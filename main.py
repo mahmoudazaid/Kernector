@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import requests
 from dotenv import load_dotenv
-from prompts import DEFAULT_PROMPT, PROMPTS
+from prompts_loader import DEFAULT_PROMPT, PROMPTS
 
 load_dotenv(override=True)
 MAX_STORY_LENGTH = 1000
