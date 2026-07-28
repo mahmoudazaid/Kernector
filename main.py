@@ -8,23 +8,28 @@ load_dotenv(override=True)
 
 
 def ask(system: str, user_text: str) -> str:
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": os.getenv("OPENROUTER_MODEL"),
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_text},
-            ],
-        },
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
-
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": os.getenv("OPENROUTER_MODEL"),
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_text},
+                ],
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException:
+        return "Failed to connect to OpenRouter"
+    except (KeyError, IndexError, ValueError):
+        return "Failed to parse response from OpenRouter"
 
 st.title("Kernector - Story Analysis")
 
