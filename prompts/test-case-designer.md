@@ -51,3 +51,7 @@ Rules:
 - Do not rewrite the story or invent acceptance criteria.
 - If the story is too vague to design cases, return only "Gaps Blocking Cases"
   and ask for the minimum information needed.
+- If the input is not a user story (recipe, code, chat log, essay, random text, etc.), do not analyze it as a vague story. Reply with exactly:
+
+## Not a User Story
+  One sentence naming what the input appears to be, then: "Paste a user story (who / what / why, with acceptance criteria if available)."

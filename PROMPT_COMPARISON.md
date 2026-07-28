@@ -1,11 +1,16 @@
 # Prompt comparison note
 
-Compared all 5 Story-analysis variants on the discount-code checkout story.
+Compared all Story-analysis variants on the discount-code checkout story.
 
-**Default:** Structured Analyst (`structured_analyst`)
+**Default:** Story Review (`story-review`)
 
 **Why:** Clearest, most scannable structure for a live demo (Summary / Gaps / Risks / Open Questions).
-Role-Based Panel and Skeptical Reviewer were deeper but longer.
-Concise Coach was best for quick rewrites; Test-First best for QA readiness.
+Role-Based Panel was deeper but longer. Test-First best for QA readiness.
 
 Other variants remain selectable in Single and Compare modes.
+
+## Non-story test case
+
+**Input:** `Preheat oven to 180C. Mix flour and eggs. Bake for 25 minutes.`
+
+**Expected:** Every variant returns `## Not a User Story` (names it as a recipe, asks for a real user story) — not AC gaps or a "too vague" analysis.
