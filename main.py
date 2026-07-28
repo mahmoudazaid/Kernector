@@ -2,29 +2,41 @@ import os
 import streamlit as st
 import requests
 from dotenv import load_dotenv
-from prompts import DEFAULT_PROMPT, PROMPTS
+from prompts_loader import DEFAULT_PROMPT, PROMPTS
 
 load_dotenv(override=True)
+MAX_STORY_LENGTH = 1000
 
+def validate_story(story: str) -> str | None:
+    if not story.strip():
+        return "Please paste a user story before analyzing."
+    if len(story) > MAX_STORY_LENGTH:
+        return f"User story is too long (max {MAX_STORY_LENGTH} characters)."
+    return None
 
 def ask(system: str, user_text: str) -> str:
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": os.getenv("OPENROUTER_MODEL"),
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_text},
-            ],
-        },
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
-
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": os.getenv("OPENROUTER_MODEL"),
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_text},
+                ],
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException:
+        return "Failed to connect to OpenRouter"
+    except (KeyError, IndexError, ValueError):
+        return "Failed to parse response from OpenRouter"
 
 st.title("Kernector - Story Analysis")
 
@@ -48,16 +60,19 @@ else:
 user_input = st.chat_input("Paste a user story to analyze")
 if user_input:
     st.chat_message("user").write(user_input)
-
-    if mode == "Single":
-        prompt = PROMPTS[selected_key]
-        with st.spinner(f"Analyzing with {prompt['name']}..."):
-            reply = ask(prompt["system"], user_input)
-        st.chat_message("assistant").write(reply)
+    error = validate_story(user_input)
+    if error:
+        st.error(error)
     else:
-        for key, prompt in PROMPTS.items():
-            with st.expander(prompt["name"], expanded=False):
-                st.caption(prompt["description"])
-                with st.spinner(f"Running {prompt['name']}..."):
-                    reply = ask(prompt["system"], user_input)
-                st.markdown(reply)
+        if mode == "Single":
+            prompt = PROMPTS[selected_key]
+            with st.spinner(f"Analyzing with {prompt['name']}..."):
+                reply = ask(prompt["system"], user_input)
+            st.chat_message("assistant").write(reply)
+        else:
+            for key, prompt in PROMPTS.items():
+                with st.expander(prompt["name"], expanded=False):
+                    st.caption(prompt["description"])
+                    with st.spinner(f"Running {prompt['name']}..."):
+                        reply = ask(prompt["system"], user_input)
+                    st.markdown(reply)
