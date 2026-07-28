@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import time
 import streamlit as st
@@ -137,9 +138,22 @@ if user_input:
             st.session_state.last_results = {selected_key: result}
         else:
             results = {}
-            for key, prompt in PROMPTS.items():
-                with st.spinner(f"Running {prompt['name']}..."):
-                    results[key] = ask(prompt["system"], user_input)
+            total = len(PROMPTS)
+            progress_bar = st.progress(0.0)
+            status = st.empty()
+            status.write(f"Starting {total} compare runs...")
+            with ThreadPoolExecutor() as executor:
+                future_to_key = {
+                    executor.submit(ask, prompt["system"], user_input): key
+                    for key, prompt in PROMPTS.items()
+                }
+                for index, future in enumerate(as_completed(future_to_key), start=1):
+                    key = future_to_key[future]
+                    results[key] = future.result()
+                    progress_bar.progress(index / total)
+                    status.write(f"{index} of {total} variants complete")
+                status.write("Compare run complete")
+        
             st.session_state.last_results = results
 
 if st.session_state.last_results and st.session_state.last_user_input:
@@ -155,7 +169,7 @@ if st.session_state.last_results and st.session_state.last_user_input:
     else:
         for key, prompt in PROMPTS.items():
             result = st.session_state.last_results[key]
-            with st.expander(prompt["name"], expanded=False):
+            with st.expander(prompt["name"], expanded=True):
                 st.caption(prompt["description"])
                 render_run_meta(result)
                 render_reply(result["content"])
