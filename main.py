@@ -14,6 +14,14 @@ def validate_story(story: str) -> str | None:
         return f"User story is too long (max {MAX_STORY_LENGTH} characters)."
     return None
 
+def is_not_a_user_story(reply: str) -> bool:
+    return "## Not a User Story" in reply
+
+def render_reply(reply: str) -> None:
+    if is_not_a_user_story(reply):
+        st.warning("This input does not look like a user story.")
+    st.markdown(reply)
+
 def ask(system: str, user_text: str) -> str:
     try:
         response = requests.post(
@@ -68,11 +76,12 @@ if user_input:
             prompt = PROMPTS[selected_key]
             with st.spinner(f"Analyzing with {prompt['name']}..."):
                 reply = ask(prompt["system"], user_input)
-            st.chat_message("assistant").write(reply)
+            with st.chat_message("assistant"):
+                render_reply(reply)
         else:
             for key, prompt in PROMPTS.items():
                 with st.expander(prompt["name"], expanded=False):
                     st.caption(prompt["description"])
                     with st.spinner(f"Running {prompt['name']}..."):
                         reply = ask(prompt["system"], user_input)
-                    st.markdown(reply)
+                    render_reply(reply)
