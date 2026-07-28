@@ -5,7 +5,14 @@ from dotenv import load_dotenv
 from prompts import DEFAULT_PROMPT, PROMPTS
 
 load_dotenv(override=True)
+MAX_STORY_LENGTH = 1000
 
+def validate_story(story: str) -> str | None:
+    if not story.strip():
+        return "Please paste a user story before analyzing."
+    if len(story) > MAX_STORY_LENGTH:
+        return f"User story is too long (max {MAX_STORY_LENGTH} characters)."
+    return None
 
 def ask(system: str, user_text: str) -> str:
     try:
@@ -53,16 +60,19 @@ else:
 user_input = st.chat_input("Paste a user story to analyze")
 if user_input:
     st.chat_message("user").write(user_input)
-
-    if mode == "Single":
-        prompt = PROMPTS[selected_key]
-        with st.spinner(f"Analyzing with {prompt['name']}..."):
-            reply = ask(prompt["system"], user_input)
-        st.chat_message("assistant").write(reply)
+    error = validate_story(user_input)
+    if error:
+        st.error(error)
     else:
-        for key, prompt in PROMPTS.items():
-            with st.expander(prompt["name"], expanded=False):
-                st.caption(prompt["description"])
-                with st.spinner(f"Running {prompt['name']}..."):
-                    reply = ask(prompt["system"], user_input)
-                st.markdown(reply)
+        if mode == "Single":
+            prompt = PROMPTS[selected_key]
+            with st.spinner(f"Analyzing with {prompt['name']}..."):
+                reply = ask(prompt["system"], user_input)
+            st.chat_message("assistant").write(reply)
+        else:
+            for key, prompt in PROMPTS.items():
+                with st.expander(prompt["name"], expanded=False):
+                    st.caption(prompt["description"])
+                    with st.spinner(f"Running {prompt['name']}..."):
+                        reply = ask(prompt["system"], user_input)
+                    st.markdown(reply)
