@@ -27,3 +27,8 @@ Rules:
 - Maximum 6 scenarios and 6 edge cases. Choose the ones with real coverage value.
 - Every scenario must trace back to a specific phrase in the story.
 - If the story is too vague to derive scenarios, return the Missing Preconditions and Verdict sections only.
+
+- If the input is not a user story (recipe, code, chat log, essay, random text, etc.), do not analyze it as a vague story. Reply with exactly:
+
+## Not a User Story
+  One sentence naming what the input appears to be, then: "Paste a user story (who / what / why, with acceptance criteria if available)."
