@@ -7,20 +7,20 @@ from dotenv import load_dotenv
 from prompts_loader import DEFAULT_PROMPT, PROMPTS
 
 load_dotenv(override=True)
-MAX_STORY_LENGTH = 1000
+MAX_INPUT_LENGTH = 10000
 
-def validate_story(story: str) -> str | None:
-    if not story.strip():
-        return "Please paste a user story before analyzing."
-    if len(story) > MAX_STORY_LENGTH:
-        return f"User story is too long (max {MAX_STORY_LENGTH} characters)."
+def validate_input(input: str) -> str | None:
+    if not input.strip():
+        return "Please paste the interview prep for analyzing."
+    if len(input) > MAX_INPUT_LENGTH:
+        return f"User story is too long (max {MAX_INPUT_LENGTH} characters)."
     return None
 
-def is_not_a_user_story(reply: str) -> bool:
-    return "## Not a User Story" in reply
+def is_not_interview_prep(reply: str) -> bool:
+    return "## Not Interview Pre" in reply
 
 def render_reply(reply: str) -> None:
-    if is_not_a_user_story(reply):
+    if is_not_interview_prep(reply):
         st.warning("This input does not look like a user story.")
     st.markdown(reply)
 
@@ -107,7 +107,7 @@ st.session_state.setdefault("last_mode", None)
 st.session_state.setdefault("last_selected_key", None)
 st.session_state.setdefault("last_results", None)
 
-st.title("Kernector - Story Analysis")
+st.title("Kernector - Interview Analysis")
 
 with st.sidebar:
     mode = st.radio("Mode", ["Single", "Compare"])
@@ -123,7 +123,7 @@ with st.sidebar:
 
 user_input = st.chat_input("Paste a user story to analyze")
 if user_input:
-    error = validate_story(user_input)
+    error = validate_input(user_input)
     if error:
         st.error(error)
     else:
