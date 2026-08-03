@@ -13,7 +13,7 @@ def validate_input(input: str) -> str | None:
     if not input.strip():
         return "Please paste the interview prep for analyzing."
     if len(input) > MAX_INPUT_LENGTH:
-        return f"User story is too long (max {MAX_INPUT_LENGTH} characters)."
+        return f"Input is too long (max {MAX_INPUT_LENGTH} characters)."
     return None
 
 def is_not_interview_prep(reply: str) -> bool:
@@ -21,7 +21,7 @@ def is_not_interview_prep(reply: str) -> bool:
 
 def render_reply(reply: str) -> None:
     if is_not_interview_prep(reply):
-        st.warning("This input does not look like a user story.")
+        st.warning("This input does not look like a Job Posting.")
     st.markdown(reply)
 
 def ask(system: str, user_text: str) -> dict:
@@ -121,7 +121,7 @@ with st.sidebar:
         )
         st.caption(PROMPTS[selected_key]["description"])
 
-user_input = st.chat_input("Paste a user story to analyze")
+user_input = st.chat_input("Paste a Job Posting to analyze")
 if user_input:
     error = validate_input(user_input)
     if error:
