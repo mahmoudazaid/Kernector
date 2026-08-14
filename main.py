@@ -1,131 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import os
-import time
 import streamlit as st
-import requests
-from dotenv import load_dotenv
 from prompts_loader import DEFAULT_PROMPT, PROMPTS
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-load_dotenv(override=True)
-MAX_INPUT_LENGTH = 10000
-
-def validate_input(input: str) -> str | None:
-    if not input.strip():
-        return "Please paste the interview prep for analyzing."
-    if len(input) > MAX_INPUT_LENGTH:
-        return f"Input is too long (max {MAX_INPUT_LENGTH} characters)."
-    return None
-
-def is_not_interview_prep(reply: str) -> bool:
-    return "## Not Interview Pre" in reply
+import requests
+import llm
+import config
 
 def render_reply(reply: str) -> None:
-    if is_not_interview_prep(reply):
+    if llm.is_not_interview_prep(reply):
         st.warning("This input does not look like a Job Posting.")
     st.markdown(reply)
-
-def make_openrouter_chat_model(model: str | None = None) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=model or os.getenv("OPENROUTER_MODEL"),
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        base_url="https://openrouter.ai/api/v1",
-        timeout=30,
-    )
-
-def make_ask_prompt() -> ChatPromptTemplate:
-    return ChatPromptTemplate.from_messages([
-        ("system", "{system}"),
-        ("human", "{user_text}"),
-    ])
-
-def ask(
-    system: str,
-    user_text: str,
-    provider: str | None = None,
-    model: str | None = None,
-    ollama_base_url: str | None = None,
-) -> dict:
-    provider = (provider or os.getenv("LLM_PROVIDER", "openrouter")).lower()
-
-    if provider == "ollama":
-        base = (ollama_base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
-        url = f"{base}/v1/chat/completions"
-        model = model or os.getenv("OLLAMA_MODEL", "llama3.2")
-        headers = {"Content-Type": "application/json"}
-        timeout = 120
-        provider_label = "Ollama"
-        try:
-            started = time.perf_counter()
-            response = requests.post(
-                url,
-                headers=headers,
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user_text},
-                    ],
-                },
-                timeout=timeout,
-            )
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            response.raise_for_status()
-            data = response.json()
-            return {
-                "content": data["choices"][0]["message"]["content"],
-                "model": data.get("model", model),
-                "latency_ms": latency_ms,
-                "usage": data.get("usage"),
-            }
-        except requests.exceptions.RequestException:
-            return {
-                "content": f"Failed to connect to {provider_label}",
-                "model": model,
-                "latency_ms": None,
-                "usage": None,
-            }
-        except (KeyError, IndexError, ValueError):
-            return {
-                "content": f"Failed to parse response from {provider_label}",
-                "model": model,
-                "latency_ms": None,
-                "usage": None,
-            }
-
-    model = model or os.getenv("OPENROUTER_MODEL")
-    provider_label = "OpenRouter"
-    try:
-        started = time.perf_counter()
-        chat_model = make_openrouter_chat_model(model)
-        prompt = make_ask_prompt()
-        chain = prompt | chat_model
-        ai_message = chain.invoke({
-            "system": system,
-            "user_text": user_text,
-        })
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        usage = None
-        meta = getattr(ai_message, "usage_metadata", None) or {}
-        if meta:
-            usage = {
-                "prompt_tokens": meta.get("input_tokens"),
-                "completion_tokens": meta.get("output_tokens"),
-                "total_tokens": meta.get("total_tokens"),
-            }
-        return {
-            "content": ai_message.content,
-            "model": model,
-            "latency_ms": latency_ms,
-            "usage": usage,
-        }
-    except Exception:
-        return {
-            "content": f"Failed to connect to {provider_label}",
-            "model": model,
-            "latency_ms": None,
-            "usage": None,
-        }
 
 def render_run_meta(result: dict) -> None:
     bits = []
@@ -166,7 +49,7 @@ def render_export_actions(result: dict, filename_prefix: str) -> None:
 def probe_ollama(base_url: str) -> dict:
     """Return {reachable: bool, models: list[str]} for an Ollama base URL."""
     try:
-        response = requests.get(f"{base_url.rstrip('/')}/api/tags", timeout=5)
+        response = requests.get(f"{base_url.rstrip('/')}/api/tags", timeout=config.OLLAMA_TIMEOUT)
         response.raise_for_status()
         models = [m["name"] for m in response.json().get("models", [])]
         return {"reachable": True, "models": models}
@@ -185,11 +68,11 @@ with st.sidebar:
         "Provider",
         ["openrouter", "ollama"],
         format_func=lambda p: "OpenRouter" if p == "openrouter" else "Ollama",
-        index=0 if os.getenv("LLM_PROVIDER", "openrouter").lower() == "openrouter" else 1,
+        index=0 if config.DEFAULT_PROVIDER == "openrouter" else 1,
     )
 
-    selected_model = os.getenv("OPENROUTER_MODEL")
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    selected_model = config.OPENROUTER_MODEL
+    ollama_base_url = config.OLLAMA_BASE_URL
 
     if provider == "ollama":
         ollama_base_url = st.text_input("Ollama base URL", value=ollama_base_url)
@@ -210,17 +93,17 @@ with st.sidebar:
             )
             selected_model = st.text_input(
                 "Ollama model",
-                value=os.getenv("OLLAMA_MODEL", "llama3.2"),
+                value=config.OLLAMA_MODEL,
             )
         elif not models:
             st.warning("Ollama is running, but no models are installed yet.")
             st.markdown("In a terminal, run: `ollama pull llama3.2`, then refresh.")
             selected_model = st.text_input(
                 "Ollama model",
-                value=os.getenv("OLLAMA_MODEL", "llama3.2"),
+                value=config.OLLAMA_MODEL,
             )
         else:
-            default_model = os.getenv("OLLAMA_MODEL", models[0])
+            default_model = config.OLLAMA_MODEL or models[0]
             index = models.index(default_model) if default_model in models else 0
             selected_model = st.selectbox("Ollama model", options=models, index=index)
             st.caption("Ollama connected · local, slower, no API cost.")
@@ -243,7 +126,7 @@ with st.sidebar:
 
 user_input = st.chat_input("Paste a Job Posting to analyze")
 if user_input:
-    error = validate_input(user_input)
+    error = llm.validate_input(user_input)
     if error:
         st.error(error)
     else:
@@ -254,7 +137,7 @@ if user_input:
         if mode == "Single":
             prompt = PROMPTS[selected_key]
             with st.spinner(f"Analyzing with {prompt['name']}..."):
-                result = ask(
+                result = llm.ask(
                     prompt["system"],
                     user_input,
                     provider=provider,
@@ -271,7 +154,7 @@ if user_input:
             with ThreadPoolExecutor() as executor:
                 future_to_key = {
                     executor.submit(
-                        ask,
+                        llm.ask,
                         prompt["system"],
                         user_input,
                         provider,
