@@ -5,7 +5,8 @@ import streamlit as st
 import requests
 from dotenv import load_dotenv
 from prompts_loader import DEFAULT_PROMPT, PROMPTS
-
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
 load_dotenv(override=True)
 MAX_INPUT_LENGTH = 10000
 
@@ -24,6 +25,20 @@ def render_reply(reply: str) -> None:
         st.warning("This input does not look like a Job Posting.")
     st.markdown(reply)
 
+def make_openrouter_chat_model(model: str | None = None) -> ChatOpenAI:
+    return ChatOpenAI(
+        model=model or os.getenv("OPENROUTER_MODEL"),
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        timeout=30,
+    )
+
+def make_ask_prompt() -> ChatPromptTemplate:
+    return ChatPromptTemplate.from_messages([
+        ("system", "{system}"),
+        ("human", "{user_text}"),
+    ])
+
 def ask(
     system: str,
     user_text: str,
@@ -40,49 +55,73 @@ def ask(
         headers = {"Content-Type": "application/json"}
         timeout = 120
         provider_label = "Ollama"
-    else:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        model = model or os.getenv("OPENROUTER_MODEL")
-        headers = {
-            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
-            "Content-Type": "application/json",
-        }
-        timeout = 30
-        provider_label = "OpenRouter"
+        try:
+            started = time.perf_counter()
+            response = requests.post(
+                url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user_text},
+                    ],
+                },
+                timeout=timeout,
+            )
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            response.raise_for_status()
+            data = response.json()
+            return {
+                "content": data["choices"][0]["message"]["content"],
+                "model": data.get("model", model),
+                "latency_ms": latency_ms,
+                "usage": data.get("usage"),
+            }
+        except requests.exceptions.RequestException:
+            return {
+                "content": f"Failed to connect to {provider_label}",
+                "model": model,
+                "latency_ms": None,
+                "usage": None,
+            }
+        except (KeyError, IndexError, ValueError):
+            return {
+                "content": f"Failed to parse response from {provider_label}",
+                "model": model,
+                "latency_ms": None,
+                "usage": None,
+            }
 
+    model = model or os.getenv("OPENROUTER_MODEL")
+    provider_label = "OpenRouter"
     try:
         started = time.perf_counter()
-        response = requests.post(
-            url,
-            headers=headers,
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_text},
-                ],
-            },
-            timeout=timeout,
-        )
+        chat_model = make_openrouter_chat_model(model)
+        prompt = make_ask_prompt()
+        chain = prompt | chat_model
+        ai_message = chain.invoke({
+            "system": system,
+            "user_text": user_text,
+        })
         latency_ms = int((time.perf_counter() - started) * 1000)
-        response.raise_for_status()
-        data = response.json()
+        usage = None
+        meta = getattr(ai_message, "usage_metadata", None) or {}
+        if meta:
+            usage = {
+                "prompt_tokens": meta.get("input_tokens"),
+                "completion_tokens": meta.get("output_tokens"),
+                "total_tokens": meta.get("total_tokens"),
+            }
         return {
-            "content": data["choices"][0]["message"]["content"],
-            "model": data.get("model", model),
+            "content": ai_message.content,
+            "model": model,
             "latency_ms": latency_ms,
-            "usage": data.get("usage"),
+            "usage": usage,
         }
-    except requests.exceptions.RequestException:
+    except Exception:
         return {
             "content": f"Failed to connect to {provider_label}",
-            "model": model,
-            "latency_ms": None,
-            "usage": None,
-        }
-    except (KeyError, IndexError, ValueError):
-        return {
-            "content": f"Failed to parse response from {provider_label}",
             "model": model,
             "latency_ms": None,
             "usage": None,
