@@ -4,6 +4,7 @@ import requests
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 import config
+from model_settings import SETTINGS
 
 def ask(
     system: str,
@@ -11,8 +12,13 @@ def ask(
     provider: str | None = None,
     model: str | None = None,
     ollama_base_url: str | None = None,
+    model_config: dict | None = None,
 ) -> dict:
     provider = (provider or config.DEFAULT_PROVIDER).lower()
+    applied = {
+        k: v for k, v in (model_config or {}).items()
+        if k in {s.key for s in SETTINGS}
+    }
 
     if provider == "ollama":
         base = (ollama_base_url or config.OLLAMA_BASE_URL).rstrip("/")
@@ -31,6 +37,7 @@ def ask(
                         {"role": "system", "content": system},
                         {"role": "user", "content": user_text},
                     ],
+                    **applied,
                 },
                 timeout=config.OLLAMA_TIMEOUT,
             )
@@ -42,6 +49,7 @@ def ask(
                 "model": data.get("model", model),
                 "latency_ms": latency_ms,
                 "usage": data.get("usage"),
+                "settings": applied,
             }
         except requests.exceptions.RequestException:
             return {
@@ -49,6 +57,7 @@ def ask(
                 "model": model,
                 "latency_ms": None,
                 "usage": None,
+                "settings": applied,
             }
         except (KeyError, IndexError, ValueError):
             return {
@@ -56,13 +65,14 @@ def ask(
                 "model": model,
                 "latency_ms": None,
                 "usage": None,
+                "settings": applied,
             }
 
     model = model or os.getenv("OPENROUTER_MODEL")
     provider_label = "OpenRouter"
     try:
         started = time.perf_counter()
-        chat_model = make_openrouter_chat_model(model)
+        chat_model = make_openrouter_chat_model(model, **applied)
         prompt = make_ask_prompt()
         chain = prompt | chat_model
         ai_message = chain.invoke({
@@ -83,6 +93,7 @@ def ask(
             "model": model,
             "latency_ms": latency_ms,
             "usage": usage,
+            "settings": applied,
         }
     except Exception:
         return {
@@ -90,14 +101,16 @@ def ask(
             "model": model,
             "latency_ms": None,
             "usage": None,
+            "settings": applied,
         }
 
-def make_openrouter_chat_model(model: str | None = None) -> ChatOpenAI:
+def make_openrouter_chat_model(model: str | None = None, **params) -> ChatOpenAI:
     return ChatOpenAI(
         model= model or config.OPENROUTER_MODEL,
         api_key=config.OPENROUTER_API_KEY,
         base_url=config.OPENROUTER_BASE_URL,
         timeout=config.OPENROUTER_TIMEOUT,
+        **params,
     )
 
 def make_ask_prompt() -> ChatPromptTemplate:

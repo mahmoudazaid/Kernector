@@ -4,6 +4,7 @@ from prompts_loader import DEFAULT_PROMPT, PROMPTS
 import requests
 import llm
 import config
+from model_settings import SETTINGS
 
 def render_reply(reply: str) -> None:
     if llm.is_not_interview_prep(reply):
@@ -33,6 +34,10 @@ def render_run_meta(result: dict) -> None:
     if cost is not None:
         bits.append(f"Cost: ${cost}")
 
+    settings = result.get("settings") or {}
+    if settings:
+        bits.append(" · ".join(f"{k}={v}" for k, v in settings.items()))
+
     if bits:
         st.caption(" | ".join(bits))
 
@@ -44,6 +49,25 @@ def render_export_actions(result: dict, filename_prefix: str) -> None:
         mime="text/markdown",
         key=f"download_{filename_prefix}",
     )
+
+def render_model_settings(provider: str) -> dict:
+    values = {}
+    with st.expander("Model Settings", icon=":material/tune:"):
+        st.caption("Defaults are safe. Change only what you need.")
+        for setting in SETTINGS:
+            if provider not in setting.providers:
+                continue
+            widget = st.slider if setting.widget == "slider" else st.number_input
+            values[setting.key] = widget(
+                setting.label,
+                min_value=setting.min_value,
+                max_value=setting.max_value,
+                value=setting.default,
+                step=setting.step,
+                help=setting.help,
+                key=f"setting_{provider}_{setting.key}",
+            )
+    return values
 
 @st.cache_data(ttl=30)
 def probe_ollama(base_url: str) -> dict:
@@ -108,8 +132,23 @@ with st.sidebar:
             selected_model = st.selectbox("Ollama model", options=models, index=index)
             st.caption("Ollama connected · local, slower, no API cost.")
     else:
-        st.caption(f"OpenRouter model: {selected_model}")
+        openrouter_models = config.OPENROUTER_MODELS
+        if openrouter_models:
+            default_model = config.OPENROUTER_MODEL or openrouter_models[0]
+            index = (
+                openrouter_models.index(default_model)
+                if default_model in openrouter_models
+                else 0
+            )
+            selected_model = st.selectbox("OpenRouter model", options=openrouter_models, index=index)
+        else:
+            selected_model = st.text_input(
+                "OpenRouter model",
+                value=config.OPENROUTER_MODEL
+                )
+            st.caption("No OpenRouter models available")
 
+    model_config = render_model_settings(provider)
 
     mode = st.radio("Mode", ["Single", "Compare"])
     selected_key = DEFAULT_PROMPT
@@ -143,6 +182,7 @@ if user_input:
                     provider=provider,
                     model=selected_model,
                     ollama_base_url=ollama_base_url,
+                    model_config=model_config,
                 )
             st.session_state.last_results = {selected_key: result}
         else:
@@ -160,6 +200,7 @@ if user_input:
                         provider,
                         selected_model,
                         ollama_base_url,
+                        model_config
                     ): key
                     for key, prompt in PROMPTS.items()
                 }
