@@ -40,3 +40,6 @@ htmlcov/
 
 .cursor/
 learning/
+
+# Generated artifacts
+output/
