@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import streamlit as st
 from prompts_loader import DEFAULT_PROMPT, PROMPTS
 import requests
@@ -41,10 +40,10 @@ def render_run_meta(result: dict) -> None:
     if bits:
         st.caption(" | ".join(bits))
 
-def render_export_actions(result: dict, filename_prefix: str) -> None:
+def render_export_actions(content: str, filename_prefix: str) -> None:
     st.download_button(
         "Download output",
-        data=result["content"],
+        data=content,
         file_name=f"{filename_prefix}.md",
         mime="text/markdown",
         key=f"download_{filename_prefix}",
@@ -80,10 +79,7 @@ def probe_ollama(base_url: str) -> dict:
     except requests.exceptions.RequestException:
         return {"reachable": False, "models": []}
 
-st.session_state.setdefault("last_user_input", None)
-st.session_state.setdefault("last_mode", None)
-st.session_state.setdefault("last_selected_key", None)
-st.session_state.setdefault("last_results", None)
+st.session_state.setdefault("messages", [])
 
 st.title("Kernector - Interview Analysis")
 
@@ -94,6 +90,13 @@ with st.sidebar:
         format_func=lambda p: "OpenRouter" if p == "openrouter" else "Ollama",
         index=0 if config.DEFAULT_PROVIDER == "openrouter" else 1,
     )
+    if st.button(
+        "New chat",
+        icon=":material/add_comment:",
+        width="stretch",
+    ):
+
+        st.session_state.messages = []
 
     selected_model = config.OPENROUTER_MODEL
     ollama_base_url = config.OLLAMA_BASE_URL
@@ -150,18 +153,22 @@ with st.sidebar:
 
     model_config = render_model_settings(provider)
 
-    mode = st.radio("Mode", ["Single", "Compare"])
-    selected_key = DEFAULT_PROMPT
-    if mode == "Single":
-        selected_key = st.selectbox(
-            "Prompt variant",
-            options=list(PROMPTS.keys()),
-            format_func=lambda key: PROMPTS[key]["name"],
-            index=list(PROMPTS.keys()).index(DEFAULT_PROMPT),
-        )
-        st.caption(PROMPTS[selected_key]["description"])
-    elif provider == "ollama":
-        st.caption(f"Compare will run {len(PROMPTS)} local calls and may be slow.")
+    selected_key = st.selectbox(
+        "Prompt variant",
+        options=list(PROMPTS.keys()),
+        format_func=lambda key: PROMPTS[key]["name"],
+        index=list(PROMPTS.keys()).index(DEFAULT_PROMPT),
+    )
+    st.caption(PROMPTS[selected_key]["description"])
+    
+for  index, message in enumerate(st.session_state.messages):
+    with st.chat_message(message["role"]):
+        if message["role"] == "assistant":
+            render_run_meta(message.get("meta") or {})
+            render_reply(message["content"])
+            render_export_actions(message["content"], f"analysis_{index}")
+        else:
+            st.markdown(message["content"])
 
 user_input = st.chat_input("Paste a Job Posting to analyze")
 if user_input:
@@ -169,13 +176,15 @@ if user_input:
     if error:
         st.error(error)
     else:
-        st.session_state.last_user_input = user_input
-        st.session_state.last_mode = mode
-        st.session_state.last_selected_key = selected_key
+        history = list(st.session_state.messages)
+        st.session_state.messages.append({"role": "user", "content": user_input})
 
-        if mode == "Single":
-            prompt = PROMPTS[selected_key]
-            with st.spinner(f"Analyzing with {prompt['name']}..."):
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        prompt = PROMPTS[selected_key]
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
                 result = llm.ask(
                     prompt["system"],
                     user_input,
@@ -183,51 +192,19 @@ if user_input:
                     model=selected_model,
                     ollama_base_url=ollama_base_url,
                     model_config=model_config,
+                    history=history,
                 )
-            st.session_state.last_results = {selected_key: result}
-        else:
-            results = {}
-            total = len(PROMPTS)
-            progress_bar = st.progress(0.0)
-            status = st.empty()
-            status.write(f"Starting {total} compare runs...")
-            with ThreadPoolExecutor() as executor:
-                future_to_key = {
-                    executor.submit(
-                        llm.ask,
-                        prompt["system"],
-                        user_input,
-                        provider,
-                        selected_model,
-                        ollama_base_url,
-                        model_config
-                    ): key
-                    for key, prompt in PROMPTS.items()
-                }
-                for index, future in enumerate(as_completed(future_to_key), start=1):
-                    key = future_to_key[future]
-                    results[key] = future.result()
-                    progress_bar.progress(index / total)
-                    status.write(f"{index} of {total} variants complete")
-                status.write("Compare run complete")
-
-            st.session_state.last_results = results
-
-if st.session_state.last_results and st.session_state.last_user_input:
-    st.chat_message("user").write(st.session_state.last_user_input)
-
-    if st.session_state.last_mode == "Single":
-        key = st.session_state.last_selected_key
-        result = st.session_state.last_results[key]
-        with st.chat_message("assistant"):
             render_run_meta(result)
             render_reply(result["content"])
-            render_export_actions(result, key)
-    else:
-        for key, prompt in PROMPTS.items():
-            result = st.session_state.last_results[key]
-            with st.expander(prompt["name"], expanded=True):
-                st.caption(prompt["description"])
-                render_run_meta(result)
-                render_reply(result["content"])
-                render_export_actions(result, key)
+            render_export_actions(result["content"], f"analysis_{len(st.session_state.messages)}")
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": result["content"],
+            "meta": {
+                "model": result["model"],
+                "latency_ms": result["latency_ms"],
+                "usage": result["usage"],
+                "settings": result["settings"],
+            },
+        })
