@@ -94,7 +94,6 @@ with st.sidebar:
         "New chat",
         icon=":material/add_comment:",
         width="stretch",
-        disabled=not st.session_state.messages,
     ):
 
         st.session_state.messages = []
