@@ -2,7 +2,7 @@ import os
 import time
 import requests
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import config
 from model_settings import SETTINGS
 
@@ -13,12 +13,16 @@ def ask(
     model: str | None = None,
     ollama_base_url: str | None = None,
     model_config: dict | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     provider = (provider or config.DEFAULT_PROVIDER).lower()
     applied = {
         k: v for k, v in (model_config or {}).items()
         if k in {s.key for s in SETTINGS}
     }
+    conversation = to_provider_messages(history or [])+[
+        {"role": "user", "content": user_text},
+    ]
 
     if provider == "ollama":
         base = (ollama_base_url or config.OLLAMA_BASE_URL).rstrip("/")
@@ -33,10 +37,7 @@ def ask(
                 headers=headers,
                 json={
                     "model": model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user_text},
-                    ],
+                    "messages": [{"role": "system", "content": system}] + conversation,
                     **applied,
                 },
                 timeout=config.OLLAMA_TIMEOUT,
@@ -77,7 +78,7 @@ def ask(
         chain = prompt | chat_model
         ai_message = chain.invoke({
             "system": system,
-            "user_text": user_text,
+            "history": conversation,
         })
         latency_ms = int((time.perf_counter() - started) * 1000)
         usage = None
@@ -116,8 +117,14 @@ def make_openrouter_chat_model(model: str | None = None, **params) -> ChatOpenAI
 def make_ask_prompt() -> ChatPromptTemplate:
     return ChatPromptTemplate.from_messages([
         ("system", "{system}"),
-        ("human", "{user_text}"),
+        MessagesPlaceholder("history"),
     ])
+
+def to_provider_messages(messages: list[dict]) -> list[dict]:
+    return [
+        {"role": message["role"], "content": message["content"]}
+        for message in messages
+    ]
 
 def validate_input(input: str) -> str | None:
     if not input.strip():
