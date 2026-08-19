@@ -1,19 +1,19 @@
-"""Checks for retrieval.py and evaluate.py. Run: uv run python test_retrieval.py
+"""Checks for retrieval.py and evaluate.py. Run: uv run python -m labs.lab02.test_retrieval
 
 No network access. BM25 and the metrics are pure functions over committed data,
-and the vector checks read output/kb_embeddings.json, skipping if it is absent.
+and the vector checks read labs/lab02/output/kb_embeddings.json, skipping if it is absent.
 """
 
 from pathlib import Path
 
 from embeddings import cosine_similarity
-from evaluate import (
+from labs.lab02.evaluate import (
     actual_winner,
     first_relevant_rank,
     hit_rate,
     mean_reciprocal_rank,
 )
-from retrieval import CACHE_PATH, knowledge_base, knowledge_base_vectors, search_bm25, tokenize
+from labs.lab02.retrieval import CACHE_PATH, knowledge_base, knowledge_base_vectors, search_bm25, tokenize
 
 failures = []
 
@@ -61,7 +61,7 @@ check("two misses is neither", actual_winner({"bm25": None, "vector": None}) == 
 
 print("-- vector cache, no api --")
 if not Path(CACHE_PATH).exists():
-    print(f"SKIP  {CACHE_PATH} missing, run: uv run python evaluate.py")
+    print(f"SKIP  {CACHE_PATH} missing, run: uv run python -m labs.lab02.evaluate")
 else:
     documents = knowledge_base()
     vectors = knowledge_base_vectors()
