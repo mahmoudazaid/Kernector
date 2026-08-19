@@ -1,7 +1,7 @@
-"""Explore output/embeddings.json: similarity comparisons, PCA projection, and a plot.
+"""Explore labs/lab01/output/embeddings.json: similarity comparisons, PCA projection, and a plot.
 
-Run: uv run python explore.py
-Requires output/embeddings.json, produced by: uv run python embed_and_store.py
+Run: uv run python -m labs.lab01.explore
+Requires labs/lab01/output/embeddings.json, produced by: uv run python -m labs.lab01.embed_and_store
 """
 
 from pathlib import Path
@@ -15,8 +15,8 @@ from itertools import combinations
 
 from embeddings import cosine_similarity, embed_texts, load_records
 
-EMBEDDINGS_PATH = "output/embeddings.json"
-PLOT_PATH = "output/embedding_plot.png"
+EMBEDDINGS_PATH = "labs/lab01/output/embeddings.json"
+PLOT_PATH = "labs/lab01/output/embedding_plot.png"
 
 CATEGORY_COLORS = {
     "billing": "#1f77b4",
@@ -173,7 +173,7 @@ def report_interpretation(records: list[dict], explained: np.ndarray) -> None:
 
 def main() -> None:
     if not Path(EMBEDDINGS_PATH).exists():
-        raise SystemExit(f"{EMBEDDINGS_PATH} not found. Run: uv run python embed_and_store.py")
+        raise SystemExit(f"{EMBEDDINGS_PATH} not found. Run: uv run python -m labs.lab01.embed_and_store")
 
     records = load_records(EMBEDDINGS_PATH)
     index = {record["id"]: record for record in records}

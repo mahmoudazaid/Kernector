@@ -1,0 +1,19 @@
+[
+    { "id": "kb-01", "title": "ERR-4021 revoked API key", "text": "Error ERR-4021 means the API key you sent has been revoked. Generate a new key in the dashboard under Settings, API keys, and update your environment before retrying." },
+    { "id": "kb-02", "title": "ERR-4210 payload too large", "text": "Error ERR-4210 means the request body exceeded the 2 MB payload limit. Split the batch into smaller chunks and send them sequentially." },
+    { "id": "kb-03", "title": "ERR-5003 upstream timeout", "text": "Error ERR-5003 is an upstream timeout from the model provider. Retry with exponential backoff. It is not caused by anything wrong in your request." },
+    { "id": "kb-04", "title": "HTTP 402 spend cap reached", "text": "A 402 Payment Required response means your workspace has exceeded its monthly spend cap. Raise the cap in Billing or wait for the next cycle to begin." },
+    { "id": "kb-05", "title": "Credential hygiene", "text": "Replace your access secrets on a regular schedule so that a leaked secret has a short useful life. Retire the previous secret only after the replacement is confirmed working in production." },
+    { "id": "kb-06", "title": "Seats and members", "text": "Each member of your workspace consumes one seat. Removing a member frees their seat at the end of the current billing period, not immediately." },
+    { "id": "kb-07", "title": "Password reset for directory members", "text": "Members who sign in through your identity provider cannot change a password here. Password changes happen in your provider's directory and take effect on next sign-in." },
+    { "id": "kb-08", "title": "Password reset for local accounts", "text": "Members with a local account can reset their password from the sign-in page. The reset link expires after 30 minutes and can only be used once." },
+    { "id": "kb-09", "title": "Rate limits", "text": "Requests are limited to 60 per minute per key. Exceeding the limit returns HTTP 429 together with a Retry-After header telling you how long to pause." },
+    { "id": "kb-10", "title": "Log retention", "text": "Prompt and completion logs are retained for 30 days and then permanently deleted. Retention cannot be extended on the current plan." },
+    { "id": "kb-11", "title": "Model deprecation", "text": "When a model is retired you receive 60 days notice by email. Requests sent after the retirement date fall back to the closest supported model rather than failing." },
+    { "id": "kb-12", "title": "Streaming responses", "text": "Enable token by token delivery by setting stream to true. The reply then arrives as server sent events instead of one complete JSON body at the end." },
+    { "id": "kb-13", "title": "Request timeouts", "text": "The default request timeout is 120 seconds. It can be lowered per request but cannot be raised above 300 seconds on any plan." },
+    { "id": "kb-14", "title": "Invoices", "text": "Download invoices from Billing, Invoices. Invoices are issued on the first of each month and include VAT where applicable to your country." },
+    { "id": "kb-15", "title": "Workspace regions", "text": "Workspaces are pinned to a single region when created and cannot be migrated later. Create a new workspace if you need a different region." },
+    { "id": "kb-16", "title": "Webhook signature verification", "text": "Verify that a webhook came from us by comparing the X-Signature header against an HMAC of the raw request body computed with your signing secret." }
+  ]
+  
