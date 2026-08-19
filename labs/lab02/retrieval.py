@@ -1,10 +1,10 @@
-"""Keyword (BM25) and vector retrieval over data/knowledge_base.json.
+"""Keyword (BM25) and vector retrieval over labs/lab02/data/knowledge_base.json.
 
 Try a query against both methods:
-    uv run python retrieval.py "ERR-4021"
+    uv run python -m labs.lab02.retrieval "ERR-4021"
 
 Vector search needs OPENROUTER_API_KEY (see embeddings.py) and caches the
-knowledge-base vectors in output/kb_embeddings.json so repeat runs cost nothing.
+knowledge-base vectors in labs/lab02/output/kb_embeddings.json so repeat runs cost nothing.
 Tokenization is lowercase with punctuation stripped and no stemming, so "keys"
 does not match "key".
 """
@@ -18,8 +18,8 @@ from rank_bm25 import BM25Okapi
 
 from embeddings import cosine_similarity, embed_texts, load_records, save_records
 
-KNOWLEDGE_BASE_PATH = "data/knowledge_base.json"
-CACHE_PATH = "output/kb_embeddings.json"
+KNOWLEDGE_BASE_PATH = "labs/lab02/data/knowledge_base.json"
+CACHE_PATH = "labs/lab02/output/kb_embeddings.json"
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
@@ -79,7 +79,7 @@ def search_vector(query: str, top_k: int = 5) -> list[dict]:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        raise SystemExit('Usage: uv run python retrieval.py "your query"')
+        raise SystemExit('Usage: uv run python -m labs.lab02.retrieval "your query"')
 
     query = " ".join(sys.argv[1:])
     print(f"query:  {query!r}")
