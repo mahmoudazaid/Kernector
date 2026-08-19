@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.decomposition import PCA
+from itertools import combinations
 
 from embeddings import cosine_similarity, embed_texts, load_records
 
@@ -120,6 +121,55 @@ def save_plot(records: list[dict], coordinates: np.ndarray, explained: np.ndarra
     plt.close(figure)
     print(f"  saved {path}")
 
+def category_cohesion(records: list[dict]) -> dict[str, float]:
+    cohesion = {}
+    for category in CATEGORY_COLORS:
+        vectors = [record["embedding"] for record in records if record["category"] == category]
+        pairs = [cosine_similarity(left, right) for left, right in combinations(vectors, 2)]
+        cohesion[category] = sum(pairs) / len(pairs)
+    return cohesion
+
+def centroid_scores(record: dict, records: list[dict]) -> dict[str, float]:
+    scores = {}
+    for category in CATEGORY_COLORS:
+        vectors = [
+            other["embedding"]
+            for other in records
+            if other["category"] == category and other["id"] != record["id"]
+        ]
+        scores[category] = cosine_similarity(record["embedding"], np.mean(vectors, axis=0).tolist())
+    return scores
+
+def report_interpretation(records: list[dict], explained: np.ndarray) -> None:
+    print("-- interpretation --")
+
+    cohesion = category_cohesion(records)
+    print("  cohesion, mean similarity within each category:")
+    for category, score in sorted(cohesion.items(), key=lambda item: item[1], reverse=True):
+        print(f"    {category:11s} {score:.4f}")
+
+    print("  documents nearer another category's centroid than their own:")
+    misplaced = []
+    for record in records:
+        scores = centroid_scores(record, records)
+        nearest = max(scores, key=scores.get)
+        if nearest != record["category"]:
+            misplaced.append(record["id"])
+            print(
+                f"    {record['id']:14s} labeled {record['category']} ({scores[record['category']]:.4f})"
+                f" but nearer {nearest} ({scores[nearest]:.4f})"
+            )
+    if not misplaced:
+        print("    none")
+
+    print()
+    print("  Answer these from the plot and the numbers above:")
+    print("   1. Which categories cluster tightly and which spread out? Check against the cohesion scores,")
+    print("      and note that distance between clusters is not the same thing as tightness within one.")
+    print("   2. Which documents sit between clusters, and what in their wording pulls them there?")
+    print(f"   3. Only {explained.sum():.1%} of the variance survives the reduction to 2D.")
+    print("      What structure might the plot be hiding, and which numbers should you trust instead?")
+    print("   4. Would keyword matching have scored the near-duplicate pairs as highly as cosine similarity did?")
 
 def main() -> None:
     if not Path(EMBEDDINGS_PATH).exists():
@@ -135,6 +185,7 @@ def main() -> None:
     report_query(QUERY, records)
     coordinates, explained = project_to_2d(records)
     save_plot(records, coordinates, explained, PLOT_PATH)
+    report_interpretation(records, explained)
 
 
 if __name__ == "__main__":
