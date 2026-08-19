@@ -1,8 +1,8 @@
-"""Evaluate BM25 against vector retrieval on data/eval_queries.json.
+"""Evaluate BM25 against vector retrieval on labs/lab02/data/eval_queries.json.
 
-Run: uv run python evaluate.py
+Run: uv run python -m labs.lab02.evaluate
 
-Writes output/eval_results.csv, prints a summary, and prints every failure.
+Writes labs/lab02/output/eval_results.csv, prints a summary, and prints every failure.
 
 Both metrics are rank based, because BM25 scores are unnormalized sums over
 query terms and are not comparable across queries:
@@ -14,10 +14,10 @@ import csv
 from pathlib import Path
 
 from embeddings import load_records
-from retrieval import search_bm25, search_vector
+from labs.lab02.retrieval import search_bm25, search_vector
 
-QUERIES_PATH = "data/eval_queries.json"
-RESULTS_PATH = "output/eval_results.csv"
+QUERIES_PATH = "labs/lab02/data/eval_queries.json"
+RESULTS_PATH = "labs/lab02/output/eval_results.csv"
 TOP_K = 3
 
 METHODS = {"bm25": search_bm25, "vector": search_vector}

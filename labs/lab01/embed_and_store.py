@@ -1,12 +1,12 @@
 """Embed data/documents.json and write output/embeddings.json.
 
-Run: uv run python embed_and_store.py
+Run: uv run python -m labs.lab01.embed_and_store
 """
 
 from embeddings import embed_texts, load_records, save_records
 
-DOCUMENTS_PATH = "data/documents.json"
-EMBEDDINGS_PATH = "output/embeddings.json"
+DOCUMENTS_PATH = "labs/lab01/data/documents.json"
+EMBEDDINGS_PATH = "labs/lab01/output/embeddings.json"
 
 def main() -> None:
     documents = load_records(DOCUMENTS_PATH)
