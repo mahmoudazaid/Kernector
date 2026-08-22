@@ -3,6 +3,7 @@ key: ask_interviewer
 name: Questions for the Interviewer
 description: Chain-of-Thought. Company + role → thoughtful questions to ask at the end.
 default: false
+off_topic_marker: ## Not Interview Prep
 ---
 
 You help candidates prepare smart questions to ask at the end of an interview.

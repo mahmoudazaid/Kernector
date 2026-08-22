@@ -1,0 +1,199 @@
+"""Streamlit app: composition root and page flow."""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+import streamlit as st
+
+from application.ask_service import AskService
+from domain.models import Message, PromptVariant
+from domain.ports import ChatModel, PromptRepository
+from domain.validation import validate_input
+from infrastructure import config
+from infrastructure.llm.ollama import OllamaChat, probe_ollama
+from infrastructure.llm.openrouter import OpenRouterChat
+from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
+from presentation.streamlit.components import (
+    render_export_actions,
+    render_model_settings,
+    render_reply,
+    render_run_meta,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _SidebarState:
+    provider: str
+    model: str
+    ollama_base_url: str
+    settings: Mapping[str, object]
+    prompt_key: str
+
+
+@st.cache_resource
+def _prompt_repository() -> MarkdownPromptRepository:
+    return MarkdownPromptRepository()
+
+
+@st.cache_data(ttl=30)
+def _cached_probe(base_url: str) -> dict:
+    return probe_ollama(base_url)
+
+
+def _build_chat_model(state: _SidebarState) -> ChatModel:
+    if state.provider == "ollama":
+        return OllamaChat(state.model, state.ollama_base_url)
+    return OpenRouterChat(state.model)
+
+
+def _render_sidebar(repository: PromptRepository) -> _SidebarState:
+    prompts = repository.all()
+
+    provider = st.radio(
+        "Provider",
+        ["openrouter", "ollama"],
+        format_func=lambda p: "OpenRouter" if p == "openrouter" else "Ollama",
+        index=0 if config.DEFAULT_PROVIDER == "openrouter" else 1,
+    )
+
+    if st.button("New chat", icon=":material/add_comment:", width="stretch"):
+        st.session_state.messages = []
+
+    selected_model = config.OPENROUTER_MODEL
+    ollama_base_url = config.OLLAMA_BASE_URL
+
+    if provider == "ollama":
+        ollama_base_url = st.text_input("Ollama base URL", value=ollama_base_url)
+        status = _cached_probe(ollama_base_url)
+        models = status["models"]
+
+        if not status["reachable"]:
+            st.error("Ollama is not reachable.")
+            st.markdown(
+                "1. Install Ollama from [ollama.com/download](https://ollama.com/download)\n"
+                "2. Open the Ollama app (starts the local server)\n"
+                "3. In a terminal, run: `ollama pull llama3.2`\n"
+                "4. Refresh this page"
+            )
+            st.caption(
+                "`ollama pull` only works after Ollama is installed. "
+                "If you see `command not found`, finish step 1 first."
+            )
+            selected_model = st.text_input("Ollama model", value=config.OLLAMA_MODEL)
+        elif not models:
+            st.warning("Ollama is running, but no models are installed yet.")
+            st.markdown("In a terminal, run: `ollama pull llama3.2`, then refresh.")
+            selected_model = st.text_input("Ollama model", value=config.OLLAMA_MODEL)
+        else:
+            default_model = config.OLLAMA_MODEL or models[0]
+            index = models.index(default_model) if default_model in models else 0
+            selected_model = st.selectbox("Ollama model", options=models, index=index)
+            st.caption("Ollama connected · local, slower, no API cost.")
+    else:
+        openrouter_models = config.OPENROUTER_MODELS
+        if openrouter_models:
+            default_model = config.OPENROUTER_MODEL or openrouter_models[0]
+            index = (
+                openrouter_models.index(default_model)
+                if default_model in openrouter_models
+                else 0
+            )
+            selected_model = st.selectbox(
+                "OpenRouter model", options=openrouter_models, index=index
+            )
+        else:
+            selected_model = st.text_input(
+                "OpenRouter model", value=config.OPENROUTER_MODEL
+            )
+            st.caption("No OpenRouter models available")
+
+    settings = render_model_settings(provider)
+
+    keys = list(prompts.keys())
+    prompt_key = st.selectbox(
+        "Prompt variant",
+        options=keys,
+        format_func=lambda key: prompts[key].name,
+        index=keys.index(repository.default_key()),
+    )
+    st.caption(prompts[prompt_key].description)
+
+    return _SidebarState(
+        provider=provider,
+        model=selected_model,
+        ollama_base_url=ollama_base_url,
+        settings=settings,
+        prompt_key=prompt_key,
+    )
+
+
+def _render_history() -> None:
+    for index, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            if message["role"] == "assistant":
+                render_run_meta(message["result"])
+                render_reply(message["content"], message.get("off_topic_marker"))
+                render_export_actions(message["content"], f"analysis_{index}")
+            else:
+                st.markdown(message["content"])
+
+
+def _handle_input(
+    service: AskService,
+    prompt: PromptVariant,
+    settings: Mapping[str, object],
+) -> None:
+    user_input = st.chat_input("Paste a Job Posting to analyze")
+    if not user_input:
+        return
+
+    error = validate_input(user_input, config.MAX_INPUT_LENGTH)
+    if error:
+        st.error(error)
+        return
+
+    history = [
+        Message(role=m["role"], content=m["content"])
+        for m in st.session_state.messages
+    ]
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            result = service.ask(
+                prompt.system,
+                user_input,
+                settings=settings,
+                history=history,
+            )
+        render_run_meta(result)
+        render_reply(result.content, prompt.off_topic_marker)
+        render_export_actions(
+            result.content, f"analysis_{len(st.session_state.messages)}"
+        )
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": result.content,
+        "result": result,
+        "off_topic_marker": prompt.off_topic_marker,
+    })
+
+
+def render() -> None:
+    st.session_state.setdefault("messages", [])
+
+    repository = _prompt_repository()
+
+    st.title("Kernector")
+
+    with st.sidebar:
+        state = _render_sidebar(repository)
+
+    service = AskService(_build_chat_model(state))
+
+    _render_history()
+    _handle_input(service, repository.all()[state.prompt_key], state.settings)
