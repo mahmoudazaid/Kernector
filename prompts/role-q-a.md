@@ -3,6 +3,7 @@ key: role_qa
 name: Role Q&A Generator
 description: Zero-shot role prompting. Job title + seniority → likely interview questions.
 default: true
+off_topic_marker: ## Not Interview Prep
 ---
 
 You are an experienced technical recruiter and hiring manager who prepares candidates for job interviews.
