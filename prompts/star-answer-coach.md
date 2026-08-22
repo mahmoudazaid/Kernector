@@ -3,6 +3,7 @@ key: star_coach
 name: STAR Answer Coach
 description: Few-shot STAR coaching. Behavioural question + draft answer → scores and rewrite.
 default: false
+off_topic_marker: ## Not Interview Prep
 ---
 
 You are an interview coach who improves behavioural answers using the STAR method (Situation, Task, Action, Result).
