@@ -1,17 +1,21 @@
 """Guards the dependency direction between layers.
 
 `test/domain/test_domain_boundaries.py` covers the innermost layer. This file
-covers the three outward layers, so the arrows in ARCHITECTURE.md cannot quietly
+covers the outward layers, so the arrows in ARCHITECTURE.md cannot quietly
 reverse:
 
     presentation ──> composition ──> application ──> domain
                           └────────> infrastructure ─────┘
 """
 
-import ast
 from pathlib import Path
 
 import pytest
+
+from test.architecture.import_scan import (
+    find_forbidden_imports,
+    references_attribute,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -57,18 +61,6 @@ def _modules(layer: str) -> list[Path]:
     return sorted((REPO_ROOT / layer).rglob("*.py"))
 
 
-def _imported_roots(path: Path) -> set[str]:
-    """Top-level package names imported by a module."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    roots: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            roots.add(node.module.split(".")[0])
-    return roots
-
-
 CASES = [
     (layer, module)
     for layer in LAYER_RULES
@@ -85,7 +77,7 @@ def test_layer_modules_are_discovered(layer: str) -> None:
     "layer,module_path", CASES, ids=[f"{layer}/{m.name}" for layer, m in CASES]
 )
 def test_layer_imports_no_forbidden_packages(layer: str, module_path: Path) -> None:
-    forbidden = _imported_roots(module_path) & LAYER_RULES[layer]
+    forbidden = find_forbidden_imports(module_path, LAYER_RULES[layer])
     assert not forbidden, (
         f"{module_path.relative_to(REPO_ROOT)} imports {sorted(forbidden)}, "
         f"which {layer}/ may not depend on"
@@ -97,6 +89,44 @@ def test_application_layer_never_touches_session_state() -> None:
     offenders = [
         path.relative_to(REPO_ROOT)
         for path in _modules("application")
-        if "session_state" in path.read_text(encoding="utf-8")
+        if references_attribute(path, "session_state")
     ]
     assert not offenders, f"session_state referenced in {offenders}"
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("import infrastructure\n", {"infrastructure"}),
+        ("from streamlit import session_state\n", {"streamlit"}),
+    ],
+)
+def test_planted_application_forbidden_import_is_detected(
+    tmp_path: Path, source: str, expected: set[str]
+) -> None:
+    module = tmp_path / "bad_application.py"
+    module.write_text(source, encoding="utf-8")
+    assert find_forbidden_imports(module, LAYER_RULES["application"]) == expected
+
+
+def test_planted_application_session_state_attribute_is_detected(tmp_path: Path) -> None:
+    module = tmp_path / "bad_session.py"
+    module.write_text("import streamlit as st\nst.session_state['x'] = 1\n", encoding="utf-8")
+    assert references_attribute(module, "session_state")
+
+
+def test_planted_application_session_state_name_is_detected(tmp_path: Path) -> None:
+    module = tmp_path / "bad_from_import.py"
+    module.write_text("from streamlit import session_state\nsession_state['x'] = 1\n", encoding="utf-8")
+    assert references_attribute(module, "session_state")
+
+
+def test_session_state_in_comments_and_strings_is_ignored(tmp_path: Path) -> None:
+    module = tmp_path / "doc_only.py"
+    module.write_text(
+        '"""The application must not use session_state."""\n'
+        "# session_state is forbidden here.\n"
+        'message = "session_state"\n',
+        encoding="utf-8",
+    )
+    assert not references_attribute(module, "session_state")
