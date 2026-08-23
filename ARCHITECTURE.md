@@ -8,7 +8,7 @@ business logic and the UI stays replaceable.
 | Layer | Holds | May import |
 |---|---|---|
 | `domain/` | Business rules, entities, port protocols | Standard library only |
-| `application/` | Use-case orchestration | `domain` |
+| `application/` | Use-case orchestration and typed request/response contracts | `domain` |
 | `infrastructure/` | LLM clients, config, prompt loading, embeddings | `domain` + third-party libs |
 | `presentation/` | Streamlit UI, composition root | `application`, `domain`, and `infrastructure` (for wiring only) |
 
