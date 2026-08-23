@@ -155,7 +155,7 @@ def _handle_input(
     settings: Mapping[str, object],
     max_input_length: int,
 ) -> None:
-    user_input = st.chat_input("Paste a Job Posting to analyze")
+    user_input = st.chat_input("Start typing...")
     if not user_input:
         return
 
