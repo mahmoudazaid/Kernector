@@ -14,7 +14,6 @@ class SourceType(StrEnum):
     TICKET = "ticket"
     KNOWLEDGE_DOCUMENT = "knowledge_document"
 
-
 def _require_text(value: str, field: str) -> None:
     """Reject anything that is not a non-blank string."""
     if not isinstance(value, str) or not value.strip():
