@@ -1,15 +1,49 @@
+"""OpenRouter embeddings adapter."""
+
 import json
+from collections.abc import Sequence
 from pathlib import Path
+
 import numpy as np
 from langchain_openai import OpenAIEmbeddings
-from infrastructure import config
 
-def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
-    require_config()
-    if not texts:
-        return []
-    client = make_openrouter_embeddings(model)
-    return client.embed_documents(texts)
+from domain.knowledge import Vector
+from infrastructure.config import OpenRouterSettings
+
+
+class OpenRouterEmbeddings:
+    """EmbeddingModel backed by OpenRouter."""
+
+    def __init__(self, config: OpenRouterSettings) -> None:
+        _require_embedding_config(config)
+        self._client = OpenAIEmbeddings(
+            model=config.embedding_model,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            timeout=config.timeout,
+            check_embedding_ctx_length=False,
+        )
+
+    def embed_documents(self, texts: Sequence[str]) -> Sequence[Vector]:
+        if not texts:
+            return []
+        return self._client.embed_documents(list(texts))
+
+    def embed_query(self, text: str) -> Vector:
+        return self._client.embed_query(text)
+
+
+def _require_embedding_config(config: OpenRouterSettings) -> None:
+    """Fail fast when the embedding credentials are absent."""
+    if not config.api_key:
+        raise RuntimeError("Missing OPENROUTER_API_KEY. Add it to .env before embedding.")
+    if not config.base_url:
+        raise RuntimeError("Missing OPENROUTER_BASE_URL. Add it to .env before embedding.")
+    if not config.embedding_model:
+        raise RuntimeError(
+            "Missing OPENROUTER_EMBEDDING_MODEL. Add it to .env before embedding."
+        )
+
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     vector_a = np.asarray(a, dtype=float)
@@ -22,22 +56,6 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
         return 0.0
     return float(np.dot(vector_a, vector_b) / (norm_a * norm_b))
 
-def make_openrouter_embeddings(model: str | None = None) -> OpenAIEmbeddings:
-    return OpenAIEmbeddings(
-        model=model or config.OPENROUTER_EMBEDDING_MODEL,
-        api_key=config.OPENROUTER_API_KEY,
-        base_url=config.OPENROUTER_BASE_URL,
-        timeout=config.OPENROUTER_TIMEOUT,
-        check_embedding_ctx_length=False,
-    )
-
-def require_config() -> None:
-    if not config.OPENROUTER_API_KEY:
-        raise RuntimeError("Missing OPENROUTER_API_KEY. Add it to .env before embedding.")
-    if not config.OPENROUTER_BASE_URL:
-        raise RuntimeError("Missing OPENROUTER_BASE_URL. Add it to .env before embedding.")
-    if not config.OPENROUTER_EMBEDDING_MODEL:
-        raise RuntimeError("Missing OPENROUTER_EMBEDDING_MODEL. Add it to .env before embedding.")
 
 def save_records(records: list[dict], path: str) -> None:
     target = Path(path)
