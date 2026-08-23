@@ -2,16 +2,23 @@
 
 import time
 from collections.abc import Mapping, Sequence
+
 import requests
+
 from domain.models import AskResult, Message, Usage
-from infrastructure import config
+from infrastructure.config import OllamaSettings
+
 
 class OllamaChat:
     """ChatModel backed by a local Ollama server."""
 
-    def __init__(self, model: str | None = None, base_url: str | None = None) -> None:
-        self._model = model or config.OLLAMA_MODEL
-        self._base_url = (base_url or config.OLLAMA_BASE_URL).rstrip("/")
+    def __init__(self, config: OllamaSettings) -> None:
+        if not config.base_url:
+            raise RuntimeError(
+                "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
+            )
+        self._config = config
+        self._base_url = config.base_url.rstrip("/")
 
     def complete(
         self,
@@ -20,7 +27,7 @@ class OllamaChat:
         settings: Mapping[str, object],
     ) -> AskResult:
         payload = {
-            "model": self._model,
+            "model": self._config.model,
             "messages": [{"role": "system", "content": system}]
             + [{"role": m.role, "content": m.content} for m in messages],
             **settings,
@@ -31,7 +38,7 @@ class OllamaChat:
                 f"{self._base_url}/v1/chat/completions",
                 headers={"Content-Type": "application/json"},
                 json=payload,
-                timeout=config.OLLAMA_TIMEOUT,
+                timeout=self._config.timeout,
             )
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             response.raise_for_status()
@@ -40,19 +47,19 @@ class OllamaChat:
         except requests.exceptions.RequestException:
             return AskResult(
                 content="Failed to connect to Ollama",
-                model=self._model,
+                model=self._config.model,
                 settings=dict(settings),
             )
         except (KeyError, IndexError, ValueError):
             return AskResult(
                 content="Failed to parse response from Ollama",
-                model=self._model,
+                model=self._config.model,
                 settings=dict(settings),
             )
 
         return AskResult(
             content=content,
-            model=data.get("model", self._model),
+            model=data.get("model", self._config.model),
             latency_ms=latency_ms,
             usage=_to_usage(data.get("usage")),
             settings=dict(settings),
@@ -69,12 +76,13 @@ def _to_usage(usage: Mapping[str, object] | None) -> Usage | None:
         cost=usage.get("cost"),
     )
 
-def probe_ollama(base_url: str) -> dict:
+
+def probe_ollama(base_url: str, timeout: float) -> dict:
     """Return {reachable: bool, models: list[str]} for an Ollama base URL."""
     try:
         response = requests.get(
             f"{base_url.rstrip('/')}/api/tags",
-            timeout=config.OLLAMA_TIMEOUT,
+            timeout=timeout,
         )
         response.raise_for_status()
         models = [m["name"] for m in response.json().get("models", [])]

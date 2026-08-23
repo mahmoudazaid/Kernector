@@ -5,6 +5,8 @@ import pytest
 from domain.errors import DomainValidationError
 from domain.knowledge import (
     DocumentChunk,
+    EmbeddedChunk,
+    ScoredChunk,
     SourceDocument,
     SourceMetadata,
     SourceReference,
@@ -19,6 +21,11 @@ def metadata(source_id: str = "doc-1", **kwargs: object) -> SourceMetadata:
     """A minimal valid SourceMetadata."""
     reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
     return SourceMetadata(reference, **kwargs)
+
+
+def chunk(source_id: str = "doc-1", index: int = 0) -> DocumentChunk:
+    """A minimal valid DocumentChunk."""
+    return DocumentChunk(metadata(source_id), index, "chunk text")
 
 
 def test_valid_ticket_is_accepted() -> None:
@@ -123,3 +130,64 @@ def test_references_deduplicate_by_value() -> None:
     first = SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
     second = SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
     assert {first, second} == {first}
+
+
+@pytest.mark.parametrize("vector", [[0.1, 0.2], (0.1, 0.2), [0, 1], [-0.5]])
+def test_embedded_chunk_accepts_any_numeric_sequence(vector: object) -> None:
+    embedded = EmbeddedChunk(chunk("doc-9"), vector)  # type: ignore[arg-type]
+    assert embedded.vector == vector
+    assert embedded.chunk.source_id == "doc-9"
+
+
+@pytest.mark.parametrize("not_a_sequence", ["0.1,0.2", b"\x00", 0.5, None, {"a": 1}])
+def test_embedded_chunk_rejects_non_sequence_vector(not_a_sequence: object) -> None:
+    with pytest.raises(DomainValidationError, match="sequence of floats"):
+        EmbeddedChunk(chunk(), not_a_sequence)  # type: ignore[arg-type]
+
+
+def test_embedded_chunk_rejects_empty_vector() -> None:
+    with pytest.raises(DomainValidationError, match="non-empty"):
+        EmbeddedChunk(chunk(), [])
+
+
+@pytest.mark.parametrize("vector", [[True], [0.1, "b"], [None], [0.1, [0.2]]])
+def test_embedded_chunk_rejects_non_numeric_elements(vector: object) -> None:
+    with pytest.raises(DomainValidationError, match="numeric"):
+        EmbeddedChunk(chunk(), vector)  # type: ignore[arg-type]
+
+
+def test_embedded_chunk_rejects_non_chunk() -> None:
+    with pytest.raises(DomainValidationError, match="chunk"):
+        EmbeddedChunk(metadata(), [0.1])  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("score", [0.87, -0.5, 0, 1, -1.0])
+def test_scored_chunk_accepts_the_full_similarity_range(score: object) -> None:
+    """Cosine similarity spans [-1, 1]; the port is metric-agnostic, so no clamping."""
+    assert ScoredChunk(chunk(), score).score == score  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
+def test_scored_chunk_rejects_non_finite_score(score: float) -> None:
+    with pytest.raises(DomainValidationError, match="finite"):
+        ScoredChunk(chunk(), score)
+
+
+@pytest.mark.parametrize("score", [True, "0.5", None, [0.5]])
+def test_scored_chunk_rejects_non_numeric_score(score: object) -> None:
+    with pytest.raises(DomainValidationError, match="score"):
+        ScoredChunk(chunk(), score)  # type: ignore[arg-type]
+
+
+def test_scored_chunk_rejects_non_chunk() -> None:
+    with pytest.raises(DomainValidationError, match="chunk"):
+        ScoredChunk(metadata(), 0.5)  # type: ignore[arg-type]
+
+
+def test_retrieval_entities_are_immutable() -> None:
+    embedded = EmbeddedChunk(chunk(), [0.1])
+    scored = ScoredChunk(chunk(), 0.5)
+    with pytest.raises(AttributeError):
+        embedded.vector = [0.2]  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        scored.score = 0.9  # type: ignore[misc]
