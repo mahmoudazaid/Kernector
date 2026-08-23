@@ -27,6 +27,24 @@ def find_forbidden_imports(path: Path, forbidden: set[str]) -> set[str]:
     return imported_roots(path) & forbidden
 
 
+def find_non_allowed_imports(
+    path: Path,
+    *,
+    allowed: set[str],
+    forbidden: set[str] | None = None,
+) -> set[str]:
+    """Return imports that violate an allowlist policy.
+
+    Absolute import roots are rejected when they are absent from *allowed* or
+    present in *forbidden*. Relative imports are ignored by
+    :func:`imported_roots` and therefore never reported.
+    """
+    blocked = forbidden or set()
+    return {
+        root for root in imported_roots(path) if root in blocked or root not in allowed
+    }
+
+
 def references_attribute(path: Path, attribute_name: str) -> bool:
     """Return True if *attribute_name* appears as a Name or Attribute in the AST.
 
