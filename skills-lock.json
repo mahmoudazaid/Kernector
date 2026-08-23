@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "architecture-blueprint-generator": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/architecture-blueprint-generator/SKILL.md",
+      "computedHash": "9b20f13d1d96ba1c2550e1ce535f932e943c42939d3fae906a9e0d6c1bfb471a"
+    },
     "architecture-patterns": {
       "source": "rmyndharis/antigravity-skills",
       "sourceType": "github",
@@ -13,11 +19,23 @@
       "skillPath": "fastapi/.agents/skills/fastapi/SKILL.md",
       "computedHash": "e85d9e223fbc3183b1a599bbe8b02d2edf275d046ff5bcfd14352c92cdff52b3"
     },
+    "python-docstrings": {
+      "source": "open-edge-platform/anomalib",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/python-docstrings/SKILL.md",
+      "computedHash": "608624935b573ca0a40977d71645fef779a1cd76ebdd6565e93268bf353bee8c"
+    },
     "python-testing-patterns": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/python-development/skills/python-testing-patterns/SKILL.md",
       "computedHash": "1306eea409e7eff2288d7658806cb508f18339a0ee9a686d324a0fd2570eae55"
+    },
+    "technical-writing": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "technical-writing/SKILL.md",
+      "computedHash": "0544628a33393af1909297224d9346bdc2fedeb47ff5281f77e9b9dac97655fa"
     }
   }
 }
