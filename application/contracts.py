@@ -5,8 +5,7 @@ are reused; prompt bodies and analysis-specific outputs stay out of scope.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from types import MappingProxyType
+from dataclasses import dataclass, field
 
 from application.errors import ApplicationValidationError
 from domain.knowledge import SourceDocument, SourceReference, Ticket
@@ -68,6 +67,23 @@ def _require_chunk_index(value: object) -> None:
         )
 
 
+def _require_retrieval_limit(value: object) -> None:
+    """Reject invalid optional retrieval limits.
+
+    Args:
+        value (object): Candidate ``retrieval_limit`` (``None`` is allowed).
+
+    Raises:
+        ApplicationValidationError: If set and not a positive ``int``.
+    """
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ApplicationValidationError(
+            f"retrieval_limit must be a positive integer, got {value!r}"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Citation:
     """A provenance pointer suitable for RAG answers.
@@ -101,12 +117,14 @@ class AskRequest:
         query (str): User question or analysis input.
         ticket (Ticket | None): Optional ticket to ground the request.
         history (Sequence[Message]): Prior conversation turns.
+        retrieval_limit (int | None): Optional positive limit for retrieval.
     """
 
     prompt_key: str
     query: str
     ticket: Ticket | None = None
     history: Sequence[Message] = ()
+    retrieval_limit: int | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.prompt_key, "prompt_key")
@@ -122,6 +140,7 @@ class AskRequest:
                     f"history items must be Message, got {item!r}"
                 )
         object.__setattr__(self, "history", tuple(history))
+        _require_retrieval_limit(self.retrieval_limit)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,10 +150,12 @@ class AskResponse:
     Attributes:
         answer (str): Model answer text.
         citations (Sequence[Citation]): Sources supporting the answer.
+        tool_outputs (Sequence[InvokeToolResponse]): Optional tool results.
     """
 
     answer: str
     citations: Sequence[Citation] = ()
+    tool_outputs: Sequence["InvokeToolResponse"] = ()
 
     def __post_init__(self) -> None:
         _require_text(self.answer, "answer")
@@ -145,6 +166,13 @@ class AskResponse:
                     f"citations items must be Citation, got {item!r}"
                 )
         object.__setattr__(self, "citations", tuple(citations))
+        tool_outputs = _require_sequence(self.tool_outputs, "tool_outputs")
+        for item in tool_outputs:
+            if not isinstance(item, InvokeToolResponse):
+                raise ApplicationValidationError(
+                    f"tool_outputs items must be InvokeToolResponse, got {item!r}"
+                )
+        object.__setattr__(self, "tool_outputs", tuple(tool_outputs))
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,11 +231,12 @@ class InvokeToolRequest:
 
     Attributes:
         tool_name (str): Tool identifier matching a registered tool port.
-        arguments (Mapping[str, object]): Tool arguments (stored read-only).
+        arguments (Mapping[str, object]): JSON-compatible tool arguments (copied
+            into a plain ``dict``).
     """
 
     tool_name: str
-    arguments: Mapping[str, object] = MappingProxyType({})
+    arguments: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_text(self.tool_name, "tool_name")
@@ -215,9 +244,12 @@ class InvokeToolRequest:
             raise ApplicationValidationError(
                 f"arguments must be a mapping, got {self.arguments!r}"
             )
-        object.__setattr__(
-            self, "arguments", MappingProxyType(dict(self.arguments))
-        )
+        for key in self.arguments:
+            if not isinstance(key, str) or not key.strip():
+                raise ApplicationValidationError(
+                    f"arguments keys must be non-blank strings, got {key!r}"
+                )
+        object.__setattr__(self, "arguments", dict(self.arguments))
 
 
 @dataclass(frozen=True, slots=True)

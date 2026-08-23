@@ -2,6 +2,7 @@
 
 import importlib
 import sys
+from dataclasses import asdict
 
 import pytest
 
@@ -46,6 +47,10 @@ def _citation() -> Citation:
     return Citation(_reference(), quote="relevant excerpt", chunk_index=0)
 
 
+def _tool_output() -> InvokeToolResponse:
+    return InvokeToolResponse("search", "2 hits")
+
+
 def test_citation_constructs() -> None:
     citation = _citation()
     assert citation.reference.source_id == "doc-1"
@@ -60,17 +65,46 @@ def test_ask_request_constructs() -> None:
         "Analyze this ticket",
         ticket=_ticket(),
         history=history,
+        retrieval_limit=5,
     )
     assert request.prompt_key == "default"
     assert request.query == "Analyze this ticket"
     assert request.ticket == _ticket()
     assert request.history == (Message(role="user", content="earlier"),)
+    assert request.retrieval_limit == 5
+
+
+def test_ask_request_allows_none_retrieval_limit() -> None:
+    request = AskRequest("default", "query")
+    assert request.retrieval_limit is None
+
+
+@pytest.mark.parametrize("limit", [1, 3, 100])
+def test_ask_request_accepts_positive_retrieval_limit(limit: int) -> None:
+    request = AskRequest("default", "query", retrieval_limit=limit)
+    assert request.retrieval_limit == limit
+
+
+@pytest.mark.parametrize("bad_limit", [True, False, 0, -1, 1.5, "5", []])
+def test_ask_request_rejects_invalid_retrieval_limit(bad_limit: object) -> None:
+    with pytest.raises(ApplicationValidationError, match="retrieval_limit"):
+        AskRequest("default", "query", retrieval_limit=bad_limit)  # type: ignore[arg-type]
 
 
 def test_ask_response_constructs() -> None:
-    response = AskResponse("Here is the analysis.", citations=[_citation()])
+    response = AskResponse(
+        "Here is the analysis.",
+        citations=[_citation()],
+        tool_outputs=[_tool_output()],
+    )
     assert response.answer == "Here is the analysis."
     assert response.citations == (_citation(),)
+    assert response.tool_outputs == (_tool_output(),)
+
+
+def test_ask_response_defaults_tool_outputs_empty() -> None:
+    response = AskResponse("answer")
+    assert response.tool_outputs == ()
 
 
 def test_ingest_request_constructs_with_documents() -> None:
@@ -93,7 +127,8 @@ def test_ingest_response_constructs() -> None:
 def test_invoke_tool_request_constructs() -> None:
     request = InvokeToolRequest("search", {"q": "login"})
     assert request.tool_name == "search"
-    assert dict(request.arguments) == {"q": "login"}
+    assert request.arguments == {"q": "login"}
+    assert isinstance(request.arguments, dict)
 
 
 def test_invoke_tool_response_constructs() -> None:
@@ -148,6 +183,16 @@ def test_ask_response_rejects_non_sequence_citations() -> None:
         AskResponse("answer", citations="cite")  # type: ignore[arg-type]
 
 
+def test_ask_response_rejects_non_sequence_tool_outputs() -> None:
+    with pytest.raises(ApplicationValidationError, match="tool_outputs"):
+        AskResponse("answer", tool_outputs="tool")  # type: ignore[arg-type]
+
+
+def test_ask_response_rejects_non_tool_output_item() -> None:
+    with pytest.raises(ApplicationValidationError, match="tool_outputs items"):
+        AskResponse("answer", tool_outputs=[_citation()])  # type: ignore[list-item]
+
+
 def test_ingest_request_rejects_non_sequence_documents() -> None:
     with pytest.raises(ApplicationValidationError, match="documents"):
         IngestRequest(documents=_document())  # type: ignore[arg-type]
@@ -166,6 +211,12 @@ def test_ingest_response_rejects_non_sequence_accepted_ids() -> None:
 def test_invoke_tool_request_rejects_non_mapping_arguments() -> None:
     with pytest.raises(ApplicationValidationError, match="arguments"):
         InvokeToolRequest("search", ["q"])  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad_key", [1, "", "   ", None])
+def test_invoke_tool_request_rejects_invalid_argument_keys(bad_key: object) -> None:
+    with pytest.raises(ApplicationValidationError, match="arguments keys"):
+        InvokeToolRequest("search", {bad_key: "v"})  # type: ignore[dict-item]
 
 
 def test_ask_request_rejects_non_ticket() -> None:
@@ -244,6 +295,13 @@ def test_ask_response_citations_are_independent_of_input_list() -> None:
     assert len(response.citations) == 1
 
 
+def test_ask_response_tool_outputs_are_independent_of_input_list() -> None:
+    outputs = [_tool_output()]
+    response = AskResponse("answer", tool_outputs=outputs)
+    outputs.clear()
+    assert response.tool_outputs == (_tool_output(),)
+
+
 def test_ingest_request_collections_are_independent_of_input_lists() -> None:
     documents = [_document()]
     tickets = [_ticket()]
@@ -261,13 +319,45 @@ def test_ingest_response_ids_are_independent_of_input_list() -> None:
     assert response.accepted_ids == ("doc-1",)
 
 
-def test_invoke_tool_arguments_are_read_only_and_copied() -> None:
+def test_invoke_tool_arguments_are_copied() -> None:
     arguments = {"q": "login"}
     request = InvokeToolRequest("search", arguments)
     arguments["q"] = "logout"
-    assert request.arguments["q"] == "login"
-    with pytest.raises(TypeError):
-        request.arguments["extra"] = "no"  # type: ignore[index]
+    assert request.arguments == {"q": "login"}
+    assert request.arguments is not arguments
+
+
+def test_contracts_serialize_with_asdict() -> None:
+    ask_request = AskRequest(
+        "default",
+        "query",
+        ticket=_ticket(),
+        history=[Message(role="user", content="hi")],
+        retrieval_limit=3,
+    )
+    ask_response = AskResponse(
+        "answer",
+        citations=[_citation()],
+        tool_outputs=[_tool_output()],
+    )
+    ingest_request = IngestRequest(documents=[_document()], tickets=[_ticket()])
+    ingest_response = IngestResponse(["doc-1"])
+    tool_request = InvokeToolRequest("search", {"q": "login"})
+    tool_response = _tool_output()
+
+    assert asdict(ask_request)["retrieval_limit"] == 3
+    assert asdict(ask_request)["history"] == ({"role": "user", "content": "hi"},)
+    assert asdict(ask_response)["citations"][0]["quote"] == "relevant excerpt"
+    assert asdict(ask_response)["tool_outputs"] == (
+        {"tool_name": "search", "result": "2 hits"},
+    )
+    assert asdict(ingest_request)["documents"][0]["content"] == "knowledge content"
+    assert asdict(ingest_response) == {"accepted_ids": ("doc-1",)}
+    assert asdict(tool_request) == {
+        "tool_name": "search",
+        "arguments": {"q": "login"},
+    }
+    assert asdict(tool_response) == {"tool_name": "search", "result": "2 hits"}
 
 
 def test_application_contracts_import_without_streamlit() -> None:
