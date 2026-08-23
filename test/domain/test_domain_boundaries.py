@@ -1,41 +1,29 @@
 """Guards the domain layer's stdlib-only, no-I/O import rule."""
 
-import ast
+import sys
 from pathlib import Path
 
 import pytest
 
+from test.architecture.import_scan import find_non_allowed_imports
+
 DOMAIN_DIR = Path(__file__).resolve().parents[2] / "domain"
 DOMAIN_MODULES = sorted(DOMAIN_DIR.rglob("*.py"))
 
-FORBIDDEN = {
-    # UI and web frameworks
-    "streamlit", "fastapi", "starlette", "flask",
-    # LLM and orchestration
-    "langchain", "langchain_core", "langchain_openai", "openai", "ollama",
-    # vector stores and databases
-    "chromadb", "milvus", "pymilvus", "sqlite3", "sqlalchemy", "psycopg",
-    # HTTP clients
-    "requests", "httpx", "urllib", "http", "socket", "aiohttp",
-    # filesystem
-    "os", "pathlib", "shutil", "io", "open",
-    # third-party modelling and numerics
-    "pydantic", "numpy", "pandas",
-    # outer layers
-    "application", "infrastructure", "presentation",
+# Stdlib modules that perform I/O or reach outside process memory.
+# Being in sys.stdlib_module_names does not make these valid for domain.
+FORBIDDEN_STDLIB = {
+    "os",
+    "pathlib",
+    "shutil",
+    "io",
+    "sqlite3",
+    "urllib",
+    "http",
+    "socket",
 }
 
-
-def _imported_roots(path: Path) -> set[str]:
-    """Top-level package names imported by a module."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    roots: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            roots.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            roots.add(node.module.split(".")[0])
-    return roots
+ALLOWED = set(sys.stdlib_module_names) | {"domain"}
 
 
 def test_domain_modules_are_discovered() -> None:
@@ -43,6 +31,45 @@ def test_domain_modules_are_discovered() -> None:
 
 
 @pytest.mark.parametrize("module_path", DOMAIN_MODULES, ids=lambda p: p.name)
-def test_domain_module_imports_no_forbidden_packages(module_path: Path) -> None:
-    forbidden = _imported_roots(module_path) & FORBIDDEN
-    assert not forbidden, f"{module_path.name} imports {sorted(forbidden)}"
+def test_domain_module_imports_only_allowed_packages(module_path: Path) -> None:
+    disallowed = find_non_allowed_imports(
+        module_path, allowed=ALLOWED, forbidden=FORBIDDEN_STDLIB
+    )
+    assert not disallowed, f"{module_path.name} imports {sorted(disallowed)}"
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("import rich\n", {"rich"}),
+        ("import boto3\n", {"boto3"}),
+        ("import pathlib\n", {"pathlib"}),
+        ("import composition\n", {"composition"}),
+        ("from composition import build_app\n", {"composition"}),
+    ],
+)
+def test_planted_domain_disallowed_import_is_detected(
+    tmp_path: Path, source: str, expected: set[str]
+) -> None:
+    module = tmp_path / "bad_domain.py"
+    module.write_text(source, encoding="utf-8")
+    assert (
+        find_non_allowed_imports(module, allowed=ALLOWED, forbidden=FORBIDDEN_STDLIB)
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import domain.models\n",
+        "from domain.errors import DomainValidationError\n",
+        "from .errors import DomainValidationError\n",
+    ],
+)
+def test_planted_domain_allowed_import_is_accepted(tmp_path: Path, source: str) -> None:
+    module = tmp_path / "ok_domain.py"
+    module.write_text(source, encoding="utf-8")
+    assert not find_non_allowed_imports(
+        module, allowed=ALLOWED, forbidden=FORBIDDEN_STDLIB
+    )
