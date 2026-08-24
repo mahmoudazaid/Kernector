@@ -1,0 +1,74 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://kernector.local/schemas/knowledge-document.json",
+    "title": "KernectorKnowledgeDocument",
+    "type": "object",
+    "required": [
+      "source_id",
+      "title",
+      "doc_type",
+      "content",
+      "status",
+      "version"
+    ],
+    "properties": {
+      "source_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "doc_type": {
+        "type": "string",
+        "enum": [
+          "qa_guidance",
+          "story_analysis",
+          "acceptance_criteria",
+          "defect_triage",
+          "test_strategy"
+        ]
+      },
+      "content": {
+        "type": "string",
+        "minLength": 1
+      },
+      "status": {
+        "type": "string",
+        "enum": ["draft", "approved", "deprecated"]
+      },
+      "version": {
+        "type": "string",
+        "minLength": 1
+      },
+      "source_name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "source_url": {
+        "type": "string",
+        "minLength": 1
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "severity": {
+        "type": ["string", "null"],
+        "enum": ["critical", "high", "medium", "low", "info", null]
+      },
+      "component": {
+        "type": "string",
+        "minLength": 1
+      },
+      "updated_at": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "additionalProperties": true
+  }
