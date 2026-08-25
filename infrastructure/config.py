@@ -24,11 +24,18 @@ class OllamaSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ChunkingSettings:
+    chunk_size: int
+    chunk_overlap: int
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
     openrouter: OpenRouterSettings
     ollama: OllamaSettings
+    chunking: ChunkingSettings
 
 
 def load_settings() -> Settings:
@@ -52,8 +59,30 @@ def load_settings() -> Settings:
             model=os.getenv("OLLAMA_MODEL"),
             timeout=float(os.getenv("OLLAMA_TIMEOUT", "120")),
         ),
+        chunking=_load_chunking_settings(),
     )
 
 
 def _csv(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _env_int(name: str, default: str) -> int:
+    raw = os.getenv(name, default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from exc
+
+
+def _load_chunking_settings() -> ChunkingSettings:
+    chunk_size = _env_int("CHUNK_SIZE", "500")
+    chunk_overlap = _env_int("CHUNK_OVERLAP", "50")
+    if chunk_size <= 0:
+        raise ValueError(f"CHUNK_SIZE must be > 0, got {chunk_size}")
+    if chunk_overlap < 0 or chunk_overlap >= chunk_size:
+        raise ValueError(
+            "CHUNK_OVERLAP must satisfy 0 <= overlap < CHUNK_SIZE, "
+            f"got overlap={chunk_overlap}, size={chunk_size}"
+        )
+    return ChunkingSettings(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
