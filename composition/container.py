@@ -4,13 +4,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 
 from application.ask_service import AskService
-from domain.ports import ChatModel, EmbeddingModel, PromptRepository
+from domain.ports import ChatModel, EmbeddingModel, PromptRepository, VectorStore
 from infrastructure.config import Settings
 from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import OpenRouterChat
 from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
+from infrastructure.vectorstore.chroma import ChromaVectorStore
+
 
 
 def _build_openrouter(
@@ -65,6 +67,10 @@ def build_chat_model(
 
 def build_embedding_model(settings: Settings) -> EmbeddingModel:
     return OpenRouterEmbeddings(settings.openrouter)
+
+
+def build_vector_store(settings: Settings) -> VectorStore:
+    return ChromaVectorStore(settings.chroma)
 
 
 def build_prompt_repository() -> PromptRepository:

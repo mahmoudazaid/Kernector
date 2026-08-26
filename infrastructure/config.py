@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +31,10 @@ class ChunkingSettings:
     chunk_size: int
     chunk_overlap: int
 
+@dataclass(frozen=True, slots=True)
+class ChromaSettings:
+    persist_path: Path
+    collection: str
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -36,6 +43,7 @@ class Settings:
     openrouter: OpenRouterSettings
     ollama: OllamaSettings
     chunking: ChunkingSettings
+    chroma: ChromaSettings
 
 
 def load_settings() -> Settings:
@@ -60,6 +68,7 @@ def load_settings() -> Settings:
             timeout=float(os.getenv("OLLAMA_TIMEOUT", "120")),
         ),
         chunking=_load_chunking_settings(),
+        chroma=_load_chroma_settings(),
     )
 
 
@@ -86,3 +95,29 @@ def _load_chunking_settings() -> ChunkingSettings:
             f"got overlap={chunk_overlap}, size={chunk_size}"
         )
     return ChunkingSettings(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+def _resolve_under_project_root(raw: str) -> Path:
+    """Expand `~`, keep absolute paths, resolve relative ones against the repo root.
+
+    Deliberately not resolved against the CWD, so the store lands in the same
+    place whether the app is launched from the repo root or elsewhere. Mirrors
+    `infrastructure/prompts/markdown_repository.py`, which uses `parents[2]`
+    from one directory deeper.
+    """
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else _PROJECT_ROOT / path
+
+
+def _load_chroma_settings() -> ChromaSettings:
+    collection = os.getenv("CHROMA_COLLECTION", "kernector_knowledge")
+    if not collection.strip():
+        raise ValueError(f"CHROMA_COLLECTION must be non-empty, got {collection!r}")
+    persist_path = os.getenv("CHROMA_PERSIST_PATH", "data/chroma")
+    if not persist_path.strip():
+        raise ValueError(
+            f"CHROMA_PERSIST_PATH must be non-empty, got {persist_path!r}"
+        )
+    return ChromaSettings(
+        persist_path=_resolve_under_project_root(persist_path),
+        collection=collection,
+    )
