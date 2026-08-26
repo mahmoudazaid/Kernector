@@ -6,8 +6,11 @@ from composition.container import (
     build_chat_model,
     build_embedding_model,
     build_prompt_repository,
+    build_vector_store,
     probe_ollama,
 )
+
+
 from infrastructure.config import Settings, load_settings
 
 __all__ = [
@@ -17,6 +20,7 @@ __all__ = [
     "build_chat_model",
     "build_embedding_model",
     "build_prompt_repository",
+    "build_vector_store",
     "load_settings",
     "probe_ollama",
 ]

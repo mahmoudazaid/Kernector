@@ -30,13 +30,35 @@ class EmbeddingModel(Protocol):
 
     def embed_query(self, text: str) -> Vector: ...
 
-
 class VectorStore(Protocol):
     """A store of embedded chunks that can be searched by similarity."""
 
-    def add(self, embedded: Sequence[EmbeddedChunk]) -> None: ...
+    def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
+        """Update or Insert embedded chunks if it's not already in the store, 
+        keyed by their derived identity.
 
-    def search(self, vector: Vector, limit: int) -> Sequence[ScoredChunk]: ...
+        Idempotent: re-adding a chunk with the same derived identity replaces
+        its content, vector, and metadata rather than creating a second record.
+        Returns without effect when `embedded` is empty.
+
+        Raises:
+            RuntimeError: a subclass, on any adapter-level failure.
+        """
+
+    def search(self, vector: Vector, limit: int) -> Sequence[ScoredChunk]:
+        """Return the `limit` nearest chunks to `vector`, nearest first.
+
+        Returns an empty sequence when `limit <= 0` or the store is empty.
+        A `limit` that is not an `int` is rejected; `bool` is rejected
+        specifically rather than letting `False` fall through to the
+        `limit <= 0` rule.
+
+        Scores are cosine similarity in `[-1.0, 1.0]`, higher is nearer.
+        Negative scores are legitimate and are never clamped.
+
+        Raises:
+            RuntimeError: a subclass, on any adapter-level failure.
+        """
 
 
 class Tool(Protocol):
