@@ -10,17 +10,21 @@ from pathlib import Path
 import pytest
 
 from application.ask_service import AskService
+from application.errors import ConfigurationError
+from application.ingest_knowledge import IngestKnowledge
 from composition import (
     Settings,
     available_providers,
     build_ask_service,
     build_chat_model,
+    build_ingest_knowledge,
     build_prompt_repository,
     build_vector_store,
     load_settings,
 )
 from domain.models import AskResult, Message
 from domain.ports import ChatModel, PromptRepository, VectorStore
+from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.openrouter import OpenRouterChat
 from infrastructure.vectorstore.chroma import ChromaVectorStore
@@ -179,7 +183,7 @@ def test_build_vector_store_returns_the_chroma_adapter(
 
 def test_built_vector_store_satisfies_the_port(chroma_settings: Settings) -> None:
     store = build_vector_store(chroma_settings)
-    for name in ("upsert", "search"):
+    for name in ("upsert", "search", "delete_source"):
         assert callable(getattr(store, name, None)), name
         assert inspect.signature(getattr(type(store), name)) == inspect.signature(
             getattr(VectorStore, name)
@@ -208,3 +212,61 @@ def test_build_vector_store_creates_the_directory_it_was_given(
     assert not chroma_settings.chroma.persist_path.exists()
     build_vector_store(chroma_settings)
     assert chroma_settings.chroma.persist_path.is_dir()
+
+
+@pytest.fixture
+def embedding_env(chroma_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Settings:
+    """`chroma_settings` with the embedding credentials guaranteed present.
+
+    `chroma_settings` already neutralized `.env`, which means a developer whose
+    key lives only there would otherwise see this fixture's settings come back
+    with `api_key=None` (§3.1).
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("CHUNK_SIZE", "400")
+    monkeypatch.setenv("CHUNK_OVERLAP", "40")
+    return load_settings()
+
+
+def test_build_ingest_knowledge_wires_the_configured_primitives(
+    embedding_env: Settings,
+) -> None:
+    """AC: the use case receives ports and primitive settings, not config objects."""
+    use_case = build_ingest_knowledge(embedding_env)
+
+    assert isinstance(use_case, IngestKnowledge)
+    assert use_case._chunk_size == 400
+    assert use_case._chunk_overlap == 40
+    assert isinstance(use_case._vector_store, ChromaVectorStore)
+    assert isinstance(use_case._embedding_model, OpenRouterEmbeddings)
+
+
+def test_build_ingest_knowledge_is_a_pure_factory(embedding_env: Settings) -> None:
+    """A fresh instance per call, matching `build_vector_store`."""
+    first = build_ingest_knowledge(embedding_env)
+    assert build_ingest_knowledge(embedding_env) is not first
+
+
+def test_missing_embedding_configuration_surfaces_as_configuration_error(
+    chroma_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC 2: an absent key is an environment failure with a typed error.
+
+    `chroma_settings` patched `load_dotenv` to a no-op *before* this deletes the
+    variable. Without that ordering a local `.env` would restore the key and
+    this test would pass vacuously (§3.1).
+    """
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    settings = load_settings()
+    assert settings.openrouter.api_key is None
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_API_KEY"):
+        build_ingest_knowledge(settings)
+
+
+def test_a_configuration_error_is_not_a_validation_error() -> None:
+    """An environment failure is not a contract violation (§ error handling)."""
+    assert issubclass(ConfigurationError, RuntimeError)
+    assert not issubclass(ConfigurationError, ValueError)

@@ -30,8 +30,9 @@ _NAME_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]")
 _IPV4_PATTERN = re.compile(r"(?:[0-9]{1,3}\.){3}[0-9]{1,3}")
 
 # Bumping this re-derives every record ID at once, orphaning the entire existing
-# collection — the port has no delete operation to reconcile the old records
-# (§5.1). Treat any bump as requiring a full rebuild of the store.
+# collection. That is now reconcilable: `delete_source` scopes removal by the
+# stored metadata rather than by derived ID, so a full re-ingest of every source
+# converges the store onto the new scheme.
 _ID_SCHEME_VERSION = 1
 
 # Scalar metadata keys the adapter owns. Caller keys never land in this
@@ -422,11 +423,13 @@ def _require_cosine(collection: Collection, name: str) -> None:
 class ChromaVectorStore:
     """Persistent Chroma adapter behind the `VectorStore` port.
 
-    Stale chunks are not reconciled. Record IDs derive from
-    `(source_type, source_id, chunk_index)`, so re-ingesting a document after
-    CHUNK_SIZE grows upserts the lower indexes and leaves every higher-index
-    chunk from the previous run orphaned in the collection. The port exposes no
-    delete operation, so this adapter cannot fix it; #85 owns re-ingestion.
+    Stale chunks are reconcilable. Record IDs derive from
+    `(source_type, source_id, chunk_index)`, so re-ingesting a document whose
+    content now chunks into fewer pieces would leave the higher-index records
+    from the previous run behind. `delete_source` removes them: a caller that
+    deletes a source before upserting its replacement converges on exactly the
+    new chunk set. The delete/upsert pair is not atomic, so a storage failure
+    between the two can leave one source absent until the next successful run.
 
     One writer at a time; concurrent writes from multiple processes are out of
     scope. Repeated construction on the same path within one process reopens the
@@ -512,6 +515,44 @@ class ChromaVectorStore:
         except (ChromaError, ValueError) as exc:
             raise ChromaStoreError(
                 f"could not write {len(ids)} record(s) to collection "
+                f"{self._collection.name!r}: {exc}"
+            ) from exc
+
+    def delete_source(self, reference: SourceReference) -> None:
+        """Delete one complete source. See `domain.ports.VectorStore`.
+
+        Filters on both `source_id` and `source_type`, which `_encode_metadata`
+        already writes as scalar metadata, so the same identifier under another
+        source type is untouched. Hashing is never reversed to find the records;
+        the filter reads the metadata the adapter stored.
+
+        A reference matching nothing is a no-op: chromadb 1.5.9 raises only when
+        *no* filter at all is supplied, so a zero-match `where` deletes nothing
+        without error.
+
+        Not atomic with the `upsert` that replaces the records. The vector index
+        is derived data, and a later successful re-ingest repairs a partial
+        failure.
+
+        Raises:
+            ChromaStoreError: On an invalid reference or any adapter failure.
+        """
+        if not isinstance(reference, SourceReference):
+            raise ChromaStoreError(
+                f"reference must be a SourceReference, got {reference!r}"
+            )
+        where = {
+            "$and": [
+                {_KEY_SOURCE_ID: reference.source_id},
+                {_KEY_SOURCE_TYPE: str(reference.source_type)},
+            ]
+        }
+        try:
+            self._collection.delete(where=where)
+        except (ChromaError, ValueError) as exc:
+            raise ChromaStoreError(
+                f"could not delete source {reference.source_type}:"
+                f"{reference.source_id} from collection "
                 f"{self._collection.name!r}: {exc}"
             ) from exc
 
