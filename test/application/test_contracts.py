@@ -120,8 +120,9 @@ def test_ingest_request_constructs_with_tickets() -> None:
 
 
 def test_ingest_response_constructs() -> None:
-    response = IngestResponse(["doc-1", "KRN-1"])
+    response = IngestResponse(["doc-1", "KRN-1"], 2)
     assert response.accepted_ids == ("doc-1", "KRN-1")
+    assert response.chunk_count == 2
 
 
 def test_invoke_tool_request_constructs() -> None:
@@ -205,7 +206,7 @@ def test_ingest_request_rejects_non_sequence_tickets() -> None:
 
 def test_ingest_response_rejects_non_sequence_accepted_ids() -> None:
     with pytest.raises(ApplicationValidationError, match="accepted_ids"):
-        IngestResponse("doc-1")  # type: ignore[arg-type]
+        IngestResponse("doc-1", 1)  # type: ignore[arg-type]
 
 
 def test_invoke_tool_request_rejects_non_mapping_arguments() -> None:
@@ -252,7 +253,24 @@ def test_ingest_request_rejects_empty_collections() -> None:
 @pytest.mark.parametrize("blank", BLANK)
 def test_ingest_response_rejects_blank_accepted_ids(blank: str) -> None:
     with pytest.raises(ApplicationValidationError, match="accepted_ids item"):
-        IngestResponse([blank])
+        IngestResponse([blank], 1)
+
+
+def test_ingest_response_requires_a_chunk_count() -> None:
+    """A missing count must fail at the call, never default to zero."""
+    with pytest.raises(TypeError):
+        IngestResponse(["doc-1"])  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("bad_count", [-1, True, "3", 1.5, None])
+def test_ingest_response_rejects_invalid_chunk_count(bad_count: object) -> None:
+    with pytest.raises(ApplicationValidationError, match="chunk_count"):
+        IngestResponse(["doc-1"], bad_count)  # type: ignore[arg-type]
+
+
+def test_ingest_response_accepts_a_zero_chunk_count() -> None:
+    """Explicitly passing zero is legal; silently defaulting to it is not."""
+    assert IngestResponse(["doc-1"], 0).chunk_count == 0
 
 
 def test_citation_rejects_non_reference() -> None:
@@ -314,7 +332,7 @@ def test_ingest_request_collections_are_independent_of_input_lists() -> None:
 
 def test_ingest_response_ids_are_independent_of_input_list() -> None:
     ids = ["doc-1"]
-    response = IngestResponse(ids)
+    response = IngestResponse(ids, 1)
     ids.append("doc-2")
     assert response.accepted_ids == ("doc-1",)
 
@@ -341,7 +359,7 @@ def test_contracts_serialize_with_asdict() -> None:
         tool_outputs=[_tool_output()],
     )
     ingest_request = IngestRequest(documents=[_document()], tickets=[_ticket()])
-    ingest_response = IngestResponse(["doc-1"])
+    ingest_response = IngestResponse(["doc-1"], 1)
     tool_request = InvokeToolRequest("search", {"q": "login"})
     tool_response = _tool_output()
 
@@ -352,7 +370,7 @@ def test_contracts_serialize_with_asdict() -> None:
         {"tool_name": "search", "result": "2 hits"},
     )
     assert asdict(ingest_request)["documents"][0]["content"] == "knowledge content"
-    assert asdict(ingest_response) == {"accepted_ids": ("doc-1",)}
+    assert asdict(ingest_response) == {"accepted_ids": ("doc-1",), "chunk_count": 1}
     assert asdict(tool_request) == {
         "tool_name": "search",
         "arguments": {"q": "login"},
