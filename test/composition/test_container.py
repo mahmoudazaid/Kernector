@@ -1,10 +1,12 @@
 """Verifies the composition root wires ports to concrete implementations."""
 
 import inspect
+import json
 import os
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ from application.ask_service import AskService
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
 from composition import (
+    KnowledgeLoadError,
     Settings,
     available_providers,
     build_ask_service,
@@ -20,11 +23,15 @@ from composition import (
     build_ingest_knowledge,
     build_prompt_repository,
     build_vector_store,
-    load_settings,
+    load_knowledge_documents,
+    load_runtime_settings,
 )
+from domain.knowledge import SourceType
 from domain.models import AskResult, Message
 from domain.ports import ChatModel, PromptRepository, VectorStore
+from infrastructure.config import load_settings
 from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
+from infrastructure.knowledge.corpus import CorpusLoadError
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.openrouter import OpenRouterChat
 from infrastructure.vectorstore.chroma import ChromaVectorStore
@@ -58,11 +65,11 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
     code = (
         "import sys\n"
         "import infrastructure.config as config\n"
-        # Neutralized before load_settings runs, so the CHROMA_PERSIST_PATH
+        # Neutralized before load_runtime_settings runs, so the CHROMA_PERSIST_PATH
         # passed in `env` below cannot be overridden by a local .env (§3.1).
         "config.load_dotenv = lambda *a, **k: False\n"
-        "from composition import build_chat_model, build_vector_store, load_settings\n"
-        "settings = load_settings()\n"
+        "from composition import build_chat_model, build_vector_store, load_runtime_settings\n"
+        "settings = load_runtime_settings()\n"
         "model = build_chat_model(settings)\n"
         "assert model is not None, 'no chat model built'\n"
         "store = build_vector_store(settings)\n"
@@ -270,3 +277,80 @@ def test_a_configuration_error_is_not_a_validation_error() -> None:
     """An environment failure is not a contract violation (§ error handling)."""
     assert issubclass(ConfigurationError, RuntimeError)
     assert not issubclass(ConfigurationError, ValueError)
+
+
+def test_load_runtime_settings_returns_settings_for_composition_factories(
+    chroma_settings: Settings,
+) -> None:
+    """Presentation obtains settings only through the composition seam."""
+    settings = load_runtime_settings()
+
+    assert isinstance(settings, Settings)
+    assert settings.chroma.persist_path == chroma_settings.chroma.persist_path
+    assert build_vector_store(settings) is not None
+
+
+def test_load_runtime_settings_maps_value_error_to_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expected config parse failures become ConfigurationError for the CLI."""
+    monkeypatch.setattr(
+        "composition.container.load_settings",
+        lambda: (_ for _ in ()).throw(ValueError("CHUNK_SIZE must be an integer")),
+    )
+
+    with pytest.raises(ConfigurationError, match="CHUNK_SIZE must be an integer") as exc_info:
+        load_runtime_settings()
+
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_load_knowledge_documents_returns_normalized_source_documents(
+    chroma_settings: Settings, tmp_path: Path
+) -> None:
+    """Composition loads any doc_type without restricting categories."""
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(
+        json.dumps(
+            [
+                {
+                    "source_id": "adr-001",
+                    "title": "Dependency direction",
+                    "doc_type": "architecture_decision",
+                    "content": "Presentation depends on composition and application.",
+                    "status": "approved",
+                    "version": "1.0",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = replace(
+        chroma_settings,
+        knowledge=replace(chroma_settings.knowledge, corpus_path=corpus),
+    )
+
+    documents = load_knowledge_documents(settings)
+
+    assert isinstance(documents, tuple)
+    assert len(documents) == 1
+    document = documents[0]
+    assert document.source_id == "adr-001"
+    assert document.metadata.extra["doc_type"] == "architecture_decision"
+    assert document.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+
+
+def test_load_knowledge_documents_maps_corpus_failure_to_knowledge_load_error(
+    chroma_settings: Settings, tmp_path: Path
+) -> None:
+    """Missing or unreadable corpus becomes KnowledgeLoadError for the CLI."""
+    missing = tmp_path / "absent" / "corpus.json"
+    settings = replace(
+        chroma_settings,
+        knowledge=replace(chroma_settings.knowledge, corpus_path=missing),
+    )
+
+    with pytest.raises(KnowledgeLoadError, match=str(missing)) as exc_info:
+        load_knowledge_documents(settings)
+
+    assert isinstance(exc_info.value.__cause__, CorpusLoadError)
