@@ -25,11 +25,11 @@ from composition import (
     build_vector_store,
     load_knowledge_documents,
     load_runtime_settings,
-    load_settings,
 )
 from domain.knowledge import SourceType
 from domain.models import AskResult, Message
 from domain.ports import ChatModel, PromptRepository, VectorStore
+from infrastructure.config import load_settings
 from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
 from infrastructure.knowledge.corpus import CorpusLoadError
 from infrastructure.llm.ollama import OllamaChat
@@ -65,11 +65,11 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
     code = (
         "import sys\n"
         "import infrastructure.config as config\n"
-        # Neutralized before load_settings runs, so the CHROMA_PERSIST_PATH
+        # Neutralized before load_runtime_settings runs, so the CHROMA_PERSIST_PATH
         # passed in `env` below cannot be overridden by a local .env (§3.1).
         "config.load_dotenv = lambda *a, **k: False\n"
-        "from composition import build_chat_model, build_vector_store, load_settings\n"
-        "settings = load_settings()\n"
+        "from composition import build_chat_model, build_vector_store, load_runtime_settings\n"
+        "settings = load_runtime_settings()\n"
         "model = build_chat_model(settings)\n"
         "assert model is not None, 'no chat model built'\n"
         "store = build_vector_store(settings)\n"
