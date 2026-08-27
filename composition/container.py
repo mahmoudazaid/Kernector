@@ -6,12 +6,15 @@ from dataclasses import replace
 from application.ask_service import AskService
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
+from composition.errors import KnowledgeLoadError
+from domain.knowledge import SourceDocument
 from domain.ports import ChatModel, EmbeddingModel, PromptRepository, VectorStore
-from infrastructure.config import Settings
+from infrastructure.config import Settings, load_settings
 from infrastructure.embeddings.openrouter import (
     EmbeddingConfigError,
     OpenRouterEmbeddings,
 )
+from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corpus
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import OpenRouterChat
@@ -49,6 +52,42 @@ _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatMode
 def available_providers() -> tuple[str, ...]:
     """The provider keys the composition root knows how to build."""
     return tuple(_CHAT_MODELS)
+
+
+def load_runtime_settings() -> Settings:
+    """Load environment settings for presentation and other composition callers.
+
+    Wraps ``infrastructure.config.load_settings`` so presentation never imports
+    infrastructure. Expected parse failures become ``ConfigurationError``.
+
+    Returns:
+        Settings: Frozen runtime configuration for composition factories.
+
+    Raises:
+        ConfigurationError: If environment values fail known config validation.
+    """
+    try:
+        return load_settings()
+    except ValueError as error:
+        raise ConfigurationError(str(error)) from error
+
+
+def load_knowledge_documents(settings: Settings) -> tuple[SourceDocument, ...]:
+    """Load normalized knowledge documents from the configured corpus path.
+
+    Args:
+        settings (Settings): Runtime settings whose knowledge.corpus_path is used.
+
+    Returns:
+        tuple[SourceDocument, ...]: Normalized documents for ingestion.
+
+    Raises:
+        KnowledgeLoadError: If the corpus file cannot be loaded or validated.
+    """
+    try:
+        return load_knowledge_corpus(settings.knowledge.corpus_path)
+    except CorpusLoadError as error:
+        raise KnowledgeLoadError(str(error)) from error
 
 
 def build_chat_model(
