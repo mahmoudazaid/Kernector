@@ -8,13 +8,17 @@ from composition.container import (
     build_ingest_knowledge,
     build_prompt_repository,
     build_vector_store,
+    load_knowledge_documents,
+    load_runtime_settings,
     probe_ollama,
 )
+from composition.errors import KnowledgeLoadError
 
 
 from infrastructure.config import Settings, load_settings
 
 __all__ = [
+    "KnowledgeLoadError",
     "Settings",
     "available_providers",
     "build_ask_service",
@@ -23,6 +27,8 @@ __all__ = [
     "build_ingest_knowledge",
     "build_prompt_repository",
     "build_vector_store",
+    "load_knowledge_documents",
+    "load_runtime_settings",
     "load_settings",
     "probe_ollama",
 ]
