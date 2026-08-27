@@ -4,9 +4,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 
 from application.ask_service import AskService
+from application.errors import ConfigurationError
+from application.ingest_knowledge import IngestKnowledge
 from domain.ports import ChatModel, EmbeddingModel, PromptRepository, VectorStore
 from infrastructure.config import Settings
-from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
+from infrastructure.embeddings.openrouter import (
+    EmbeddingConfigError,
+    OpenRouterEmbeddings,
+)
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import OpenRouterChat
@@ -71,6 +76,33 @@ def build_embedding_model(settings: Settings) -> EmbeddingModel:
 
 def build_vector_store(settings: Settings) -> VectorStore:
     return ChromaVectorStore(settings.chroma)
+
+
+def build_ingest_knowledge(settings: Settings) -> IngestKnowledge:
+    """Wire the ingest use case from the loaded settings.
+
+    Only the embedding adapter's own configuration failure is mapped to a typed
+    `ConfigurationError`. Vector-store failures keep `ChromaStoreError`: a
+    missing credential and an unreadable collection are different problems, and
+    relabelling the latter would send a caller looking in the wrong place.
+
+    Pure, like `build_vector_store`: a fresh instance per call, so no open
+    SQLite handle is retained across callers.
+
+    Raises:
+        ConfigurationError: The embedding credentials are missing or unusable.
+    """
+    try:
+        embedding_model = build_embedding_model(settings)
+    except EmbeddingConfigError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    vector_store = build_vector_store(settings)
+    return IngestKnowledge(
+        embedding_model,
+        vector_store,
+        chunk_size=settings.chunking.chunk_size,
+        chunk_overlap=settings.chunking.chunk_overlap,
+    )
 
 
 def build_prompt_repository() -> PromptRepository:
