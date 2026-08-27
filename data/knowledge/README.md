@@ -95,7 +95,7 @@ This example is derived documentation, so `source_name` and `source_url` identif
 
 ## Mapping to Domain types
 
-When the ingestion pipeline loads these records later, it will map them into the shared types in `domain/knowledge.py`.
+The JSON knowledge-corpus adapter ([#117](https://github.com/mahmoudazaid/Kernector/issues/117)) maps seed records into the shared types in `domain/knowledge.py`.
 
 
 | Corpus field     | Domain target                                                    |
@@ -103,12 +103,62 @@ When the ingestion pipeline loads these records later, it will map them into the
 | `source_id`      | `SourceReference.source_id` with `SourceType.KNOWLEDGE_DOCUMENT` |
 | `title`          | `SourceMetadata.title`                                           |
 | `content`        | `SourceDocument.content`                                         |
-| Remaining fields | Candidate metadata for enrichment and filtering in #83           |
+| Remaining fields | `SourceMetadata.extra` (lists become `{key}_json` strings)       |
 
 
-The seed JSON is an on-disk input format. `SourceDocument` is the framework-independent runtime representation used by the application.
+The seed JSON is an on-disk input format. `SourceDocument` is the framework-independent runtime representation used by the application.
 
-[#83](https://github.com/mahmoudazaid/Kernector/issues/83) owns chunking, metadata enrichment, and adapter-specific conversion. Do not convert `tags` into comma-separated text in #82, and do not modify Domain models to mirror every seed-corpus field.
+Ownership:
+
+- Chunking: [#83](https://github.com/mahmoudazaid/Kernector/issues/83)
+- JSON corpus load and normalization: [#117](https://github.com/mahmoudazaid/Kernector/issues/117)
+- Ingestion orchestration: [#85](https://github.com/mahmoudazaid/Kernector/issues/85)
+- Runnable ingest CLI: [#118](https://github.com/mahmoudazaid/Kernector/issues/118)
+
+Do not convert `tags` into comma-separated text in the seed format, and do not modify Domain models to mirror every seed-corpus field.
+
+## Ingest command
+
+Ingest every normalized record from the configured corpus (default `data/knowledge/documents.json`) without branching on `doc_type`:
+
+```bash
+uv run python -m presentation.cli.ingest
+```
+
+### Configuration
+
+| Variable | Role | Default |
+| -------- | ---- | ------- |
+| `KNOWLEDGE_CORPUS_PATH` | Path to the JSON corpus array | `data/knowledge/documents.json` |
+| `CHROMA_PERSIST_PATH` | Chroma persistence directory | `data/chroma` |
+| `CHROMA_COLLECTION` | Chroma collection name | `kernector_knowledge` |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | Chunking window | `500` / `50` |
+| `OPENROUTER_API_KEY` | Embedding credentials | (required) |
+| `OPENROUTER_BASE_URL` | Embedding API base URL | (required) |
+| `OPENROUTER_EMBEDDING_MODEL` | Embedding model id | `qwen/qwen3-embedding-8b` |
+
+Settings and corpus loading go through composition; the CLI never imports infrastructure adapters.
+
+### Output
+
+On success, stdout reports the authoritative counts from `IngestResponse`:
+
+```text
+accepted_documents=<count>
+chunk_count=<count>
+```
+
+`accepted_documents` is `len(accepted_ids)`. The command ingests all categories in the corpus the same way.
+
+### Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0` | Ingestion succeeded |
+| `1` | Corpus load failure or application validation failure |
+| `2` | Configuration failure (settings or embedding credentials) |
+
+Errors are printed to stderr without a traceback.
 
 ## Future source support
 
@@ -126,13 +176,18 @@ Future sources may include:
 - Google Drive documents
 - Extracted text from diagrams or flowcharts
 
-These sources do not need to follow this seed-corpus JSON format. Each source adapter will extract its content and metadata, then map them into the shared `SourceDocument` or `Ticket` Domain types before using the common RAG pipeline.
+These sources do not need to follow this seed-corpus JSON format. Each source adapter will extract its content and metadata, then map them into the shared `SourceDocument` or `Ticket` Domain types before using the common RAG pipeline.
 
-## Out of scope
+## Related issues
 
-- Chunking and metadata enrichment: [#83](https://github.com/mahmoudazaid/Kernector/issues/83)
-- Chroma and vector storage: [#84](https://github.com/mahmoudazaid/Kernector/issues/84)
-- Knowledge ingestion use case: [#85](https://github.com/mahmoudazaid/Kernector/issues/85)
+- Chunking: [#83](https://github.com/mahmoudazaid/Kernector/issues/83)
+- Chroma and vector storage: [#84](https://github.com/mahmoudazaid/Kernector/issues/84)
+- Knowledge ingestion use case: [#85](https://github.com/mahmoudazaid/Kernector/issues/85)
+- JSON knowledge corpus adapter: [#117](https://github.com/mahmoudazaid/Kernector/issues/117)
+- Ingest CLI: [#118](https://github.com/mahmoudazaid/Kernector/issues/118)
+
+## Out of scope for this folder
+
 - Embedding generation
 - LangChain integration
 - Streamlit or FastAPI changes
