@@ -11,6 +11,15 @@ from domain.knowledge import Vector
 from infrastructure.config import OpenRouterSettings
 
 
+class EmbeddingConfigError(RuntimeError):
+    """The embedding credentials are missing or unusable.
+
+    Named so the composition root can catch this specific failure narrowly and
+    map it to a typed `ConfigurationError`. Still a `RuntimeError` subclass, so
+    any existing caller expecting the previous bare raise is unaffected.
+    """
+
+
 class OpenRouterEmbeddings:
     """EmbeddingModel backed by OpenRouter."""
 
@@ -36,11 +45,15 @@ class OpenRouterEmbeddings:
 def _require_embedding_config(config: OpenRouterSettings) -> None:
     """Fail fast when the embedding credentials are absent."""
     if not config.api_key:
-        raise RuntimeError("Missing OPENROUTER_API_KEY. Add it to .env before embedding.")
+        raise EmbeddingConfigError(
+            "Missing OPENROUTER_API_KEY. Add it to .env before embedding."
+        )
     if not config.base_url:
-        raise RuntimeError("Missing OPENROUTER_BASE_URL. Add it to .env before embedding.")
+        raise EmbeddingConfigError(
+            "Missing OPENROUTER_BASE_URL. Add it to .env before embedding."
+        )
     if not config.embedding_model:
-        raise RuntimeError(
+        raise EmbeddingConfigError(
             "Missing OPENROUTER_EMBEDDING_MODEL. Add it to .env before embedding."
         )
 

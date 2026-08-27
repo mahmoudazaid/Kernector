@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from domain.knowledge import EmbeddedChunk, ScoredChunk, Vector
+from domain.knowledge import EmbeddedChunk, ScoredChunk, SourceReference, Vector
 from domain.models import AskResult, Message, PromptVariant
 
 class ChatModel(Protocol):
@@ -55,6 +55,21 @@ class VectorStore(Protocol):
 
         Scores are cosine similarity in `[-1.0, 1.0]`, higher is nearer.
         Negative scores are legitimate and are never clamped.
+
+        Raises:
+            RuntimeError: a subclass, on any adapter-level failure.
+        """
+
+    def delete_source(self, reference: SourceReference) -> None:
+        """Delete all chunks belonging to one complete source reference.
+
+        Scoped by the whole `SourceReference`, so the same `source_id` under a
+        different `source_type` is left untouched, as is every other source.
+        A reference matching no stored record is a no-op, not an error.
+
+        Enables replacement on re-ingestion: deleting a source and upserting
+        its freshly generated chunks leaves no stale higher-index records
+        behind when the new content chunks into fewer pieces.
 
         Raises:
             RuntimeError: a subclass, on any adapter-level failure.

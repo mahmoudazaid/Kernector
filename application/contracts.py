@@ -84,6 +84,21 @@ def _require_retrieval_limit(value: object) -> None:
         )
 
 
+def _require_chunk_count(value: object) -> None:
+    """Reject invalid ingest chunk counts.
+
+    Args:
+        value (object): Candidate ``chunk_count``.
+
+    Raises:
+        ApplicationValidationError: If not a non-negative ``int``.
+    """
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ApplicationValidationError(
+            f"chunk_count must be a non-negative integer, got {value!r}"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Citation:
     """A provenance pointer suitable for RAG answers.
@@ -214,15 +229,19 @@ class IngestResponse:
 
     Attributes:
         accepted_ids (Sequence[str]): Non-blank identifiers accepted for ingest.
+        chunk_count (int): Total chunks stored for the request. Required with no
+            default, so an unreported count cannot be mistaken for zero.
     """
 
     accepted_ids: Sequence[str]
+    chunk_count: int
 
     def __post_init__(self) -> None:
         accepted_ids = _require_sequence(self.accepted_ids, "accepted_ids")
         for item in accepted_ids:
             _require_text(item, "accepted_ids item")
         object.__setattr__(self, "accepted_ids", tuple(accepted_ids))
+        _require_chunk_count(self.chunk_count)
 
 
 @dataclass(frozen=True, slots=True)
