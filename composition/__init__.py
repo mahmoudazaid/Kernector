@@ -13,9 +13,7 @@ from composition.container import (
     probe_ollama,
 )
 from composition.errors import KnowledgeLoadError
-
-
-from infrastructure.config import Settings, load_settings
+from infrastructure.config import Settings
 
 __all__ = [
     "KnowledgeLoadError",
@@ -29,6 +27,5 @@ __all__ = [
     "build_vector_store",
     "load_knowledge_documents",
     "load_runtime_settings",
-    "load_settings",
     "probe_ollama",
 ]
