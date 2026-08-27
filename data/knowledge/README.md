@@ -1,6 +1,6 @@
 # Knowledge seed corpus
 
-Curated Story Intelligence Hub documents for later RAG, including QA guidance and story-analysis knowledge with structured metadata for filtered retrieval.
+Curated heterogeneous knowledge documents for later RAG (OpenAPI, user stories, bugs, source-code notes, SRS, QA guidance) with structured metadata for filtered retrieval.
 
 This folder defines the **seed-corpus format only**. It is not a universal contract for GitHub, Jira, Confluence, Google Drive, file uploads, or other connectors. Future adapters may receive different source structures before mapping them into the shared Domain types.
 
@@ -19,7 +19,7 @@ Unknown fields are accepted or rejected according to the `additionalProperties`
 | ----------- | -------------------------------------------------- |
 | `source_id` | Stable, unique, non-blank identifier               |
 | `title`     | Human-readable document title                      |
-| `doc_type`  | Seed-corpus document category                      |
+| `doc_type`  | Free-form document category (any non-blank string) |
 | `content`   | Document text used later by the ingestion pipeline |
 | `status`    | Document lifecycle status                          |
 | `version`   | Document version string                            |
@@ -46,13 +46,7 @@ When a document is derived from an external source, `source_name` and `source
 
 ### `doc_type`
 
-- `qa_guidance`
-- `story_analysis`
-- `acceptance_criteria`
-- `defect_triage`
-- `test_strategy`
-
-These values describe the committed Story Intelligence seed corpus only. They do not define every document type that future connectors may ingest.
+Any non-blank string. The committed seed corpus uses examples such as `openapi`, `user_story`, `bug`, `source_code`, `srs`, and `qa_guidance`. These are illustrative only—not an allow-list for adapters or connectors.
 
 ### `status`
 
@@ -77,26 +71,27 @@ Use `null` when severity is not meaningful for the document.
 
 ```json
 {
-  "source_id": "si-ac-001",
-  "title": "Writing testable acceptance criteria",
-  "doc_type": "acceptance_criteria",
-  "content": "Acceptance criteria should be specific, observable, and testable. Prefer Given/When/Then or clear outcome statements. Avoid vague words such as \"fast\" or \"user-friendly\" unless measurable thresholds are defined. Each criterion should map to at least one verification idea.",
+  "source_id": "openapi-payments-001",
+  "title": "Create payment endpoint",
+  "doc_type": "openapi",
+  "content": "POST /payments creates a payment for a customer. The request body requires amount (positive number) and currency (ISO 4217). On success the API returns 201 with a payment_id. Validation failures return 400; unauthorized callers receive 401.",
   "status": "approved",
   "version": "1.0",
   "tags": [
-    "acceptance-criteria",
-    "story-quality",
-    "qa"
+    "payments",
+    "api"
   ],
   "severity": null,
-  "component": "story-analysis",
-  "source_name": "Kernector Story Intelligence guidance",
+  "component": "payment-service",
+  "source_name": "Payments API",
+  "source_url": "https://example.test/openapi.json",
+  "api_version": "v1",
   "updated_at": "2026-08-24"
 }
 
 ```
 
-This example is original Kernector guidance, so it does not claim an external `source_url`.
+This example is derived documentation, so `source_name` and `source_url` identify the origin.
 
 ## Mapping to Domain types
 

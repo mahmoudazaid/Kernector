@@ -36,6 +36,12 @@ class ChromaSettings:
     persist_path: Path
     collection: str
 
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeSettings:
+    corpus_path: Path
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
@@ -44,6 +50,7 @@ class Settings:
     ollama: OllamaSettings
     chunking: ChunkingSettings
     chroma: ChromaSettings
+    knowledge: KnowledgeSettings
 
 
 def load_settings() -> Settings:
@@ -69,6 +76,7 @@ def load_settings() -> Settings:
         ),
         chunking=_load_chunking_settings(),
         chroma=_load_chroma_settings(),
+        knowledge=_load_knowledge_settings(),
     )
 
 
@@ -120,4 +128,17 @@ def _load_chroma_settings() -> ChromaSettings:
     return ChromaSettings(
         persist_path=_resolve_under_project_root(persist_path),
         collection=collection,
+    )
+
+
+def _load_knowledge_settings() -> KnowledgeSettings:
+    corpus_path = os.getenv(
+        "KNOWLEDGE_CORPUS_PATH", "data/knowledge/documents.json"
+    )
+    if not corpus_path.strip():
+        raise ValueError(
+            f"KNOWLEDGE_CORPUS_PATH must be non-empty, got {corpus_path!r}"
+        )
+    return KnowledgeSettings(
+        corpus_path=_resolve_under_project_root(corpus_path),
     )

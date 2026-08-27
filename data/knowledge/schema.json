@@ -22,13 +22,7 @@
       },
       "doc_type": {
         "type": "string",
-        "enum": [
-          "qa_guidance",
-          "story_analysis",
-          "acceptance_criteria",
-          "defect_triage",
-          "test_strategy"
-        ]
+        "minLength": 1
       },
       "content": {
         "type": "string",

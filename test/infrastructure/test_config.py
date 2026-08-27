@@ -1,4 +1,4 @@
-"""Chroma configuration: defaults, path resolution, and validation."""
+"""Chroma and knowledge-corpus configuration: defaults, path resolution, validation."""
 
 from pathlib import Path
 
@@ -19,6 +19,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("CHROMA_PERSIST_PATH", raising=False)
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
+    monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
     return monkeypatch
 
 
@@ -64,3 +65,47 @@ def test_loading_settings_creates_no_directories(
     env.setenv("CHROMA_PERSIST_PATH", str(target))
     assert load_settings().chroma.persist_path == target
     assert not target.exists()
+
+
+def test_knowledge_corpus_defaults(env: pytest.MonkeyPatch) -> None:
+    knowledge = load_settings().knowledge
+    assert (
+        knowledge.corpus_path
+        == PROJECT_ROOT / "data" / "knowledge" / "documents.json"
+    )
+
+
+def test_knowledge_relative_path_resolves_against_repo_root_not_cwd(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    env.chdir(tmp_path)
+    env.setenv("KNOWLEDGE_CORPUS_PATH", "data/knowledge/documents.json")
+    assert (
+        load_settings().knowledge.corpus_path
+        == PROJECT_ROOT / "data" / "knowledge" / "documents.json"
+    )
+
+
+def test_knowledge_absolute_path_is_preserved(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "custom-corpus.json"
+    env.setenv("KNOWLEDGE_CORPUS_PATH", str(target))
+    assert load_settings().knowledge.corpus_path == target
+
+
+def test_knowledge_tilde_is_expanded(env: pytest.MonkeyPatch) -> None:
+    env.setenv("KNOWLEDGE_CORPUS_PATH", "~/kernector-corpus.json")
+    assert (
+        load_settings().knowledge.corpus_path
+        == Path.home() / "kernector-corpus.json"
+    )
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
+def test_blank_knowledge_corpus_path_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("KNOWLEDGE_CORPUS_PATH", raw)
+    with pytest.raises(ValueError, match="KNOWLEDGE_CORPUS_PATH"):
+        load_settings()
