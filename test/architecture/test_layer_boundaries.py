@@ -24,6 +24,7 @@ IO_PACKAGES = {
     "langchain", "langchain_core", "langchain_openai", "openai", "ollama",
     "chromadb", "milvus", "pymilvus", "sqlalchemy", "psycopg",
     "requests", "httpx", "aiohttp",
+    "pypdf",
     "numpy", "pandas",
     "dotenv",
 }
