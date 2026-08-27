@@ -131,3 +131,11 @@ def test_session_state_in_comments_and_strings_is_ignored(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     assert not references_attribute(module, "session_state")
+
+
+def test_composition_does_not_reexport_raw_load_settings() -> None:
+    """Presentation obtains settings only through ``load_runtime_settings``."""
+    import composition
+
+    assert not hasattr(composition, "load_settings")
+    assert callable(composition.load_runtime_settings)
