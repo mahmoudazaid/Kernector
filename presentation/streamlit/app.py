@@ -12,7 +12,7 @@ from composition import (
     build_ask_service,
     build_chat_model,
     build_prompt_repository,
-    load_settings,
+    load_runtime_settings,
     probe_ollama,
 )
 from domain.models import Message, PromptVariant
@@ -39,7 +39,7 @@ class _SidebarState:
 
 @st.cache_resource
 def _settings() -> Settings:
-    return load_settings()
+    return load_runtime_settings()
 
 
 @st.cache_resource
