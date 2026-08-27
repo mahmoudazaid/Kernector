@@ -246,6 +246,160 @@ def test_non_embedded_chunk_items_are_rejected(store: ChromaVectorStore) -> None
 
 
 # --------------------------------------------------------------------------
+# Source deletion (§5.1)
+# --------------------------------------------------------------------------
+
+
+def make_reference(
+    source_id: str = "doc-1",
+    source_type: SourceType = SourceType.KNOWLEDGE_DOCUMENT,
+) -> SourceReference:
+    return SourceReference(source_id, source_type)
+
+
+def stored_identities(store: ChromaVectorStore) -> list[tuple[str, str, int]]:
+    """Every record's identity, read back through the public surface."""
+    return sorted(
+        (
+            str(scored.chunk.reference.source_type),
+            scored.chunk.reference.source_id,
+            scored.chunk.index,
+        )
+        for scored in store.search(ALIGNED, 1000)
+    )
+
+
+def test_delete_source_removes_every_chunk_of_that_source(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0),
+            make_embedded(source_id="doc-1", index=1),
+            make_embedded(source_id="doc-1", index=2),
+        ]
+    )
+    assert count(store) == 3
+
+    store.delete_source(make_reference("doc-1"))
+
+    assert count(store) == 0
+
+
+def test_delete_source_preserves_other_sources(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0),
+            make_embedded(source_id="doc-1", index=1),
+            make_embedded(source_id="doc-2", index=0),
+        ]
+    )
+
+    store.delete_source(make_reference("doc-1"))
+
+    assert stored_identities(store) == [("knowledge_document", "doc-2", 0)]
+
+
+def test_delete_source_preserves_the_same_id_under_another_source_type(
+    store: ChromaVectorStore,
+) -> None:
+    """Identity is the complete reference, so cross-type deletion cannot happen."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0),
+            make_embedded(source_id="doc-1", index=0, source_type=SourceType.TICKET),
+        ]
+    )
+    assert count(store) == 2
+
+    store.delete_source(make_reference("doc-1", SourceType.KNOWLEDGE_DOCUMENT))
+
+    assert stored_identities(store) == [("ticket", "doc-1", 0)]
+
+
+def test_deleting_an_unknown_source_is_a_no_op(store: ChromaVectorStore) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+
+    store.delete_source(make_reference("never-stored"))
+
+    assert stored_identities(store) == [("knowledge_document", "doc-1", 0)]
+
+
+def test_deleting_from_an_empty_collection_is_a_no_op(
+    store: ChromaVectorStore,
+) -> None:
+    """A zero-match `where` deletes nothing; only a filterless delete errors."""
+    store.delete_source(make_reference("doc-1"))
+
+    assert count(store) == 0
+
+
+@pytest.mark.parametrize(
+    "source_id",
+    ["doc:1#0", "  spaced  ", "документ", "文档-1", "emoji-🙂", '{"json":"like"}'],
+)
+def test_delete_source_handles_unusual_identifiers(
+    tmp_path: Path, source_id: str
+) -> None:
+    """Delimiters, whitespace, and non-ASCII must still scope correctly.
+
+    A fresh store per case, so one identifier cannot mask another.
+    """
+    store = ChromaVectorStore(settings(tmp_path / "chroma"))
+    store.upsert(
+        [
+            make_embedded(source_id=source_id, index=0),
+            make_embedded(source_id=source_id, index=1),
+            make_embedded(source_id="other", index=0),
+        ]
+    )
+
+    store.delete_source(make_reference(source_id))
+
+    assert stored_identities(store) == [("knowledge_document", "other", 0)]
+
+
+def test_deletion_persists_after_reopening_the_store(tmp_path: Path) -> None:
+    path = tmp_path / "chroma"
+    first = ChromaVectorStore(settings(path))
+    first.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0),
+            make_embedded(source_id="doc-2", index=0),
+        ]
+    )
+    first.delete_source(make_reference("doc-1"))
+
+    reopened = ChromaVectorStore(settings(path))
+
+    assert stored_identities(reopened) == [("knowledge_document", "doc-2", 0)]
+
+
+@pytest.mark.parametrize(
+    "bad", ["doc-1", None, 42, ("doc-1", "knowledge_document")]
+)
+def test_delete_source_rejects_a_non_reference(
+    store: ChromaVectorStore, bad: object
+) -> None:
+    with pytest.raises(ChromaStoreError, match="reference"):
+        store.delete_source(bad)
+
+
+def test_a_delete_failure_stays_a_store_error(tmp_path: Path) -> None:
+    """Adapter failures keep the store error type, never a configuration error.
+
+    The collection is dropped from under the adapter, which is the cheapest
+    real vendor failure available; nothing here is mocked.
+    """
+    store = ChromaVectorStore(settings(tmp_path / "chroma"))
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+    store._client.delete_collection(COLLECTION)
+
+    with pytest.raises(ChromaStoreError, match="could not delete source"):
+        store.delete_source(make_reference("doc-1"))
+
+
+# --------------------------------------------------------------------------
 # Search (§9)
 # --------------------------------------------------------------------------
 
