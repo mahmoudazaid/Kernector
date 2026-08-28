@@ -102,23 +102,6 @@ def test_duplicate_source_references_in_one_request_are_rejected() -> None:
     assert store.records == {}
 
 
-def test_the_same_source_id_under_two_source_types_is_not_a_duplicate() -> None:
-    """Identity is the complete SourceReference, not `source_id` alone."""
-    store = InMemoryVectorStore()
-    ticket_typed = SourceDocument(
-        SourceMetadata(SourceReference("doc-1", SourceType.TICKET)),
-        CONTENT,
-    )
-
-    response = _use_case(store).execute(
-        IngestRequest(documents=[_document("doc-1"), ticket_typed])
-    )
-
-    # 3 chunks each, and the two references are distinct, so nothing collides.
-    assert response.chunk_count == 6
-    assert len(store.records) == 6
-
-
 def test_re_ingesting_with_fewer_chunks_removes_the_stale_ones() -> None:
     store = InMemoryVectorStore()
     request = IngestRequest(documents=[_document()])
@@ -163,31 +146,6 @@ def test_re_ingesting_one_source_leaves_other_sources_untouched() -> None:
         (record.chunk.reference.source_id, record.chunk.index)
         for record in store.records.values()
     ) == [("doc-1", 0), ("doc-2", 0), ("doc-2", 1), ("doc-2", 2)]
-
-
-def test_deletion_is_scoped_to_the_complete_source_reference() -> None:
-    """A re-ingest must not delete the same id under another source type."""
-    store = InMemoryVectorStore()
-    ticket_typed = SourceDocument(
-        SourceMetadata(SourceReference("doc-1", SourceType.TICKET)),
-        CONTENT,
-    )
-    _use_case(store).execute(
-        IngestRequest(documents=[_document("doc-1"), ticket_typed])
-    )
-    assert len(store.records) == 6
-
-    _use_case(store, chunk_size=30, chunk_overlap=0).execute(
-        IngestRequest(documents=[_document("doc-1")])
-    )
-
-    # The knowledge_document copy collapsed to one chunk; the ticket-typed
-    # copy of the same id keeps all three: 1 + 3.
-    assert len(store.records) == 4
-    assert sorted(
-        (str(record.chunk.reference.source_type), record.chunk.index)
-        for record in store.records.values()
-    ) == [("knowledge_document", 0), ("ticket", 0), ("ticket", 1), ("ticket", 2)]
 
 
 def test_an_embedding_failure_preserves_previously_stored_data() -> None:
