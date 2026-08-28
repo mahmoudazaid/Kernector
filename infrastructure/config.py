@@ -43,6 +43,11 @@ class KnowledgeSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentCatalogSettings:
+    path: Path
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -51,6 +56,7 @@ class Settings:
     chunking: ChunkingSettings
     chroma: ChromaSettings
     knowledge: KnowledgeSettings
+    document_catalog: DocumentCatalogSettings
 
 
 def load_settings() -> Settings:
@@ -77,6 +83,7 @@ def load_settings() -> Settings:
         chunking=_load_chunking_settings(),
         chroma=_load_chroma_settings(),
         knowledge=_load_knowledge_settings(),
+        document_catalog=_load_document_catalog_settings(),
     )
 
 
@@ -141,4 +148,17 @@ def _load_knowledge_settings() -> KnowledgeSettings:
         )
     return KnowledgeSettings(
         corpus_path=_resolve_under_project_root(corpus_path),
+    )
+
+
+def _load_document_catalog_settings() -> DocumentCatalogSettings:
+    catalog_path = os.getenv(
+        "DOCUMENT_CATALOG_PATH", "data/catalog/uploads.json"
+    )
+    if not catalog_path.strip():
+        raise ValueError(
+            f"DOCUMENT_CATALOG_PATH must be non-empty, got {catalog_path!r}"
+        )
+    return DocumentCatalogSettings(
+        path=_resolve_under_project_root(catalog_path),
     )

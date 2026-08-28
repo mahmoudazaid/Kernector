@@ -14,3 +14,25 @@ class DocumentUploadError(RuntimeError):
     ``DomainValidationError`` is discarded; presentation catches this type by
     name, so nothing depends on the discarded base.
     """
+
+
+class DocumentOperationError(RuntimeError):
+    """Uploaded-document list/create/replace/delete failed after translation.
+
+    Wraps application management failures (unknown document, partial delete,
+    degraded replace recovery) so presentation stays free of infrastructure
+    exception types while still seeing honest, retryable outcomes.
+
+    Plain instances mean nothing was mutated: the operation stopped before it
+    touched the catalog or the vector store, so there is nothing to reconcile.
+    """
+
+
+class PartialDocumentOperationError(DocumentOperationError):
+    """The operation stopped midway and left catalog/vector state to reconcile.
+
+    Separate from its base so presentation can tell the user to retry only when
+    a retry is actually needed. Telling someone a catalog row is stranded after
+    a failure that never opened the store sends them looking for damage that
+    does not exist.
+    """
