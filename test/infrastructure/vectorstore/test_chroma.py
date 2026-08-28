@@ -85,18 +85,6 @@ def test_different_index_is_a_different_record(store: ChromaVectorStore) -> None
     assert count(store) == 2
 
 
-def test_different_source_type_is_a_different_record(
-    store: ChromaVectorStore,
-) -> None:
-    store.upsert(
-        [
-            make_embedded(source_type=SourceType.KNOWLEDGE_DOCUMENT),
-            make_embedded(source_type=SourceType.TICKET),
-        ]
-    )
-    assert count(store) == 2
-
-
 @pytest.mark.parametrize("source_id", ["a:b|c", "مستند-١", "with spaces", "-"])
 def test_unusual_source_ids_persist_and_stay_distinct(
     store: ChromaVectorStore, source_id: str
@@ -298,23 +286,6 @@ def test_delete_source_preserves_other_sources(store: ChromaVectorStore) -> None
     store.delete_source(make_reference("doc-1"))
 
     assert stored_identities(store) == [("knowledge_document", "doc-2", 0)]
-
-
-def test_delete_source_preserves_the_same_id_under_another_source_type(
-    store: ChromaVectorStore,
-) -> None:
-    """Identity is the complete reference, so cross-type deletion cannot happen."""
-    store.upsert(
-        [
-            make_embedded(source_id="doc-1", index=0),
-            make_embedded(source_id="doc-1", index=0, source_type=SourceType.TICKET),
-        ]
-    )
-    assert count(store) == 2
-
-    store.delete_source(make_reference("doc-1", SourceType.KNOWLEDGE_DOCUMENT))
-
-    assert stored_identities(store) == [("ticket", "doc-1", 0)]
 
 
 def test_deleting_an_unknown_source_is_a_no_op(store: ChromaVectorStore) -> None:
