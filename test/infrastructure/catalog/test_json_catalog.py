@@ -109,6 +109,19 @@ def test_invalid_payload_raises_validation_error(tmp_path: Path) -> None:
         catalog.all()
 
 
+def test_duplicate_reference_raises_validation_error(tmp_path: Path) -> None:
+    """Collapsing the pair would drop a row on the next write and orphan chunks."""
+    path = tmp_path / "uploads.json"
+    catalog = JsonDocumentCatalog(path)
+    catalog.upsert(_document(source_id="id-1", file_name="a.md"))
+    entries = json.loads(path.read_text(encoding="utf-8"))
+    duplicate = dict(entries[0], file_name="b.md")
+    path.write_text(json.dumps([*entries, duplicate]), encoding="utf-8")
+
+    with pytest.raises(CatalogValidationError, match="duplicates source"):
+        catalog.all()
+
+
 def test_every_read_reloads_disk_state(tmp_path: Path) -> None:
     path = tmp_path / "uploads.json"
     catalog = JsonDocumentCatalog(path)

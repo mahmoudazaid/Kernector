@@ -6,9 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from application.errors import ConfigurationError
 from application.manage_documents import PartialDeleteFailure, UnknownDocumentError
 from composition import container as composition_container
-from composition.errors import DocumentOperationError, DocumentUploadError
+from composition.errors import (
+    DocumentOperationError,
+    DocumentUploadError,
+    PartialDocumentOperationError,
+)
 from domain.knowledge import (
     CatalogStatus,
     SourceReference,
@@ -105,6 +110,72 @@ def test_create_extraction_failure_becomes_document_upload_error(
         )
 
 
+def test_create_dimension_mismatch_keeps_the_actionable_guidance(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The create path must not degrade to the raw vendor string."""
+    from infrastructure.vectorstore.chroma import ChromaStoreError
+    from test.doubles import StubEmbeddingModel
+
+    class _MismatchedStore:
+        def delete_source(self, reference: SourceReference) -> None:
+            return None
+
+        def upsert(self, embedded: object) -> None:
+            raise ChromaStoreError(
+                "could not write 3 record(s) to collection 'kernector_test': "
+                "Collection expecting embedding with dimension of 3, got 4096"
+            )
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_vector_store",
+        lambda _settings: _MismatchedStore(),
+    )
+
+    with pytest.raises(DocumentUploadError, match="embedding size") as raised:
+        composition_container.create_uploaded_document(
+            settings,
+            UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
+        )
+    assert str(settings.chroma.persist_path) in str(raised.value)
+
+
+def test_list_and_delete_need_no_embedding_credentials(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Neither operation embeds anything, so neither may demand an API key."""
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    created = composition_container.create_uploaded_document(
+        settings,
+        UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
+    )
+
+    def _no_embeddings(_settings: Settings) -> object:
+        raise ConfigurationError("Missing OPENROUTER_API_KEY.")
+
+    monkeypatch.setattr(
+        composition_container, "build_embedding_model", _no_embeddings
+    )
+
+    listed = composition_container.list_uploaded_documents(settings)
+    assert [row.reference for row in listed] == [created.reference]
+
+    composition_container.delete_uploaded_document(settings, created.reference)
+    assert composition_container.list_uploaded_documents(settings) == ()
+
+
 def test_partial_delete_is_translated(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -138,6 +209,6 @@ def test_partial_delete_is_translated(
         "build_document_catalog",
         lambda _settings: ExplodingCatalog(),
     )
-    with pytest.raises(DocumentOperationError) as raised:
+    with pytest.raises(PartialDocumentOperationError) as raised:
         composition_container.delete_uploaded_document(settings, created.reference)
     assert isinstance(raised.value.__cause__, PartialDeleteFailure)
