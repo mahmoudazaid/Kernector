@@ -21,7 +21,6 @@ from domain.knowledge import (
     SourceMetadata,
     SourceReference,
     SourceType,
-    Ticket,
 )
 from domain.models import Message
 
@@ -37,10 +36,6 @@ def _document(source_id: str = "doc-1") -> SourceDocument:
         SourceMetadata(_reference(source_id)),
         "knowledge content",
     )
-
-
-def _ticket(ticket_id: str = "KRN-1") -> Ticket:
-    return Ticket(ticket_id, "As a QA analyst I want ...")
 
 
 def _citation() -> Citation:
@@ -279,7 +274,7 @@ def test_ask_response_rejects_non_citation_item() -> None:
 
 def test_ingest_request_rejects_non_document_item() -> None:
     with pytest.raises(ApplicationValidationError, match="documents items"):
-        IngestRequest(documents=[_ticket()])  # type: ignore[list-item]
+        IngestRequest(documents=[_reference()])  # type: ignore[list-item]
 
 
 def test_ingest_request_rejects_empty_documents() -> None:
