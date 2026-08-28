@@ -2,14 +2,22 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from pathlib import Path
 
 from application.ask_service import AskService
+from application.contracts import IngestRequest, IngestResponse
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
-from composition.errors import KnowledgeLoadError
+from composition.errors import DocumentUploadError, KnowledgeLoadError
+from domain.errors import DomainValidationError
 from domain.knowledge import SourceDocument
 from domain.ports import ChatModel, EmbeddingModel, PromptRepository, VectorStore
 from infrastructure.config import Settings, load_settings
+from infrastructure.documents.uploaded_files import (
+    SUPPORTED_SUFFIXES,
+    DocumentExtractionError,
+    extract_document,
+)
 from infrastructure.embeddings.openrouter import (
     EmbeddingConfigError,
     OpenRouterEmbeddings,
@@ -19,7 +27,9 @@ from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import OpenRouterChat
 from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
-from infrastructure.vectorstore.chroma import ChromaVectorStore
+from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
+
+SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
 
 
@@ -142,6 +152,50 @@ def build_ingest_knowledge(settings: Settings) -> IngestKnowledge:
         chunk_size=settings.chunking.chunk_size,
         chunk_overlap=settings.chunking.chunk_overlap,
     )
+
+
+def ingest_uploaded_document(
+    settings: Settings, path: Path, *, source_id: str
+) -> IngestResponse:
+    """Extract one uploaded file and ingest it through ``IngestKnowledge``.
+
+    Owns extraction-to-ingestion wiring so presentation never imports the
+    document adapter. Temporary-file lifecycle stays in presentation.
+
+    Args:
+        settings (Settings): Runtime settings for the ingest factory.
+        path (Path): Local file whose suffix is already presentation-validated.
+        source_id (str): Caller-supplied source identity.
+
+    Returns:
+        IngestResponse: Accepted IDs and chunk count from the use case.
+
+    Raises:
+        DocumentUploadError: Extraction failed (blank identity, unsupported
+            type, or unreadable content), or the vector store rejected the
+            write (for example an embedding-dimension mismatch).
+        ConfigurationError: Embedding credentials are missing or unusable.
+        ApplicationValidationError: The ingest request is invalid.
+    """
+    try:
+        document = extract_document(path, source_id=source_id)
+    except DomainValidationError as error:
+        raise DocumentUploadError(str(error)) from error
+    except DocumentExtractionError as error:
+        raise DocumentUploadError(str(error)) from error
+
+    use_case = build_ingest_knowledge(settings)
+    try:
+        return use_case.execute(IngestRequest(documents=(document,)))
+    except ChromaStoreError as error:
+        message = str(error)
+        if "dimension" in message.lower():
+            message = (
+                "The knowledge store was built with a different embedding size "
+                "than the current model. Delete the Chroma data directory "
+                f"({settings.chroma.persist_path}) and ingest again."
+            )
+        raise DocumentUploadError(message) from error
 
 
 def build_prompt_repository() -> PromptRepository:
