@@ -14,6 +14,27 @@ from domain.knowledge import (
 from domain.ports import EmbeddingModel, VectorStore
 
 
+class IngestFailure(RuntimeError):
+    """Ingest failed, with an explicit signal about vector-store mutation.
+
+    Attributes:
+        vector_mutation_started (bool): True when ``delete_source`` or ``upsert``
+            may have run for this request, so callers must not restore a prior
+            ready catalog row blindly.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        vector_mutation_started: bool,
+        cause: BaseException | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.vector_mutation_started = vector_mutation_started
+        self.__cause__ = cause
+
+
 class IngestKnowledge:
     """Turns `SourceDocument` inputs into embedded chunks the store holds.
 
@@ -55,6 +76,8 @@ class IngestKnowledge:
                 duplicate source references, an embedding result whose length
                 disagrees with the chunk count, or — propagated from
                 `chunk_document` — an invalid document or chunk setting.
+            IngestFailure: Embedding or vector-store failure, annotated with
+                whether vector mutation may have started.
         """
         if request.tickets:
             raise ApplicationValidationError(
@@ -63,15 +86,24 @@ class IngestKnowledge:
                 "ships in its own ticket"
             )
         _reject_duplicate_references(request.documents)
-        chunks_by_document = tuple(
-            self._chunk(document) for document in request.documents
-        )
-        all_chunks = tuple(
-            chunk for chunks in chunks_by_document for chunk in chunks
-        )
-        vectors = self._embedding_model.embed_documents(
-            [chunk.content for chunk in all_chunks]
-        )
+        try:
+            chunks_by_document = tuple(
+                self._chunk(document) for document in request.documents
+            )
+            all_chunks = tuple(
+                chunk for chunks in chunks_by_document for chunk in chunks
+            )
+            vectors = self._embedding_model.embed_documents(
+                [chunk.content for chunk in all_chunks]
+            )
+        except ApplicationValidationError:
+            raise
+        except Exception as error:
+            raise IngestFailure(
+                str(error),
+                vector_mutation_started=False,
+                cause=error,
+            ) from error
         if len(vectors) != len(all_chunks):
             raise ApplicationValidationError(
                 f"embedding returned {len(vectors)} vector(s) for "
@@ -81,13 +113,20 @@ class IngestKnowledge:
             EmbeddedChunk(chunk=chunk, vector=vector)
             for chunk, vector in zip(all_chunks, vectors, strict=True)
         )
-        for document, records in zip(
-            request.documents,
-            _regroup(embedded, chunks_by_document),
-            strict=True,
-        ):
-            self._vector_store.delete_source(document.reference)
-            self._vector_store.upsert(records)
+        try:
+            for document, records in zip(
+                request.documents,
+                _regroup(embedded, chunks_by_document),
+                strict=True,
+            ):
+                self._vector_store.delete_source(document.reference)
+                self._vector_store.upsert(records)
+        except Exception as error:
+            raise IngestFailure(
+                str(error),
+                vector_mutation_started=True,
+                cause=error,
+            ) from error
         return IngestResponse(
             accepted_ids=[document.source_id for document in request.documents],
             chunk_count=len(embedded),

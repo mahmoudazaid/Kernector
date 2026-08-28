@@ -1,128 +1,231 @@
-"""Upload-to-ingest helpers for the Streamlit presentation layer.
+"""Upload and document-management helpers for the Streamlit presentation layer.
 
-Owns validation, the in-flight guard, temporary-file lifecycle, and mapping of
-composition results to UI-neutral messages. Widgets stay in ``app.py``.
+Owns validation and the mapping of composition results to UI-neutral messages.
+Widgets stay in ``app.py``. Temporary-file lifecycle for uploads lives in the
+document extractor adapter, not here.
 """
 
 from __future__ import annotations
 
 import logging
-import tempfile
-from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from application.errors import ApplicationValidationError, ConfigurationError
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
+    DocumentOperationError,
     DocumentUploadError,
+    PartialDocumentOperationError,
     Settings,
-    ingest_uploaded_document,
+    create_uploaded_document,
+    delete_uploaded_document,
+    list_uploaded_documents,
+    replace_uploaded_document,
 )
 from domain.errors import DomainValidationError
+from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
 
 logger = logging.getLogger(__name__)
-
-_IN_PROGRESS_KEY = "ingest_in_progress"
 
 
 @dataclass(frozen=True, slots=True)
 class UploadIngestResult:
-    """UI-neutral outcome of one upload submission.
+    """UI-neutral outcome of one document-management action.
 
     Attributes:
-        ok (bool): Whether ingestion succeeded.
+        ok (bool): Whether the action succeeded.
         message (str): User-facing success or error text.
+        document (CatalogDocument | None): Created or replaced catalog row.
+        should_rerun (bool): Whether the UI should call ``st.rerun`` after success.
     """
 
     ok: bool
     message: str
+    document: CatalogDocument | None = None
+    should_rerun: bool = False
 
 
-def _write_upload_tempfile(filename: str, content: bytes) -> Path:
-    """Persist upload bytes under a managed temp path with a validated suffix."""
-    suffix = Path(filename).suffix.lower()
-    if suffix not in SUPPORTED_UPLOAD_SUFFIXES:
-        raise DocumentUploadError(
-            f"unsupported document type ({suffix!r}); supported types are "
-            f"{', '.join(sorted(SUPPORTED_UPLOAD_SUFFIXES))}"
-        )
-    handle = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    try:
-        handle.write(content)
-        handle.flush()
-    finally:
-        handle.close()
-    return Path(handle.name)
+@dataclass(frozen=True, slots=True)
+class DocumentListing:
+    """The document list plus the reason it could not be loaded, if any.
 
+    A failed listing is an ordinary page state, not an exception the widget
+    layer should have to interpret: the panel still renders, with an error
+    banner instead of rows.
 
-def submit_uploaded_document(
-    settings: Settings,
-    *,
-    filename: str | None,
-    content: bytes | None,
-    source_id: str,
-    session: MutableMapping[str, object],
-) -> UploadIngestResult:
-    """Validate, guard, ingest one upload, and always clear the in-flight flag.
-
-    Args:
-        settings (Settings): Runtime settings for composition ingest.
-        filename (str | None): Client filename used only for suffix selection.
-        content (bytes | None): Raw uploaded bytes.
-        source_id (str): Caller-supplied source identity.
-        session (MutableMapping[str, object]): Mutable mapping with
-            ``ingest_in_progress`` (typically ``st.session_state``).
-
-    Returns:
-        UploadIngestResult: Success or failure message for the UI.
+    Attributes:
+        documents (tuple[CatalogDocument, ...]): Catalog rows, empty on failure.
+        error (str | None): User-facing reason the list is unavailable.
     """
-    if session.get(_IN_PROGRESS_KEY):
-        return UploadIngestResult(
-            ok=False,
-            message="Ingestion is already in progress. Wait for it to finish.",
+
+    documents: tuple[CatalogDocument, ...] = ()
+    error: str | None = None
+
+
+def load_uploaded_documents(settings: Settings) -> DocumentListing:
+    """Return catalog rows for the uploaded-documents list.
+
+    Typed failures carry text the reader can act on. Anything else is logged
+    with its traceback and reported generically, so an unexpected error never
+    puts server internals on someone's screen.
+    """
+    try:
+        return DocumentListing(documents=tuple(list_uploaded_documents(settings)))
+    except (DocumentOperationError, ConfigurationError) as error:
+        return DocumentListing(error=f"Could not load uploaded documents: {error}")
+    except Exception:
+        logger.exception("Unexpected failure listing uploaded documents")
+        return DocumentListing(
+            error="Could not load uploaded documents. Check the server logs."
         )
+
+
+def _validate_upload(
+    filename: str | None, content: bytes | None
+) -> UploadIngestResult | UploadPayload:
     if not filename or content is None:
         return UploadIngestResult(
             ok=False,
             message="Choose a document to upload before submitting.",
         )
-    if not isinstance(source_id, str) or not source_id.strip():
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_UPLOAD_SUFFIXES:
         return UploadIngestResult(
             ok=False,
-            message="Enter a non-blank source ID before submitting.",
-        )
-
-    session[_IN_PROGRESS_KEY] = True
-    temp_path: Path | None = None
-    try:
-        try:
-            temp_path = _write_upload_tempfile(filename, content)
-            response = ingest_uploaded_document(
-                settings, temp_path, source_id=source_id.strip()
-            )
-        except DocumentUploadError as error:
-            return UploadIngestResult(ok=False, message=str(error))
-        except DomainValidationError as error:
-            return UploadIngestResult(ok=False, message=str(error))
-        except ApplicationValidationError as error:
-            return UploadIngestResult(ok=False, message=str(error))
-        except ConfigurationError as error:
-            return UploadIngestResult(ok=False, message=str(error))
-        except Exception:
-            logger.exception("Unexpected failure during document upload ingest")
-            return UploadIngestResult(
-                ok=False,
-                message="Upload failed unexpectedly. Check the server logs.",
-            )
-        return UploadIngestResult(
-            ok=True,
             message=(
-                f"Accepted {len(response.accepted_ids)} document(s), "
-                f"{response.chunk_count} chunk(s)."
+                f"unsupported document type ({suffix!r}); supported types are "
+                f"{', '.join(sorted(SUPPORTED_UPLOAD_SUFFIXES))}"
             ),
         )
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-        session[_IN_PROGRESS_KEY] = False
+    return UploadPayload(file_name=filename, content=content)
+
+
+def create_new_document(
+    settings: Settings,
+    *,
+    filename: str | None,
+    content: bytes | None,
+) -> UploadIngestResult:
+    """Validate and create a new upload with a system-managed source ID."""
+    validated = _validate_upload(filename, content)
+    if isinstance(validated, UploadIngestResult):
+        return validated
+
+    try:
+        document = create_uploaded_document(settings, validated)
+    except PartialDocumentOperationError:
+        # Not logged here. Composition already recorded the safe diagnostic
+        # fields for this exact failure, and `logger.exception` would print the
+        # chain behind it — which is precisely where an adapter path or a
+        # credential echoed by a vendor would be sitting.
+        return UploadIngestResult(
+            ok=False,
+            message=(
+                "Upload failed and its status could not be saved; retry, or "
+                "delete any visible pending document."
+            ),
+        )
+    except DocumentUploadError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except DocumentOperationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except DomainValidationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except ApplicationValidationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except ConfigurationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except Exception:
+        logger.exception("Unexpected failure during document create")
+        return UploadIngestResult(
+            ok=False,
+            message="Upload failed unexpectedly. Check the server logs.",
+        )
+    return UploadIngestResult(
+        ok=True,
+        message=(
+            f"Uploaded {document.file_name} "
+            f"({document.chunk_count} chunk(s)). "
+            f"Source ID: {document.reference.source_id}"
+        ),
+        document=document,
+        should_rerun=True,
+    )
+
+
+def replace_existing_document(
+    settings: Settings,
+    *,
+    reference: SourceReference,
+    filename: str | None,
+    content: bytes | None,
+) -> UploadIngestResult:
+    """Replace content for a selected catalog document under the same ID."""
+    validated = _validate_upload(filename, content)
+    if isinstance(validated, UploadIngestResult):
+        return validated
+
+    try:
+        document = replace_uploaded_document(settings, reference, validated)
+    except PartialDocumentOperationError as error:
+        return UploadIngestResult(
+            ok=False,
+            message=f"{error} Replacement did not complete; retry Replace or Delete.",
+        )
+    except DocumentUploadError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except DocumentOperationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except DomainValidationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except ApplicationValidationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except ConfigurationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except Exception:
+        logger.exception("Unexpected failure during document replace")
+        return UploadIngestResult(
+            ok=False,
+            message="Replace failed unexpectedly. Check the server logs.",
+        )
+    return UploadIngestResult(
+        ok=True,
+        message=(
+            f"Replaced {document.file_name} "
+            f"({document.chunk_count} chunk(s)). "
+            f"Source ID unchanged: {document.reference.source_id}"
+        ),
+        document=document,
+        should_rerun=True,
+    )
+
+
+def delete_existing_document(
+    settings: Settings,
+    *,
+    reference: SourceReference,
+) -> UploadIngestResult:
+    """Delete vector chunks and the catalog row for a selected document."""
+    try:
+        delete_uploaded_document(settings, reference)
+    except PartialDocumentOperationError as error:
+        return UploadIngestResult(
+            ok=False,
+            message=f"{error} Retry Delete to finish removing the catalog row.",
+        )
+    except DocumentOperationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except ConfigurationError as error:
+        return UploadIngestResult(ok=False, message=str(error))
+    except Exception:
+        logger.exception("Unexpected failure during document delete")
+        return UploadIngestResult(
+            ok=False,
+            message="Delete failed unexpectedly. Check the server logs.",
+        )
+    return UploadIngestResult(
+        ok=True,
+        message=f"Deleted document {reference.source_id}.",
+        should_rerun=True,
+    )

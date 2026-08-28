@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from math import isfinite
 
@@ -14,6 +15,15 @@ class SourceType(StrEnum):
 
     TICKET = "ticket"
     KNOWLEDGE_DOCUMENT = "knowledge_document"
+
+
+class CatalogStatus(StrEnum):
+    """Lifecycle status of an uploaded document in the catalog."""
+
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+    DEGRADED = "degraded"
 
 def _require_text(value: str, field_name: str) -> None:
     """Reject anything that is not a non-blank string."""
@@ -185,3 +195,52 @@ class ScoredChunk:
             raise DomainValidationError(
                 f"score must be a finite number, got {self.score!r}"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class UploadPayload:
+    """Raw upload bytes and the client-supplied file name."""
+
+    file_name: str
+    content: bytes
+
+    def __post_init__(self) -> None:
+        _require_text(self.file_name, "file_name")
+        if not isinstance(self.content, (bytes, bytearray)):
+            raise DomainValidationError(
+                f"content must be bytes, got {type(self.content).__name__}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogDocument:
+    """Durable metadata for one uploaded knowledge document."""
+
+    reference: SourceReference
+    file_name: str
+    title: str | None
+    content_format: str | None
+    status: CatalogStatus
+    uploaded_at: datetime
+    chunk_count: int
+    error: str | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reference, SourceReference):
+            raise DomainValidationError(
+                f"reference must be a SourceReference, got {self.reference!r}"
+            )
+        _require_text(self.file_name, "file_name")
+        if not isinstance(self.status, CatalogStatus):
+            raise DomainValidationError(
+                f"status must be a CatalogStatus, got {self.status!r}"
+            )
+        if not isinstance(self.uploaded_at, datetime):
+            raise DomainValidationError(
+                f"uploaded_at must be a datetime, got {self.uploaded_at!r}"
+            )
+        if self.uploaded_at.tzinfo is None:
+            raise DomainValidationError(
+                "uploaded_at must be timezone-aware"
+            )
+        _require_index(self.chunk_count, "chunk_count")
