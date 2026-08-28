@@ -3,7 +3,15 @@
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from domain.knowledge import EmbeddedChunk, ScoredChunk, SourceReference, Vector
+from domain.knowledge import (
+    CatalogDocument,
+    EmbeddedChunk,
+    ScoredChunk,
+    SourceDocument,
+    SourceReference,
+    UploadPayload,
+    Vector,
+)
 from domain.models import AskResult, Message, PromptVariant
 
 class ChatModel(Protocol):
@@ -86,3 +94,31 @@ class Tool(Protocol):
     def description(self) -> str: ...
 
     def run(self, arguments: Mapping[str, object]) -> str: ...
+
+
+class DocumentCatalog(Protocol):
+    """Durable metadata registry for uploaded knowledge documents."""
+
+    def all(self) -> Sequence[CatalogDocument]:
+        """Return every catalog record, reloading durable state if needed."""
+
+    def get(self, reference: SourceReference) -> CatalogDocument | None:
+        """Return the record for ``reference``, or ``None`` when absent."""
+
+    def upsert(self, document: CatalogDocument) -> None:
+        """Insert or replace the record keyed by ``document.reference``."""
+
+    def delete(self, reference: SourceReference) -> None:
+        """Remove the record for ``reference``. Missing references are a no-op."""
+
+
+class DocumentExtractor(Protocol):
+    """Turns an upload payload into a normalized source document."""
+
+    def extract(
+        self,
+        payload: UploadPayload,
+        *,
+        reference: SourceReference,
+    ) -> SourceDocument:
+        """Extract text and metadata for ``payload`` under ``reference``."""

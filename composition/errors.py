@@ -14,3 +14,12 @@ class DocumentUploadError(RuntimeError):
     ``DomainValidationError`` is discarded; presentation catches this type by
     name, so nothing depends on the discarded base.
     """
+
+
+class DocumentOperationError(RuntimeError):
+    """Uploaded-document list/create/replace/delete failed after translation.
+
+    Wraps application management failures (unknown document, partial delete,
+    degraded replace recovery) so presentation stays free of infrastructure
+    exception types while still seeing honest, retryable outcomes.
+    """

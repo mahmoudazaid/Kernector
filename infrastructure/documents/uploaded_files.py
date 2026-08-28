@@ -13,6 +13,7 @@ scanned, image-only PDF has no text layer and is reported as unreadable.
 
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
@@ -22,6 +23,7 @@ from domain.knowledge import (
     SourceMetadata,
     SourceReference,
     SourceType,
+    UploadPayload,
 )
 
 _PROVIDER = "upload"
@@ -130,3 +132,42 @@ def extract_document(path: Path, *, source_id: str) -> SourceDocument:
         ),
         text,
     )
+
+
+class UploadedFileExtractor:
+    """Extract a ``SourceDocument`` from an in-memory upload payload.
+
+    Sanitizes the client file name to a basename, writes bytes into a managed
+    temporary directory under that name, and delegates to ``extract_document``.
+    The temporary directory is always removed.
+    """
+
+    def extract(
+        self,
+        payload: UploadPayload,
+        *,
+        reference: SourceReference,
+    ) -> SourceDocument:
+        """Extract text and metadata for ``payload`` under ``reference``.
+
+        Args:
+            payload (UploadPayload): Client file name and raw bytes.
+            reference (SourceReference): Caller-owned source identity.
+
+        Returns:
+            SourceDocument: Normalized document for ingestion.
+
+        Raises:
+            DomainValidationError: If ``reference.source_id`` is blank.
+            UnsupportedDocumentError: If the sanitized suffix is unsupported.
+            UnreadableDocumentError: If the file cannot be read or has no text.
+        """
+        safe_name = Path(payload.file_name).name
+        if not safe_name.strip():
+            raise UnsupportedDocumentError(
+                "upload file name must include a basename after sanitization"
+            )
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / safe_name
+            path.write_bytes(bytes(payload.content))
+            return extract_document(path, source_id=reference.source_id)
