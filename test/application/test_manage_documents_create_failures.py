@@ -45,17 +45,32 @@ class FailingUpsertStore(InMemoryVectorStore):
 
 
 class RecoveryRefusingCatalog(InMemoryDocumentCatalog):
-    """Accepts the pending row, then refuses every later write."""
+    """Accepts the pending row, then refuses every later write.
 
-    def __init__(self) -> None:
+    ``write_error`` is the exact instance raised, so a test can assert identity
+    rather than matching on text.
+    """
+
+    def __init__(self, error: Exception | None = None) -> None:
         super().__init__()
         self.upserts = 0
+        self.write_error = error or RuntimeError("catalog upsert failed")
 
     def upsert(self, document: CatalogDocument) -> None:
         self.upserts += 1
         if self.upserts > 1:
-            raise RuntimeError("catalog upsert failed")
+            raise self.write_error
         super().upsert(document)
+
+
+class _ExplodingIngest:
+    """Ingest stand-in that raises one known exception instance."""
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    def execute(self, request: object) -> object:
+        raise self._error
 
 
 def _document_factory(
@@ -211,3 +226,84 @@ def test_create_recovery_write_failure_after_vector_mutation_keeps_both() -> Non
     assert isinstance(raised.value.ingest_error, IngestFailure)
     assert raised.value.ingest_error.vector_mutation_started is True
     assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+PARTIAL_CREATE_MESSAGE = (
+    "Upload failed and its status could not be saved; retry, or delete any "
+    "visible pending document."
+)
+
+# Stand-ins for the two things that must never surface: a credential carried in
+# a vendor error, and a server path carried in an adapter error.
+LEAKY_INGEST_ERROR = IngestFailure(
+    "openrouter rejected key sk-live-abc123",
+    vector_mutation_started=False,
+    cause=RuntimeError("vendor said 401 for sk-live-abc123"),
+)
+LEAKY_CATALOG_ERROR = RuntimeError(
+    "could not write catalog at /srv/kernector/data/uploads.json"
+)
+
+
+def _use_case_with_both_failures(
+    catalog: RecoveryRefusingCatalog,
+) -> ManageUploadedDocuments:
+    return ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: _ExplodingIngest(LEAKY_INGEST_ERROR),
+        vector_store_factory=InMemoryVectorStore,
+        new_source_id=FixedIdFactory("id-leak"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+    )
+
+
+def test_partial_create_failure_keeps_both_originals_reachable() -> None:
+    """The detail must survive for diagnosis — as attributes, not as text."""
+    catalog = RecoveryRefusingCatalog(LEAKY_CATALOG_ERROR)
+
+    with pytest.raises(PartialCreateFailure) as raised:
+        _use_case_with_both_failures(catalog).create(
+            UploadPayload(file_name="guide.md", content=b"x")
+        )
+
+    assert raised.value.ingest_error is LEAKY_INGEST_ERROR
+    assert raised.value.__cause__ is LEAKY_CATALOG_ERROR
+
+
+def test_partial_create_failure_message_leaks_neither_failure() -> None:
+    """Whoever renders this exception must not have to sanitize it first."""
+    catalog = RecoveryRefusingCatalog(LEAKY_CATALOG_ERROR)
+
+    with pytest.raises(PartialCreateFailure) as raised:
+        _use_case_with_both_failures(catalog).create(
+            UploadPayload(file_name="guide.md", content=b"x")
+        )
+
+    message = str(raised.value)
+    assert message == PARTIAL_CREATE_MESSAGE
+    assert "sk-live-abc123" not in message
+    assert "/srv/kernector/data/uploads.json" not in message
+    assert str(LEAKY_INGEST_ERROR) not in message
+    assert str(LEAKY_CATALOG_ERROR) not in message
+
+
+def test_partial_create_failure_message_is_fixed_across_causes() -> None:
+    """A different pair of failures must not produce a different public string."""
+    catalog = RecoveryRefusingCatalog(RuntimeError("disk full on /mnt/data"))
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: _ExplodingIngest(
+            IngestFailure("other", vector_mutation_started=True)
+        ),
+        vector_store_factory=InMemoryVectorStore,
+        new_source_id=FixedIdFactory("id-other"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+    )
+
+    with pytest.raises(PartialCreateFailure) as raised:
+        use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
+
+    assert str(raised.value) == PARTIAL_CREATE_MESSAGE
+    assert "/mnt/data" not in str(raised.value)
