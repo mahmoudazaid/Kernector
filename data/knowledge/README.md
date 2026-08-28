@@ -176,7 +176,7 @@ Future sources may include:
 - Google Drive documents
 - Extracted text from diagrams or flowcharts
 
-These sources do not need to follow this seed-corpus JSON format. Each source adapter will extract its content and metadata, then map them into the shared `SourceDocument` or `Ticket` Domain types before using the common RAG pipeline.
+These sources do not need to follow this seed-corpus JSON format. Each source adapter will extract its content and metadata, then map them into the shared `SourceDocument` Domain type before using the common RAG pipeline.
 
 ## Related issues
 
