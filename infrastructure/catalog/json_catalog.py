@@ -7,6 +7,7 @@ import os
 import threading
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar
 
@@ -151,44 +152,120 @@ def _entry_from_document(document: CatalogDocument) -> dict[str, object]:
     }
 
 
+# Declaration order, so a hand-edited file is reported field by field from the
+# top rather than in whatever order a dict happens to iterate.
+_REQUIRED_FIELDS = (
+    "source_id",
+    "source_type",
+    "file_name",
+    "status",
+    "uploaded_at",
+    "chunk_count",
+)
+
+
 def _document_from_entry(entry: object, *, index: int) -> CatalogDocument:
+    """Build one catalog row, rejecting anything the writer would not have made.
+
+    Types are checked, never coerced. ``str(value)`` would turn an integer
+    ``source_id`` into a plausible string that keys real vector chunks, so the
+    corruption would survive the next write instead of being caught on read —
+    and a wrong ``chunk_count`` would silently claim a document has content it
+    does not have.
+
+    Raises:
+        CatalogValidationError: A field is missing or holds the wrong type. The
+            message names the entry index and the offending field.
+    """
     if not isinstance(entry, dict):
         raise CatalogValidationError(
             f"catalog entry {index} must be an object, got {type(entry).__name__}"
         )
+    for field in _REQUIRED_FIELDS:
+        if field not in entry:
+            raise CatalogValidationError(
+                f"catalog entry {index} missing required field {field!r}"
+            )
+    source_id = _require_str(entry, "source_id", index=index)
+    file_name = _require_str(entry, "file_name", index=index)
+    source_type = _require_member(
+        SourceType, _require_str(entry, "source_type", index=index),
+        field="source_type", index=index,
+    )
+    status = _require_member(
+        CatalogStatus, _require_str(entry, "status", index=index),
+        field="status", index=index,
+    )
+    uploaded_at_raw = _require_str(entry, "uploaded_at", index=index)
     try:
-        source_id = entry["source_id"]
-        source_type_raw = entry["source_type"]
-        file_name = entry["file_name"]
-        status_raw = entry["status"]
-        uploaded_at_raw = entry["uploaded_at"]
-        chunk_count = entry["chunk_count"]
-    except KeyError as error:
+        uploaded_at = datetime.fromisoformat(uploaded_at_raw)
+    except ValueError as error:
         raise CatalogValidationError(
-            f"catalog entry {index} missing required field {error.args[0]!r}"
+            f"catalog entry {index} field 'uploaded_at' is not an ISO-8601 "
+            f"timestamp: {uploaded_at_raw!r}"
         ) from error
     try:
-        source_type = SourceType(source_type_raw)
-        status = CatalogStatus(status_raw)
-        uploaded_at = datetime.fromisoformat(str(uploaded_at_raw))
-        reference = SourceReference(str(source_id), source_type)
         return CatalogDocument(
-            reference=reference,
-            file_name=str(file_name),
-            title=_optional_str(entry.get("title")),
-            content_format=_optional_str(entry.get("content_format")),
+            reference=SourceReference(source_id, source_type),
+            file_name=file_name,
+            title=_optional_str(entry, "title", index=index),
+            content_format=_optional_str(entry, "content_format", index=index),
             status=status,
             uploaded_at=uploaded_at,
-            chunk_count=chunk_count,  # type: ignore[arg-type]
-            error=_optional_str(entry.get("error")),
+            chunk_count=_require_int(entry, "chunk_count", index=index),
+            error=_optional_str(entry, "error", index=index),
         )
-    except (DomainValidationError, TypeError, ValueError) as error:
+    except DomainValidationError as error:
+        # Domain invariants the JSON types cannot express: blank text, a
+        # negative count, a naive timestamp. Its messages already name the field.
         raise CatalogValidationError(
             f"catalog entry {index} is invalid: {error}"
         ) from error
 
 
-def _optional_str(value: object) -> str | None:
+def _require_str(entry: Mapping[str, object], field: str, *, index: int) -> str:
+    value = entry[field]
+    if not isinstance(value, str):
+        raise CatalogValidationError(
+            f"catalog entry {index} field {field!r} must be a string, got "
+            f"{type(value).__name__}"
+        )
+    return value
+
+
+def _require_int(entry: Mapping[str, object], field: str, *, index: int) -> int:
+    value = entry[field]
+    # `bool` is an `int` subclass, so `True` would otherwise be read as 1.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CatalogValidationError(
+            f"catalog entry {index} field {field!r} must be an integer, got "
+            f"{type(value).__name__}"
+        )
+    return value
+
+
+def _optional_str(
+    entry: Mapping[str, object], field: str, *, index: int
+) -> str | None:
+    value = entry.get(field)
     if value is None:
         return None
-    return str(value)
+    if not isinstance(value, str):
+        raise CatalogValidationError(
+            f"catalog entry {index} field {field!r} must be a string or null, "
+            f"got {type(value).__name__}"
+        )
+    return value
+
+
+def _require_member[MemberT: StrEnum](
+    enum: type[MemberT], raw: str, *, field: str, index: int
+) -> MemberT:
+    try:
+        return enum(raw)
+    except ValueError as error:
+        allowed = ", ".join(sorted(member.value for member in enum))
+        raise CatalogValidationError(
+            f"catalog entry {index} field {field!r} must be one of {allowed}; "
+            f"got {raw!r}"
+        ) from error

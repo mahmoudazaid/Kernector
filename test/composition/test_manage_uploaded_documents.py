@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from application.errors import ConfigurationError
-from application.manage_documents import PartialDeleteFailure, UnknownDocumentError
+from application.manage_documents import (
+    PartialCreateFailure,
+    PartialDeleteFailure,
+    UnknownDocumentError,
+)
 from composition import container as composition_container
 from composition.errors import (
     DocumentOperationError,
@@ -144,6 +148,49 @@ def test_create_dimension_mismatch_keeps_the_actionable_guidance(
             UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
         )
     assert str(settings.chroma.persist_path) in str(raised.value)
+
+
+def test_create_recovery_write_failure_maps_to_partial_operation_error(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both failures must survive translation as a retryable partial outcome."""
+    from test.doubles import FailingEmbeddingModel
+
+    class _RecoveryRefusingCatalog:
+        def __init__(self) -> None:
+            self.upserts = 0
+
+        def all(self):
+            return ()
+
+        def get(self, reference):
+            return None
+
+        def upsert(self, document):
+            self.upserts += 1
+            if self.upserts > 1:
+                raise RuntimeError("disk full")
+
+        def delete(self, reference):
+            return None
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: FailingEmbeddingModel(),
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_document_catalog",
+        lambda _settings: _RecoveryRefusingCatalog(),
+    )
+
+    with pytest.raises(PartialDocumentOperationError) as raised:
+        composition_container.create_uploaded_document(
+            settings,
+            UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
+        )
+    assert isinstance(raised.value.__cause__, PartialCreateFailure)
 
 
 def test_list_and_delete_need_no_embedding_credentials(
