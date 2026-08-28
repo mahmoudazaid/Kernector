@@ -52,13 +52,13 @@ def test_create_extraction_failure_leaves_no_catalog_row() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=extractor,
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
             InMemoryVectorStore(),
             chunk_size=10,
             chunk_overlap=2,
         ),
-        vector_store=InMemoryVectorStore(),
+        vector_store_factory=InMemoryVectorStore,
         new_source_id=FixedIdFactory("id-1"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
     )
@@ -75,13 +75,13 @@ def test_create_ingest_failure_leaves_failed_row_and_propagates_cause() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             FailingEmbeddingModel(),
             store,
             chunk_size=10,
             chunk_overlap=2,
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("id-fail"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
     )

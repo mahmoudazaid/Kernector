@@ -59,8 +59,8 @@ def _use_case(
         catalog=catalog,
         extractor=extractor
         or RecordingExtractor(document_factory=_document_factory),
-        ingest=ingest,
-        vector_store=store,
+        ingest_factory=lambda: ingest,
+        vector_store_factory=lambda: store,
         new_source_id=ids or FixedIdFactory("11111111-1111-1111-1111-111111111111"),
         now=clock
         or FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),

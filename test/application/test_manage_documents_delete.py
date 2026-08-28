@@ -60,10 +60,10 @@ def _seed(
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
     )
@@ -82,10 +82,10 @@ def test_delete_removes_chunks_then_catalog_row() -> None:
     ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
     ).delete(reference)
 
     assert catalog.get(reference) is None
@@ -103,13 +103,13 @@ def test_vector_delete_failure_leaves_catalog_unchanged() -> None:
         ManageUploadedDocuments(
             catalog=catalog,
             extractor=RecordingExtractor(document_factory=_document_factory),
-            ingest=IngestKnowledge(
+            ingest_factory=lambda: IngestKnowledge(
                 StubEmbeddingModel(),
                 failing_store,
                 chunk_size=10,
                 chunk_overlap=2,
             ),
-            vector_store=failing_store,
+            vector_store_factory=lambda: failing_store,
         ).delete(reference)
 
     row = catalog.get(reference)
@@ -127,10 +127,10 @@ def test_catalog_delete_failure_after_vector_success_is_partial() -> None:
         ManageUploadedDocuments(
             catalog=catalog,
             extractor=RecordingExtractor(document_factory=_document_factory),
-            ingest=IngestKnowledge(
+            ingest_factory=lambda: IngestKnowledge(
                 StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
             ),
-            vector_store=store,
+            vector_store_factory=lambda: store,
         ).delete(reference)
 
     assert store.records == {}
@@ -144,10 +144,10 @@ def test_delete_missing_data_is_idempotent_and_retry_converges() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
     )
     use_case.delete(reference)
     use_case.delete(reference)

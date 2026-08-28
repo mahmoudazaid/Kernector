@@ -24,6 +24,7 @@ from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
     KnowledgeLoadError,
+    PartialDocumentOperationError,
 )
 from infrastructure.config import Settings
 
@@ -31,6 +32,7 @@ __all__ = [
     "DocumentOperationError",
     "DocumentUploadError",
     "KnowledgeLoadError",
+    "PartialDocumentOperationError",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
     "available_providers",

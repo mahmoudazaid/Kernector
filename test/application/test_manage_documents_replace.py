@@ -79,13 +79,13 @@ def _seed_ready(
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V1)),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
             store,
             chunk_size=10,
             chunk_overlap=2,
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
     )
@@ -98,10 +98,10 @@ def test_replace_rejects_unknown_id() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
     )
@@ -121,10 +121,10 @@ def test_replace_preserves_source_id_and_updates_metadata() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("should-not-be-used"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
     )
@@ -151,10 +151,10 @@ def test_replace_restores_previous_row_when_mutation_did_not_start() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             FailingEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
     )
@@ -193,10 +193,10 @@ def test_replace_records_degraded_when_mutation_may_have_started() -> None:
     use_case = ManageUploadedDocuments(
         catalog=catalog,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
-        ingest=IngestKnowledge(
+        ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
-        vector_store=store,
+        vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
     )

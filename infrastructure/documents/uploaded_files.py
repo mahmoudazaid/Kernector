@@ -77,13 +77,41 @@ def _extract_pdf(path: Path) -> tuple[str, int]:
     return _PAGE_SEPARATOR.join(page for page in pages if page), len(pages)
 
 
-def extract_document(path: Path, *, source_id: str) -> SourceDocument:
+def _content_format_for(name: str, *, described_as: object) -> str:
+    """Map a file name's suffix to its canonical `content_format`.
+
+    Split out so a caller can reject an unsupported type from the name alone,
+    before any bytes reach the disk.
+
+    Raises:
+        UnsupportedDocumentError: If the suffix is outside the supported set.
+    """
+    suffix = Path(name).suffix.lower()
+    if suffix not in _FORMAT_BY_SUFFIX:
+        described = repr(suffix) if suffix else "no suffix"
+        raise UnsupportedDocumentError(
+            f"{described_as}: unsupported document type ({described}); supported "
+            f"types are {', '.join(sorted(SUPPORTED_SUFFIXES))}"
+        )
+    return _FORMAT_BY_SUFFIX[suffix]
+
+
+def extract_document(
+    path: Path,
+    *,
+    source_id: str,
+    source_type: SourceType = SourceType.KNOWLEDGE_DOCUMENT,
+) -> SourceDocument:
     """Normalize one supported local file into a SourceDocument.
 
     Args:
         path (Path): Local file to read.
         source_id (str): Caller-supplied source identity. Never derived from the
             file name, path, or content.
+        source_type (SourceType): The caller's source kind. Load-bearing, not
+            cosmetic: chunks are stored and deleted under the complete
+            reference, so a hardcoded kind here would orphan every chunk whose
+            catalog row is filed under a different one.
 
     Returns:
         SourceDocument: The file's text with its provenance metadata.
@@ -95,15 +123,8 @@ def extract_document(path: Path, *, source_id: str) -> SourceDocument:
             extractable text.
     """
     # Identity first: a caller contract violation must fail without any I/O.
-    reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
-    suffix = path.suffix.lower()
-    if suffix not in _FORMAT_BY_SUFFIX:
-        described = repr(suffix) if suffix else "no suffix"
-        raise UnsupportedDocumentError(
-            f"{path}: unsupported document type ({described}); supported types "
-            f"are {', '.join(sorted(SUPPORTED_SUFFIXES))}"
-        )
-    content_format = _FORMAT_BY_SUFFIX[suffix]
+    reference = SourceReference(source_id, source_type)
+    content_format = _content_format_for(path.name, described_as=path)
     page_count: int | None = None
     try:
         if content_format == _PDF:
@@ -140,6 +161,9 @@ class UploadedFileExtractor:
     Sanitizes the client file name to a basename, writes bytes into a managed
     temporary directory under that name, and delegates to ``extract_document``.
     The temporary directory is always removed.
+
+    Name and suffix are checked before the payload is written, so a rejected
+    upload never reaches the disk at all.
     """
 
     def extract(
@@ -152,7 +176,8 @@ class UploadedFileExtractor:
 
         Args:
             payload (UploadPayload): Client file name and raw bytes.
-            reference (SourceReference): Caller-owned source identity.
+            reference (SourceReference): Caller-owned source identity, whose
+                ``source_type`` is carried through to the extracted document.
 
         Returns:
             SourceDocument: Normalized document for ingestion.
@@ -167,7 +192,12 @@ class UploadedFileExtractor:
             raise UnsupportedDocumentError(
                 "upload file name must include a basename after sanitization"
             )
+        _content_format_for(safe_name, described_as=safe_name)
         with TemporaryDirectory() as directory:
             path = Path(directory) / safe_name
             path.write_bytes(bytes(payload.content))
-            return extract_document(path, source_id=reference.source_id)
+            return extract_document(
+                path,
+                source_id=reference.source_id,
+                source_type=reference.source_type,
+            )
