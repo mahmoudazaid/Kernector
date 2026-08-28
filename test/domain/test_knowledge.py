@@ -11,7 +11,6 @@ from domain.knowledge import (
     SourceMetadata,
     SourceReference,
     SourceType,
-    Ticket,
 )
 
 BLANK = ["", "   ", "\n"]
@@ -28,9 +27,14 @@ def chunk(source_id: str = "doc-1", index: int = 0) -> DocumentChunk:
     return DocumentChunk(metadata(source_id), index, "chunk text")
 
 
-def test_valid_ticket_is_accepted() -> None:
-    ticket = Ticket("KRN-1", "As a QA analyst I want ...", title="Login")
-    assert ticket.reference == SourceReference("KRN-1", SourceType.TICKET)
+def test_ticket_is_not_defined_in_domain_knowledge() -> None:
+    import domain.knowledge as knowledge
+
+    assert not hasattr(knowledge, "Ticket")
+
+
+def test_source_type_has_no_ticket_member() -> None:
+    assert "TICKET" not in SourceType.__members__
 
 
 def test_valid_source_document_is_accepted() -> None:
@@ -40,32 +44,15 @@ def test_valid_source_document_is_accepted() -> None:
 
 
 @pytest.mark.parametrize("blank", BLANK)
-def test_ticket_rejects_blank_identifier(blank: str) -> None:
-    with pytest.raises(DomainValidationError, match="ticket_id"):
-        Ticket(blank, "content")
-
-
-@pytest.mark.parametrize("blank", BLANK)
 def test_source_document_rejects_blank_identifier(blank: str) -> None:
     with pytest.raises(DomainValidationError, match="source_id"):
         SourceDocument(metadata(blank), "content")
 
 
 @pytest.mark.parametrize("blank", BLANK)
-def test_ticket_rejects_blank_content(blank: str) -> None:
-    with pytest.raises(DomainValidationError, match="content"):
-        Ticket("KRN-1", blank)
-
-
-@pytest.mark.parametrize("blank", BLANK)
 def test_source_document_rejects_blank_content(blank: str) -> None:
     with pytest.raises(DomainValidationError, match="content"):
         SourceDocument(metadata(), blank)
-
-
-def test_none_identifier_raises_domain_error() -> None:
-    with pytest.raises(DomainValidationError):
-        Ticket(None, "content")  # type: ignore[arg-type]
 
 
 def test_source_reference_rejects_raw_string_source_type() -> None:
@@ -121,9 +108,9 @@ def test_chunk_rejects_invalid_index(bad_index: object) -> None:
 
 
 def test_entities_are_immutable() -> None:
-    ticket = Ticket("KRN-1", "content")
+    document = SourceDocument(metadata(), "content")
     with pytest.raises(AttributeError):
-        ticket.content = "changed"  # type: ignore[misc]
+        document.content = "changed"  # type: ignore[misc]
 
 
 def test_references_deduplicate_by_value() -> None:

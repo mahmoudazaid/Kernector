@@ -179,7 +179,7 @@ def test_every_documented_field_type_round_trips(tmp_path: Path) -> None:
     """Strict reads must not narrow what a legitimately written row can hold."""
     path = tmp_path / "uploads.json"
     document = CatalogDocument(
-        reference=SourceReference("id-round-trip", SourceType.TICKET),
+        reference=SourceReference("id-round-trip", SourceType.KNOWLEDGE_DOCUMENT),
         file_name="guide.md",
         title="Guide",
         content_format="markdown",
