@@ -10,7 +10,6 @@ from domain.knowledge import (
     SourceMetadata,
     SourceReference,
     SourceType,
-    Ticket,
 )
 from test.doubles import (
     EmbeddingUnavailable,
@@ -118,32 +117,6 @@ def test_the_same_source_id_under_two_source_types_is_not_a_duplicate() -> None:
     # 3 chunks each, and the two references are distinct, so nothing collides.
     assert response.chunk_count == 6
     assert len(store.records) == 6
-
-
-def test_a_non_empty_tickets_collection_is_rejected() -> None:
-    store = InMemoryVectorStore()
-
-    with pytest.raises(ApplicationValidationError, match="tickets"):
-        _use_case(store).execute(
-            IngestRequest(tickets=[Ticket("KRN-1", "ticket body")])
-        )
-
-    assert store.records == {}
-
-
-def test_tickets_are_rejected_before_any_accompanying_document_is_stored() -> None:
-    """Never silently dropped: a partial ingest would be worse than an error."""
-    store = InMemoryVectorStore()
-
-    with pytest.raises(ApplicationValidationError, match="tickets"):
-        _use_case(store).execute(
-            IngestRequest(
-                documents=[_document()],
-                tickets=[Ticket("KRN-1", "ticket body")],
-            )
-        )
-
-    assert store.records == {}
 
 
 def test_re_ingesting_with_fewer_chunks_removes_the_stale_ones() -> None:

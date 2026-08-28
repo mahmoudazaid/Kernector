@@ -192,35 +192,26 @@ class AskResponse:
 
 @dataclass(frozen=True, slots=True)
 class IngestRequest:
-    """Input for ingesting knowledge sources (stub-friendly).
+    """Input for ingesting knowledge sources.
 
     Attributes:
         documents (Sequence[SourceDocument]): Knowledge documents to ingest.
-        tickets (Sequence[Ticket]): Tickets to ingest.
     """
 
     documents: Sequence[SourceDocument] = ()
-    tickets: Sequence[Ticket] = ()
 
     def __post_init__(self) -> None:
         documents = _require_sequence(self.documents, "documents")
-        tickets = _require_sequence(self.tickets, "tickets")
         for item in documents:
             if not isinstance(item, SourceDocument):
                 raise ApplicationValidationError(
                     f"documents items must be SourceDocument, got {item!r}"
                 )
-        for item in tickets:
-            if not isinstance(item, Ticket):
-                raise ApplicationValidationError(
-                    f"tickets items must be Ticket, got {item!r}"
-                )
-        if not documents and not tickets:
+        if not documents:
             raise ApplicationValidationError(
-                "documents or tickets must contain at least one item"
+                "documents must contain at least one item"
             )
         object.__setattr__(self, "documents", tuple(documents))
-        object.__setattr__(self, "tickets", tuple(tickets))
 
 
 @dataclass(frozen=True, slots=True)
