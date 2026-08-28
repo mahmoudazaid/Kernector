@@ -58,18 +58,73 @@ def test_citation_constructs() -> None:
     assert citation.chunk_index == 0
 
 
+def test_ask_request_has_no_ticket_field() -> None:
+    assert "ticket" not in AskRequest.__dataclass_fields__
+
+
+def test_ask_request_defaults_grounding_references_empty() -> None:
+    request = AskRequest(prompt_key="default", query="What applies?")
+    assert request.grounding_references == ()
+
+
+def test_ask_request_accepts_grounding_references() -> None:
+    references = [_reference("doc-1"), _reference("doc-2")]
+    request = AskRequest(
+        prompt_key="default",
+        query="What applies?",
+        grounding_references=references,
+    )
+    assert request.grounding_references == tuple(references)
+
+
+def test_ask_request_rejects_non_sequence_grounding_references() -> None:
+    with pytest.raises(ApplicationValidationError, match="grounding_references"):
+        AskRequest(
+            prompt_key="default",
+            query="What applies?",
+            grounding_references=_reference(),  # type: ignore[arg-type]
+        )
+
+
+def test_ask_request_rejects_non_reference_grounding_item() -> None:
+    with pytest.raises(
+        ApplicationValidationError,
+        match="grounding_references items must be SourceReference",
+    ):
+        AskRequest(
+            prompt_key="default",
+            query="What applies?",
+            grounding_references=[_document()],  # type: ignore[list-item]
+        )
+
+
+def test_ask_request_grounding_references_are_independent_of_input_list() -> None:
+    references = [_reference()]
+    request = AskRequest(
+        prompt_key="default",
+        query="What applies?",
+        grounding_references=references,
+    )
+    references.clear()
+    assert request.grounding_references == (_reference(),)
+
+
 def test_ask_request_constructs() -> None:
     history = [Message(role="user", content="earlier")]
+    references = [_reference("doc-1"), _reference("doc-2")]
     request = AskRequest(
         "default",
-        "Analyze this ticket",
-        ticket=_ticket(),
+        "What applies?",
+        grounding_references=references,
         history=history,
         retrieval_limit=5,
     )
     assert request.prompt_key == "default"
-    assert request.query == "Analyze this ticket"
-    assert request.ticket == _ticket()
+    assert request.query == "What applies?"
+    assert request.grounding_references == (
+        _reference("doc-1"),
+        _reference("doc-2"),
+    )
     assert request.history == (Message(role="user", content="earlier"),)
     assert request.retrieval_limit == 5
 
@@ -212,11 +267,6 @@ def test_invoke_tool_request_rejects_invalid_argument_keys(bad_key: object) -> N
         InvokeToolRequest("search", {bad_key: "v"})  # type: ignore[dict-item]
 
 
-def test_ask_request_rejects_non_ticket() -> None:
-    with pytest.raises(ApplicationValidationError, match="ticket"):
-        AskRequest("default", "query", ticket=_document())  # type: ignore[arg-type]
-
-
 def test_ask_request_rejects_non_message_history_item() -> None:
     with pytest.raises(ApplicationValidationError, match="history items"):
         AskRequest("default", "query", history=["hi"])  # type: ignore[list-item]
@@ -333,7 +383,7 @@ def test_contracts_serialize_with_asdict() -> None:
     ask_request = AskRequest(
         "default",
         "query",
-        ticket=_ticket(),
+        grounding_references=[_reference()],
         history=[Message(role="user", content="hi")],
         retrieval_limit=3,
     )
@@ -347,8 +397,16 @@ def test_contracts_serialize_with_asdict() -> None:
     tool_request = InvokeToolRequest("search", {"q": "login"})
     tool_response = _tool_output()
 
-    assert asdict(ask_request)["retrieval_limit"] == 3
-    assert asdict(ask_request)["history"] == ({"role": "user", "content": "hi"},)
+    ask_dict = asdict(ask_request)
+    assert "ticket" not in ask_dict
+    assert ask_dict["retrieval_limit"] == 3
+    assert ask_dict["history"] == ({"role": "user", "content": "hi"},)
+    assert ask_dict["grounding_references"] == (
+        {
+            "source_id": "doc-1",
+            "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+        },
+    )
     assert asdict(ask_response)["citations"][0]["quote"] == "relevant excerpt"
     assert asdict(ask_response)["tool_outputs"] == (
         {"tool_name": "search", "result": "2 hits"},
