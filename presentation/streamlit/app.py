@@ -25,7 +25,12 @@ from presentation.streamlit.components import (
     render_reply,
     render_run_meta,
 )
-from presentation.streamlit.upload_ingest import submit_uploaded_document
+from presentation.streamlit.upload_ingest import (
+    create_new_document,
+    delete_existing_document,
+    load_uploaded_documents,
+    replace_existing_document,
+)
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
 
@@ -198,39 +203,121 @@ def _handle_input(
 
 
 def _render_upload_ingest(settings: Settings) -> None:
-    """Collect one upload and source ID, then ingest through composition.
+    """List uploaded documents and support create, explicit replace, and delete.
 
     The in-progress flag is a submit-guard for ordinary repeated clicks, not a
     concurrency primitive: a Streamlit rerun can interrupt the prior script run.
-    Per-source delete/upsert in ``IngestKnowledge`` still tolerates a repeated
-    ingest if one slips through.
     """
-    st.subheader("Upload document")
-    with st.form("document_upload"):
+    st.subheader("Uploaded documents")
+    try:
+        documents = list(load_uploaded_documents(settings))
+    except Exception as error:  # noqa: BLE001 — show list failures without traceback
+        st.error(f"Could not load uploaded documents: {error}")
+        documents = []
+
+    if documents:
+        labels = {
+            f"{doc.file_name} · {doc.status.value} · {doc.reference.source_id}": doc
+            for doc in documents
+        }
+        selected_label = st.selectbox(
+            "Managed documents",
+            options=list(labels.keys()),
+            help="Select a document to replace or delete. Matching filenames never "
+            "replace automatically — choose Replace explicitly.",
+        )
+        selected = labels[selected_label]
+        st.caption(
+            f"Status: {selected.status.value} · chunks: {selected.chunk_count} · "
+            f"uploaded: {selected.uploaded_at.isoformat()}"
+        )
+        if selected.error:
+            st.warning(selected.error)
+    else:
+        selected = None
+        st.caption(
+            "No uploaded documents yet. Seed-corpus documents are managed separately "
+            "and do not appear here."
+        )
+
+    st.subheader("Upload new document")
+    st.caption("A system-managed source ID is assigned automatically.")
+    with st.form("document_upload_new"):
         uploaded = st.file_uploader(
             "Document",
             type=sorted(suffix.lstrip(".") for suffix in SUPPORTED_UPLOAD_SUFFIXES),
             accept_multiple_files=False,
+            key="upload_new_file",
         )
-        source_id = st.text_input("Source ID")
-        submitted = st.form_submit_button(
-            "Ingest",
+        submitted_new = st.form_submit_button(
+            "Upload new",
             disabled=bool(st.session_state.get("ingest_in_progress")),
         )
-    if not submitted:
+    if submitted_new:
+        result = create_new_document(
+            settings,
+            filename=uploaded.name if uploaded is not None else None,
+            content=uploaded.getvalue() if uploaded is not None else None,
+            session=st.session_state,
+        )
+        if result.ok:
+            st.success(result.message)
+            if result.should_rerun:
+                st.rerun()
+        else:
+            st.error(result.message)
+
+    if selected is None:
         return
 
-    result = submit_uploaded_document(
-        settings,
-        filename=uploaded.name if uploaded is not None else None,
-        content=uploaded.getvalue() if uploaded is not None else None,
-        source_id=source_id,
-        session=st.session_state,
+    st.subheader("Replace selected document")
+    st.caption("Keeps the same source ID and replaces stored chunks.")
+    with st.form("document_upload_replace"):
+        replacement = st.file_uploader(
+            "Replacement document",
+            type=sorted(suffix.lstrip(".") for suffix in SUPPORTED_UPLOAD_SUFFIXES),
+            accept_multiple_files=False,
+            key="upload_replace_file",
+        )
+        submitted_replace = st.form_submit_button(
+            "Replace",
+            disabled=bool(st.session_state.get("ingest_in_progress")),
+        )
+    if submitted_replace:
+        result = replace_existing_document(
+            settings,
+            reference=selected.reference,
+            filename=replacement.name if replacement is not None else None,
+            content=replacement.getvalue() if replacement is not None else None,
+            session=st.session_state,
+        )
+        if result.ok:
+            st.success(result.message)
+            if result.should_rerun:
+                st.rerun()
+        else:
+            st.error(result.message)
+
+    st.subheader("Delete selected document")
+    confirm = st.checkbox(
+        f"Confirm delete of {selected.file_name}",
+        key=f"confirm_delete_{selected.reference.source_id}",
     )
-    if result.ok:
-        st.success(result.message)
-    else:
-        st.error(result.message)
+    if st.button(
+        "Delete",
+        disabled=not confirm or bool(st.session_state.get("ingest_in_progress")),
+    ):
+        result = delete_existing_document(
+            settings,
+            reference=selected.reference,
+            session=st.session_state,
+        )
+        if result.ok:
+            st.success(result.message)
+            if result.should_rerun:
+                st.rerun()
+        else:
+            st.error(result.message)
 
 
 def render() -> None:

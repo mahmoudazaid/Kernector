@@ -20,6 +20,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("CHROMA_PERSIST_PATH", raising=False)
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
+    monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
     return monkeypatch
 
 
@@ -108,4 +109,26 @@ def test_blank_knowledge_corpus_path_is_rejected(
 ) -> None:
     env.setenv("KNOWLEDGE_CORPUS_PATH", raw)
     with pytest.raises(ValueError, match="KNOWLEDGE_CORPUS_PATH"):
+        load_settings()
+
+
+def test_document_catalog_defaults(env: pytest.MonkeyPatch) -> None:
+    catalog = load_settings().document_catalog
+    assert catalog.path == PROJECT_ROOT / "data" / "catalog" / "uploads.json"
+
+
+def test_document_catalog_absolute_path_is_preserved(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "uploads.json"
+    env.setenv("DOCUMENT_CATALOG_PATH", str(target))
+    assert load_settings().document_catalog.path == target
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
+def test_blank_document_catalog_path_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("DOCUMENT_CATALOG_PATH", raw)
+    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_PATH"):
         load_settings()

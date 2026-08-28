@@ -4,7 +4,7 @@ import pytest
 
 from application.contracts import IngestRequest
 from application.errors import ApplicationValidationError
-from application.ingest_knowledge import IngestKnowledge
+from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from domain.knowledge import (
     SourceDocument,
     SourceMetadata,
@@ -229,7 +229,9 @@ def test_an_embedding_failure_preserves_previously_stored_data() -> None:
         chunk_size=30,
         chunk_overlap=0,
     )
-    with pytest.raises(EmbeddingUnavailable):
+    with pytest.raises(IngestFailure) as raised:
         failing.execute(IngestRequest(documents=[_document()]))
 
+    assert raised.value.vector_mutation_started is False
+    assert isinstance(raised.value.__cause__, EmbeddingUnavailable)
     assert store.records == before

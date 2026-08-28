@@ -6,16 +6,25 @@ from pathlib import Path
 
 from application.ask_service import AskService
 from application.contracts import IngestRequest, IngestResponse
-from application.errors import ConfigurationError
-from application.ingest_knowledge import IngestKnowledge
-from composition.errors import DocumentUploadError, KnowledgeLoadError
+from application.errors import ApplicationValidationError, ConfigurationError
+from application.ingest_knowledge import IngestFailure, IngestKnowledge
+from application.manage_documents import (
+    DocumentManagementError,
+    ManageUploadedDocuments,
+    PartialDeleteFailure,
+    PartialReplaceFailure,
+    UnknownDocumentError,
+)
+from composition.errors import DocumentOperationError, DocumentUploadError, KnowledgeLoadError
 from domain.errors import DomainValidationError
-from domain.knowledge import SourceDocument
-from domain.ports import ChatModel, EmbeddingModel, PromptRepository, VectorStore
+from domain.knowledge import CatalogDocument, SourceDocument, SourceReference, UploadPayload
+from domain.ports import ChatModel, DocumentCatalog, EmbeddingModel, PromptRepository, VectorStore
+from infrastructure.catalog.json_catalog import CatalogError, JsonDocumentCatalog
 from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
+    UploadedFileExtractor,
     extract_document,
 )
 from infrastructure.embeddings.openrouter import (
@@ -196,6 +205,111 @@ def ingest_uploaded_document(
                 f"({settings.chroma.persist_path}) and ingest again."
             )
         raise DocumentUploadError(message) from error
+    except IngestFailure as error:
+        cause = error.__cause__
+        if isinstance(cause, ChromaStoreError):
+            message = str(cause)
+            if "dimension" in message.lower():
+                message = (
+                    "The knowledge store was built with a different embedding size "
+                    "than the current model. Delete the Chroma data directory "
+                    f"({settings.chroma.persist_path}) and ingest again."
+                )
+            raise DocumentUploadError(message) from error
+        raise DocumentUploadError(str(error)) from error
+
+
+def build_document_catalog(settings: Settings) -> DocumentCatalog:
+    """Build a fresh JSON catalog adapter for the configured path."""
+    return JsonDocumentCatalog(settings.document_catalog.path)
+
+
+def build_document_extractor() -> UploadedFileExtractor:
+    """Build the upload-payload extractor adapter."""
+    return UploadedFileExtractor()
+
+
+def build_manage_uploaded_documents(settings: Settings) -> ManageUploadedDocuments:
+    """Wire create/replace/delete/list for uploaded documents."""
+    vector_store = build_vector_store(settings)
+    return ManageUploadedDocuments(
+        catalog=build_document_catalog(settings),
+        extractor=build_document_extractor(),
+        ingest=build_ingest_knowledge(settings),
+        vector_store=vector_store,
+    )
+
+
+def list_uploaded_documents(settings: Settings) -> tuple[CatalogDocument, ...]:
+    """Return every uploaded-document catalog row."""
+    try:
+        return tuple(build_manage_uploaded_documents(settings).list())
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+
+
+def create_uploaded_document(
+    settings: Settings, payload: UploadPayload
+) -> CatalogDocument:
+    """Create a new uploaded document with a system-managed source ID."""
+    try:
+        return build_manage_uploaded_documents(settings).create(payload)
+    except DocumentExtractionError as error:
+        raise DocumentUploadError(str(error)) from error
+    except DomainValidationError as error:
+        raise DocumentUploadError(str(error)) from error
+    except IngestFailure as error:
+        raise DocumentUploadError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    except (ApplicationValidationError, ConfigurationError):
+        raise
+    except Exception as error:
+        raise DocumentUploadError(str(error)) from error
+
+
+def replace_uploaded_document(
+    settings: Settings,
+    reference: SourceReference,
+    payload: UploadPayload,
+) -> CatalogDocument:
+    """Replace an existing uploaded document under the same source ID."""
+    try:
+        return build_manage_uploaded_documents(settings).replace(reference, payload)
+    except UnknownDocumentError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentExtractionError as error:
+        raise DocumentUploadError(str(error)) from error
+    except DomainValidationError as error:
+        raise DocumentUploadError(str(error)) from error
+    except (IngestFailure, PartialReplaceFailure) as error:
+        raise DocumentOperationError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    except (ApplicationValidationError, ConfigurationError):
+        raise
+    except Exception as error:
+        raise DocumentUploadError(str(error)) from error
+
+
+def delete_uploaded_document(
+    settings: Settings, reference: SourceReference
+) -> None:
+    """Delete vector chunks then the catalog row for ``reference``."""
+    try:
+        build_manage_uploaded_documents(settings).delete(reference)
+    except PartialDeleteFailure as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except ChromaStoreError as error:
+        raise DocumentOperationError(str(error)) from error
 
 
 def build_prompt_repository() -> PromptRepository:
