@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from application.errors import ApplicationValidationError
-from domain.knowledge import SourceDocument, SourceReference, Ticket
+from domain.knowledge import SourceDocument, SourceReference
 from domain.models import Message
 
 
@@ -130,24 +130,31 @@ class AskRequest:
     Attributes:
         prompt_key (str): Identifier of the selected prompt (not its body).
         query (str): User question or analysis input.
-        ticket (Ticket | None): Optional ticket to ground the request.
+        grounding_references (Sequence[SourceReference]): Optional provenance
+            identifiers supplied by callers or domain packs; the generic
+            contract does not interpret their business meaning.
         history (Sequence[Message]): Prior conversation turns.
         retrieval_limit (int | None): Optional positive limit for retrieval.
     """
 
     prompt_key: str
     query: str
-    ticket: Ticket | None = None
+    grounding_references: Sequence[SourceReference] = ()
     history: Sequence[Message] = ()
     retrieval_limit: int | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.prompt_key, "prompt_key")
         _require_text(self.query, "query")
-        if self.ticket is not None and not isinstance(self.ticket, Ticket):
-            raise ApplicationValidationError(
-                f"ticket must be a Ticket, got {self.ticket!r}"
-            )
+        grounding_references = _require_sequence(
+            self.grounding_references, "grounding_references"
+        )
+        for item in grounding_references:
+            if not isinstance(item, SourceReference):
+                raise ApplicationValidationError(
+                    f"grounding_references items must be SourceReference, got {item!r}"
+                )
+        object.__setattr__(self, "grounding_references", tuple(grounding_references))
         history = _require_sequence(self.history, "history")
         for item in history:
             if not isinstance(item, Message):
