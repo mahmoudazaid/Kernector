@@ -139,7 +139,7 @@ def test_create_partial_failure_is_actionable_without_leaking_details(
 
     monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
 
-    with caplog.at_level("ERROR"):
+    with caplog.at_level("DEBUG"):
         result = upload_mod.create_new_document(
             object(), filename="guide.txt", content=b"hello"
         )
@@ -152,7 +152,11 @@ def test_create_partial_failure_is_actionable_without_leaking_details(
     )
     assert "/srv/kernector/data/uploads.json" not in result.message
     assert "sk-live-abc123" not in result.message
-    assert any(record.exc_info for record in caplog.records)
+    # Composition already logged the safe fields; re-logging here would print
+    # the exception chain, which is where the credential and the path live.
+    assert "/srv/kernector/data/uploads.json" not in caplog.text
+    assert "sk-live-abc123" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 def test_replace_preserves_reference_in_success_message(
