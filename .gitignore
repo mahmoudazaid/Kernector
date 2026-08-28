@@ -44,3 +44,4 @@ learning/
 # Generated artifacts
 output/
 data/chroma/
+data/catalog/

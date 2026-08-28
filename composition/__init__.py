@@ -5,19 +5,30 @@ from composition.container import (
     available_providers,
     build_ask_service,
     build_chat_model,
+    build_document_catalog,
     build_embedding_model,
     build_ingest_knowledge,
+    build_manage_uploaded_documents,
     build_prompt_repository,
     build_vector_store,
+    create_uploaded_document,
+    delete_uploaded_document,
     ingest_uploaded_document,
+    list_uploaded_documents,
     load_knowledge_documents,
     load_runtime_settings,
     probe_ollama,
+    replace_uploaded_document,
 )
-from composition.errors import DocumentUploadError, KnowledgeLoadError
+from composition.errors import (
+    DocumentOperationError,
+    DocumentUploadError,
+    KnowledgeLoadError,
+)
 from infrastructure.config import Settings
 
 __all__ = [
+    "DocumentOperationError",
     "DocumentUploadError",
     "KnowledgeLoadError",
     "SUPPORTED_UPLOAD_SUFFIXES",
@@ -25,12 +36,18 @@ __all__ = [
     "available_providers",
     "build_ask_service",
     "build_chat_model",
+    "build_document_catalog",
     "build_embedding_model",
     "build_ingest_knowledge",
+    "build_manage_uploaded_documents",
     "build_prompt_repository",
     "build_vector_store",
+    "create_uploaded_document",
+    "delete_uploaded_document",
     "ingest_uploaded_document",
+    "list_uploaded_documents",
     "load_knowledge_documents",
     "load_runtime_settings",
     "probe_ollama",
+    "replace_uploaded_document",
 ]
