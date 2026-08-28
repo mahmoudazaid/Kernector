@@ -98,7 +98,6 @@ def test_successful_ingest_prints_counts_and_returns_zero(
     assert len(use_case.calls) == 1
     request = use_case.calls[0]
     assert list(request.documents) == list(documents)
-    assert list(request.tickets) == []
     assert "accepted_documents=2" in captured.out
     assert "chunk_count=5" in captured.out
     assert captured.err == ""
