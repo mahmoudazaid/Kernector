@@ -25,7 +25,13 @@ from presentation.streamlit.components import (
     render_reply,
     render_run_meta,
 )
-from presentation.streamlit.upload_ingest import submit_uploaded_document
+from presentation.streamlit.upload_ingest import (
+    UploadIngestResult,
+    create_new_document,
+    delete_existing_document,
+    load_uploaded_documents,
+    replace_existing_document,
+)
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
 
@@ -197,45 +203,145 @@ def _handle_input(
     })
 
 
-def _render_upload_ingest(settings: Settings) -> None:
-    """Collect one upload and source ID, then ingest through composition.
+_ACTION_MESSAGE_KEY = "document_action_message"
 
-    The in-progress flag is a submit-guard for ordinary repeated clicks, not a
-    concurrency primitive: a Streamlit rerun can interrupt the prior script run.
-    Per-source delete/upsert in ``IngestKnowledge`` still tolerates a repeated
-    ingest if one slips through.
+
+def _apply_action_result(result: UploadIngestResult) -> None:
+    """Show one action's outcome, surviving the rerun that follows a success.
+
+    ``st.rerun`` aborts the current script run, and the frontend drops the
+    elements that run had already written — so a success banner rendered just
+    before it never reaches the reader. The message is parked in session state
+    instead and drawn at the top of the next run.
     """
-    st.subheader("Upload document")
-    with st.form("document_upload"):
-        uploaded = st.file_uploader(
-            "Document",
-            type=sorted(suffix.lstrip(".") for suffix in SUPPORTED_UPLOAD_SUFFIXES),
-            accept_multiple_files=False,
+    if not result.ok:
+        st.error(result.message)
+        return
+    if result.should_rerun:
+        st.session_state[_ACTION_MESSAGE_KEY] = result.message
+        st.rerun()  # Raises; nothing after this line runs.
+        return
+    st.success(result.message)
+
+
+def _render_upload_ingest(settings: Settings) -> None:
+    """List uploaded documents and support create, explicit replace, and delete."""
+    st.subheader("Uploaded documents")
+    completed = st.session_state.pop(_ACTION_MESSAGE_KEY, None)
+    if completed:
+        st.success(completed)
+
+    listing = load_uploaded_documents(settings)
+    if listing.error:
+        st.error(listing.error)
+    documents = list(listing.documents)
+
+    selected = None
+    if documents:
+        labels = {
+            f"{doc.file_name} · {doc.status.value} · {doc.reference.source_id}": doc
+            for doc in documents
+        }
+        selected_label = st.selectbox(
+            "Managed documents",
+            options=list(labels.keys()),
+            help="Catalog identity is the source ID, not the file name. Matching "
+            "names stay separate documents until you explicitly Replace.",
         )
-        source_id = st.text_input("Source ID")
-        submitted = st.form_submit_button(
-            "Ingest",
-            disabled=bool(st.session_state.get("ingest_in_progress")),
+        selected = labels[selected_label]
+        st.caption(
+            f"Status: {selected.status.value} · chunks: {selected.chunk_count} · "
+            f"uploaded: {selected.uploaded_at.isoformat()}"
         )
-    if not submitted:
+        if selected.error:
+            st.warning(selected.error)
+    else:
+        st.caption(
+            "No uploaded documents yet. Seed-corpus documents are managed separately "
+            "and do not appear here."
+        )
+
+    action_options = ["Upload new"]
+    if selected is not None:
+        action_options.extend(["Replace selected", "Delete selected"])
+    action = st.radio(
+        "Document action",
+        options=action_options,
+        horizontal=True,
+        help="Upload new always creates a new source ID. Replace only runs when "
+        "you choose Replace selected — the app never treats a matching file name "
+        "as the same document.",
+    )
+
+    if action == "Upload new":
+        st.caption("A system-managed source ID is assigned automatically.")
+        with st.form("document_upload_new"):
+            uploaded = st.file_uploader(
+                "Document",
+                type=sorted(
+                    suffix.lstrip(".") for suffix in SUPPORTED_UPLOAD_SUFFIXES
+                ),
+                accept_multiple_files=False,
+                key="upload_new_file",
+            )
+            submitted_new = st.form_submit_button("Upload new")
+        if submitted_new:
+            _apply_action_result(
+                create_new_document(
+                    settings,
+                    filename=uploaded.name if uploaded is not None else None,
+                    content=uploaded.getvalue() if uploaded is not None else None,
+                )
+            )
         return
 
-    result = submit_uploaded_document(
-        settings,
-        filename=uploaded.name if uploaded is not None else None,
-        content=uploaded.getvalue() if uploaded is not None else None,
-        source_id=source_id,
-        session=st.session_state,
+    if selected is None:
+        return
+
+    if action == "Replace selected":
+        st.caption(
+            f"Keeps source ID {selected.reference.source_id} and replaces "
+            "stored chunks. File name is ignored for identity."
+        )
+        with st.form("document_upload_replace"):
+            replacement = st.file_uploader(
+                "Replacement document",
+                type=sorted(
+                    suffix.lstrip(".") for suffix in SUPPORTED_UPLOAD_SUFFIXES
+                ),
+                accept_multiple_files=False,
+                key="upload_replace_file",
+            )
+            submitted_replace = st.form_submit_button("Replace")
+        if submitted_replace:
+            _apply_action_result(
+                replace_existing_document(
+                    settings,
+                    reference=selected.reference,
+                    filename=replacement.name if replacement is not None else None,
+                    content=(
+                        replacement.getvalue() if replacement is not None else None
+                    ),
+                )
+            )
+        return
+
+    st.caption(
+        f"Removes catalog row and vector chunks for {selected.file_name} "
+        f"({selected.reference.source_id})."
     )
-    if result.ok:
-        st.success(result.message)
-    else:
-        st.error(result.message)
+    confirm = st.checkbox(
+        f"Confirm delete of {selected.file_name}",
+        key=f"confirm_delete_{selected.reference.source_id}",
+    )
+    if st.button("Delete", disabled=not confirm):
+        _apply_action_result(
+            delete_existing_document(settings, reference=selected.reference)
+        )
 
 
 def render() -> None:
     st.session_state.setdefault("messages", [])
-    st.session_state.setdefault("ingest_in_progress", False)
 
     settings = _settings()
     repository = _prompt_repository()

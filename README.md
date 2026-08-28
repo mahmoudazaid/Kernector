@@ -6,15 +6,18 @@
 uv run streamlit run main.py
 ```
 
-## Upload a document into the knowledge base
+## Upload and manage documents
 
 1. Start the app with the command above.
-2. Choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
-3. Enter a stable, unique source ID (identity is never taken from the file name).
-4. Submit **Ingest** and read the accepted-document and chunk counts.
-5. Re-uploading with the same source ID replaces that source's chunks; a new source ID keeps a separate source even when the file names match.
+2. Under **Upload new document**, choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
+3. Submit **Upload new**. The app assigns a system-managed UUID source ID (never derived from the file name). Matching filenames create separate documents.
+4. Under **Uploaded documents**, select a row to inspect status, chunk count, and the diagnostic source ID.
+5. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.
+6. To remove a document, confirm and click **Delete** (vector chunks first, then the catalog row).
 
-While ingestion is running, the Ingest button stays disabled so a repeated click in the same session is rejected before another run starts.
+Upload catalog metadata is stored at `data/catalog/uploads.json` by default (`DOCUMENT_CATALOG_PATH`). Seed-corpus documents remain separate and do not appear in this list.
+
+Create, replace, and delete run to completion before the page refreshes, and the outcome appears above the document list on the refreshed page. A failure that left chunks or a catalog row behind says so and names the action to retry; one that changed nothing says only what went wrong.
 
 If ingest fails because the store expects a different embedding size, remove the local Chroma directory and try again:
 
