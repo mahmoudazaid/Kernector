@@ -11,6 +11,7 @@ from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.manage_documents import (
     DocumentManagementError,
     ManageUploadedDocuments,
+    PartialCreateFailure,
     PartialDeleteFailure,
     PartialReplaceFailure,
     UnknownDocumentError,
@@ -277,13 +278,22 @@ def list_uploaded_documents(settings: Settings) -> tuple[CatalogDocument, ...]:
 def create_uploaded_document(
     settings: Settings, payload: UploadPayload
 ) -> CatalogDocument:
-    """Create a new uploaded document with a system-managed source ID."""
+    """Create a new uploaded document with a system-managed source ID.
+
+    Raises:
+        PartialDocumentOperationError: The upload failed and its catalog status
+            could not be written, so a stale row may be visible.
+        DocumentUploadError: The file could not be extracted or ingested.
+        DocumentOperationError: The catalog could not be read or written.
+    """
     try:
         return build_manage_uploaded_documents(settings).create(payload)
     except DocumentExtractionError as error:
         raise DocumentUploadError(str(error)) from error
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
+    except PartialCreateFailure as error:
+        raise PartialDocumentOperationError(str(error)) from error
     except IngestFailure as error:
         raise _upload_error_from_ingest_failure(settings, error) from error
     except CatalogError as error:

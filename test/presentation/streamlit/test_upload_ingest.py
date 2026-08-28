@@ -126,6 +126,35 @@ def test_typed_create_failures_map_to_specific_messages(
     assert needle in result.message
 
 
+def test_create_partial_failure_is_actionable_without_leaking_details(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The upload half-landed: say what to do, not what the server saw."""
+
+    def _create(*_a: object, **_k: object) -> CatalogDocument:
+        raise PartialDocumentOperationError(
+            "could not write catalog at /srv/kernector/data/uploads.json"
+        )
+
+    monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
+
+    with caplog.at_level("ERROR"):
+        result = upload_mod.create_new_document(
+            object(), filename="guide.txt", content=b"hello"
+        )
+
+    assert result.ok is False
+    assert result.document is None
+    assert "/srv/kernector/data/uploads.json" not in result.message
+    assert "retry or delete" in result.message.lower()
+    assert any(
+        "/srv/kernector/data/uploads.json" in record.getMessage()
+        or "/srv/kernector/data/uploads.json" in str(record.exc_info)
+        for record in caplog.records
+    ) or any(record.exc_info for record in caplog.records)
+
+
 def test_replace_preserves_reference_in_success_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

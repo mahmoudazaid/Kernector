@@ -8,8 +8,12 @@ from datetime import UTC, datetime
 import pytest
 
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
-from application.manage_documents import ManageUploadedDocuments
+from application.manage_documents import (
+    ManageUploadedDocuments,
+    PartialCreateFailure,
+)
 from domain.knowledge import (
+    CatalogDocument,
     CatalogStatus,
     EmbeddedChunk,
     SourceDocument,
@@ -38,6 +42,20 @@ class FailingUpsertStore(InMemoryVectorStore):
 
     def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
         raise RuntimeError("upsert failed")
+
+
+class RecoveryRefusingCatalog(InMemoryDocumentCatalog):
+    """Accepts the pending row, then refuses every later write."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.upserts = 0
+
+    def upsert(self, document: CatalogDocument) -> None:
+        self.upserts += 1
+        if self.upserts > 1:
+            raise RuntimeError("catalog upsert failed")
+        super().upsert(document)
 
 
 def _document_factory(
@@ -136,3 +154,60 @@ def test_create_records_degraded_when_mutation_may_have_started() -> None:
     assert len(rows) == 1
     assert rows[0].status is CatalogStatus.DEGRADED
     assert rows[0].error
+
+
+def test_create_recovery_write_failure_keeps_both_failures() -> None:
+    """Losing the ingest error would hide why the upload failed at all."""
+    catalog = RecoveryRefusingCatalog()
+    store = InMemoryVectorStore()
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: IngestKnowledge(
+            FailingEmbeddingModel(),
+            store,
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("id-both"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+    )
+
+    with pytest.raises(PartialCreateFailure) as raised:
+        use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
+
+    ingest_error = raised.value.ingest_error
+    assert isinstance(ingest_error, IngestFailure)
+    assert isinstance(ingest_error.__cause__, EmbeddingUnavailable)
+    assert isinstance(raised.value.__cause__, RuntimeError)
+    assert str(raised.value.__cause__) == "catalog upsert failed"
+    # The pending row is all that survived, so the caller must be told to look.
+    rows = catalog.all()
+    assert len(rows) == 1
+    assert rows[0].status is CatalogStatus.PENDING
+
+
+def test_create_recovery_write_failure_after_vector_mutation_keeps_both() -> None:
+    catalog = RecoveryRefusingCatalog()
+    store = FailingUpsertStore()
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(),
+            store,
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("id-both-degraded"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+    )
+
+    with pytest.raises(PartialCreateFailure) as raised:
+        use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
+
+    assert isinstance(raised.value.ingest_error, IngestFailure)
+    assert raised.value.ingest_error.vector_mutation_started is True
+    assert isinstance(raised.value.__cause__, RuntimeError)

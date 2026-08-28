@@ -109,6 +109,89 @@ def test_invalid_payload_raises_validation_error(tmp_path: Path) -> None:
         catalog.all()
 
 
+def _write_entry_with(tmp_path: Path, field: str, value: object) -> Path:
+    """Persist one valid row, then overwrite ``field`` with a wrong-typed value."""
+    path = tmp_path / "uploads.json"
+    JsonDocumentCatalog(path).upsert(_document())
+    entry = json.loads(path.read_text(encoding="utf-8"))[0]
+    entry[field] = value
+    path.write_text(json.dumps([entry]), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_id", 123),
+        ("source_id", None),
+        ("source_id", ["a"]),
+        ("source_type", 123),
+        ("source_type", None),
+        ("file_name", 123),
+        ("file_name", None),
+        ("status", 1),
+        ("status", None),
+        ("uploaded_at", 12345),
+        ("uploaded_at", None),
+        ("chunk_count", "2"),
+        ("chunk_count", 2.5),
+        ("chunk_count", True),
+        ("chunk_count", None),
+        ("title", 123),
+        ("content_format", 123),
+        ("error", 123),
+    ],
+)
+def test_wrong_field_type_is_rejected_not_coerced(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    """A hand-edited catalog must fail loudly, never be silently reinterpreted.
+
+    Coercing through ``str`` turns a typo into a plausible-looking row: an
+    integer ``source_id`` becomes the string that keys real vector chunks, so
+    the corruption survives the next write instead of being caught on read.
+    """
+    path = _write_entry_with(tmp_path, field, value)
+
+    with pytest.raises(CatalogValidationError) as raised:
+        JsonDocumentCatalog(path).all()
+
+    message = str(raised.value)
+    assert "entry 0" in message
+    assert field in message
+
+
+@pytest.mark.parametrize("field", ["title", "content_format", "error"])
+def test_optional_fields_accept_null_and_absent(tmp_path: Path, field: str) -> None:
+    path = tmp_path / "uploads.json"
+    JsonDocumentCatalog(path).upsert(_document())
+    entry = json.loads(path.read_text(encoding="utf-8"))[0]
+    entry[field] = None
+    path.write_text(json.dumps([entry]), encoding="utf-8")
+    assert getattr(JsonDocumentCatalog(path).all()[0], field) is None
+
+    del entry[field]
+    path.write_text(json.dumps([entry]), encoding="utf-8")
+    assert getattr(JsonDocumentCatalog(path).all()[0], field) is None
+
+
+def test_every_documented_field_type_round_trips(tmp_path: Path) -> None:
+    """Strict reads must not narrow what a legitimately written row can hold."""
+    path = tmp_path / "uploads.json"
+    document = CatalogDocument(
+        reference=SourceReference("id-round-trip", SourceType.TICKET),
+        file_name="guide.md",
+        title="Guide",
+        content_format="markdown",
+        status=CatalogStatus.DEGRADED,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=0,
+        error="upsert failed",
+    )
+    JsonDocumentCatalog(path).upsert(document)
+    assert JsonDocumentCatalog(path).all() == (document,)
+
+
 def test_duplicate_reference_raises_validation_error(tmp_path: Path) -> None:
     """Collapsing the pair would drop a row on the next write and orphan chunks."""
     path = tmp_path / "uploads.json"

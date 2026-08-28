@@ -114,6 +114,18 @@ def create_new_document(
 
     try:
         document = create_uploaded_document(settings, validated)
+    except PartialDocumentOperationError:
+        # Both the upload and the write that would have recorded it failed, so
+        # the detail is a server-side story: log it whole, and tell the reader
+        # the only thing they can act on.
+        logger.exception("Document create failed and its status was not recorded")
+        return UploadIngestResult(
+            ok=False,
+            message=(
+                "Upload failed and its status could not be saved; retry or "
+                "delete any visible record."
+            ),
+        )
     except DocumentUploadError as error:
         return UploadIngestResult(ok=False, message=str(error))
     except DocumentOperationError as error:

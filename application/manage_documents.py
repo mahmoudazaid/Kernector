@@ -26,6 +26,23 @@ class DocumentManagementError(RuntimeError):
     """Base error for uploaded-document management failures."""
 
 
+class PartialCreateFailure(DocumentManagementError):
+    """Create failed and the catalog could not record why.
+
+    Two independent failures happened, and reporting only the second would be
+    misleading: the catalog write that failed is exactly the one that would
+    have recorded the first, so this exception is the only place both survive.
+
+    Attributes:
+        ingest_error (BaseException): The failure that stopped the upload. The
+            catalog write failure is chained as ``__cause__``.
+    """
+
+    def __init__(self, message: str, *, ingest_error: BaseException) -> None:
+        super().__init__(message)
+        self.ingest_error = ingest_error
+
+
 class PartialDeleteFailure(DocumentManagementError):
     """Vector chunks were removed but the catalog row could not be deleted."""
 
@@ -77,6 +94,10 @@ class ManageUploadedDocuments:
         written chunks leaves a ``degraded`` row instead, so the orphaned chunks
         stay visible as state that ``delete`` still has to clear. Either way the
         original error is re-raised unchanged.
+
+        Raises:
+            PartialCreateFailure: The ingest failed *and* its status could not
+                be written, leaving only the ``pending`` row on disk.
         """
         source_id = self._new_source_id()
         reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
@@ -90,17 +111,7 @@ class ManageUploadedDocuments:
         try:
             response = self._run_ingest(document)
         except Exception as error:
-            self._catalog.upsert(
-                dataclasses.replace(
-                    pending,
-                    status=(
-                        CatalogStatus.DEGRADED
-                        if _vector_mutation_started(error)
-                        else CatalogStatus.FAILED
-                    ),
-                    error=_safe_error_summary(error),
-                )
-            )
+            self._record_create_failure(pending, error)
             raise
         ready = dataclasses.replace(
             pending,
@@ -186,6 +197,30 @@ class ManageUploadedDocuments:
 
     def _run_ingest(self, document: SourceDocument) -> IngestResponse:
         return self._ingest_factory().execute(IngestRequest(documents=(document,)))
+
+    def _record_create_failure(
+        self, pending: CatalogDocument, error: BaseException
+    ) -> None:
+        """Write the outcome status, or report that both writes failed."""
+        status = (
+            CatalogStatus.DEGRADED
+            if _vector_mutation_started(error)
+            else CatalogStatus.FAILED
+        )
+        try:
+            self._catalog.upsert(
+                dataclasses.replace(
+                    pending,
+                    status=status,
+                    error=_safe_error_summary(error),
+                )
+            )
+        except Exception as catalog_error:
+            raise PartialCreateFailure(
+                f"upload failed and its {status.value} status could not be "
+                f"recorded: {_safe_error_summary(error)}",
+                ingest_error=error,
+            ) from catalog_error
 
     def _recover_replace(
         self,
