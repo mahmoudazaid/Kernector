@@ -106,6 +106,16 @@ class JsonDocumentCatalog:
         records: dict[SourceReference, CatalogDocument] = {}
         for index, entry in enumerate(payload):
             document = _document_from_entry(entry, index=index)
+            if document.reference in records:
+                # Refusing beats last-one-wins: the next write serializes this
+                # dict, so silently collapsing the pair would delete a row from
+                # disk and orphan its chunks with nothing left pointing at them.
+                reference = document.reference
+                raise CatalogValidationError(
+                    f"catalog entry {index} duplicates source "
+                    f"{reference.source_type.value}:{reference.source_id}; "
+                    "each source may appear at most once"
+                )
             records[document.reference] = document
         return records
 

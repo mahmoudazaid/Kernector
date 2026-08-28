@@ -17,7 +17,7 @@ uv run streamlit run main.py
 
 Upload catalog metadata is stored at `data/catalog/uploads.json` by default (`DOCUMENT_CATALOG_PATH`). Seed-corpus documents remain separate and do not appear in this list.
 
-While a create/replace/delete is running, action buttons stay disabled so a repeated click in the same session is rejected before another run starts.
+Create, replace, and delete run to completion before the page refreshes, and the outcome appears above the document list on the refreshed page. A failure that left chunks or a catalog row behind says so and names the action to retry; one that changed nothing says only what went wrong.
 
 If ingest fails because the store expects a different embedding size, remove the local Chroma directory and try again:
 

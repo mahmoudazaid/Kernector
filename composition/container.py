@@ -15,7 +15,12 @@ from application.manage_documents import (
     PartialReplaceFailure,
     UnknownDocumentError,
 )
-from composition.errors import DocumentOperationError, DocumentUploadError, KnowledgeLoadError
+from composition.errors import (
+    DocumentOperationError,
+    DocumentUploadError,
+    KnowledgeLoadError,
+    PartialDocumentOperationError,
+)
 from domain.errors import DomainValidationError
 from domain.knowledge import CatalogDocument, SourceDocument, SourceReference, UploadPayload
 from domain.ports import ChatModel, DocumentCatalog, EmbeddingModel, PromptRepository, VectorStore
@@ -136,7 +141,9 @@ def build_vector_store(settings: Settings) -> VectorStore:
     return ChromaVectorStore(settings.chroma)
 
 
-def build_ingest_knowledge(settings: Settings) -> IngestKnowledge:
+def build_ingest_knowledge(
+    settings: Settings, *, vector_store: VectorStore | None = None
+) -> IngestKnowledge:
     """Wire the ingest use case from the loaded settings.
 
     Only the embedding adapter's own configuration failure is mapped to a typed
@@ -145,7 +152,9 @@ def build_ingest_knowledge(settings: Settings) -> IngestKnowledge:
     relabelling the latter would send a caller looking in the wrong place.
 
     Pure, like `build_vector_store`: a fresh instance per call, so no open
-    SQLite handle is retained across callers.
+    SQLite handle is retained across callers. A caller that already holds a
+    store passes it in rather than opening a second client on the same
+    collection.
 
     Raises:
         ConfigurationError: The embedding credentials are missing or unusable.
@@ -154,13 +163,36 @@ def build_ingest_knowledge(settings: Settings) -> IngestKnowledge:
         embedding_model = build_embedding_model(settings)
     except EmbeddingConfigError as exc:
         raise ConfigurationError(str(exc)) from exc
-    vector_store = build_vector_store(settings)
+    if vector_store is None:
+        vector_store = build_vector_store(settings)
     return IngestKnowledge(
         embedding_model,
         vector_store,
         chunk_size=settings.chunking.chunk_size,
         chunk_overlap=settings.chunking.chunk_overlap,
     )
+
+
+def _upload_error_from_ingest_failure(
+    settings: Settings, error: IngestFailure
+) -> DocumentUploadError:
+    """Translate an ingest failure into the message the UI should show.
+
+    A store that was built with a different embedding size reports a vendor
+    string nobody can act on, so it is replaced with the one instruction that
+    fixes it. Every other cause keeps its own text.
+    """
+    cause = error.__cause__
+    if not isinstance(cause, ChromaStoreError):
+        return DocumentUploadError(str(error))
+    message = str(cause)
+    if "dimension" in message.lower():
+        message = (
+            "The knowledge store was built with a different embedding size "
+            "than the current model. Delete the Chroma data directory "
+            f"({settings.chroma.persist_path}) and ingest again."
+        )
+    return DocumentUploadError(message)
 
 
 def ingest_uploaded_document(
@@ -196,27 +228,8 @@ def ingest_uploaded_document(
     use_case = build_ingest_knowledge(settings)
     try:
         return use_case.execute(IngestRequest(documents=(document,)))
-    except ChromaStoreError as error:
-        message = str(error)
-        if "dimension" in message.lower():
-            message = (
-                "The knowledge store was built with a different embedding size "
-                "than the current model. Delete the Chroma data directory "
-                f"({settings.chroma.persist_path}) and ingest again."
-            )
-        raise DocumentUploadError(message) from error
     except IngestFailure as error:
-        cause = error.__cause__
-        if isinstance(cause, ChromaStoreError):
-            message = str(cause)
-            if "dimension" in message.lower():
-                message = (
-                    "The knowledge store was built with a different embedding size "
-                    "than the current model. Delete the Chroma data directory "
-                    f"({settings.chroma.persist_path}) and ingest again."
-                )
-            raise DocumentUploadError(message) from error
-        raise DocumentUploadError(str(error)) from error
+        raise _upload_error_from_ingest_failure(settings, error) from error
 
 
 def build_document_catalog(settings: Settings) -> DocumentCatalog:
@@ -230,13 +243,26 @@ def build_document_extractor() -> UploadedFileExtractor:
 
 
 def build_manage_uploaded_documents(settings: Settings) -> ManageUploadedDocuments:
-    """Wire create/replace/delete/list for uploaded documents."""
-    vector_store = build_vector_store(settings)
+    """Wire create/replace/delete/list for uploaded documents.
+
+    The store and the ingest pipeline are passed as factories the use case calls
+    only when it needs them. Listing then costs one JSON read — no Chroma client
+    and no embedding credentials — which matters because the Streamlit page
+    lists on every rerun, and because `list` and `delete` never embed anything.
+    Each operation opens at most one store, and both paths open it through the
+    same factory, so ingest and delete cannot drift onto different collections.
+    """
+    def _vector_store() -> VectorStore:
+        return build_vector_store(settings)
+
+    def _ingest() -> IngestKnowledge:
+        return build_ingest_knowledge(settings, vector_store=_vector_store())
+
     return ManageUploadedDocuments(
         catalog=build_document_catalog(settings),
         extractor=build_document_extractor(),
-        ingest=build_ingest_knowledge(settings),
-        vector_store=vector_store,
+        ingest_factory=_ingest,
+        vector_store_factory=_vector_store,
     )
 
 
@@ -259,7 +285,7 @@ def create_uploaded_document(
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
     except IngestFailure as error:
-        raise DocumentUploadError(str(error)) from error
+        raise _upload_error_from_ingest_failure(settings, error) from error
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
     except DocumentManagementError as error:
@@ -275,7 +301,14 @@ def replace_uploaded_document(
     reference: SourceReference,
     payload: UploadPayload,
 ) -> CatalogDocument:
-    """Replace an existing uploaded document under the same source ID."""
+    """Replace an existing uploaded document under the same source ID.
+
+    Raises:
+        PartialDocumentOperationError: Chunks or the catalog row were left
+            mid-replace, so a retry is genuinely required.
+        DocumentOperationError: The replace stopped without mutating anything.
+        DocumentUploadError: The replacement file could not be extracted.
+    """
     try:
         return build_manage_uploaded_documents(settings).replace(reference, payload)
     except UnknownDocumentError as error:
@@ -284,7 +317,13 @@ def replace_uploaded_document(
         raise DocumentUploadError(str(error)) from error
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
-    except (IngestFailure, PartialReplaceFailure) as error:
+    except PartialReplaceFailure as error:
+        raise PartialDocumentOperationError(str(error)) from error
+    except IngestFailure as error:
+        # A failure before the first `delete_source` left the previous version
+        # stored and its catalog row restored: nothing for the user to retry.
+        if error.vector_mutation_started:
+            raise PartialDocumentOperationError(str(error)) from error
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
@@ -299,16 +338,20 @@ def replace_uploaded_document(
 def delete_uploaded_document(
     settings: Settings, reference: SourceReference
 ) -> None:
-    """Delete vector chunks then the catalog row for ``reference``."""
+    """Delete vector chunks then the catalog row for ``reference``.
+
+    Raises:
+        PartialDocumentOperationError: The chunks are gone but the catalog row
+            remains, so a retry is genuinely required.
+        DocumentOperationError: The delete stopped before removing anything.
+    """
     try:
         build_manage_uploaded_documents(settings).delete(reference)
     except PartialDeleteFailure as error:
-        raise DocumentOperationError(str(error)) from error
+        raise PartialDocumentOperationError(str(error)) from error
     except DocumentManagementError as error:
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:
-        raise DocumentOperationError(str(error)) from error
-    except ChromaStoreError as error:
         raise DocumentOperationError(str(error)) from error
 
 
