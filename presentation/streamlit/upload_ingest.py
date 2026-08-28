@@ -122,8 +122,8 @@ def create_new_document(
         return UploadIngestResult(
             ok=False,
             message=(
-                "Upload failed and its status could not be saved; retry or "
-                "delete any visible record."
+                "Upload failed and its status could not be saved; retry, or "
+                "delete any visible pending document."
             ),
         )
     except DocumentUploadError as error:

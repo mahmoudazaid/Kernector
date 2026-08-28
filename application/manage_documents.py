@@ -33,13 +33,24 @@ class PartialCreateFailure(DocumentManagementError):
     misleading: the catalog write that failed is exactly the one that would
     have recorded the first, so this exception is the only place both survive.
 
+    Both originals stay reachable — ``ingest_error`` as an attribute, the
+    catalog write as ``__cause__`` — but neither reaches the message. The
+    message is fixed by the class rather than passed in, because this exception
+    crosses into presentation: a caller cannot leak an adapter path, a
+    credential, or a vendor string through text it has no way to supply. The
+    detail is for the server log; the message is for the reader.
+
     Attributes:
-        ingest_error (BaseException): The failure that stopped the upload. The
-            catalog write failure is chained as ``__cause__``.
+        ingest_error (BaseException): The failure that stopped the upload.
     """
 
-    def __init__(self, message: str, *, ingest_error: BaseException) -> None:
-        super().__init__(message)
+    MESSAGE = (
+        "Upload failed and its status could not be saved; retry, or delete any "
+        "visible pending document."
+    )
+
+    def __init__(self, *, ingest_error: BaseException) -> None:
+        super().__init__(self.MESSAGE)
         self.ingest_error = ingest_error
 
 
@@ -201,7 +212,12 @@ class ManageUploadedDocuments:
     def _record_create_failure(
         self, pending: CatalogDocument, error: BaseException
     ) -> None:
-        """Write the outcome status, or report that both writes failed."""
+        """Write the outcome status, or report that both writes failed.
+
+        The summary stored in the row's ``error`` field is a catalog
+        diagnostic, read back only by whoever is already looking at that
+        document. It is deliberately not what ``PartialCreateFailure`` says.
+        """
         status = (
             CatalogStatus.DEGRADED
             if _vector_mutation_started(error)
@@ -216,11 +232,7 @@ class ManageUploadedDocuments:
                 )
             )
         except Exception as catalog_error:
-            raise PartialCreateFailure(
-                f"upload failed and its {status.value} status could not be "
-                f"recorded: {_safe_error_summary(error)}",
-                ingest_error=error,
-            ) from catalog_error
+            raise PartialCreateFailure(ingest_error=error) from catalog_error
 
     def _recover_replace(
         self,

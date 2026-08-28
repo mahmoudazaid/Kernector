@@ -135,7 +135,7 @@ def test_create_partial_failure_is_actionable_without_leaking_details(
     def _create(*_a: object, **_k: object) -> CatalogDocument:
         raise PartialDocumentOperationError(
             "could not write catalog at /srv/kernector/data/uploads.json"
-        )
+        ) from RuntimeError("openrouter rejected key sk-live-abc123")
 
     monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
 
@@ -146,13 +146,13 @@ def test_create_partial_failure_is_actionable_without_leaking_details(
 
     assert result.ok is False
     assert result.document is None
+    assert result.message == (
+        "Upload failed and its status could not be saved; retry, or delete any "
+        "visible pending document."
+    )
     assert "/srv/kernector/data/uploads.json" not in result.message
-    assert "retry or delete" in result.message.lower()
-    assert any(
-        "/srv/kernector/data/uploads.json" in record.getMessage()
-        or "/srv/kernector/data/uploads.json" in str(record.exc_info)
-        for record in caplog.records
-    ) or any(record.exc_info for record in caplog.records)
+    assert "sk-live-abc123" not in result.message
+    assert any(record.exc_info for record in caplog.records)
 
 
 def test_replace_preserves_reference_in_success_message(

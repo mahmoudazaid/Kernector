@@ -1,5 +1,6 @@
 """Composition root: the only place that constructs infrastructure."""
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -45,6 +46,8 @@ from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
 from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
 
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -293,6 +296,14 @@ def create_uploaded_document(
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
     except PartialCreateFailure as error:
+        # The only layer that can still see both originals: `ingest_error` is an
+        # attribute, so it is not in the chain a traceback would print, and the
+        # message deliberately holds neither. Log here or the detail is lost.
+        logger.exception(
+            "Document create failed and its catalog status could not be "
+            "written; ingest failure: %r",
+            error.ingest_error,
+        )
         raise PartialDocumentOperationError(str(error)) from error
     except IngestFailure as error:
         raise _upload_error_from_ingest_failure(settings, error) from error
