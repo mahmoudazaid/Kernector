@@ -45,7 +45,7 @@
     "source_id": "code-ingest-001",
     "title": "IngestKnowledge.execute orchestration",
     "doc_type": "source_code",
-    "content": "IngestKnowledge.execute accepts an IngestRequest of normalized SourceDocument values, rejects non-empty tickets until Ticket mapping ships, rejects duplicate SourceReference values, then chunks, embeds, deletes prior vectors for each source, and upserts the new chunks.",
+    "content": "IngestKnowledge.execute accepts an IngestRequest of normalized SourceDocument values, rejects duplicate SourceReference values, then chunks, embeds, deletes prior vectors for each source, and upserts the new chunks.",
     "status": "approved",
     "version": "1.0",
     "tags": ["ingestion", "application", "rag"],
