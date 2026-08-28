@@ -177,6 +177,31 @@ def build_ingest_knowledge(
     )
 
 
+def _log_partial_create(error: PartialCreateFailure) -> None:
+    """Record that a create half-landed, using only non-sensitive fields.
+
+    Deliberately not ``logger.exception``. The chain behind this failure runs
+    through adapter and vendor errors, and their text routinely carries the
+    thing that broke: an API key echoed in a 401 body, a request header, an
+    absolute catalog path, a slice of the uploaded document. A log file
+    outlives the request and is read by more people than the screen was, so
+    none of it is written here.
+
+    What survives is what a reader can act on: which operation, that it landed
+    partially, and which two exception classes were involved. The values stay
+    on the exception — ``ingest_error`` and ``__cause__`` — for a debugger
+    attached in-process, and go no further.
+    """
+    ingest_error = error.ingest_error
+    logger.error(
+        "operation=document_create outcome=partial_failure "
+        "ingest_error=%s catalog_error=%s vector_mutation_started=%s",
+        type(ingest_error).__name__,
+        type(error.__cause__).__name__,
+        getattr(ingest_error, "vector_mutation_started", None),
+    )
+
+
 def _upload_error_from_ingest_failure(
     settings: Settings, error: IngestFailure
 ) -> DocumentUploadError:
@@ -296,14 +321,7 @@ def create_uploaded_document(
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
     except PartialCreateFailure as error:
-        # The only layer that can still see both originals: `ingest_error` is an
-        # attribute, so it is not in the chain a traceback would print, and the
-        # message deliberately holds neither. Log here or the detail is lost.
-        logger.exception(
-            "Document create failed and its catalog status could not be "
-            "written; ingest failure: %r",
-            error.ingest_error,
-        )
+        _log_partial_create(error)
         raise PartialDocumentOperationError(str(error)) from error
     except IngestFailure as error:
         raise _upload_error_from_ingest_failure(settings, error) from error

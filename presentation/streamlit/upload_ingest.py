@@ -115,10 +115,10 @@ def create_new_document(
     try:
         document = create_uploaded_document(settings, validated)
     except PartialDocumentOperationError:
-        # Both the upload and the write that would have recorded it failed, so
-        # the detail is a server-side story: log it whole, and tell the reader
-        # the only thing they can act on.
-        logger.exception("Document create failed and its status was not recorded")
+        # Not logged here. Composition already recorded the safe diagnostic
+        # fields for this exact failure, and `logger.exception` would print the
+        # chain behind it — which is precisely where an adapter path or a
+        # credential echoed by a vendor would be sitting.
         return UploadIngestResult(
             ok=False,
             message=(

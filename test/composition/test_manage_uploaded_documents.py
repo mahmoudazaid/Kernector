@@ -193,22 +193,24 @@ def test_create_recovery_write_failure_maps_to_partial_operation_error(
     assert isinstance(raised.value.__cause__, PartialCreateFailure)
 
 
-def test_create_partial_failure_is_translated_without_internal_detail(
-    settings: Settings,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """The translated error is UI-bound, so it carries neither original text."""
+# A credential inside a vendor error and a server path inside an adapter error:
+# the two shapes of detail that must reach neither the screen nor the log file.
+LEAKY_KEY = "sk-live-abc123"
+LEAKY_CATALOG_PATH = "/srv/kernector/data/uploads.json"
+
+
+def _partial_create_scenario(
+    monkeypatch: pytest.MonkeyPatch, *, vector_mutation_started: bool
+) -> tuple[Exception, Exception]:
+    """Wire a create whose ingest fails and whose recovery write fails too."""
     from application.ingest_knowledge import IngestFailure
 
     ingest_error = IngestFailure(
-        "openrouter rejected key sk-live-abc123",
-        vector_mutation_started=False,
-        cause=RuntimeError("vendor said 401 for sk-live-abc123"),
+        f"openrouter rejected key {LEAKY_KEY}",
+        vector_mutation_started=vector_mutation_started,
+        cause=RuntimeError(f"vendor said 401 for {LEAKY_KEY}"),
     )
-    catalog_error = RuntimeError(
-        "could not write catalog at /srv/kernector/data/uploads.json"
-    )
+    catalog_error = RuntimeError(f"could not write catalog at {LEAKY_CATALOG_PATH}")
 
     class _ExplodingIngest:
         def execute(self, request):
@@ -242,6 +244,18 @@ def test_create_partial_failure_is_translated_without_internal_detail(
         "build_document_catalog",
         lambda _settings: _RecoveryRefusingCatalog(),
     )
+    return ingest_error, catalog_error
+
+
+def test_create_partial_failure_is_translated_without_internal_detail(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The translated error is UI-bound, so it carries neither original text."""
+    ingest_error, catalog_error = _partial_create_scenario(
+        monkeypatch, vector_mutation_started=False
+    )
 
     with caplog.at_level("ERROR"), pytest.raises(
         PartialDocumentOperationError
@@ -252,14 +266,65 @@ def test_create_partial_failure_is_translated_without_internal_detail(
         )
 
     message = str(raised.value)
-    assert "sk-live-abc123" not in message
-    assert "/srv/kernector/data/uploads.json" not in message
+    assert message == PartialCreateFailure.MESSAGE
+    assert LEAKY_KEY not in message
+    assert LEAKY_CATALOG_PATH not in message
     assert str(ingest_error) not in message
     assert str(catalog_error) not in message
 
-    # Nothing is lost — it goes to the server log, where it is safe to read.
-    assert "sk-live-abc123" in caplog.text
-    assert "/srv/kernector/data/uploads.json" in caplog.text
+
+def test_create_partial_failure_log_holds_no_sensitive_values(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A log file outlives the request and is read by more people than the UI."""
+    ingest_error, catalog_error = _partial_create_scenario(
+        monkeypatch, vector_mutation_started=False
+    )
+
+    with caplog.at_level("ERROR"), pytest.raises(PartialDocumentOperationError):
+        composition_container.create_uploaded_document(
+            settings,
+            UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
+        )
+
+    assert LEAKY_KEY not in caplog.text
+    assert LEAKY_CATALOG_PATH not in caplog.text
+    assert str(ingest_error) not in caplog.text
+    assert str(catalog_error) not in caplog.text
+    assert "vendor said 401" not in caplog.text
+    assert "Hello world" not in caplog.text
+    assert "guide.md" not in caplog.text
+    # No traceback either: the chain is exactly where the detail hides.
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize("mutation_started", [False, True])
+def test_create_partial_failure_logs_safe_diagnostic_fields(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    mutation_started: bool,
+) -> None:
+    """Class names and flags say which subsystem failed without quoting it."""
+    _partial_create_scenario(monkeypatch, vector_mutation_started=mutation_started)
+
+    with caplog.at_level("ERROR"), pytest.raises(PartialDocumentOperationError):
+        composition_container.create_uploaded_document(
+            settings,
+            UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
+        )
+
+    records = [
+        record for record in caplog.records if record.name == "composition.container"
+    ]
+    assert len(records) == 1
+    assert records[0].getMessage() == (
+        "operation=document_create outcome=partial_failure "
+        "ingest_error=IngestFailure catalog_error=RuntimeError "
+        f"vector_mutation_started={mutation_started}"
+    )
 
 
 def test_list_and_delete_need_no_embedding_credentials(
