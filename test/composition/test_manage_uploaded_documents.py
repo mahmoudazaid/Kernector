@@ -193,6 +193,75 @@ def test_create_recovery_write_failure_maps_to_partial_operation_error(
     assert isinstance(raised.value.__cause__, PartialCreateFailure)
 
 
+def test_create_partial_failure_is_translated_without_internal_detail(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The translated error is UI-bound, so it carries neither original text."""
+    from application.ingest_knowledge import IngestFailure
+
+    ingest_error = IngestFailure(
+        "openrouter rejected key sk-live-abc123",
+        vector_mutation_started=False,
+        cause=RuntimeError("vendor said 401 for sk-live-abc123"),
+    )
+    catalog_error = RuntimeError(
+        "could not write catalog at /srv/kernector/data/uploads.json"
+    )
+
+    class _ExplodingIngest:
+        def execute(self, request):
+            raise ingest_error
+
+    class _RecoveryRefusingCatalog:
+        def __init__(self) -> None:
+            self.upserts = 0
+
+        def all(self):
+            return ()
+
+        def get(self, reference):
+            return None
+
+        def upsert(self, document):
+            self.upserts += 1
+            if self.upserts > 1:
+                raise catalog_error
+
+        def delete(self, reference):
+            return None
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_ingest_knowledge",
+        lambda *_a, **_k: _ExplodingIngest(),
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_document_catalog",
+        lambda _settings: _RecoveryRefusingCatalog(),
+    )
+
+    with caplog.at_level("ERROR"), pytest.raises(
+        PartialDocumentOperationError
+    ) as raised:
+        composition_container.create_uploaded_document(
+            settings,
+            UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
+        )
+
+    message = str(raised.value)
+    assert "sk-live-abc123" not in message
+    assert "/srv/kernector/data/uploads.json" not in message
+    assert str(ingest_error) not in message
+    assert str(catalog_error) not in message
+
+    # Nothing is lost — it goes to the server log, where it is safe to read.
+    assert "sk-live-abc123" in caplog.text
+    assert "/srv/kernector/data/uploads.json" in caplog.text
+
+
 def test_list_and_delete_need_no_embedding_credentials(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
