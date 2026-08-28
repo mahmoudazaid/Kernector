@@ -107,16 +107,13 @@ def test_ask_response_defaults_tool_outputs_empty() -> None:
     assert response.tool_outputs == ()
 
 
+def test_ingest_request_has_no_tickets_field() -> None:
+    assert "tickets" not in IngestRequest.__dataclass_fields__
+
+
 def test_ingest_request_constructs_with_documents() -> None:
     request = IngestRequest(documents=[_document()])
     assert request.documents == (_document(),)
-    assert request.tickets == ()
-
-
-def test_ingest_request_constructs_with_tickets() -> None:
-    request = IngestRequest(tickets=[_ticket()])
-    assert request.tickets == (_ticket(),)
-    assert request.documents == ()
 
 
 def test_ingest_response_constructs() -> None:
@@ -199,11 +196,6 @@ def test_ingest_request_rejects_non_sequence_documents() -> None:
         IngestRequest(documents=_document())  # type: ignore[arg-type]
 
 
-def test_ingest_request_rejects_non_sequence_tickets() -> None:
-    with pytest.raises(ApplicationValidationError, match="tickets"):
-        IngestRequest(tickets=_ticket())  # type: ignore[arg-type]
-
-
 def test_ingest_response_rejects_non_sequence_accepted_ids() -> None:
     with pytest.raises(ApplicationValidationError, match="accepted_ids"):
         IngestResponse("doc-1", 1)  # type: ignore[arg-type]
@@ -240,13 +232,8 @@ def test_ingest_request_rejects_non_document_item() -> None:
         IngestRequest(documents=[_ticket()])  # type: ignore[list-item]
 
 
-def test_ingest_request_rejects_non_ticket_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="tickets items"):
-        IngestRequest(tickets=[_document()])  # type: ignore[list-item]
-
-
-def test_ingest_request_rejects_empty_collections() -> None:
-    with pytest.raises(ApplicationValidationError, match="documents or tickets"):
+def test_ingest_request_rejects_empty_documents() -> None:
+    with pytest.raises(ApplicationValidationError, match="documents must contain at least one item"):
         IngestRequest()
 
 
@@ -320,14 +307,11 @@ def test_ask_response_tool_outputs_are_independent_of_input_list() -> None:
     assert response.tool_outputs == (_tool_output(),)
 
 
-def test_ingest_request_collections_are_independent_of_input_lists() -> None:
+def test_ingest_request_documents_are_independent_of_input_list() -> None:
     documents = [_document()]
-    tickets = [_ticket()]
-    request = IngestRequest(documents=documents, tickets=tickets)
+    request = IngestRequest(documents=documents)
     documents.clear()
-    tickets.clear()
     assert request.documents == (_document(),)
-    assert request.tickets == (_ticket(),)
 
 
 def test_ingest_response_ids_are_independent_of_input_list() -> None:
@@ -358,7 +342,7 @@ def test_contracts_serialize_with_asdict() -> None:
         citations=[_citation()],
         tool_outputs=[_tool_output()],
     )
-    ingest_request = IngestRequest(documents=[_document()], tickets=[_ticket()])
+    ingest_request = IngestRequest(documents=[_document()])
     ingest_response = IngestResponse(["doc-1"], 1)
     tool_request = InvokeToolRequest("search", {"q": "login"})
     tool_response = _tool_output()
@@ -369,7 +353,9 @@ def test_contracts_serialize_with_asdict() -> None:
     assert asdict(ask_response)["tool_outputs"] == (
         {"tool_name": "search", "result": "2 hits"},
     )
-    assert asdict(ingest_request)["documents"][0]["content"] == "knowledge content"
+    ingest_dict = asdict(ingest_request)
+    assert ingest_dict["documents"][0]["content"] == "knowledge content"
+    assert "tickets" not in ingest_dict
     assert asdict(ingest_response) == {"accepted_ids": ("doc-1",), "chunk_count": 1}
     assert asdict(tool_request) == {
         "tool_name": "search",

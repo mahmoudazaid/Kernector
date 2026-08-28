@@ -72,19 +72,12 @@ class IngestKnowledge:
             The accepted source identifiers and the total chunks stored.
 
         Raises:
-            ApplicationValidationError: A non-empty `tickets` collection,
-                duplicate source references, an embedding result whose length
-                disagrees with the chunk count, or — propagated from
-                `chunk_document` — an invalid document or chunk setting.
+            ApplicationValidationError: Duplicate source references, an embedding
+                result whose length disagrees with the chunk count, or — propagated
+                from `chunk_document` — an invalid document or chunk setting.
             IngestFailure: Embedding or vector-store failure, annotated with
                 whether vector mutation may have started.
         """
-        if request.tickets:
-            raise ApplicationValidationError(
-                f"tickets are not ingested yet, got {len(request.tickets)}; "
-                "pass documents only until Ticket -> SourceDocument mapping "
-                "ships in its own ticket"
-            )
         _reject_duplicate_references(request.documents)
         try:
             chunks_by_document = tuple(
