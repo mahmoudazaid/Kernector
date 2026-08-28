@@ -7,6 +7,7 @@ import streamlit as st
 
 from application.ask_service import AskService
 from composition import (
+    SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
     build_ask_service,
@@ -24,6 +25,7 @@ from presentation.streamlit.components import (
     render_reply,
     render_run_meta,
 )
+from presentation.streamlit.upload_ingest import submit_uploaded_document
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
 
@@ -195,8 +197,45 @@ def _handle_input(
     })
 
 
+def _render_upload_ingest(settings: Settings) -> None:
+    """Collect one upload and source ID, then ingest through composition.
+
+    The in-progress flag is a submit-guard for ordinary repeated clicks, not a
+    concurrency primitive: a Streamlit rerun can interrupt the prior script run.
+    Per-source delete/upsert in ``IngestKnowledge`` still tolerates a repeated
+    ingest if one slips through.
+    """
+    st.subheader("Upload document")
+    with st.form("document_upload"):
+        uploaded = st.file_uploader(
+            "Document",
+            type=sorted(suffix.lstrip(".") for suffix in SUPPORTED_UPLOAD_SUFFIXES),
+            accept_multiple_files=False,
+        )
+        source_id = st.text_input("Source ID")
+        submitted = st.form_submit_button(
+            "Ingest",
+            disabled=bool(st.session_state.get("ingest_in_progress")),
+        )
+    if not submitted:
+        return
+
+    result = submit_uploaded_document(
+        settings,
+        filename=uploaded.name if uploaded is not None else None,
+        content=uploaded.getvalue() if uploaded is not None else None,
+        source_id=source_id,
+        session=st.session_state,
+    )
+    if result.ok:
+        st.success(result.message)
+    else:
+        st.error(result.message)
+
+
 def render() -> None:
     st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("ingest_in_progress", False)
 
     settings = _settings()
     repository = _prompt_repository()
@@ -205,6 +244,8 @@ def render() -> None:
 
     with st.sidebar:
         state = _render_sidebar(settings, repository)
+
+    _render_upload_ingest(settings)
 
     service = build_ask_service(
         build_chat_model(
