@@ -219,7 +219,8 @@ def _apply_action_result(result: UploadIngestResult) -> None:
         return
     if result.should_rerun:
         st.session_state[_ACTION_MESSAGE_KEY] = result.message
-        st.rerun()
+        st.rerun()  # Raises; nothing after this line runs.
+        return
     st.success(result.message)
 
 

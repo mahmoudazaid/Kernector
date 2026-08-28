@@ -103,10 +103,46 @@ def test_extract_cleans_up_temporary_files_on_failure(
         TrackingTemporaryDirectory,
     )
     extractor = UploadedFileExtractor()
-    with pytest.raises(UnsupportedDocumentError):
+    with pytest.raises(UnreadableDocumentError):
         extractor.extract(
-            UploadPayload(file_name="notes.docx", content=b"x"),
+            UploadPayload(file_name="empty.md", content=b"   \n"),
             reference=_reference(),
         )
     assert created
     assert all(not path.exists() for path in created)
+
+
+def test_unsupported_type_is_rejected_before_any_temporary_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected upload must never be written to disk, however large it is."""
+    created: list[Path] = []
+    real_temporary_directory = __import__("tempfile").TemporaryDirectory
+
+    class TrackingTemporaryDirectory(real_temporary_directory):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)
+            created.append(Path(self.name))
+
+    monkeypatch.setattr(
+        "infrastructure.documents.uploaded_files.TemporaryDirectory",
+        TrackingTemporaryDirectory,
+    )
+    extractor = UploadedFileExtractor()
+    with pytest.raises(UnsupportedDocumentError):
+        extractor.extract(
+            UploadPayload(file_name="notes.docx", content=b"x" * 1024),
+            reference=_reference(),
+        )
+    assert created == []
+
+
+def test_extract_carries_the_callers_source_type() -> None:
+    """Chunks are stored under the whole reference, so the kind must survive."""
+    extractor = UploadedFileExtractor()
+    reference = SourceReference("id-9", SourceType.TICKET)
+    document = extractor.extract(
+        UploadPayload(file_name="guide.md", content=b"# Guide\n"),
+        reference=reference,
+    )
+    assert document.metadata.reference == reference
