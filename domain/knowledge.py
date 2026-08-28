@@ -13,7 +13,6 @@ from domain.errors import DomainValidationError
 class SourceType(StrEnum):
     """The kinds of knowledge a source can hold."""
 
-    TICKET = "ticket"
     KNOWLEDGE_DOCUMENT = "knowledge_document"
 
 
@@ -90,23 +89,6 @@ class SourceMetadata:
     def source_id(self) -> str:
         """The originating source identifier, preserved for traceability."""
         return self.reference.source_id
-
-@dataclass(frozen=True, slots=True)
-class Ticket:
-    """A work item whose text is the subject of analysis."""
-
-    ticket_id: str
-    content: str
-    title: str | None = None
-
-    def __post_init__(self) -> None:
-        _require_text(self.ticket_id, "ticket_id")
-        _require_text(self.content, "content")
-
-    @property
-    def reference(self) -> SourceReference:
-        """Provenance pointer for citing this ticket."""
-        return SourceReference(self.ticket_id, SourceType.TICKET)
 
 @dataclass(frozen=True, slots=True)
 class SourceDocument:
