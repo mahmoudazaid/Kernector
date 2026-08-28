@@ -9,6 +9,7 @@ import pytest
 from composition import DocumentUploadError, ingest_uploaded_document
 from composition import container as composition_container
 from application.contracts import IngestRequest, IngestResponse
+from application.ingest_knowledge import IngestFailure
 from domain.errors import DomainValidationError
 from domain.knowledge import (
     SourceDocument,
@@ -178,7 +179,11 @@ def test_chroma_dimension_mismatch_becomes_document_upload_error(
 
     class _FailingIngest:
         def execute(self, request: IngestRequest) -> IngestResponse:
-            raise store_error
+            raise IngestFailure(
+                str(store_error),
+                vector_mutation_started=True,
+                cause=store_error,
+            )
 
     monkeypatch.setattr(
         composition_container,
@@ -195,4 +200,4 @@ def test_chroma_dimension_mismatch_becomes_document_upload_error(
         ingest_uploaded_document(chroma_settings, path, source_id="upload-001")
 
     assert str(chroma_settings.chroma.persist_path) in str(exc_info.value)
-    assert exc_info.value.__cause__ is store_error
+    assert exc_info.value.__cause__.__cause__ is store_error

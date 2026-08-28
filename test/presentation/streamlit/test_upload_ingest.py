@@ -12,7 +12,11 @@ from pathlib import Path
 import pytest
 
 from application.errors import ApplicationValidationError, ConfigurationError
-from composition import DocumentOperationError, DocumentUploadError
+from composition import (
+    DocumentOperationError,
+    DocumentUploadError,
+    PartialDocumentOperationError,
+)
 from domain.errors import DomainValidationError
 from domain.knowledge import (
     CatalogDocument,
@@ -46,71 +50,33 @@ def test_missing_file_rejects_create_without_calling_composition(
         "create_uploaded_document",
         lambda *a, **k: calls.append((a, k)),
     )
-    session: dict[str, object] = {"ingest_in_progress": False}
 
-    result = upload_mod.create_new_document(
-        object(),
-        filename=None,
-        content=None,
-        session=session,
-    )
+    result = upload_mod.create_new_document(object(), filename=None, content=None)
 
     assert result.ok is False
     assert result.message.strip()
     assert calls == []
-    assert session["ingest_in_progress"] is False
 
 
-def test_in_progress_rejects_create_without_calling_composition(
+def test_create_returns_source_id_for_the_success_banner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[object] = []
-    monkeypatch.setattr(
-        upload_mod,
-        "create_uploaded_document",
-        lambda *a, **k: calls.append((a, k)),
-    )
-    session: dict[str, object] = {"ingest_in_progress": True}
-
-    result = upload_mod.create_new_document(
-        object(),
-        filename="guide.txt",
-        content=b"hello",
-        session=session,
-    )
-
-    assert result.ok is False
-    assert calls == []
-    assert session["ingest_in_progress"] is True
-
-
-def test_create_sets_flag_during_composition_and_clears_after(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    observed: list[bool] = []
     document = _document()
 
     def _create(_settings: object, payload: UploadPayload) -> CatalogDocument:
-        observed.append(bool(session["ingest_in_progress"]))
         assert payload.file_name == "guide.txt"
         return document
 
     monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
-    session: dict[str, object] = {"ingest_in_progress": False}
 
     result = upload_mod.create_new_document(
-        object(),
-        filename="guide.txt",
-        content=b"hello",
-        session=session,
+        object(), filename="guide.txt", content=b"hello"
     )
 
     assert result.ok is True
     assert result.should_rerun is True
     assert result.document == document
     assert "id-1" in result.message
-    assert observed == [True]
-    assert session["ingest_in_progress"] is False
 
 
 def test_unsupported_suffix_rejected_before_composition(
@@ -122,13 +88,9 @@ def test_unsupported_suffix_rejected_before_composition(
         "create_uploaded_document",
         lambda *a, **k: calls.append((a, k)),
     )
-    session: dict[str, object] = {"ingest_in_progress": False}
 
     result = upload_mod.create_new_document(
-        object(),
-        filename="notes.docx",
-        content=b"hello",
-        session=session,
+        object(), filename="notes.docx", content=b"hello"
     )
 
     assert result.ok is False
@@ -155,18 +117,13 @@ def test_typed_create_failures_map_to_specific_messages(
         raise error
 
     monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
-    session: dict[str, object] = {"ingest_in_progress": False}
 
     result = upload_mod.create_new_document(
-        object(),
-        filename="guide.txt",
-        content=b"hello",
-        session=session,
+        object(), filename="guide.txt", content=b"hello"
     )
 
     assert result.ok is False
     assert needle in result.message
-    assert session["ingest_in_progress"] is False
 
 
 def test_replace_preserves_reference_in_success_message(
@@ -182,14 +139,12 @@ def test_replace_preserves_reference_in_success_message(
         return document
 
     monkeypatch.setattr(upload_mod, "replace_uploaded_document", _replace)
-    session: dict[str, object] = {"ingest_in_progress": False}
 
     result = upload_mod.replace_existing_document(
         object(),
         reference=document.reference,
         filename="guide-v2.md",
         content=b"hello",
-        session=session,
     )
 
     assert result.ok is True
@@ -197,23 +152,79 @@ def test_replace_preserves_reference_in_success_message(
     assert "id-1" in result.message
 
 
-def test_delete_partial_failure_mentions_retry(
+def test_partial_delete_failure_names_the_action_to_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _delete(*_a: object, **_k: object) -> None:
-        raise DocumentOperationError("chunks removed but catalog row remains")
+        raise PartialDocumentOperationError(
+            "chunks removed but catalog row remains"
+        )
 
     monkeypatch.setattr(upload_mod, "delete_uploaded_document", _delete)
-    session: dict[str, object] = {"ingest_in_progress": False}
 
     result = upload_mod.delete_existing_document(
-        object(),
-        reference=_document().reference,
-        session=session,
+        object(), reference=_document().reference
     )
 
     assert result.ok is False
     assert "retry" in result.message.lower()
+
+
+def test_delete_failure_that_changed_nothing_promises_no_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing was mutated, so the message must not send the user chasing state."""
+
+    def _delete(*_a: object, **_k: object) -> None:
+        raise DocumentOperationError("could not open the vector store")
+
+    monkeypatch.setattr(upload_mod, "delete_uploaded_document", _delete)
+
+    result = upload_mod.delete_existing_document(
+        object(), reference=_document().reference
+    )
+
+    assert result.ok is False
+    assert result.message == "could not open the vector store"
+    assert "retry" not in result.message.lower()
+
+
+def test_partial_replace_failure_names_the_actions_to_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _replace(*_a: object, **_k: object) -> CatalogDocument:
+        raise PartialDocumentOperationError("degraded row written")
+
+    monkeypatch.setattr(upload_mod, "replace_uploaded_document", _replace)
+
+    result = upload_mod.replace_existing_document(
+        object(),
+        reference=_document().reference,
+        filename="guide.md",
+        content=b"hello",
+    )
+
+    assert result.ok is False
+    assert "retry replace or delete" in result.message.lower()
+
+
+def test_replace_failure_that_changed_nothing_promises_no_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _replace(*_a: object, **_k: object) -> CatalogDocument:
+        raise DocumentOperationError("unknown document knowledge_document:id-1")
+
+    monkeypatch.setattr(upload_mod, "replace_uploaded_document", _replace)
+
+    result = upload_mod.replace_existing_document(
+        object(),
+        reference=_document().reference,
+        filename="guide.md",
+        content=b"hello",
+    )
+
+    assert result.ok is False
+    assert result.message == "unknown document knowledge_document:id-1"
 
 
 def test_unexpected_exception_is_logged_without_leaking_details(
@@ -224,19 +235,62 @@ def test_unexpected_exception_is_logged_without_leaking_details(
         raise RuntimeError("secret internals")
 
     monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
-    session: dict[str, object] = {"ingest_in_progress": False}
 
     with caplog.at_level("ERROR"):
         result = upload_mod.create_new_document(
-            object(),
-            filename="guide.txt",
-            content=b"hello",
-            session=session,
+            object(), filename="guide.txt", content=b"hello"
         )
 
     assert result.ok is False
     assert "secret internals" not in result.message
     assert "unexpectedly" in result.message.lower()
+    assert any("Unexpected failure" in record.message for record in caplog.records)
+
+
+def test_listing_returns_rows_when_composition_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = _document()
+    monkeypatch.setattr(
+        upload_mod, "list_uploaded_documents", lambda _settings: (document,)
+    )
+
+    listing = upload_mod.load_uploaded_documents(object())
+
+    assert listing.documents == (document,)
+    assert listing.error is None
+
+
+def test_listing_reports_typed_failures_as_page_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _list(*_a: object, **_k: object) -> tuple[CatalogDocument, ...]:
+        raise ConfigurationError("Missing OPENROUTER_API_KEY.")
+
+    monkeypatch.setattr(upload_mod, "list_uploaded_documents", _list)
+
+    listing = upload_mod.load_uploaded_documents(object())
+
+    assert listing.documents == ()
+    assert listing.error is not None
+    assert "Missing OPENROUTER_API_KEY." in listing.error
+
+
+def test_listing_logs_unexpected_failures_without_leaking_details(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _list(*_a: object, **_k: object) -> tuple[CatalogDocument, ...]:
+        raise RuntimeError("secret internals")
+
+    monkeypatch.setattr(upload_mod, "list_uploaded_documents", _list)
+
+    with caplog.at_level("ERROR"):
+        listing = upload_mod.load_uploaded_documents(object())
+
+    assert listing.documents == ()
+    assert listing.error is not None
+    assert "secret internals" not in listing.error
     assert any("Unexpected failure" in record.message for record in caplog.records)
 
 

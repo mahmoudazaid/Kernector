@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.manage_documents import (
     ManageUploadedDocuments,
@@ -21,7 +22,6 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
     UploadPayload,
-    Vector,
 )
 from test.document_doubles import (
     FixedClock,
@@ -34,6 +34,7 @@ from test.doubles import (
     FailingEmbeddingModel,
     InMemoryVectorStore,
     StubEmbeddingModel,
+    WrongLengthEmbeddingModel,
 )
 
 CONTENT_V1 = "abcdefghijklmnopqrstuvwxyz"
@@ -171,6 +172,40 @@ def test_replace_restores_previous_row_when_mutation_did_not_start() -> None:
     assert restored.status is CatalogStatus.READY
     assert restored.file_name == original.file_name
     assert restored.chunk_count == original.chunk_count
+
+
+def test_replace_restores_previous_row_on_validation_failure() -> None:
+    """A pre-mutation validation error must not overwrite a working ready row."""
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    original = _seed_ready(catalog, store)
+
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
+        # One vector short of the chunk count: `IngestKnowledge` rejects the
+        # batch before its first `delete_source`, so nothing was mutated.
+        ingest_factory=lambda: IngestKnowledge(
+            WrongLengthEmbeddingModel(-1), store, chunk_size=10, chunk_overlap=2
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("unused"),
+        now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+    )
+    with pytest.raises(ApplicationValidationError):
+        use_case.replace(
+            original.reference,
+            UploadPayload(file_name="guide-v2.md", content=b"v2"),
+        )
+
+    restored = catalog.get(original.reference)
+    assert restored is not None
+    assert restored.status is CatalogStatus.READY
+    assert restored.file_name == original.file_name
+    assert restored.chunk_count == original.chunk_count
+    assert restored.error is None
+    # The previous version's chunks were never touched, so the row is truthful.
+    assert len(store.records) == original.chunk_count
 
 
 def test_replace_records_degraded_when_mutation_may_have_started() -> None:
