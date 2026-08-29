@@ -202,6 +202,27 @@ def build_retrieve_knowledge(
     return RetrieveKnowledge(embedding_model, vector_store)
 
 
+def reindex_filter_metadata(settings: Settings) -> int:
+    """Promote stored ``extra`` keys so metadata filters work on legacy records.
+
+    Opens the configured Chroma collection and rewrites every record's metadata
+    without re-embedding. Safe to run repeatedly.
+
+    Returns:
+        The number of records rewritten.
+
+    Raises:
+        ChromaStoreError: The adapter could not read or rewrite the collection.
+        TypeError: The configured vector store is not a ``ChromaVectorStore``.
+    """
+    store = build_vector_store(settings)
+    if not isinstance(store, ChromaVectorStore):
+        raise TypeError(
+            f"reindex_filter_metadata requires ChromaVectorStore, got {type(store)!r}"
+        )
+    return store.reindex_filter_metadata()
+
+
 def _log_partial_create(error: PartialCreateFailure) -> None:
     """Record that a create half-landed, using only non-sensitive fields.
 
