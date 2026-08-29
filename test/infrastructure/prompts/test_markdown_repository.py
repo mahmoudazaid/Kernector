@@ -114,6 +114,58 @@ def test_rejects_multiple_defaults_across_directories(tmp_path: Path) -> None:
         repository.all()
 
 
+def test_default_key_override_wins_over_frontmatter(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    _write_prompt(pack, filename="alpha.md", key="alpha", default=True)
+    _write_prompt(pack, filename="beta.md", key="beta", name="Beta")
+
+    repository = MarkdownPromptRepository((pack,), default_key="beta")
+
+    assert repository.default_key() == "beta"
+
+
+def test_default_key_override_rejects_unknown_key(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    _write_prompt(pack, filename="alpha.md", key="alpha", default=True)
+
+    repository = MarkdownPromptRepository((pack,), default_key="missing")
+
+    with pytest.raises(ValueError, match="missing"):
+        repository.all()
+
+
+def test_default_key_override_allows_multiple_frontmatter_defaults(
+    tmp_path: Path,
+) -> None:
+    pack_a = tmp_path / "pack-a"
+    pack_b = tmp_path / "pack-b"
+    pack_a.mkdir()
+    pack_b.mkdir()
+    _write_prompt(pack_a, filename="alpha.md", key="alpha", default=True)
+    _write_prompt(pack_b, filename="beta.md", key="beta", default=True)
+
+    repository = MarkdownPromptRepository(
+        (pack_a, pack_b), default_key="beta"
+    )
+
+    assert set(repository.all()) == {"alpha", "beta"}
+    assert repository.default_key() == "beta"
+
+
+def test_default_key_override_allows_missing_frontmatter_default(
+    tmp_path: Path,
+) -> None:
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    _write_prompt(pack, filename="alpha.md", key="alpha", default=False)
+
+    repository = MarkdownPromptRepository((pack,), default_key="alpha")
+
+    assert repository.default_key() == "alpha"
+
+
 def test_rejects_missing_default(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     pack.mkdir()

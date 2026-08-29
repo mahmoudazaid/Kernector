@@ -395,7 +395,10 @@ def delete_uploaded_document(
 
 
 def build_prompt_repository(settings: Settings) -> PromptRepository:
-    return MarkdownPromptRepository(settings.prompts.pack_paths)
+    return MarkdownPromptRepository(
+        settings.prompts.pack_paths,
+        default_key=settings.prompts.default_key,
+    )
 
 
 def build_ask_service(chat_model: ChatModel) -> AskService:
