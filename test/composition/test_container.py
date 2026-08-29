@@ -14,6 +14,7 @@ import pytest
 from application.ask_service import AskService
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
+from application.retrieve_knowledge import RetrieveKnowledge
 from composition import (
     KnowledgeLoadError,
     Settings,
@@ -22,6 +23,7 @@ from composition import (
     build_chat_model,
     build_ingest_knowledge,
     build_prompt_repository,
+    build_retrieve_knowledge,
     build_vector_store,
     load_knowledge_documents,
     load_runtime_settings,
@@ -351,6 +353,29 @@ def test_build_ingest_knowledge_is_a_pure_factory(embedding_env: Settings) -> No
     """A fresh instance per call, matching `build_vector_store`."""
     first = build_ingest_knowledge(embedding_env)
     assert build_ingest_knowledge(embedding_env) is not first
+
+
+def test_build_retrieve_knowledge_wires_embedding_and_vector_store(
+    embedding_env: Settings,
+) -> None:
+    use_case = build_retrieve_knowledge(embedding_env)
+
+    assert isinstance(use_case, RetrieveKnowledge)
+    assert isinstance(use_case._vector_store, ChromaVectorStore)
+    assert isinstance(use_case._embedding_model, OpenRouterEmbeddings)
+
+
+def test_build_retrieve_knowledge_reuses_an_injected_vector_store(
+    embedding_env: Settings,
+) -> None:
+    store = build_vector_store(embedding_env)
+    use_case = build_retrieve_knowledge(embedding_env, vector_store=store)
+    assert use_case._vector_store is store
+
+
+def test_build_retrieve_knowledge_is_a_pure_factory(embedding_env: Settings) -> None:
+    first = build_retrieve_knowledge(embedding_env)
+    assert build_retrieve_knowledge(embedding_env) is not first
 
 
 def test_missing_embedding_configuration_surfaces_as_configuration_error(
