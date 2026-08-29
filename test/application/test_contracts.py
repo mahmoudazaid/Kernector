@@ -14,9 +14,13 @@ from application.contracts import (
     IngestResponse,
     InvokeToolRequest,
     InvokeToolResponse,
+    RetrieveRequest,
+    RetrieveResponse,
 )
 from application.errors import ApplicationValidationError
 from domain.knowledge import (
+    DocumentChunk,
+    ScoredChunk,
     SourceDocument,
     SourceMetadata,
     SourceReference,
@@ -179,6 +183,53 @@ def test_invoke_tool_request_constructs() -> None:
     assert isinstance(request.arguments, dict)
 
 
+def _scored_chunk() -> ScoredChunk:
+    return ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(_reference()),
+            index=0,
+            content="chunk text",
+        ),
+        score=0.9,
+    )
+
+
+def test_retrieve_request_constructs() -> None:
+    request = RetrieveRequest(
+        query="how do we restart?",
+        retrieval_limit=5,
+        metadata_filters={"doc_type": "runbook"},
+    )
+    assert request.query == "how do we restart?"
+    assert request.retrieval_limit == 5
+    assert request.metadata_filters == {"doc_type": "runbook"}
+    assert isinstance(request.metadata_filters, dict)
+
+
+def test_retrieve_request_defaults_metadata_filters_to_none() -> None:
+    request = RetrieveRequest(query="what applies?", retrieval_limit=3)
+    assert request.metadata_filters is None
+
+
+def test_retrieve_request_accepts_empty_metadata_filters() -> None:
+    request = RetrieveRequest(
+        query="what applies?",
+        retrieval_limit=3,
+        metadata_filters={},
+    )
+    assert request.metadata_filters == {}
+
+
+def test_retrieve_response_constructs() -> None:
+    hit = _scored_chunk()
+    response = RetrieveResponse(hits=[hit])
+    assert response.hits == (hit,)
+
+
+def test_retrieve_response_defaults_hits_empty() -> None:
+    assert RetrieveResponse().hits == ()
+
+
 def test_invoke_tool_response_constructs() -> None:
     response = InvokeToolResponse("search", "2 hits")
     assert response.tool_name == "search"
@@ -254,6 +305,75 @@ def test_ingest_response_rejects_non_sequence_accepted_ids() -> None:
 def test_invoke_tool_request_rejects_non_mapping_arguments() -> None:
     with pytest.raises(ApplicationValidationError, match="arguments"):
         InvokeToolRequest("search", ["q"])  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("blank", BLANK)
+def test_retrieve_request_rejects_blank_query(blank: str) -> None:
+    with pytest.raises(ApplicationValidationError, match="query"):
+        RetrieveRequest(blank, retrieval_limit=3)
+
+
+@pytest.mark.parametrize("bad_limit", [None, True, False, 0, -1, 1.5, "5", []])
+def test_retrieve_request_rejects_invalid_retrieval_limit(bad_limit: object) -> None:
+    with pytest.raises(ApplicationValidationError, match="retrieval_limit"):
+        RetrieveRequest("query", retrieval_limit=bad_limit)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("limit", [1, 3, 100])
+def test_retrieve_request_accepts_positive_retrieval_limit(limit: int) -> None:
+    assert RetrieveRequest("query", retrieval_limit=limit).retrieval_limit == limit
+
+
+def test_retrieve_request_rejects_non_mapping_metadata_filters() -> None:
+    with pytest.raises(ApplicationValidationError, match="metadata_filters"):
+        RetrieveRequest(
+            "query",
+            retrieval_limit=3,
+            metadata_filters=["doc_type"],  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("bad_key", [1, "", "   ", None])
+def test_retrieve_request_rejects_invalid_metadata_filter_keys(
+    bad_key: object,
+) -> None:
+    with pytest.raises(ApplicationValidationError, match="metadata_filters keys"):
+        RetrieveRequest(
+            "query",
+            retrieval_limit=3,
+            metadata_filters={bad_key: "runbook"},  # type: ignore[dict-item]
+        )
+
+
+@pytest.mark.parametrize("bad_value", [1, None, True, ["x"], {"a": "b"}])
+def test_retrieve_request_rejects_non_string_metadata_filter_values(
+    bad_value: object,
+) -> None:
+    with pytest.raises(ApplicationValidationError, match="metadata_filters values"):
+        RetrieveRequest(
+            "query",
+            retrieval_limit=3,
+            metadata_filters={"doc_type": bad_value},  # type: ignore[dict-item]
+        )
+
+
+def test_retrieve_request_accepts_empty_string_filter_value() -> None:
+    request = RetrieveRequest(
+        "query",
+        retrieval_limit=3,
+        metadata_filters={"tag": ""},
+    )
+    assert request.metadata_filters == {"tag": ""}
+
+
+def test_retrieve_response_rejects_non_sequence_hits() -> None:
+    with pytest.raises(ApplicationValidationError, match="hits"):
+        RetrieveResponse(hits="chunk")  # type: ignore[arg-type]
+
+
+def test_retrieve_response_rejects_non_scored_chunk_item() -> None:
+    with pytest.raises(ApplicationValidationError, match="hits items"):
+        RetrieveResponse(hits=[_reference()])  # type: ignore[list-item]
 
 
 @pytest.mark.parametrize("bad_key", [1, "", "   ", None])
@@ -374,6 +494,25 @@ def test_invoke_tool_arguments_are_copied() -> None:
     assert request.arguments is not arguments
 
 
+def test_retrieve_request_metadata_filters_are_copied() -> None:
+    filters = {"doc_type": "runbook"}
+    request = RetrieveRequest(
+        "query",
+        retrieval_limit=3,
+        metadata_filters=filters,
+    )
+    filters["doc_type"] = "changed"
+    assert request.metadata_filters == {"doc_type": "runbook"}
+    assert request.metadata_filters is not filters
+
+
+def test_retrieve_response_hits_are_independent_of_input_list() -> None:
+    hits = [_scored_chunk()]
+    response = RetrieveResponse(hits=hits)
+    hits.clear()
+    assert len(response.hits) == 1
+
+
 def test_contracts_serialize_with_asdict() -> None:
     ask_request = AskRequest(
         "default",
@@ -391,6 +530,12 @@ def test_contracts_serialize_with_asdict() -> None:
     ingest_response = IngestResponse(["doc-1"], 1)
     tool_request = InvokeToolRequest("search", {"q": "login"})
     tool_response = _tool_output()
+    retrieve_request = RetrieveRequest(
+        "query",
+        retrieval_limit=5,
+        metadata_filters={"doc_type": "runbook"},
+    )
+    retrieve_response = RetrieveResponse(hits=[_scored_chunk()])
 
     ask_dict = asdict(ask_request)
     assert "ticket" not in ask_dict
@@ -415,6 +560,13 @@ def test_contracts_serialize_with_asdict() -> None:
         "arguments": {"q": "login"},
     }
     assert asdict(tool_response) == {"tool_name": "search", "result": "2 hits"}
+    assert asdict(retrieve_request) == {
+        "query": "query",
+        "retrieval_limit": 5,
+        "metadata_filters": {"doc_type": "runbook"},
+    }
+    assert asdict(retrieve_response)["hits"][0]["score"] == 0.9
+    assert asdict(retrieve_response)["hits"][0]["chunk"]["content"] == "chunk text"
 
 
 def test_application_contracts_import_without_streamlit() -> None:
