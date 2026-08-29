@@ -139,7 +139,7 @@ class ManageUploadedDocuments:
         previous = self._catalog.get(reference)
         if previous is None:
             raise UnknownDocumentError(
-                f"unknown document {reference.source_type.value}:{reference.source_id}"
+                f"unknown document {reference.source_type}:{reference.source_id}"
             )
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)
