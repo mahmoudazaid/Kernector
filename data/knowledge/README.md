@@ -139,6 +139,8 @@ Ownership:
 - Runnable ingest CLI: [#118](https://github.com/mahmoudazaid/Kernector/issues/118)
 - Example pack layout: [#137](https://github.com/mahmoudazaid/Kernector/issues/137)
 
+Architecture note: [ADR 0001 — domain-agnostic knowledge foundation](../../docs/adr/0001-domain-agnostic-knowledge-foundation.md).
+
 Do not convert `tags` into comma-separated text in the seed format, and do not modify Domain models to mirror every seed-corpus field.
 
 ## Ingest command
@@ -211,12 +213,26 @@ These sources do not need to follow this seed-corpus JSON format. Each source ad
 
 ## Related issues
 
+Foundation:
+
 - Chunking: [#83](https://github.com/mahmoudazaid/Kernector/issues/83)
 - Chroma and vector storage: [#84](https://github.com/mahmoudazaid/Kernector/issues/84)
 - Knowledge ingestion use case: [#85](https://github.com/mahmoudazaid/Kernector/issues/85)
 - JSON knowledge corpus adapter: [#117](https://github.com/mahmoudazaid/Kernector/issues/117)
 - Ingest CLI: [#118](https://github.com/mahmoudazaid/Kernector/issues/118)
+
+Domain-agnostic migration ([EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68)):
+
+- Remove `Ticket` from domain: [#132](https://github.com/mahmoudazaid/Kernector/issues/132)
+- Opaque `source_type`: [#133](https://github.com/mahmoudazaid/Kernector/issues/133)
+- Documents-only ingest contract: [#134](https://github.com/mahmoudazaid/Kernector/issues/134)
+- Generic ask grounding: [#135](https://github.com/mahmoudazaid/Kernector/issues/135)
+- Story Intelligence prompt pack: [#136](https://github.com/mahmoudazaid/Kernector/issues/136)
 - Example pack layout + neutral samples: [#137](https://github.com/mahmoudazaid/Kernector/issues/137)
+- This documentation: [#138](https://github.com/mahmoudazaid/Kernector/issues/138)
+- Future SQL document catalog: [#131](https://github.com/mahmoudazaid/Kernector/issues/131)
+
+ADR: [0001 — domain-agnostic knowledge foundation](../../docs/adr/0001-domain-agnostic-knowledge-foundation.md).
 
 ## Out of scope for this folder
 

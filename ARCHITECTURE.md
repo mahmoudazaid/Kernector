@@ -47,6 +47,46 @@ Everything points inward toward `domain`. Nothing points outward.
 `composition/container.py` wires concrete infrastructure implementations into
 application services. Presentation is not the composition root.
 
+## Knowledge foundation
+
+Kernector’s reusable core is **domain-agnostic**. Business vocabulary lives in
+optional packs; provider-specific ingestion lives in replaceable connectors.
+See [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md).
+
+### Generic core pipeline
+
+Normalized knowledge enters as `SourceDocument`, then follows a shared path:
+chunk → embed → vector store → retrieve (with provenance). Domain and
+application layers stay origin-agnostic; they do not model tickets, Jira, or
+other provider types as permanent core entities.
+
+### Optional domain packs
+
+Packs supply example content and prompts for a product surface. **Story
+Intelligence** is the first example (`data/knowledge/packs/story-intelligence/`,
+`prompts/packs/story-intelligence/`). Pack fields (for example SDLC-shaped
+`doc_type` or `severity`) are example metadata, not platform requirements. The
+default product surface uses the neutral `core` prompt pack and
+`data/knowledge/documents.json`.
+
+### Replaceable connectors
+
+Connectors normalize external payloads into `SourceDocument` before the shared
+pipeline. Names only (no implementation commitment in this document):
+
+- File upload (TXT, Markdown, PDF)
+- Seed JSON corpus adapter
+- Future: GitHub, Jira, Confluence, Google Drive
+
+### Catalog adapter selection
+
+Uploaded-document lifecycle metadata uses the `DocumentCatalog` port.
+`DOCUMENT_CATALOG_PATH` configures only the JSON catalog **file location**; it
+does not select an adapter. Composition currently wires `JsonDocumentCatalog`
+directly. Configurable JSON vs SQL adapter selection will be introduced by
+follow-up [#131](https://github.com/mahmoudazaid/Kernector/issues/131); it is
+not implemented here.
+
 ## Architecture tests
 
 Automated AST checks under `test/architecture/` and
