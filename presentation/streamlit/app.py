@@ -52,7 +52,7 @@ def _settings() -> Settings:
 
 @st.cache_resource
 def _prompt_repository() -> PromptRepository:
-    return build_prompt_repository()
+    return build_prompt_repository(_settings())
 
 
 @st.cache_data(ttl=30)
