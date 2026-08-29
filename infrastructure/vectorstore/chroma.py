@@ -18,7 +18,6 @@ from domain.knowledge import (
     ScoredChunk,
     SourceMetadata,
     SourceReference,
-    SourceType,
     Vector,
 )
 from infrastructure.config import ChromaSettings
@@ -236,12 +235,6 @@ def _decode_chunk(
             f"record {record_id}: document must be a string, got {document!r}"
         )
     raw_type = _require_str(metadata, _KEY_SOURCE_TYPE, record_id)
-    try:
-        source_type = SourceType(raw_type)
-    except ValueError as exc:
-        raise ChromaStoreError(
-            f"record {record_id}: unknown {_KEY_SOURCE_TYPE} {raw_type!r}"
-        ) from exc
     index = metadata.get(_KEY_CHUNK_INDEX)
     if isinstance(index, bool) or not isinstance(index, int):
         raise ChromaStoreError(
@@ -252,7 +245,7 @@ def _decode_chunk(
             metadata=SourceMetadata(
                 reference=SourceReference(
                     source_id=_require_str(metadata, _KEY_SOURCE_ID, record_id),
-                    source_type=source_type,
+                    source_type=raw_type,
                 ),
                 title=_decode_optional_str(metadata, _KEY_TITLE, record_id),
                 provider=_decode_optional_str(metadata, _KEY_PROVIDER, record_id),
