@@ -73,9 +73,7 @@ def _empty_snapshot() -> _RecordSnapshot:
     return _RecordSnapshot((), (), (), ())
 
 
-def _snapshot_records(
-    collection: Collection, ids: Sequence[str]
-) -> _RecordSnapshot:
+def _snapshot_records(collection: Collection, ids: Sequence[str]) -> _RecordSnapshot:
     """Load existing rows for ``ids`` before any delete. Missing IDs are omitted."""
     if not ids:
         return _empty_snapshot()
@@ -140,19 +138,22 @@ def _delete_then_write(
 ) -> None:
     """Delete ``ids``, run ``write``, restore ``snapshot`` if ``write`` fails.
 
-    Validation and snapshot creation must happen before this is called. If both
-    the primary write and restoration fail, the raised ``ChromaStoreError``
-    reports both failures and chains the primary exception.
+    Validation and snapshot creation must happen before this is called. On write
+    failure, every target ID is deleted again before snapshot restore so a
+    partial primary write cannot leave rows that conflict with ``add`` or keep
+    newly introduced IDs. If cleanup or restoration also fails, the raised
+    ``ChromaStoreError`` reports both failures and chains the primary exception.
     """
     try:
         collection.delete(ids=list(ids))
         write()
     except (ChromaError, ValueError) as exc:
         try:
+            collection.delete(ids=list(ids))
             _restore_snapshot(collection, snapshot)
         except (ChromaError, ValueError, RuntimeError, OSError) as restore_exc:
             raise ChromaStoreError(
-                f"{failure_message}: {exc}; restoration also failed: {restore_exc}"
+                f"{failure_message}: {exc}; recovery also failed: {restore_exc}"
             ) from exc
         raise ChromaStoreError(f"{failure_message}: {exc}") from exc
 
@@ -217,7 +218,9 @@ def _encode_extra(extra: Mapping[str, str], where: str) -> str:
     `str()` coercion.
     """
     if not isinstance(extra, Mapping):
-        raise ChromaStoreError(f"{where}: metadata.extra must be a mapping, got {extra!r}")
+        raise ChromaStoreError(
+            f"{where}: metadata.extra must be a mapping, got {extra!r}"
+        )
     for key in extra:
         if not isinstance(key, str):
             raise ChromaStoreError(
@@ -263,7 +266,9 @@ def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
         if value is None:
             continue
         if not isinstance(value, str):
-            raise ChromaStoreError(f"{where}: metadata.{key} must be a string, got {value!r}")
+            raise ChromaStoreError(
+                f"{where}: metadata.{key} must be a string, got {value!r}"
+            )
         encoded[key] = value
     for key, value in metadata.extra.items():
         if not isinstance(key, str):
@@ -372,9 +377,7 @@ def _decode_optional_str(
     return value
 
 
-def _decode_chunk(
-    record_id: str, document: object, metadata: object
-) -> DocumentChunk:
+def _decode_chunk(record_id: str, document: object, metadata: object) -> DocumentChunk:
     """Rebuild a DocumentChunk from one persisted record.
 
     Built in the order SourceReference -> SourceMetadata -> DocumentChunk so each
