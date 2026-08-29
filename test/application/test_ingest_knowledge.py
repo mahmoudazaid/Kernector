@@ -27,9 +27,14 @@ CHUNK_OVERLAP = 2
 CONTENT = "abcdefghijklmnopqrstuvwxyz"
 
 
-def _document(source_id: str = "doc-1", content: str = CONTENT) -> SourceDocument:
+def _document(
+    source_id: str = "doc-1",
+    content: str = CONTENT,
+    *,
+    source_type: str = SourceType.KNOWLEDGE_DOCUMENT,
+) -> SourceDocument:
     return SourceDocument(
-        SourceMetadata(SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)),
+        SourceMetadata(SourceReference(source_id, source_type)),
         content,
     )
 
@@ -100,6 +105,54 @@ def test_duplicate_source_references_in_one_request_are_rejected() -> None:
         )
 
     assert store.records == {}
+
+
+def test_the_same_source_id_under_two_source_types_is_not_a_duplicate() -> None:
+    store = InMemoryVectorStore()
+
+    response = _use_case(store).execute(
+        IngestRequest(
+            documents=[
+                _document("shared", source_type="knowledge_document"),
+                _document("shared", source_type="connector_feed"),
+            ]
+        )
+    )
+
+    assert response.accepted_ids == ("shared", "shared")
+    assert len(store.records) == 6
+    kinds = {key[0] for key in store.records}
+    assert kinds == {"knowledge_document", "connector_feed"}
+
+
+def test_deletion_is_scoped_to_the_complete_source_reference() -> None:
+    store = InMemoryVectorStore()
+    _use_case(store).execute(
+        IngestRequest(
+            documents=[
+                _document("shared", source_type="knowledge_document"),
+                _document("shared", source_type="connector_feed"),
+            ]
+        )
+    )
+    assert len(store.records) == 6
+
+    _use_case(store, chunk_size=30, chunk_overlap=0).execute(
+        IngestRequest(
+            documents=[_document("shared", source_type="knowledge_document")]
+        )
+    )
+
+    # knowledge_document collapsed to one chunk; connector_feed's three survive.
+    assert len(store.records) == 4
+    assert sorted(
+        (key[0], key[1], key[2]) for key in store.records
+    ) == [
+        ("connector_feed", "shared", 0),
+        ("connector_feed", "shared", 1),
+        ("connector_feed", "shared", 2),
+        ("knowledge_document", "shared", 0),
+    ]
 
 
 def test_re_ingesting_with_fewer_chunks_removes_the_stale_ones() -> None:

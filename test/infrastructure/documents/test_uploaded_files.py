@@ -43,7 +43,7 @@ def test_txt_file_becomes_source_document(tmp_path: Path) -> None:
 
     assert document.content == "Kernector guidance body"
     assert document.source_id == "upload:guide"
-    assert document.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
 
 @pytest.mark.parametrize(

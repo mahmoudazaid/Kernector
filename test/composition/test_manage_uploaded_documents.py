@@ -59,7 +59,7 @@ def test_list_create_replace_delete_round_trip(
         UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
     )
     assert created.status is CatalogStatus.READY
-    assert created.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert created.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     listed = composition_container.list_uploaded_documents(settings)
     assert len(listed) == 1

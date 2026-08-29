@@ -192,6 +192,33 @@ def test_every_documented_field_type_round_trips(tmp_path: Path) -> None:
     assert JsonDocumentCatalog(path).all() == (document,)
 
 
+def test_opaque_source_type_round_trips(tmp_path: Path) -> None:
+    path = tmp_path / "uploads.json"
+    document = CatalogDocument(
+        reference=SourceReference("id-opaque", "connector_feed"),
+        file_name="feed.md",
+        title="Feed",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=1,
+        error=None,
+    )
+    JsonDocumentCatalog(path).upsert(document)
+    assert JsonDocumentCatalog(path).all() == (document,)
+
+
+def test_blank_source_type_is_rejected(tmp_path: Path) -> None:
+    path = _write_entry_with(tmp_path, "source_type", "   ")
+
+    with pytest.raises(CatalogValidationError) as raised:
+        JsonDocumentCatalog(path).all()
+
+    message = str(raised.value)
+    assert "entry 0" in message
+    assert "source_type" in message
+
+
 def test_duplicate_reference_raises_validation_error(tmp_path: Path) -> None:
     """Collapsing the pair would drop a row on the next write and orphan chunks."""
     path = tmp_path / "uploads.json"

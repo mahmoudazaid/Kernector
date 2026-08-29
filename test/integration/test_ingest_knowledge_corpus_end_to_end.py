@@ -144,18 +144,18 @@ def test_heterogeneous_corpus_preserves_doc_type_and_provenance(
     assert openapi.metadata.extra["tags_json"] == '["payments","api"]'
     assert openapi.metadata.extra["source_name"] == "Payments API"
     assert openapi.metadata.extra["source_url"] == "https://example.test/openapi.json"
-    assert openapi.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert openapi.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     bug = by_source["bug-auth-001"][0]
     assert bug.metadata.extra["doc_type"] == "bug"
     assert bug.metadata.extra["severity"] == "high"
     assert bug.metadata.extra["source_name"] == "QA defect triage"
-    assert bug.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert bug.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     srs = by_source["srs-auth-001"][0]
     assert srs.metadata.extra["doc_type"] == "srs"
     assert srs.metadata.extra["source_name"] == "Kernector SRS"
-    assert srs.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert srs.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     assert {
         scored.chunk.reference.source_type for scored in store.search(PROBE, 1000)
