@@ -1,5 +1,6 @@
 """Chroma adapter behavior: identity, metadata, writes, search, and failures."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -625,6 +626,58 @@ def test_filters_apply_before_limit(store: ChromaVectorStore) -> None:
     hits = store.search(ALIGNED, 1, metadata_filters={"doc_type": "runbook"})
 
     assert [hit.chunk.source_id for hit in hits] == ["match"]
+
+
+def test_re_upsert_with_changed_extra_does_not_leave_stale_promoted_keys(
+    store: ChromaVectorStore,
+) -> None:
+    """chromadb upsert merges metadata; stale `x:` keys must not survive replace."""
+    store.upsert(
+        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"tag": "old"})]
+    )
+    store.upsert(
+        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"other": "new"})]
+    )
+
+    assert store.search(ALIGNED, 10, metadata_filters={"tag": "old"}) == ()
+    hits = store.search(ALIGNED, 10, metadata_filters={"other": "new"})
+    assert [hit.chunk.source_id for hit in hits] == ["doc-1"]
+    assert dict(hits[0].chunk.metadata.extra) == {"other": "new"}
+
+
+def test_reindex_filter_metadata_makes_legacy_extra_filterable(
+    store: ChromaVectorStore,
+) -> None:
+    """Records written before `x:` promotion need an explicit reindex path."""
+    store._collection.add(
+        ids=["legacy-record"],
+        embeddings=[list(ALIGNED)],
+        documents=["legacy body"],
+        metadatas=[
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": json.dumps({"doc_type": "runbook"}, sort_keys=True),
+            }
+        ],
+    )
+
+    assert store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"}) == ()
+
+    rewritten = store.reindex_filter_metadata()
+
+    assert rewritten == 1
+    hits = store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"})
+    assert [hit.chunk.source_id for hit in hits] == ["doc-1"]
+    assert dict(hits[0].chunk.metadata.extra) == {"doc_type": "runbook"}
+    assert hits[0].chunk.content == "legacy body"
+
+
+def test_reindex_filter_metadata_on_empty_collection_is_zero(
+    store: ChromaVectorStore,
+) -> None:
+    assert store.reindex_filter_metadata() == 0
 
 
 def test_empty_string_filter_value_matches(store: ChromaVectorStore) -> None:

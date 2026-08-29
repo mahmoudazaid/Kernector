@@ -41,8 +41,9 @@ _ID_SCHEME_VERSION = 1
 # shadowing owned scalars (a caller key named "title" becomes "x:title").
 #
 # Records written before this promotion carry only `extra_json`. Filtered search
-# against them returns zero hits until those sources are fully re-ingested —
-# the same recoverability model as bumping `_ID_SCHEME_VERSION` above.
+# against them returns zero hits until `reindex_filter_metadata` (or a full
+# re-ingest that rewrites through `upsert`) promotes those keys — the same
+# recoverability model as bumping `_ID_SCHEME_VERSION` above.
 _KEY_SOURCE_ID = "source_id"
 _KEY_SOURCE_TYPE = "source_type"
 _KEY_CHUNK_INDEX = "chunk_index"
@@ -518,9 +519,10 @@ class ChromaVectorStore:
         """Insert or replace embedded chunks. See `domain.ports.VectorStore`.
 
         The entire batch is validated before anything is written, so a bad item
-        cannot leave a half-applied batch behind. The write itself carries no
-        such guarantee: chromadb 1.5.9 documents no atomicity for `upsert`, so a
-        failure inside the vendor call may leave some records applied.
+        cannot leave a half-applied batch behind. Each identity is deleted before
+        it is written: chromadb 1.5.9 *merges* metadata on `upsert`, so omitting
+        a previously promoted `extra` key would otherwise leave a stale filterable
+        scalar behind. The delete-then-write pair itself is not atomic.
         """
         if not embedded:
             return
@@ -556,6 +558,7 @@ class ChromaVectorStore:
             documents.append(item.chunk.content)
             metadatas.append(_encode_metadata(item.chunk))
         try:
+            self._collection.delete(ids=ids)
             self._collection.upsert(
                 ids=ids,
                 embeddings=vectors,
@@ -605,6 +608,77 @@ class ChromaVectorStore:
                 f"{reference.source_id} from collection "
                 f"{self._collection.name!r}: {exc}"
             ) from exc
+
+    def reindex_filter_metadata(self) -> int:
+        """Rewrite every record so `SourceMetadata.extra` keys are filterable.
+
+        Records persisted before `x:` promotion carry only `extra_json`. This
+        path rebuilds metadata from the decoded domain chunk (keeping stored
+        embeddings and documents) and replaces each record via delete-then-add
+        so chromadb cannot merge leftover scalars. Idempotent for collections
+        that already carry promoted keys.
+
+        Returns:
+            The number of records rewritten.
+
+        Raises:
+            ChromaStoreError: On adapter or decode failure. A failure after
+                some deletes may leave the collection partially rewritten.
+        """
+        try:
+            result = self._collection.get(
+                include=["metadatas", "documents", "embeddings"]
+            )
+        except (ChromaError, ValueError) as exc:
+            raise ChromaStoreError(
+                f"could not read collection {self._collection.name!r} for "
+                f"filter-metadata reindex: {exc}"
+            ) from exc
+        ids = result.get("ids") or []
+        if not ids:
+            return 0
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        embeddings = result.get("embeddings")
+        if embeddings is None:
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: reindex requires stored "
+                "embeddings, but none were returned"
+            )
+        if not (
+            len(documents) == len(ids)
+            and len(metadatas) == len(ids)
+            and len(embeddings) == len(ids)
+        ):
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: reindex get() returned "
+                f"mismatched lengths ids={len(ids)} documents={len(documents)} "
+                f"metadatas={len(metadatas)} embeddings={len(embeddings)}"
+            )
+        vectors: list[list[float]] = []
+        texts: list[str] = []
+        rewritten: list[dict[str, str | int]] = []
+        for record_id, document, metadata, embedding in zip(
+            ids, documents, metadatas, embeddings, strict=True
+        ):
+            chunk = _decode_chunk(record_id, document, metadata)
+            vectors.append(_validate_vector(list(embedding), f"record {record_id}"))
+            texts.append(chunk.content)
+            rewritten.append(_encode_metadata(chunk))
+        try:
+            self._collection.delete(ids=list(ids))
+            self._collection.add(
+                ids=list(ids),
+                embeddings=vectors,
+                documents=texts,
+                metadatas=rewritten,
+            )
+        except (ChromaError, ValueError) as exc:
+            raise ChromaStoreError(
+                f"could not rewrite {len(ids)} record(s) in collection "
+                f"{self._collection.name!r} during filter-metadata reindex: {exc}"
+            ) from exc
+        return len(ids)
 
     def search(
         self,

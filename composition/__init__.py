@@ -19,6 +19,7 @@ from composition.container import (
     load_knowledge_documents,
     load_runtime_settings,
     probe_ollama,
+    reindex_filter_metadata,
     replace_uploaded_document,
 )
 from composition.errors import (
@@ -53,5 +54,6 @@ __all__ = [
     "load_knowledge_documents",
     "load_runtime_settings",
     "probe_ollama",
+    "reindex_filter_metadata",
     "replace_uploaded_document",
 ]
