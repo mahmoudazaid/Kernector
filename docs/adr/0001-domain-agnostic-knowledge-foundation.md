@@ -31,9 +31,10 @@ data into a shared document contract.
    into `SourceDocument` before calling the shared pipeline. Connector
    implementation is out of scope for this ADR.
 4. **Catalog persistence** — Uploaded-document catalog uses a port
-   (`DocumentCatalog`). The current adapter is JSON
-   (`DOCUMENT_CATALOG_PATH` / `JsonDocumentCatalog`). A future transactional SQL
-   adapter is tracked in [#131](https://github.com/mahmoudazaid/Kernector/issues/131).
+   (`DocumentCatalog`). Composition currently wires `JsonDocumentCatalog`
+   directly. `DOCUMENT_CATALOG_PATH` sets only that JSON adapter’s file path; it
+   does not choose among adapters. Configurable JSON vs SQL adapter selection
+   is tracked in [#131](https://github.com/mahmoudazaid/Kernector/issues/131).
 
 ## Consequences
 
@@ -56,7 +57,7 @@ data into a shared document contract.
 | [#136](https://github.com/mahmoudazaid/Kernector/issues/136) | Interview-prep prompts → Story Intelligence pack |
 | [#137](https://github.com/mahmoudazaid/Kernector/issues/137) | Seed corpus as example pack + neutral samples |
 | [#138](https://github.com/mahmoudazaid/Kernector/issues/138) | Document foundation, packs, and connector boundaries |
-| [#131](https://github.com/mahmoudazaid/Kernector/issues/131) | Future SQL catalog adapter (selection / planning) |
+| [#131](https://github.com/mahmoudazaid/Kernector/issues/131) | Configurable JSON/SQL catalog adapter selection |
 
 Parent: [EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68).
 
