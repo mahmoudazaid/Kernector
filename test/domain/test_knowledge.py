@@ -54,6 +54,12 @@ def test_source_reference_rejects_blank_source_type(blank: str) -> None:
         SourceReference("doc-1", blank)
 
 
+@pytest.mark.parametrize("not_a_string", [None, 1, True, ["wiki"], {"kind": "wiki"}])
+def test_source_reference_rejects_non_string_source_type(not_a_string: object) -> None:
+    with pytest.raises(DomainValidationError, match="source_type"):
+        SourceReference("doc-1", not_a_string)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize("blank", BLANK)
 def test_source_document_rejects_blank_identifier(blank: str) -> None:
     with pytest.raises(DomainValidationError, match="source_id"):
