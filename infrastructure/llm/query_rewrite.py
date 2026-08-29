@@ -1,6 +1,5 @@
 """OpenRouter LangChain adapter for retrieval query rewriting."""
 
-from collections.abc import Callable
 from typing import Any, Protocol
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -41,8 +40,8 @@ class _InvocableModel(Protocol):
 class OpenRouterQueryRewriter:
     """``QueryRewriter`` backed by LangChain ``ChatOpenAI`` on OpenRouter.
 
-    Accepts an optional injected ``model`` (or ``model_factory``) so tests
-    exercise the public ``rewrite()`` seam without calling the network.
+    Accepts an optional injected ``model`` so tests exercise the public
+    ``rewrite()`` seam without calling the network.
     """
 
     def __init__(
@@ -50,14 +49,11 @@ class OpenRouterQueryRewriter:
         config: OpenRouterSettings,
         *,
         model: _InvocableModel | None = None,
-        model_factory: Callable[[], _InvocableModel] | None = None,
     ) -> None:
         _require_rewrite_config(config)
         self._system = REWRITE_SYSTEM
         if model is not None:
             self._model = model
-        elif model_factory is not None:
-            self._model = model_factory()
         else:
             self._model = ChatOpenAI(
                 model=config.rewrite_model,
@@ -70,8 +66,8 @@ class OpenRouterQueryRewriter:
         """Return a non-blank retrieval-oriented rewrite of ``query``.
 
         Raises:
-            QueryRewriterError: Invocation failed or content was blank after
-                normalization.
+            QueryRewriterError: Invocation failed, content was not a string, or
+                content was blank after normalization.
         """
         messages = [
             SystemMessage(content=self._system),
@@ -84,7 +80,10 @@ class OpenRouterQueryRewriter:
 
         content = getattr(result, "content", result)
         if not isinstance(content, str):
-            content = str(content) if content is not None else ""
+            raise QueryRewriterError(
+                "Query rewrite returned non-string content: "
+                f"{type(content).__name__}"
+            )
         normalized = content.strip()
         if not normalized:
             raise QueryRewriterError(

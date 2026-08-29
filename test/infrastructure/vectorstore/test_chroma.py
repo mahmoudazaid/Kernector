@@ -680,6 +680,159 @@ def test_reindex_filter_metadata_on_empty_collection_is_zero(
     assert store.reindex_filter_metadata() == 0
 
 
+def test_reindex_filter_metadata_is_idempotent(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"doc_type": "runbook"})]
+    )
+
+    assert store.reindex_filter_metadata() == 1
+    assert store.reindex_filter_metadata() == 1
+
+    hits = store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"})
+    assert [hit.chunk.source_id for hit in hits] == ["doc-1"]
+    assert dict(hits[0].chunk.metadata.extra) == {"doc_type": "runbook"}
+
+
+def test_reindex_filter_metadata_removes_stale_promoted_keys(
+    store: ChromaVectorStore,
+) -> None:
+    """Reindex rewrites from extra_json and must drop leftover x: scalars."""
+    store._collection.add(
+        ids=["legacy-stale"],
+        embeddings=[list(ALIGNED)],
+        documents=["legacy body"],
+        metadatas=[
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": json.dumps({"doc_type": "runbook"}, sort_keys=True),
+                "x:stale": "should-go",
+            }
+        ],
+    )
+
+    assert store.reindex_filter_metadata() == 1
+
+    assert store.search(ALIGNED, 10, metadata_filters={"stale": "should-go"}) == ()
+    hits = store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"})
+    assert [hit.chunk.source_id for hit in hits] == ["doc-1"]
+    raw = store._collection.get(ids=["legacy-stale"], include=["metadatas"])
+    assert "x:stale" not in (raw["metadatas"][0] or {})
+
+
+def test_failed_replacement_upsert_restores_existing_record(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Delete-then-write must not accept data loss when the write fails."""
+    store.upsert(
+        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"tag": "old"})]
+    )
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("simulated upsert failure")
+
+    monkeypatch.setattr(store._collection, "upsert", boom)
+
+    with pytest.raises(ChromaStoreError, match="simulated upsert failure"):
+        store.upsert(
+            [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"tag": "new"})]
+        )
+
+    hits = store.search(ALIGNED, 10, metadata_filters={"tag": "old"})
+    assert [hit.chunk.source_id for hit in hits] == ["doc-1"]
+    assert dict(hits[0].chunk.metadata.extra) == {"tag": "old"}
+    assert hits[0].chunk.content == "body"
+
+
+def test_failed_replacement_upsert_reports_when_restoration_also_fails(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.upsert(
+        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"tag": "old"})]
+    )
+
+    def boom_upsert(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("primary write failed")
+
+    def boom_add(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("restoration failed")
+
+    monkeypatch.setattr(store._collection, "upsert", boom_upsert)
+    monkeypatch.setattr(store._collection, "add", boom_add)
+
+    with pytest.raises(ChromaStoreError, match="primary write failed") as raised:
+        store.upsert(
+            [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"tag": "new"})]
+        )
+
+    message = str(raised.value)
+    assert "restoration failed" in message
+    assert isinstance(raised.value.__cause__, ValueError)
+
+
+def test_failed_reindex_add_restores_existing_collection(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store._collection.add(
+        ids=["legacy-record"],
+        embeddings=[list(ALIGNED)],
+        documents=["legacy body"],
+        metadatas=[
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": json.dumps({"doc_type": "runbook"}, sort_keys=True),
+            }
+        ],
+    )
+
+    add_calls = {"n": 0}
+    real_add = store._collection.add
+
+    def flaky_add(*args: object, **kwargs: object) -> object:
+        add_calls["n"] += 1
+        if add_calls["n"] == 1:
+            raise ValueError("simulated reindex add failure")
+        return real_add(*args, **kwargs)
+
+    monkeypatch.setattr(store._collection, "add", flaky_add)
+
+    with pytest.raises(ChromaStoreError, match="simulated reindex add failure"):
+        store.reindex_filter_metadata()
+
+    # Pre-promotion filter still misses; content and identity remain recoverable.
+    assert store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"}) == ()
+    hits = store.search(ALIGNED, 10)
+    assert len(hits) == 1
+    assert hits[0].chunk.source_id == "doc-1"
+    assert hits[0].chunk.content == "legacy body"
+    assert dict(hits[0].chunk.metadata.extra) == {"doc_type": "runbook"}
+
+
+def test_failed_reindex_reports_when_restoration_also_fails(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.upsert(
+        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"doc_type": "runbook"})]
+    )
+
+    def boom_add(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("reindex write failed")
+
+    # Primary write and restoration both go through add after delete.
+    monkeypatch.setattr(store._collection, "add", boom_add)
+
+    with pytest.raises(ChromaStoreError, match="reindex write failed") as raised:
+        store.reindex_filter_metadata()
+
+    assert "restoration" in str(raised.value).lower()
+    assert isinstance(raised.value.__cause__, ValueError)
+    # Both writes failed after delete — remaining non-atomic limitation.
+    assert count(store) == 0
+
+
 def test_empty_string_filter_value_matches(store: ChromaVectorStore) -> None:
     store.upsert(
         [
