@@ -16,7 +16,6 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     SourceReference,
-    SourceType,
 )
 
 
@@ -114,7 +113,7 @@ class JsonDocumentCatalog:
                 reference = document.reference
                 raise CatalogValidationError(
                     f"catalog entry {index} duplicates source "
-                    f"{reference.source_type.value}:{reference.source_id}; "
+                    f"{reference.source_type}:{reference.source_id}; "
                     "each source may appear at most once"
                 )
             records[document.reference] = document
@@ -141,7 +140,7 @@ class JsonDocumentCatalog:
 def _entry_from_document(document: CatalogDocument) -> dict[str, object]:
     return {
         "source_id": document.reference.source_id,
-        "source_type": document.reference.source_type.value,
+        "source_type": document.reference.source_type,
         "file_name": document.file_name,
         "title": document.title,
         "content_format": document.content_format,
@@ -188,10 +187,7 @@ def _document_from_entry(entry: object, *, index: int) -> CatalogDocument:
             )
     source_id = _require_str(entry, "source_id", index=index)
     file_name = _require_str(entry, "file_name", index=index)
-    source_type = _require_member(
-        SourceType, _require_str(entry, "source_type", index=index),
-        field="source_type", index=index,
-    )
+    source_type = _require_str(entry, "source_type", index=index)
     status = _require_member(
         CatalogStatus, _require_str(entry, "status", index=index),
         field="status", index=index,

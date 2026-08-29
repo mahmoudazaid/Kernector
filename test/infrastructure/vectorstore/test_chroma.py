@@ -36,7 +36,7 @@ def make_chunk(
     source_id: str = "doc-1",
     index: int = 0,
     content: str = "body",
-    source_type: SourceType = SourceType.KNOWLEDGE_DOCUMENT,
+    source_type: str = SourceType.KNOWLEDGE_DOCUMENT,
     **metadata_fields: object,
 ) -> DocumentChunk:
     metadata = SourceMetadata(
@@ -240,7 +240,7 @@ def test_non_embedded_chunk_items_are_rejected(store: ChromaVectorStore) -> None
 
 def make_reference(
     source_id: str = "doc-1",
-    source_type: SourceType = SourceType.KNOWLEDGE_DOCUMENT,
+    source_type: str = SourceType.KNOWLEDGE_DOCUMENT,
 ) -> SourceReference:
     return SourceReference(source_id, source_type)
 
@@ -286,6 +286,35 @@ def test_delete_source_preserves_other_sources(store: ChromaVectorStore) -> None
     store.delete_source(make_reference("doc-1"))
 
     assert stored_identities(store) == [("knowledge_document", "doc-2", 0)]
+
+
+def test_different_source_type_is_a_different_record(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="shared", source_type="knowledge_document"),
+            make_embedded(source_id="shared", source_type="connector_feed"),
+        ]
+    )
+
+    assert stored_identities(store) == [
+        ("connector_feed", "shared", 0),
+        ("knowledge_document", "shared", 0),
+    ]
+
+
+def test_delete_source_preserves_the_same_id_under_another_source_type(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="shared", source_type="knowledge_document"),
+            make_embedded(source_id="shared", source_type="connector_feed"),
+        ]
+    )
+
+    store.delete_source(make_reference("shared", source_type="knowledge_document"))
+
+    assert stored_identities(store) == [("connector_feed", "shared", 0)]
 
 
 def test_deleting_an_unknown_source_is_a_no_op(store: ChromaVectorStore) -> None:
@@ -458,7 +487,8 @@ def test_search_reconstructs_full_domain_objects(
 ) -> None:
     top = populated.search(ALIGNED, 1)[0]
     assert isinstance(top.chunk, DocumentChunk)
-    assert isinstance(top.chunk.metadata.reference.source_type, SourceType)
+    assert isinstance(top.chunk.metadata.reference.source_type, str)
+    assert top.chunk.metadata.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
     assert top.chunk.index == 0
 
 
@@ -610,7 +640,8 @@ def valid_record(store: ChromaVectorStore) -> dict[str, object]:
     [
         ("missing source_id", lambda m: {k: v for k, v in m.items() if k != "source_id"}),
         ("blank source_id", lambda m: {**m, "source_id": "   "}),
-        ("unknown source_type", lambda m: {**m, "source_type": "not_a_type"}),
+        ("blank source_type", lambda m: {**m, "source_type": "   "}),
+        ("non-string source_type", lambda m: {**m, "source_type": 42}),
         ("negative chunk_index", lambda m: {**m, "chunk_index": -1}),
         ("non-integer chunk_index", lambda m: {**m, "chunk_index": "zero"}),
         ("malformed extra_json", lambda m: {**m, "extra_json": "{not json"}),
@@ -694,7 +725,7 @@ assert chunk.metadata.title == "Survives restart", chunk.metadata.title
 assert chunk.metadata.provider == "jira", chunk.metadata.provider
 assert chunk.metadata.content_format == "markdown", chunk.metadata.content_format
 assert chunk.metadata.reference.source_id == "restart-doc"
-assert chunk.metadata.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+assert chunk.metadata.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 assert dict(chunk.metadata.extra) == {"tags_json": '["persisted"]'}, chunk.metadata.extra
 assert abs(scored.score - 1.0) < 1e-6, scored.score
 print("reader ok")

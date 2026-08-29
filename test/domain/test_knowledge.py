@@ -34,13 +34,24 @@ def test_ticket_is_not_defined_in_domain_knowledge() -> None:
 
 
 def test_source_type_has_no_ticket_member() -> None:
-    assert "TICKET" not in SourceType.__members__
+    assert not hasattr(SourceType, "TICKET")
 
 
 def test_valid_source_document_is_accepted() -> None:
     document = SourceDocument(metadata(), "Exploratory testing guidance ...")
     assert document.source_id == "doc-1"
-    assert document.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+
+
+def test_source_reference_accepts_opaque_string_source_type() -> None:
+    reference = SourceReference("doc-1", "wiki")
+    assert reference.source_type == "wiki"
+
+
+@pytest.mark.parametrize("blank", BLANK)
+def test_source_reference_rejects_blank_source_type(blank: str) -> None:
+    with pytest.raises(DomainValidationError, match="source_type"):
+        SourceReference("doc-1", blank)
 
 
 @pytest.mark.parametrize("blank", BLANK)
@@ -53,16 +64,6 @@ def test_source_document_rejects_blank_identifier(blank: str) -> None:
 def test_source_document_rejects_blank_content(blank: str) -> None:
     with pytest.raises(DomainValidationError, match="content"):
         SourceDocument(metadata(), blank)
-
-
-def test_source_reference_rejects_raw_string_source_type() -> None:
-    with pytest.raises(DomainValidationError, match="source_type"):
-        SourceReference("doc-1", "ticket")  # type: ignore[arg-type]
-
-
-def test_unsupported_source_type_is_not_constructible() -> None:
-    with pytest.raises(ValueError):
-        SourceType("email")
 
 
 def test_metadata_rejects_non_reference() -> None:
