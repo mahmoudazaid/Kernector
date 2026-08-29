@@ -1,6 +1,8 @@
 # Prompt comparison note
 
-Compared the five interview-prep prompt variants for Kernector.
+Compared the five interview-prep prompt variants in the **Story Intelligence** domain pack (`prompts/packs/story-intelligence/`).
+
+Packs are selected via composition/config (`PROMPT_PACKS`, default `story-intelligence` until a neutral default pack lands). Core prompt loading stays pack-agnostic.
 
 ## Techniques
 

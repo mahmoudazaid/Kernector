@@ -1,62 +1,65 @@
 """Markdown-backed prompt repository."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+
 from domain.models import PromptVariant
 
-# Repo-root-relative: prompts/ -> infrastructure/ -> repo root
-PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 class MarkdownPromptRepository:
     """PromptRepository backed by markdown files with frontmatter."""
 
-    def __init__(self, prompts_dir: Path | None = None) -> None:
-        self._dir = prompts_dir or PROMPTS_DIR
+    def __init__(self, prompt_dirs: Sequence[Path]) -> None:
+        self._dirs = tuple(prompt_dirs)
         self._prompts: dict[str, PromptVariant] | None = None
         self._default_key: str | None = None
 
     def all(self) -> Mapping[str, PromptVariant]:
         self._load()
         return self._prompts
-    
+
     def default_key(self) -> str:
         self._load()
         return self._default_key
-    
+
     def _load(self) -> None:
         if self._prompts is not None:
             return
-        
+
         prompts: dict[str, PromptVariant] = {}
         default_key: str | None = None
 
-        for path in sorted(self._dir.glob("*.md")):
-            meta, body = _parse_prompt_file(path)
-            key = meta["key"]
+        for directory in self._dirs:
+            for path in sorted(directory.glob("*.md")):
+                meta, body = _parse_prompt_file(path)
+                key = meta["key"]
 
-            if key in prompts:
-                raise ValueError(f"Prompt key {key} already exists")
+                if key in prompts:
+                    raise ValueError(f"Prompt key {key} already exists")
 
-            prompts[key] = PromptVariant(
-                key=key,
-                name=meta["name"],
-                description=meta["description"],
-                system=body,
-                off_topic_marker=meta.get("off_topic_marker"),
-            )
+                prompts[key] = PromptVariant(
+                    key=key,
+                    name=meta["name"],
+                    description=meta["description"],
+                    system=body,
+                    off_topic_marker=meta.get("off_topic_marker"),
+                )
 
-            if meta.get("default", "false").lower() == "true":
-                if default_key is not None:
-                    raise ValueError("Multiple default prompts found")
-                default_key = key
+                if meta.get("default", "false").lower() == "true":
+                    if default_key is not None:
+                        raise ValueError("Multiple default prompts found")
+                    default_key = key
 
         if not prompts:
-            raise ValueError(f"No prompts found in {self._dir}")
+            raise ValueError(
+                "No prompts found in " + ", ".join(str(d) for d in self._dirs)
+            )
         if default_key is None:
             raise ValueError("No default prompt found")
 
         self._prompts = prompts
         self._default_key = default_key
+
 
 def _parse_prompt_file(path: Path) -> tuple[dict[str, str], str]:
     text = path.read_text(encoding="utf-8").strip()
