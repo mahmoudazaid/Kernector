@@ -52,7 +52,7 @@ def test_generic_record_becomes_source_document(tmp_path: Path) -> None:
     assert document.content == (
         "The application layer depends only on domain ports."
     )
-    assert document.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
     assert document.metadata.extra["doc_type"] == "architecture_decision"
 
 
@@ -329,21 +329,21 @@ def test_committed_heterogeneous_seed_corpus_loads() -> None:
 
     openapi = by_id["openapi-payments-001"]
     assert openapi.metadata.extra["doc_type"] == "openapi"
-    assert openapi.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert openapi.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
     assert openapi.metadata.extra["tags_json"] == '["payments","api"]'
     assert "severity" not in openapi.metadata.extra
 
     bug = by_id["bug-auth-001"]
     assert bug.metadata.extra["doc_type"] == "bug"
-    assert bug.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert bug.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     srs = by_id["srs-auth-001"]
     assert srs.metadata.extra["doc_type"] == "srs"
-    assert srs.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert srs.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     source_code = by_id["code-ingest-001"]
     assert source_code.metadata.extra["doc_type"] == "source_code"
-    assert source_code.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert source_code.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
     assert {document.reference.source_type for document in documents} == {
         SourceType.KNOWLEDGE_DOCUMENT

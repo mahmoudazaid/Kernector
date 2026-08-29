@@ -75,7 +75,7 @@ def test_create_persists_application_generated_uuid() -> None:
     ).create(UploadPayload(file_name="guide.md", content=b"# Guide\n"))
 
     assert result.reference.source_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-    assert result.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert result.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
     assert result.status is CatalogStatus.READY
     assert result.chunk_count == 3
     assert catalog.get(result.reference) == result

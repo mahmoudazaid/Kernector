@@ -3,8 +3,8 @@
 `load_knowledge_corpus` is the public seam: a JSON array of corpus records
 becomes a tuple of `SourceDocument` values that ingestion can consume without
 knowing the on-disk format. Concrete categories stay in
-`SourceMetadata.extra["doc_type"]`; every record uses
-`SourceType.KNOWLEDGE_DOCUMENT`.
+`SourceMetadata.extra["doc_type"]`; every record uses the documented
+`SourceType.KNOWLEDGE_DOCUMENT` constant.
 """
 
 from __future__ import annotations

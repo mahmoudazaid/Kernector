@@ -100,7 +100,8 @@ The JSON knowledge-corpus adapter ([#117](https://github.com/mahmoudazaid/Kernec
 
 | Corpus field     | Domain target                                                    |
 | ---------------- | ---------------------------------------------------------------- |
-| `source_id`      | `SourceReference.source_id` with `SourceType.KNOWLEDGE_DOCUMENT` |
+| `source_id`      | `SourceReference.source_id`                                      |
+| `source_type`    | Opaque non-blank string; seed corpus uses documented constant `SourceType.KNOWLEDGE_DOCUMENT` (`"knowledge_document"`). Adapters may supply other kinds without editing a closed domain enum. Existing on-disk values continue to work; no reindex required. |
 | `title`          | `SourceMetadata.title`                                           |
 | `content`        | `SourceDocument.content`                                         |
 | Remaining fields | `SourceMetadata.extra` (lists become `{key}_json` strings)       |
