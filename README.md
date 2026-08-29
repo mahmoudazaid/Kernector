@@ -1,5 +1,16 @@
 # Kernector
 
+Kernector is a **domain-agnostic knowledge platform**: a shared ingest and
+retrieval pipeline over `SourceDocument`, with optional domain packs and
+replaceable source connectors. The default seed corpus
+(`data/knowledge/documents.json`) is neutral; Story Intelligence samples live
+under `data/knowledge/packs/story-intelligence/` as an example pack, not a
+platform requirement.
+
+Architecture and layering: [ARCHITECTURE.md](ARCHITECTURE.md). Domain-agnostic
+direction: [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md).
+Seed format details: [data/knowledge/README.md](data/knowledge/README.md).
+
 ## Run the Streamlit app
 
 ```bash
