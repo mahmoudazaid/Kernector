@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from infrastructure.vectorstore.chroma import ChromaStoreError
 from presentation.cli import reindex_filter_metadata as reindex_cli
 
 
@@ -28,7 +27,7 @@ def test_store_failure_prints_to_stderr_and_returns_one(
     monkeypatch.setattr(reindex_cli, "load_runtime_settings", lambda: object())
 
     def _boom(_settings: object) -> int:
-        raise ChromaStoreError("could not rewrite collection")
+        raise RuntimeError("could not rewrite collection")
 
     monkeypatch.setattr(reindex_cli, "reindex_filter_metadata", _boom)
 
