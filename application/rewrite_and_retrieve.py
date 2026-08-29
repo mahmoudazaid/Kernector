@@ -64,9 +64,7 @@ class RewriteAndRetrieveKnowledge:
             raise QueryRewriteFailure(str(error), cause=error) from error
 
         if not isinstance(rewritten, str) or not rewritten.strip():
-            raise QueryRewriteFailure(
-                "Query rewrite returned a blank retrieval query"
-            )
+            raise QueryRewriteFailure("Query rewrite returned a blank retrieval query")
 
         rewritten = rewritten.strip()
         retrieve_response = self._retrieve.execute(
