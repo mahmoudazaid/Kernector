@@ -1,8 +1,8 @@
 """Behavior tests for the JSON knowledge-corpus adapter.
 
 Every assertion goes through `load_knowledge_corpus` and the public adapter
-errors. Temporary corpus files under `tmp_path` and the committed seed corpus
-are the behavior under test — nothing mocks `Path` or `json`.
+errors. Temporary corpus files under `tmp_path` and committed corpora under
+`data/knowledge/` are the behavior under test — nothing mocks `Path` or `json`.
 """
 
 from __future__ import annotations
@@ -315,14 +315,57 @@ def test_nested_metadata_object_is_rejected(tmp_path: Path) -> None:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-COMMITTED_CORPUS = REPO_ROOT / "data" / "knowledge" / "documents.json"
+NEUTRAL_DEFAULT_CORPUS = REPO_ROOT / "data" / "knowledge" / "documents.json"
+STORY_INTELLIGENCE_PACK = (
+    REPO_ROOT / "data" / "knowledge" / "packs" / "story-intelligence" / "documents.json"
+)
 
 
-def test_committed_heterogeneous_seed_corpus_loads() -> None:
-    raw = json.loads(COMMITTED_CORPUS.read_text(encoding="utf-8"))
+def test_arbitrary_non_sdlc_extras_are_preserved_in_extra(tmp_path: Path) -> None:
+    corpus = _write_corpus(
+        tmp_path / "corpus.json",
+        [
+            _valid_record(
+                source_id="policy-leave-001",
+                title="Leave request window",
+                doc_type="policy",
+                content="Request leave ten business days in advance.",
+                audience="all-staff",
+                region="global",
+            )
+        ],
+    )
+
+    document = load_knowledge_corpus(corpus)[0]
+    extra = document.metadata.extra
+
+    assert extra["doc_type"] == "policy"
+    assert extra["audience"] == "all-staff"
+    assert extra["region"] == "global"
+    assert "severity" not in extra
+    assert "component" not in extra
+
+
+def test_committed_neutral_default_corpus_loads() -> None:
+    raw = json.loads(NEUTRAL_DEFAULT_CORPUS.read_text(encoding="utf-8"))
     assert isinstance(raw, list)
 
-    documents = load_knowledge_corpus(COMMITTED_CORPUS)
+    documents = load_knowledge_corpus(NEUTRAL_DEFAULT_CORPUS)
+
+    assert len(documents) == len(raw)
+    assert {document.reference.source_type for document in documents} == {
+        SourceType.KNOWLEDGE_DOCUMENT
+    }
+    assert "openapi-payments-001" not in {
+        document.source_id for document in documents
+    }
+
+
+def test_committed_story_intelligence_pack_loads() -> None:
+    raw = json.loads(STORY_INTELLIGENCE_PACK.read_text(encoding="utf-8"))
+    assert isinstance(raw, list)
+
+    documents = load_knowledge_corpus(STORY_INTELLIGENCE_PACK)
 
     assert len(documents) == len(raw)
     by_id = {document.source_id: document for document in documents}
