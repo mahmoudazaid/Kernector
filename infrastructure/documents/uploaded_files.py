@@ -100,7 +100,7 @@ def extract_document(
     path: Path,
     *,
     source_id: str,
-    source_type: SourceType = SourceType.KNOWLEDGE_DOCUMENT,
+    source_type: str = SourceType.KNOWLEDGE_DOCUMENT,
 ) -> SourceDocument:
     """Normalize one supported local file into a SourceDocument.
 
@@ -108,7 +108,7 @@ def extract_document(
         path (Path): Local file to read.
         source_id (str): Caller-supplied source identity. Never derived from the
             file name, path, or content.
-        source_type (SourceType): The caller's source kind. Load-bearing, not
+        source_type (str): The caller's source kind. Load-bearing, not
             cosmetic: chunks are stored and deleted under the complete
             reference, so a hardcoded kind here would orphan every chunk whose
             catalog row is filed under a different one.

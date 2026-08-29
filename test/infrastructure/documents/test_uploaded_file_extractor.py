@@ -140,9 +140,10 @@ def test_unsupported_type_is_rejected_before_any_temporary_file(
 def test_extract_carries_the_callers_source_type() -> None:
     """Chunks are stored under the whole reference, so the kind must survive."""
     extractor = UploadedFileExtractor()
-    reference = SourceReference("id-9", SourceType.KNOWLEDGE_DOCUMENT)
+    reference = SourceReference("id-9", "connector_feed")
     document = extractor.extract(
         UploadPayload(file_name="guide.md", content=b"# Guide\n"),
         reference=reference,
     )
     assert document.metadata.reference == reference
+    assert document.metadata.reference.source_type == "connector_feed"

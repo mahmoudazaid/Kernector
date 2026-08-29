@@ -337,7 +337,7 @@ def test_load_knowledge_documents_returns_normalized_source_documents(
     document = documents[0]
     assert document.source_id == "adr-001"
     assert document.metadata.extra["doc_type"] == "architecture_decision"
-    assert document.reference.source_type is SourceType.KNOWLEDGE_DOCUMENT
+    assert document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
 
 def test_load_knowledge_documents_maps_corpus_failure_to_knowledge_load_error(

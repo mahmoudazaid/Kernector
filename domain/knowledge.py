@@ -10,8 +10,8 @@ from domain.errors import DomainValidationError
 
 
 
-class SourceType(StrEnum):
-    """The kinds of knowledge a source can hold."""
+class SourceType:
+    """Documented well-known source kinds. Not a closed validation set."""
 
     KNOWLEDGE_DOCUMENT = "knowledge_document"
 
@@ -29,13 +29,6 @@ def _require_text(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise DomainValidationError(f"{field_name} must be non-empty")
 
-
-def _require_source_type(value: object) -> None:
-    """Reject source types outside the supported enum."""
-    if not isinstance(value, SourceType):
-        raise DomainValidationError(
-            f"source_type must be a SourceType, got {value!r}"
-        )
 
 def _require_index(value: object, field_name: str) -> None:
     """Reject anything that is not a non-negative integer."""
@@ -62,11 +55,11 @@ class SourceReference:
     """Points back at the source a chunk or citation came from."""
 
     source_id: str
-    source_type: SourceType
+    source_type: str
 
     def __post_init__(self) -> None:
         _require_text(self.source_id, "source_id")
-        _require_source_type(self.source_type)
+        _require_text(self.source_type, "source_type")
 
 
 @dataclass(frozen=True, slots=True)
