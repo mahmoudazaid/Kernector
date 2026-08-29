@@ -394,8 +394,8 @@ def delete_uploaded_document(
         raise DocumentOperationError(str(error)) from error
 
 
-def build_prompt_repository() -> PromptRepository:
-    return MarkdownPromptRepository()
+def build_prompt_repository(settings: Settings) -> PromptRepository:
+    return MarkdownPromptRepository(settings.prompts.pack_paths)
 
 
 def build_ask_service(chat_model: ChatModel) -> AskService:
