@@ -3,7 +3,8 @@
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from math import isfinite
 
 import chromadb
@@ -41,8 +42,9 @@ _ID_SCHEME_VERSION = 1
 # shadowing owned scalars (a caller key named "title" becomes "x:title").
 #
 # Records written before this promotion carry only `extra_json`. Filtered search
-# against them returns zero hits until those sources are fully re-ingested —
-# the same recoverability model as bumping `_ID_SCHEME_VERSION` above.
+# against them returns zero hits until `reindex_filter_metadata` (or a full
+# re-ingest that rewrites through `upsert`) promotes those keys — the same
+# recoverability model as bumping `_ID_SCHEME_VERSION` above.
 _KEY_SOURCE_ID = "source_id"
 _KEY_SOURCE_TYPE = "source_type"
 _KEY_CHUNK_INDEX = "chunk_index"
@@ -55,6 +57,105 @@ _EXTRA_KEY_PREFIX = "x:"
 
 class ChromaStoreError(RuntimeError):
     """Raised when the Chroma adapter cannot honor the VectorStore contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class _RecordSnapshot:
+    """Exact Chroma rows captured before a destructive replace."""
+
+    ids: tuple[str, ...]
+    embeddings: tuple[tuple[float, ...], ...]
+    documents: tuple[str, ...]
+    metadatas: tuple[dict[str, str | int], ...]
+
+
+def _empty_snapshot() -> _RecordSnapshot:
+    return _RecordSnapshot((), (), (), ())
+
+
+def _snapshot_records(collection: Collection, ids: Sequence[str]) -> _RecordSnapshot:
+    """Load existing rows for ``ids`` before any delete. Missing IDs are omitted."""
+    if not ids:
+        return _empty_snapshot()
+    try:
+        result = collection.get(
+            ids=list(ids),
+            include=["metadatas", "documents", "embeddings"],
+        )
+    except (ChromaError, ValueError) as exc:
+        raise ChromaStoreError(
+            f"could not snapshot {len(ids)} record(s) in collection "
+            f"{collection.name!r} before replace: {exc}"
+        ) from exc
+    found_ids = tuple(result.get("ids") or ())
+    if not found_ids:
+        return _empty_snapshot()
+    documents = result.get("documents") or []
+    metadatas = result.get("metadatas") or []
+    embeddings = result.get("embeddings")
+    if embeddings is None:
+        raise ChromaStoreError(
+            f"collection {collection.name!r}: snapshot requires stored embeddings, "
+            "but none were returned"
+        )
+    if not (
+        len(documents) == len(found_ids)
+        and len(metadatas) == len(found_ids)
+        and len(embeddings) == len(found_ids)
+    ):
+        raise ChromaStoreError(
+            f"collection {collection.name!r}: snapshot get() returned mismatched "
+            f"lengths ids={len(found_ids)} documents={len(documents)} "
+            f"metadatas={len(metadatas)} embeddings={len(embeddings)}"
+        )
+    return _RecordSnapshot(
+        ids=found_ids,
+        embeddings=tuple(tuple(float(v) for v in row) for row in embeddings),
+        documents=tuple(str(doc) for doc in documents),
+        metadatas=tuple(dict(meta or {}) for meta in metadatas),
+    )
+
+
+def _restore_snapshot(collection: Collection, snapshot: _RecordSnapshot) -> None:
+    """Re-insert an exact pre-delete snapshot via ``add``."""
+    if not snapshot.ids:
+        return
+    collection.add(
+        ids=list(snapshot.ids),
+        embeddings=[list(row) for row in snapshot.embeddings],
+        documents=list(snapshot.documents),
+        metadatas=[dict(meta) for meta in snapshot.metadatas],
+    )
+
+
+def _delete_then_write(
+    collection: Collection,
+    *,
+    ids: Sequence[str],
+    snapshot: _RecordSnapshot,
+    write: Callable[[], None],
+    failure_message: str,
+) -> None:
+    """Delete ``ids``, run ``write``, restore ``snapshot`` if ``write`` fails.
+
+    Validation and snapshot creation must happen before this is called. On write
+    failure, every target ID is deleted again before snapshot restore so a
+    partial primary write cannot leave rows that conflict with ``add`` or keep
+    newly introduced IDs. If cleanup or restoration also fails, the raised
+    ``ChromaStoreError`` reports both failures and chains the primary exception.
+    """
+    try:
+        collection.delete(ids=list(ids))
+        write()
+    except (ChromaError, ValueError) as exc:
+        try:
+            collection.delete(ids=list(ids))
+            _restore_snapshot(collection, snapshot)
+        except (ChromaError, ValueError, RuntimeError, OSError) as restore_exc:
+            raise ChromaStoreError(
+                f"{failure_message}: {exc}; recovery also failed: {restore_exc}"
+            ) from exc
+        raise ChromaStoreError(f"{failure_message}: {exc}") from exc
 
 
 def _client_settings() -> ChromaClientSettings:
@@ -117,7 +218,9 @@ def _encode_extra(extra: Mapping[str, str], where: str) -> str:
     `str()` coercion.
     """
     if not isinstance(extra, Mapping):
-        raise ChromaStoreError(f"{where}: metadata.extra must be a mapping, got {extra!r}")
+        raise ChromaStoreError(
+            f"{where}: metadata.extra must be a mapping, got {extra!r}"
+        )
     for key in extra:
         if not isinstance(key, str):
             raise ChromaStoreError(
@@ -163,7 +266,9 @@ def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
         if value is None:
             continue
         if not isinstance(value, str):
-            raise ChromaStoreError(f"{where}: metadata.{key} must be a string, got {value!r}")
+            raise ChromaStoreError(
+                f"{where}: metadata.{key} must be a string, got {value!r}"
+            )
         encoded[key] = value
     for key, value in metadata.extra.items():
         if not isinstance(key, str):
@@ -272,9 +377,7 @@ def _decode_optional_str(
     return value
 
 
-def _decode_chunk(
-    record_id: str, document: object, metadata: object
-) -> DocumentChunk:
+def _decode_chunk(record_id: str, document: object, metadata: object) -> DocumentChunk:
     """Rebuild a DocumentChunk from one persisted record.
 
     Built in the order SourceReference -> SourceMetadata -> DocumentChunk so each
@@ -478,8 +581,10 @@ class ChromaVectorStore:
     content now chunks into fewer pieces would leave the higher-index records
     from the previous run behind. `delete_source` removes them: a caller that
     deletes a source before upserting its replacement converges on exactly the
-    new chunk set. The delete/upsert pair is not atomic, so a storage failure
-    between the two can leave one source absent until the next successful run.
+    new chunk set. Within a single ``upsert`` or ``reindex_filter_metadata``
+    call, rows are snapshotted before delete and restored if the write fails.
+    A cross-call ``delete_source`` then ``upsert`` sequence from the application
+    is still not one atomic transaction.
 
     One writer at a time; concurrent writes from multiple processes are out of
     scope. Repeated construction on the same path within one process reopens the
@@ -517,10 +622,13 @@ class ChromaVectorStore:
     def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
         """Insert or replace embedded chunks. See `domain.ports.VectorStore`.
 
-        The entire batch is validated before anything is written, so a bad item
-        cannot leave a half-applied batch behind. The write itself carries no
-        such guarantee: chromadb 1.5.9 documents no atomicity for `upsert`, so a
-        failure inside the vendor call may leave some records applied.
+        The entire batch is validated and existing rows for the batch IDs are
+        snapshotted before anything is deleted, so a bad item cannot leave a
+        half-applied batch behind. Each identity is deleted before it is
+        written: chromadb 1.5.9 *merges* metadata on `upsert`, so omitting a
+        previously promoted `extra` key would otherwise leave a stale
+        filterable scalar behind. If the write fails, the snapshot is restored.
+        If restoration also fails, ``ChromaStoreError`` reports both failures.
         """
         if not embedded:
             return
@@ -555,18 +663,26 @@ class ChromaVectorStore:
             vectors.append(vector)
             documents.append(item.chunk.content)
             metadatas.append(_encode_metadata(item.chunk))
-        try:
+        snapshot = _snapshot_records(self._collection, ids)
+
+        def write() -> None:
             self._collection.upsert(
                 ids=ids,
                 embeddings=vectors,
                 documents=documents,
                 metadatas=metadatas,
             )
-        except (ChromaError, ValueError) as exc:
-            raise ChromaStoreError(
+
+        _delete_then_write(
+            self._collection,
+            ids=ids,
+            snapshot=snapshot,
+            write=write,
+            failure_message=(
                 f"could not write {len(ids)} record(s) to collection "
-                f"{self._collection.name!r}: {exc}"
-            ) from exc
+                f"{self._collection.name!r}"
+            ),
+        )
 
     def delete_source(self, reference: SourceReference) -> None:
         """Delete one complete source. See `domain.ports.VectorStore`.
@@ -605,6 +721,90 @@ class ChromaVectorStore:
                 f"{reference.source_id} from collection "
                 f"{self._collection.name!r}: {exc}"
             ) from exc
+
+    def reindex_filter_metadata(self) -> int:
+        """Rewrite every record so `SourceMetadata.extra` keys are filterable.
+
+        Records persisted before `x:` promotion carry only `extra_json`. This
+        path rebuilds metadata from the decoded domain chunk (keeping stored
+        embeddings and documents) and replaces each record via delete-then-add
+        so chromadb cannot merge leftover scalars. Existing rows are snapshotted
+        before the first delete and restored if the write fails. Idempotent for
+        collections that already carry promoted keys.
+
+        Returns:
+            The number of records rewritten.
+
+        Raises:
+            ChromaStoreError: On adapter or decode failure. If the rewrite write
+                and restoration both fail, the error reports both failures.
+        """
+        try:
+            result = self._collection.get(
+                include=["metadatas", "documents", "embeddings"]
+            )
+        except (ChromaError, ValueError) as exc:
+            raise ChromaStoreError(
+                f"could not read collection {self._collection.name!r} for "
+                f"filter-metadata reindex: {exc}"
+            ) from exc
+        ids = result.get("ids") or []
+        if not ids:
+            return 0
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        embeddings = result.get("embeddings")
+        if embeddings is None:
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: reindex requires stored "
+                "embeddings, but none were returned"
+            )
+        if not (
+            len(documents) == len(ids)
+            and len(metadatas) == len(ids)
+            and len(embeddings) == len(ids)
+        ):
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: reindex get() returned "
+                f"mismatched lengths ids={len(ids)} documents={len(documents)} "
+                f"metadatas={len(metadatas)} embeddings={len(embeddings)}"
+            )
+        snapshot = _RecordSnapshot(
+            ids=tuple(ids),
+            embeddings=tuple(tuple(float(v) for v in row) for row in embeddings),
+            documents=tuple(str(doc) for doc in documents),
+            metadatas=tuple(dict(meta or {}) for meta in metadatas),
+        )
+        vectors: list[list[float]] = []
+        texts: list[str] = []
+        rewritten: list[dict[str, str | int]] = []
+        for record_id, document, metadata, embedding in zip(
+            ids, documents, metadatas, embeddings, strict=True
+        ):
+            chunk = _decode_chunk(record_id, document, metadata)
+            vectors.append(_validate_vector(list(embedding), f"record {record_id}"))
+            texts.append(chunk.content)
+            rewritten.append(_encode_metadata(chunk))
+
+        def write() -> None:
+            self._collection.add(
+                ids=list(ids),
+                embeddings=vectors,
+                documents=texts,
+                metadatas=rewritten,
+            )
+
+        _delete_then_write(
+            self._collection,
+            ids=ids,
+            snapshot=snapshot,
+            write=write,
+            failure_message=(
+                f"could not rewrite {len(ids)} record(s) in collection "
+                f"{self._collection.name!r} during filter-metadata reindex"
+            ),
+        )
+        return len(ids)
 
     def search(
         self,
