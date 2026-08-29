@@ -22,6 +22,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
+    monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     return monkeypatch
 
 
@@ -135,10 +136,10 @@ def test_blank_document_catalog_path_is_rejected(
         load_settings()
 
 
-def test_prompt_packs_default_to_story_intelligence(env: pytest.MonkeyPatch) -> None:
+def test_prompt_packs_default_to_core(env: pytest.MonkeyPatch) -> None:
     prompts = load_settings().prompts
     assert prompts.pack_paths == (
-        PROJECT_ROOT / "prompts" / "packs" / "story-intelligence",
+        PROJECT_ROOT / "prompts" / "packs" / "core",
     )
 
 
@@ -158,4 +159,22 @@ def test_prompt_packs_rejects_blank_entries(
 ) -> None:
     env.setenv("PROMPT_PACKS", raw)
     with pytest.raises(ValueError, match="PROMPT_PACKS"):
+        load_settings()
+
+
+def test_prompt_default_key_unset_is_none(env: pytest.MonkeyPatch) -> None:
+    assert load_settings().prompts.default_key is None
+
+
+def test_prompt_default_key_is_read_from_env(env: pytest.MonkeyPatch) -> None:
+    env.setenv("PROMPT_DEFAULT_KEY", "knowledge_qa")
+    assert load_settings().prompts.default_key == "knowledge_qa"
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
+def test_blank_prompt_default_key_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("PROMPT_DEFAULT_KEY", raw)
+    with pytest.raises(ValueError, match="PROMPT_DEFAULT_KEY"):
         load_settings()
