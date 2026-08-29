@@ -150,7 +150,7 @@ def _delete_then_write(
     except (ChromaError, ValueError) as exc:
         try:
             _restore_snapshot(collection, snapshot)
-        except Exception as restore_exc:
+        except (ChromaError, ValueError, RuntimeError, OSError) as restore_exc:
             raise ChromaStoreError(
                 f"{failure_message}: {exc}; restoration also failed: {restore_exc}"
             ) from exc
