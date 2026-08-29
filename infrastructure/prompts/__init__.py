@@ -1,1 +1,1 @@
-"""Domain layer: pure business rules. Stdlib imports only."""
+"""Markdown prompt pack loading."""
