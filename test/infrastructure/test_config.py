@@ -21,6 +21,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
+    monkeypatch.delenv("PROMPT_PACKS", raising=False)
     return monkeypatch
 
 
@@ -131,4 +132,30 @@ def test_blank_document_catalog_path_is_rejected(
 ) -> None:
     env.setenv("DOCUMENT_CATALOG_PATH", raw)
     with pytest.raises(ValueError, match="DOCUMENT_CATALOG_PATH"):
+        load_settings()
+
+
+def test_prompt_packs_default_to_story_intelligence(env: pytest.MonkeyPatch) -> None:
+    prompts = load_settings().prompts
+    assert prompts.pack_paths == (
+        PROJECT_ROOT / "prompts" / "packs" / "story-intelligence",
+    )
+
+
+def test_prompt_packs_resolves_csv_names_under_packs_root(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("PROMPT_PACKS", "alpha, beta")
+    assert load_settings().prompts.pack_paths == (
+        PROJECT_ROOT / "prompts" / "packs" / "alpha",
+        PROJECT_ROOT / "prompts" / "packs" / "beta",
+    )
+
+
+@pytest.mark.parametrize("raw", ["", "   ", ",", " , , "])
+def test_prompt_packs_rejects_blank_entries(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("PROMPT_PACKS", raw)
+    with pytest.raises(ValueError, match="PROMPT_PACKS"):
         load_settings()

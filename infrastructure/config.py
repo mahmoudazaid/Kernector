@@ -48,6 +48,11 @@ class DocumentCatalogSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class PromptSettings:
+    pack_paths: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -57,6 +62,7 @@ class Settings:
     chroma: ChromaSettings
     knowledge: KnowledgeSettings
     document_catalog: DocumentCatalogSettings
+    prompts: PromptSettings
 
 
 def load_settings() -> Settings:
@@ -84,6 +90,7 @@ def load_settings() -> Settings:
         chroma=_load_chroma_settings(),
         knowledge=_load_knowledge_settings(),
         document_catalog=_load_document_catalog_settings(),
+        prompts=_load_prompt_settings(),
     )
 
 
@@ -114,10 +121,8 @@ def _load_chunking_settings() -> ChunkingSettings:
 def _resolve_under_project_root(raw: str) -> Path:
     """Expand `~`, keep absolute paths, resolve relative ones against the repo root.
 
-    Deliberately not resolved against the CWD, so the store lands in the same
-    place whether the app is launched from the repo root or elsewhere. Mirrors
-    `infrastructure/prompts/markdown_repository.py`, which uses `parents[2]`
-    from one directory deeper.
+    Deliberately not resolved against the CWD, so paths land in the same place
+    whether the app is launched from the repo root or elsewhere.
     """
     path = Path(raw).expanduser()
     return path if path.is_absolute() else _PROJECT_ROOT / path
@@ -161,4 +166,16 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
         )
     return DocumentCatalogSettings(
         path=_resolve_under_project_root(catalog_path),
+    )
+
+
+def _load_prompt_settings() -> PromptSettings:
+    raw = os.getenv("PROMPT_PACKS", "story-intelligence")
+    names = _csv(raw)
+    if not names:
+        raise ValueError(f"PROMPT_PACKS must name at least one pack, got {raw!r}")
+    return PromptSettings(
+        pack_paths=tuple(
+            _PROJECT_ROOT / "prompts" / "packs" / name for name in names
+        ),
     )
