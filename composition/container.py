@@ -17,6 +17,7 @@ from application.manage_documents import (
     PartialReplaceFailure,
     UnknownDocumentError,
 )
+from application.retrieve_knowledge import RetrieveKnowledge
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -175,6 +176,30 @@ def build_ingest_knowledge(
         chunk_size=settings.chunking.chunk_size,
         chunk_overlap=settings.chunking.chunk_overlap,
     )
+
+
+def build_retrieve_knowledge(
+    settings: Settings, *, vector_store: VectorStore | None = None
+) -> RetrieveKnowledge:
+    """Wire the retrieve use case from the loaded settings.
+
+    Only the embedding adapter's own configuration failure is mapped to a typed
+    `ConfigurationError`. Vector-store failures keep `ChromaStoreError`.
+
+    Pure, like `build_ingest_knowledge`: a fresh instance per call. A caller
+    that already holds a store passes it in rather than opening a second client
+    on the same collection.
+
+    Raises:
+        ConfigurationError: The embedding credentials are missing or unusable.
+    """
+    try:
+        embedding_model = build_embedding_model(settings)
+    except EmbeddingConfigError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    if vector_store is None:
+        vector_store = build_vector_store(settings)
+    return RetrieveKnowledge(embedding_model, vector_store)
 
 
 def _log_partial_create(error: PartialCreateFailure) -> None:

@@ -34,10 +34,15 @@ _IPV4_PATTERN = re.compile(r"(?:[0-9]{1,3}\.){3}[0-9]{1,3}")
 # converges the store onto the new scheme.
 _ID_SCHEME_VERSION = 1
 
-# Scalar metadata keys the adapter owns. Caller keys never land in this
-# namespace: the whole of `SourceMetadata.extra` travels as one JSON envelope
-# under `_KEY_EXTRA_JSON`, so a caller key named "title" cannot shadow the real
-# title, and #86 stays free to promote chosen fields into scalar metadata.
+# Scalar metadata keys the adapter owns. Caller `SourceMetadata.extra` keys never
+# land in this namespace: the whole mapping travels as one JSON envelope under
+# `_KEY_EXTRA_JSON` (the sole decode source), and each entry is *also* promoted
+# under `_EXTRA_KEY_PREFIX` so metadata filters can use Chroma `where` without
+# shadowing owned scalars (a caller key named "title" becomes "x:title").
+#
+# Records written before this promotion carry only `extra_json`. Filtered search
+# against them returns zero hits until those sources are fully re-ingested —
+# the same recoverability model as bumping `_ID_SCHEME_VERSION` above.
 _KEY_SOURCE_ID = "source_id"
 _KEY_SOURCE_TYPE = "source_type"
 _KEY_CHUNK_INDEX = "chunk_index"
@@ -45,6 +50,7 @@ _KEY_TITLE = "title"
 _KEY_PROVIDER = "provider"
 _KEY_CONTENT_FORMAT = "content_format"
 _KEY_EXTRA_JSON = "extra_json"
+_EXTRA_KEY_PREFIX = "x:"
 
 
 class ChromaStoreError(RuntimeError):
@@ -125,6 +131,11 @@ def _encode_extra(extra: Mapping[str, str], where: str) -> str:
         ) from exc
 
 
+def _promote_extra_key(key: str) -> str:
+    """Map a caller `extra` key into the filterable scalar namespace."""
+    return f"{_EXTRA_KEY_PREFIX}{key}"
+
+
 def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
     """Flatten a chunk's provenance into Chroma's scalar metadata namespace.
 
@@ -132,6 +143,9 @@ def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
     rejects None metadata values. `SourceMetadata.__post_init__` does not check
     `title`, `provider`, or `content_format`, so the adapter validates them here
     rather than trusting the domain to have done it.
+
+    Each `extra` entry is duplicated under `_EXTRA_KEY_PREFIX` for filterable
+    `where` clauses; decode still rebuilds `extra` only from `_KEY_EXTRA_JSON`.
     """
     where = _describe(chunk)
     metadata = chunk.metadata
@@ -151,7 +165,50 @@ def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
         if not isinstance(value, str):
             raise ChromaStoreError(f"{where}: metadata.{key} must be a string, got {value!r}")
         encoded[key] = value
+    for key, value in metadata.extra.items():
+        if not isinstance(key, str):
+            raise ChromaStoreError(
+                f"{where}: metadata.extra keys must be strings, got {key!r}"
+            )
+        if not isinstance(value, str):
+            raise ChromaStoreError(
+                f"{where}: metadata.extra[{key!r}] must be a string, got {value!r}"
+            )
+        encoded[_promote_extra_key(key)] = value
     return encoded
+
+
+def _where_from_metadata_filters(
+    metadata_filters: Mapping[str, str] | None,
+) -> Mapping[str, object] | None:
+    """Build a Chroma `where` for exact-match AND filters over promoted `extra`.
+
+    chromadb 1.5.9 rejects a single-clause `$and`, so one filter becomes a bare
+    equality clause and two or more become `$and`. ``None`` / ``{}`` mean no
+    `where`. Filters address `SourceMetadata.extra` only.
+    """
+    if metadata_filters is None:
+        return None
+    if not isinstance(metadata_filters, Mapping):
+        raise ChromaStoreError(
+            f"metadata_filters must be a mapping, got {metadata_filters!r}"
+        )
+    if not metadata_filters:
+        return None
+    clauses: list[dict[str, str]] = []
+    for key, value in metadata_filters.items():
+        if not isinstance(key, str):
+            raise ChromaStoreError(
+                f"metadata_filters keys must be strings, got {key!r}"
+            )
+        if not isinstance(value, str):
+            raise ChromaStoreError(
+                f"metadata_filters values must be strings, got {value!r}"
+            )
+        clauses.append({_promote_extra_key(key): value})
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
 
 
 def _decode_extra(raw: object, record_id: str) -> Mapping[str, str]:
@@ -549,24 +606,35 @@ class ChromaVectorStore:
                 f"{self._collection.name!r}: {exc}"
             ) from exc
 
-    def search(self, vector: Vector, limit: int) -> Sequence[ScoredChunk]:
+    def search(
+        self,
+        vector: Vector,
+        limit: int,
+        *,
+        metadata_filters: Mapping[str, str] | None = None,
+    ) -> Sequence[ScoredChunk]:
         """Return the nearest chunks to `vector`. See `domain.ports.VectorStore`.
 
         Scores are cosine similarity in [-1.0, 1.0], nearest first, never
-        clamped. chromadb 1.5.9 returns fewer results than requested without
-        error or warning, so an over-large `limit` simply returns everything.
+        clamped. Filters (when present) are applied before `limit`. chromadb
+        1.5.9 returns fewer results than requested without error or warning, so
+        an over-large `limit` simply returns everything.
         """
         if isinstance(limit, bool) or not isinstance(limit, int):
             raise ChromaStoreError(f"limit must be an int, got {limit!r}")
         if limit <= 0:
             return ()
         query = _validate_vector(vector, "query")
+        where = _where_from_metadata_filters(metadata_filters)
+        query_kwargs: dict[str, object] = {
+            "query_embeddings": [query],
+            "n_results": limit,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where is not None:
+            query_kwargs["where"] = where
         try:
-            result = self._collection.query(
-                query_embeddings=[query],
-                n_results=limit,
-                include=["documents", "metadatas", "distances"],
-            )
+            result = self._collection.query(**query_kwargs)
         except (ChromaError, ValueError) as exc:
             raise ChromaStoreError(
                 f"could not query collection {self._collection.name!r}: {exc}"

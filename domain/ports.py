@@ -53,13 +53,32 @@ class VectorStore(Protocol):
             RuntimeError: a subclass, on any adapter-level failure.
         """
 
-    def search(self, vector: Vector, limit: int) -> Sequence[ScoredChunk]:
+    def search(
+        self,
+        vector: Vector,
+        limit: int,
+        *,
+        metadata_filters: Mapping[str, str] | None = None,
+    ) -> Sequence[ScoredChunk]:
         """Return the `limit` nearest chunks to `vector`, nearest first.
+
+        Filters are applied **before** the limit: `limit` is the count of
+        nearest chunks among those that match, not a post-filter slice of an
+        unfiltered top-k. `None` and `{}` both mean unfiltered top-k.
+
+        When `metadata_filters` is non-empty, every supplied key/value pair must
+        exact-match a key in `SourceMetadata.extra` (AND semantics). A missing
+        key is a non-match. Owned scalar provenance fields (`title`,
+        `source_id`, …) are not filter targets.
 
         Returns an empty sequence when `limit <= 0` or the store is empty.
         A `limit` that is not an `int` is rejected; `bool` is rejected
         specifically rather than letting `False` fall through to the
         `limit <= 0` rule.
+
+        Adapters reject a non-mapping `metadata_filters` and non-string keys or
+        values. An empty-string filter value is legal and matches an empty
+        stored value.
 
         Scores are cosine similarity in `[-1.0, 1.0]`, higher is nearer.
         Negative scores are legitimate and are never clamped.

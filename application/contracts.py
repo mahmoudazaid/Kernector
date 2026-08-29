@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from application.errors import ApplicationValidationError
-from domain.knowledge import SourceDocument, SourceReference
+from domain.knowledge import ScoredChunk, SourceDocument, SourceReference
 from domain.models import Message
 
 
@@ -82,6 +82,58 @@ def _require_retrieval_limit(value: object) -> None:
         raise ApplicationValidationError(
             f"retrieval_limit must be a positive integer, got {value!r}"
         )
+
+
+def _require_positive_retrieval_limit(value: object) -> int:
+    """Reject missing or invalid required retrieval limits.
+
+    Args:
+        value (object): Candidate ``retrieval_limit``.
+
+    Returns:
+        int: The validated positive limit.
+
+    Raises:
+        ApplicationValidationError: If not a positive ``int``.
+    """
+    _require_retrieval_limit(value)
+    if value is None:
+        raise ApplicationValidationError(
+            f"retrieval_limit must be a positive integer, got {value!r}"
+        )
+    return value
+
+
+def _require_metadata_filters(
+    value: object,
+) -> dict[str, str] | None:
+    """Validate and copy an optional opaque metadata filter map.
+
+    Args:
+        value (object): Candidate ``metadata_filters`` (``None`` is allowed).
+
+    Returns:
+        dict[str, str] | None: A plain copy, or ``None`` when absent.
+
+    Raises:
+        ApplicationValidationError: If not a string-to-string mapping.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ApplicationValidationError(
+            f"metadata_filters must be a mapping, got {value!r}"
+        )
+    for key, filter_value in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ApplicationValidationError(
+                f"metadata_filters keys must be non-blank strings, got {key!r}"
+            )
+        if not isinstance(filter_value, str):
+            raise ApplicationValidationError(
+                f"metadata_filters values must be strings, got {filter_value!r}"
+            )
+    return dict(value)
 
 
 def _require_chunk_count(value: object) -> None:
@@ -284,3 +336,53 @@ class InvokeToolResponse:
     def __post_init__(self) -> None:
         _require_text(self.tool_name, "tool_name")
         _require_text(self.result, "result")
+
+
+@dataclass(frozen=True, slots=True)
+class RetrieveRequest:
+    """Input for metadata-filtered semantic retrieval.
+
+    Attributes:
+        query (str): Natural-language query to embed and search with.
+        retrieval_limit (int): Positive cap on ranked hits (filter-then-limit).
+        metadata_filters (Mapping[str, str] | None): Optional opaque exact-match
+            AND filters over ``SourceMetadata.extra``. ``None`` or ``{}`` means
+            unfiltered top-k. Copied into a plain ``dict`` when present.
+    """
+
+    query: str
+    retrieval_limit: int
+    metadata_filters: Mapping[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.query, "query")
+        object.__setattr__(
+            self,
+            "retrieval_limit",
+            _require_positive_retrieval_limit(self.retrieval_limit),
+        )
+        object.__setattr__(
+            self,
+            "metadata_filters",
+            _require_metadata_filters(self.metadata_filters),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RetrieveResponse:
+    """Outcome of a retrieve request.
+
+    Attributes:
+        hits (Sequence[ScoredChunk]): Ranked chunks with full provenance.
+    """
+
+    hits: Sequence[ScoredChunk] = ()
+
+    def __post_init__(self) -> None:
+        hits = _require_sequence(self.hits, "hits")
+        for item in hits:
+            if not isinstance(item, ScoredChunk):
+                raise ApplicationValidationError(
+                    f"hits items must be ScoredChunk, got {item!r}"
+                )
+        object.__setattr__(self, "hits", tuple(hits))
