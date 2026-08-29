@@ -8,7 +8,7 @@ and `pythonpath = ["."]` puts the repo root ahead of the stdlib `test` package
 """
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from domain.knowledge import (
     DocumentChunk,
@@ -98,16 +98,25 @@ def record_key(chunk: DocumentChunk) -> tuple[str, str, int]:
     return (str(reference.source_type), reference.source_id, chunk.index)
 
 
+def _matches_extra_filters(
+    chunk: DocumentChunk, metadata_filters: Mapping[str, str]
+) -> bool:
+    """Exact-match AND over `SourceMetadata.extra`; missing key ⇒ non-match."""
+    extra = chunk.metadata.extra
+    return all(extra.get(key) == value for key, value in metadata_filters.items())
+
+
 class InMemoryVectorStore:
     """A dict-backed VectorStore, so use-case tests need no real store.
 
     `records` is public: assert against stored state, never against which
     private helpers were called.
 
-    `search` returns records in insertion order, NOT by similarity, and ignores
-    the query vector entirely. Ranking is the Chroma adapter's behavior and
-    `test/infrastructure/vectorstore/test_chroma.py` owns it; never assert
-    ranking through this double.
+    `search` returns matching records in insertion order, NOT by similarity, and
+    ignores the query vector entirely. Ranking is the Chroma adapter's behavior
+    and `test/infrastructure/vectorstore/test_chroma.py` owns it; never assert
+    ranking through this double. Filters address `SourceMetadata.extra` only and
+    are applied before the limit.
     """
 
     def __init__(self) -> None:
@@ -117,12 +126,24 @@ class InMemoryVectorStore:
         for item in embedded:
             self.records[record_key(item.chunk)] = item
 
-    def search(self, vector: Vector, limit: int) -> Sequence[ScoredChunk]:
+    def search(
+        self,
+        vector: Vector,
+        limit: int,
+        *,
+        metadata_filters: Mapping[str, str] | None = None,
+    ) -> Sequence[ScoredChunk]:
         if limit <= 0:
             return ()
+        filters = metadata_filters or {}
+        matched = (
+            item
+            for item in self.records.values()
+            if not filters or _matches_extra_filters(item.chunk, filters)
+        )
         return tuple(
             ScoredChunk(chunk=item.chunk, score=1.0)
-            for item in list(self.records.values())[:limit]
+            for item in list(matched)[:limit]
         )
 
     def delete_source(self, reference: SourceReference) -> None:
