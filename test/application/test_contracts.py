@@ -16,6 +16,7 @@ from application.contracts import (
     InvokeToolResponse,
     RetrieveRequest,
     RetrieveResponse,
+    RewriteRetrieveResponse,
 )
 from application.errors import ApplicationValidationError
 from domain.knowledge import (
@@ -230,6 +231,26 @@ def test_retrieve_response_defaults_hits_empty() -> None:
     assert RetrieveResponse().hits == ()
 
 
+def test_rewrite_retrieve_response_constructs() -> None:
+    hit = _scored_chunk()
+    response = RewriteRetrieveResponse(
+        hits=[hit],
+        original_query="what broke?",
+        rewritten_query="payment service failure last week",
+    )
+    assert response.hits == (hit,)
+    assert response.original_query == "what broke?"
+    assert response.rewritten_query == "payment service failure last week"
+
+
+def test_rewrite_retrieve_response_defaults_hits_empty() -> None:
+    response = RewriteRetrieveResponse(
+        original_query="what broke?",
+        rewritten_query="payment service failure",
+    )
+    assert response.hits == ()
+
+
 def test_invoke_tool_response_constructs() -> None:
     response = InvokeToolResponse("search", "2 hits")
     assert response.tool_name == "search"
@@ -376,6 +397,42 @@ def test_retrieve_response_rejects_non_scored_chunk_item() -> None:
         RetrieveResponse(hits=[_reference()])  # type: ignore[list-item]
 
 
+@pytest.mark.parametrize("blank", BLANK)
+def test_rewrite_retrieve_response_rejects_blank_original_query(blank: str) -> None:
+    with pytest.raises(ApplicationValidationError, match="original_query"):
+        RewriteRetrieveResponse(
+            original_query=blank,
+            rewritten_query="rewritten",
+        )
+
+
+@pytest.mark.parametrize("blank", BLANK)
+def test_rewrite_retrieve_response_rejects_blank_rewritten_query(blank: str) -> None:
+    with pytest.raises(ApplicationValidationError, match="rewritten_query"):
+        RewriteRetrieveResponse(
+            original_query="original",
+            rewritten_query=blank,
+        )
+
+
+def test_rewrite_retrieve_response_rejects_non_sequence_hits() -> None:
+    with pytest.raises(ApplicationValidationError, match="hits"):
+        RewriteRetrieveResponse(
+            hits="chunk",  # type: ignore[arg-type]
+            original_query="original",
+            rewritten_query="rewritten",
+        )
+
+
+def test_rewrite_retrieve_response_rejects_non_scored_chunk_item() -> None:
+    with pytest.raises(ApplicationValidationError, match="hits items"):
+        RewriteRetrieveResponse(
+            hits=[_reference()],  # type: ignore[list-item]
+            original_query="original",
+            rewritten_query="rewritten",
+        )
+
+
 @pytest.mark.parametrize("bad_key", [1, "", "   ", None])
 def test_invoke_tool_request_rejects_invalid_argument_keys(bad_key: object) -> None:
     with pytest.raises(ApplicationValidationError, match="arguments keys"):
@@ -513,6 +570,17 @@ def test_retrieve_response_hits_are_independent_of_input_list() -> None:
     assert len(response.hits) == 1
 
 
+def test_rewrite_retrieve_response_hits_are_independent_of_input_list() -> None:
+    hits = [_scored_chunk()]
+    response = RewriteRetrieveResponse(
+        hits=hits,
+        original_query="original",
+        rewritten_query="rewritten",
+    )
+    hits.clear()
+    assert len(response.hits) == 1
+
+
 def test_contracts_serialize_with_asdict() -> None:
     ask_request = AskRequest(
         "default",
@@ -536,6 +604,11 @@ def test_contracts_serialize_with_asdict() -> None:
         metadata_filters={"doc_type": "runbook"},
     )
     retrieve_response = RetrieveResponse(hits=[_scored_chunk()])
+    rewrite_retrieve_response = RewriteRetrieveResponse(
+        hits=[_scored_chunk()],
+        original_query="what broke?",
+        rewritten_query="payment failure",
+    )
 
     ask_dict = asdict(ask_request)
     assert "ticket" not in ask_dict
@@ -567,6 +640,11 @@ def test_contracts_serialize_with_asdict() -> None:
     }
     assert asdict(retrieve_response)["hits"][0]["score"] == 0.9
     assert asdict(retrieve_response)["hits"][0]["chunk"]["content"] == "chunk text"
+    assert asdict(rewrite_retrieve_response) == {
+        "hits": asdict(retrieve_response)["hits"],
+        "original_query": "what broke?",
+        "rewritten_query": "payment failure",
+    }
 
 
 def test_application_contracts_import_without_streamlit() -> None:

@@ -15,6 +15,7 @@ from application.ask_service import AskService
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
 from application.retrieve_knowledge import RetrieveKnowledge
+from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition import (
     KnowledgeLoadError,
     Settings,
@@ -24,6 +25,7 @@ from composition import (
     build_ingest_knowledge,
     build_prompt_repository,
     build_retrieve_knowledge,
+    build_rewrite_and_retrieve_knowledge,
     build_vector_store,
     load_knowledge_documents,
     load_runtime_settings,
@@ -36,6 +38,7 @@ from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
 from infrastructure.knowledge.corpus import CorpusLoadError
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.openrouter import OpenRouterChat
+from infrastructure.llm.query_rewrite import OpenRouterQueryRewriter
 from infrastructure.vectorstore.chroma import ChromaVectorStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -376,6 +379,74 @@ def test_build_retrieve_knowledge_reuses_an_injected_vector_store(
 def test_build_retrieve_knowledge_is_a_pure_factory(embedding_env: Settings) -> None:
     first = build_retrieve_knowledge(embedding_env)
     assert build_retrieve_knowledge(embedding_env) is not first
+
+
+@pytest.fixture
+def rewrite_env(embedding_env: Settings, monkeypatch: pytest.MonkeyPatch) -> Settings:
+    """Embedding credentials plus a chat/rewrite model name."""
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    return load_settings()
+
+
+def test_build_rewrite_and_retrieve_knowledge_wires_rewriter_and_retrieve(
+    rewrite_env: Settings,
+) -> None:
+    use_case = build_rewrite_and_retrieve_knowledge(rewrite_env)
+
+    assert isinstance(use_case, RewriteAndRetrieveKnowledge)
+    assert isinstance(use_case._query_rewriter, OpenRouterQueryRewriter)
+    assert isinstance(use_case._retrieve, RetrieveKnowledge)
+    assert isinstance(use_case._retrieve._vector_store, ChromaVectorStore)
+    assert isinstance(use_case._retrieve._embedding_model, OpenRouterEmbeddings)
+
+
+def test_build_rewrite_and_retrieve_knowledge_reuses_an_injected_vector_store(
+    rewrite_env: Settings,
+) -> None:
+    store = build_vector_store(rewrite_env)
+    use_case = build_rewrite_and_retrieve_knowledge(
+        rewrite_env, vector_store=store
+    )
+    assert use_case._retrieve._vector_store is store
+
+
+def test_build_rewrite_and_retrieve_knowledge_is_a_pure_factory(
+    rewrite_env: Settings,
+) -> None:
+    first = build_rewrite_and_retrieve_knowledge(rewrite_env)
+    assert build_rewrite_and_retrieve_knowledge(rewrite_env) is not first
+
+
+def test_missing_rewrite_configuration_surfaces_as_configuration_error(
+    chroma_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.delenv("OPENROUTER_REWRITE_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    settings = load_settings()
+    assert settings.openrouter.rewrite_model is None
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_REWRITE_MODEL|OPENROUTER_MODEL"):
+        build_rewrite_and_retrieve_knowledge(settings)
+
+
+def test_missing_embedding_configuration_on_rewrite_path_surfaces_as_configuration_error(
+    chroma_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.delenv("OPENROUTER_EMBEDDING_MODEL", raising=False)
+    # embedding_model has a hard-coded default; wipe it via replace after load
+    settings = load_settings()
+    settings = replace(
+        settings,
+        openrouter=replace(settings.openrouter, embedding_model=""),
+    )
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_EMBEDDING_MODEL"):
+        build_rewrite_and_retrieve_knowledge(settings)
 
 
 def test_missing_embedding_configuration_surfaces_as_configuration_error(

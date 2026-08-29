@@ -17,6 +17,7 @@ from domain.knowledge import (
     SourceReference,
     Vector,
 )
+from domain.errors import QueryRewriterError
 
 _DIMENSION = 4
 
@@ -48,6 +49,45 @@ class StubEmbeddingModel:
 
     def embed_query(self, text: str) -> Vector:
         return vector_for(text)
+
+
+class RecordingEmbeddingModel(StubEmbeddingModel):
+    """Records every ``embed_query`` text so orchestration tests can observe it.
+
+    ``InMemoryVectorStore.search`` ignores the query vector, so ranking cannot
+    prove which query was embedded; assert against ``queries`` instead.
+    """
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def embed_query(self, text: str) -> Vector:
+        self.queries.append(text)
+        return super().embed_query(text)
+
+
+class StubQueryRewriter:
+    """A QueryRewriter that returns a fixed rewritten string."""
+
+    def __init__(self, rewritten: str) -> None:
+        self._rewritten = rewritten
+
+    def rewrite(self, query: str) -> str:
+        return self._rewritten
+
+
+class FailingQueryRewriter:
+    """A QueryRewriter that raises ``QueryRewriterError``."""
+
+    def rewrite(self, query: str) -> str:
+        raise QueryRewriterError("rewrite provider is unavailable")
+
+
+class BlankQueryRewriter:
+    """A nonconforming QueryRewriter that returns a blank string."""
+
+    def rewrite(self, query: str) -> str:
+        return ""
 
 
 class WrongLengthEmbeddingModel:
