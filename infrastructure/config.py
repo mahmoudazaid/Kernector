@@ -50,6 +50,7 @@ class DocumentCatalogSettings:
 @dataclass(frozen=True, slots=True)
 class PromptSettings:
     pack_paths: tuple[Path, ...]
+    default_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,12 +171,23 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
 
 
 def _load_prompt_settings() -> PromptSettings:
-    raw = os.getenv("PROMPT_PACKS", "story-intelligence")
+    raw = os.getenv("PROMPT_PACKS", "core")
     names = _csv(raw)
     if not names:
         raise ValueError(f"PROMPT_PACKS must name at least one pack, got {raw!r}")
+    default_key_raw = os.getenv("PROMPT_DEFAULT_KEY")
+    default_key: str | None
+    if default_key_raw is None:
+        default_key = None
+    elif not default_key_raw.strip():
+        raise ValueError(
+            f"PROMPT_DEFAULT_KEY must be non-empty, got {default_key_raw!r}"
+        )
+    else:
+        default_key = default_key_raw.strip()
     return PromptSettings(
         pack_paths=tuple(
             _PROJECT_ROOT / "prompts" / "packs" / name for name in names
         ),
+        default_key=default_key,
     )
