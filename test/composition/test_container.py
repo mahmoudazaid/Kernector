@@ -144,11 +144,39 @@ def test_ask_service_receives_its_collaborator() -> None:
     assert stub.calls == [("system prompt", (Message(role="user", content="hello"),))]
 
 
-def test_prompt_repository_satisfies_its_port() -> None:
-    repository: PromptRepository = build_prompt_repository()
+def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("PROMPT_PACKS", raising=False)
+    repository: PromptRepository = build_prompt_repository(load_settings())
     prompts = repository.all()
     assert prompts, "no prompt variants loaded"
     assert repository.default_key() in prompts
+
+
+def test_build_prompt_repository_uses_settings_pack_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    pack = tmp_path / "custom-pack"
+    pack.mkdir()
+    (pack / "only.md").write_text(
+        "---\n"
+        "key: only_key\n"
+        "name: Only\n"
+        "description: Custom pack prompt.\n"
+        "default: true\n"
+        "---\n"
+        "\n"
+        "Custom system.\n",
+        encoding="utf-8",
+    )
+    base = load_settings()
+    settings = replace(base, prompts=replace(base.prompts, pack_paths=(pack,)))
+
+    repository = build_prompt_repository(settings)
+
+    assert set(repository.all()) == {"only_key"}
+    assert repository.default_key() == "only_key"
 
 
 def test_built_chat_models_satisfy_the_port() -> None:
