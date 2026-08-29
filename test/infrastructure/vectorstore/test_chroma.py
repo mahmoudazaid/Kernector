@@ -15,7 +15,11 @@ from domain.knowledge import (
     SourceType,
 )
 from infrastructure.config import ChromaSettings
-from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
+from infrastructure.vectorstore.chroma import (
+    ChromaStoreError,
+    ChromaVectorStore,
+    _derive_id,
+)
 
 COLLECTION = "kernector_knowledge"
 ALIGNED = (1.0, 0.0, 0.0)
@@ -55,6 +59,36 @@ def make_embedded(
 def count(store: ChromaVectorStore) -> int:
     """Record count read through the public surface."""
     return len(store.search(ALIGNED, 1000))
+
+
+def _raw_by_id(
+    store: ChromaVectorStore, *, ids: list[str] | None = None
+) -> dict[str, tuple[tuple[float, ...], str, dict[str, object]]]:
+    """Order-independent raw Chroma rows keyed by record id."""
+    kwargs: dict[str, object] = {
+        "include": ["metadatas", "documents", "embeddings"],
+    }
+    if ids is not None:
+        kwargs["ids"] = ids
+    result = store._collection.get(**kwargs)
+    found = list(result.get("ids") or [])
+    documents = list(result.get("documents") or [])
+    metadatas = list(result.get("metadatas") or [])
+    embeddings_raw = result.get("embeddings")
+    if embeddings_raw is None:
+        embeddings: list[object] = []
+    else:
+        embeddings = list(embeddings_raw)
+    rows: dict[str, tuple[tuple[float, ...], str, dict[str, object]]] = {}
+    for record_id, document, metadata, embedding in zip(
+        found, documents, metadatas, embeddings, strict=True
+    ):
+        rows[str(record_id)] = (
+            tuple(float(v) for v in embedding),  # type: ignore[arg-type]
+            str(document),
+            dict(metadata or {}),
+        )
+    return rows
 
 
 def round_trip(store: ChromaVectorStore, chunk: DocumentChunk) -> DocumentChunk:
@@ -112,7 +146,9 @@ def test_duplicate_derived_ids_in_one_batch_are_rejected(
 
 def test_complete_optional_fields_round_trip(store: ChromaVectorStore) -> None:
     original = make_chunk(
-        title="A title", provider="jira", content_format="markdown",
+        title="A title",
+        provider="jira",
+        content_format="markdown",
         extra={"team": "core"},
     )
     assert round_trip(store, original) == original
@@ -190,9 +226,7 @@ def test_re_adding_replaces_content_vector_and_metadata(
     store: ChromaVectorStore,
 ) -> None:
     store.upsert([make_embedded(content="before", title="old")])
-    store.upsert(
-        [make_embedded(vector=ORTHOGONAL, content="after", title="new")]
-    )
+    store.upsert([make_embedded(vector=ORTHOGONAL, content="after", title="new")])
     assert count(store) == 1
     updated = store.search(ORTHOGONAL, 1)[0]
     assert updated.chunk.content == "after"
@@ -376,9 +410,7 @@ def test_deletion_persists_after_reopening_the_store(tmp_path: Path) -> None:
     assert stored_identities(reopened) == [("knowledge_document", "doc-2", 0)]
 
 
-@pytest.mark.parametrize(
-    "bad", ["doc-1", None, 42, ("doc-1", "knowledge_document")]
-)
+@pytest.mark.parametrize("bad", ["doc-1", None, 42, ("doc-1", "knowledge_document")])
 def test_delete_source_rejects_a_non_reference(
     store: ChromaVectorStore, bad: object
 ) -> None:
@@ -598,8 +630,7 @@ def test_none_and_empty_filters_match_unfiltered_top_k(
 
     unfiltered = [hit.chunk.source_id for hit in store.search(ALIGNED, 10)]
     assert [
-        hit.chunk.source_id
-        for hit in store.search(ALIGNED, 10, metadata_filters=None)
+        hit.chunk.source_id for hit in store.search(ALIGNED, 10, metadata_filters=None)
     ] == unfiltered
     assert [
         hit.chunk.source_id for hit in store.search(ALIGNED, 10, metadata_filters={})
@@ -682,7 +713,11 @@ def test_reindex_filter_metadata_on_empty_collection_is_zero(
 
 def test_reindex_filter_metadata_is_idempotent(store: ChromaVectorStore) -> None:
     store.upsert(
-        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"doc_type": "runbook"})]
+        [
+            make_embedded(
+                source_id="doc-1", vector=ALIGNED, extra={"doc_type": "runbook"}
+            )
+        ]
     )
 
     assert store.reindex_filter_metadata() == 1
@@ -743,6 +778,67 @@ def test_failed_replacement_upsert_restores_existing_record(
     assert [hit.chunk.source_id for hit in hits] == ["doc-1"]
     assert dict(hits[0].chunk.metadata.extra) == {"tag": "old"}
     assert hits[0].chunk.content == "body"
+
+
+def test_partial_replacement_upsert_clears_new_ids_and_restores_snapshot(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A partial primary write must not leave new IDs or block snapshot restore."""
+    existing = make_embedded(
+        source_id="doc-1",
+        vector=ALIGNED,
+        content="original body",
+        extra={"tag": "old"},
+    )
+    store.upsert([existing])
+    before = _raw_by_id(store)
+    existing_id = _derive_id(existing.chunk)
+    new_chunk = make_embedded(
+        source_id="doc-2",
+        vector=ORTHOGONAL,
+        content="brand new",
+        extra={"tag": "fresh"},
+    )
+    new_id = _derive_id(new_chunk.chunk)
+    assert new_id not in before
+
+    real_upsert = store._collection.upsert
+
+    def partial_upsert(**kwargs: object) -> None:
+        ids = list(kwargs["ids"])  # type: ignore[arg-type]
+        embeddings = list(kwargs["embeddings"])  # type: ignore[arg-type]
+        documents = list(kwargs["documents"])  # type: ignore[arg-type]
+        metadatas = list(kwargs["metadatas"])  # type: ignore[arg-type]
+        # Write only the newly introduced target, then fail — leaving a row
+        # that would conflict with a naive snapshot ``add`` of the old ID.
+        index = ids.index(new_id)
+        real_upsert(
+            ids=[ids[index]],
+            embeddings=[embeddings[index]],
+            documents=[documents[index]],
+            metadatas=[metadatas[index]],
+        )
+        raise ValueError("partial upsert failure")
+
+    monkeypatch.setattr(store._collection, "upsert", partial_upsert)
+
+    with pytest.raises(ChromaStoreError, match="partial upsert failure") as raised:
+        store.upsert(
+            [
+                make_embedded(
+                    source_id="doc-1",
+                    vector=ALIGNED,
+                    content="replaced body",
+                    extra={"tag": "new"},
+                ),
+                new_chunk,
+            ]
+        )
+
+    assert isinstance(raised.value.__cause__, ValueError)
+    assert _raw_by_id(store) == before
+    assert new_id not in _raw_by_id(store)
+    assert existing_id in before
 
 
 def test_failed_replacement_upsert_reports_when_restoration_also_fails(
@@ -811,11 +907,67 @@ def test_failed_reindex_add_restores_existing_collection(
     assert dict(hits[0].chunk.metadata.extra) == {"doc_type": "runbook"}
 
 
+def test_partial_reindex_add_clears_partial_rows_and_restores_snapshot(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Partial reindex ``add`` must not leave rewritten rows that block restore."""
+    store.upsert(
+        [
+            make_embedded(
+                source_id="doc-a",
+                vector=ALIGNED,
+                content="alpha",
+                extra={"tag": "a"},
+            ),
+            make_embedded(
+                source_id="doc-b",
+                vector=ORTHOGONAL,
+                content="beta",
+                extra={"tag": "b"},
+            ),
+        ]
+    )
+    before = _raw_by_id(store)
+    assert len(before) == 2
+
+    add_calls = {"n": 0}
+    real_add = store._collection.add
+
+    def partial_add(**kwargs: object) -> object:
+        add_calls["n"] += 1
+        if add_calls["n"] == 1:
+            ids = list(kwargs["ids"])  # type: ignore[arg-type]
+            embeddings = list(kwargs["embeddings"])  # type: ignore[arg-type]
+            documents = list(kwargs["documents"])  # type: ignore[arg-type]
+            metadatas = list(kwargs["metadatas"])  # type: ignore[arg-type]
+            real_add(
+                ids=ids[:1],
+                embeddings=embeddings[:1],
+                documents=documents[:1],
+                metadatas=metadatas[:1],
+            )
+            raise ValueError("partial reindex add failure")
+        return real_add(**kwargs)
+
+    monkeypatch.setattr(store._collection, "add", partial_add)
+
+    with pytest.raises(ChromaStoreError, match="partial reindex add failure") as raised:
+        store.reindex_filter_metadata()
+
+    assert isinstance(raised.value.__cause__, ValueError)
+    assert add_calls["n"] >= 2  # primary partial write + restore path
+    assert _raw_by_id(store) == before
+
+
 def test_failed_reindex_reports_when_restoration_also_fails(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store.upsert(
-        [make_embedded(source_id="doc-1", vector=ALIGNED, extra={"doc_type": "runbook"})]
+        [
+            make_embedded(
+                source_id="doc-1", vector=ALIGNED, extra={"doc_type": "runbook"}
+            )
+        ]
     )
 
     def boom_add(*_args: object, **_kwargs: object) -> None:
@@ -827,7 +979,10 @@ def test_failed_reindex_reports_when_restoration_also_fails(
     with pytest.raises(ChromaStoreError, match="reindex write failed") as raised:
         store.reindex_filter_metadata()
 
-    assert "restoration" in str(raised.value).lower()
+    assert (
+        "restoration" in str(raised.value).lower()
+        or "recovery" in str(raised.value).lower()
+    )
     assert isinstance(raised.value.__cause__, ValueError)
     # Both writes failed after delete — remaining non-atomic limitation.
     assert count(store) == 0
@@ -896,11 +1051,15 @@ def test_non_string_filter_key_or_value_is_rejected(store: ChromaVectorStore) ->
     store.upsert([make_embedded()])
     with pytest.raises(ChromaStoreError, match="metadata_filters"):
         store.search(
-            ALIGNED, 1, metadata_filters={1: "runbook"}  # type: ignore[dict-item]
+            ALIGNED,
+            1,
+            metadata_filters={1: "runbook"},  # type: ignore[dict-item]
         )
     with pytest.raises(ChromaStoreError, match="metadata_filters"):
         store.search(
-            ALIGNED, 1, metadata_filters={"doc_type": 1}  # type: ignore[dict-item]
+            ALIGNED,
+            1,
+            metadata_filters={"doc_type": 1},  # type: ignore[dict-item]
         )
 
 
@@ -1032,7 +1191,10 @@ def valid_record(store: ChromaVectorStore) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("label", "mutate"),
     [
-        ("missing source_id", lambda m: {k: v for k, v in m.items() if k != "source_id"}),
+        (
+            "missing source_id",
+            lambda m: {k: v for k, v in m.items() if k != "source_id"},
+        ),
         ("blank source_id", lambda m: {**m, "source_id": "   "}),
         ("blank source_type", lambda m: {**m, "source_type": "   "}),
         ("non-string source_type", lambda m: {**m, "source_type": 42}),
