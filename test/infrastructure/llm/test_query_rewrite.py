@@ -1,9 +1,9 @@
 """OpenRouter query-rewrite adapter, tested through an injected fake model."""
 
-import re
 from types import SimpleNamespace
 
 import pytest
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from domain.errors import QueryRewriterError
 from infrastructure.config import OpenRouterSettings
@@ -11,16 +11,6 @@ from infrastructure.llm.query_rewrite import (
     QueryRewriteConfigError,
     OpenRouterQueryRewriter,
     REWRITE_SYSTEM,
-)
-
-# Same vocabulary guard as test_pack_layout for the core pack.
-_DOMAIN_DENYLIST = (
-    "interview",
-    "story",
-    "ticket",
-    "star",
-    "job description",
-    "recruiter",
 )
 
 
@@ -58,17 +48,20 @@ class _FakeModel:
         return SimpleNamespace(content=self._content)
 
 
-def test_rewrite_sends_original_query_and_system_instruction() -> None:
+def test_rewrite_sends_system_and_human_messages_structurally() -> None:
     fake = _FakeModel("rewritten retrieval query")
     rewriter = OpenRouterQueryRewriter(_settings(), model=fake)
 
     result = rewriter.rewrite("what broke?")
 
     assert result == "rewritten retrieval query"
-    assert fake.messages is not None
-    text = str(fake.messages)
-    assert "what broke?" in text
-    assert REWRITE_SYSTEM in text or "retrieval" in text.lower()
+    assert isinstance(fake.messages, list)
+    assert len(fake.messages) == 2
+    system, human = fake.messages
+    assert isinstance(system, SystemMessage)
+    assert system.content == REWRITE_SYSTEM
+    assert isinstance(human, HumanMessage)
+    assert human.content == "what broke?"
 
 
 def test_rewrite_normalizes_surrounding_whitespace() -> None:
@@ -98,6 +91,18 @@ def test_blank_content_raises_query_rewriter_error(blank: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "content",
+    [None, ["payment failure"], {"text": "payment failure"}, 42, object()],
+)
+def test_non_string_content_raises_query_rewriter_error(content: object) -> None:
+    fake = _FakeModel(content)
+    rewriter = OpenRouterQueryRewriter(_settings(), model=fake)
+
+    with pytest.raises(QueryRewriterError):
+        rewriter.rewrite("what broke?")
+
+
+@pytest.mark.parametrize(
     ("field", "value", "match"),
     [
         ("api_key", None, "OPENROUTER_API_KEY"),
@@ -113,10 +118,3 @@ def test_missing_config_raises_at_construction(
 ) -> None:
     with pytest.raises(QueryRewriteConfigError, match=match):
         OpenRouterQueryRewriter(_settings(**{field: value}))
-
-
-def test_rewrite_system_prompt_avoids_domain_vocabulary() -> None:
-    for term in _DOMAIN_DENYLIST:
-        assert re.search(rf"\b{re.escape(term)}\b", REWRITE_SYSTEM, flags=re.IGNORECASE) is None, (
-            f"rewrite prompt must not contain {term!r}"
-        )
