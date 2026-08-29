@@ -12,8 +12,8 @@ Last audited commit: `162c666`. All rows are **planned** (placement approved, co
 | Secrets / env | eng | W01 | L04 | GP04 | W01 | A04 | planned | `load_dotenv`, `.env` gitignored / PR #13, `.gitignore` | high |
 | Exceptions / timeouts | py | W01, W06 | L05 | GP05 | W01 | A05 | planned | `requests.exceptions.RequestException`, `timeout=` / `llm.py` | high |
 | HTTP + JSON + requests | eng | W01 | L06 | GP06 | W01 (CLI) | A06, A07 | planned | POST `/chat/completions`; JSON messages / PR #13 | high |
-| Prompt techniques | app | W02 | L07 | GP07 | W02 | A08 | planned | five `prompts/*.md`; `PROMPT_COMPARISON.md` / `e1ad222` | medium |
-| Prompt files / loader | app | W02 | L08 | GP08 | W02 | A09 | planned | `parse_prompt_file`, `PROMPTS` / PR #45 | high |
+| Prompt techniques | app | W02 | L07 | GP07 | W02 | A08 | planned | five `prompts/packs/story-intelligence/*.md`; `PROMPT_COMPARISON.md` / `e1ad222` | medium |
+| Prompt files / loader | app | W02 | L08 | GP08 | W02 | A09 | planned | `MarkdownPromptRepository` + `PROMPT_PACKS` / PR #45 | high |
 | Streamlit UI | fw | W03 | L09 | GP09 | W03 | A10, A11 | planned | sidebar, `selectbox`, `chat_input`, `st.markdown` / PR #13 | high |
 | Validation + result dict | app | W04 | L10 | GP10 | W04 | A12 | planned | `validate_input`, `is_not_interview_prep` / PR #46 | high |
 | Latency / usage / export | app | W04 | L11 | GP11 | W04 | A13 | planned | `time.perf_counter`, usage dict, `st.download_button` / PR #47 | high |
