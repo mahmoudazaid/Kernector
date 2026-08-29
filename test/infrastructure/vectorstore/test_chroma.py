@@ -511,6 +511,194 @@ def test_query_dimension_mismatch_is_rejected(
 
 
 # --------------------------------------------------------------------------
+# Metadata-filtered search (#86)
+# --------------------------------------------------------------------------
+
+
+def test_single_extra_filter_returns_exact_matches_only(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(
+                source_id="runbook",
+                vector=ALIGNED,
+                extra={"doc_type": "runbook"},
+            ),
+            make_embedded(
+                source_id="policy",
+                vector=ORTHOGONAL,
+                extra={"doc_type": "policy"},
+            ),
+            make_embedded(source_id="bare", vector=OPPOSING),
+        ]
+    )
+
+    hits = store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"})
+
+    assert [hit.chunk.source_id for hit in hits] == ["runbook"]
+    assert dict(hits[0].chunk.metadata.extra) == {"doc_type": "runbook"}
+
+
+def test_and_filters_require_every_extra_key(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [
+            make_embedded(
+                source_id="both",
+                vector=ALIGNED,
+                extra={"doc_type": "runbook", "severity": "high"},
+            ),
+            make_embedded(
+                source_id="type_only",
+                vector=ORTHOGONAL,
+                extra={"doc_type": "runbook", "severity": "low"},
+            ),
+            make_embedded(
+                source_id="missing_sev",
+                vector=OPPOSING,
+                extra={"doc_type": "runbook"},
+            ),
+        ]
+    )
+
+    hits = store.search(
+        ALIGNED,
+        10,
+        metadata_filters={"doc_type": "runbook", "severity": "high"},
+    )
+
+    assert [hit.chunk.source_id for hit in hits] == ["both"]
+
+
+def test_missing_filter_key_excludes_chunks(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="no-extra", vector=ALIGNED),
+            make_embedded(
+                source_id="other",
+                vector=ORTHOGONAL,
+                extra={"severity": "high"},
+            ),
+        ]
+    )
+
+    assert store.search(ALIGNED, 10, metadata_filters={"doc_type": "runbook"}) == ()
+
+
+def test_none_and_empty_filters_match_unfiltered_top_k(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="a", vector=ALIGNED, index=0),
+            make_embedded(source_id="b", vector=ORTHOGONAL, index=0),
+        ]
+    )
+
+    unfiltered = [hit.chunk.source_id for hit in store.search(ALIGNED, 10)]
+    assert [
+        hit.chunk.source_id
+        for hit in store.search(ALIGNED, 10, metadata_filters=None)
+    ] == unfiltered
+    assert [
+        hit.chunk.source_id for hit in store.search(ALIGNED, 10, metadata_filters={})
+    ] == unfiltered
+
+
+def test_filters_apply_before_limit(store: ChromaVectorStore) -> None:
+    """Nearest non-match must not consume the limit budget."""
+    store.upsert(
+        [
+            make_embedded(
+                source_id="nearest-non-match",
+                vector=ALIGNED,
+                extra={"doc_type": "policy"},
+            ),
+            make_embedded(
+                source_id="match",
+                vector=ORTHOGONAL,
+                extra={"doc_type": "runbook"},
+            ),
+        ]
+    )
+
+    hits = store.search(ALIGNED, 1, metadata_filters={"doc_type": "runbook"})
+
+    assert [hit.chunk.source_id for hit in hits] == ["match"]
+
+
+def test_empty_string_filter_value_matches(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="empty", vector=ALIGNED, extra={"tag": ""}),
+            make_embedded(source_id="filled", vector=ORTHOGONAL, extra={"tag": "x"}),
+        ]
+    )
+
+    hits = store.search(ALIGNED, 10, metadata_filters={"tag": ""})
+
+    assert [hit.chunk.source_id for hit in hits] == ["empty"]
+
+
+def test_hostile_extra_keys_remain_filterable(store: ChromaVectorStore) -> None:
+    extra = {"ünï:code": "قيمة", "a.b|c": "delimited", "": "empty key", "z": ""}
+    store.upsert([make_embedded(source_id="hostile", vector=ALIGNED, extra=extra)])
+
+    hits = store.search(ALIGNED, 1, metadata_filters={"ünï:code": "قيمة"})
+
+    assert len(hits) == 1
+    assert dict(hits[0].chunk.metadata.extra) == extra
+
+
+def test_extra_keys_colliding_with_reserved_names_still_filter_via_extra(
+    store: ChromaVectorStore,
+) -> None:
+    """Caller `title` in extra is filterable; owned title scalar is not."""
+    store.upsert(
+        [
+            make_embedded(
+                source_id="owned-title",
+                vector=ALIGNED,
+                title="runbook",
+                extra={},
+            ),
+            make_embedded(
+                source_id="extra-title",
+                vector=ORTHOGONAL,
+                title="real",
+                extra={"title": "runbook"},
+            ),
+        ]
+    )
+
+    hits = store.search(ALIGNED, 10, metadata_filters={"title": "runbook"})
+
+    assert [hit.chunk.source_id for hit in hits] == ["extra-title"]
+    assert hits[0].chunk.metadata.title == "real"
+
+
+@pytest.mark.parametrize("bad_filters", ["doc_type", ["doc_type"], 1])
+def test_non_mapping_metadata_filters_are_rejected(
+    store: ChromaVectorStore, bad_filters: object
+) -> None:
+    store.upsert([make_embedded()])
+    with pytest.raises(ChromaStoreError, match="metadata_filters"):
+        store.search(ALIGNED, 1, metadata_filters=bad_filters)  # type: ignore[arg-type]
+
+
+def test_non_string_filter_key_or_value_is_rejected(store: ChromaVectorStore) -> None:
+    store.upsert([make_embedded()])
+    with pytest.raises(ChromaStoreError, match="metadata_filters"):
+        store.search(
+            ALIGNED, 1, metadata_filters={1: "runbook"}  # type: ignore[dict-item]
+        )
+    with pytest.raises(ChromaStoreError, match="metadata_filters"):
+        store.search(
+            ALIGNED, 1, metadata_filters={"doc_type": 1}  # type: ignore[dict-item]
+        )
+
+
+# --------------------------------------------------------------------------
 # Collection configuration (§4.1, §4.2, §4.4)
 # --------------------------------------------------------------------------
 
