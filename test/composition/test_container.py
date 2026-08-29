@@ -147,10 +147,12 @@ def test_ask_service_receives_its_collaborator() -> None:
 def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
+    monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     repository: PromptRepository = build_prompt_repository(load_settings())
     prompts = repository.all()
-    assert prompts, "no prompt variants loaded"
-    assert repository.default_key() in prompts
+    assert set(prompts) == {"knowledge_qa"}
+    assert repository.default_key() == "knowledge_qa"
+    assert "role_qa" not in prompts
 
 
 def test_build_prompt_repository_uses_settings_pack_paths(
@@ -177,6 +179,73 @@ def test_build_prompt_repository_uses_settings_pack_paths(
 
     assert set(repository.all()) == {"only_key"}
     assert repository.default_key() == "only_key"
+
+
+def test_build_prompt_repository_wires_default_key_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    pack = tmp_path / "custom-pack"
+    pack.mkdir()
+    (pack / "alpha.md").write_text(
+        "---\n"
+        "key: alpha\n"
+        "name: Alpha\n"
+        "description: Frontmatter default.\n"
+        "default: true\n"
+        "---\n"
+        "\n"
+        "Alpha.\n",
+        encoding="utf-8",
+    )
+    (pack / "beta.md").write_text(
+        "---\n"
+        "key: beta\n"
+        "name: Beta\n"
+        "description: Override target.\n"
+        "---\n"
+        "\n"
+        "Beta.\n",
+        encoding="utf-8",
+    )
+    base = load_settings()
+    settings = replace(
+        base,
+        prompts=replace(base.prompts, pack_paths=(pack,), default_key="beta"),
+    )
+
+    repository = build_prompt_repository(settings)
+
+    assert repository.default_key() == "beta"
+
+
+def test_build_prompt_repository_rejects_unknown_default_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    pack = tmp_path / "custom-pack"
+    pack.mkdir()
+    (pack / "only.md").write_text(
+        "---\n"
+        "key: only_key\n"
+        "name: Only\n"
+        "description: Custom pack prompt.\n"
+        "default: true\n"
+        "---\n"
+        "\n"
+        "Custom system.\n",
+        encoding="utf-8",
+    )
+    base = load_settings()
+    settings = replace(
+        base,
+        prompts=replace(base.prompts, pack_paths=(pack,), default_key="missing"),
+    )
+
+    repository = build_prompt_repository(settings)
+
+    with pytest.raises(ValueError, match="missing"):
+        repository.all()
 
 
 def test_built_chat_models_satisfy_the_port() -> None:

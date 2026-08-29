@@ -339,3 +339,16 @@ def test_streamlit_app_imports_without_infrastructure_documents() -> None:
         assert "pypdf" not in source
         assert "extract_document" not in source
         assert "JsonDocumentCatalog" not in source
+
+
+def test_streamlit_app_imports_prompts_via_composition_only() -> None:
+    """Prompt selection stays above infrastructure; composition/domain only."""
+    import presentation.streamlit.app as app_mod
+
+    source = Path(app_mod.__file__).read_text(encoding="utf-8")
+    assert "infrastructure.prompts" not in source
+    assert "infrastructure.config" not in source
+    assert "MarkdownPromptRepository" not in source
+    assert "build_prompt_repository" in source
+    assert "from composition import" in source
+    assert "PromptRepository" in source

@@ -2,7 +2,9 @@
 
 Compared the five interview-prep prompt variants in the **Story Intelligence** domain pack (`prompts/packs/story-intelligence/`).
 
-Packs are selected via composition/config (`PROMPT_PACKS`, default `story-intelligence` until a neutral default pack lands). Core prompt loading stays pack-agnostic.
+Packs are selected via composition/config (`PROMPT_PACKS`, default `core`). Optional packs such as `story-intelligence` are enabled by listing them in `PROMPT_PACKS`. `PROMPT_DEFAULT_KEY` overrides the frontmatter `default: true` when set. Core prompt loading stays pack-agnostic.
+
+The product default pack is **`core`** (`knowledge_qa`). Story Intelligence remains optional.
 
 ## Techniques
 
@@ -16,9 +18,11 @@ Packs are selected via composition/config (`PROMPT_PACKS`, default `story-intell
 
 ## Default
 
-**Default:** Role Q&A Generator (`role_qa`)
+**Product default:** Knowledge Q&A (`knowledge_qa` in `prompts/packs/core/`)
 
-**Why:** Clearest live demo — user pastes a job title + seniority and gets usable interview questions in one shot. Other modes need longer or different inputs (full JD, draft STAR answer, pitch).
+**Story Intelligence pack default (when that pack is selected alone):** Role Q&A Generator (`role_qa`)
+
+**Why Role Q&A for Story Intelligence:** Clearest live demo — user pastes a job title + seniority and gets usable interview questions in one shot. Other modes need longer or different inputs (full JD, draft STAR answer, pitch).
 
 | Variant | Best when | Trade-off |
 |---------|-----------|-----------|
