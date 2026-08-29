@@ -80,11 +80,12 @@ pipeline. Names only (no implementation commitment in this document):
 
 ### Catalog adapter selection
 
-Uploaded-document lifecycle metadata uses `DocumentCatalog`. Today composition
-wires `JsonDocumentCatalog` via `DOCUMENT_CATALOG_PATH`. A transactional SQL
-adapter is tracked as configuration/selection follow-up
-[#131](https://github.com/mahmoudazaid/Kernector/issues/131); it is not
-implemented here.
+Uploaded-document lifecycle metadata uses the `DocumentCatalog` port.
+`DOCUMENT_CATALOG_PATH` configures only the JSON catalog **file location**; it
+does not select an adapter. Composition currently wires `JsonDocumentCatalog`
+directly. Configurable JSON vs SQL adapter selection will be introduced by
+follow-up [#131](https://github.com/mahmoudazaid/Kernector/issues/131); it is
+not implemented here.
 
 ## Architecture tests
 
