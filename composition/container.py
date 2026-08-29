@@ -18,6 +18,7 @@ from application.manage_documents import (
     UnknownDocumentError,
 )
 from application.retrieve_knowledge import RetrieveKnowledge
+from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -43,6 +44,10 @@ from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corp
 from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import OpenRouterChat
+from infrastructure.llm.query_rewrite import (
+    OpenRouterQueryRewriter,
+    QueryRewriteConfigError,
+)
 from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
 from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
 
@@ -200,6 +205,51 @@ def build_retrieve_knowledge(
     if vector_store is None:
         vector_store = build_vector_store(settings)
     return RetrieveKnowledge(embedding_model, vector_store)
+
+
+def build_rewrite_and_retrieve_knowledge(
+    settings: Settings, *, vector_store: VectorStore | None = None
+) -> RewriteAndRetrieveKnowledge:
+    """Wire rewrite-then-retrieve from the loaded settings.
+
+    Maps adapter construction failures to ``ConfigurationError``:
+    ``QueryRewriteConfigError`` for the rewriter and ``EmbeddingConfigError``
+    for the retrieve path. Operational rewrite failures stay
+    ``QueryRewriteFailure`` from the use case.
+
+    Pure: a fresh instance per call. Pass an existing ``vector_store`` to share
+    one client with ingest or plain retrieve.
+
+    Raises:
+        ConfigurationError: Rewrite or embedding credentials are missing.
+    """
+    try:
+        rewriter = OpenRouterQueryRewriter(settings.openrouter)
+    except QueryRewriteConfigError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    retrieve = build_retrieve_knowledge(settings, vector_store=vector_store)
+    return RewriteAndRetrieveKnowledge(rewriter, retrieve)
+
+
+def reindex_filter_metadata(settings: Settings) -> int:
+    """Promote stored ``extra`` keys so metadata filters work on legacy records.
+
+    Opens the configured Chroma collection and rewrites every record's metadata
+    without re-embedding. Safe to run repeatedly.
+
+    Returns:
+        The number of records rewritten.
+
+    Raises:
+        ChromaStoreError: The adapter could not read or rewrite the collection.
+        TypeError: The configured vector store is not a ``ChromaVectorStore``.
+    """
+    store = build_vector_store(settings)
+    if not isinstance(store, ChromaVectorStore):
+        raise TypeError(
+            f"reindex_filter_metadata requires ChromaVectorStore, got {type(store)!r}"
+        )
+    return store.reindex_filter_metadata()
 
 
 def _log_partial_create(error: PartialCreateFailure) -> None:

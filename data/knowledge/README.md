@@ -193,6 +193,25 @@ chunk_count=<count>
 
 Errors are printed to stderr without a traceback.
 
+## Filter-metadata reindex
+
+Chunks stored before metadata-filtered retrieval ([#86](https://github.com/mahmoudazaid/Kernector/issues/86)) keep `extra` only inside `extra_json`. Filtered search against those records returns zero hits until the promoted `x:` scalars exist.
+
+Rewrite every record's metadata in place (no re-embedding):
+
+```bash
+uv run python -m presentation.cli.reindex_filter_metadata
+```
+
+On success, stdout reports `rewritten_records=<count>`. Prefer a full corpus ingest when documents or chunk settings must also change.
+
+| Code | Meaning |
+| ---- | ------- |
+| `0` | Reindex succeeded |
+| `1` | Store read/rewrite failure |
+
+Errors are printed to stderr without a traceback.
+
 ## Future source support
 
 Future sources may include:
@@ -220,6 +239,7 @@ Foundation:
 - Knowledge ingestion use case: [#85](https://github.com/mahmoudazaid/Kernector/issues/85)
 - JSON knowledge corpus adapter: [#117](https://github.com/mahmoudazaid/Kernector/issues/117)
 - Ingest CLI: [#118](https://github.com/mahmoudazaid/Kernector/issues/118)
+- Metadata-filtered retrieval: [#86](https://github.com/mahmoudazaid/Kernector/issues/86)
 
 Domain-agnostic migration ([EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68)):
 
