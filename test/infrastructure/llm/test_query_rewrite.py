@@ -8,9 +8,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from domain.errors import QueryRewriterError
 from infrastructure.config import OpenRouterSettings
 from infrastructure.llm.query_rewrite import (
-    QueryRewriteConfigError,
-    OpenRouterQueryRewriter,
     REWRITE_SYSTEM,
+    OpenRouterQueryRewriter,
+    QueryRewriteConfigError,
 )
 
 

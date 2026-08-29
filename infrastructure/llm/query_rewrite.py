@@ -55,8 +55,11 @@ class OpenRouterQueryRewriter:
         if model is not None:
             self._model = model
         else:
+            # `_require_rewrite_config` already rejected a missing model name.
+            rewrite_model = config.rewrite_model
+            assert rewrite_model is not None
             self._model = ChatOpenAI(
-                model=config.rewrite_model,
+                model=rewrite_model,
                 api_key=config.api_key,
                 base_url=config.base_url,
                 timeout=config.timeout,
@@ -81,14 +84,11 @@ class OpenRouterQueryRewriter:
         content = getattr(result, "content", result)
         if not isinstance(content, str):
             raise QueryRewriterError(
-                "Query rewrite returned non-string content: "
-                f"{type(content).__name__}"
+                f"Query rewrite returned non-string content: {type(content).__name__}"
             )
         normalized = content.strip()
         if not normalized:
-            raise QueryRewriterError(
-                "Query rewrite returned a blank retrieval query"
-            )
+            raise QueryRewriterError("Query rewrite returned a blank retrieval query")
         return normalized
 
 
