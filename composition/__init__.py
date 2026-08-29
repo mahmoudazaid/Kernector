@@ -11,6 +11,7 @@ from composition.container import (
     build_manage_uploaded_documents,
     build_prompt_repository,
     build_retrieve_knowledge,
+    build_rewrite_and_retrieve_knowledge,
     build_vector_store,
     create_uploaded_document,
     delete_uploaded_document,
@@ -19,6 +20,7 @@ from composition.container import (
     load_knowledge_documents,
     load_runtime_settings,
     probe_ollama,
+    reindex_filter_metadata,
     replace_uploaded_document,
 )
 from composition.errors import (
@@ -45,6 +47,7 @@ __all__ = [
     "build_manage_uploaded_documents",
     "build_prompt_repository",
     "build_retrieve_knowledge",
+    "build_rewrite_and_retrieve_knowledge",
     "build_vector_store",
     "create_uploaded_document",
     "delete_uploaded_document",
@@ -53,5 +56,6 @@ __all__ = [
     "load_knowledge_documents",
     "load_runtime_settings",
     "probe_ollama",
+    "reindex_filter_metadata",
     "replace_uploaded_document",
 ]

@@ -386,3 +386,29 @@ class RetrieveResponse:
                     f"hits items must be ScoredChunk, got {item!r}"
                 )
         object.__setattr__(self, "hits", tuple(hits))
+
+
+@dataclass(frozen=True, slots=True)
+class RewriteRetrieveResponse:
+    """Outcome of rewrite-then-retrieve.
+
+    Attributes:
+        hits (Sequence[ScoredChunk]): Ranked chunks with full provenance.
+        original_query (str): The caller's natural-language query before rewrite.
+        rewritten_query (str): The retrieval-oriented query that was embedded.
+    """
+
+    original_query: str
+    rewritten_query: str
+    hits: Sequence[ScoredChunk] = ()
+
+    def __post_init__(self) -> None:
+        _require_text(self.original_query, "original_query")
+        _require_text(self.rewritten_query, "rewritten_query")
+        hits = _require_sequence(self.hits, "hits")
+        for item in hits:
+            if not isinstance(item, ScoredChunk):
+                raise ApplicationValidationError(
+                    f"hits items must be ScoredChunk, got {item!r}"
+                )
+        object.__setattr__(self, "hits", tuple(hits))
