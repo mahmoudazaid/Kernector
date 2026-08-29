@@ -178,3 +178,23 @@ def test_blank_prompt_default_key_is_rejected(
     env.setenv("PROMPT_DEFAULT_KEY", raw)
     with pytest.raises(ValueError, match="PROMPT_DEFAULT_KEY"):
         load_settings()
+
+
+def test_rewrite_model_uses_dedicated_env_when_set(env: pytest.MonkeyPatch) -> None:
+    env.setenv("OPENROUTER_MODEL", "chat/model")
+    env.setenv("OPENROUTER_REWRITE_MODEL", "rewrite/model")
+    assert load_settings().openrouter.rewrite_model == "rewrite/model"
+
+
+def test_rewrite_model_falls_back_to_openrouter_model(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.delenv("OPENROUTER_REWRITE_MODEL", raising=False)
+    env.setenv("OPENROUTER_MODEL", "chat/model")
+    assert load_settings().openrouter.rewrite_model == "chat/model"
+
+
+def test_rewrite_model_is_none_when_both_unset(env: pytest.MonkeyPatch) -> None:
+    env.delenv("OPENROUTER_REWRITE_MODEL", raising=False)
+    env.delenv("OPENROUTER_MODEL", raising=False)
+    assert load_settings().openrouter.rewrite_model is None

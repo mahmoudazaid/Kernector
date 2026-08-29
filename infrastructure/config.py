@@ -16,6 +16,7 @@ class OpenRouterSettings:
     model: str | None
     models: tuple[str, ...]
     embedding_model: str
+    rewrite_model: str | None
     timeout: float
 
 
@@ -80,6 +81,8 @@ def load_settings() -> Settings:
             embedding_model=os.getenv(
                 "OPENROUTER_EMBEDDING_MODEL", "qwen/qwen3-embedding-8b"
             ),
+            rewrite_model=os.getenv("OPENROUTER_REWRITE_MODEL")
+            or os.getenv("OPENROUTER_MODEL"),
             timeout=float(os.getenv("OPENROUTER_TIMEOUT", "120")),
         ),
         ollama=OllamaSettings(

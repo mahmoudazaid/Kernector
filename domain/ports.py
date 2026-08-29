@@ -14,6 +14,7 @@ from domain.knowledge import (
 )
 from domain.models import AskResult, Message, PromptVariant
 
+
 class ChatModel(Protocol):
     """A provider that can answer a conversation."""
 
@@ -37,6 +38,22 @@ class EmbeddingModel(Protocol):
     def embed_documents(self, texts: Sequence[str]) -> Sequence[Vector]: ...
 
     def embed_query(self, text: str) -> Vector: ...
+
+class QueryRewriter(Protocol):
+    """Rewrites a natural-language query into a retrieval-oriented string.
+
+    Unlike ``VectorStore`` / ``DocumentCatalog``, which document
+    ``RuntimeError: a subclass``, this port names ``QueryRewriterError`` so
+    the application can catch one known type rather than every ``RuntimeError``.
+    """
+
+    def rewrite(self, query: str) -> str:
+        """Return a non-blank retrieval-oriented query for ``query``.
+
+        Raises:
+            QueryRewriterError: Invocation failed or content was unusable.
+        """
+        ...
 
 class VectorStore(Protocol):
     """A store of embedded chunks that can be searched by similarity."""
