@@ -9,8 +9,13 @@ from domain.models import PromptVariant
 class MarkdownPromptRepository:
     """PromptRepository backed by markdown files with frontmatter."""
 
-    def __init__(self, prompt_dirs: Sequence[Path]) -> None:
+    def __init__(
+        self,
+        prompt_dirs: Sequence[Path],
+        default_key: str | None = None,
+    ) -> None:
         self._dirs = tuple(prompt_dirs)
+        self._default_key_override = default_key
         self._prompts: dict[str, PromptVariant] | None = None
         self._default_key: str | None = None
 
@@ -27,7 +32,7 @@ class MarkdownPromptRepository:
             return
 
         prompts: dict[str, PromptVariant] = {}
-        default_key: str | None = None
+        frontmatter_default: str | None = None
 
         for directory in self._dirs:
             for path in sorted(directory.glob("*.md")):
@@ -46,19 +51,31 @@ class MarkdownPromptRepository:
                 )
 
                 if meta.get("default", "false").lower() == "true":
-                    if default_key is not None:
+                    if (
+                        self._default_key_override is None
+                        and frontmatter_default is not None
+                    ):
                         raise ValueError("Multiple default prompts found")
-                    default_key = key
+                    frontmatter_default = key
 
         if not prompts:
             raise ValueError(
                 "No prompts found in " + ", ".join(str(d) for d in self._dirs)
             )
-        if default_key is None:
+
+        if self._default_key_override is not None:
+            if self._default_key_override not in prompts:
+                raise ValueError(
+                    f"Unknown default prompt key {self._default_key_override!r}"
+                )
+            resolved_default = self._default_key_override
+        elif frontmatter_default is None:
             raise ValueError("No default prompt found")
+        else:
+            resolved_default = frontmatter_default
 
         self._prompts = prompts
-        self._default_key = default_key
+        self._default_key = resolved_default
 
 
 def _parse_prompt_file(path: Path) -> tuple[dict[str, str], str]:
