@@ -445,7 +445,7 @@ def test_oversized_query_is_rejected_before_any_port_call() -> None:
     rewriter = _RecordingRewriter()
     rewrite_retrieve = RewriteAndRetrieveKnowledge(
         rewriter,  # type: ignore[arg-type]
-        RetrieveKnowledge(embedder, store),
+        RetrieveKnowledge(embedder, store, max_input_length=limit),
         max_input_length=limit,
     )
     chat = _RecordingChat()
@@ -484,3 +484,43 @@ def test_query_at_exact_max_length_is_accepted() -> None:
 
     assert response.answer == "ok"
     assert len(chat.calls) == 1
+
+
+def test_oversized_history_content_is_rejected_before_any_port_call() -> None:
+    limit = 20
+    store = _RecordingStore()
+    embedder = RecordingEmbeddingModel()
+    rewriter = _RecordingRewriter()
+    rewrite_retrieve = RewriteAndRetrieveKnowledge(
+        rewriter,  # type: ignore[arg-type]
+        RetrieveKnowledge(embedder, store, max_input_length=limit),
+        max_input_length=limit,
+    )
+    chat = _RecordingChat()
+    prompts = _RecordingPrompts()
+    use_case = AskKnowledge(
+        rewrite_retrieve,
+        AskService(chat),
+        prompts,
+        default_retrieval_limit=5,
+        relevance_threshold=THRESHOLD,
+        max_input_length=limit,
+    )
+    history = (
+        Message(role="user", content="ok"),
+        Message(role="assistant", content="y" * (limit + 1)),
+    )
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"history\[1\] content must be at most 20 characters, got 21",
+    ):
+        use_case.execute(
+            AskRequest(prompt_key=None, query="How do I restart?", history=history)
+        )
+
+    assert prompts.calls == []
+    assert rewriter.queries == []
+    assert embedder.queries == []
+    assert store.searches == []
+    assert chat.calls == []

@@ -61,7 +61,7 @@ def test_ingested_extra_metadata_is_filterable_on_retrieve(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
     )
-    retrieve = RetrieveKnowledge(embedding, store)
+    retrieve = RetrieveKnowledge(embedding, store, max_input_length=10_000)
 
     ingest.execute(
         IngestRequest(

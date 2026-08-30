@@ -64,7 +64,9 @@ def _use_case(
     max_input_length: int = 10_000,
 ) -> tuple[RewriteAndRetrieveKnowledge, RecordingEmbeddingModel]:
     recording = embedder if embedder is not None else RecordingEmbeddingModel()
-    retrieve = RetrieveKnowledge(recording, store)
+    retrieve = RetrieveKnowledge(
+        recording, store, max_input_length=max_input_length
+    )
     query_rewriter = (
         rewriter if rewriter is not None else StubQueryRewriter(rewritten)
     )
@@ -194,3 +196,22 @@ def test_oversized_query_is_rejected_before_rewriter_embed_or_store() -> None:
     assert rewriter.queries == []
     assert embedder.queries == []
     assert store.searches == []
+
+
+def test_rewritten_query_may_exceed_input_limit_after_original_was_accepted() -> None:
+    """User-input limit applies to the original query only, not rewriter expansion."""
+    limit = 20
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("doc-1"))
+    use_case, embedder = _use_case(
+        store,
+        rewritten="y" * (limit + 50),
+        max_input_length=limit,
+    )
+
+    response = use_case.execute(
+        RetrieveRequest(query="x" * limit, retrieval_limit=1)
+    )
+
+    assert embedder.queries == ["y" * (limit + 50)]
+    assert len(response.hits) == 1
