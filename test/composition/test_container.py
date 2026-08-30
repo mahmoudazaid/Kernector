@@ -89,7 +89,13 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
-        env={**os.environ, "CHROMA_PERSIST_PATH": str(store_path)},
+        env={
+            **os.environ,
+            "CHROMA_PERSIST_PATH": str(store_path),
+            "OPENROUTER_API_KEY": "test-key",
+            "OPENROUTER_BASE_URL": "https://openrouter.test/api/v1",
+            "OPENROUTER_MODEL": "test/chat-model",
+        },
     )
     assert result.returncode == 0, result.stderr
     assert store_path.is_dir(), "the store was not created under tmp_path"
@@ -464,6 +470,19 @@ def test_missing_embedding_configuration_surfaces_as_configuration_error(
 
     with pytest.raises(ConfigurationError, match="OPENROUTER_API_KEY"):
         build_ingest_knowledge(settings)
+
+
+def test_missing_chat_configuration_surfaces_as_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Absent OpenRouter chat credentials fail at build_chat_model, typed."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    settings = load_settings()
+    assert settings.openrouter.api_key is None
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_API_KEY"):
+        build_chat_model(settings, provider="openrouter")
 
 
 def test_a_configuration_error_is_not_a_validation_error() -> None:
