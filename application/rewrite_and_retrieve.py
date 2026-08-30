@@ -2,7 +2,7 @@
 
 from application.contracts import RetrieveRequest, RewriteRetrieveResponse
 from application.errors import ApplicationValidationError
-from application.retrieve_knowledge import RetrieveKnowledge
+from application.retrieve_knowledge import RetrieveKnowledge, TrustedRewrittenQuery
 from domain.errors import QueryRewriterError
 from domain.ports import QueryRewriter
 
@@ -34,11 +34,11 @@ class RewriteAndRetrieveKnowledge:
     """Rewrites the query, then delegates to ``RetrieveKnowledge``.
 
     Accepts ports and the retrieve use case only: the application layer must
-    not import ``infrastructure``. ``RetrieveKnowledge`` stays rewrite-unaware.
+    not import ``infrastructure``.
 
-    Length is enforced on the **caller-supplied** ``RetrieveRequest.query``
-    before the rewriter runs. ``RetrieveKnowledge`` must not re-apply the same
-    limit: it receives rewriter output, which is not user input.
+    Length is enforced on the caller-supplied ``RetrieveRequest.query`` before
+    the rewriter runs. Rewriter output is passed as ``TrustedRewrittenQuery``
+    so it is not re-measured against the user-input limit.
     """
 
     def __init__(
@@ -81,13 +81,10 @@ class RewriteAndRetrieveKnowledge:
             raise QueryRewriteFailure("Query rewrite returned a blank retrieval query")
 
         rewritten = rewritten.strip()
-        retrieve_response = self._retrieve.execute(
-            RetrieveRequest(
-                query=rewritten,
-                retrieval_limit=request.retrieval_limit,
-                metadata_filters=request.metadata_filters,
-            ),
-            enforce_length=False,
+        retrieve_response = self._retrieve.execute_rewritten(
+            TrustedRewrittenQuery(rewritten),
+            retrieval_limit=request.retrieval_limit,
+            metadata_filters=request.metadata_filters,
         )
         return RewriteRetrieveResponse(
             hits=retrieve_response.hits,
