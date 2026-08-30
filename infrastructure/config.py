@@ -87,9 +87,12 @@ class Settings:
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
     load_dotenv(override=True)
+    max_input_length = _env_int("MAX_INPUT_LENGTH", "10000")
+    if max_input_length <= 0:
+        raise ValueError(f"MAX_INPUT_LENGTH must be > 0, got {max_input_length}")
     return Settings(
         provider=os.getenv("LLM_PROVIDER", "openrouter").lower(),
-        max_input_length=int(os.getenv("MAX_INPUT_LENGTH", "10000")),
+        max_input_length=max_input_length,
         openrouter=OpenRouterSettings(
             api_key=os.getenv("OPENROUTER_API_KEY"),
             base_url=os.getenv("OPENROUTER_BASE_URL"),
