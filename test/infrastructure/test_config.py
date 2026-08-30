@@ -161,6 +161,52 @@ def test_prompt_packs_allows_empty_list(
     assert load_settings().prompts.pack_paths == ()
 
 
+def test_retrieval_defaults(env: pytest.MonkeyPatch) -> None:
+    retrieval = load_settings().retrieval
+    assert retrieval.limit == 5
+    assert retrieval.relevance_threshold == 0.0
+
+
+def test_retrieval_settings_are_read_from_env(env: pytest.MonkeyPatch) -> None:
+    env.setenv("RETRIEVAL_LIMIT", "12")
+    env.setenv("RELEVANCE_THRESHOLD", "0.35")
+    retrieval = load_settings().retrieval
+    assert retrieval.limit == 12
+    assert retrieval.relevance_threshold == 0.35
+
+
+@pytest.mark.parametrize("raw", ["0", "-1"])
+def test_non_positive_retrieval_limit_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("RETRIEVAL_LIMIT", raw)
+    with pytest.raises(ValueError, match="RETRIEVAL_LIMIT must be > 0"):
+        load_settings()
+
+
+def test_non_integer_retrieval_limit_is_rejected(env: pytest.MonkeyPatch) -> None:
+    env.setenv("RETRIEVAL_LIMIT", "many")
+    with pytest.raises(ValueError, match="RETRIEVAL_LIMIT must be an integer"):
+        load_settings()
+
+
+@pytest.mark.parametrize("raw", ["1.01", "-1.01", "42"])
+def test_out_of_range_relevance_threshold_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    """The threshold is a cosine similarity, so it shares the port's [-1, 1]
+    range. A value outside it silently disables or blanks the evidence filter."""
+    env.setenv("RELEVANCE_THRESHOLD", raw)
+    with pytest.raises(ValueError, match=r"RELEVANCE_THRESHOLD must be within"):
+        load_settings()
+
+
+def test_non_numeric_relevance_threshold_is_rejected(env: pytest.MonkeyPatch) -> None:
+    env.setenv("RELEVANCE_THRESHOLD", "close-enough")
+    with pytest.raises(ValueError, match="RELEVANCE_THRESHOLD must be a number"):
+        load_settings()
+
+
 def test_prompt_default_key_unset_is_none(env: pytest.MonkeyPatch) -> None:
     assert load_settings().prompts.default_key is None
 
