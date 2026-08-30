@@ -3,6 +3,7 @@
 import pytest
 
 from application.contracts import RetrieveRequest
+from application.errors import ApplicationValidationError
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import (
     QueryRewriteFailure,
@@ -60,6 +61,7 @@ def _use_case(
     rewritten: str = "payment service failure last week",
     embedder: RecordingEmbeddingModel | None = None,
     rewriter: object | None = None,
+    max_input_length: int = 10_000,
 ) -> tuple[RewriteAndRetrieveKnowledge, RecordingEmbeddingModel]:
     recording = embedder if embedder is not None else RecordingEmbeddingModel()
     retrieve = RetrieveKnowledge(recording, store)
@@ -67,7 +69,11 @@ def _use_case(
         rewriter if rewriter is not None else StubQueryRewriter(rewritten)
     )
     return (
-        RewriteAndRetrieveKnowledge(query_rewriter, retrieve),  # type: ignore[arg-type]
+        RewriteAndRetrieveKnowledge(
+            query_rewriter,  # type: ignore[arg-type]
+            retrieve,
+            max_input_length=max_input_length,
+        ),
         recording,
     )
 
@@ -147,3 +153,44 @@ def test_unrelated_exception_propagates_unwrapped() -> None:
         use_case.execute(RetrieveRequest(query="what broke?", retrieval_limit=1))
 
     assert embedder.queries == []
+
+
+class _RecordingRewriter:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def rewrite(self, query: str) -> str:
+        self.queries.append(query)
+        return "rewritten"
+
+
+class _RecordingStore(InMemoryVectorStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.searches: list[object] = []
+
+    def search(self, vector, limit, *, metadata_filters=None):  # type: ignore[no-untyped-def]
+        self.searches.append((vector, limit, metadata_filters))
+        return super().search(vector, limit, metadata_filters=metadata_filters)
+
+
+def test_oversized_query_is_rejected_before_rewriter_embed_or_store() -> None:
+    limit = 20
+    store = _RecordingStore()
+    _seed(store, _chunk("doc-1"))
+    rewriter = _RecordingRewriter()
+    use_case, embedder = _use_case(
+        store, rewriter=rewriter, max_input_length=limit
+    )
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"query must be at most 20 characters, got 21",
+    ):
+        use_case.execute(
+            RetrieveRequest(query="x" * (limit + 1), retrieval_limit=1)
+        )
+
+    assert rewriter.queries == []
+    assert embedder.queries == []
+    assert store.searches == []

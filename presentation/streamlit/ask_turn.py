@@ -1,18 +1,19 @@
 """Ask-turn outcome mapping for the Streamlit presentation layer.
 
-Owns the decision to drop a rejected user turn from session state. Widgets and
-``st`` calls stay in ``app.py``.
+Owns AskRequest construction and the decision to drop a rejected user turn from
+session state. Widgets and ``st`` calls stay in ``app.py``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from application.ask_knowledge import AskKnowledge
 from application.contracts import AskRequest, AskResponse
 from application.errors import ApplicationValidationError
 from domain.errors import DomainValidationError
+from domain.models import Message
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,10 +43,17 @@ def _failure_message(error: BaseException) -> str:
 
 def run_ask_turn(
     ask: AskKnowledge,
-    request: AskRequest,
+    *,
+    query: str,
+    prompt_key: str | None,
+    history: Sequence[Message] = (),
     settings: Mapping[str, object] | None = None,
 ) -> AskTurnResult:
-    """Execute one ask and classify the outcome for session-state handling.
+    """Build the ask contract, execute, and classify the outcome.
+
+    ``AskRequest`` construction lives here so blank/malformed input raises
+    ``ApplicationValidationError`` inside the mapper — never in the widget
+    layer after the user turn has already been appended to session state.
 
     ``ApplicationValidationError`` (including ``UnknownPromptError``) means the
     boundary rejected the request — the user turn must be dropped.
@@ -53,6 +61,11 @@ def run_ask_turn(
     failed.
     """
     try:
+        request = AskRequest(
+            prompt_key=prompt_key,
+            query=query,
+            history=history,
+        )
         response = ask.execute(request, settings=settings)
     except ApplicationValidationError as error:
         return AskTurnResult(

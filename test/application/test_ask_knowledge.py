@@ -14,6 +14,8 @@ from application.grounded_rag_policy import (
     CONTEXT_OPEN,
     GROUNDED_RAG_SYSTEM,
 )
+from application.retrieve_knowledge import RetrieveKnowledge
+from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
@@ -22,6 +24,7 @@ from domain.knowledge import (
     SourceType,
 )
 from domain.models import AskResult, Message, PromptVariant, Usage
+from test.doubles import InMemoryVectorStore, RecordingEmbeddingModel
 
 THRESHOLD = 0.5
 
@@ -408,7 +411,28 @@ def test_unknown_prompt_key_is_rejected_before_retrieval_spends_a_call() -> None
 # --- Input length ---------------------------------------------------------
 
 
+class _RecordingRewriter:
+    def __init__(self, rewritten: str = "rewritten") -> None:
+        self.queries: list[str] = []
+        self._rewritten = rewritten
+
+    def rewrite(self, query: str) -> str:
+        self.queries.append(query)
+        return self._rewritten
+
+
+class _RecordingStore(InMemoryVectorStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.searches: list[object] = []
+
+    def search(self, vector, limit, *, metadata_filters=None):  # type: ignore[no-untyped-def]
+        self.searches.append((vector, limit, metadata_filters))
+        return super().search(vector, limit, metadata_filters=metadata_filters)
+
+
 def test_oversized_query_is_rejected_before_any_port_call() -> None:
+    """Reject before prompts, rewriter, embedding, vector store, or chat."""
     limit = 20
     task = PromptVariant(
         key="task_mode",
@@ -416,7 +440,14 @@ def test_oversized_query_is_rejected_before_any_port_call() -> None:
         description="A fixture pack variant",
         system="TASK PROMPT BODY",
     )
-    rewrite_retrieve = _FakeRewriteRetrieve((_hit(),))
+    store = _RecordingStore()
+    embedder = RecordingEmbeddingModel()
+    rewriter = _RecordingRewriter()
+    rewrite_retrieve = RewriteAndRetrieveKnowledge(
+        rewriter,  # type: ignore[arg-type]
+        RetrieveKnowledge(embedder, store),
+        max_input_length=limit,
+    )
     chat = _RecordingChat()
     prompts = _RecordingPrompts(task)
     use_case = AskKnowledge(
@@ -437,7 +468,9 @@ def test_oversized_query_is_rejected_before_any_port_call() -> None:
         )
 
     assert prompts.calls == []
-    assert rewrite_retrieve.requests == []
+    assert rewriter.queries == []
+    assert embedder.queries == []
+    assert store.searches == []
     assert chat.calls == []
 
 
