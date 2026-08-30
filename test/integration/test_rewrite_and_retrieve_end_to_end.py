@@ -72,6 +72,7 @@ def test_rewritten_query_ranks_matching_chunk_first(
     use_case = RewriteAndRetrieveKnowledge(
         StubQueryRewriter(rewritten),
         RetrieveKnowledge(embedding, store),
+        max_input_length=10_000,
     )
 
     response = use_case.execute(

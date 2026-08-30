@@ -232,7 +232,11 @@ def build_rewrite_and_retrieve_knowledge(
     except QueryRewriteConfigError as exc:
         raise ConfigurationError(str(exc)) from exc
     retrieve = build_retrieve_knowledge(settings, vector_store=vector_store)
-    return RewriteAndRetrieveKnowledge(rewriter, retrieve)
+    return RewriteAndRetrieveKnowledge(
+        rewriter,
+        retrieve,
+        max_input_length=settings.max_input_length,
+    )
 
 
 def reindex_filter_metadata(settings: Settings) -> int:

@@ -219,6 +219,18 @@ def test_build_ask_knowledge_wires_max_input_length_from_settings(
     assert ask._max_input_length == 1234
 
 
+def test_build_rewrite_and_retrieve_wires_max_input_length_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    rewrite_env: Settings,
+) -> None:
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+    settings = load_settings()
+    # rewrite_env fixture may already have loaded settings; rebuild from env.
+    use_case = build_rewrite_and_retrieve_knowledge(settings)
+
+    assert use_case._max_input_length == 1234
+
+
 def test_build_ask_knowledge_routes_generation_through_ask_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

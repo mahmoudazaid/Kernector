@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import streamlit as st
 
 from application.ask_knowledge import AskKnowledge
-from application.contracts import AskRequest, Citation
+from application.contracts import Citation
 from application.errors import ConfigurationError
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
@@ -206,11 +206,9 @@ def _handle_input(
         with st.spinner("Thinking..."):
             result = run_ask_turn(
                 ask,
-                AskRequest(
-                    prompt_key=prompt_key,
-                    query=user_input,
-                    history=history,
-                ),
+                query=user_input,
+                prompt_key=prompt_key,
+                history=history,
                 settings=settings,
             )
             if not result.ok:
