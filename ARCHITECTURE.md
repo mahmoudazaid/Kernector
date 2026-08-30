@@ -72,21 +72,40 @@ app starts and General mode works with zero enabled packs.
 
 ### Grounded ask: system policy vs optional task prompts
 
-Chat over ingested documents is orchestrated by `AskKnowledge`:
+Chat over ingested documents is orchestrated by `AskKnowledge`, and the four
+inputs sit in **different privilege tiers**. The tier is decided by placement,
+not by wording — a rule stated in prose can be argued with by text the model
+reads later, but text that never reaches the system role cannot impersonate the
+policy that constrains it.
 
-1. **Mandatory grounded-RAG system policy** (`application/grounded_rag_policy.py`)
-   — non-user-selectable; enforces grounding, provenance, citations, untrusted
-   context, and honest uncertainty. It is never a prompt-pack Mode.
-2. **Retrieved chunks with provenance** — rewrite-then-retrieve, then citation
-   assembly.
-3. **Optional task prompt / Mode** — pack variants (for example Knowledge Q&A
-   or Story Intelligence) or future custom commands; composed *with* the
-   policy, never substituted for it. `AskRequest.prompt_key=None` means General
-   mode (no task template).
-4. **User query** — conversation turn sent to the chat model.
+| Tier | Input | Placement |
+|---|---|---|
+| Platform policy | `GROUNDED_RAG_SYSTEM` (`application/grounded_rag_policy.py`) | the `system` argument, **alone** |
+| Untrusted evidence | retrieved chunks with provenance | a `Message` between `BEGIN/END_RETRIEVED_CONTEXT` markers |
+| Optional task instruction | the selected Mode's `PromptVariant.system` | a `Message` after the context |
+| User input | `AskRequest.query` | the final user `Message` |
 
-Streamlit defaults to **General** Mode. Selecting a pack Mode only adds task
-instructions; it cannot bypass grounding rules.
+Retrieved document text is attacker-influenceable: anyone who can get a document
+ingested chooses its words. A pack prompt is author-supplied but still
+lower-trust than platform policy. Neither is concatenated into the system
+string, which is what makes "composed with, never substituted for" a structural
+property rather than a matter of string ordering.
+
+The policy is a module constant, so `PROMPT_PACKS` can neither hide it nor offer
+it as a selectable Mode. `AskRequest.prompt_key=None` means General mode (no
+task template), and Streamlit defaults to it.
+
+Generation runs through `AskService`, so the domain settings allowlist
+(`domain/model_settings.py`) is applied in exactly one place.
+
+**Insufficient evidence means no *relevant* evidence, not an empty result set.**
+Retrieval is top-k by cosine similarity, so a non-empty store returns `k` chunks
+for any query however unrelated. `RELEVANCE_THRESHOLD` is the floor a chunk must
+clear to count as evidence; when nothing clears it, `AskKnowledge` returns a
+fixed insufficient-knowledge answer with no citations and never calls the model.
+The shipped default of `0.0` discards only actively dissimilar chunks — it is a
+floor, not a tuned value, and the right number depends on the embedding model
+and corpus.
 
 ### Replaceable connectors
 
