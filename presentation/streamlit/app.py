@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from application.ask_knowledge import AskKnowledge, UnknownPromptError
+from application.ask_knowledge import AskKnowledge
 from application.contracts import AskRequest, Citation
-from application.errors import ApplicationValidationError, ConfigurationError
+from application.errors import ConfigurationError
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
@@ -18,10 +18,9 @@ from composition import (
     load_runtime_settings,
     probe_ollama,
 )
-from domain.errors import DomainValidationError
 from domain.models import Message
 from domain.ports import PromptRepository
-from domain.validation import validate_input
+from presentation.streamlit.ask_turn import run_ask_turn
 from presentation.streamlit.components import (
     render_export_actions,
     render_model_settings,
@@ -38,24 +37,6 @@ from presentation.streamlit.upload_ingest import (
 )
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
-
-# Failures a user can act on, rather than every exception. Presentation may not
-# import `infrastructure`, so adapter errors are reached through the
-# `RuntimeError` base their ports document — that covers `ConfigurationError`,
-# `QueryRewriteFailure`, and vector-store errors. A `TypeError` or `KeyError` is
-# a bug in this app, and stays uncaught so it surfaces as one.
-_ASK_FAILURES = (
-    UnknownPromptError,
-    ApplicationValidationError,
-    DomainValidationError,
-    RuntimeError,
-)
-
-
-def _failure_message(error: Exception) -> str:
-    """Never render an empty red box: some exceptions stringify to ``''``."""
-    text = str(error).strip()
-    return text or f"The request failed ({type(error).__name__})."
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,16 +187,10 @@ def _handle_input(
     ask: AskKnowledge,
     prompt_key: str | None,
     settings: Mapping[str, object],
-    max_input_length: int,
     off_topic_marker: str | None,
 ) -> None:
     user_input = st.chat_input("Start typing...")
     if not user_input:
-        return
-
-    error = validate_input(user_input, max_input_length)
-    if error:
-        st.error(error)
         return
 
     history = [
@@ -229,21 +204,26 @@ def _handle_input(
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            try:
-                response = ask.execute(
-                    AskRequest(
-                        prompt_key=prompt_key,
-                        query=user_input,
-                        history=history,
-                    ),
-                    settings=settings,
-                )
-            except _ASK_FAILURES as error:
-                # The user turn stays in state: it is already drawn above, and
-                # popping it would leave the transcript and the session out of
-                # step until the next rerun redraws without it.
-                st.error(_failure_message(error))
+            result = run_ask_turn(
+                ask,
+                AskRequest(
+                    prompt_key=prompt_key,
+                    query=user_input,
+                    history=history,
+                ),
+                settings=settings,
+            )
+            if not result.ok:
+                # A rejected turn must not persist. `history` is rebuilt from
+                # session state on the next submit and handed to the model, so
+                # keeping it would ship the exact text the boundary refused.
+                # The bubble drawn above disappears on the next rerun.
+                if result.drop_user_turn:
+                    st.session_state.messages.pop()
+                st.error(result.message)
                 return
+            response = result.response
+            assert response is not None
         render_run_meta(response.run)
         render_reply(response.answer, off_topic_marker)
         _render_citations(response.citations)
@@ -437,6 +417,5 @@ def render() -> None:
         ask,
         state.prompt_key,
         state.settings,
-        settings.max_input_length,
         off_topic_marker,
     )
