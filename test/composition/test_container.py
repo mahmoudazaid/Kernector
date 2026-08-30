@@ -89,7 +89,13 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
-        env={**os.environ, "CHROMA_PERSIST_PATH": str(store_path)},
+        env={
+            **os.environ,
+            "CHROMA_PERSIST_PATH": str(store_path),
+            "OPENROUTER_API_KEY": "test-key",
+            "OPENROUTER_BASE_URL": "https://openrouter.test/api/v1",
+            "OPENROUTER_MODEL": "test/chat-model",
+        },
     )
     assert result.returncode == 0, result.stderr
     assert store_path.is_dir(), "the store was not created under tmp_path"
