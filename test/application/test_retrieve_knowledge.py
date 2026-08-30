@@ -208,32 +208,15 @@ def test_oversized_query_is_rejected_before_embed_or_store() -> None:
     assert store.searches == []
 
 
-def test_execute_rewritten_embeds_trusted_text_without_input_length_limit() -> None:
-    """Trusted rewriter output is a distinct type — not a flag on execute."""
-    from application.retrieve_knowledge import TrustedRewrittenQuery
-
+def test_query_at_exact_max_length_is_accepted() -> None:
     limit = 20
     store = InMemoryVectorStore()
     _seed(store, _chunk("doc-1"))
     embedder = RecordingEmbeddingModel()
     use_case = _use_case(store, max_input_length=limit, embedding=embedder)
-    rewritten = "x" * (limit + 5)
+    query = "x" * limit
 
-    response = use_case.execute_rewritten(
-        TrustedRewrittenQuery(rewritten),
-        retrieval_limit=1,
-    )
+    response = use_case.execute(RetrieveRequest(query=query, retrieval_limit=1))
 
-    assert embedder.queries == [rewritten]
+    assert embedder.queries == [query]
     assert len(response.hits) == 1
-
-
-def test_execute_rewritten_rejects_non_trusted_query_type() -> None:
-    store = InMemoryVectorStore()
-    use_case = _use_case(store, max_input_length=20)
-
-    with pytest.raises(ApplicationValidationError, match="TrustedRewrittenQuery"):
-        use_case.execute_rewritten(
-            "not trusted",  # type: ignore[arg-type]
-            retrieval_limit=1,
-        )

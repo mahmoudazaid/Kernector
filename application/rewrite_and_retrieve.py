@@ -2,7 +2,7 @@
 
 from application.contracts import RetrieveRequest, RewriteRetrieveResponse
 from application.errors import ApplicationValidationError
-from application.retrieve_knowledge import RetrieveKnowledge, TrustedRewrittenQuery
+from application.retrieve_knowledge import RetrieveKnowledge
 from domain.errors import QueryRewriterError
 from domain.ports import QueryRewriter
 
@@ -31,14 +31,15 @@ class QueryRewriteFailure(RuntimeError):
 
 
 class RewriteAndRetrieveKnowledge:
-    """Rewrites the query, then delegates to ``RetrieveKnowledge``.
+    """Rewrites the query, then delegates to ``RetrieveKnowledge.execute``.
 
     Accepts ports and the retrieve use case only: the application layer must
     not import ``infrastructure``.
 
-    Length is enforced on the caller-supplied ``RetrieveRequest.query`` before
-    the rewriter runs. Rewriter output is passed as ``TrustedRewrittenQuery``
-    so it is not re-measured against the user-input limit.
+    The original query is length-checked before the rewriter runs. The rewritten
+    string is wrapped in a normal ``RetrieveRequest`` and passed to
+    ``RetrieveKnowledge.execute``, which enforces the same limit again before
+    embedding — so oversized rewriter output never reaches embed or store.
     """
 
     def __init__(
@@ -62,7 +63,9 @@ class RewriteAndRetrieveKnowledge:
             Hits plus original and rewritten query strings for observability.
 
         Raises:
-            ApplicationValidationError: ``query`` exceeds ``max_input_length``.
+            ApplicationValidationError: Original or rewritten query exceeds
+                ``max_input_length`` (rewritten case: after rewrite, before
+                embed/store).
             QueryRewriteFailure: The rewriter raised ``QueryRewriterError`` or
                 returned blank content. Retrieve is not invoked.
             RuntimeError: Propagated unchanged from embedding or vector store.
@@ -81,10 +84,12 @@ class RewriteAndRetrieveKnowledge:
             raise QueryRewriteFailure("Query rewrite returned a blank retrieval query")
 
         rewritten = rewritten.strip()
-        retrieve_response = self._retrieve.execute_rewritten(
-            TrustedRewrittenQuery(rewritten),
-            retrieval_limit=request.retrieval_limit,
-            metadata_filters=request.metadata_filters,
+        retrieve_response = self._retrieve.execute(
+            RetrieveRequest(
+                query=rewritten,
+                retrieval_limit=request.retrieval_limit,
+                metadata_filters=request.metadata_filters,
+            )
         )
         return RewriteRetrieveResponse(
             hits=retrieve_response.hits,

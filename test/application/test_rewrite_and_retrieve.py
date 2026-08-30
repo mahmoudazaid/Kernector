@@ -158,12 +158,13 @@ def test_unrelated_exception_propagates_unwrapped() -> None:
 
 
 class _RecordingRewriter:
-    def __init__(self) -> None:
+    def __init__(self, rewritten: str = "rewritten") -> None:
         self.queries: list[str] = []
+        self._rewritten = rewritten
 
     def rewrite(self, query: str) -> str:
         self.queries.append(query)
-        return "rewritten"
+        return self._rewritten
 
 
 class _RecordingStore(InMemoryVectorStore):
@@ -198,20 +199,46 @@ def test_oversized_query_is_rejected_before_rewriter_embed_or_store() -> None:
     assert store.searches == []
 
 
-def test_rewritten_query_may_exceed_input_limit_after_original_was_accepted() -> None:
-    """User-input limit applies to the original query only, not rewriter expansion."""
+def test_oversized_rewritten_query_allows_rewriter_but_not_embed_or_store() -> None:
+    """Original within limit may rewrite; oversized rewrite must not reach embed/store."""
     limit = 20
-    store = InMemoryVectorStore()
+    store = _RecordingStore()
     _seed(store, _chunk("doc-1"))
+    oversized = "y" * (limit + 1)
+    rewriter = _RecordingRewriter(oversized)
     use_case, embedder = _use_case(
         store,
-        rewritten="y" * (limit + 50),
+        rewritten=oversized,
+        rewriter=rewriter,
         max_input_length=limit,
     )
 
-    response = use_case.execute(
-        RetrieveRequest(query="x" * limit, retrieval_limit=1)
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"query must be at most 20 characters, got 21",
+    ):
+        use_case.execute(RetrieveRequest(query="x" * limit, retrieval_limit=1))
+
+    assert rewriter.queries == ["x" * limit]
+    assert embedder.queries == []
+    assert store.searches == []
+
+
+def test_exact_limit_original_and_rewrite_proceed_to_embed() -> None:
+    limit = 20
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("doc-1"))
+    original = "x" * limit
+    rewritten = "y" * limit
+    use_case, embedder = _use_case(
+        store, rewritten=rewritten, max_input_length=limit
     )
 
-    assert embedder.queries == ["y" * (limit + 50)]
+    response = use_case.execute(
+        RetrieveRequest(query=original, retrieval_limit=1)
+    )
+
+    assert embedder.queries == [rewritten]
     assert len(response.hits) == 1
+    assert response.original_query == original
+    assert response.rewritten_query == rewritten
