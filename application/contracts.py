@@ -180,7 +180,8 @@ class AskRequest:
     """Input for a prompt-selected ask/analyze use case.
 
     Attributes:
-        prompt_key (str): Identifier of the selected prompt (not its body).
+        prompt_key (str | None): Optional identifier of a selected task prompt.
+            ``None`` means general grounded chat with no task template.
         query (str): User question or analysis input.
         grounding_references (Sequence[SourceReference]): Optional provenance
             identifiers supplied by callers or domain packs; the generic
@@ -189,14 +190,15 @@ class AskRequest:
         retrieval_limit (int | None): Optional positive limit for retrieval.
     """
 
-    prompt_key: str
-    query: str
+    prompt_key: str | None = None
+    query: str = ""
     grounding_references: Sequence[SourceReference] = ()
     history: Sequence[Message] = ()
     retrieval_limit: int | None = None
 
     def __post_init__(self) -> None:
-        _require_text(self.prompt_key, "prompt_key")
+        if self.prompt_key is not None:
+            _require_text(self.prompt_key, "prompt_key")
         _require_text(self.query, "query")
         grounding_references = _require_sequence(
             self.grounding_references, "grounding_references"

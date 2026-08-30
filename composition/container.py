@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, ConfigurationError
@@ -481,6 +482,24 @@ def build_prompt_repository(settings: Settings) -> PromptRepository:
 
 def build_ask_service(chat_model: ChatModel) -> AskService:
     return AskService(chat_model)
+
+
+def build_ask_knowledge(
+    settings: Settings,
+    *,
+    chat_model: ChatModel | None = None,
+    vector_store: VectorStore | None = None,
+    prompt_repository: PromptRepository | None = None,
+) -> AskKnowledge:
+    """Wire grounded ask from rewrite/retrieve, chat model, and prompts."""
+    if chat_model is None:
+        chat_model = build_chat_model(settings)
+    if prompt_repository is None:
+        prompt_repository = build_prompt_repository(settings)
+    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=vector_store
+    )
+    return AskKnowledge(rewrite_and_retrieve, chat_model, prompt_repository)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

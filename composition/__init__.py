@@ -3,6 +3,7 @@
 from composition.container import (
     SUPPORTED_UPLOAD_SUFFIXES,
     available_providers,
+    build_ask_knowledge,
     build_ask_service,
     build_chat_model,
     build_document_catalog,
@@ -39,6 +40,7 @@ __all__ = [
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
     "available_providers",
+    "build_ask_knowledge",
     "build_ask_service",
     "build_chat_model",
     "build_document_catalog",

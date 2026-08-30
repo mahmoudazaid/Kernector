@@ -155,6 +155,32 @@ def test_ask_service_receives_its_collaborator() -> None:
     assert stub.calls == [("system prompt", (Message(role="user", content="hello"),))]
 
 
+def test_prompt_repository_allows_zero_packs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("PROMPT_PACKS", "")
+    monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
+    repository: PromptRepository = build_prompt_repository(load_settings())
+    assert repository.all() == {}
+    assert repository.default_key() is None
+
+
+def test_build_ask_knowledge_wires_with_zero_packs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from application.ask_knowledge import AskKnowledge
+    from composition import build_ask_knowledge
+
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("PROMPT_PACKS", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    settings = load_settings()
+    ask = build_ask_knowledge(settings, chat_model=_StubChat())
+    assert isinstance(ask, AskKnowledge)
+
+
 def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
