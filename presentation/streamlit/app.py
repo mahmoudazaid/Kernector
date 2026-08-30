@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import streamlit as st
 
 from application.ask_service import AskService
+from application.errors import ConfigurationError
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
@@ -353,14 +354,18 @@ def render() -> None:
 
     _render_upload_ingest(settings)
 
-    service = build_ask_service(
-        build_chat_model(
-            settings,
-            provider=state.provider,
-            model=state.model,
-            base_url=state.ollama_base_url,
+    try:
+        service = build_ask_service(
+            build_chat_model(
+                settings,
+                provider=state.provider,
+                model=state.model,
+                base_url=state.ollama_base_url,
+            )
         )
-    )
+    except ConfigurationError as error:
+        st.error(str(error))
+        return
 
     _render_history()
     _handle_input(
