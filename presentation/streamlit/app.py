@@ -1,31 +1,32 @@
 """Streamlit app: page flow."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import streamlit as st
 
-from application.ask_service import AskService
+from application.ask_knowledge import AskKnowledge, UnknownPromptError
+from application.contracts import AskRequest, Citation
 from application.errors import ConfigurationError
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
-    build_ask_service,
+    build_ask_knowledge,
     build_chat_model,
     build_prompt_repository,
     load_runtime_settings,
     probe_ollama,
 )
-from domain.models import Message, PromptVariant
+from domain.models import Message
 from domain.ports import PromptRepository
 from domain.validation import validate_input
 from presentation.streamlit.components import (
     render_export_actions,
     render_model_settings,
     render_reply,
-    render_run_meta,
 )
+from presentation.streamlit.modes import default_mode_index, mode_options
 from presentation.streamlit.upload_ingest import (
     UploadIngestResult,
     create_new_document,
@@ -35,6 +36,7 @@ from presentation.streamlit.upload_ingest import (
 )
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
+_GENERAL_SELECT_KEY = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +45,7 @@ class _SidebarState:
     model: str
     ollama_base_url: str
     settings: Mapping[str, object]
-    prompt_key: str
+    prompt_key: str | None
 
 
 @st.cache_resource
@@ -59,6 +61,20 @@ def _prompt_repository() -> PromptRepository:
 @st.cache_data(ttl=30)
 def _cached_probe(_settings: Settings, base_url: str) -> dict:
     return probe_ollama(_settings, base_url)
+
+
+def _render_citations(citations: Sequence[Citation]) -> None:
+    if not citations:
+        return
+    with st.expander(f"Citations ({len(citations)})"):
+        for index, citation in enumerate(citations, start=1):
+            ref = citation.reference
+            st.markdown(
+                f"**{index}.** `{ref.source_id}` ({ref.source_type})"
+                + (f" · chunk {citation.chunk_index}" if citation.chunk_index is not None else "")
+            )
+            if citation.quote:
+                st.caption(citation.quote)
 
 
 def _render_sidebar(settings: Settings, repository: PromptRepository) -> _SidebarState:
@@ -129,14 +145,24 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
 
     settings_values = render_model_settings(provider)
 
-    keys = list(prompts.keys())
-    prompt_key = st.selectbox(
-        "Prompt variant",
-        options=keys,
-        format_func=lambda key: prompts[key].name,
-        index=keys.index(repository.default_key()),
+    options = mode_options(prompts)
+    select_keys = [
+        _GENERAL_SELECT_KEY if key is None else key for key, _label in options
+    ]
+    labels = {
+        (_GENERAL_SELECT_KEY if key is None else key): label for key, label in options
+    }
+    selected = st.selectbox(
+        "Mode",
+        options=select_keys,
+        format_func=lambda key: labels[key],
+        index=default_mode_index(options),
     )
-    st.caption(prompts[prompt_key].description)
+    prompt_key = None if selected == _GENERAL_SELECT_KEY else selected
+    if prompt_key is None:
+        st.caption("General grounded chat over ingested documents.")
+    else:
+        st.caption(prompts[prompt_key].description)
 
     return _SidebarState(
         provider=provider,
@@ -151,18 +177,19 @@ def _render_history() -> None:
     for index, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
-                render_run_meta(message["result"])
                 render_reply(message["content"], message.get("off_topic_marker"))
+                _render_citations(message.get("citations") or ())
                 render_export_actions(message["content"], f"analysis_{index}")
             else:
                 st.markdown(message["content"])
 
 
 def _handle_input(
-    service: AskService,
-    prompt: PromptVariant,
+    ask: AskKnowledge,
+    prompt_key: str | None,
     settings: Mapping[str, object],
     max_input_length: int,
+    off_topic_marker: str | None,
 ) -> None:
     user_input = st.chat_input("Start typing...")
     if not user_input:
@@ -184,23 +211,34 @@ def _handle_input(
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            result = service.ask(
-                prompt.system,
-                user_input,
-                settings=settings,
-                history=history,
-            )
-        render_run_meta(result)
-        render_reply(result.content, prompt.off_topic_marker)
+            try:
+                response = ask.execute(
+                    AskRequest(
+                        prompt_key=prompt_key,
+                        query=user_input,
+                        history=history,
+                    ),
+                    settings=settings,
+                )
+            except UnknownPromptError as error:
+                st.error(str(error))
+                st.session_state.messages.pop()
+                return
+            except Exception as error:
+                st.error(str(error))
+                st.session_state.messages.pop()
+                return
+        render_reply(response.answer, off_topic_marker)
+        _render_citations(response.citations)
         render_export_actions(
-            result.content, f"analysis_{len(st.session_state.messages)}"
+            response.answer, f"analysis_{len(st.session_state.messages)}"
         )
 
     st.session_state.messages.append({
         "role": "assistant",
-        "content": result.content,
-        "result": result,
-        "off_topic_marker": prompt.off_topic_marker,
+        "content": response.answer,
+        "citations": response.citations,
+        "off_topic_marker": off_topic_marker,
     })
 
 
@@ -355,22 +393,32 @@ def render() -> None:
     _render_upload_ingest(settings)
 
     try:
-        service = build_ask_service(
-            build_chat_model(
+        ask = build_ask_knowledge(
+            settings,
+            chat_model=build_chat_model(
                 settings,
                 provider=state.provider,
                 model=state.model,
                 base_url=state.ollama_base_url,
-            )
+            ),
+            prompt_repository=repository,
         )
     except ConfigurationError as error:
         st.error(str(error))
         return
 
+    prompts = repository.all()
+    off_topic_marker = (
+        prompts[state.prompt_key].off_topic_marker
+        if state.prompt_key is not None
+        else None
+    )
+
     _render_history()
     _handle_input(
-        service,
-        repository.all()[state.prompt_key],
+        ask,
+        state.prompt_key,
         state.settings,
         settings.max_input_length,
+        off_topic_marker,
     )

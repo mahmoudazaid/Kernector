@@ -154,12 +154,11 @@ def test_prompt_packs_resolves_csv_names_under_packs_root(
 
 
 @pytest.mark.parametrize("raw", ["", "   ", ",", " , , "])
-def test_prompt_packs_rejects_blank_entries(
+def test_prompt_packs_allows_empty_list(
     env: pytest.MonkeyPatch, raw: str
 ) -> None:
     env.setenv("PROMPT_PACKS", raw)
-    with pytest.raises(ValueError, match="PROMPT_PACKS"):
-        load_settings()
+    assert load_settings().prompts.pack_paths == ()
 
 
 def test_prompt_default_key_unset_is_none(env: pytest.MonkeyPatch) -> None:

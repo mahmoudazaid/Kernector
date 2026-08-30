@@ -74,7 +74,14 @@ def test_ignores_empty_directory_when_another_has_prompts(tmp_path: Path) -> Non
     assert repository.default_key() == "alpha"
 
 
-def test_rejects_when_all_directories_are_empty(tmp_path: Path) -> None:
+def test_empty_pack_paths_yield_no_prompts_and_no_default() -> None:
+    repository = MarkdownPromptRepository(())
+
+    assert repository.all() == {}
+    assert repository.default_key() is None
+
+
+def test_empty_directories_yield_no_prompts_and_no_default(tmp_path: Path) -> None:
     empty_a = tmp_path / "empty-a"
     empty_b = tmp_path / "empty-b"
     empty_a.mkdir()
@@ -82,8 +89,8 @@ def test_rejects_when_all_directories_are_empty(tmp_path: Path) -> None:
 
     repository = MarkdownPromptRepository((empty_a, empty_b))
 
-    with pytest.raises(ValueError, match="No prompts found"):
-        repository.all()
+    assert repository.all() == {}
+    assert repository.default_key() is None
 
 
 def test_rejects_duplicate_prompt_keys_across_directories(tmp_path: Path) -> None:
@@ -166,15 +173,15 @@ def test_default_key_override_allows_missing_frontmatter_default(
     assert repository.default_key() == "alpha"
 
 
-def test_rejects_missing_default(tmp_path: Path) -> None:
+def test_missing_default_yields_none_default_key(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     pack.mkdir()
     _write_prompt(pack, filename="alpha.md", key="alpha", default=False)
 
     repository = MarkdownPromptRepository((pack,))
 
-    with pytest.raises(ValueError, match="No default prompt found"):
-        repository.all()
+    assert set(repository.all()) == {"alpha"}
+    assert repository.default_key() is None
 
 
 def test_preserves_off_topic_marker_from_frontmatter(tmp_path: Path) -> None:
