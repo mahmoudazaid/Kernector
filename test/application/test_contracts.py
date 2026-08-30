@@ -78,6 +78,16 @@ def test_ask_request_accepts_grounding_references() -> None:
     assert request.grounding_references == tuple(references)
 
 
+def test_ask_request_accepts_opaque_non_blank_source_type() -> None:
+    """Generic source contracts must not reject kinds absent from SourceType."""
+    reference = SourceReference("x-1", "totally_unknown_kind")
+    request = AskRequest(
+        query="q",
+        grounding_references=(reference,),
+    )
+    assert request.grounding_references[0].source_type == "totally_unknown_kind"
+
+
 def test_ask_request_rejects_non_sequence_grounding_references() -> None:
     with pytest.raises(ApplicationValidationError, match="grounding_references"):
         AskRequest(
