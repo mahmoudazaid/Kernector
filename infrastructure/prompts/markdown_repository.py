@@ -23,7 +23,7 @@ class MarkdownPromptRepository:
         self._load()
         return self._prompts
 
-    def default_key(self) -> str:
+    def default_key(self) -> str | None:
         self._load()
         return self._default_key
 
@@ -35,6 +35,12 @@ class MarkdownPromptRepository:
         frontmatter_default: str | None = None
 
         for directory in self._dirs:
+            # Zero configured packs is a valid product surface (General mode
+            # only), but a *configured* pack that isn't on disk is a typo in
+            # PROMPT_PACKS. Without this, `PROMPT_PACKS=stroy-intelligence`
+            # boots happily with every Mode silently missing.
+            if not directory.is_dir():
+                raise ValueError(f"Prompt pack directory not found: {directory}")
             for path in sorted(directory.glob("*.md")):
                 meta, body = _parse_prompt_file(path)
                 key = meta["key"]
@@ -58,19 +64,12 @@ class MarkdownPromptRepository:
                         raise ValueError("Multiple default prompts found")
                     frontmatter_default = key
 
-        if not prompts:
-            raise ValueError(
-                "No prompts found in " + ", ".join(str(d) for d in self._dirs)
-            )
-
         if self._default_key_override is not None:
             if self._default_key_override not in prompts:
                 raise ValueError(
                     f"Unknown default prompt key {self._default_key_override!r}"
                 )
-            resolved_default = self._default_key_override
-        elif frontmatter_default is None:
-            raise ValueError("No default prompt found")
+            resolved_default: str | None = self._default_key_override
         else:
             resolved_default = frontmatter_default
 
