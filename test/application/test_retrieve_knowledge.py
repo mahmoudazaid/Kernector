@@ -3,6 +3,7 @@
 import pytest
 
 from application.contracts import RetrieveRequest
+from application.errors import ApplicationValidationError
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.knowledge import (
     DocumentChunk,
@@ -15,6 +16,7 @@ from test.doubles import (
     EmbeddingUnavailable,
     FailingEmbeddingModel,
     InMemoryVectorStore,
+    RecordingEmbeddingModel,
     StubEmbeddingModel,
     vector_for,
 )
@@ -48,8 +50,17 @@ def _seed(store: InMemoryVectorStore, *chunks: DocumentChunk) -> None:
     )
 
 
-def _use_case(store: InMemoryVectorStore) -> RetrieveKnowledge:
-    return RetrieveKnowledge(StubEmbeddingModel(), store)
+def _use_case(
+    store: InMemoryVectorStore,
+    *,
+    max_input_length: int = 10_000,
+    embedding: object | None = None,
+) -> RetrieveKnowledge:
+    return RetrieveKnowledge(
+        embedding if embedding is not None else StubEmbeddingModel(),  # type: ignore[arg-type]
+        store,
+        max_input_length=max_input_length,
+    )
 
 
 def test_unfiltered_retrieve_returns_top_k_hits_with_full_provenance() -> None:
@@ -162,7 +173,51 @@ def test_filters_apply_before_limit() -> None:
 def test_embedding_failure_propagates_without_wrapping() -> None:
     store = InMemoryVectorStore()
     _seed(store, _chunk("doc-1"))
-    use_case = RetrieveKnowledge(FailingEmbeddingModel(), store)
+    use_case = RetrieveKnowledge(
+        FailingEmbeddingModel(), store, max_input_length=10_000
+    )
 
     with pytest.raises(EmbeddingUnavailable, match="unavailable"):
         use_case.execute(RetrieveRequest(query="anything", retrieval_limit=3))
+
+
+class _RecordingStore(InMemoryVectorStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.searches: list[object] = []
+
+    def search(self, vector, limit, *, metadata_filters=None):  # type: ignore[no-untyped-def]
+        self.searches.append((vector, limit, metadata_filters))
+        return super().search(vector, limit, metadata_filters=metadata_filters)
+
+
+def test_oversized_query_is_rejected_before_embed_or_store() -> None:
+    limit = 20
+    store = _RecordingStore()
+    _seed(store, _chunk("doc-1"))
+    embedder = RecordingEmbeddingModel()
+    use_case = _use_case(store, max_input_length=limit, embedding=embedder)
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"query must be at most 20 characters, got 21",
+    ):
+        use_case.execute(RetrieveRequest(query="x" * (limit + 1), retrieval_limit=1))
+
+    assert embedder.queries == []
+    assert store.searches == []
+
+
+def test_length_check_can_be_skipped_for_rewritten_queries() -> None:
+    """Rewrite-and-retrieve already bounded the caller query; rewriter output is not re-limited."""
+    limit = 20
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("doc-1"))
+    use_case = _use_case(store, max_input_length=limit)
+
+    response = use_case.execute(
+        RetrieveRequest(query="x" * (limit + 5), retrieval_limit=1),
+        enforce_length=False,
+    )
+
+    assert len(response.hits) == 1

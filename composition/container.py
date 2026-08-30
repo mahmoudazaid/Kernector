@@ -208,7 +208,11 @@ def build_retrieve_knowledge(
         raise ConfigurationError(str(exc)) from exc
     if vector_store is None:
         vector_store = build_vector_store(settings)
-    return RetrieveKnowledge(embedding_model, vector_store)
+    return RetrieveKnowledge(
+        embedding_model,
+        vector_store,
+        max_input_length=settings.max_input_length,
+    )
 
 
 def build_rewrite_and_retrieve_knowledge(

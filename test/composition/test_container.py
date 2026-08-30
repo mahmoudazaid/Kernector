@@ -234,6 +234,20 @@ def test_build_rewrite_and_retrieve_wires_max_input_length_from_settings(
     assert use_case._max_input_length == 1234
 
 
+def test_build_retrieve_knowledge_wires_max_input_length_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+
+    use_case = build_retrieve_knowledge(load_settings())
+
+    assert use_case._max_input_length == 1234
+
+
 def test_build_ask_knowledge_routes_generation_through_ask_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
