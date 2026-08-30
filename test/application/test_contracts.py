@@ -17,6 +17,7 @@ from application.contracts import (
     RetrieveRequest,
     RetrieveResponse,
     RewriteRetrieveResponse,
+    RunMeta,
 )
 from application.errors import ApplicationValidationError
 from domain.knowledge import (
@@ -27,7 +28,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from domain.models import Message
+from domain.models import AskResult, Message, Usage
 
 BLANK = ["", "   ", "\n"]
 
@@ -113,8 +114,8 @@ def test_ask_request_constructs() -> None:
     history = [Message(role="user", content="earlier")]
     references = [_reference("doc-1"), _reference("doc-2")]
     request = AskRequest(
-        "default",
-        "What applies?",
+        prompt_key="default",
+        query="What applies?",
         grounding_references=references,
         history=history,
         retrieval_limit=5,
@@ -130,20 +131,84 @@ def test_ask_request_constructs() -> None:
 
 
 def test_ask_request_allows_none_retrieval_limit() -> None:
-    request = AskRequest("default", "query")
+    request = AskRequest(prompt_key="default", query="query")
     assert request.retrieval_limit is None
 
 
 @pytest.mark.parametrize("limit", [1, 3, 100])
 def test_ask_request_accepts_positive_retrieval_limit(limit: int) -> None:
-    request = AskRequest("default", "query", retrieval_limit=limit)
+    request = AskRequest(prompt_key="default", query="query", retrieval_limit=limit)
     assert request.retrieval_limit == limit
 
 
 @pytest.mark.parametrize("bad_limit", [True, False, 0, -1, 1.5, "5", []])
 def test_ask_request_rejects_invalid_retrieval_limit(bad_limit: object) -> None:
     with pytest.raises(ApplicationValidationError, match="retrieval_limit"):
-        AskRequest("default", "query", retrieval_limit=bad_limit)  # type: ignore[arg-type]
+        AskRequest(prompt_key="default", query="query", retrieval_limit=bad_limit)  # type: ignore[arg-type]
+
+
+def test_ask_request_rejects_positional_construction() -> None:
+    """`prompt_key` and `query` are both non-blank strings, so a positional swap
+    would construct successfully and validate cleanly. Keyword-only is what makes
+    that mistake impossible rather than merely unlikely."""
+    with pytest.raises(TypeError):
+        AskRequest("default", "query")  # type: ignore[misc]
+
+
+def test_ask_request_requires_query() -> None:
+    with pytest.raises(TypeError):
+        AskRequest(prompt_key="default")  # type: ignore[call-arg]
+
+
+def test_ask_request_allows_none_prompt_key() -> None:
+    request = AskRequest(query="What applies?")
+    assert request.prompt_key is None
+
+
+def test_run_meta_defaults_are_empty() -> None:
+    meta = RunMeta()
+    assert meta.model is None
+    assert meta.latency_ms is None
+    assert meta.usage is None
+    assert meta.settings == {}
+
+
+def test_run_meta_from_result_drops_answer_content() -> None:
+    result = AskResult(
+        content="the answer text",
+        model="test-model",
+        latency_ms=42,
+        usage=Usage(total_tokens=10),
+        settings={"temperature": 0.3},
+    )
+
+    meta = RunMeta.from_result(result)
+
+    assert meta.model == "test-model"
+    assert meta.latency_ms == 42
+    assert meta.usage == Usage(total_tokens=10)
+    assert meta.settings == {"temperature": 0.3}
+    assert "content" not in RunMeta.__dataclass_fields__
+    assert "the answer text" not in str(meta)
+
+
+def test_run_meta_rejects_negative_latency() -> None:
+    with pytest.raises(ApplicationValidationError, match="latency_ms"):
+        RunMeta(latency_ms=-1)
+
+
+def test_ask_response_defaults_run_to_none() -> None:
+    assert AskResponse("answer").run is None
+
+
+def test_ask_response_accepts_run_meta() -> None:
+    meta = RunMeta(model="test-model")
+    assert AskResponse("answer", run=meta).run == meta
+
+
+def test_ask_response_rejects_non_run_meta() -> None:
+    with pytest.raises(ApplicationValidationError, match="run must be a RunMeta"):
+        AskResponse("answer", run=AskResult(content="answer"))  # type: ignore[arg-type]
 
 
 def test_ask_response_constructs() -> None:
@@ -266,13 +331,13 @@ def test_ask_request_accepts_none_prompt_key() -> None:
 @pytest.mark.parametrize("blank", BLANK)
 def test_ask_request_rejects_blank_prompt_key(blank: str) -> None:
     with pytest.raises(ApplicationValidationError, match="prompt_key"):
-        AskRequest(blank, "query")
+        AskRequest(prompt_key=blank, query="query")
 
 
 @pytest.mark.parametrize("blank", BLANK)
 def test_ask_request_rejects_blank_query(blank: str) -> None:
     with pytest.raises(ApplicationValidationError, match="query"):
-        AskRequest("default", blank)
+        AskRequest(prompt_key="default", query=blank)
 
 
 @pytest.mark.parametrize("blank", BLANK)
@@ -301,7 +366,7 @@ def test_invoke_tool_response_rejects_blank_result(blank: str) -> None:
 
 def test_ask_request_rejects_non_sequence_history() -> None:
     with pytest.raises(ApplicationValidationError, match="history"):
-        AskRequest("default", "query", history={"role": "user"})  # type: ignore[arg-type]
+        AskRequest(prompt_key="default", query="query", history={"role": "user"})  # type: ignore[arg-type]
 
 
 def test_ask_response_rejects_non_sequence_citations() -> None:
@@ -447,7 +512,7 @@ def test_invoke_tool_request_rejects_invalid_argument_keys(bad_key: object) -> N
 
 def test_ask_request_rejects_non_message_history_item() -> None:
     with pytest.raises(ApplicationValidationError, match="history items"):
-        AskRequest("default", "query", history=["hi"])  # type: ignore[list-item]
+        AskRequest(prompt_key="default", query="query", history=["hi"])  # type: ignore[list-item]
 
 
 def test_ask_response_rejects_non_citation_item() -> None:
@@ -506,7 +571,7 @@ def test_citation_rejects_invalid_chunk_index(bad_index: object) -> None:
 
 
 def test_contracts_are_immutable() -> None:
-    request = AskRequest("default", "query", history=[Message("user", "hi")])
+    request = AskRequest(prompt_key="default", query="query", history=[Message("user", "hi")])
     response = AskResponse("answer", citations=[_citation()])
     with pytest.raises(AttributeError):
         request.query = "changed"  # type: ignore[misc]
@@ -516,7 +581,7 @@ def test_contracts_are_immutable() -> None:
 
 def test_ask_request_history_is_independent_of_input_list() -> None:
     history = [Message(role="user", content="hi")]
-    request = AskRequest("default", "query", history=history)
+    request = AskRequest(prompt_key="default", query="query", history=history)
     history.append(Message(role="assistant", content="ok"))
     assert request.history == (Message(role="user", content="hi"),)
 
@@ -589,8 +654,8 @@ def test_rewrite_retrieve_response_hits_are_independent_of_input_list() -> None:
 
 def test_contracts_serialize_with_asdict() -> None:
     ask_request = AskRequest(
-        "default",
-        "query",
+        prompt_key="default",
+        query="query",
         grounding_references=[_reference()],
         history=[Message(role="user", content="hi")],
         retrieval_limit=3,

@@ -35,6 +35,12 @@ class MarkdownPromptRepository:
         frontmatter_default: str | None = None
 
         for directory in self._dirs:
+            # Zero configured packs is a valid product surface (General mode
+            # only), but a *configured* pack that isn't on disk is a typo in
+            # PROMPT_PACKS. Without this, `PROMPT_PACKS=stroy-intelligence`
+            # boots happily with every Mode silently missing.
+            if not directory.is_dir():
+                raise ValueError(f"Prompt pack directory not found: {directory}")
             for path in sorted(directory.glob("*.md")):
                 meta, body = _parse_prompt_file(path)
                 key = meta["key"]

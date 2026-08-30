@@ -7,7 +7,7 @@ import streamlit as st
 
 from application.ask_knowledge import AskKnowledge, UnknownPromptError
 from application.contracts import AskRequest, Citation
-from application.errors import ConfigurationError
+from application.errors import ApplicationValidationError, ConfigurationError
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
@@ -18,6 +18,7 @@ from composition import (
     load_runtime_settings,
     probe_ollama,
 )
+from domain.errors import DomainValidationError
 from domain.models import Message
 from domain.ports import PromptRepository
 from domain.validation import validate_input
@@ -25,6 +26,7 @@ from presentation.streamlit.components import (
     render_export_actions,
     render_model_settings,
     render_reply,
+    render_run_meta,
 )
 from presentation.streamlit.modes import default_mode_index, mode_options
 from presentation.streamlit.upload_ingest import (
@@ -36,7 +38,24 @@ from presentation.streamlit.upload_ingest import (
 )
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
-_GENERAL_SELECT_KEY = ""
+
+# Failures a user can act on, rather than every exception. Presentation may not
+# import `infrastructure`, so adapter errors are reached through the
+# `RuntimeError` base their ports document — that covers `ConfigurationError`,
+# `QueryRewriteFailure`, and vector-store errors. A `TypeError` or `KeyError` is
+# a bug in this app, and stays uncaught so it surfaces as one.
+_ASK_FAILURES = (
+    UnknownPromptError,
+    ApplicationValidationError,
+    DomainValidationError,
+    RuntimeError,
+)
+
+
+def _failure_message(error: Exception) -> str:
+    """Never render an empty red box: some exceptions stringify to ``''``."""
+    text = str(error).strip()
+    return text or f"The request failed ({type(error).__name__})."
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,20 +164,18 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
 
     settings_values = render_model_settings(provider)
 
+    # The (key, label) pairs are the options themselves. Mapping `None` onto a
+    # blank-string sentinel would collide with a pack whose frontmatter `key:`
+    # is empty — nothing validates that — and the collision silently turns
+    # General into that pack's prompt.
     options = mode_options(prompts)
-    select_keys = [
-        _GENERAL_SELECT_KEY if key is None else key for key, _label in options
-    ]
-    labels = {
-        (_GENERAL_SELECT_KEY if key is None else key): label for key, label in options
-    }
-    selected = st.selectbox(
+    selected_option = st.selectbox(
         "Mode",
-        options=select_keys,
-        format_func=lambda key: labels[key],
+        options=options,
+        format_func=lambda option: option[1],
         index=default_mode_index(options),
     )
-    prompt_key = None if selected == _GENERAL_SELECT_KEY else selected
+    prompt_key = selected_option[0]
     if prompt_key is None:
         st.caption("General grounded chat over ingested documents.")
     else:
@@ -177,6 +194,7 @@ def _render_history() -> None:
     for index, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
+                render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
                 _render_citations(message.get("citations") or ())
                 render_export_actions(message["content"], f"analysis_{index}")
@@ -220,14 +238,13 @@ def _handle_input(
                     ),
                     settings=settings,
                 )
-            except UnknownPromptError as error:
-                st.error(str(error))
-                st.session_state.messages.pop()
+            except _ASK_FAILURES as error:
+                # The user turn stays in state: it is already drawn above, and
+                # popping it would leave the transcript and the session out of
+                # step until the next rerun redraws without it.
+                st.error(_failure_message(error))
                 return
-            except Exception as error:
-                st.error(str(error))
-                st.session_state.messages.pop()
-                return
+        render_run_meta(response.run)
         render_reply(response.answer, off_topic_marker)
         _render_citations(response.citations)
         render_export_actions(
@@ -238,6 +255,7 @@ def _handle_input(
         "role": "assistant",
         "content": response.answer,
         "citations": response.citations,
+        "run": response.run,
         "off_topic_marker": off_topic_marker,
     })
 

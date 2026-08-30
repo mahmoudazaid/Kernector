@@ -491,7 +491,11 @@ def build_ask_knowledge(
     vector_store: VectorStore | None = None,
     prompt_repository: PromptRepository | None = None,
 ) -> AskKnowledge:
-    """Wire grounded ask from rewrite/retrieve, chat model, and prompts."""
+    """Wire grounded ask from rewrite/retrieve, the ask service, and prompts.
+
+    Generation is wrapped in `AskService` rather than handed to `AskKnowledge`
+    raw, so the domain settings allowlist stays in one place.
+    """
     if chat_model is None:
         chat_model = build_chat_model(settings)
     if prompt_repository is None:
@@ -499,7 +503,13 @@ def build_ask_knowledge(
     rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
         settings, vector_store=vector_store
     )
-    return AskKnowledge(rewrite_and_retrieve, chat_model, prompt_repository)
+    return AskKnowledge(
+        rewrite_and_retrieve,
+        build_ask_service(chat_model),
+        prompt_repository,
+        default_retrieval_limit=settings.retrieval.limit,
+        relevance_threshold=settings.retrieval.relevance_threshold,
+    )
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
