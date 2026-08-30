@@ -208,7 +208,11 @@ def build_retrieve_knowledge(
         raise ConfigurationError(str(exc)) from exc
     if vector_store is None:
         vector_store = build_vector_store(settings)
-    return RetrieveKnowledge(embedding_model, vector_store)
+    return RetrieveKnowledge(
+        embedding_model,
+        vector_store,
+        max_input_length=settings.max_input_length,
+    )
 
 
 def build_rewrite_and_retrieve_knowledge(
@@ -232,7 +236,11 @@ def build_rewrite_and_retrieve_knowledge(
     except QueryRewriteConfigError as exc:
         raise ConfigurationError(str(exc)) from exc
     retrieve = build_retrieve_knowledge(settings, vector_store=vector_store)
-    return RewriteAndRetrieveKnowledge(rewriter, retrieve)
+    return RewriteAndRetrieveKnowledge(
+        rewriter,
+        retrieve,
+        max_input_length=settings.max_input_length,
+    )
 
 
 def reindex_filter_metadata(settings: Settings) -> int:
@@ -509,6 +517,7 @@ def build_ask_knowledge(
         prompt_repository,
         default_retrieval_limit=settings.retrieval.limit,
         relevance_threshold=settings.retrieval.relevance_threshold,
+        max_input_length=settings.max_input_length,
     )
 
 

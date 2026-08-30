@@ -201,6 +201,53 @@ def test_build_ask_knowledge_wires_configured_retrieval_settings(
     assert ask._relevance_threshold == 0.42
 
 
+def test_build_ask_knowledge_wires_max_input_length_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from composition import build_ask_knowledge
+
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("PROMPT_PACKS", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+
+    ask = build_ask_knowledge(load_settings(), chat_model=_StubChat())
+
+    assert ask._max_input_length == 1234
+
+
+def test_build_rewrite_and_retrieve_wires_max_input_length_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+
+    use_case = build_rewrite_and_retrieve_knowledge(load_settings())
+
+    assert use_case._max_input_length == 1234
+
+
+def test_build_retrieve_knowledge_wires_max_input_length_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+
+    use_case = build_retrieve_knowledge(load_settings())
+
+    assert use_case._max_input_length == 1234
+
+
 def test_build_ask_knowledge_routes_generation_through_ask_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -581,6 +628,17 @@ def test_load_runtime_settings_maps_value_error_to_configuration_error(
         load_runtime_settings()
 
     assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_load_runtime_settings_maps_invalid_max_input_length_to_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bad MAX_INPUT_LENGTH is operator config, not a request-contract error."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "0")
+
+    with pytest.raises(ConfigurationError, match="MAX_INPUT_LENGTH must be > 0"):
+        load_runtime_settings()
 
 
 def test_load_knowledge_documents_returns_normalized_source_documents(
