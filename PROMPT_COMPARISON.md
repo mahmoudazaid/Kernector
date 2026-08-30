@@ -2,9 +2,18 @@
 
 Compared the five interview-prep prompt variants in the **Story Intelligence** domain pack (`prompts/packs/story-intelligence/`).
 
-Packs are selected via composition/config (`PROMPT_PACKS`, default `core`). Optional packs such as `story-intelligence` are enabled by listing them in `PROMPT_PACKS`. `PROMPT_DEFAULT_KEY` overrides the frontmatter `default: true` when set. Core prompt loading stays pack-agnostic.
+Packs are selected via composition/config (`PROMPT_PACKS`, default `core`).
+Optional packs such as `story-intelligence` are enabled by listing them in
+`PROMPT_PACKS`. Empty `PROMPT_PACKS` is valid: General grounded chat still
+works. `PROMPT_DEFAULT_KEY` overrides the frontmatter `default: true` when set.
+Core prompt loading stays pack-agnostic.
 
-The product default pack is **`core`** (`knowledge_qa`). Story Intelligence remains optional.
+Streamlit chat defaults to **General** Mode (`prompt_key=None`). Pack variants
+such as Knowledge Q&A remain optional Modes composed with the mandatory
+grounded-RAG system policy (see `ARCHITECTURE.md`).
+
+The product default pack when packs are enabled remains **`core`**
+(`knowledge_qa`). Story Intelligence remains optional.
 
 ## Techniques
 

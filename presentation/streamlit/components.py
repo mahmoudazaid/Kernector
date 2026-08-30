@@ -4,8 +4,8 @@ from collections.abc import Mapping
 
 import streamlit as st
 
+from application.contracts import RunMeta
 from domain.model_settings import SETTINGS
-from domain.models import AskResult
 from domain.validation import is_off_topic
 
 
@@ -15,7 +15,15 @@ def render_reply(reply: str, off_topic_marker: str | None = None) -> None:
     st.markdown(reply)
 
 
-def render_run_meta(result: AskResult) -> None:
+def render_run_meta(result: RunMeta | None) -> None:
+    """Caption one model call. ``None`` means no call was made — draw nothing.
+
+    The insufficient-evidence path returns no run meta, and history re-renders
+    those replies on every rerun, so absence has to be ordinary here.
+    """
+    if result is None:
+        return
+
     bits = []
 
     if result.model:

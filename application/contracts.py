@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from application.errors import ApplicationValidationError
 from domain.knowledge import ScoredChunk, SourceDocument, SourceReference
-from domain.models import Message
+from domain.models import AskResult, Message, Usage
 
 
 def _require_text(value: object, field_name: str) -> str:
@@ -175,28 +175,37 @@ class Citation:
         _require_chunk_index(self.chunk_index)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AskRequest:
     """Input for a prompt-selected ask/analyze use case.
 
+    Keyword-only. ``prompt_key`` became optional while ``query`` stayed
+    required, which under positional construction would have let the two swap
+    silently — both are non-blank strings, so no validation could catch it.
+    Keyword-only construction removes that class of error outright and keeps
+    ``query`` genuinely required rather than defaulted to a blank sentinel.
+
     Attributes:
-        prompt_key (str): Identifier of the selected prompt (not its body).
         query (str): User question or analysis input.
+        prompt_key (str | None): Optional identifier of a selected task prompt.
+            ``None`` means general grounded chat with no task template.
         grounding_references (Sequence[SourceReference]): Optional provenance
             identifiers supplied by callers or domain packs; the generic
-            contract does not interpret their business meaning.
+            contract does not interpret their business meaning. Reserved: no
+            current use case narrows retrieval with them.
         history (Sequence[Message]): Prior conversation turns.
         retrieval_limit (int | None): Optional positive limit for retrieval.
     """
 
-    prompt_key: str
     query: str
+    prompt_key: str | None = None
     grounding_references: Sequence[SourceReference] = ()
     history: Sequence[Message] = ()
     retrieval_limit: int | None = None
 
     def __post_init__(self) -> None:
-        _require_text(self.prompt_key, "prompt_key")
+        if self.prompt_key is not None:
+            _require_text(self.prompt_key, "prompt_key")
         _require_text(self.query, "query")
         grounding_references = _require_sequence(
             self.grounding_references, "grounding_references"
@@ -218,6 +227,59 @@ class AskRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class RunMeta:
+    """Observability for one model call: what ran, how long, at what cost.
+
+    Deliberately carries no answer text. ``AskResponse.answer`` is the single
+    source of the reply; reusing ``AskResult`` here would put a second copy of
+    the content on the response, free to drift from the first.
+
+    Attributes:
+        model (str | None): Model the adapter actually invoked.
+        latency_ms (int | None): Wall-clock duration of the call.
+        usage (Usage | None): Token counts and cost, when the provider reports.
+        settings (Mapping[str, object]): Generation settings that were applied,
+            after the domain allowlist filtered them.
+    """
+
+    model: str | None = None
+    latency_ms: int | None = None
+    usage: Usage | None = None
+    settings: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.model is not None:
+            _require_text(self.model, "model")
+        if self.latency_ms is not None and (
+            not isinstance(self.latency_ms, int)
+            or isinstance(self.latency_ms, bool)
+            or self.latency_ms < 0
+        ):
+            raise ApplicationValidationError(
+                f"latency_ms must be a non-negative integer, got {self.latency_ms!r}"
+            )
+        if self.usage is not None and not isinstance(self.usage, Usage):
+            raise ApplicationValidationError(
+                f"usage must be a Usage, got {self.usage!r}"
+            )
+        if not isinstance(self.settings, Mapping):
+            raise ApplicationValidationError(
+                f"settings must be a mapping, got {self.settings!r}"
+            )
+        object.__setattr__(self, "settings", dict(self.settings))
+
+    @classmethod
+    def from_result(cls, result: AskResult) -> "RunMeta":
+        """Project the observability fields of an ``AskResult``, dropping content."""
+        return cls(
+            model=result.model,
+            latency_ms=result.latency_ms,
+            usage=result.usage,
+            settings=result.settings,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AskResponse:
     """Output of a prompt-selected ask/analyze use case.
 
@@ -225,14 +287,22 @@ class AskResponse:
         answer (str): Model answer text.
         citations (Sequence[Citation]): Sources supporting the answer.
         tool_outputs (Sequence[InvokeToolResponse]): Optional tool results.
+        run (RunMeta | None): Observability for the model call. ``None`` when no
+            call was made — the insufficient-evidence path short-circuits before
+            the model, so presentation must tolerate its absence.
     """
 
     answer: str
     citations: Sequence[Citation] = ()
     tool_outputs: Sequence["InvokeToolResponse"] = ()
+    run: RunMeta | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.answer, "answer")
+        if self.run is not None and not isinstance(self.run, RunMeta):
+            raise ApplicationValidationError(
+                f"run must be a RunMeta, got {self.run!r}"
+            )
         citations = _require_sequence(self.citations, "citations")
         for item in citations:
             if not isinstance(item, Citation):
