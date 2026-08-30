@@ -190,6 +190,21 @@ def test_non_integer_retrieval_limit_is_rejected(env: pytest.MonkeyPatch) -> Non
         load_settings()
 
 
+@pytest.mark.parametrize("raw", ["0", "-1"])
+def test_non_positive_max_input_length_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("MAX_INPUT_LENGTH", raw)
+    with pytest.raises(ValueError, match="MAX_INPUT_LENGTH must be > 0"):
+        load_settings()
+
+
+def test_non_integer_max_input_length_is_rejected(env: pytest.MonkeyPatch) -> None:
+    env.setenv("MAX_INPUT_LENGTH", "abc")
+    with pytest.raises(ValueError, match="MAX_INPUT_LENGTH must be an integer"):
+        load_settings()
+
+
 @pytest.mark.parametrize("raw", ["1.01", "-1.01", "42"])
 def test_out_of_range_relevance_threshold_is_rejected(
     env: pytest.MonkeyPatch, raw: str

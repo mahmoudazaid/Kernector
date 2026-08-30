@@ -509,6 +509,7 @@ def build_ask_knowledge(
         prompt_repository,
         default_retrieval_limit=settings.retrieval.limit,
         relevance_threshold=settings.retrieval.relevance_threshold,
+        max_input_length=settings.max_input_length,
     )
 
 
