@@ -8,11 +8,14 @@ from application.ask_knowledge import AskKnowledge, UnknownPromptError
 from application.ask_service import AskService
 from application.citations import build_citations
 from application.contracts import AskRequest, RewriteRetrieveResponse
+from application.errors import ApplicationValidationError
 from application.grounded_rag_policy import (
     CONTEXT_CLOSE,
     CONTEXT_OPEN,
     GROUNDED_RAG_SYSTEM,
 )
+from application.retrieve_knowledge import RetrieveKnowledge
+from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
@@ -21,6 +24,7 @@ from domain.knowledge import (
     SourceType,
 )
 from domain.models import AskResult, Message, PromptVariant, Usage
+from test.doubles import InMemoryVectorStore, RecordingEmbeddingModel
 
 THRESHOLD = 0.5
 
@@ -88,6 +92,21 @@ class _EmptyPrompts:
         return None
 
 
+class _RecordingPrompts:
+    """Records PromptRepository.all() so zero-call asserts are meaningful."""
+
+    def __init__(self, *variants: PromptVariant) -> None:
+        self._prompts = {variant.key: variant for variant in variants}
+        self.calls: list[None] = []
+
+    def all(self) -> Mapping[str, PromptVariant]:
+        self.calls.append(None)
+        return self._prompts
+
+    def default_key(self) -> str | None:
+        return next(iter(self._prompts), None)
+
+
 class _FixedPrompts:
     def __init__(self, *variants: PromptVariant) -> None:
         self._prompts = {variant.key: variant for variant in variants}
@@ -106,6 +125,7 @@ def _use_case(
     *,
     threshold: float = THRESHOLD,
     limit: int = 5,
+    max_input_length: int = 10_000,
 ) -> AskKnowledge:
     return AskKnowledge(
         _FakeRewriteRetrieve(hits),
@@ -113,6 +133,7 @@ def _use_case(
         prompts or _EmptyPrompts(),
         default_retrieval_limit=limit,
         relevance_threshold=threshold,
+        max_input_length=max_input_length,
     )
 
 
@@ -185,6 +206,7 @@ def test_retrieval_limit_falls_back_to_the_configured_default() -> None:
         _EmptyPrompts(),
         default_retrieval_limit=7,
         relevance_threshold=THRESHOLD,
+        max_input_length=10_000,
     )
 
     use_case.execute(AskRequest(prompt_key=None, query="How do I restart?"))
@@ -200,6 +222,7 @@ def test_explicit_retrieval_limit_overrides_the_default() -> None:
         _EmptyPrompts(),
         default_retrieval_limit=7,
         relevance_threshold=THRESHOLD,
+        max_input_length=10_000,
     )
 
     use_case.execute(
@@ -375,10 +398,129 @@ def test_unknown_prompt_key_is_rejected_before_retrieval_spends_a_call() -> None
         _EmptyPrompts(),
         default_retrieval_limit=5,
         relevance_threshold=THRESHOLD,
+        max_input_length=10_000,
     )
 
     with pytest.raises(UnknownPromptError):
         use_case.execute(AskRequest(prompt_key="missing_key", query="Anything?"))
 
     assert rewrite_retrieve.requests == []
+    assert chat.calls == []
+
+
+# --- Input length ---------------------------------------------------------
+
+
+class _RecordingRewriter:
+    def __init__(self, rewritten: str = "rewritten") -> None:
+        self.queries: list[str] = []
+        self._rewritten = rewritten
+
+    def rewrite(self, query: str) -> str:
+        self.queries.append(query)
+        return self._rewritten
+
+
+class _RecordingStore(InMemoryVectorStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.searches: list[object] = []
+
+    def search(self, vector, limit, *, metadata_filters=None):  # type: ignore[no-untyped-def]
+        self.searches.append((vector, limit, metadata_filters))
+        return super().search(vector, limit, metadata_filters=metadata_filters)
+
+
+def test_oversized_query_is_rejected_before_any_port_call() -> None:
+    """Reject before prompts, rewriter, embedding, vector store, or chat."""
+    limit = 20
+    task = PromptVariant(
+        key="task_mode",
+        name="Task Mode",
+        description="A fixture pack variant",
+        system="TASK PROMPT BODY",
+    )
+    store = _RecordingStore()
+    embedder = RecordingEmbeddingModel()
+    rewriter = _RecordingRewriter()
+    rewrite_retrieve = RewriteAndRetrieveKnowledge(
+        rewriter,  # type: ignore[arg-type]
+        RetrieveKnowledge(embedder, store, max_input_length=limit),
+        max_input_length=limit,
+    )
+    chat = _RecordingChat()
+    prompts = _RecordingPrompts(task)
+    use_case = AskKnowledge(
+        rewrite_retrieve,
+        AskService(chat),
+        prompts,
+        default_retrieval_limit=5,
+        relevance_threshold=THRESHOLD,
+        max_input_length=limit,
+    )
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"query must be at most 20 characters, got 21",
+    ):
+        use_case.execute(
+            AskRequest(prompt_key="task_mode", query="x" * (limit + 1))
+        )
+
+    assert prompts.calls == []
+    assert rewriter.queries == []
+    assert embedder.queries == []
+    assert store.searches == []
+    assert chat.calls == []
+
+
+def test_query_at_exact_max_length_is_accepted() -> None:
+    limit = 20
+    chat = _RecordingChat("ok")
+
+    response = _use_case(
+        (_hit(),), chat, max_input_length=limit
+    ).execute(AskRequest(prompt_key=None, query="x" * limit))
+
+    assert response.answer == "ok"
+    assert len(chat.calls) == 1
+
+
+def test_oversized_history_content_is_rejected_before_any_port_call() -> None:
+    limit = 20
+    store = _RecordingStore()
+    embedder = RecordingEmbeddingModel()
+    rewriter = _RecordingRewriter()
+    rewrite_retrieve = RewriteAndRetrieveKnowledge(
+        rewriter,  # type: ignore[arg-type]
+        RetrieveKnowledge(embedder, store, max_input_length=limit),
+        max_input_length=limit,
+    )
+    chat = _RecordingChat()
+    prompts = _RecordingPrompts()
+    use_case = AskKnowledge(
+        rewrite_retrieve,
+        AskService(chat),
+        prompts,
+        default_retrieval_limit=5,
+        relevance_threshold=THRESHOLD,
+        max_input_length=limit,
+    )
+    history = (
+        Message(role="user", content="ok"),
+        Message(role="assistant", content="y" * (limit + 1)),
+    )
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"history\[1\] content must be at most 20 characters, got 21",
+    ):
+        use_case.execute(
+            AskRequest(prompt_key=None, query="How do I restart?", history=history)
+        )
+
+    assert prompts.calls == []
+    assert rewriter.queries == []
+    assert embedder.queries == []
+    assert store.searches == []
     assert chat.calls == []

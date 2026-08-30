@@ -3,6 +3,7 @@
 import pytest
 
 from application.contracts import RetrieveRequest
+from application.errors import ApplicationValidationError
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import (
     QueryRewriteFailure,
@@ -60,14 +61,17 @@ def _use_case(
     rewritten: str = "payment service failure last week",
     embedder: RecordingEmbeddingModel | None = None,
     rewriter: object | None = None,
+    max_input_length: int = 10_000,
 ) -> tuple[RewriteAndRetrieveKnowledge, RecordingEmbeddingModel]:
     recording = embedder if embedder is not None else RecordingEmbeddingModel()
-    retrieve = RetrieveKnowledge(recording, store)
-    query_rewriter = (
-        rewriter if rewriter is not None else StubQueryRewriter(rewritten)
-    )
+    retrieve = RetrieveKnowledge(recording, store, max_input_length=max_input_length)
+    query_rewriter = rewriter if rewriter is not None else StubQueryRewriter(rewritten)
     return (
-        RewriteAndRetrieveKnowledge(query_rewriter, retrieve),  # type: ignore[arg-type]
+        RewriteAndRetrieveKnowledge(
+            query_rewriter,  # type: ignore[arg-type]
+            retrieve,
+            max_input_length=max_input_length,
+        ),
         recording,
     )
 
@@ -79,9 +83,7 @@ def test_rewritten_query_is_embedded_and_both_queries_are_observable() -> None:
     rewritten = "payment service failure last week"
     use_case, embedder = _use_case(store, rewritten=rewritten)
 
-    response = use_case.execute(
-        RetrieveRequest(query=original, retrieval_limit=2)
-    )
+    response = use_case.execute(RetrieveRequest(query=original, retrieval_limit=2))
 
     assert embedder.queries == [rewritten]
     assert response.original_query == original
@@ -113,9 +115,7 @@ def test_retrieval_limit_and_metadata_filters_pass_through_unchanged() -> None:
 def test_query_rewriter_error_surfaces_as_query_rewrite_failure() -> None:
     store = InMemoryVectorStore()
     _seed(store, _chunk("doc-1"))
-    use_case, embedder = _use_case(
-        store, rewriter=FailingQueryRewriter()
-    )
+    use_case, embedder = _use_case(store, rewriter=FailingQueryRewriter())
 
     with pytest.raises(QueryRewriteFailure, match="unavailable") as raised:
         use_case.execute(RetrieveRequest(query="what broke?", retrieval_limit=1))
@@ -147,3 +147,82 @@ def test_unrelated_exception_propagates_unwrapped() -> None:
         use_case.execute(RetrieveRequest(query="what broke?", retrieval_limit=1))
 
     assert embedder.queries == []
+
+
+class _RecordingRewriter:
+    def __init__(self, rewritten: str = "rewritten") -> None:
+        self.queries: list[str] = []
+        self._rewritten = rewritten
+
+    def rewrite(self, query: str) -> str:
+        self.queries.append(query)
+        return self._rewritten
+
+
+class _RecordingStore(InMemoryVectorStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.searches: list[object] = []
+
+    def search(self, vector, limit, *, metadata_filters=None):  # type: ignore[no-untyped-def]
+        self.searches.append((vector, limit, metadata_filters))
+        return super().search(vector, limit, metadata_filters=metadata_filters)
+
+
+def test_oversized_query_is_rejected_before_rewriter_embed_or_store() -> None:
+    limit = 20
+    store = _RecordingStore()
+    _seed(store, _chunk("doc-1"))
+    rewriter = _RecordingRewriter()
+    use_case, embedder = _use_case(store, rewriter=rewriter, max_input_length=limit)
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"query must be at most 20 characters, got 21",
+    ):
+        use_case.execute(RetrieveRequest(query="x" * (limit + 1), retrieval_limit=1))
+
+    assert rewriter.queries == []
+    assert embedder.queries == []
+    assert store.searches == []
+
+
+def test_oversized_rewritten_query_allows_rewriter_but_not_embed_or_store() -> None:
+    """Original within limit may rewrite; oversized rewrite must not reach embed/store."""
+    limit = 20
+    store = _RecordingStore()
+    _seed(store, _chunk("doc-1"))
+    oversized = "y" * (limit + 1)
+    rewriter = _RecordingRewriter(oversized)
+    use_case, embedder = _use_case(
+        store,
+        rewritten=oversized,
+        rewriter=rewriter,
+        max_input_length=limit,
+    )
+
+    with pytest.raises(
+        ApplicationValidationError,
+        match=r"query must be at most 20 characters, got 21",
+    ):
+        use_case.execute(RetrieveRequest(query="x" * limit, retrieval_limit=1))
+
+    assert rewriter.queries == ["x" * limit]
+    assert embedder.queries == []
+    assert store.searches == []
+
+
+def test_exact_limit_original_and_rewrite_proceed_to_embed() -> None:
+    limit = 20
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("doc-1"))
+    original = "x" * limit
+    rewritten = "y" * limit
+    use_case, embedder = _use_case(store, rewritten=rewritten, max_input_length=limit)
+
+    response = use_case.execute(RetrieveRequest(query=original, retrieval_limit=1))
+
+    assert embedder.queries == [rewritten]
+    assert len(response.hits) == 1
+    assert response.original_query == original
+    assert response.rewritten_query == rewritten
