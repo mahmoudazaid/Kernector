@@ -257,6 +257,12 @@ def test_invoke_tool_response_constructs() -> None:
     assert response.result == "2 hits"
 
 
+def test_ask_request_accepts_none_prompt_key() -> None:
+    request = AskRequest(prompt_key=None, query="What applies?")
+    assert request.prompt_key is None
+    assert request.query == "What applies?"
+
+
 @pytest.mark.parametrize("blank", BLANK)
 def test_ask_request_rejects_blank_prompt_key(blank: str) -> None:
     with pytest.raises(ApplicationValidationError, match="prompt_key"):

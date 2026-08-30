@@ -176,8 +176,6 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
 def _load_prompt_settings() -> PromptSettings:
     raw = os.getenv("PROMPT_PACKS", "core")
     names = _csv(raw)
-    if not names:
-        raise ValueError(f"PROMPT_PACKS must name at least one pack, got {raw!r}")
     default_key_raw = os.getenv("PROMPT_DEFAULT_KEY")
     default_key: str | None
     if default_key_raw is None:

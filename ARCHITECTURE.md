@@ -66,8 +66,27 @@ Packs supply example content and prompts for a product surface. **Story
 Intelligence** is the first example (`data/knowledge/packs/story-intelligence/`,
 `prompts/packs/story-intelligence/`). Pack fields (for example SDLC-shaped
 `doc_type` or `severity`) are example metadata, not platform requirements. The
-default product surface uses the neutral `core` prompt pack and
-`data/knowledge/documents.json`.
+default product surface may enable the neutral `core` prompt pack and
+`data/knowledge/documents.json`, but **task-prompt packs are optional**: the
+app starts and General mode works with zero enabled packs.
+
+### Grounded ask: system policy vs optional task prompts
+
+Chat over ingested documents is orchestrated by `AskKnowledge`:
+
+1. **Mandatory grounded-RAG system policy** (`application/grounded_rag_policy.py`)
+   — non-user-selectable; enforces grounding, provenance, citations, untrusted
+   context, and honest uncertainty. It is never a prompt-pack Mode.
+2. **Retrieved chunks with provenance** — rewrite-then-retrieve, then citation
+   assembly.
+3. **Optional task prompt / Mode** — pack variants (for example Knowledge Q&A
+   or Story Intelligence) or future custom commands; composed *with* the
+   policy, never substituted for it. `AskRequest.prompt_key=None` means General
+   mode (no task template).
+4. **User query** — conversation turn sent to the chat model.
+
+Streamlit defaults to **General** Mode. Selecting a pack Mode only adds task
+instructions; it cannot bypass grounding rules.
 
 ### Replaceable connectors
 
