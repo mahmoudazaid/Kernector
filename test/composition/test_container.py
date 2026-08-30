@@ -472,6 +472,19 @@ def test_missing_embedding_configuration_surfaces_as_configuration_error(
         build_ingest_knowledge(settings)
 
 
+def test_missing_chat_configuration_surfaces_as_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Absent OpenRouter chat credentials fail at build_chat_model, typed."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    settings = load_settings()
+    assert settings.openrouter.api_key is None
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_API_KEY"):
+        build_chat_model(settings, provider="openrouter")
+
+
 def test_a_configuration_error_is_not_a_validation_error() -> None:
     """An environment failure is not a contract violation (§ error handling)."""
     assert issubclass(ConfigurationError, RuntimeError)
