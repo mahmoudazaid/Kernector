@@ -221,12 +221,15 @@ def test_build_ask_knowledge_wires_max_input_length_from_settings(
 
 def test_build_rewrite_and_retrieve_wires_max_input_length_from_settings(
     monkeypatch: pytest.MonkeyPatch,
-    rewrite_env: Settings,
 ) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
     monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
-    settings = load_settings()
-    # rewrite_env fixture may already have loaded settings; rebuild from env.
-    use_case = build_rewrite_and_retrieve_knowledge(settings)
+
+    use_case = build_rewrite_and_retrieve_knowledge(load_settings())
 
     assert use_case._max_input_length == 1234
 
