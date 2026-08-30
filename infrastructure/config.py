@@ -55,6 +55,22 @@ class PromptSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalSettings:
+    """How much evidence to fetch, and how close it must be to count.
+
+    `relevance_threshold` is a cosine similarity in [-1.0, 1.0], matching
+    `VectorStore.search`. The default of 0.0 is a floor, not a tuned value: it
+    discards only actively dissimilar chunks. Raising it is what makes the
+    insufficient-knowledge path fire on merely-unrelated results, and the right
+    number depends on the embedding model and corpus — measure the score spread
+    over known on-topic and off-topic queries before setting it.
+    """
+
+    limit: int
+    relevance_threshold: float
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -65,6 +81,7 @@ class Settings:
     knowledge: KnowledgeSettings
     document_catalog: DocumentCatalogSettings
     prompts: PromptSettings
+    retrieval: RetrievalSettings
 
 
 def load_settings() -> Settings:
@@ -95,6 +112,7 @@ def load_settings() -> Settings:
         knowledge=_load_knowledge_settings(),
         document_catalog=_load_document_catalog_settings(),
         prompts=_load_prompt_settings(),
+        retrieval=_load_retrieval_settings(),
     )
 
 
@@ -173,11 +191,27 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
     )
 
 
+def _load_retrieval_settings() -> RetrievalSettings:
+    limit = _env_int("RETRIEVAL_LIMIT", "5")
+    if limit <= 0:
+        raise ValueError(f"RETRIEVAL_LIMIT must be > 0, got {limit}")
+    raw_threshold = os.getenv("RELEVANCE_THRESHOLD", "0.0")
+    try:
+        threshold = float(raw_threshold)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"RELEVANCE_THRESHOLD must be a number, got {raw_threshold!r}"
+        ) from exc
+    if not -1.0 <= threshold <= 1.0:
+        raise ValueError(
+            f"RELEVANCE_THRESHOLD must be within [-1.0, 1.0], got {threshold}"
+        )
+    return RetrievalSettings(limit=limit, relevance_threshold=threshold)
+
+
 def _load_prompt_settings() -> PromptSettings:
     raw = os.getenv("PROMPT_PACKS", "core")
     names = _csv(raw)
-    if not names:
-        raise ValueError(f"PROMPT_PACKS must name at least one pack, got {raw!r}")
     default_key_raw = os.getenv("PROMPT_DEFAULT_KEY")
     default_key: str | None
     if default_key_raw is None:
