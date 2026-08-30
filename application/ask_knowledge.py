@@ -82,7 +82,8 @@ class AskKnowledge:
             and ``run=None`` — the model is not called at all.
 
         Raises:
-            ApplicationValidationError: ``query`` exceeds ``max_input_length``.
+            ApplicationValidationError: ``query`` or a ``history`` message
+                exceeds ``max_input_length``.
             UnknownPromptError: ``prompt_key`` is set but not in the repository.
         """
         if len(request.query) > self._max_input_length:
@@ -90,6 +91,13 @@ class AskKnowledge:
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )
+        for index, message in enumerate(request.history):
+            if len(message.content) > self._max_input_length:
+                raise ApplicationValidationError(
+                    f"history[{index}] content must be at most "
+                    f"{self._max_input_length} characters, "
+                    f"got {len(message.content)}"
+                )
         task_system = self._resolve_task_system(request.prompt_key)
         limit = request.retrieval_limit or self._default_retrieval_limit
         retrieved = self._rewrite_and_retrieve.execute(

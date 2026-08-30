@@ -86,7 +86,8 @@ class RewriteAndRetrieveKnowledge:
                 query=rewritten,
                 retrieval_limit=request.retrieval_limit,
                 metadata_filters=request.metadata_filters,
-            )
+            ),
+            enforce_length=False,
         )
         return RewriteRetrieveResponse(
             hits=retrieve_response.hits,
