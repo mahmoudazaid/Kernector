@@ -137,6 +137,47 @@ directly. Configurable JSON vs SQL adapter selection will be introduced by
 follow-up [#131](https://github.com/mahmoudazaid/Kernector/issues/131); it is
 not implemented here.
 
+## Error taxonomy
+
+Operational failures cross the port boundary as typed errors so presentation can
+show user-safe messages instead of vendor bodies or tracebacks. Adapters raise
+fixed, adapter-authored exception text with vendor detail only on `__cause__`.
+Presentation does **not** treat that text as display-safe: `run_ask_turn` maps
+operational types to fixed category sentences (see below).
+
+| Category | Type | Layer | Meaning |
+|---|---|---|---|
+| validation | `ApplicationValidationError`, `UnknownPromptError`, `UnknownDocumentError` | application | Contract / input reject |
+| validation | `DomainValidationError` | domain | Domain invariant violation |
+| config | `ConfigurationError` | application | Missing/invalid environment at composition |
+| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` |
+| provider | `ProviderError` | domain | LLM / embedding / rewrite runtime failure |
+| provider | `QueryRewriterError` | domain | Subclass of `ProviderError` from the rewrite port |
+| provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping rewrite failures |
+| store | `VectorStoreError` | domain | Vector-store read or write failure |
+| store | `ChromaStoreError` | infrastructure | Subclass of `VectorStoreError` |
+| tool | `ToolFailureError` | domain | Tool invocation failure (reserved until adapters exist) |
+| ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
+| corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
+| composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of the above |
+
+**Empty / below-threshold retrieval is not an error.** `AskKnowledge` returns
+`AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())` and does not
+call the model.
+
+Streamlit ask mapping (`run_ask_turn`) uses a **fixed type → message map**.
+Exception type alone is never treated as proof that `str(error)` is safe:
+
+| Caught type | User-facing message | `drop_user_turn` |
+|---|---|---|
+| `ApplicationValidationError` | boundary-authored `str(error)` | yes |
+| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`) | fixed provider sentence | no |
+| `ToolFailureError` | fixed tool sentence | no |
+| `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
+
+Technical and vendor detail may remain on `__cause__` (and in logs); it must
+not reach `st.error`.
+
 ## Architecture tests
 
 Automated AST checks under `test/architecture/` and

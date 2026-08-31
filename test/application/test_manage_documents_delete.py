@@ -29,6 +29,7 @@ from test.document_doubles import (
 from test.doubles import InMemoryVectorStore, StubEmbeddingModel
 
 CONTENT = "abcdefghijklmnopqrstuvwxyz"
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 def _document_factory(
@@ -66,6 +67,7 @@ def _seed(
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     return use_case.create(
         UploadPayload(file_name="guide.md", content=b"x")
@@ -86,6 +88,7 @@ def test_delete_removes_chunks_then_catalog_row() -> None:
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
         vector_store_factory=lambda: store,
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     ).delete(reference)
 
     assert catalog.get(reference) is None
@@ -110,6 +113,7 @@ def test_vector_delete_failure_leaves_catalog_unchanged() -> None:
                 chunk_overlap=2,
             ),
             vector_store_factory=lambda: failing_store,
+            max_upload_bytes=_MAX_UPLOAD_BYTES,
         ).delete(reference)
 
     row = catalog.get(reference)
@@ -131,6 +135,7 @@ def test_catalog_delete_failure_after_vector_success_is_partial() -> None:
                 StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
             ),
             vector_store_factory=lambda: store,
+            max_upload_bytes=_MAX_UPLOAD_BYTES,
         ).delete(reference)
 
     assert store.records == {}
@@ -148,6 +153,7 @@ def test_delete_missing_data_is_idempotent_and_retry_converges() -> None:
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
         ),
         vector_store_factory=lambda: store,
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     use_case.delete(reference)
     use_case.delete(reference)

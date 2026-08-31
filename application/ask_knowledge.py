@@ -87,6 +87,9 @@ class AskKnowledge:
                 exceeds ``max_input_length``, or a query fails the
                 platform/pack input-safety reject rules.
             UnknownPromptError: ``prompt_key`` is set but not in the repository.
+            ProviderError: Rewrite, embedding, or chat provider failed.
+            VectorStoreError: Vector-store search failed.
+            QueryRewriteFailure: Query rewrite failed before retrieval.
         """
         if len(request.query) > self._max_input_length:
             raise ApplicationValidationError(

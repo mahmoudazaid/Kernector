@@ -598,6 +598,19 @@ def test_missing_chat_configuration_surfaces_as_configuration_error(
         build_chat_model(settings, provider="openrouter")
 
 
+def test_build_chat_model_maps_missing_ollama_base_url_to_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama construction failures follow the same typed config path as OpenRouter."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    settings = load_settings()
+    assert settings.ollama.base_url is None
+
+    with pytest.raises(ConfigurationError, match="OLLAMA_BASE_URL"):
+        build_chat_model(settings, provider="ollama")
+
+
 def test_a_configuration_error_is_not_a_validation_error() -> None:
     """An environment failure is not a contract violation (§ error handling)."""
     assert issubclass(ConfigurationError, RuntimeError)

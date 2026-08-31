@@ -12,8 +12,15 @@ from dataclasses import dataclass
 from application.ask_knowledge import AskKnowledge
 from application.contracts import AskRequest, AskResponse
 from application.errors import ApplicationValidationError
-from domain.errors import DomainValidationError
+from domain.errors import DomainValidationError, ProviderError, ToolFailureError
 from domain.models import Message
+
+# Fixed category sentences — presentation never renders ``str(error)`` for
+# provider/tool/store failures. Exception type selects the sentence; type alone
+# is never treated as proof that the exception text is safe.
+_PROVIDER_FAILURE_MESSAGE = "The model provider could not complete the request."
+_TOOL_FAILURE_MESSAGE = "A tool failed while processing your request."
+_OPERATIONAL_FAILURE_MESSAGE = "Something went wrong while processing your request."
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +42,8 @@ class AskTurnResult:
     drop_user_turn: bool = False
 
 
-def _failure_message(error: BaseException) -> str:
-    """Never hand the UI an empty string: some exceptions stringify to ``''``."""
+def _validation_message(error: BaseException) -> str:
+    """Validation messages are authored at the application boundary."""
     text = str(error).strip()
     return text or f"The request failed ({type(error).__name__})."
 
@@ -59,6 +66,16 @@ def run_ask_turn(
     boundary rejected the request — the user turn must be dropped.
     Operational failures keep the turn: the text was accepted; only the call
     failed.
+
+    Message policy by type (fixed mapping — never ``str(error)`` for
+    operational types):
+
+    * ``ApplicationValidationError`` — boundary-authored ``str(error)``;
+      ``drop_user_turn=True``.
+    * ``ProviderError`` (incl. rewrite failures) — fixed provider sentence.
+    * ``ToolFailureError`` — fixed tool sentence.
+    * ``VectorStoreError``, ``DomainValidationError``, other ``RuntimeError`` —
+      fixed operational sentence.
     """
     try:
         request = AskRequest(
@@ -70,13 +87,25 @@ def run_ask_turn(
     except ApplicationValidationError as error:
         return AskTurnResult(
             ok=False,
-            message=_failure_message(error),
+            message=_validation_message(error),
             drop_user_turn=True,
         )
-    except (DomainValidationError, RuntimeError) as error:
+    except ProviderError:
         return AskTurnResult(
             ok=False,
-            message=_failure_message(error),
+            message=_PROVIDER_FAILURE_MESSAGE,
+            drop_user_turn=False,
+        )
+    except ToolFailureError:
+        return AskTurnResult(
+            ok=False,
+            message=_TOOL_FAILURE_MESSAGE,
+            drop_user_turn=False,
+        )
+    except (DomainValidationError, RuntimeError):
+        return AskTurnResult(
+            ok=False,
+            message=_OPERATIONAL_FAILURE_MESSAGE,
             drop_user_turn=False,
         )
     return AskTurnResult(ok=True, response=response)
