@@ -79,19 +79,12 @@ class RiskAssessmentRequest:
         items = _require_sequence(self.evidence, "evidence")
         if len(items) == 0:
             raise RiskScoreValidationError("evidence must be non-empty")
-        seen: set[tuple[str, str]] = set()
         normalized: list[RiskEvidence] = []
         for item in items:
             if not isinstance(item, RiskEvidence):
                 raise RiskScoreValidationError(
                     f"evidence items must be RiskEvidence, got {item!r}"
                 )
-            key = (item.reference.source_type, item.reference.source_id)
-            if key in seen:
-                raise RiskScoreValidationError(
-                    f"duplicate evidence reference: {item.reference!r}"
-                )
-            seen.add(key)
             normalized.append(item)
         object.__setattr__(self, "evidence", tuple(normalized))
 

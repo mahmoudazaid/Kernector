@@ -218,6 +218,34 @@ def test_input_order_does_not_change_result() -> None:
     assert first == second
 
 
+def test_repeated_reference_chunks_contribute_with_deduped_factor_refs() -> None:
+    """Two chunks from one document both score; factor refs stay unique and stable."""
+    chunk_a = _item(
+        "DOC-1",
+        "confluence",
+        "Blocked by payments vendor.",
+        is_complete=False,
+    )
+    chunk_b = _item(
+        "DOC-1",
+        "confluence",
+        "Authentication OAuth remains TBD.",
+        is_complete=False,
+    )
+    first = score_risk(_request(chunk_a, chunk_b))
+    second = score_risk(_request(chunk_b, chunk_a))
+    assert first == second
+    ids = {f.factor_id: f for f in first.factors}
+    assert set(ids) == {
+        "ambiguous_language",
+        "external_dependency",
+        "security_sensitive",
+    }
+    assert first.score == 15 + 20 + 20
+    for factor in first.factors:
+        assert factor.references == (_ref("DOC-1", "confluence"),)
+
+
 def test_identical_requests_are_stable() -> None:
     request = _request(
         _item("S-1", "user_story", "As a user I want login without acceptance.")
