@@ -95,3 +95,22 @@ def test_invoke_tool_never_reads_source_or_risk_fields() -> None:
     assert response.result == "ok"
     assert tool.calls[0] is not None
     assert tool.calls[0]["evidence"][0]["source_type"] == "srs"  # type: ignore[index]
+
+
+def test_invoke_tool_passes_generate_test_cases_shaped_payload_untouched() -> None:
+    tool = _FakeTool(result='{"output_style":"steps","test_cases":[]}')
+    use_case = InvokeTool(ToolRegistry([tool]))
+    args = {
+        "target": "Assess MFA",
+        "output_style": "gherkin",
+        "evidence": [
+            {
+                "source_id": "US-1",
+                "source_type": "user_story",
+                "text": "Need MFA",
+            }
+        ],
+    }
+    response = use_case.execute(InvokeToolRequest("fake.tool", args))
+    assert response.result.startswith("{")
+    assert tool.calls[0] == args
