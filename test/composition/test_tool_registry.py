@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,10 +11,22 @@ import pytest
 
 from application.errors import ConfigurationError
 from composition.tool_registry import build_tool_registry
+from domain.models import AskResult, Message
 from infrastructure.config import DomainToolSettings, load_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TOOL_NAME = "software_delivery.risk_score"
+RISK_TOOL = "software_delivery.risk_score"
+GENERATE_TOOL = "software_delivery.generate_test_cases"
+
+
+class _FakeChat:
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        settings: Mapping[str, object],
+    ) -> AskResult:
+        return AskResult(content="{}")
 
 
 @pytest.fixture
@@ -30,15 +43,24 @@ def test_empty_config_builds_empty_registry(env: pytest.MonkeyPatch) -> None:
     assert registry.names() == ()
 
 
-def test_software_delivery_registers_risk_tool(env: pytest.MonkeyPatch) -> None:
+def test_software_delivery_registers_both_tools_with_injected_chat(
+    env: pytest.MonkeyPatch,
+) -> None:
     env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     settings = load_settings()
-    registry = build_tool_registry(settings)
-    assert registry.names() == (TOOL_NAME,)
-    assert TOOL_NAME in registry
-    tool = registry.get(TOOL_NAME)
-    assert tool is not None
-    assert tool.name == TOOL_NAME
+    registry = build_tool_registry(settings, chat_model=_FakeChat())
+    assert set(registry.names()) == {RISK_TOOL, GENERATE_TOOL}
+    assert RISK_TOOL in registry
+    assert GENERATE_TOOL in registry
+
+
+def test_enabled_pack_without_chat_model_is_configuration_error(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    settings = load_settings()
+    with pytest.raises(ConfigurationError, match="chat_model"):
+        build_tool_registry(settings)
 
 
 def test_unknown_pack_id_is_configuration_error(env: pytest.MonkeyPatch) -> None:
