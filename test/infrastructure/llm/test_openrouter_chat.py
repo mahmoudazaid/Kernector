@@ -5,6 +5,7 @@ from collections.abc import Mapping
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from domain.errors import ProviderError
 from domain.models import Message, Usage
 from infrastructure.config import OpenRouterSettings
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
@@ -122,11 +123,13 @@ def test_complete_returns_ask_result_from_injected_model() -> None:
     assert messages[2].content == "A RAG assistant."
 
 
-def test_complete_soft_fails_when_model_raises() -> None:
-    fake = _FakeChat(error=RuntimeError("upstream down"))
+def test_complete_raises_provider_error_without_vendor_text() -> None:
+    upstream = RuntimeError("upstream down")
+    fake = _FakeChat(error=upstream)
     chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
 
-    result = chat.complete("system", (Message(role="user", content="hi"),), {})
+    with pytest.raises(ProviderError, match="OpenRouter chat provider") as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
 
-    assert result.content == "Failed to connect to OpenRouter"
-    assert result.model == "chat/model"
+    assert "upstream down" not in str(raised.value)
+    assert raised.value.__cause__ is upstream

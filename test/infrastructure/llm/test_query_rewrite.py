@@ -75,10 +75,14 @@ def test_invocation_failure_raises_query_rewriter_error() -> None:
     fake = _FakeModel(error=RuntimeError("upstream down"))
     rewriter = OpenRouterQueryRewriter(_settings(), model=fake)
 
-    with pytest.raises(QueryRewriterError, match="upstream down") as raised:
+    with pytest.raises(
+        QueryRewriterError, match="OpenRouter query rewrite provider"
+    ) as raised:
         rewriter.rewrite("what broke?")
 
+    assert "upstream down" not in str(raised.value)
     assert isinstance(raised.value.__cause__, RuntimeError)
+    assert raised.value.__cause__ is fake._error
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "\n\t"])
