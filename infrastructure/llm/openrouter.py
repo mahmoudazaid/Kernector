@@ -7,6 +7,7 @@ from typing import Protocol
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
+from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import OpenRouterSettings
 
@@ -53,12 +54,10 @@ class OpenRouterChat:
                 "system": system,
                 "history": _to_provider_messages(messages),
             })
-        except Exception:
-            return AskResult(
-                content="Failed to connect to OpenRouter",
-                model=self._config.model,
-                settings=dict(settings),
-            )
+        except Exception as exc:
+            raise ProviderError(
+                "The OpenRouter chat provider could not be reached."
+            ) from exc
         return AskResult(
             content=ai_message.content,
             model=self._config.model,

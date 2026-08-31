@@ -9,8 +9,9 @@ class RetrieveKnowledge:
     """Embeds a query and searches the vector store with optional metadata filters.
 
     Accepts ports only: the application layer must not import `infrastructure`.
-    Embedding and store failures propagate unchanged — retrieval is read-only and
-    does not wrap them in a typed failure carrying mutation state.
+    Embedding and store failures propagate as ``ProviderError`` /
+    ``VectorStoreError`` — retrieval is read-only and does not wrap them in a
+    typed failure carrying mutation state.
 
     ``execute`` is the only public retrieval entry and always enforces
     ``max_input_length`` before ``embed_query``, including for rewritten queries
@@ -39,7 +40,8 @@ class RetrieveKnowledge:
 
         Raises:
             ApplicationValidationError: ``query`` exceeds ``max_input_length``.
-            RuntimeError: Propagated from the embedding model or vector store.
+            ProviderError: Propagated from the embedding model.
+            VectorStoreError: Propagated from the vector store.
         """
         if len(request.query) > self._max_input_length:
             raise ApplicationValidationError(

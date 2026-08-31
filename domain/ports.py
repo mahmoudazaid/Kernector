@@ -19,11 +19,18 @@ class ChatModel(Protocol):
     """A provider that can answer a conversation."""
 
     def complete(
-        self, 
-        system: str, 
-        messages: Sequence[Message], 
-        settings: Mapping[str, object]
-        ) -> AskResult: ...
+        self,
+        system: str,
+        messages: Sequence[Message],
+        settings: Mapping[str, object],
+    ) -> AskResult:
+        """Return a model completion for ``system`` plus ``messages``.
+
+        Raises:
+            ProviderError: The provider call failed at runtime.
+        """
+        ...
+
 
 class PromptRepository(Protocol):
     """A source of prompt variants."""
@@ -32,19 +39,32 @@ class PromptRepository(Protocol):
 
     def default_key(self) -> str | None: ...
 
+
 class EmbeddingModel(Protocol):
     """A provider that turns text into vectors."""
 
-    def embed_documents(self, texts: Sequence[str]) -> Sequence[Vector]: ...
+    def embed_documents(self, texts: Sequence[str]) -> Sequence[Vector]:
+        """Embed each text; return one vector per input, same order.
 
-    def embed_query(self, text: str) -> Vector: ...
+        Raises:
+            ProviderError: The embedding provider call failed at runtime.
+        """
+        ...
+
+    def embed_query(self, text: str) -> Vector:
+        """Embed a single query string.
+
+        Raises:
+            ProviderError: The embedding provider call failed at runtime.
+        """
+        ...
+
 
 class QueryRewriter(Protocol):
     """Rewrites a natural-language query into a retrieval-oriented string.
 
-    Unlike ``VectorStore`` / ``DocumentCatalog``, which document
-    ``RuntimeError: a subclass``, this port names ``QueryRewriterError`` so
-    the application can catch one known type rather than every ``RuntimeError``.
+    Names ``QueryRewriterError`` (a ``ProviderError``) so the application can
+    catch one known type rather than every ``RuntimeError``.
     """
 
     def rewrite(self, query: str) -> str:
@@ -55,11 +75,12 @@ class QueryRewriter(Protocol):
         """
         ...
 
+
 class VectorStore(Protocol):
     """A store of embedded chunks that can be searched by similarity."""
 
     def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
-        """Update or Insert embedded chunks if it's not already in the store, 
+        """Update or Insert embedded chunks if it's not already in the store,
         keyed by their derived identity.
 
         Idempotent: re-adding a chunk with the same derived identity replaces
@@ -67,7 +88,7 @@ class VectorStore(Protocol):
         Returns without effect when `embedded` is empty.
 
         Raises:
-            RuntimeError: a subclass, on any adapter-level failure.
+            VectorStoreError: On any adapter-level failure.
         """
 
     def search(
@@ -101,7 +122,7 @@ class VectorStore(Protocol):
         Negative scores are legitimate and are never clamped.
 
         Raises:
-            RuntimeError: a subclass, on any adapter-level failure.
+            VectorStoreError: On any adapter-level failure.
         """
 
     def delete_source(self, reference: SourceReference) -> None:
@@ -116,7 +137,7 @@ class VectorStore(Protocol):
         behind when the new content chunks into fewer pieces.
 
         Raises:
-            RuntimeError: a subclass, on any adapter-level failure.
+            VectorStoreError: On any adapter-level failure.
         """
 
 
@@ -129,7 +150,13 @@ class Tool(Protocol):
     @property
     def description(self) -> str: ...
 
-    def run(self, arguments: Mapping[str, object]) -> str: ...
+    def run(self, arguments: Mapping[str, object]) -> str:
+        """Execute the tool with ``arguments`` and return a string result.
+
+        Raises:
+            ToolFailureError: The tool invocation failed.
+        """
+        ...
 
 
 class DocumentCatalog(Protocol):

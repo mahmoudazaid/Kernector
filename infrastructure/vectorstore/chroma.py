@@ -12,7 +12,7 @@ from chromadb.api.models.Collection import Collection
 from chromadb.config import Settings as ChromaClientSettings
 from chromadb.errors import ChromaError
 
-from domain.errors import DomainValidationError
+from domain.errors import DomainValidationError, VectorStoreError
 from domain.knowledge import (
     DocumentChunk,
     EmbeddedChunk,
@@ -55,7 +55,7 @@ _KEY_EXTRA_JSON = "extra_json"
 _EXTRA_KEY_PREFIX = "x:"
 
 
-class ChromaStoreError(RuntimeError):
+class ChromaStoreError(VectorStoreError):
     """Raised when the Chroma adapter cannot honor the VectorStore contract."""
 
 
