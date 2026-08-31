@@ -11,6 +11,9 @@ from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import OpenRouterSettings
 
+_CONNECTION_FAILURE_MESSAGE = "The OpenRouter chat provider could not be reached."
+_PARSE_FAILURE_MESSAGE = "The OpenRouter chat response could not be parsed."
+
 
 class ChatConfigError(RuntimeError):
     """The chat credentials are missing or unusable.
@@ -55,16 +58,24 @@ class OpenRouterChat:
                 "history": _to_provider_messages(messages),
             })
         except Exception as exc:
-            raise ProviderError(
-                "The OpenRouter chat provider could not be reached."
-            ) from exc
-        return AskResult(
-            content=ai_message.content,
-            model=self._config.model,
-            latency_ms=int((time.perf_counter() - started) * 1000),
-            usage=_to_usage(getattr(ai_message, "usage_metadata", None)),
-            settings=dict(settings),
-        )
+            raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
+
+        try:
+            content = getattr(ai_message, "content", None)
+            if not isinstance(content, str) or not content.strip():
+                raise TypeError(
+                    f"chat content must be a non-empty str, got {content!r}"
+                )
+            usage = _to_usage(getattr(ai_message, "usage_metadata", None))
+            return AskResult(
+                content=content,
+                model=self._config.model,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                usage=usage,
+                settings=dict(settings),
+            )
+        except Exception as exc:
+            raise ProviderError(_PARSE_FAILURE_MESSAGE) from exc
 
 
 def _default_chat_model(
@@ -106,9 +117,11 @@ def _to_provider_messages(messages: Sequence[Message]) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in messages]
 
 
-def _to_usage(meta: Mapping[str, object] | None) -> Usage | None:
-    if not meta:
+def _to_usage(meta: object) -> Usage | None:
+    if meta is None:
         return None
+    if not isinstance(meta, Mapping):
+        raise TypeError(f"usage_metadata must be a mapping, got {type(meta).__name__}")
     return Usage(
         prompt_tokens=meta.get("input_tokens"),
         completion_tokens=meta.get("output_tokens"),
