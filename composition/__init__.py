@@ -1,6 +1,7 @@
 """Composition root: the outermost edge, where the layers are joined."""
 
 from composition.container import (
+    SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
     available_providers,
     build_ask_knowledge,
@@ -13,6 +14,7 @@ from composition.container import (
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
+    build_tool_registry,
     build_vector_store,
     create_uploaded_document,
     delete_uploaded_document,
@@ -37,6 +39,7 @@ __all__ = [
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
+    "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
     "available_providers",
@@ -50,6 +53,7 @@ __all__ = [
     "build_prompt_repository",
     "build_retrieve_knowledge",
     "build_rewrite_and_retrieve_knowledge",
+    "build_tool_registry",
     "build_vector_store",
     "create_uploaded_document",
     "delete_uploaded_document",

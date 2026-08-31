@@ -24,6 +24,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
+    monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
     return monkeypatch
 
 
@@ -283,3 +284,18 @@ def test_rewrite_model_is_none_when_both_unset(env: pytest.MonkeyPatch) -> None:
     env.delenv("OPENROUTER_REWRITE_MODEL", raising=False)
     env.delenv("OPENROUTER_MODEL", raising=False)
     assert load_settings().openrouter.rewrite_model is None
+
+
+def test_domain_tool_packs_default_empty(env: pytest.MonkeyPatch) -> None:
+    assert load_settings().domain_tools.enabled_packs == ()
+
+
+def test_domain_tool_packs_parses_csv(env: pytest.MonkeyPatch) -> None:
+    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    assert load_settings().domain_tools.enabled_packs == ("software-delivery",)
+
+
+def test_domain_tool_packs_rejects_duplicates(env: pytest.MonkeyPatch) -> None:
+    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery,software-delivery")
+    with pytest.raises(ValueError, match="duplicate"):
+        load_settings()
