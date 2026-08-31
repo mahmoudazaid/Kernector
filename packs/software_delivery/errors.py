@@ -1,7 +1,11 @@
-"""Pack-local validation errors for Software Delivery risk scoring."""
+"""Pack-local validation errors for the Software Delivery pack."""
 
-from domain.errors import ToolArgumentValidationError
+from domain.errors import DomainValidationError, ToolArgumentValidationError
 
 
 class RiskScoreValidationError(ToolArgumentValidationError):
     """Invalid Software Delivery risk assessment input or result."""
+
+
+class AssessmentPromptValidationError(DomainValidationError):
+    """Invalid input supplied to the Software Delivery prompt boundary."""
