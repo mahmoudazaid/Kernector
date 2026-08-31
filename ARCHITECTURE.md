@@ -163,10 +163,18 @@ are authored by our code; vendor detail lives only on `__cause__`.
 `AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())` and does not
 call the model.
 
-Streamlit ask mapping (`run_ask_turn`) trusts `str(error)` for
-`ApplicationValidationError`, `ProviderError`, and `ToolFailureError`.
-`VectorStoreError` and other `RuntimeError`s get a fixed category sentence so
-paths and vendor text never reach `st.error`.
+Streamlit ask mapping (`run_ask_turn`) uses a **fixed type → message map**.
+Exception type alone is never treated as proof that `str(error)` is safe:
+
+| Caught type | User-facing message | `drop_user_turn` |
+|---|---|---|
+| `ApplicationValidationError` | boundary-authored `str(error)` | yes |
+| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`) | fixed provider sentence | no |
+| `ToolFailureError` | fixed tool sentence | no |
+| `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
+
+Technical and vendor detail may remain on `__cause__` (and in logs); it must
+not reach `st.error`.
 
 ## Architecture tests
 
