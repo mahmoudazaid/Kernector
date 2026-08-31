@@ -1,6 +1,7 @@
 """OpenRouter chat adapter, tested through an injected model factory."""
 
 from collections.abc import Mapping
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -30,7 +31,7 @@ class _FakeChat:
 
     def __init__(
         self,
-        message: AIMessage | None = None,
+        message: object | None = None,
         *,
         error: BaseException | None = None,
     ) -> None:
@@ -38,7 +39,7 @@ class _FakeChat:
         self._message = message
         self._error = error
 
-    def __call__(self, prompt_value: object, **_kwargs: object) -> AIMessage:
+    def __call__(self, prompt_value: object, **_kwargs: object) -> object:
         self.prompt_value = prompt_value
         if self._error is not None:
             raise self._error
@@ -142,7 +143,7 @@ def test_complete_raises_provider_error_without_vendor_text() -> None:
 def test_complete_raises_parse_error_for_missing_or_non_string_content(
     content: object,
 ) -> None:
-    fake = _FakeChat(AIMessage(content=content))  # type: ignore[arg-type]
+    fake = _FakeChat(SimpleNamespace(content=content, usage_metadata=None))
     chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
 
     with pytest.raises(
@@ -161,9 +162,7 @@ def test_complete_raises_parse_error_for_malformed_usage_metadata() -> None:
         def __str__(self) -> str:
             return "usage-secret-token"
 
-    fake = _FakeChat(
-        AIMessage(content="ok", usage_metadata=_BadMeta())  # type: ignore[arg-type]
-    )
+    fake = _FakeChat(SimpleNamespace(content="ok", usage_metadata=_BadMeta()))
     chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
 
     with pytest.raises(

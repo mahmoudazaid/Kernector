@@ -140,8 +140,10 @@ not implemented here.
 ## Error taxonomy
 
 Operational failures cross the port boundary as typed errors so presentation can
-show user-safe messages instead of vendor bodies or tracebacks. Adapter messages
-are authored by our code; vendor detail lives only on `__cause__`.
+show user-safe messages instead of vendor bodies or tracebacks. Adapters raise
+fixed, adapter-authored exception text with vendor detail only on `__cause__`.
+Presentation does **not** treat that text as display-safe: `run_ask_turn` maps
+operational types to fixed category sentences (see below).
 
 | Category | Type | Layer | Meaning |
 |---|---|---|---|
