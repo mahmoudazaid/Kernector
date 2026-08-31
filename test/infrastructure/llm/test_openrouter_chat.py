@@ -1,10 +1,12 @@
 """OpenRouter chat adapter, tested through an injected model factory."""
 
 from collections.abc import Mapping
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from domain.errors import ProviderError
 from domain.models import Message, Usage
 from infrastructure.config import OpenRouterSettings
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
@@ -29,7 +31,7 @@ class _FakeChat:
 
     def __init__(
         self,
-        message: AIMessage | None = None,
+        message: object | None = None,
         *,
         error: BaseException | None = None,
     ) -> None:
@@ -37,7 +39,7 @@ class _FakeChat:
         self._message = message
         self._error = error
 
-    def __call__(self, prompt_value: object, **_kwargs: object) -> AIMessage:
+    def __call__(self, prompt_value: object, **_kwargs: object) -> object:
         self.prompt_value = prompt_value
         if self._error is not None:
             raise self._error
@@ -122,11 +124,74 @@ def test_complete_returns_ask_result_from_injected_model() -> None:
     assert messages[2].content == "A RAG assistant."
 
 
-def test_complete_soft_fails_when_model_raises() -> None:
-    fake = _FakeChat(error=RuntimeError("upstream down"))
+def test_complete_raises_provider_error_without_vendor_text() -> None:
+    upstream = RuntimeError("upstream down")
+    fake = _FakeChat(error=upstream)
     chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
 
-    result = chat.complete("system", (Message(role="user", content="hi"),), {})
+    with pytest.raises(ProviderError, match="OpenRouter chat provider") as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
 
-    assert result.content == "Failed to connect to OpenRouter"
-    assert result.model == "chat/model"
+    assert "upstream down" not in str(raised.value)
+    assert raised.value.__cause__ is upstream
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, "", "   ", 42, ["chunk"], {"text": "x"}],
+)
+def test_complete_raises_parse_error_for_missing_or_non_string_content(
+    content: object,
+) -> None:
+    fake = _FakeChat(SimpleNamespace(content=content, usage_metadata=None))
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    with pytest.raises(
+        ProviderError, match="OpenRouter chat response could not be parsed"
+    ) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "chunk" not in str(raised.value)
+    assert raised.value.__cause__ is not None
+
+
+def test_complete_raises_parse_error_for_malformed_usage_metadata() -> None:
+    class _BadMeta:
+        """Not a mapping — accessing .get must not leak into the user message."""
+
+        def __str__(self) -> str:
+            return "usage-secret-token"
+
+    fake = _FakeChat(SimpleNamespace(content="ok", usage_metadata=_BadMeta()))
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    with pytest.raises(
+        ProviderError, match="OpenRouter chat response could not be parsed"
+    ) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "usage-secret-token" not in str(raised.value)
+    assert raised.value.__cause__ is not None
+
+
+def test_complete_raises_parse_error_when_ask_result_construction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeChat(AIMessage(content="Answer from context."))
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise TypeError("AskResult rejected provider payload: secret-body")
+
+    monkeypatch.setattr(
+        "infrastructure.llm.openrouter.AskResult",
+        _boom,
+    )
+
+    with pytest.raises(
+        ProviderError, match="OpenRouter chat response could not be parsed"
+    ) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "secret-body" not in str(raised.value)
+    assert isinstance(raised.value.__cause__, TypeError)

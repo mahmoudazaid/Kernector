@@ -42,7 +42,7 @@ from infrastructure.embeddings.openrouter import (
     OpenRouterEmbeddings,
 )
 from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corpus
-from infrastructure.llm.ollama import OllamaChat
+from infrastructure.llm.ollama import OllamaChat, OllamaConfigError
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
 from infrastructure.llm.query_rewrite import (
@@ -78,7 +78,10 @@ def _build_ollama(
         config = replace(config, model=model)
     if base_url:
         config = replace(config, base_url=base_url)
-    return OllamaChat(config)
+    try:
+        return OllamaChat(config)
+    except OllamaConfigError as exc:
+        raise ConfigurationError(str(exc)) from exc
 
 
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {

@@ -3,10 +3,12 @@
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 from langchain_openai import OpenAIEmbeddings
 
+from domain.errors import ProviderError
 from domain.knowledge import Vector
 from infrastructure.config import OpenRouterSettings
 
@@ -20,12 +22,23 @@ class EmbeddingConfigError(RuntimeError):
     """
 
 
+class _EmbeddingClient(Protocol):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
+
+    def embed_query(self, text: str) -> list[float]: ...
+
+
 class OpenRouterEmbeddings:
     """EmbeddingModel backed by OpenRouter."""
 
-    def __init__(self, config: OpenRouterSettings) -> None:
+    def __init__(
+        self,
+        config: OpenRouterSettings,
+        *,
+        client: _EmbeddingClient | None = None,
+    ) -> None:
         _require_embedding_config(config)
-        self._client = OpenAIEmbeddings(
+        self._client: _EmbeddingClient = client or OpenAIEmbeddings(
             model=config.embedding_model,
             api_key=config.api_key,
             base_url=config.base_url,
@@ -36,10 +49,20 @@ class OpenRouterEmbeddings:
     def embed_documents(self, texts: Sequence[str]) -> Sequence[Vector]:
         if not texts:
             return []
-        return self._client.embed_documents(list(texts))
+        try:
+            return self._client.embed_documents(list(texts))
+        except Exception as exc:
+            raise ProviderError(
+                "The OpenRouter embedding provider could not be reached."
+            ) from exc
 
     def embed_query(self, text: str) -> Vector:
-        return self._client.embed_query(text)
+        try:
+            return self._client.embed_query(text)
+        except Exception as exc:
+            raise ProviderError(
+                "The OpenRouter embedding provider could not be reached."
+            ) from exc
 
 
 def _require_embedding_config(config: OpenRouterSettings) -> None:

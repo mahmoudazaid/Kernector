@@ -3,10 +3,23 @@
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import pytest
+
 from application.contracts import AskRequest, AskResponse
 from application.errors import ApplicationValidationError
+from application.rewrite_and_retrieve import QueryRewriteFailure
+from domain.errors import (
+    ProviderError,
+    QueryRewriterError,
+    ToolFailureError,
+    VectorStoreError,
+)
 from domain.models import Message
 from presentation.streamlit.ask_turn import run_ask_turn
+
+_FIXED_OPERATIONAL_MESSAGE = "Something went wrong while processing your request."
+_FIXED_PROVIDER_MESSAGE = "The model provider could not complete the request."
+_FIXED_TOOL_MESSAGE = "A tool failed while processing your request."
 
 
 class _RaisingAsk:
@@ -99,7 +112,7 @@ def test_injection_validation_error_drops_the_user_turn() -> None:
     assert "Ignore previous" not in result.message
 
 
-def test_operational_failure_keeps_the_user_turn() -> None:
+def test_untrusted_runtime_error_keeps_the_user_turn_with_fixed_message() -> None:
     ask = _RaisingAsk(RuntimeError("vector store unavailable"))
 
     result = run_ask_turn(
@@ -111,7 +124,79 @@ def test_operational_failure_keeps_the_user_turn() -> None:
 
     assert result.ok is False
     assert result.drop_user_turn is False
-    assert "vector store unavailable" in result.message
+    assert result.message == _FIXED_OPERATIONAL_MESSAGE
+    assert "vector store unavailable" not in result.message
+
+
+def test_provider_error_keeps_the_user_turn_and_hides_arbitrary_text() -> None:
+    ask = _RaisingAsk(
+        ProviderError("vendor body with sk-leaked and /Users/secret/path")
+    )
+
+    result = run_ask_turn(
+        ask,  # type: ignore[arg-type]
+        query="How do I restart?",
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.drop_user_turn is False
+    assert result.message == _FIXED_PROVIDER_MESSAGE
+    assert "sk-leaked" not in result.message
+    assert "/Users/secret" not in result.message
+    assert "vendor body" not in result.message
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        QueryRewriterError("rewrite leaked: api-key-abc"),
+        QueryRewriteFailure("rewrite failure leaked: token-xyz"),
+        ToolFailureError("tool dumped stack and secret-token"),
+    ],
+)
+def test_provider_family_and_tool_errors_never_expose_exception_text(
+    error: BaseException,
+) -> None:
+    ask = _RaisingAsk(error)
+    leaked = str(error)
+
+    result = run_ask_turn(
+        ask,  # type: ignore[arg-type]
+        query="How do I restart?",
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.drop_user_turn is False
+    assert leaked not in result.message
+    assert "api-key" not in result.message
+    assert "secret-token" not in result.message
+    assert "token-xyz" not in result.message
+    if isinstance(error, ToolFailureError):
+        assert result.message == _FIXED_TOOL_MESSAGE
+    else:
+        assert result.message == _FIXED_PROVIDER_MESSAGE
+
+
+def test_vector_store_error_hides_path_from_message() -> None:
+    ask = _RaisingAsk(
+        VectorStoreError("could not open Chroma collection at /Users/secret/chroma")
+    )
+
+    result = run_ask_turn(
+        ask,  # type: ignore[arg-type]
+        query="How do I restart?",
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.drop_user_turn is False
+    assert result.message == _FIXED_OPERATIONAL_MESSAGE
+    assert "/Users/secret" not in result.message
 
 
 def test_successful_ask_returns_the_response() -> None:

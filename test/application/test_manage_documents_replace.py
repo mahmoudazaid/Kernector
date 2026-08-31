@@ -38,6 +38,7 @@ from test.doubles import (
 )
 
 CONTENT_V1 = "abcdefghijklmnopqrstuvwxyz"
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 CONTENT_V2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
@@ -89,6 +90,7 @@ def _seed_ready(
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     return use_case.create(UploadPayload(file_name=file_name, content=b"v1"))
 
@@ -105,6 +107,7 @@ def test_replace_rejects_unknown_id() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     with pytest.raises(UnknownDocumentError):
         use_case.replace(
@@ -128,6 +131,7 @@ def test_replace_preserves_source_id_and_updates_metadata() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("should-not-be-used"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     replaced = use_case.replace(
         original.reference,
@@ -158,6 +162,7 @@ def test_replace_restores_previous_row_when_mutation_did_not_start() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     with pytest.raises(IngestFailure) as raised:
         use_case.replace(
@@ -191,6 +196,7 @@ def test_replace_restores_previous_row_on_validation_failure() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     with pytest.raises(ApplicationValidationError):
         use_case.replace(
@@ -234,6 +240,7 @@ def test_replace_records_degraded_when_mutation_may_have_started() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
     with pytest.raises(IngestFailure) as raised:
         use_case.replace(
