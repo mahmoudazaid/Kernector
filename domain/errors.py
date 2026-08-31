@@ -8,9 +8,10 @@ class DomainValidationError(ValueError):
 class ProviderError(RuntimeError):
     """An LLM, embedding, or query-rewrite provider call failed at runtime.
 
-    Adapters raise this with a fixed, adapter-authored message. Vendor detail
-    belongs on ``__cause__`` only — never in the exception text — so
-    presentation can render ``str(error)`` without leaking provider bodies.
+    Exception text is diagnostic only. Vendor detail belongs on ``__cause__``
+    alone — never in the exception text. Presentation must always map
+    ``ProviderError`` to a fixed user-safe message; it must not render
+    ``str(error)``.
     """
 
 

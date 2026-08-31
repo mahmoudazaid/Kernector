@@ -26,6 +26,7 @@ from test.document_doubles import (
 from test.doubles import InMemoryVectorStore, StubEmbeddingModel
 
 CONTENT = "abcdefghijklmnopqrstuvwxyz"  # 3 chunks at size 10 / overlap 2
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 def _document_factory(
@@ -67,6 +68,7 @@ def _use_case(
         new_source_id=ids or FixedIdFactory("11111111-1111-1111-1111-111111111111"),
         now=clock
         or FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
 
