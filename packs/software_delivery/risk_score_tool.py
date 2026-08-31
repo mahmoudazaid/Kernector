@@ -103,6 +103,11 @@ def _parse_evidence_item(item: object) -> RiskEvidence:
         raise RiskScoreValidationError(
             f"evidence items must be mappings, got {item!r}"
         )
+    for key in item:
+        if not isinstance(key, str) or not key.strip():
+            raise RiskScoreValidationError(
+                f"evidence keys must be non-blank strings, got {key!r}"
+            )
     unknown = set(item) - _ALLOWED_EVIDENCE_KEYS
     if unknown:
         raise RiskScoreValidationError(
