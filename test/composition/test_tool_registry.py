@@ -1,15 +1,18 @@
 """Composition tests for lazy domain tool pack registration."""
 
-import importlib
+import os
+import subprocess
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from application.errors import ConfigurationError
-from composition import tool_registry as tool_registry_module
 from composition.tool_registry import build_tool_registry
 from infrastructure.config import DomainToolSettings, load_settings
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TOOL_NAME = "software_delivery.risk_score"
 
 
@@ -48,39 +51,47 @@ def test_unknown_pack_id_is_configuration_error(env: pytest.MonkeyPatch) -> None
         build_tool_registry(bad)
 
 
-def test_disabled_registry_does_not_import_software_delivery_pack(
-    env: pytest.MonkeyPatch, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    imported: list[str] = []
-    real_import = importlib.import_module
+def test_disabled_registry_does_not_import_software_delivery_pack() -> None:
+    """Fresh interpreter: empty DOMAIN_TOOL_PACKS must not load the pack."""
+    script = r"""
+import sys
+from dataclasses import replace
 
-    def _spy(name: str, package: str | None = None):
-        imported.append(name)
-        return real_import(name, package)
+import infrastructure.config as config
 
-    monkeypatch.setattr(tool_registry_module.importlib, "import_module", _spy)
-    settings = load_settings()
-    registry = build_tool_registry(settings)
-    assert len(registry) == 0
-    assert not any(
-        name == "packs.software_delivery"
-        or name.startswith("packs.software_delivery.")
-        for name in imported
+config.load_dotenv = lambda *a, **k: False
+
+from composition.tool_registry import build_tool_registry
+from infrastructure.config import DomainToolSettings, load_settings
+
+settings = replace(
+    load_settings(),
+    domain_tools=DomainToolSettings(enabled_packs=()),
+)
+registry = build_tool_registry(settings)
+assert len(registry) == 0
+assert registry.names() == ()
+assert not any(
+    name == "packs.software_delivery"
+    or name.startswith("packs.software_delivery.")
+    for name in sys.modules
+)
+print("ok", flush=True)
+"""
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(PROJECT_ROOT),
+        "DOMAIN_TOOL_PACKS": "",
+        "PYTHONUNBUFFERED": "1",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        timeout=120,
     )
-
-
-def test_enabled_registry_imports_registration_module(
-    env: pytest.MonkeyPatch, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    imported: list[str] = []
-    real_import = importlib.import_module
-
-    def _spy(name: str, package: str | None = None):
-        imported.append(name)
-        return real_import(name, package)
-
-    monkeypatch.setattr(tool_registry_module.importlib, "import_module", _spy)
-    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
-    registry = build_tool_registry(load_settings())
-    assert TOOL_NAME in registry
-    assert "packs.software_delivery.registration" in imported
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    assert "ok" in completed.stdout

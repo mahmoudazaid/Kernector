@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from domain.errors import ToolFailureError
+from domain.errors import DomainValidationError, ToolArgumentValidationError, ToolFailureError
+import packs.software_delivery.risk_score_tool as risk_score_tool_module
 from packs.software_delivery.contracts import RiskAssessmentResult
 from packs.software_delivery.errors import RiskScoreValidationError
 from packs.software_delivery.risk_score_tool import TOOL_NAME, RiskScoreTool
@@ -47,7 +48,9 @@ def test_valid_multi_source_arguments_return_semantic_json() -> None:
         "known_defect_or_failure",
         "security_sensitive",
     ]
-    ambiguous = next(f for f in payload["factors"] if f["factor_id"] == "ambiguous_language")
+    ambiguous = next(
+        f for f in payload["factors"] if f["factor_id"] == "ambiguous_language"
+    )
     assert ambiguous["references"] == [
         {"source_id": "SRS-12", "source_type": "srs"}
     ]
@@ -111,3 +114,65 @@ def test_unexpected_scorer_failure_maps_to_tool_failure_error() -> None:
         RiskScoreTool(scorer=boom).run(_valid_arguments())
     assert "secret-token" not in str(raised.value)
     assert raised.value.__cause__ is not None
+
+
+_INVALID_SCALARS = [None, 1, True, False, 3.14, ["x"], {"k": "v"}]
+_BLANK_STRINGS = ["", "   ", "\n"]
+
+
+def _scorer_spy() -> tuple[list[object], object]:
+    calls: list[object] = []
+
+    def boom(request: object) -> RiskAssessmentResult:
+        calls.append(request)
+        raise AssertionError("scorer must not run")
+
+    return calls, boom
+
+
+@pytest.mark.parametrize("bad", _INVALID_SCALARS + _BLANK_STRINGS)
+def test_non_string_or_blank_target_fails_before_scoring(bad: object) -> None:
+    calls, boom = _scorer_spy()
+    args = _valid_arguments()
+    args["target"] = bad
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(args)
+    assert isinstance(raised.value, ToolArgumentValidationError)
+    assert calls == []
+
+
+@pytest.mark.parametrize("field", ["source_id", "source_type", "text"])
+@pytest.mark.parametrize("bad", _INVALID_SCALARS + _BLANK_STRINGS)
+def test_non_string_or_blank_evidence_scalars_fail_before_scoring(
+    field: str, bad: object
+) -> None:
+    calls, boom = _scorer_spy()
+    args = _valid_arguments()
+    evidence_item = args["evidence"][0]
+    assert isinstance(evidence_item, dict)
+    item = dict(evidence_item)
+    item[field] = bad
+    args["evidence"] = [item]
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(args)
+    assert isinstance(raised.value, ToolArgumentValidationError)
+    assert calls == []
+
+
+def test_source_reference_domain_validation_is_wrapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+
+    def boom(request: object) -> RiskAssessmentResult:
+        calls.append(request)
+        raise AssertionError("scorer must not run")
+
+    def _raising_reference(source_id: object, source_type: object):
+        raise DomainValidationError("source_id must be non-empty")
+
+    monkeypatch.setattr(risk_score_tool_module, "SourceReference", _raising_reference)
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(_valid_arguments())
+    assert isinstance(raised.value.__cause__, DomainValidationError)
+    assert calls == []

@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable
 
-from domain.errors import ToolFailureError
+from domain.errors import DomainValidationError, ToolFailureError
 from domain.knowledge import SourceReference
 from packs.software_delivery.contracts import (
     RiskAssessmentRequest,
@@ -62,6 +62,12 @@ class RiskScoreTool:
         return _serialize_result(result)
 
 
+def _require_nonblank_str(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise RiskScoreValidationError(f"{field_name} must be a non-blank string")
+    return value
+
+
 def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
     if not isinstance(arguments, Mapping):
         raise RiskScoreValidationError(
@@ -77,6 +83,7 @@ def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
     if "evidence" not in arguments:
         raise RiskScoreValidationError("evidence is required")
 
+    target = _require_nonblank_str(arguments["target"], "target")
     raw_evidence = arguments["evidence"]
     if isinstance(raw_evidence, (str, bytes)) or not isinstance(
         raw_evidence, Sequence
@@ -88,7 +95,7 @@ def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
     evidence: list[RiskEvidence] = []
     for item in raw_evidence:
         evidence.append(_parse_evidence_item(item))
-    return RiskAssessmentRequest(str(arguments["target"]), evidence)
+    return RiskAssessmentRequest(target, evidence)
 
 
 def _parse_evidence_item(item: object) -> RiskEvidence:
@@ -105,9 +112,15 @@ def _parse_evidence_item(item: object) -> RiskEvidence:
         if required not in item:
             raise RiskScoreValidationError(f"{required} is required")
 
+    source_id = _require_nonblank_str(item["source_id"], "source_id")
+    source_type = _require_nonblank_str(item["source_type"], "source_type")
+    text = _require_nonblank_str(item["text"], "text")
     is_complete = item.get("is_complete", False)
-    reference = SourceReference(str(item["source_id"]), str(item["source_type"]))
-    return RiskEvidence(reference, str(item["text"]), is_complete=is_complete)  # type: ignore[arg-type]
+    try:
+        reference = SourceReference(source_id, source_type)
+    except DomainValidationError as exc:
+        raise RiskScoreValidationError(str(exc)) from exc
+    return RiskEvidence(reference, text, is_complete=is_complete)  # type: ignore[arg-type]
 
 
 def _serialize_result(result: RiskAssessmentResult) -> str:

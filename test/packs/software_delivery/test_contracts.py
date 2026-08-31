@@ -45,6 +45,16 @@ def test_risk_assessment_request_copies_evidence_to_tuple() -> None:
     assert isinstance(request.evidence, tuple)
 
 
+def test_risk_assessment_request_allows_repeated_references() -> None:
+    """Retrieval may return several chunks from one document."""
+    chunk_a = _evidence("S-1", "user_story", "Chunk one without acceptance.")
+    chunk_b = _evidence("S-1", "user_story", "Chunk two also without acceptance.")
+    request = RiskAssessmentRequest("Assess auth", [chunk_a, chunk_b])
+    assert request.evidence == (chunk_a, chunk_b)
+    assert isinstance(request.evidence, tuple)
+    assert request.evidence[0].reference == request.evidence[1].reference
+
+
 def test_risk_assessment_request_is_immutable() -> None:
     request = RiskAssessmentRequest("Assess auth", [_evidence()])
     with pytest.raises(FrozenInstanceError):
@@ -65,14 +75,6 @@ def test_risk_assessment_request_rejects_empty_evidence() -> None:
 def test_risk_assessment_request_rejects_bare_string_evidence() -> None:
     with pytest.raises(RiskScoreValidationError, match="evidence"):
         RiskAssessmentRequest("Assess auth", "not-a-sequence")  # type: ignore[arg-type]
-
-
-def test_risk_assessment_request_rejects_duplicate_references() -> None:
-    with pytest.raises(RiskScoreValidationError, match="duplicate"):
-        RiskAssessmentRequest(
-            "Assess auth",
-            [_evidence("S-1", "user_story"), _evidence("S-1", "user_story")],
-        )
 
 
 def test_risk_evidence_rejects_blank_text() -> None:
