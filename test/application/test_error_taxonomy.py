@@ -8,6 +8,7 @@ from domain.errors import (
     DomainValidationError,
     ProviderError,
     QueryRewriterError,
+    ToolArgumentValidationError,
     ToolFailureError,
     VectorStoreError,
 )
@@ -120,6 +121,30 @@ def test_ollama_missing_base_url_is_config_error() -> None:
 def test_tool_failure_error_is_named_by_tool_port() -> None:
     assert issubclass(ToolFailureError, RuntimeError)
     assert "ToolFailureError" in (Tool.run.__doc__ or "")
+
+
+def test_tool_argument_validation_error_is_domain_validation_error() -> None:
+    assert issubclass(ToolArgumentValidationError, DomainValidationError)
+    assert "ToolArgumentValidationError" in (Tool.run.__doc__ or "")
+
+
+def test_fake_tool_raises_argument_validation_error_unchanged() -> None:
+    class _RejectingTool:
+        @property
+        def name(self) -> str:
+            return "reject"
+
+        @property
+        def description(self) -> str:
+            return "rejects bad args"
+
+        def run(self, arguments: object) -> str:
+            raise ToolArgumentValidationError("arguments are invalid")
+
+    tool: Tool = _RejectingTool()
+    with pytest.raises(ToolArgumentValidationError, match="arguments are invalid") as raised:
+        tool.run({})
+    assert not isinstance(raised.value, ToolFailureError)
 
 
 def test_empty_retrieval_is_not_an_error_type() -> None:

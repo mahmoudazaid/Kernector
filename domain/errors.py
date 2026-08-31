@@ -31,9 +31,16 @@ class VectorStoreError(RuntimeError):
     """
 
 
-class ToolFailureError(RuntimeError):
-    """A tool port invocation failed.
+class ToolArgumentValidationError(DomainValidationError):
+    """Tool arguments were rejected before execution began.
 
-    Reserved until a tool adapter exists; ``Tool.run`` documents this type so
-    callers have one known failure to catch.
+    Callers should treat this as validation, not as an operational tool failure.
+    """
+
+
+class ToolFailureError(RuntimeError):
+    """A tool port invocation failed after valid arguments were accepted.
+
+    ``Tool.run`` documents this type so callers have one known operational
+    failure to catch, distinct from ``ToolArgumentValidationError``.
     """

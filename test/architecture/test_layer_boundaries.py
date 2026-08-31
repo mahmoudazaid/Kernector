@@ -30,11 +30,12 @@ IO_PACKAGES = {
 }
 
 LAYER_RULES: dict[str, set[str]] = {
-    # Use-case orchestration: domain only. No UI, no I/O, no adapters.
+    # Use-case orchestration: domain only. No UI, no I/O, no adapters, no packs.
     "application": {
         "infrastructure",
         "presentation",
         "composition",
+        "packs",
         "streamlit",
         *IO_PACKAGES,
     },
@@ -43,6 +44,7 @@ LAYER_RULES: dict[str, set[str]] = {
         "application",
         "presentation",
         "composition",
+        "packs",
     },
     # The outermost edge: may wire anything inward, but is not a UI itself.
     "composition": {
@@ -53,6 +55,16 @@ LAYER_RULES: dict[str, set[str]] = {
     # `composition` to reach anything that touches the outside world.
     "presentation": {
         "infrastructure",
+        "packs",
+        *IO_PACKAGES,
+    },
+    # Optional executable domain packs: domain + stdlib only.
+    "packs": {
+        "application",
+        "infrastructure",
+        "presentation",
+        "composition",
+        "streamlit",
         *IO_PACKAGES,
     },
 }
@@ -100,6 +112,8 @@ def test_application_layer_never_touches_session_state() -> None:
     [
         ("import infrastructure\n", {"infrastructure"}),
         ("from streamlit import session_state\n", {"streamlit"}),
+        ("import packs\n", {"packs"}),
+        ("from packs.software_delivery import scoring\n", {"packs"}),
     ],
 )
 def test_planted_application_forbidden_import_is_detected(
@@ -108,6 +122,23 @@ def test_planted_application_forbidden_import_is_detected(
     module = tmp_path / "bad_application.py"
     module.write_text(source, encoding="utf-8")
     assert find_forbidden_imports(module, LAYER_RULES["application"]) == expected
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("import application\n", {"application"}),
+        ("import infrastructure\n", {"infrastructure"}),
+        ("from composition.tool_registry import build_tool_registry\n", {"composition"}),
+        ("import streamlit\n", {"streamlit"}),
+    ],
+)
+def test_planted_pack_forbidden_import_is_detected(
+    tmp_path: Path, source: str, expected: set[str]
+) -> None:
+    module = tmp_path / "bad_pack.py"
+    module.write_text(source, encoding="utf-8")
+    assert find_forbidden_imports(module, LAYER_RULES["packs"]) == expected
 
 
 def test_planted_application_session_state_attribute_is_detected(tmp_path: Path) -> None:

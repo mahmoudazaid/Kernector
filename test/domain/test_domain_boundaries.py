@@ -46,6 +46,8 @@ def test_domain_module_imports_only_allowed_packages(module_path: Path) -> None:
         ("import pathlib\n", {"pathlib"}),
         ("import composition\n", {"composition"}),
         ("from composition import build_app\n", {"composition"}),
+        ("import packs\n", {"packs"}),
+        ("from packs.software_delivery.scoring import score_risk\n", {"packs"}),
     ],
 )
 def test_planted_domain_disallowed_import_is_detected(

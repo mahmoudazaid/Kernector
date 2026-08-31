@@ -154,7 +154,8 @@ class Tool(Protocol):
         """Execute the tool with ``arguments`` and return a string result.
 
         Raises:
-            ToolFailureError: The tool invocation failed.
+            ToolArgumentValidationError: Arguments were rejected before work.
+            ToolFailureError: The tool invocation failed after valid arguments.
         """
         ...
 
