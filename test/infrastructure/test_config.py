@@ -23,6 +23,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
+    monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
     return monkeypatch
 
 
@@ -202,6 +203,30 @@ def test_non_positive_max_input_length_is_rejected(
 def test_non_integer_max_input_length_is_rejected(env: pytest.MonkeyPatch) -> None:
     env.setenv("MAX_INPUT_LENGTH", "abc")
     with pytest.raises(ValueError, match="MAX_INPUT_LENGTH must be an integer"):
+        load_settings()
+
+
+def test_max_upload_bytes_default(env: pytest.MonkeyPatch) -> None:
+    assert load_settings().max_upload_bytes == 5 * 1024 * 1024
+
+
+def test_max_upload_bytes_is_read_from_env(env: pytest.MonkeyPatch) -> None:
+    env.setenv("MAX_UPLOAD_BYTES", "1048576")
+    assert load_settings().max_upload_bytes == 1_048_576
+
+
+@pytest.mark.parametrize("raw", ["0", "-1"])
+def test_non_positive_max_upload_bytes_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("MAX_UPLOAD_BYTES", raw)
+    with pytest.raises(ValueError, match="MAX_UPLOAD_BYTES must be > 0"):
+        load_settings()
+
+
+def test_non_integer_max_upload_bytes_is_rejected(env: pytest.MonkeyPatch) -> None:
+    env.setenv("MAX_UPLOAD_BYTES", "big")
+    with pytest.raises(ValueError, match="MAX_UPLOAD_BYTES must be an integer"):
         load_settings()
 
 

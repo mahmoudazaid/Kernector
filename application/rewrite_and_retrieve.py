@@ -2,6 +2,7 @@
 
 from application.contracts import RetrieveRequest, RewriteRetrieveResponse
 from application.errors import ApplicationValidationError
+from application.input_safety import reject_unsafe_query
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.errors import QueryRewriterError
 from domain.ports import QueryRewriter
@@ -65,7 +66,8 @@ class RewriteAndRetrieveKnowledge:
         Raises:
             ApplicationValidationError: Original or rewritten query exceeds
                 ``max_input_length`` (rewritten case: after rewrite, before
-                embed/store).
+                embed/store), or the original query fails platform
+                input-safety reject rules.
             QueryRewriteFailure: The rewriter raised ``QueryRewriterError`` or
                 returned blank content. Retrieve is not invoked.
             RuntimeError: Propagated unchanged from embedding or vector store.
@@ -75,6 +77,7 @@ class RewriteAndRetrieveKnowledge:
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )
+        reject_unsafe_query(request.query)
         try:
             rewritten = self._query_rewriter.rewrite(request.query)
         except QueryRewriterError as error:

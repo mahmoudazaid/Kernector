@@ -47,3 +47,4 @@ class PromptVariant:
     description: str
     system: str
     off_topic_marker: str | None = None
+    extra_reject_patterns: tuple[str, ...] = ()

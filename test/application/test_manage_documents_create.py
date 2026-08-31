@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
+from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestKnowledge
 from application.manage_documents import ManageUploadedDocuments
 from domain.knowledge import (
@@ -118,3 +121,31 @@ def test_create_observes_pending_then_ready_transitions() -> None:
 
     assert statuses == [CatalogStatus.PENDING, CatalogStatus.READY]
     assert result.status is CatalogStatus.READY
+
+
+def test_oversized_create_is_rejected_before_extract_or_catalog() -> None:
+    catalog = InMemoryDocumentCatalog()
+    extractor = RecordingExtractor(document_factory=_document_factory)
+    limit = 16
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=extractor,
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: InMemoryVectorStore(),
+        new_source_id=FixedIdFactory("id-oversized"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=limit,
+    )
+
+    with pytest.raises(ApplicationValidationError, match="at most 16 bytes"):
+        use_case.create(
+            UploadPayload(file_name="big.md", content=b"x" * (limit + 1))
+        )
+
+    assert extractor.calls == []
+    assert len(catalog.all()) == 0

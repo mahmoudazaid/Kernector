@@ -1,0 +1,5 @@
+[server]
+# Keep in sync with Settings.max_upload_bytes default (5 MiB).
+# Streamlit buffers the whole file before application code runs; this is the
+# resource ceiling. ManageUploadedDocuments enforces the typed boundary rule.
+maxUploadSize = 5
