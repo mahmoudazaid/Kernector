@@ -57,6 +57,31 @@ def test_request_rejects_unsupported_style() -> None:
         TestGenerationRequest("t", [_evidence()], "cucumber")  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "bad_style",
+    [
+        1,
+        1.5,
+        True,
+        None,
+        [],
+        {},
+        ["steps"],
+        {"steps": True},
+        {"nested": []},
+    ],
+)
+def test_request_rejects_non_string_output_style(bad_style: object) -> None:
+    with pytest.raises(TestCaseGenerationValidationError, match="output_style"):
+        TestGenerationRequest("t", [_evidence()], bad_style)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad_style", ["cucumber", "Cucumber", "STEPS", ""])
+def test_request_rejects_unsupported_string_output_style(bad_style: str) -> None:
+    with pytest.raises(TestCaseGenerationValidationError, match="output_style"):
+        TestGenerationRequest("t", [_evidence()], bad_style)  # type: ignore[arg-type]
+
+
 def test_request_rejects_blank_target() -> None:
     with pytest.raises(TestCaseGenerationValidationError, match="target"):
         TestGenerationRequest("  ", [_evidence()])

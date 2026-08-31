@@ -246,7 +246,7 @@ class TestGenerationRequest:
                 f"evidence must have at most {MAX_EVIDENCE_ITEMS} items, "
                 f"got {len(items)}"
             )
-        if self.output_style not in TEST_CASE_STYLES:
+        if not isinstance(self.output_style, str) or self.output_style not in TEST_CASE_STYLES:
             raise err(
                 f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
                 f"got {self.output_style!r}"
