@@ -71,6 +71,13 @@ class RetrievalSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DomainToolSettings:
+    """Optional executable domain tool packs enabled at composition time."""
+
+    enabled_packs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -83,6 +90,7 @@ class Settings:
     document_catalog: DocumentCatalogSettings
     prompts: PromptSettings
     retrieval: RetrievalSettings
+    domain_tools: DomainToolSettings
 
 
 def load_settings() -> Settings:
@@ -121,6 +129,7 @@ def load_settings() -> Settings:
         document_catalog=_load_document_catalog_settings(),
         prompts=_load_prompt_settings(),
         retrieval=_load_retrieval_settings(),
+        domain_tools=_load_domain_tool_settings(),
     )
 
 
@@ -236,3 +245,18 @@ def _load_prompt_settings() -> PromptSettings:
         ),
         default_key=default_key,
     )
+
+
+def _load_domain_tool_settings() -> DomainToolSettings:
+    raw = os.getenv("DOMAIN_TOOL_PACKS", "")
+    names = _csv(raw)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in names:
+        if name in seen:
+            raise ValueError(
+                f"DOMAIN_TOOL_PACKS contains duplicate pack id: {name!r}"
+            )
+        seen.add(name)
+        ordered.append(name)
+    return DomainToolSettings(enabled_packs=tuple(ordered))

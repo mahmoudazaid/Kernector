@@ -10,18 +10,22 @@ business logic and the UI stays replaceable.
 | `domain/` | Entities, validation, and port protocols | Standard library only |
 | `application/` | Use cases and typed request/response contracts | `domain` |
 | `infrastructure/` | Concrete adapters and external integrations | `domain` and approved third-party libraries |
-| `composition/` | Settings loading, factories, and dependency injection | `application`, `domain`, and `infrastructure` |
+| `packs/` | Optional executable domain packs (tools, scoring policies) | `domain` and standard library |
+| `composition/` | Settings loading, factories, and dependency injection | `application`, `domain`, `infrastructure`, and enabled `packs` (lazy) |
 | `presentation/` | Streamlit and future UI adapters | `application`, `domain`, and `composition` |
 
 ## Allowed dependency directions
 
 ```text
 presentation ──> composition ──> application ──> domain
-                      │                              ▲
-                      └────────> infrastructure ─────┘
+                      │              ▲                ▲
+                      ├────────> infrastructure ──────┤
+                      └────────> packs (lazy) ────────┘
 ```
 
-Everything points inward toward `domain`. Nothing points outward.
+Everything points inward toward `domain`. Nothing points outward. Shared core
+layers (`application`, `domain`, `infrastructure`, `presentation`) must not
+import `packs`; only composition activates an enabled pack.
 
 ## Rules
 
@@ -37,10 +41,13 @@ Everything points inward toward `domain`. Nothing points outward.
   rule must be reconsidered explicitly rather than silently weakened.
 - `composition/` is the composition root. It may construct application services
   and infrastructure adapters and is the single place where those layers are
-  joined.
+  joined. It may also load enabled executable packs lazily via an explicit
+  allowlist; it must not import packs at module scope.
+- `packs/` may import `domain` and the standard library only. Packs must not
+  import `application`, `infrastructure`, `presentation`, or `composition`.
 - `presentation` is the only layer allowed to import Streamlit. It must call
   application behavior through `composition` and must not construct or import
-  infrastructure adapters directly.
+  infrastructure adapters or packs directly.
 
 ## Composition root
 
@@ -62,13 +69,47 @@ other provider types as permanent core entities.
 
 ### Optional domain packs
 
-Packs supply example content and prompts for a product surface. **Story
-Intelligence** is the first example (`data/knowledge/packs/story-intelligence/`,
-`prompts/packs/story-intelligence/`). Pack fields (for example SDLC-shaped
-`doc_type` or `severity`) are example metadata, not platform requirements. The
-default product surface may enable the neutral `core` prompt pack and
-`data/knowledge/documents.json`, but **task-prompt packs are optional**: the
-app starts and General mode works with zero enabled packs.
+Kernector distinguishes **source kinds** from **domain packs**:
+
+- **Source kind** answers “where did this evidence come from?” — Story, test,
+  Confluence, SRS, OpenAPI, code, upload, or another connector. Provenance stays
+  on generic `SourceReference.source_type` (opaque string) in the shared domain.
+- **Domain pack** answers “what business interpretation should be applied?” —
+  for example software-delivery risk scoring.
+
+**Content packs** supply example knowledge and prompts
+(`data/knowledge/packs/…`, `prompts/packs/…`). **Story Intelligence** remains
+the first content/prompt example. Pack metadata fields (for example SDLC-shaped
+`doc_type` or `severity`) are example metadata, not platform requirements.
+Task-prompt packs are optional: the app starts and General mode works with zero
+enabled prompt packs.
+
+**Executable packs** under `packs/` contribute domain tools. The first is
+`packs/software_delivery/` with tool `software_delivery.risk_score`. Enable via
+`DOMAIN_TOOL_PACKS=software-delivery` (CSV; default empty). Composition loads
+packs through an explicit allowlist manifest and `importlib` only for configured
+IDs — a disabled pack is neither imported nor registered.
+
+#### Multi-source tool flow
+
+```text
+connector/upload → SourceDocument → chunks/index
+       → authorized cross-source retrieval → evidence bundle
+       → optional domain tool (e.g. software_delivery.risk_score)
+       → cited / structured result
+```
+
+One domain tool consumes a multi-source evidence bundle. A new source kind does
+not require a new risk tool or shared-core contract change. Absence-based
+policies (for example missing acceptance criteria) apply only when evidence is
+marked complete; chunk-level evidence may still contribute positive signals.
+
+#### Tool invocation boundary (#92 vs #95)
+
+- **#92** — pack-local contracts and scoring; generic `ToolRegistry` + single-tool
+  `InvokeTool` that treats arguments and results as opaque strings.
+- **#95** — chat-time tool selection, multi-tool loops/chaining, and populating
+  `AskResponse.tool_outputs`.
 
 ### Grounded ask: system policy vs optional task prompts
 
@@ -156,7 +197,8 @@ operational types to fixed category sentences (see below).
 | provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping rewrite failures |
 | store | `VectorStoreError` | domain | Vector-store read or write failure |
 | store | `ChromaStoreError` | infrastructure | Subclass of `VectorStoreError` |
-| tool | `ToolFailureError` | domain | Tool invocation failure (reserved until adapters exist) |
+| tool | `ToolArgumentValidationError` | domain | Invalid tool arguments before execution (`DomainValidationError`) |
+| tool | `ToolFailureError` | domain | Tool invocation failure after valid arguments |
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
 | composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of the above |
