@@ -9,3 +9,9 @@ class RiskScoreValidationError(ToolArgumentValidationError):
 
 class AssessmentPromptValidationError(DomainValidationError):
     """Invalid input supplied to the Software Delivery prompt boundary."""
+
+
+class TestCaseGenerationValidationError(ToolArgumentValidationError):
+    """Invalid caller arguments for Software Delivery test-case generation."""
+
+    __test__ = False
