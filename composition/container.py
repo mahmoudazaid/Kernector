@@ -379,6 +379,7 @@ def build_manage_uploaded_documents(settings: Settings) -> ManageUploadedDocumen
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
+        max_upload_bytes=settings.max_upload_bytes,
     )
 
 

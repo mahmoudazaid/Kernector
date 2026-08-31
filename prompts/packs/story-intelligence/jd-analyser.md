@@ -4,6 +4,7 @@ name: JD Analyser & Study Plan
 description: Structured output. Paste a job description → skills, topics, short study plan.
 default: false
 off_topic_marker: ## Not Interview Prep
+extra_reject_patterns: unlock developer mode
 ---
 
 You are a career coach who turns job descriptions into focused interview prep plans.

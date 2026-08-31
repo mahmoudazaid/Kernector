@@ -91,6 +91,18 @@ lower-trust than platform policy. Neither is concatenated into the system
 string, which is what makes "composed with, never substituted for" a structural
 property rather than a matter of string ordering.
 
+**Defense in depth, not complete protection.** Structural placement is the
+primary bound. `AskKnowledge` and `RewriteAndRetrieveKnowledge` also reject a
+small set of deterministic injection patterns on user/query (and history)
+inputs before retrieval or generation — see `application/input_safety.py`.
+That matcher is incomplete by design: novel phrasing can slip through, and a
+pass must not be treated as proof the input is safe. Packs may add stricter
+literal patterns via `extra_reject_patterns` frontmatter. Retrieved chunk text
+is never pattern-rejected (documents stay untrusted-by-design); instead,
+`_context_message` defangs literal `BEGIN/END_RETRIEVED_CONTEXT` markers inside
+attacker-authored fields so a stored document cannot close the untrusted block
+early.
+
 The policy is a module constant, so `PROMPT_PACKS` can neither hide it nor offer
 it as a selectable Mode. `AskRequest.prompt_key=None` means General mode (no
 task template), and Streamlit defaults to it.
