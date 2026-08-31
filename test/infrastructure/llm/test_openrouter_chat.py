@@ -133,3 +133,66 @@ def test_complete_raises_provider_error_without_vendor_text() -> None:
 
     assert "upstream down" not in str(raised.value)
     assert raised.value.__cause__ is upstream
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, "", "   ", 42, ["chunk"], {"text": "x"}],
+)
+def test_complete_raises_parse_error_for_missing_or_non_string_content(
+    content: object,
+) -> None:
+    fake = _FakeChat(AIMessage(content=content))  # type: ignore[arg-type]
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    with pytest.raises(
+        ProviderError, match="OpenRouter chat response could not be parsed"
+    ) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "chunk" not in str(raised.value)
+    assert raised.value.__cause__ is not None
+
+
+def test_complete_raises_parse_error_for_malformed_usage_metadata() -> None:
+    class _BadMeta:
+        """Not a mapping — accessing .get must not leak into the user message."""
+
+        def __str__(self) -> str:
+            return "usage-secret-token"
+
+    fake = _FakeChat(
+        AIMessage(content="ok", usage_metadata=_BadMeta())  # type: ignore[arg-type]
+    )
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    with pytest.raises(
+        ProviderError, match="OpenRouter chat response could not be parsed"
+    ) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "usage-secret-token" not in str(raised.value)
+    assert raised.value.__cause__ is not None
+
+
+def test_complete_raises_parse_error_when_ask_result_construction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeChat(AIMessage(content="Answer from context."))
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise TypeError("AskResult rejected provider payload: secret-body")
+
+    monkeypatch.setattr(
+        "infrastructure.llm.openrouter.AskResult",
+        _boom,
+    )
+
+    with pytest.raises(
+        ProviderError, match="OpenRouter chat response could not be parsed"
+    ) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "secret-body" not in str(raised.value)
+    assert isinstance(raised.value.__cause__, TypeError)
