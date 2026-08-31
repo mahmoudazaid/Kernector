@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from application.ask_knowledge import AskKnowledge
 from application.contracts import AskRequest, AskResponse
 from application.errors import ApplicationValidationError
-from domain.errors import DomainValidationError
+from domain.errors import DomainValidationError, ProviderError, ToolFailureError
 from domain.models import Message
+
+_OPERATIONAL_FAILURE_MESSAGE = "Something went wrong while processing your request."
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +37,8 @@ class AskTurnResult:
     drop_user_turn: bool = False
 
 
-def _failure_message(error: BaseException) -> str:
-    """Never hand the UI an empty string: some exceptions stringify to ``''``."""
+def _trusted_message(error: BaseException) -> str:
+    """Render adapter-authored text; never hand the UI an empty string."""
     text = str(error).strip()
     return text or f"The request failed ({type(error).__name__})."
 
@@ -59,6 +61,15 @@ def run_ask_turn(
     boundary rejected the request — the user turn must be dropped.
     Operational failures keep the turn: the text was accepted; only the call
     failed.
+
+    Message policy by type:
+
+    * Trusted (adapter-/app-authored): ``ApplicationValidationError``,
+      ``ProviderError`` (incl. rewrite failures), ``ToolFailureError`` —
+      render ``str(error)``.
+    * Untrusted (may embed vendor text or paths): ``VectorStoreError``,
+      ``DomainValidationError``, other ``RuntimeError`` — fixed category
+      sentence.
     """
     try:
         request = AskRequest(
@@ -70,13 +81,19 @@ def run_ask_turn(
     except ApplicationValidationError as error:
         return AskTurnResult(
             ok=False,
-            message=_failure_message(error),
+            message=_trusted_message(error),
             drop_user_turn=True,
         )
-    except (DomainValidationError, RuntimeError) as error:
+    except (ProviderError, ToolFailureError) as error:
         return AskTurnResult(
             ok=False,
-            message=_failure_message(error),
+            message=_trusted_message(error),
+            drop_user_turn=False,
+        )
+    except (DomainValidationError, RuntimeError):
+        return AskTurnResult(
+            ok=False,
+            message=_OPERATIONAL_FAILURE_MESSAGE,
             drop_user_turn=False,
         )
     return AskTurnResult(ok=True, response=response)

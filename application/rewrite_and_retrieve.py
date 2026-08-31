@@ -4,11 +4,11 @@ from application.contracts import RetrieveRequest, RewriteRetrieveResponse
 from application.errors import ApplicationValidationError
 from application.input_safety import reject_unsafe_query
 from application.retrieve_knowledge import RetrieveKnowledge
-from domain.errors import QueryRewriterError
+from domain.errors import ProviderError, QueryRewriterError
 from domain.ports import QueryRewriter
 
 
-class QueryRewriteFailure(RuntimeError):
+class QueryRewriteFailure(ProviderError):
     """Query rewrite failed before retrieval could run.
 
     Raised when the ``QueryRewriter`` port raises ``QueryRewriterError``, or
@@ -18,7 +18,8 @@ class QueryRewriteFailure(RuntimeError):
 
     Unlike ``RetrieveKnowledge``, which propagates embedding and store errors
     unchanged, this use case wraps rewrite failures so callers see one typed
-    application error for the rewrite step.
+    application error for the rewrite step. Subclasses ``ProviderError`` so
+    presentation can treat rewrite failures as trusted provider messages.
     """
 
     def __init__(
@@ -70,7 +71,8 @@ class RewriteAndRetrieveKnowledge:
                 input-safety reject rules.
             QueryRewriteFailure: The rewriter raised ``QueryRewriterError`` or
                 returned blank content. Retrieve is not invoked.
-            RuntimeError: Propagated unchanged from embedding or vector store.
+            ProviderError: Propagated from the embedding provider.
+            VectorStoreError: Propagated from the vector store.
         """
         if len(request.query) > self._max_input_length:
             raise ApplicationValidationError(

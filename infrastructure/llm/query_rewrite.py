@@ -79,7 +79,9 @@ class OpenRouterQueryRewriter:
         try:
             result = self._model.invoke(messages)
         except Exception as error:
-            raise QueryRewriterError(str(error)) from error
+            raise QueryRewriterError(
+                "The OpenRouter query rewrite provider could not be reached."
+            ) from error
 
         content = getattr(result, "content", result)
         if not isinstance(content, str):

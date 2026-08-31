@@ -2,23 +2,44 @@
 
 import time
 from collections.abc import Mapping, Sequence
+from typing import Protocol
 
 import requests
 
+from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import OllamaSettings
+
+
+class OllamaConfigError(RuntimeError):
+    """The Ollama base URL is missing or unusable.
+
+    Named so the composition root can catch this specific failure narrowly and
+    map it to a typed ``ConfigurationError``. Raised only from construction,
+    never from ``complete()``.
+    """
+
+
+class _HttpPost(Protocol):
+    def __call__(self, url: str, **kwargs: object) -> object: ...
 
 
 class OllamaChat:
     """ChatModel backed by a local Ollama server."""
 
-    def __init__(self, config: OllamaSettings) -> None:
+    def __init__(
+        self,
+        config: OllamaSettings,
+        *,
+        post: _HttpPost | None = None,
+    ) -> None:
         if not config.base_url:
-            raise RuntimeError(
+            raise OllamaConfigError(
                 "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
             )
         self._config = config
         self._base_url = config.base_url.rstrip("/")
+        self._post = post or requests.post
 
     def complete(
         self,
@@ -34,7 +55,7 @@ class OllamaChat:
         }
         start_time = time.perf_counter()
         try:
-            response = requests.post(
+            response = self._post(
                 f"{self._base_url}/v1/chat/completions",
                 headers={"Content-Type": "application/json"},
                 json=payload,
@@ -44,18 +65,14 @@ class OllamaChat:
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
-        except requests.exceptions.RequestException:
-            return AskResult(
-                content="Failed to connect to Ollama",
-                model=self._config.model,
-                settings=dict(settings),
-            )
-        except (KeyError, IndexError, ValueError):
-            return AskResult(
-                content="Failed to parse response from Ollama",
-                model=self._config.model,
-                settings=dict(settings),
-            )
+        except requests.exceptions.RequestException as exc:
+            raise ProviderError(
+                "The Ollama chat provider could not be reached."
+            ) from exc
+        except (KeyError, IndexError, ValueError) as exc:
+            raise ProviderError(
+                "The Ollama chat response could not be parsed."
+            ) from exc
 
         return AskResult(
             content=content,

@@ -5,8 +5,11 @@ from pathlib import Path
 
 from application.contracts import AskRequest, AskResponse
 from application.errors import ApplicationValidationError
+from domain.errors import ProviderError, VectorStoreError
 from domain.models import Message
 from presentation.streamlit.ask_turn import run_ask_turn
+
+_FIXED_OPERATIONAL_MESSAGE = "Something went wrong while processing your request."
 
 
 class _RaisingAsk:
@@ -99,7 +102,7 @@ def test_injection_validation_error_drops_the_user_turn() -> None:
     assert "Ignore previous" not in result.message
 
 
-def test_operational_failure_keeps_the_user_turn() -> None:
+def test_untrusted_runtime_error_keeps_the_user_turn_with_fixed_message() -> None:
     ask = _RaisingAsk(RuntimeError("vector store unavailable"))
 
     result = run_ask_turn(
@@ -111,7 +114,43 @@ def test_operational_failure_keeps_the_user_turn() -> None:
 
     assert result.ok is False
     assert result.drop_user_turn is False
-    assert "vector store unavailable" in result.message
+    assert result.message == _FIXED_OPERATIONAL_MESSAGE
+    assert "vector store unavailable" not in result.message
+
+
+def test_provider_error_keeps_the_user_turn_and_shows_trusted_text() -> None:
+    ask = _RaisingAsk(
+        ProviderError("The OpenRouter chat provider could not be reached.")
+    )
+
+    result = run_ask_turn(
+        ask,  # type: ignore[arg-type]
+        query="How do I restart?",
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.drop_user_turn is False
+    assert result.message == "The OpenRouter chat provider could not be reached."
+
+
+def test_vector_store_error_hides_path_from_message() -> None:
+    ask = _RaisingAsk(
+        VectorStoreError("could not open Chroma collection at /Users/secret/chroma")
+    )
+
+    result = run_ask_turn(
+        ask,  # type: ignore[arg-type]
+        query="How do I restart?",
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.drop_user_turn is False
+    assert result.message == _FIXED_OPERATIONAL_MESSAGE
+    assert "/Users/secret" not in result.message
 
 
 def test_successful_ask_returns_the_response() -> None:
