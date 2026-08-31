@@ -26,6 +26,10 @@ from composition.errors import (
     KnowledgeLoadError,
     PartialDocumentOperationError,
 )
+from composition.tool_registry import (
+    SUPPORTED_DOMAIN_TOOL_PACKS,
+    build_tool_registry,
+)
 from domain.errors import DomainValidationError
 from domain.knowledge import CatalogDocument, SourceDocument, SourceReference, UploadPayload
 from domain.ports import ChatModel, DocumentCatalog, EmbeddingModel, PromptRepository, VectorStore
