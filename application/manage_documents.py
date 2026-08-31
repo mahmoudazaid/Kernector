@@ -85,6 +85,7 @@ class ManageUploadedDocuments:
         vector_store_factory: Callable[[], VectorStore],
         new_source_id: Callable[[], str] | None = None,
         now: Callable[[], datetime] | None = None,
+        max_upload_bytes: int,
     ) -> None:
         self._catalog = catalog
         self._extractor = extractor
@@ -92,6 +93,7 @@ class ManageUploadedDocuments:
         self._vector_store_factory = vector_store_factory
         self._new_source_id = new_source_id or (lambda: str(uuid.uuid4()))
         self._now = now or (lambda: datetime.now(UTC))
+        self._max_upload_bytes = max_upload_bytes
 
     def list(self) -> Sequence[CatalogDocument]:
         """Return every uploaded-document catalog row."""
@@ -107,9 +109,12 @@ class ManageUploadedDocuments:
         original error is re-raised unchanged.
 
         Raises:
+            ApplicationValidationError: ``payload.content`` exceeds
+                ``max_upload_bytes``.
             PartialCreateFailure: The ingest failed *and* its status could not
                 be written, leaving only the ``pending`` row on disk.
         """
+        self._assert_upload_size(payload)
         source_id = self._new_source_id()
         reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
         if self._catalog.get(reference) is not None:
@@ -141,6 +146,7 @@ class ManageUploadedDocuments:
             raise UnknownDocumentError(
                 f"unknown document {reference.source_type}:{reference.source_id}"
             )
+        self._assert_upload_size(payload)
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)
         self._catalog.upsert(pending)
@@ -187,6 +193,13 @@ class ManageUploadedDocuments:
                 f"chunks removed for {reference.source_id} but catalog row remains: "
                 f"{error}"
             ) from error
+
+    def _assert_upload_size(self, payload: UploadPayload) -> None:
+        size = len(payload.content)
+        if size > self._max_upload_bytes:
+            raise ApplicationValidationError(
+                f"upload must be at most {self._max_upload_bytes} bytes, got {size}"
+            )
 
     def _pending_row(
         self,

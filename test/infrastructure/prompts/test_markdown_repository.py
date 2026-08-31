@@ -16,6 +16,7 @@ def _write_prompt(
     description: str = "A test prompt.",
     default: bool = False,
     off_topic_marker: str | None = None,
+    extra_reject_patterns: str | None = None,
     body: str = "You are a helpful assistant.",
 ) -> Path:
     lines = [
@@ -28,6 +29,8 @@ def _write_prompt(
         lines.append("default: true")
     if off_topic_marker is not None:
         lines.append(f"off_topic_marker: {off_topic_marker}")
+    if extra_reject_patterns is not None:
+        lines.append(f"extra_reject_patterns: {extra_reject_patterns}")
     lines.extend(["---", "", body, ""])
     path = directory / filename
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -221,3 +224,32 @@ def test_preserves_off_topic_marker_from_frontmatter(tmp_path: Path) -> None:
     repository = MarkdownPromptRepository((pack,))
 
     assert repository.all()["alpha"].off_topic_marker == "## Not Relevant"
+
+
+def test_parses_pipe_separated_extra_reject_patterns(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    _write_prompt(
+        pack,
+        filename="alpha.md",
+        key="alpha",
+        default=True,
+        extra_reject_patterns="unlock developer mode | do anything now",
+    )
+
+    repository = MarkdownPromptRepository((pack,))
+
+    assert repository.all()["alpha"].extra_reject_patterns == (
+        "unlock developer mode",
+        "do anything now",
+    )
+
+
+def test_absent_extra_reject_patterns_defaults_to_empty(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    _write_prompt(pack, filename="alpha.md", key="alpha", default=True)
+
+    repository = MarkdownPromptRepository((pack,))
+
+    assert repository.all()["alpha"].extra_reject_patterns == ()
