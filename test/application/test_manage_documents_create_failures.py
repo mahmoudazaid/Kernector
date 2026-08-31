@@ -35,6 +35,7 @@ from test.doubles import (
 )
 
 CONTENT = "abcdefghijklmnopqrstuvwxyz"
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 class FailingUpsertStore(InMemoryVectorStore):
@@ -103,6 +104,7 @@ def test_create_extraction_failure_leaves_no_catalog_row() -> None:
         vector_store_factory=InMemoryVectorStore,
         new_source_id=FixedIdFactory("id-1"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
     with pytest.raises(RuntimeError, match="unreadable upload"):
@@ -126,6 +128,7 @@ def test_create_ingest_failure_leaves_failed_row_and_propagates_cause() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("id-fail"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
     with pytest.raises(IngestFailure) as raised:
@@ -159,6 +162,7 @@ def test_create_records_degraded_when_mutation_may_have_started() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("id-partial"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
     with pytest.raises(IngestFailure) as raised:
@@ -187,6 +191,7 @@ def test_create_recovery_write_failure_keeps_both_failures() -> None:
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("id-both"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
     with pytest.raises(PartialCreateFailure) as raised:
@@ -218,6 +223,7 @@ def test_create_recovery_write_failure_after_vector_mutation_keeps_both() -> Non
         vector_store_factory=lambda: store,
         new_source_id=FixedIdFactory("id-both-degraded"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
     with pytest.raises(PartialCreateFailure) as raised:
@@ -255,6 +261,7 @@ def _use_case_with_both_failures(
         vector_store_factory=InMemoryVectorStore,
         new_source_id=FixedIdFactory("id-leak"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
 
@@ -300,6 +307,7 @@ def test_partial_create_failure_message_is_fixed_across_causes() -> None:
         vector_store_factory=InMemoryVectorStore,
         new_source_id=FixedIdFactory("id-other"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
     with pytest.raises(PartialCreateFailure) as raised:
