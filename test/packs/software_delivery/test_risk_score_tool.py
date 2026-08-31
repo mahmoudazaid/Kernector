@@ -85,6 +85,59 @@ def test_malformed_evidence_fails_before_scoring() -> None:
     assert calls == []
 
 
+def test_mixed_invalid_and_unknown_evidence_keys_fail_before_scoring() -> None:
+    calls: list[object] = []
+
+    def boom(request: object) -> RiskAssessmentResult:
+        calls.append(request)
+        raise AssertionError("scorer must not run")
+
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(
+            {
+                "target": "Assess",
+                "evidence": [
+                    {
+                        7: "invalid",
+                        "extra": "unknown",
+                        "source_id": "doc-1",
+                        "source_type": "document",
+                        "text": "evidence",
+                    }
+                ],
+            }
+        )
+    assert not isinstance(raised.value, TypeError)
+    assert calls == []
+
+
+@pytest.mark.parametrize("bad_key", [7, True, ("a",), "", "   ", "\n"])
+def test_non_string_or_blank_evidence_keys_fail_before_scoring(
+    bad_key: object,
+) -> None:
+    calls: list[object] = []
+
+    def boom(request: object) -> RiskAssessmentResult:
+        calls.append(request)
+        raise AssertionError("scorer must not run")
+
+    with pytest.raises(RiskScoreValidationError):
+        RiskScoreTool(scorer=boom).run(
+            {
+                "target": "Assess",
+                "evidence": [
+                    {
+                        bad_key: "x",
+                        "source_id": "doc-1",
+                        "source_type": "document",
+                        "text": "evidence",
+                    }
+                ],
+            }
+        )
+    assert calls == []
+
+
 def test_references_round_trip_in_factors() -> None:
     payload = json.loads(
         RiskScoreTool().run(
