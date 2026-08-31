@@ -247,3 +247,34 @@ def test_replace_records_degraded_when_mutation_may_have_started() -> None:
     assert current.status is CatalogStatus.DEGRADED
     assert current.file_name == "guide-v2.md"
     assert current.error
+
+
+def test_oversized_replace_is_rejected_before_extract() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    original = _seed_ready(catalog, store)
+    extractor = RecordingExtractor(document_factory=_document_factory(CONTENT_V2))
+    limit = 16
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=extractor,
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("unused"),
+        now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=limit,
+    )
+
+    with pytest.raises(ApplicationValidationError, match="at most 16 bytes"):
+        use_case.replace(
+            original.reference,
+            UploadPayload(file_name="big.md", content=b"x" * (limit + 1)),
+        )
+
+    assert extractor.calls == []
+    current = catalog.get(original.reference)
+    assert current is not None
+    assert current.status is CatalogStatus.READY
+    assert current.file_name == original.file_name

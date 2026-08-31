@@ -12,9 +12,10 @@ from application.grounded_rag_policy import (
     GROUNDED_RAG_SYSTEM,
     INSUFFICIENT_KNOWLEDGE_ANSWER,
 )
+from application.input_safety import reject_unsafe_query
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from domain.knowledge import ScoredChunk
-from domain.models import Message
+from domain.models import Message, PromptVariant
 from domain.ports import PromptRepository
 
 
@@ -83,7 +84,8 @@ class AskKnowledge:
 
         Raises:
             ApplicationValidationError: ``query`` or a ``history`` message
-                exceeds ``max_input_length``.
+                exceeds ``max_input_length``, or a query fails the
+                platform/pack input-safety reject rules.
             UnknownPromptError: ``prompt_key`` is set but not in the repository.
         """
         if len(request.query) > self._max_input_length:
@@ -98,7 +100,11 @@ class AskKnowledge:
                     f"{self._max_input_length} characters, "
                     f"got {len(message.content)}"
                 )
-        task_system = self._resolve_task_system(request.prompt_key)
+        task = self._resolve_variant(request.prompt_key)
+        extras = () if task is None else task.extra_reject_patterns
+        reject_unsafe_query(request.query, extra_patterns=extras)
+        for message in request.history:
+            reject_unsafe_query(message.content, extra_patterns=extras)
         limit = request.retrieval_limit or self._default_retrieval_limit
         retrieved = self._rewrite_and_retrieve.execute(
             RetrieveRequest(query=request.query, retrieval_limit=limit)
@@ -109,8 +115,8 @@ class AskKnowledge:
             return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())
 
         prelude = [*request.history, _context_message(hits)]
-        if task_system is not None:
-            prelude.append(Message(role="user", content=task_system))
+        if task is not None:
+            prelude.append(Message(role="user", content=task.system))
 
         result = self._ask_service.ask(
             GROUNDED_RAG_SYSTEM,
@@ -136,14 +142,21 @@ class AskKnowledge:
         """
         return tuple(hit for hit in hits if hit.score >= self._relevance_threshold)
 
-    def _resolve_task_system(self, prompt_key: str | None) -> str | None:
+    def _resolve_variant(self, prompt_key: str | None) -> PromptVariant | None:
         """Resolve the optional task prompt before spending a retrieval call."""
         if prompt_key is None:
             return None
         variant = self._prompt_repository.all().get(prompt_key)
         if variant is None:
             raise UnknownPromptError(f"Unknown prompt key {prompt_key!r}")
-        return variant.system
+        return variant
+
+
+def _defang(text: str) -> str:
+    """Neutralise context delimiters so stored text cannot close the block early."""
+    return text.replace(CONTEXT_OPEN, "<«BEGIN_RETRIEVED_CONTEXT»>").replace(
+        CONTEXT_CLOSE, "<«END_RETRIEVED_CONTEXT»>"
+    )
 
 
 def _context_message(hits: Sequence[ScoredChunk]) -> Message:
@@ -151,11 +164,13 @@ def _context_message(hits: Sequence[ScoredChunk]) -> Message:
     lines = [CONTEXT_OPEN]
     for hit in hits:
         ref = hit.chunk.reference
-        title = hit.chunk.metadata.title or ""
+        title = _defang(hit.chunk.metadata.title or "")
+        source_id = _defang(ref.source_id)
+        content = _defang(hit.chunk.content)
         lines.append(
-            f"- source_id={ref.source_id} source_type={ref.source_type}"
+            f"- source_id={source_id} source_type={ref.source_type}"
             f" title={title!r} chunk_index={hit.chunk.index}\n"
-            f"  {hit.chunk.content}"
+            f"  {content}"
         )
     lines.append(CONTEXT_CLOSE)
     return Message(role="user", content="\n".join(lines))

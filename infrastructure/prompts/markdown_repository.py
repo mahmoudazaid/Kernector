@@ -54,6 +54,9 @@ class MarkdownPromptRepository:
                     description=meta["description"],
                     system=body,
                     off_topic_marker=meta.get("off_topic_marker"),
+                    extra_reject_patterns=_split_pipe_list(
+                        meta.get("extra_reject_patterns", "")
+                    ),
                 )
 
                 if meta.get("default", "false").lower() == "true":
@@ -95,3 +98,8 @@ def _parse_prompt_file(path: Path) -> tuple[dict[str, str], str]:
         meta[key.strip()] = value.strip()
 
     return meta, body
+
+
+def _split_pipe_list(value: str) -> tuple[str, ...]:
+    """Split a single-line ``a | b`` frontmatter value; blanks dropped."""
+    return tuple(item.strip() for item in value.split("|") if item.strip())

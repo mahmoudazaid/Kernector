@@ -74,6 +74,7 @@ class RetrievalSettings:
 class Settings:
     provider: str
     max_input_length: int
+    max_upload_bytes: int
     openrouter: OpenRouterSettings
     ollama: OllamaSettings
     chunking: ChunkingSettings
@@ -90,9 +91,13 @@ def load_settings() -> Settings:
     max_input_length = _env_int("MAX_INPUT_LENGTH", "10000")
     if max_input_length <= 0:
         raise ValueError(f"MAX_INPUT_LENGTH must be > 0, got {max_input_length}")
+    max_upload_bytes = _env_int("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024))
+    if max_upload_bytes <= 0:
+        raise ValueError(f"MAX_UPLOAD_BYTES must be > 0, got {max_upload_bytes}")
     return Settings(
         provider=os.getenv("LLM_PROVIDER", "openrouter").lower(),
         max_input_length=max_input_length,
+        max_upload_bytes=max_upload_bytes,
         openrouter=OpenRouterSettings(
             api_key=os.getenv("OPENROUTER_API_KEY"),
             base_url=os.getenv("OPENROUTER_BASE_URL"),
