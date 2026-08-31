@@ -132,3 +132,66 @@ def test_generator_failure_is_not_validation_error() -> None:
 
     with pytest.raises(ToolFailureError, match="bad model output"):
         GenerateTestCasesTool(_FakeChat(), generator=boom).run(_valid_arguments())
+
+
+def test_injected_oversized_result_fails_at_serializer_boundary() -> None:
+    """Budget must apply at tool serialize even when generator skips the default path."""
+    from domain.knowledge import SourceReference
+    from packs.software_delivery.contracts import GeneratedTestCase
+    from packs.software_delivery.limits import MAX_TOTAL_OUTPUT_CHARS
+
+    oversized = GeneratedTestCase(
+        title="x" * 200,
+        steps=("step " + ("y" * 100),) * 20,
+        expected="z" * 1000,
+        references=(SourceReference("US-12", "user_story"),),
+    )
+    # Enough cases that final JSON exceeds the pack budget.
+    cases = tuple(
+        GeneratedTestCase(
+            title=oversized.title,
+            steps=oversized.steps,
+            expected=oversized.expected,
+            references=oversized.references,
+        )
+        for _ in range(5)
+    )
+    result = TestGenerationResult("steps", cases)
+    assert (
+        len(
+            json.dumps(
+                {
+                    "output_style": result.output_style,
+                    "test_cases": [
+                        {
+                            "title": c.title,
+                            "steps": list(c.steps),
+                            "expected": c.expected,
+                            "references": [
+                                {
+                                    "source_id": r.source_id,
+                                    "source_type": r.source_type,
+                                }
+                                for r in c.references
+                            ],
+                        }
+                        for c in result.test_cases
+                    ],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        > MAX_TOTAL_OUTPUT_CHARS
+    )
+
+    def fat_generator(
+        request: TestGenerationRequest, chat_model: object
+    ) -> TestGenerationResult:
+        return result
+
+    with pytest.raises(ToolFailureError, match="serialized result") as captured:
+        GenerateTestCasesTool(_FakeChat(), generator=fat_generator).run(
+            _valid_arguments()
+        )
+    assert not isinstance(captured.value, TestCaseGenerationValidationError)

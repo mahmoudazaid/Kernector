@@ -70,18 +70,34 @@ def generate_test_cases(
 
     cases = _parse_cases(payload, request.output_style, evidence_by_id)
     outcome = TestGenerationResult(request.output_style, cases)
-    serialized = _serialize_result(outcome)
+    # Enforce the public serializer budget before returning (same gate as the tool).
+    serialize_test_generation_result(outcome)
+    return outcome
+
+
+def serialize_test_generation_result(result: TestGenerationResult) -> str:
+    """Serialize a validated result to opaque tool JSON.
+
+    Enforces ``MAX_TOTAL_OUTPUT_CHARS`` on the final JSON so injected generators
+    and the default pipeline share one budget boundary.
+
+    Raises:
+        ToolFailureError: Serialization failed or the JSON exceeds the budget.
+    """
+    try:
+        serialized = _serialize_result(result)
+    except ToolFailureError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - map serialization failures
+        raise ToolFailureError(
+            "Failed to serialize test generation result"
+        ) from exc
     if len(serialized) > MAX_TOTAL_OUTPUT_CHARS:
         raise ToolFailureError(
             f"serialized result must be at most {MAX_TOTAL_OUTPUT_CHARS} characters, "
             f"got {len(serialized)}"
         )
-    return outcome
-
-
-def serialize_test_generation_result(result: TestGenerationResult) -> str:
-    """Serialize a validated result to opaque tool JSON."""
-    return _serialize_result(result)
+    return serialized
 
 
 def _serialize_result(result: TestGenerationResult) -> str:
