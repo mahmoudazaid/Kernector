@@ -166,9 +166,10 @@ def _context_message(hits: Sequence[ScoredChunk]) -> Message:
         ref = hit.chunk.reference
         title = _defang(hit.chunk.metadata.title or "")
         source_id = _defang(ref.source_id)
+        source_type = _defang(ref.source_type)
         content = _defang(hit.chunk.content)
         lines.append(
-            f"- source_id={source_id} source_type={ref.source_type}"
+            f"- source_id={source_id} source_type={source_type}"
             f" title={title!r} chunk_index={hit.chunk.index}\n"
             f"  {content}"
         )
