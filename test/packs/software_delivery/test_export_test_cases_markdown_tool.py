@@ -86,10 +86,10 @@ def test_unknown_root_key_fails_before_formatter() -> None:
 
 def test_valid_arguments_return_markdown() -> None:
     markdown = ExportTestCasesMarkdownTool().run(_valid_arguments())
-    assert "## 1. Login with MFA" in markdown
-    assert "1. Open login page" in markdown
+    assert "## 1. `Login with MFA`" in markdown
+    assert "1. `Open login page`" in markdown
     assert "User is authenticated." in markdown
-    assert "`US-12` (user_story)" in markdown
+    assert "`US-12` (`user_story`)" in markdown
 
 
 def test_formatter_failure_is_not_validation_error() -> None:
