@@ -1,8 +1,10 @@
 """Generic tool-call envelope for presentation surfaces.
 
-Carries only what the UI may show safely: tool name, outcome status, and a
-bounded summary. Raw opaque tool payloads stay outside this type; #170 maps
-``InvokeToolResponse.result`` into typed views before presentation renders.
+Carries tool name, outcome status, and an explicitly authored summary.
+Summaries must be built from safe typed metadata (score, case count, tool
+name, success/failure) — never from ``InvokeToolResponse.result`` or any other
+opaque payload. #170 projects tool outcomes onto typed views before presentation
+renders.
 """
 
 from __future__ import annotations
@@ -19,8 +21,10 @@ class ToolCallView:
     Attributes:
         tool_name (str): Registered tool that ran.
         ok (bool): Whether the invocation completed successfully.
-        summary (str): Bounded, user-safe description of the outcome. Never the
-            full opaque tool payload.
+        summary (str): Short description authored from typed metadata at the
+            composition boundary (for example score or generated-case count).
+            At most ``MAX_TOOL_CALL_SUMMARY_CHARS`` characters. Never copied or
+            truncated from an opaque tool payload.
     """
 
     tool_name: str
@@ -33,15 +37,3 @@ class ToolCallView:
                 f"summary must be at most {MAX_TOOL_CALL_SUMMARY_CHARS} "
                 f"characters, got {len(self.summary)}"
             )
-
-
-def bounded_tool_call_summary(
-    text: str,
-    *,
-    limit: int = MAX_TOOL_CALL_SUMMARY_CHARS,
-) -> str:
-    """Return a user-safe summary truncated to ``limit`` characters."""
-    stripped = text.strip()
-    if len(stripped) <= limit:
-        return stripped
-    return stripped[: limit - 1].rstrip() + "…"

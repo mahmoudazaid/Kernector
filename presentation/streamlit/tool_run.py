@@ -17,7 +17,7 @@ def _references(references: Sequence[SourceReference]) -> str:
 
 
 def tool_call_lines(calls: Sequence[ToolCallView]) -> tuple[str, ...]:
-    """Render the generic envelope: tool name, status, and bounded summary."""
+    """Render the generic envelope: tool name, status, and authored summary."""
     lines: list[str] = []
     for call in calls:
         if call.ok:

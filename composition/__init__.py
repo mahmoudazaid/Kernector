@@ -44,11 +44,7 @@ from composition.software_delivery_tools import (
     TestCasesView,
     software_delivery_tools_enabled,
 )
-from composition.tool_runs import (
-    MAX_TOOL_CALL_SUMMARY_CHARS,
-    ToolCallView,
-    bounded_tool_call_summary,
-)
+from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -76,7 +72,6 @@ __all__ = [
     "TestCasesView",
     "ToolCallView",
     "analysis_citations",
-    "bounded_tool_call_summary",
     "requirements_analysis_enabled",
     "software_delivery_tools_enabled",
     "available_providers",

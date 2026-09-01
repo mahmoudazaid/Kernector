@@ -60,14 +60,24 @@ def _fixture_view() -> SoftwareDeliveryRunView:
     )
 
 
-def test_tool_call_lines_show_name_status_and_bounded_summary_only() -> None:
+def test_tool_call_lines_show_name_status_and_authored_summary_only() -> None:
     calls = _fixture_view().calls
 
     assert tool_call_lines(calls) == (
         "- `software_delivery.risk_score` — succeeded — Scored risk at 62/100",
         "- `software_delivery.generate_test_cases` — failed",
     )
-    assert '{"score"' not in " ".join(tool_call_lines(calls))
+    rendered = " ".join(tool_call_lines(calls))
+    assert '{"score"' not in rendered
+    assert "sk-live-abc" not in rendered
+
+
+def test_presentation_has_no_raw_to_summary_projection_helper() -> None:
+    import presentation.streamlit.tool_run as helper_mod
+
+    source = Path(helper_mod.__file__).read_text(encoding="utf-8")
+    assert "bounded_tool_call_summary" not in source
+    assert "InvokeToolResponse" not in source
 
 
 def test_no_calls_render_no_lines() -> None:
