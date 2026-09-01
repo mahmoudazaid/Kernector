@@ -6,7 +6,7 @@ import re
 
 from packs.software_delivery.contracts import TestGenerationResult
 
-_FENCE_LINE = re.compile(r"^\s*`{3,}")
+_FENCE_ONLY = re.compile(r"^(`{3,})$")
 
 
 def export_test_cases_markdown(result: TestGenerationResult) -> str:
@@ -20,7 +20,7 @@ def export_test_cases_markdown(result: TestGenerationResult) -> str:
     for index, case in enumerate(result.test_cases, start=1):
         lines.extend(
             [
-                f"## {index}. {_single_line(case.title)}",
+                f"## {index}. {_inline_code(case.title)}",
                 "",
                 "### Steps",
                 "",
@@ -28,10 +28,10 @@ def export_test_cases_markdown(result: TestGenerationResult) -> str:
         )
         if result.output_style == "gherkin":
             for step in case.steps:
-                lines.append(f"- {_single_line(step)}")
+                lines.append(f"- {_inline_code(step)}")
         else:
             for step_index, step in enumerate(case.steps, start=1):
-                lines.append(f"{step_index}. {_single_line(step)}")
+                lines.append(f"{step_index}. {_inline_code(step)}")
         lines.extend(
             [
                 "",
@@ -39,7 +39,7 @@ def export_test_cases_markdown(result: TestGenerationResult) -> str:
                 "",
             ]
         )
-        lines.extend(_safe_multiline(case.expected))
+        lines.extend(_contained_block(case.expected))
         lines.extend(
             [
                 "",
@@ -49,15 +49,36 @@ def export_test_cases_markdown(result: TestGenerationResult) -> str:
         )
         for ref in case.references:
             lines.append(
-                f"- {_inline_code(ref.source_id)} ({_single_line(ref.source_type)})"
+                f"- {_inline_code(ref.source_id)} ({_inline_code(ref.source_type)})"
             )
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def _single_line(text: str) -> str:
-    """Collapse whitespace and escape heading markers in inline fields."""
-    return " ".join(text.split()).replace("#", "\\#")
+def structural_reference_headings(markdown: str) -> list[str]:
+    """Return structural ``### References`` headings outside fenced field blocks."""
+    headings: list[str] = []
+    in_fence = False
+    fence = ""
+    for line in markdown.splitlines():
+        fence_match = _FENCE_ONLY.match(line)
+        if fence_match:
+            marker = fence_match.group(1)
+            if in_fence and marker == fence:
+                in_fence = False
+                fence = ""
+            elif not in_fence:
+                in_fence = True
+                fence = marker
+            continue
+        if not in_fence and line == "### References":
+            headings.append(line)
+    return headings
+
+
+def _inline_text(text: str) -> str:
+    """Normalize user content to one line for inline-code containment."""
+    return " ".join(text.split())
 
 
 def _longest_backtick_run(text: str) -> int:
@@ -76,33 +97,15 @@ def _adaptive_fence(text: str) -> str:
     return "`" * max(3, _longest_backtick_run(text) + 1)
 
 
-def _needs_fenced_block(text: str) -> bool:
-    if "```" in text:
-        return True
-    return any(_FENCE_LINE.match(line) for line in text.splitlines())
-
-
-def _safe_multiline(text: str) -> list[str]:
-    """Render body text without breaking adjacent Markdown sections."""
-    if not text:
-        return [""]
-    if _needs_fenced_block(text):
-        fence = _adaptive_fence(text)
-        return [fence, *text.splitlines(), fence]
-    lines: list[str] = []
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        prefix = line[: len(line) - len(stripped)]
-        if stripped.startswith("#"):
-            lines.append(f"{prefix}\\#{stripped[1:]}")
-        else:
-            lines.append(line)
-    return lines
+def _contained_block(text: str) -> list[str]:
+    """Wrap arbitrary multiline content in an adaptive fenced code block."""
+    fence = _adaptive_fence(text)
+    return [fence, *text.splitlines(), fence]
 
 
 def _inline_code(text: str) -> str:
-    """Escape text for a Markdown inline code span with adaptive delimiters."""
-    safe = _single_line(text)
+    """Contain arbitrary inline content in an adaptive Markdown code span."""
+    safe = _inline_text(text)
     tick_run = _longest_backtick_run(safe)
     if tick_run == 0:
         return f"`{safe}`"
