@@ -25,7 +25,7 @@ from presentation.streamlit.tool_run import (
 
 
 def render_tool_call_envelope(calls: Sequence[ToolCallView]) -> None:
-    """Show each tool name, status, and bounded summary — never raw payloads."""
+    """Show each tool name, status, and authored summary — never raw payloads."""
     if not calls:
         return
     st.markdown("**Tool calls**")

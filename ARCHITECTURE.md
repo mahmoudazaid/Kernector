@@ -127,8 +127,10 @@ catching ``ConfigurationError``. There is no standalone tool-run form and no
 parallel retrieval/orchestration path in composition.
 
 The generic ``ToolCallView`` envelope carries tool name, success/failure
-status, and a bounded user-safe summary only (≤120 characters). Raw opaque
-tool payloads are never stored, exposed, or rendered. Shared Streamlit code
+status, and an explicitly authored summary (≤120 characters) built from typed
+metadata such as score or generated-case count — never from
+``InvokeToolResponse.result`` or truncated opaque payloads. Raw tool payloads
+are never stored, exposed, or rendered. Shared Streamlit code
 stays pack-agnostic; Software Delivery renderers live in ``tool_run_panel.py``.
 ``AskResponse.tool_outputs`` remains unpopulated until
 [#170](https://github.com/mahmoudazaid/Kernector/issues/170) wires chat-time
