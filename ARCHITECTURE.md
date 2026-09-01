@@ -152,11 +152,23 @@ tool request cannot live there.
 ``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) wraps
 ``AskKnowledge`` and asks the enabled pack's deterministic policy —
 ``select_chat_intent`` in ``packs/software_delivery/chat_intent.py`` — which
-chain, if any, a query names. Unmatched queries are delegated to the grounded
-path verbatim, so ordinary chat is unchanged and no tool runs speculatively.
+chain, if any, a query names. **Tool selection runs only in General mode**
+(``AskRequest.prompt_key is None``). Any selected task prompt delegates the
+original request, history, and generation settings unchanged to
+``AskKnowledge`` — routing never moves into Streamlit. Unmatched General-mode
+queries are delegated to the grounded path verbatim, so ordinary chat is
+unchanged and no tool runs speculatively.
 
-The policy is **keyword matching, not a classifier**. Determinism is the point:
-a chat-time tool call is a side effect, and an explicit table is reproducible,
+The policy is **explicit-request matching, not a classifier**. Test generation
+requires a creation verb (``create``, ``generate``, ``write``, ``produce``,
+``draft``, ``build``) paired with a test artifact; ``gherkin``, ``cucumber``,
+``feature file``, ``test plan``, or ``test cases`` alone are not sufficient.
+Risk routing accepts explicit score/assessment requests (for example
+``assess/score/evaluate the risk``, ``what is the risk score for <target>``,
+``how risky is <target>``) and rejects conceptual or read-only questions.
+Negated forms (``do not generate test cases``, ``don't create tests``, and
+normalized equivalents) never invoke tools. Determinism is the point: a
+chat-time tool call is a side effect, and an explicit table is reproducible,
 testable offline, and narrow in the safe direction — an unmatched query simply
 stays on the grounded path. Vocabulary stays in the pack because "test cases"
 and "risk score" are business terms; composition reaches the policy through

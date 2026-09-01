@@ -105,7 +105,14 @@ class ToolAugmentedAsk:
         An empty corpus answers with the grounded path's own
         insufficient-knowledge sentence rather than a tool-flavoured variant —
         one vocabulary for "I don't know", whichever route the turn took.
+
+        Tool selection runs only in General mode (``prompt_key is None``). A
+        selected task prompt delegates the original ``AskRequest``, history, and
+        generation settings unchanged to ``AskKnowledge`` — routing never moves
+        into Streamlit.
         """
+        if request.prompt_key is not None:
+            return self._ask.execute(request, settings)
         selection = self._select(request.query)
         if selection is None:
             return self._ask.execute(request, settings)
