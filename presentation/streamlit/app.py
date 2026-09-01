@@ -6,14 +6,16 @@ from dataclasses import dataclass
 import streamlit as st
 
 from application.ask_knowledge import AskKnowledge
-from application.contracts import Citation
+from application.contracts import Citation, InvokeToolResponse, SoftwareDeliveryIntent
 from application.errors import ConfigurationError
+from application.orchestrate_software_delivery import OrchestrateSoftwareDelivery
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
     build_ask_knowledge,
     build_chat_model,
+    build_orchestrate_software_delivery,
     build_prompt_repository,
     load_runtime_settings,
     probe_ollama,
@@ -28,6 +30,7 @@ from presentation.streamlit.components import (
     render_run_meta,
 )
 from presentation.streamlit.modes import default_mode_index, mode_options
+from presentation.streamlit.orchestration_turn import run_orchestration_turn
 from presentation.streamlit.upload_ingest import (
     UploadIngestResult,
     create_new_document,
@@ -37,6 +40,17 @@ from presentation.streamlit.upload_ingest import (
 )
 
 _PROVIDER_LABELS = {"openrouter": "OpenRouter", "ollama": "Ollama"}
+_SOFTWARE_DELIVERY_PACK = "software-delivery"
+_WORKFLOW_OPTIONS: tuple[tuple[SoftwareDeliveryIntent | None, str], ...] = (
+    (None, "Grounded chat"),
+    (SoftwareDeliveryIntent.RISK_SCORE, "Score risk"),
+    (SoftwareDeliveryIntent.GENERATE_TESTS, "Generate test cases"),
+    (
+        SoftwareDeliveryIntent.GENERATE_AND_EXPORT,
+        "Generate tests and export Markdown",
+    ),
+)
+_OUTPUT_STYLE_OPTIONS = ("steps", "gherkin")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +60,8 @@ class _SidebarState:
     ollama_base_url: str
     settings: Mapping[str, object]
     prompt_key: str | None
+    delivery_intent: SoftwareDeliveryIntent | None
+    output_style: str
 
 
 @st.cache_resource
@@ -75,6 +91,15 @@ def _render_citations(citations: Sequence[Citation]) -> None:
             )
             if citation.quote:
                 st.caption(citation.quote)
+
+
+def _render_tool_outputs(tool_outputs: Sequence[InvokeToolResponse]) -> None:
+    if not tool_outputs:
+        return
+    with st.expander(f"Tool results ({len(tool_outputs)})"):
+        for output in tool_outputs:
+            st.markdown(f"**{output.tool_name}**")
+            st.code(output.result, language=None)
 
 
 def _render_sidebar(settings: Settings, repository: PromptRepository) -> _SidebarState:
@@ -162,12 +187,30 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
     else:
         st.caption(prompts[prompt_key].description)
 
+    delivery_intent: SoftwareDeliveryIntent | None = None
+    output_style = "steps"
+    if _SOFTWARE_DELIVERY_PACK in settings.domain_tools.enabled_packs:
+        selected_workflow = st.selectbox(
+            "Software Delivery workflow",
+            options=_WORKFLOW_OPTIONS,
+            format_func=lambda option: option[1],
+            index=0,
+        )
+        delivery_intent = selected_workflow[0]
+        if delivery_intent in (
+            SoftwareDeliveryIntent.GENERATE_TESTS,
+            SoftwareDeliveryIntent.GENERATE_AND_EXPORT,
+        ):
+            output_style = st.selectbox("Test output style", _OUTPUT_STYLE_OPTIONS)
+
     return _SidebarState(
         provider=provider,
         model=selected_model,
         ollama_base_url=ollama_base_url,
         settings=settings_values,
         prompt_key=prompt_key,
+        delivery_intent=delivery_intent,
+        output_style=output_style,
     )
 
 
@@ -178,6 +221,7 @@ def _render_history() -> None:
                 render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
                 _render_citations(message.get("citations") or ())
+                _render_tool_outputs(message.get("tool_outputs") or ())
                 render_export_actions(message["content"], f"analysis_{index}")
             else:
                 st.markdown(message["content"])
@@ -188,6 +232,10 @@ def _handle_input(
     prompt_key: str | None,
     settings: Mapping[str, object],
     off_topic_marker: str | None,
+    *,
+    orchestrator: OrchestrateSoftwareDelivery | None = None,
+    delivery_intent: SoftwareDeliveryIntent | None = None,
+    output_style: str = "steps",
 ) -> None:
     user_input = st.chat_input("Start typing...")
     if not user_input:
@@ -204,13 +252,23 @@ def _handle_input(
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            result = run_ask_turn(
-                ask,
-                query=user_input,
-                prompt_key=prompt_key,
-                history=history,
-                settings=settings,
-            )
+            if delivery_intent is not None:
+                assert orchestrator is not None
+                result = run_orchestration_turn(
+                    orchestrator,
+                    query=user_input,
+                    intent=delivery_intent,
+                    target=user_input,
+                    output_style=output_style,
+                )
+            else:
+                result = run_ask_turn(
+                    ask,
+                    query=user_input,
+                    prompt_key=prompt_key,
+                    history=history,
+                    settings=settings,
+                )
             if not result.ok:
                 # A rejected turn must not persist. `history` is rebuilt from
                 # session state on the next submit and handed to the model, so
@@ -222,9 +280,11 @@ def _handle_input(
                 return
             response = result.response
             assert response is not None
-        render_run_meta(response.run)
+        render_run_meta(getattr(response, "run", None))
         render_reply(response.answer, off_topic_marker)
         _render_citations(response.citations)
+        tool_outputs = getattr(response, "tool_outputs", ())
+        _render_tool_outputs(tool_outputs)
         render_export_actions(
             response.answer, f"analysis_{len(st.session_state.messages)}"
         )
@@ -233,7 +293,8 @@ def _handle_input(
         "role": "assistant",
         "content": response.answer,
         "citations": response.citations,
-        "run": response.run,
+        "tool_outputs": tool_outputs,
+        "run": getattr(response, "run", None),
         "off_topic_marker": off_topic_marker,
     })
 
@@ -389,16 +450,22 @@ def render() -> None:
     _render_upload_ingest(settings)
 
     try:
+        chat_model = build_chat_model(
+            settings,
+            provider=state.provider,
+            model=state.model,
+            base_url=state.ollama_base_url,
+        )
         ask = build_ask_knowledge(
             settings,
-            chat_model=build_chat_model(
-                settings,
-                provider=state.provider,
-                model=state.model,
-                base_url=state.ollama_base_url,
-            ),
+            chat_model=chat_model,
             prompt_repository=repository,
         )
+        orchestrator = None
+        if _SOFTWARE_DELIVERY_PACK in settings.domain_tools.enabled_packs:
+            orchestrator = build_orchestrate_software_delivery(
+                settings, chat_model=chat_model
+            )
     except ConfigurationError as error:
         st.error(str(error))
         return
@@ -416,4 +483,7 @@ def render() -> None:
         state.prompt_key,
         state.settings,
         off_topic_marker,
+        orchestrator=orchestrator,
+        delivery_intent=state.delivery_intent,
+        output_style=state.output_style,
     )
