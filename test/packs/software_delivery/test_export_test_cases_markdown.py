@@ -101,3 +101,54 @@ def test_malicious_markdown_is_normalized_without_breaking_structure() -> None:
     assert "\\## Injected expected" in markdown
     assert "``US-`12``" in markdown
     assert "(user_story \\#\\# Injected type)" in markdown
+
+
+def test_expected_fence_does_not_swallow_references_section() -> None:
+    result = TestGenerationResult(
+        "steps",
+        (
+            GeneratedTestCase(
+                "Case",
+                ("Act",),
+                "Before\n```\n### References\n- injected",
+                (SourceReference("US-1", "user_story"),),
+            ),
+        ),
+    )
+    markdown = export_test_cases_markdown(result)
+    assert len(markdown.split("### References")) == 3
+    assert markdown.endswith("- `US-1` (user_story)\n")
+    assert "````" in markdown
+
+
+def test_consecutive_backticks_in_source_id_use_adaptive_delimiter() -> None:
+    result = TestGenerationResult(
+        "steps",
+        (
+            GeneratedTestCase(
+                "Case",
+                ("Act",),
+                "OK",
+                (SourceReference("US-``12", "user_story"),),
+            ),
+        ),
+    )
+    markdown = export_test_cases_markdown(result)
+    assert "### References" in markdown
+    assert "```US-``12```" in markdown
+
+
+def test_source_id_with_leading_or_trailing_backticks_uses_spaced_delimiter() -> None:
+    result = TestGenerationResult(
+        "steps",
+        (
+            GeneratedTestCase(
+                "Case",
+                ("Act",),
+                "OK",
+                (SourceReference("`US-12`", "user_story"),),
+            ),
+        ),
+    )
+    markdown = export_test_cases_markdown(result)
+    assert "`` `US-12` ``" in markdown

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 from packs.software_delivery.contracts import TestGenerationResult
+
+_FENCE_LINE = re.compile(r"^\s*`{3,}")
 
 
 def export_test_cases_markdown(result: TestGenerationResult) -> str:
@@ -56,10 +60,35 @@ def _single_line(text: str) -> str:
     return " ".join(text.split()).replace("#", "\\#")
 
 
+def _longest_backtick_run(text: str) -> int:
+    longest = 0
+    current = 0
+    for char in text:
+        if char == "`":
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
+
+
+def _adaptive_fence(text: str) -> str:
+    return "`" * max(3, _longest_backtick_run(text) + 1)
+
+
+def _needs_fenced_block(text: str) -> bool:
+    if "```" in text:
+        return True
+    return any(_FENCE_LINE.match(line) for line in text.splitlines())
+
+
 def _safe_multiline(text: str) -> list[str]:
     """Render body text without breaking adjacent Markdown sections."""
     if not text:
         return [""]
+    if _needs_fenced_block(text):
+        fence = _adaptive_fence(text)
+        return [fence, *text.splitlines(), fence]
     lines: list[str] = []
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -72,8 +101,12 @@ def _safe_multiline(text: str) -> list[str]:
 
 
 def _inline_code(text: str) -> str:
-    """Escape text for a Markdown inline code span."""
+    """Escape text for a Markdown inline code span with adaptive delimiters."""
     safe = _single_line(text)
-    if "`" in safe:
-        return f"``{safe}``"
-    return f"`{safe}`"
+    tick_run = _longest_backtick_run(safe)
+    if tick_run == 0:
+        return f"`{safe}`"
+    delimiter = "`" * (tick_run + 1)
+    if safe.startswith("`") or safe.endswith("`"):
+        return f"{delimiter} {safe} {delimiter}"
+    return f"{delimiter}{safe}{delimiter}"
