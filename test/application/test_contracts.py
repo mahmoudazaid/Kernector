@@ -14,13 +14,10 @@ from application.contracts import (
     IngestResponse,
     InvokeToolRequest,
     InvokeToolResponse,
-    OrchestrateSoftwareDeliveryRequest,
-    OrchestrateSoftwareDeliveryResponse,
     RetrieveRequest,
     RetrieveResponse,
     RewriteRetrieveResponse,
     RunMeta,
-    SoftwareDeliveryIntent,
 )
 from application.errors import ApplicationValidationError
 from domain.knowledge import (
@@ -738,118 +735,13 @@ def test_application_contracts_import_without_streamlit() -> None:
     assert hasattr(module, "AskRequest")
 
 
-def test_software_delivery_intent_values() -> None:
-    assert SoftwareDeliveryIntent.RISK_SCORE == "risk_score"
-    assert SoftwareDeliveryIntent.GENERATE_TESTS == "generate_tests"
-    assert SoftwareDeliveryIntent.GENERATE_AND_EXPORT == "generate_and_export"
+def test_application_contracts_exclude_software_delivery_orchestration_types() -> None:
+    import application.contracts as contracts
 
+    forbidden = {
+        "SoftwareDeliveryIntent",
+        "OrchestrateSoftwareDeliveryRequest",
+        "OrchestrateSoftwareDeliveryResponse",
+    }
+    assert forbidden.isdisjoint(set(dir(contracts)))
 
-def test_orchestrate_software_delivery_request_constructs() -> None:
-    request = OrchestrateSoftwareDeliveryRequest(
-        intent=SoftwareDeliveryIntent.RISK_SCORE,
-        target="Assess MFA",
-        query="MFA requirements",
-        output_style="gherkin",
-        retrieval_limit=7,
-    )
-    assert request.intent is SoftwareDeliveryIntent.RISK_SCORE
-    assert request.target == "Assess MFA"
-    assert request.query == "MFA requirements"
-    assert request.output_style == "gherkin"
-    assert request.retrieval_limit == 7
-
-
-def test_orchestrate_software_delivery_request_defaults() -> None:
-    request = OrchestrateSoftwareDeliveryRequest(
-        intent=SoftwareDeliveryIntent.GENERATE_TESTS,
-        target="Assess MFA",
-        query="MFA",
-    )
-    assert request.output_style == "steps"
-    assert request.retrieval_limit is None
-
-
-def test_orchestrate_software_delivery_request_rejects_positional() -> None:
-    with pytest.raises(TypeError):
-        OrchestrateSoftwareDeliveryRequest(  # type: ignore[misc]
-            SoftwareDeliveryIntent.RISK_SCORE,
-            "target",
-            "query",
-        )
-
-
-@pytest.mark.parametrize("blank", BLANK)
-def test_orchestrate_software_delivery_request_rejects_blank_target(blank: str) -> None:
-    with pytest.raises(ApplicationValidationError, match="target"):
-        OrchestrateSoftwareDeliveryRequest(
-            intent=SoftwareDeliveryIntent.RISK_SCORE,
-            target=blank,
-            query="query",
-        )
-
-
-@pytest.mark.parametrize("blank", BLANK)
-def test_orchestrate_software_delivery_request_rejects_blank_query(blank: str) -> None:
-    with pytest.raises(ApplicationValidationError, match="query"):
-        OrchestrateSoftwareDeliveryRequest(
-            intent=SoftwareDeliveryIntent.RISK_SCORE,
-            target="target",
-            query=blank,
-        )
-
-
-def test_orchestrate_software_delivery_request_rejects_invalid_intent() -> None:
-    with pytest.raises(ApplicationValidationError, match="intent"):
-        OrchestrateSoftwareDeliveryRequest(
-            intent="risk_score",  # type: ignore[arg-type]
-            target="target",
-            query="query",
-        )
-
-
-def test_orchestrate_software_delivery_request_rejects_invalid_output_style() -> None:
-    with pytest.raises(ApplicationValidationError, match="output_style"):
-        OrchestrateSoftwareDeliveryRequest(
-            intent=SoftwareDeliveryIntent.GENERATE_TESTS,
-            target="target",
-            query="query",
-            output_style="csv",
-        )
-
-
-@pytest.mark.parametrize("bad_limit", [True, False, 0, -1, 1.5, "5", []])
-def test_orchestrate_software_delivery_request_rejects_invalid_retrieval_limit(
-    bad_limit: object,
-) -> None:
-    with pytest.raises(ApplicationValidationError, match="retrieval_limit"):
-        OrchestrateSoftwareDeliveryRequest(
-            intent=SoftwareDeliveryIntent.RISK_SCORE,
-            target="target",
-            query="query",
-            retrieval_limit=bad_limit,  # type: ignore[arg-type]
-        )
-
-
-def test_orchestrate_software_delivery_response_constructs() -> None:
-    response = OrchestrateSoftwareDeliveryResponse(
-        answer="Scored risk.",
-        citations=[_citation()],
-        tool_outputs=[_tool_output()],
-    )
-    assert response.answer == "Scored risk."
-    assert response.citations == (_citation(),)
-    assert response.tool_outputs == (_tool_output(),)
-
-
-def test_orchestrate_software_delivery_response_defaults() -> None:
-    response = OrchestrateSoftwareDeliveryResponse(answer="none")
-    assert response.citations == ()
-    assert response.tool_outputs == ()
-
-
-def test_orchestrate_software_delivery_response_rejects_non_sequence_tool_outputs() -> None:
-    with pytest.raises(ApplicationValidationError, match="tool_outputs"):
-        OrchestrateSoftwareDeliveryResponse(
-            answer="ok",
-            tool_outputs="tool",  # type: ignore[arg-type]
-        )

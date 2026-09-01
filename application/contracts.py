@@ -6,7 +6,6 @@ are reused; prompt bodies and analysis-specific outputs stay out of scope.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
 
 from application.errors import ApplicationValidationError
 from domain.knowledge import ScoredChunk, SourceDocument, SourceReference
@@ -304,85 +303,6 @@ class AskResponse:
             raise ApplicationValidationError(
                 f"run must be a RunMeta, got {self.run!r}"
             )
-        citations = _require_sequence(self.citations, "citations")
-        for item in citations:
-            if not isinstance(item, Citation):
-                raise ApplicationValidationError(
-                    f"citations items must be Citation, got {item!r}"
-                )
-        object.__setattr__(self, "citations", tuple(citations))
-        tool_outputs = _require_sequence(self.tool_outputs, "tool_outputs")
-        for item in tool_outputs:
-            if not isinstance(item, InvokeToolResponse):
-                raise ApplicationValidationError(
-                    f"tool_outputs items must be InvokeToolResponse, got {item!r}"
-                )
-        object.__setattr__(self, "tool_outputs", tuple(tool_outputs))
-
-
-class SoftwareDeliveryIntent(StrEnum):
-    """User intent selecting which Software Delivery tools to run."""
-
-    RISK_SCORE = "risk_score"
-    GENERATE_TESTS = "generate_tests"
-    GENERATE_AND_EXPORT = "generate_and_export"
-
-
-_OUTPUT_STYLES = frozenset({"steps", "gherkin"})
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class OrchestrateSoftwareDeliveryRequest:
-    """Input for Software Delivery tool orchestration from retrieved evidence.
-
-    Attributes:
-        intent (SoftwareDeliveryIntent): Which tool chain to run.
-        target (str): Assessment subject forwarded to tools as ``target``.
-        query (str): Natural-language query used for retrieval.
-        output_style (str): Opaque generate/export style (``steps`` or ``gherkin``).
-        retrieval_limit (int | None): Optional positive limit for retrieval.
-    """
-
-    intent: SoftwareDeliveryIntent
-    target: str
-    query: str
-    output_style: str = "steps"
-    retrieval_limit: int | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.intent, SoftwareDeliveryIntent):
-            raise ApplicationValidationError(
-                f"intent must be a SoftwareDeliveryIntent, got {self.intent!r}"
-            )
-        _require_text(self.target, "target")
-        _require_text(self.query, "query")
-        if (
-            not isinstance(self.output_style, str)
-            or self.output_style not in _OUTPUT_STYLES
-        ):
-            raise ApplicationValidationError(
-                f"output_style must be one of {sorted(_OUTPUT_STYLES)}, "
-                f"got {self.output_style!r}"
-            )
-        _require_retrieval_limit(self.retrieval_limit)
-
-
-@dataclass(frozen=True, slots=True)
-class OrchestrateSoftwareDeliveryResponse:
-    """Outcome of Software Delivery tool orchestration.
-
-    Attributes:
-        answer (str): Deterministic summary of what ran; not a model reply.
-        citations (Sequence[Citation]): Provenance from relevant retrieval hits.
-        tool_outputs (Sequence[InvokeToolResponse]): Ordered tool results.
-    """
-
-    answer: str
-    citations: Sequence[Citation] = ()
-    tool_outputs: Sequence["InvokeToolResponse"] = ()
-
-    def __post_init__(self) -> None:
-        _require_text(self.answer, "answer")
         citations = _require_sequence(self.citations, "citations")
         for item in citations:
             if not isinstance(item, Citation):

@@ -19,7 +19,6 @@ from application.manage_documents import (
     PartialReplaceFailure,
     UnknownDocumentError,
 )
-from application.orchestrate_software_delivery import OrchestrateSoftwareDelivery
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition.errors import (
@@ -551,28 +550,41 @@ def build_orchestrate_software_delivery(
     settings: Settings,
     *,
     chat_model: ChatModel,
-    vector_store: VectorStore | None = None,
-) -> OrchestrateSoftwareDelivery:
-    """Wire Software Delivery orchestration to retrieve + opaque invoke.
+) -> object:
+    """Wire Software Delivery orchestration when the pack is enabled.
+
+    Imports pack orchestration only for configured pack IDs so disabled packs
+    are not loaded at import time.
 
     Args:
-        settings (Settings): Retrieval limits and enabled tool packs.
+        settings (Settings): Runtime settings including enabled tool packs.
         chat_model (ChatModel): Shared chat adapter for generate-test-cases.
-        vector_store (VectorStore | None): Optional injected store.
 
     Returns:
-        OrchestrateSoftwareDelivery: Application orchestration use case.
+        OrchestrateSoftwareDelivery: Pack orchestration use case.
+
+    Raises:
+        ConfigurationError: Pack disabled or orchestrator cannot be built.
     """
-    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
-        settings, vector_store=vector_store
+    if "software-delivery" not in settings.domain_tools.enabled_packs:
+        raise ConfigurationError(
+            "software-delivery pack must be enabled to build orchestration"
+        )
+    invoke_tool = build_invoke_tool(settings, chat_model=chat_model)
+
+    def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
+        from application.contracts import InvokeToolRequest
+
+        return invoke_tool.execute(
+            InvokeToolRequest(tool_name, arguments)
+        ).result
+
+    import importlib
+
+    registration = importlib.import_module(
+        "packs.software_delivery.registration"
     )
-    return OrchestrateSoftwareDelivery(
-        rewrite_and_retrieve,
-        build_invoke_tool(settings, chat_model=chat_model),
-        default_retrieval_limit=settings.retrieval.limit,
-        relevance_threshold=settings.retrieval.relevance_threshold,
-        max_input_length=settings.max_input_length,
-    )
+    return registration.build_orchestrator(invoke=invoke)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
