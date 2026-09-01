@@ -20,3 +20,7 @@ class TestCaseGenerationValidationError(ToolArgumentValidationError):
 class MarkdownExportValidationError(ToolArgumentValidationError):
     """Invalid caller arguments for Software Delivery Markdown export."""
 
+
+class OrchestrationValidationError(DomainValidationError):
+    """Invalid Software Delivery orchestration request or response."""
+

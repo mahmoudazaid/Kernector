@@ -16,14 +16,14 @@ from application.contracts import InvokeToolRequest
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
-from application.orchestrate_software_delivery import (
-    EXPORT_TEST_CASES_MARKDOWN,
-    GENERATE_TEST_CASES,
-    RISK_SCORE,
-    OrchestrateSoftwareDelivery,
-)
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
+from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
+from packs.software_delivery.orchestration_policy import (
+    EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    GENERATE_TEST_CASES_TOOL,
+    RISK_SCORE_TOOL,
+)
 from composition import (
     KnowledgeLoadError,
     Settings,
@@ -292,9 +292,9 @@ def test_build_invoke_tool_registers_software_delivery_tools(
 
     assert isinstance(invoke, InvokeTool)
     assert set(invoke._registry.names()) == {
-        RISK_SCORE,
-        GENERATE_TEST_CASES,
-        EXPORT_TEST_CASES_MARKDOWN,
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
     }
 
 
@@ -307,7 +307,7 @@ def test_build_invoke_tool_runs_real_risk_score(
 
     response = invoke.execute(
         InvokeToolRequest(
-            RISK_SCORE,
+            RISK_SCORE_TOOL,
             {
                 "target": "Assess MFA",
                 "evidence": [
@@ -322,37 +322,67 @@ def test_build_invoke_tool_runs_real_risk_score(
         )
     )
 
-    assert response.tool_name == RISK_SCORE
+    assert response.tool_name == RISK_SCORE_TOOL
     assert '"score"' in response.result
 
 
-def test_build_orchestrate_software_delivery_wires_settings_and_tools(
+def test_build_orchestrate_software_delivery_wires_pack_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
-    monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
     monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
-    monkeypatch.setenv("RETRIEVAL_LIMIT", "9")
-    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.42")
-    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
 
     use_case = build_orchestrate_software_delivery(
         load_settings(), chat_model=_StubChat()
     )
 
     assert isinstance(use_case, OrchestrateSoftwareDelivery)
-    assert use_case._default_retrieval_limit == 9
-    assert use_case._relevance_threshold == 0.42
-    assert use_case._max_input_length == 1234
-    assert set(use_case._invoke_tool._registry.names()) == {
-        RISK_SCORE,
-        GENERATE_TEST_CASES,
-        EXPORT_TEST_CASES_MARKDOWN,
-    }
+    assert callable(use_case._invoke)
+
+
+def test_build_orchestrate_requires_enabled_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
+
+    with pytest.raises(ConfigurationError, match="software-delivery pack must be enabled"):
+        build_orchestrate_software_delivery(
+            load_settings(), chat_model=_StubChat()
+        )
+
+
+def test_disabled_orchestration_does_not_import_pack_at_composition_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fresh interpreter: composition import must not load SD orchestration."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    script = r"""
+import sys
+import importlib
+
+importlib.import_module("composition.container")
+names = set(sys.modules)
+assert not any(
+    name == "packs.software_delivery.orchestration"
+    or name.startswith("packs.software_delivery.orchestration.")
+    for name in names
+)
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "DOMAIN_TOOL_PACKS": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
 
 
 def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -> None:
