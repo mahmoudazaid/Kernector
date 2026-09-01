@@ -394,6 +394,32 @@ def test_ask_response_rejects_non_tool_output_item() -> None:
         AskResponse("answer", tool_outputs=[_citation()])  # type: ignore[list-item]
 
 
+def test_ask_response_accepts_opaque_invoke_tool_response_entries() -> None:
+    output = InvokeToolResponse("software_delivery.risk_score", '{"score":62}')
+    response = AskResponse("answer", tool_outputs=[output])
+
+    assert response.tool_outputs == (output,)
+    assert response.tool_outputs[0].result == '{"score":62}'
+
+
+def test_ask_response_rejects_presentation_view_types_in_tool_outputs() -> None:
+    from composition.tool_runs import ToolCallView
+    from composition.software_delivery_tools import SoftwareDeliveryRunView
+
+    with pytest.raises(ApplicationValidationError, match="tool_outputs items"):
+        AskResponse(
+            "answer",
+            tool_outputs=[ToolCallView("tool", ok=True, summary="ok")],  # type: ignore[list-item]
+        )
+    with pytest.raises(ApplicationValidationError, match="tool_outputs items"):
+        AskResponse(
+            "answer",
+            tool_outputs=[
+                SoftwareDeliveryRunView(summary="x", calls=())  # type: ignore[list-item]
+            ],
+        )
+
+
 def test_ingest_request_rejects_non_sequence_documents() -> None:
     with pytest.raises(ApplicationValidationError, match="documents"):
         IngestRequest(documents=_document())  # type: ignore[arg-type]

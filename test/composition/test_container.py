@@ -37,6 +37,8 @@ from composition import (
     RequirementsAnalysisView,
     RequirementsAnalyzer,
     Settings,
+    SoftwareDeliveryRunView,
+    ToolCallView,
     available_providers,
     build_ask_service,
     build_analyze_requirements,
@@ -568,6 +570,10 @@ names = set(sys.modules)
 assert hasattr(composition, "RequirementsAnalysisView")
 assert hasattr(composition, "RequirementsAnalyzer")
 assert hasattr(composition, "build_analyze_requirements")
+assert hasattr(composition, "SoftwareDeliveryRunView")
+assert hasattr(composition, "ToolCallView")
+assert hasattr(composition, "software_delivery_tools_enabled")
+assert not hasattr(composition, "build_software_delivery_tools")
 assert not any(name.startswith("packs.") for name in names)
 print("ok")
 """

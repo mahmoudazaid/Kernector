@@ -36,6 +36,15 @@ from composition.requirements_analysis import (
     analysis_citations,
     requirements_analysis_enabled,
 )
+from composition.software_delivery_tools import (
+    RiskFactorView,
+    RiskScoreView,
+    SoftwareDeliveryRunView,
+    TestCaseView,
+    TestCasesView,
+    software_delivery_tools_enabled,
+)
+from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -49,14 +58,22 @@ __all__ = [
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
+    "MAX_TOOL_CALL_SUMMARY_CHARS",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
     "RequirementsAnalysisFindingView",
     "RequirementsAnalysisView",
     "RequirementsAnalyzer",
+    "RiskFactorView",
+    "RiskScoreView",
+    "SoftwareDeliveryRunView",
+    "TestCaseView",
+    "TestCasesView",
+    "ToolCallView",
     "analysis_citations",
     "requirements_analysis_enabled",
+    "software_delivery_tools_enabled",
     "available_providers",
     "build_analyze_requirements",
     "build_ask_knowledge",
