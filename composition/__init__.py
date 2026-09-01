@@ -17,7 +17,6 @@ from composition.container import (
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
-    build_software_delivery_tools,
     build_tool_registry,
     build_vector_store,
     create_uploaded_document,
@@ -38,16 +37,18 @@ from composition.requirements_analysis import (
     requirements_analysis_enabled,
 )
 from composition.software_delivery_tools import (
-    SOFTWARE_DELIVERY_TEST_STYLES,
     RiskFactorView,
     RiskScoreView,
     SoftwareDeliveryRunView,
-    SoftwareDeliveryToolRunner,
     TestCaseView,
     TestCasesView,
     software_delivery_tools_enabled,
 )
-from composition.tool_runs import ToolCallView, ToolRunFailedError
+from composition.tool_runs import (
+    MAX_TOOL_CALL_SUMMARY_CHARS,
+    ToolCallView,
+    bounded_tool_call_summary,
+)
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -61,6 +62,7 @@ __all__ = [
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
+    "MAX_TOOL_CALL_SUMMARY_CHARS",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
@@ -69,14 +71,12 @@ __all__ = [
     "RequirementsAnalyzer",
     "RiskFactorView",
     "RiskScoreView",
-    "SOFTWARE_DELIVERY_TEST_STYLES",
     "SoftwareDeliveryRunView",
-    "SoftwareDeliveryToolRunner",
     "TestCaseView",
     "TestCasesView",
     "ToolCallView",
-    "ToolRunFailedError",
     "analysis_citations",
+    "bounded_tool_call_summary",
     "requirements_analysis_enabled",
     "software_delivery_tools_enabled",
     "available_providers",
@@ -90,7 +90,6 @@ __all__ = [
     "build_invoke_tool",
     "build_manage_uploaded_documents",
     "build_orchestrate_software_delivery",
-    "build_software_delivery_tools",
     "build_prompt_repository",
     "build_retrieve_knowledge",
     "build_rewrite_and_retrieve_knowledge",

@@ -118,23 +118,32 @@ reach the pack, mirroring the insufficient-evidence semantics documented for
 pack is disabled, gated by `requirements_analysis_enabled` rather than by catching
 `ConfigurationError`.
 
-The Streamlit **tool run** panel (#161) runs the Software Delivery orchestration
-chain (risk score → optional test generation → optional Markdown export) over
-cross-source retrieved evidence. It is absent when the pack is disabled, gated by
-`software_delivery_tools_enabled` rather than by catching `ConfigurationError`.
-The generic `ToolCallView` envelope is recorded at the opaque `InvokeTool`
-boundary in composition (`ToolCallRecorder`), so shared code never interprets
-pack payloads. `AskResponse.tool_outputs` remains unpopulated — that is still
-#95's unfinished chat-time half ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
+The Streamlit **Software Delivery tool-result renderers** (#161) expose typed
+composition views — risk score with factor citations, structured test cases,
+and Markdown preview/download — from fixtures or from future
+``AskResponse.tool_outputs`` populated by #170. They are absent when the pack
+is disabled, gated by ``software_delivery_tools_enabled`` rather than by
+catching ``ConfigurationError``. There is no standalone tool-run form and no
+parallel retrieval/orchestration path in composition.
 
-#### Tool invocation boundary (#92 vs #95 vs #161)
+The generic ``ToolCallView`` envelope carries tool name, success/failure
+status, and a bounded user-safe summary only (≤120 characters). Raw opaque
+tool payloads are never stored, exposed, or rendered. Shared Streamlit code
+stays pack-agnostic; Software Delivery renderers live in ``tool_run_panel.py``.
+``AskResponse.tool_outputs`` remains unpopulated until
+[#170](https://github.com/mahmoudazaid/Kernector/issues/170) wires chat-time
+tool selection and projection onto these views — #161 cannot close until then.
 
-- **#92** — pack-local contracts and scoring; generic `ToolRegistry` + single-tool
-  `InvokeTool` that treats arguments and results as opaque strings.
+#### Tool invocation boundary (#92 vs #95 vs #161 vs #170)
+
+- **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
+  ``InvokeTool`` that treats arguments and results as opaque strings.
 - **#95** — orchestration over a retrieved evidence bundle (delivered); chat-time
-  tool selection and populating `AskResponse.tool_outputs` remain open ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
-- **#161** — Streamlit presentation of tool runs via `build_software_delivery_tools`,
-  the generic envelope, and isolated pack renderers in `tool_run_panel.py`.
+  tool selection remains open ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
+- **#161** — presentation-only renderers and the generic ``ToolCallView`` envelope;
+  testable with fixtures; blocked on #170 for chat-turn integration.
+- **#170** — chat intent → retrieve → orchestrate → populate
+  ``AskResponse.tool_outputs`` with typed views (not in this PR).
 
 ### Grounded ask: system policy vs optional task prompts
 
@@ -231,7 +240,6 @@ operational types to fixed category sentences (see below).
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
 | composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of infrastructure / adapter failures |
-| composition | `ToolRunFailedError` | composition | Tool run stopped at a failing call; carries the partial call ledger |
 
 **Empty / below-threshold retrieval is not an error.** `AskKnowledge` returns
 `AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())` and does not
@@ -257,18 +265,6 @@ fixed type → message policy:
 |---|---|
 | `ApplicationValidationError` | boundary-authored `str(error)` |
 | `ProviderError` (incl. `RequirementsAnalysisOutputError`) | fixed provider sentence |
-| `InsufficientEvidenceError` | fixed insufficient-evidence sentence |
-| `DomainValidationError`, `VectorStoreError`, other `RuntimeError` | fixed operational sentence |
-| anything else | logged, generic unexpected sentence |
-
-Streamlit tool-run mapping (`run_tool_turn`) uses the same fixed type → message
-policy:
-
-| Caught type | User-facing message |
-|---|---|
-| `ApplicationValidationError` | boundary-authored `str(error)` |
-| `ToolRunFailedError` | fixed tool sentence **plus the call ledger** |
-| `ProviderError` | fixed provider sentence |
 | `InsufficientEvidenceError` | fixed insufficient-evidence sentence |
 | `DomainValidationError`, `VectorStoreError`, other `RuntimeError` | fixed operational sentence |
 | anything else | logged, generic unexpected sentence |
