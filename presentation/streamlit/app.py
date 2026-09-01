@@ -5,18 +5,18 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from application.ask_knowledge import AskKnowledge
-from application.contracts import Citation
+from application.contracts import Citation, InvokeToolResponse
 from application.errors import ConfigurationError
 from composition import (
+    GroundedAsk,
     RequirementsAnalysisFindingView,
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
     build_analyze_requirements,
-    build_ask_knowledge,
     build_chat_model,
     build_prompt_repository,
+    build_tool_augmented_ask,
     load_runtime_settings,
     probe_ollama,
     requirements_analysis_enabled,
@@ -31,7 +31,7 @@ from presentation.streamlit.analysis_turn import (
     finding_bullets,
     run_analysis_turn,
 )
-from presentation.streamlit.ask_turn import run_ask_turn
+from presentation.streamlit.ask_turn import run_ask_turn, tool_output_lines
 from presentation.streamlit.components import (
     render_export_actions,
     render_model_settings,
@@ -183,6 +183,20 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
     )
 
 
+def _render_tool_outputs(tool_outputs: Sequence[InvokeToolResponse]) -> None:
+    """Name the tools a turn ran. The payload stays opaque, as its contract says.
+
+    Structured rendering of a pack's results is a pack-specific projection, and
+    this module may not name a pack. What belongs here is the fact that tools
+    ran at all — the answer itself already carries what they produced.
+    """
+    if not tool_outputs:
+        return
+    with st.expander(f"Tools used ({len(tool_outputs)})"):
+        for line in tool_output_lines(tool_outputs):
+            st.markdown(line)
+
+
 def _render_history() -> None:
     for index, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
@@ -190,13 +204,14 @@ def _render_history() -> None:
                 render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
                 _render_citations(message.get("citations") or ())
+                _render_tool_outputs(message.get("tool_outputs") or ())
                 render_export_actions(message["content"], f"analysis_{index}")
             else:
                 st.markdown(message["content"])
 
 
 def _handle_input(
-    ask: AskKnowledge,
+    ask: GroundedAsk,
     prompt_key: str | None,
     settings: Mapping[str, object],
     off_topic_marker: str | None,
@@ -237,6 +252,7 @@ def _handle_input(
         render_run_meta(response.run)
         render_reply(response.answer, off_topic_marker)
         _render_citations(response.citations)
+        _render_tool_outputs(response.tool_outputs)
         render_export_actions(
             response.answer, f"analysis_{len(st.session_state.messages)}"
         )
@@ -245,6 +261,7 @@ def _handle_input(
         "role": "assistant",
         "content": response.answer,
         "citations": response.citations,
+        "tool_outputs": response.tool_outputs,
         "run": response.run,
         "off_topic_marker": off_topic_marker,
     })
@@ -479,7 +496,7 @@ def render() -> None:
             model=state.model,
             base_url=state.ollama_base_url,
         )
-        ask = build_ask_knowledge(
+        ask = build_tool_augmented_ask(
             settings,
             chat_model=chat_model,
             prompt_repository=repository,
