@@ -40,10 +40,9 @@ htmlcov/
 
 .cursor/
 learning/
+.claude/
 
 # Generated artifacts
 output/
 data/chroma/
 data/catalog/
-
-.claude/

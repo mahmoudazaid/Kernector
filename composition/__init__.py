@@ -34,6 +34,7 @@ from composition.requirements_analysis import (
     RequirementsAnalysisView,
     RequirementsAnalyzer,
     analysis_citations,
+    requirements_analysis_enabled,
 )
 from composition.errors import (
     DocumentOperationError,
@@ -55,6 +56,7 @@ __all__ = [
     "RequirementsAnalysisView",
     "RequirementsAnalyzer",
     "analysis_citations",
+    "requirements_analysis_enabled",
     "available_providers",
     "build_analyze_requirements",
     "build_ask_knowledge",
