@@ -77,3 +77,27 @@ User is authenticated.
 - `US-12` (user_story)
 """
     assert export_test_cases_markdown(result) == expected
+
+
+def test_malicious_markdown_is_normalized_without_breaking_structure() -> None:
+    result = TestGenerationResult(
+        "steps",
+        (
+            GeneratedTestCase(
+                "Login\n\n## Injected heading",
+                ("Open page\n\n## Injected step",),
+                "User is authenticated.\n\n## Injected expected",
+                (SourceReference("US-`12", "user_story\n\n## Injected type"),),
+            ),
+        ),
+    )
+    markdown = export_test_cases_markdown(result)
+    assert markdown.count("## 1.") == 1
+    assert markdown.count("### Steps") == 1
+    assert markdown.count("### Expected result") == 1
+    assert markdown.count("### References") == 1
+    assert "## 1. Login \\#\\# Injected heading" in markdown
+    assert "1. Open page \\#\\# Injected step" in markdown
+    assert "\\## Injected expected" in markdown
+    assert "``US-`12``" in markdown
+    assert "(user_story \\#\\# Injected type)" in markdown
