@@ -24,3 +24,11 @@ class MarkdownExportValidationError(ToolArgumentValidationError):
 class OrchestrationValidationError(DomainValidationError):
     """Invalid Software Delivery orchestration request or response."""
 
+
+class RequirementsAnalysisValidationError(ToolArgumentValidationError):
+    """Invalid caller arguments for Software Delivery requirements analysis."""
+
+
+class MissingEvidenceError(DomainValidationError):
+    """No retrieval hits cleared the relevance threshold for analysis."""
+
