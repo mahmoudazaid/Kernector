@@ -7,6 +7,10 @@ from pathlib import Path
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
+from composition.requirements_analysis import (
+    PackRequirementsAnalyzer,
+    RequirementsAnalyzer,
+)
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, ConfigurationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -32,7 +36,7 @@ from composition.tool_registry import (
     build_tool_registry,
 )
 from domain.errors import DomainValidationError
-from domain.knowledge import CatalogDocument, SourceDocument, SourceReference, UploadPayload
+from domain.knowledge import CatalogDocument, ScoredChunk, SourceDocument, SourceReference, UploadPayload
 from domain.ports import ChatModel, DocumentCatalog, EmbeddingModel, PromptRepository, VectorStore
 from infrastructure.catalog.json_catalog import CatalogError, JsonDocumentCatalog
 from infrastructure.config import Settings, load_settings
@@ -585,6 +589,65 @@ def build_orchestrate_software_delivery(
         "packs.software_delivery.registration"
     )
     return registration.build_orchestrator(invoke=invoke)
+
+
+def build_analyze_requirements(
+    settings: Settings,
+    *,
+    chat_model: ChatModel,
+    vector_store: VectorStore | None = None,
+) -> RequirementsAnalyzer:
+    """Wire Software Delivery requirements analysis when the pack is enabled.
+
+    Binds filter-less cross-source retrieval with a relevance threshold in
+    composition so the pack sees only hits that cleared the cutoff.
+
+    Args:
+        settings (Settings): Runtime settings including enabled tool packs.
+        chat_model (ChatModel): Shared chat adapter for requirements analysis.
+        vector_store (VectorStore | None): Optional shared vector store client.
+
+    Returns:
+        RequirementsAnalyzer: Typed composition façade over the pack use case.
+
+    Raises:
+        ConfigurationError: Pack disabled or analysis use case cannot be built.
+    """
+    if "software-delivery" not in settings.domain_tools.enabled_packs:
+        raise ConfigurationError(
+            "software-delivery pack must be enabled to build requirements analysis"
+        )
+    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=vector_store
+    )
+    threshold = settings.retrieval.relevance_threshold
+    limit = settings.retrieval.limit
+
+    def retrieve(query: str) -> tuple[ScoredChunk, ...]:
+        from application.contracts import RetrieveRequest
+
+        response = rewrite_and_retrieve.execute(
+            RetrieveRequest(query=query, retrieval_limit=limit)
+        )
+        return tuple(hit for hit in response.hits if hit.score >= threshold)
+
+    import importlib
+
+    registration = importlib.import_module(
+        "packs.software_delivery.registration"
+    )
+    use_case = registration.build_analyze_requirements(
+        retrieve=retrieve, chat_model=chat_model
+    )
+
+    def execute(requirements: str):
+        from packs.software_delivery.requirements_analysis_contracts import (
+            AnalyzeRequirementsRequest,
+        )
+
+        return use_case.execute(AnalyzeRequirementsRequest(requirements))
+
+    return PackRequirementsAnalyzer(execute)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

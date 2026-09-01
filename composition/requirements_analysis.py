@@ -1,0 +1,90 @@
+"""Composition-facing types and adapter for requirements analysis."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Protocol
+
+from application.citations import build_citations
+from application.contracts import Citation
+from domain.knowledge import ScoredChunk, SourceReference
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementsAnalysisFindingView:
+    """One cited finding exposed at the composition boundary."""
+
+    statement: str
+    references: tuple[SourceReference, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementsAnalysisView:
+    """Structured requirements analysis result for presentation and composition."""
+
+    summary: str
+    acceptance_criteria_gaps: tuple[RequirementsAnalysisFindingView, ...]
+    risks: tuple[RequirementsAnalysisFindingView, ...]
+    clarification_questions: tuple[RequirementsAnalysisFindingView, ...]
+    evidence: tuple[ScoredChunk, ...]
+
+
+class RequirementsAnalyzer(Protocol):
+    """Analyze pasted requirements against multi-source retrieved evidence."""
+
+    def analyze(self, requirements: str) -> RequirementsAnalysisView:
+        """Run retrieval-backed analysis and return a typed structured result."""
+
+
+class _PackFinding(Protocol):
+    statement: str
+    references: Sequence[SourceReference]
+
+
+class _PackAnalysisResult(Protocol):
+    summary: str
+    acceptance_criteria_gaps: Sequence[_PackFinding]
+    risks: Sequence[_PackFinding]
+    clarification_questions: Sequence[_PackFinding]
+    evidence: Sequence[ScoredChunk]
+
+
+ExecuteRequirementsAnalysis = Callable[[str], _PackAnalysisResult]
+
+
+def analysis_citations(view: RequirementsAnalysisView) -> tuple[Citation, ...]:
+    """Project analysis evidence onto generic application Citation values."""
+    return build_citations(view.evidence)
+
+
+def _finding_views(
+    findings: Sequence[_PackFinding],
+) -> tuple[RequirementsAnalysisFindingView, ...]:
+    return tuple(
+        RequirementsAnalysisFindingView(
+            finding.statement,
+            tuple(finding.references),
+        )
+        for finding in findings
+    )
+
+
+def _to_view(result: _PackAnalysisResult) -> RequirementsAnalysisView:
+    return RequirementsAnalysisView(
+        summary=result.summary,
+        acceptance_criteria_gaps=_finding_views(result.acceptance_criteria_gaps),
+        risks=_finding_views(result.risks),
+        clarification_questions=_finding_views(result.clarification_questions),
+        evidence=tuple(result.evidence),
+    )
+
+
+class PackRequirementsAnalyzer:
+    """Adapter from the lazy-loaded pack executor to the composition Protocol."""
+
+    def __init__(self, execute: ExecuteRequirementsAnalysis) -> None:
+        self._execute = execute
+
+    def analyze(self, requirements: str) -> RequirementsAnalysisView:
+        return _to_view(self._execute(requirements))

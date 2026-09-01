@@ -24,6 +24,7 @@ def _hit(
     source_type: str = "user_story",
     content: str = "Need MFA",
     extra: dict[str, str] | None = None,
+    index: int = 0,
 ) -> ScoredChunk:
     return ScoredChunk(
         chunk=DocumentChunk(
@@ -31,7 +32,7 @@ def _hit(
                 SourceReference(source_id, source_type),
                 extra=extra or {},
             ),
-            index=0,
+            index=index,
             content=content,
         ),
         score=0.9,

@@ -99,10 +99,22 @@ connector/upload → SourceDocument → chunks/index
        → cited / structured result
 ```
 
+Requirements analysis follows a parallel path: pasted requirements →
+filter-less cross-source retrieval (relevance threshold applied in
+composition) → `AnalyzeRequirements` → structured findings with
+`ScoredChunk` evidence → `analysis_citations` projects to generic
+`Citation` values at the composition edge.
+
 One domain tool consumes a multi-source evidence bundle. A new source kind does
 not require a new risk tool or shared-core contract change. Absence-based
 policies (for example missing acceptance criteria) apply only when evidence is
 marked complete; chunk-level evidence may still contribute positive signals.
+
+Software Delivery requirements analysis (`AnalyzeRequirements`) receives
+retrieval through a single-argument callable wired in composition — no
+`metadata_filters` channel — with `RELEVANCE_THRESHOLD` applied before hits
+reach the pack, mirroring the insufficient-evidence semantics documented for
+`AskKnowledge`.
 
 #### Tool invocation boundary (#92 vs #95)
 
@@ -199,6 +211,9 @@ operational types to fixed category sentences (see below).
 | store | `ChromaStoreError` | infrastructure | Subclass of `VectorStoreError` |
 | tool | `ToolArgumentValidationError` | domain | Invalid tool arguments before execution (`DomainValidationError`) |
 | tool | `ToolFailureError` | domain | Tool invocation failure after valid arguments |
+| pack | `RequirementsAnalysisValidationError` | domain | Invalid requirements-analysis caller input or prompt budget |
+| pack | `RequirementsAnalysisOutputError` | domain | Invalid requirements-analysis model output (`ProviderError` subclass) |
+| pack | `MissingEvidenceError` | domain | No retrieval hits cleared the relevance threshold for requirements analysis |
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
 | composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of the above |
@@ -213,7 +228,7 @@ Exception type alone is never treated as proof that `str(error)` is safe:
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
 | `ApplicationValidationError` | boundary-authored `str(error)` | yes |
-| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`) | fixed provider sentence | no |
+| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`, `RequirementsAnalysisOutputError`) | fixed provider sentence | no |
 | `ToolFailureError` | fixed tool sentence | no |
 | `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
 
