@@ -118,12 +118,23 @@ reach the pack, mirroring the insufficient-evidence semantics documented for
 pack is disabled, gated by `requirements_analysis_enabled` rather than by catching
 `ConfigurationError`.
 
-#### Tool invocation boundary (#92 vs #95)
+The Streamlit **tool run** panel (#161) runs the Software Delivery orchestration
+chain (risk score → optional test generation → optional Markdown export) over
+cross-source retrieved evidence. It is absent when the pack is disabled, gated by
+`software_delivery_tools_enabled` rather than by catching `ConfigurationError`.
+The generic `ToolCallView` envelope is recorded at the opaque `InvokeTool`
+boundary in composition (`ToolCallRecorder`), so shared code never interprets
+pack payloads. `AskResponse.tool_outputs` remains unpopulated — that is still
+#95's unfinished chat-time half ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
+
+#### Tool invocation boundary (#92 vs #95 vs #161)
 
 - **#92** — pack-local contracts and scoring; generic `ToolRegistry` + single-tool
   `InvokeTool` that treats arguments and results as opaque strings.
-- **#95** — chat-time tool selection, multi-tool loops/chaining, and populating
-  `AskResponse.tool_outputs`.
+- **#95** — orchestration over a retrieved evidence bundle (delivered); chat-time
+  tool selection and populating `AskResponse.tool_outputs` remain open ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
+- **#161** — Streamlit presentation of tool runs via `build_software_delivery_tools`,
+  the generic envelope, and isolated pack renderers in `tool_run_panel.py`.
 
 ### Grounded ask: system policy vs optional task prompts
 
@@ -220,6 +231,7 @@ operational types to fixed category sentences (see below).
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
 | composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of infrastructure / adapter failures |
+| composition | `ToolRunFailedError` | composition | Tool run stopped at a failing call; carries the partial call ledger |
 
 **Empty / below-threshold retrieval is not an error.** `AskKnowledge` returns
 `AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())` and does not
@@ -245,6 +257,18 @@ fixed type → message policy:
 |---|---|
 | `ApplicationValidationError` | boundary-authored `str(error)` |
 | `ProviderError` (incl. `RequirementsAnalysisOutputError`) | fixed provider sentence |
+| `InsufficientEvidenceError` | fixed insufficient-evidence sentence |
+| `DomainValidationError`, `VectorStoreError`, other `RuntimeError` | fixed operational sentence |
+| anything else | logged, generic unexpected sentence |
+
+Streamlit tool-run mapping (`run_tool_turn`) uses the same fixed type → message
+policy:
+
+| Caught type | User-facing message |
+|---|---|
+| `ApplicationValidationError` | boundary-authored `str(error)` |
+| `ToolRunFailedError` | fixed tool sentence **plus the call ledger** |
+| `ProviderError` | fixed provider sentence |
 | `InsufficientEvidenceError` | fixed insufficient-evidence sentence |
 | `DomainValidationError`, `VectorStoreError`, other `RuntimeError` | fixed operational sentence |
 | anything else | logged, generic unexpected sentence |

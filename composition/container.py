@@ -1,7 +1,7 @@
 """Composition root: the only place that constructs infrastructure."""
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -35,10 +35,15 @@ from composition.errors import (
     KnowledgeLoadError,
     PartialDocumentOperationError,
 )
+from composition.software_delivery_tools import (
+    PackSoftwareDeliveryTools,
+    SoftwareDeliveryToolRunner,
+)
 from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     build_tool_registry,
 )
+from composition.tool_runs import OpaqueInvoke
 from domain.errors import DomainValidationError
 from domain.knowledge import CatalogDocument, ScoredChunk, SourceDocument, SourceReference, UploadPayload
 from domain.ports import ChatModel, DocumentCatalog, EmbeddingModel, PromptRepository, VectorStore
@@ -593,6 +598,86 @@ def build_orchestrate_software_delivery(
         "packs.software_delivery.registration"
     )
     return registration.build_orchestrator(invoke=invoke)
+
+
+def build_software_delivery_tools(
+    settings: Settings,
+    *,
+    chat_model: ChatModel,
+    vector_store: VectorStore | None = None,
+) -> SoftwareDeliveryToolRunner:
+    """Wire the Software Delivery tool chain over cross-source retrieval.
+
+    Args:
+        settings (Settings): Runtime settings including enabled tool packs.
+        chat_model (ChatModel): Shared chat adapter for test-case generation.
+        vector_store (VectorStore | None): Optional shared vector store client.
+
+    Returns:
+        SoftwareDeliveryToolRunner: Typed composition façade over the pack chain.
+
+    Raises:
+        ConfigurationError: Pack disabled or the chain cannot be built.
+    """
+    if "software-delivery" not in settings.domain_tools.enabled_packs:
+        raise ConfigurationError(
+            "software-delivery pack must be enabled to build tool runs"
+        )
+    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=vector_store
+    )
+    threshold = settings.retrieval.relevance_threshold
+    limit = settings.retrieval.limit
+    invoke_tool = build_invoke_tool(settings, chat_model=chat_model)
+
+    def retrieve(target: str) -> tuple[ScoredChunk, ...]:
+        from application.contracts import RetrieveRequest
+
+        response = rewrite_and_retrieve.execute(
+            RetrieveRequest(query=target, retrieval_limit=limit)
+        )
+        return tuple(hit for hit in response.hits if hit.score >= threshold)
+
+    def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
+        from application.contracts import InvokeToolRequest
+
+        return invoke_tool.execute(InvokeToolRequest(tool_name, arguments)).result
+
+    def orchestrate(
+        *,
+        target: str,
+        hits: Sequence[ScoredChunk],
+        generate_tests: bool,
+        output_style: str,
+        invoke: OpaqueInvoke,
+    ):
+        import importlib
+
+        from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
+        from packs.software_delivery.orchestration_contracts import (
+            OrchestrateSoftwareDeliveryRequest,
+        )
+        from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+
+        registration = importlib.import_module("packs.software_delivery.registration")
+        orchestrator = registration.build_orchestrator(invoke=invoke)
+        intent = (
+            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+            if generate_tests
+            else SoftwareDeliveryIntent.RISK_SCORE
+        )
+        return orchestrator.execute(
+            OrchestrateSoftwareDeliveryRequest(
+                intent=intent,
+                target=target,
+                evidence=evidence_bundle_from_hits(hits),
+                output_style=output_style,
+            )
+        )
+
+    return PackSoftwareDeliveryTools(
+        retrieve=retrieve, invoke=invoke, orchestrate=orchestrate
+    )
 
 
 def build_analyze_requirements(
