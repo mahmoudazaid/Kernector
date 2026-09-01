@@ -76,7 +76,7 @@ def test_an_unmatched_query_is_answered_by_grounded_rag() -> None:
     wrapper = ToolAugmentedAsk(ask, runner=runner, select=lambda query: None)
     request = AskRequest(
         query="What is the session timeout?",
-        prompt_key="general",
+        prompt_key=None,
         history=(Message(role="user", content="Hello"),),
     )
 
@@ -84,6 +84,29 @@ def test_an_unmatched_query_is_answered_by_grounded_rag() -> None:
 
     assert response is ask.response
     assert ask.calls == [(request, {"temperature": 0})]
+    assert runner.runs == []
+
+
+def test_a_selected_mode_delegates_verbatim_without_calling_the_runner() -> None:
+    """Tool selection is General-mode only; task prompts stay on grounded RAG."""
+    ask = _RecordingAsk()
+    runner = _RecordingRunner(_outcome())
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=runner,
+        select=lambda query: _Selection(generate_tests=True, output_style="steps"),
+    )
+    request = AskRequest(
+        query="Create test cases for AUTH-101",
+        prompt_key="story-review",
+        history=(Message(role="user", content="Hello"),),
+    )
+    settings = {"temperature": 0.2}
+
+    response = wrapper.execute(request, settings=settings)
+
+    assert response is ask.response
+    assert ask.calls == [(request, settings)]
     assert runner.runs == []
 
 
@@ -114,6 +137,7 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
     response = wrapper.execute(
         AskRequest(
             query="Create test cases for AUTH-101",
+            prompt_key=None,
             history=(Message(role="user", content="Hello"),),
         )
     )
@@ -134,7 +158,12 @@ def test_the_selected_style_reaches_the_chain() -> None:
         select=lambda query: _Selection(generate_tests=True, output_style="gherkin"),
     )
 
-    wrapper.execute(AskRequest(query="Write gherkin test cases for AUTH-101"))
+    wrapper.execute(
+        AskRequest(
+            query="Write gherkin test cases for AUTH-101",
+            prompt_key=None,
+        )
+    )
 
     assert runner.runs == [("Write gherkin test cases for AUTH-101", True, "gherkin")]
 
@@ -158,7 +187,9 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
         select=lambda query: _Selection(generate_tests=True, output_style="steps"),
     )
 
-    response = wrapper.execute(AskRequest(query="Create test cases for AUTH-101"))
+    response = wrapper.execute(
+        AskRequest(query="Create test cases for AUTH-101", prompt_key=None)
+    )
 
     assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
     assert response.tool_outputs == ()

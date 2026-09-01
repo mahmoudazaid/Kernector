@@ -126,34 +126,37 @@ Invalid or empty input raises `MarkdownExportValidationError` before any Markdow
 ## Chat-time intent selection
 
 `select_chat_intent(query)` decides which tool chain — if any — a chat message is
-asking for. It is a deterministic keyword policy, not a classifier: a chat-time
-tool call is a side effect, and an explicit table is reproducible and testable
-offline. Composition reaches it through `registration.build_chat_intent_selector`.
+asking for. It is a deterministic explicit-request policy, not a classifier.
+Composition reaches it through `registration.build_chat_intent_selector`.
+**Only General chat** (`AskRequest.prompt_key is None`) is eligible; selected
+task prompts always stay on grounded RAG and never reach this policy.
 
 ### Input
 
-The raw chat message. It is lowercased and its whitespace collapsed before
-matching; nothing else is normalized.
+The raw chat message. It is lowercased, apostrophes normalized (`don't` →
+`dont`), and whitespace collapsed before matching; nothing else is normalized.
 
 ### Output
 
 `ChatToolSelection(generate_tests, output_style)`, or `None` when no Software
-Delivery workflow is named — which leaves the query on the ordinary grounded-RAG
-path.
+Delivery workflow is explicitly named — which leaves the query on the ordinary
+grounded-RAG path.
 
 ### Rules
 
-| Terms | Effect |
+| Requirement | Effect |
 |---|---|
-| `test case(s)`, `test scenario(s)`, `generate tests`, `write tests`, `test plan`, `acceptance test` | `generate_tests=True` |
-| `gherkin`, `given/when/then`, `given when then`, `feature file`, `cucumber` | `generate_tests=True`, `output_style="gherkin"` |
-| `risk score`, `score the risk`, `risk assessment`, `assess the risk`, `how risky`, `delivery risk` | `generate_tests=False` |
-| anything else | `None` |
+| Creation verb **and** test artifact | `generate_tests=True`, `output_style="steps"` unless a gherkin-style term is also present |
+| Creation verbs | `create`, `generate`, `write`, `produce`, `draft`, `build` |
+| Test artifacts | `test case(s)`, `test scenario(s)`, `tests`, `acceptance test(s)`, `test plan`, `feature file(s)`, `cucumber scenario(s)` |
+| Gherkin-style terms (with creation + artifact) | `output_style="gherkin"` when `gherkin`, `cucumber`, `given/when/then`, `given when then`, or `feature file` appears |
+| Explicit risk requests | `generate_tests=False` — e.g. `assess/score/evaluate the risk`, `what is the risk score for <target>`, `how risky is <target>`, `risk assessment of <target>` |
+| Negation + tool signal | `None` — e.g. `do not generate test cases`, `don't create tests`, `never assess the risk` |
+| Conceptual / read-only | `None` — e.g. `What is Gherkin?`, `How is a risk score calculated?`, `Summarise the test plan`, `Which test cases cover AUTH-101?` |
+| Artifact or style term alone | `None` — `gherkin`, `cucumber`, `feature file`, `test plan`, and `test cases` are not sufficient without a creation verb |
 
-- A gherkin term implies generation on its own: "give me a feature file for the
-  login story" names a test artifact and needs no second signal.
-- Test-generation terms win over risk terms, because the generate chain already
-  scores risk first.
+- Test-generation requests win over risk terms, because the generate chain
+  already scores risk first.
 - **Declining is the default, and the tables are deliberately narrow.** A false
   negative costs a tool run the user can re-ask for; a false positive runs tools
   nobody wanted. "Can you check the risk here?" does not match, by design.
