@@ -34,13 +34,13 @@ from composition.requirements_analysis import (
     RequirementsAnalysisView,
     RequirementsAnalyzer,
     analysis_citations,
+    requirements_analysis_enabled,
 )
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
-    RequirementsEvidenceUnavailableError,
 )
 from infrastructure.config import Settings
 
@@ -49,7 +49,6 @@ __all__ = [
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
-    "RequirementsEvidenceUnavailableError",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
@@ -57,6 +56,7 @@ __all__ = [
     "RequirementsAnalysisView",
     "RequirementsAnalyzer",
     "analysis_citations",
+    "requirements_analysis_enabled",
     "available_providers",
     "build_analyze_requirements",
     "build_ask_knowledge",

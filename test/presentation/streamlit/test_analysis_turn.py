@@ -13,10 +13,10 @@ import pytest
 
 from application.errors import ApplicationValidationError
 from application.input_safety import UNSAFE_QUERY_MESSAGE
+from application.errors import InsufficientEvidenceError
 from composition import (
     RequirementsAnalysisFindingView,
     RequirementsAnalysisView,
-    RequirementsEvidenceUnavailableError,
 )
 from domain.errors import DomainValidationError, ProviderError, VectorStoreError
 from domain.knowledge import (
@@ -26,13 +26,20 @@ from domain.knowledge import (
     SourceReference,
 )
 from presentation.streamlit.analysis_turn import (
-    analysis_enabled,
+    AnalysisContext,
+    StoredAnalysisResult,
+    analysis_result_after_successful_document_mutation,
+    analysis_result_for_display,
     finding_bullets,
     run_analysis_turn,
 )
+from presentation.streamlit.upload_ingest import UploadIngestResult
 
 _BLANK_MESSAGE = "Paste requirements before running the analysis."
 _PROVIDER_MESSAGE = "The model provider could not complete the analysis."
+_INSUFFICIENT_EVIDENCE_MESSAGE = (
+    "No ingested document was relevant enough to ground this analysis."
+)
 _OPERATIONAL_MESSAGE = "Something went wrong while analyzing the requirements."
 _UNEXPECTED_MESSAGE = "Analysis failed unexpectedly. Check the server logs."
 
@@ -93,16 +100,20 @@ class _RaisingAnalyzer:
         raise self._error
 
 
-class _Settings:
-    """Duck-typed stand-in: analysis_enabled reads one nested field."""
-
-    def __init__(self, *packs: str) -> None:
-        self.domain_tools = _DomainTools(packs)
-
-
-class _DomainTools:
-    def __init__(self, packs: tuple[str, ...]) -> None:
-        self.enabled_packs = packs
+def _stored(
+    *,
+    requirements: str = "Login must use MFA.",
+    provider: str = "openrouter",
+    model: str = "gpt-test",
+) -> StoredAnalysisResult:
+    return StoredAnalysisResult(
+        context=AnalysisContext(
+            requirements=requirements,
+            provider=provider,
+            model=model,
+        ),
+        result=run_analysis_turn(_StubAnalyzer(_view()), requirements=requirements),
+    )
 
 
 def test_successful_analysis_returns_findings_with_generic_citations() -> None:
@@ -227,28 +238,91 @@ def test_no_findings_render_no_bullets() -> None:
     assert finding_bullets(()) == ()
 
 
-def test_analysis_surface_is_absent_when_the_pack_is_disabled() -> None:
-    assert analysis_enabled(_Settings()) is False
-    assert analysis_enabled(_Settings("other-pack")) is False
+def test_stored_analysis_renders_only_when_requirements_match() -> None:
+    stored = _stored(requirements="Login must use MFA.")
+    context = AnalysisContext(
+        requirements="Login must use MFA.",
+        provider="openrouter",
+        model="gpt-test",
+    )
+
+    result = analysis_result_for_display(stored, context=context)
+
+    assert result is not None
+    assert result.ok is True
 
 
-def test_analysis_surface_appears_when_the_pack_is_enabled() -> None:
-    assert analysis_enabled(_Settings("software-delivery")) is True
+def test_stale_analysis_is_hidden_when_requirements_change() -> None:
+    stored = _stored(requirements="Login must use MFA.")
+    context = AnalysisContext(
+        requirements="Different story text.",
+        provider="openrouter",
+        model="gpt-test",
+    )
+
+    assert analysis_result_for_display(stored, context=context) is None
+
+
+@pytest.mark.parametrize("field", ["provider", "model"])
+def test_stale_analysis_is_hidden_when_model_context_changes(field: str) -> None:
+    stored = _stored()
+    context = AnalysisContext(
+        requirements="Login must use MFA.",
+        provider="openrouter",
+        model="gpt-test",
+    )
+    changed = {
+        "provider": AnalysisContext(
+            requirements="Login must use MFA.",
+            provider="ollama",
+            model="gpt-test",
+        ),
+        "model": AnalysisContext(
+            requirements="Login must use MFA.",
+            provider="openrouter",
+            model="llama3.2",
+        ),
+    }[field]
+
+    assert analysis_result_for_display(stored, context=changed) is None
+
+
+def test_successful_document_mutation_clears_stored_analysis() -> None:
+    stored = _stored()
+
+    cleared = analysis_result_after_successful_document_mutation(stored)
+
+    assert cleared is None
+
+
+def test_failed_document_mutation_preserves_stored_analysis() -> None:
+    stored = _stored()
+    failed = UploadIngestResult(ok=False, message="Upload failed.")
+
+    if failed.ok:
+        stored = analysis_result_after_successful_document_mutation(stored)
+
+    assert stored is not None
+    assert analysis_result_for_display(stored, context=stored.context) is not None
 
 
 def test_analysis_module_reaches_the_pack_only_through_composition() -> None:
-    """AC1: no adapter or pack import in the presentation module.
-
-    The pack *id* string is expected here (see analysis_enabled); what must
-    never appear is an import of the pack package itself.
-    """
+    """AC1: no adapter or pack import in the presentation module."""
+    import composition
     import presentation.streamlit.analysis_turn as helper_mod
 
     source = Path(helper_mod.__file__).read_text(encoding="utf-8")
     assert "import packs" not in source
     assert "from packs" not in source
     assert "infrastructure" not in source
+    assert "Settings" not in source
+    assert "domain_tools" not in source
+    assert "RequirementsEvidenceUnavailableError" not in source
+    assert "from application.errors import" in source
     assert "from composition import" in source
+    assert not hasattr(composition, "RequirementsEvidenceUnavailableError")
+    assert not hasattr(composition, "InsufficientEvidenceError")
+    assert not hasattr(helper_mod, "analysis_enabled")
 
 
 def test_streamlit_app_wires_analysis_through_composition_only() -> None:
@@ -261,20 +335,18 @@ def test_streamlit_app_wires_analysis_through_composition_only() -> None:
     assert "software_delivery" not in source
     assert "AnalyzeRequirements" not in source
     assert "build_analyze_requirements" in source
+    assert "requirements_analysis_enabled" in source
     assert "run_analysis_turn" in source
 
 
 def test_missing_evidence_is_reported_as_a_corpus_gap_not_a_crash() -> None:
-    """The message is composition-authored and fixed, so str(error) is safe."""
+    """Insufficient evidence uses a fixed sentence; str(error) is never shown."""
     analyzer = _RaisingAnalyzer(
-        RequirementsEvidenceUnavailableError(
-            "No ingested document was relevant enough to ground this analysis."
-        )
+        InsufficientEvidenceError("internal diagnostic with sk-secret")
     )
 
     result = run_analysis_turn(analyzer, requirements="Login must use MFA.")
 
     assert result.ok is False
-    assert result.message == (
-        "No ingested document was relevant enough to ground this analysis."
-    )
+    assert result.message == _INSUFFICIENT_EVIDENCE_MESSAGE
+    assert "sk-secret" not in result.message
