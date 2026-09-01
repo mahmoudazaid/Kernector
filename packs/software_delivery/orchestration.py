@@ -67,9 +67,6 @@ class OrchestrateSoftwareDelivery:
             ToolArgumentValidationError: Propagated from a tool.
             ToolFailureError: Propagated from a tool or invalid tool JSON.
         """
-        if not request.evidence.items:
-            raise ToolFailureError("Evidence bundle must be non-empty")
-
         outcomes: list[SoftwareDeliveryOutcome] = []
         for tool_name in tool_chain(request.intent):
             if tool_name == RISK_SCORE_TOOL:

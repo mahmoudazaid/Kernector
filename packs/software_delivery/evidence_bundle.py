@@ -4,8 +4,32 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TypeVar
 
 from domain.knowledge import ScoredChunk, SourceReference
+from packs.software_delivery.errors import OrchestrationValidationError
+
+_E = TypeVar("_E", bound=Exception)
+
+
+def _require_text(
+    value: object,
+    field_name: str,
+    error_type: type[_E] = OrchestrationValidationError,
+) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise error_type(f"{field_name} must be non-empty")
+    return value
+
+
+def _require_sequence(
+    value: object,
+    field_name: str,
+    error_type: type[_E] = OrchestrationValidationError,
+) -> Sequence[object]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise error_type(f"{field_name} must be a sequence, got {value!r}")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +40,17 @@ class EvidenceBundleItem:
     text: str
     is_complete: bool = False
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.reference, SourceReference):
+            raise OrchestrationValidationError(
+                f"reference must be a SourceReference, got {self.reference!r}"
+            )
+        _require_text(self.text, "text")
+        if not isinstance(self.is_complete, bool):
+            raise OrchestrationValidationError(
+                f"is_complete must be a bool, got {self.is_complete!r}"
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class EvidenceBundle:
@@ -24,9 +59,17 @@ class EvidenceBundle:
     items: Sequence[EvidenceBundleItem]
 
     def __post_init__(self) -> None:
-        if isinstance(self.items, (str, bytes)) or not isinstance(self.items, Sequence):
-            raise ValueError(f"items must be a sequence, got {self.items!r}")
-        object.__setattr__(self, "items", tuple(self.items))
+        items = _require_sequence(self.items, "items")
+        if len(items) == 0:
+            raise OrchestrationValidationError("items must be non-empty")
+        normalized: list[EvidenceBundleItem] = []
+        for item in items:
+            if not isinstance(item, EvidenceBundleItem):
+                raise OrchestrationValidationError(
+                    f"items entries must be EvidenceBundleItem, got {item!r}"
+                )
+            normalized.append(item)
+        object.__setattr__(self, "items", tuple(normalized))
 
 
 def evidence_bundle_from_hits(hits: Sequence[ScoredChunk]) -> EvidenceBundle:

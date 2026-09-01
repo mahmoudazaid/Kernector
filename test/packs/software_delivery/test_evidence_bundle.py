@@ -1,15 +1,20 @@
 """Tests for Software Delivery evidence bundle mapping."""
 
+import pytest
+
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
     SourceMetadata,
     SourceReference,
 )
+from packs.software_delivery.errors import OrchestrationValidationError
 from packs.software_delivery.evidence_bundle import (
+    EvidenceBundle,
+    EvidenceBundleItem,
     evidence_bundle_from_hits,
-    risk_tool_arguments,
     generate_test_tool_arguments,
+    risk_tool_arguments,
 )
 
 
@@ -67,3 +72,28 @@ def test_test_payload_preserves_source_references() -> None:
     assert item["source_id"] == "US-9"
     assert item["source_type"] == "user_story"
     assert item["text"] == "Need MFA"
+
+
+@pytest.mark.parametrize(
+    "factory,match",
+    [
+        (lambda: EvidenceBundleItem("bad", "text"), "reference must be"),  # type: ignore[arg-type]
+        (lambda: EvidenceBundleItem(SourceReference("US-1", "user_story"), ""), "text must be"),
+        (
+            lambda: EvidenceBundleItem(
+                SourceReference("US-1", "user_story"), "text", is_complete=1
+            ),
+            "is_complete must be a bool",
+        ),
+    ],
+)
+def test_malformed_evidence_item_raises_validation_error(
+    factory: object, match: str
+) -> None:
+    with pytest.raises(OrchestrationValidationError, match=match):
+        factory()  # type: ignore[operator]
+
+
+def test_empty_evidence_bundle_raises_validation_error() -> None:
+    with pytest.raises(OrchestrationValidationError, match="items must be non-empty"):
+        EvidenceBundle(items=())
