@@ -1,8 +1,12 @@
 """Composition-facing views for Software Delivery tool-run presentation.
 
-Typed dataclasses only — no retrieval, orchestration, or invocation. #170 will
-project tool outcomes onto these views before chat attaches them to
-``AskResponse.tool_outputs``; #161 renders them in Streamlit.
+Typed dataclasses only — no retrieval, orchestration, or invocation. These
+views are **not** stored on ``AskResponse.tool_outputs``; that field holds
+opaque ``InvokeToolResponse`` entries only. #170 will retrieve/orchestrate and
+populate ``AskResponse.tool_outputs``; a future pack-specific projection
+adapter will parse known outcomes into ``SoftwareDeliveryRunView`` and
+``ToolCallView`` (summaries from validated typed metadata, never raw payload
+text). #161 renderers consume those views from fixtures today.
 """
 
 from __future__ import annotations

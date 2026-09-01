@@ -77,7 +77,8 @@ def test_presentation_has_no_raw_to_summary_projection_helper() -> None:
 
     source = Path(helper_mod.__file__).read_text(encoding="utf-8")
     assert "bounded_tool_call_summary" not in source
-    assert "InvokeToolResponse" not in source
+    assert "from application.contracts import" not in source
+    assert "InvokeToolResponse(" not in source
 
 
 def test_no_calls_render_no_lines() -> None:
@@ -162,6 +163,24 @@ def test_ask_turn_still_ignores_tool_outputs() -> None:
     assert "tool_outputs" not in source
     assert "render_software_delivery" not in source
     assert "SoftwareDeliveryRunView" not in source
+
+
+def test_architecture_docs_do_not_store_typed_views_on_ask_response() -> None:
+    architecture = Path("ARCHITECTURE.md").read_text(encoding="utf-8")
+    sd_tools = Path("composition/software_delivery_tools.py").read_text(encoding="utf-8")
+
+    assert "tool_outputs`` with typed views" not in architecture
+    assert "projection onto these views" not in architecture
+    assert "not** stored on ``AskResponse.tool_outputs``" in sd_tools
+    assert "opaque ``InvokeToolResponse``" in architecture
+
+
+def test_app_does_not_wire_tool_outputs_to_renderers() -> None:
+    import presentation.streamlit.app as app_mod
+
+    source = Path(app_mod.__file__).read_text(encoding="utf-8")
+    assert "tool_outputs" not in source
+    assert "render_software_delivery_tool_results" not in source
 
 
 def test_render_software_delivery_tool_results_accepts_fixture_view() -> None:
