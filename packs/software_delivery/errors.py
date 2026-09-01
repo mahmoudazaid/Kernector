@@ -1,6 +1,6 @@
 """Pack-local validation errors for the Software Delivery pack."""
 
-from domain.errors import DomainValidationError, ToolArgumentValidationError
+from domain.errors import DomainValidationError, ProviderError, ToolArgumentValidationError
 
 
 class RiskScoreValidationError(ToolArgumentValidationError):
@@ -23,4 +23,16 @@ class MarkdownExportValidationError(ToolArgumentValidationError):
 
 class OrchestrationValidationError(DomainValidationError):
     """Invalid Software Delivery orchestration request or response."""
+
+
+class RequirementsAnalysisValidationError(DomainValidationError):
+    """Invalid caller input for Software Delivery requirements analysis."""
+
+
+class RequirementsAnalysisOutputError(ProviderError):
+    """Invalid or unusable requirements-analysis model output."""
+
+
+class MissingEvidenceError(DomainValidationError):
+    """No retrieval hits cleared the relevance threshold for analysis."""
 
