@@ -11,6 +11,10 @@ from packs.software_delivery.orchestration import (
     OpaqueInvoke,
     OrchestrateSoftwareDelivery,
 )
+from packs.software_delivery.requirements_analysis import (
+    AnalyzeRequirements,
+    RetrieveEvidence,
+)
 from packs.software_delivery.risk_score_tool import RiskScoreTool
 
 
@@ -26,3 +30,12 @@ def build_tools(*, chat_model: ChatModel) -> Sequence[Tool]:
 def build_orchestrator(*, invoke: OpaqueInvoke) -> OrchestrateSoftwareDelivery:
     """Return the pack orchestration use case wired to opaque invoke."""
     return OrchestrateSoftwareDelivery(invoke)
+
+
+def build_analyze_requirements(
+    *,
+    retrieve: RetrieveEvidence,
+    chat_model: ChatModel,
+) -> AnalyzeRequirements:
+    """Return the pack requirements analysis use case wired to injected ports."""
+    return AnalyzeRequirements(retrieve, chat_model)

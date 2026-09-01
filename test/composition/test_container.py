@@ -12,13 +12,26 @@ from pathlib import Path
 import pytest
 
 from application.ask_service import AskService
-from application.contracts import InvokeToolRequest
+from application.contracts import InvokeToolRequest, RetrieveRequest, RewriteRetrieveResponse
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
+from domain.knowledge import (
+    DocumentChunk,
+    ScoredChunk,
+    SourceMetadata,
+    SourceReference,
+)
+from packs.software_delivery.errors import MissingEvidenceError
 from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
+from packs.software_delivery.requirements_analysis import AnalyzeRequirements
+from packs.software_delivery.requirements_analysis_contracts import (
+    AnalyzeRequirementsRequest,
+    RequirementsAnalysisResult,
+    RequirementsFinding,
+)
 from packs.software_delivery.orchestration_policy import (
     EXPORT_TEST_CASES_MARKDOWN_TOOL,
     GENERATE_TEST_CASES_TOOL,
@@ -29,6 +42,8 @@ from composition import (
     Settings,
     available_providers,
     build_ask_service,
+    build_analyze_requirements,
+    analysis_citations,
     build_chat_model,
     build_ingest_knowledge,
     build_invoke_tool,
@@ -372,6 +387,154 @@ assert not any(
     or name.startswith("packs.software_delivery.orchestration.")
     for name in names
 )
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "DOMAIN_TOOL_PACKS": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
+
+
+def _sd_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+
+
+def _scored_hit(*, score: float = 0.9, content: str = "Need MFA") -> ScoredChunk:
+    return ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(
+                SourceReference("US-1", "user_story"),
+                extra={},
+            ),
+            index=0,
+            content=content,
+        ),
+        score=score,
+    )
+
+
+class _RecordingRewriteRetrieve:
+    def __init__(self, hits: Sequence[ScoredChunk]) -> None:
+        self.hits = hits
+        self.requests: list[RetrieveRequest] = []
+
+    def execute(self, request: RetrieveRequest) -> RewriteRetrieveResponse:
+        self.requests.append(request)
+        return RewriteRetrieveResponse(
+            original_query=request.query,
+            rewritten_query=request.query,
+            hits=self.hits,
+        )
+
+
+def test_build_analyze_requirements_wires_pack_use_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([]),
+    )
+
+    use_case = build_analyze_requirements(
+        load_settings(), chat_model=_StubChat()
+    )
+
+    assert isinstance(use_case, AnalyzeRequirements)
+    assert callable(use_case._retrieve)
+
+
+def test_analyze_requirements_retrieval_is_not_narrowed_by_source_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _sd_env(monkeypatch)
+    recorder = _RecordingRewriteRetrieve([_scored_hit()])
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: recorder,
+    )
+    settings = load_settings()
+    use_case = build_analyze_requirements(settings, chat_model=_StubChat())
+
+    use_case._retrieve("Assess MFA requirements")
+
+    assert len(recorder.requests) == 1
+    assert recorder.requests[0].metadata_filters is None
+    assert recorder.requests[0].retrieval_limit == settings.retrieval.limit
+
+
+def test_relevance_threshold_filters_before_the_pack_sees_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.0")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve(
+            [_scored_hit(score=-1.0)]
+        ),
+    )
+    use_case = build_analyze_requirements(
+        load_settings(), chat_model=_StubChat()
+    )
+
+    with pytest.raises(MissingEvidenceError):
+        use_case.execute(AnalyzeRequirementsRequest("Assess MFA"))
+
+
+def test_analysis_citations_projects_evidence_onto_application_citations() -> None:
+    hit = _scored_hit(content="MFA required")
+    result = RequirementsAnalysisResult(
+        "summary",
+        (
+            RequirementsFinding(
+                "gap",
+                "missing lockout",
+                (SourceReference("US-1", "user_story"),),
+            ),
+        ),
+        (hit,),
+    )
+
+    citations = analysis_citations(result)
+
+    assert len(citations) == 1
+    assert citations[0].reference == SourceReference("US-1", "user_story")
+    assert citations[0].quote == "MFA required"
+    assert citations[0].chunk_index == 0
+
+
+def test_build_analyze_requirements_requires_enabled_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
+
+    with pytest.raises(ConfigurationError, match="software-delivery pack must be enabled"):
+        build_analyze_requirements(load_settings(), chat_model=_StubChat())
+
+
+def test_disabled_pack_does_not_import_requirements_analysis_at_composition_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    script = r"""
+import sys
+import importlib
+
+importlib.import_module("composition.container")
+names = set(sys.modules)
+assert not any(name.startswith("packs.") for name in names)
 print("ok")
 """
     result = subprocess.run(
