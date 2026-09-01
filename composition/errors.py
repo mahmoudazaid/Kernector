@@ -36,3 +36,13 @@ class PartialDocumentOperationError(DocumentOperationError):
     a failure that never opened the store sends them looking for damage that
     does not exist.
     """
+
+
+class RequirementsEvidenceUnavailableError(RuntimeError):
+    """Requirements analysis found nothing above the relevance threshold.
+
+    Translated at the composition edge from the pack's ``MissingEvidenceError``
+    so presentation can say "your corpus has nothing relevant" without
+    importing a pack exception type — and so that outcome does not arrive
+    disguised as a generic operational failure.
+    """

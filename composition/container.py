@@ -30,6 +30,7 @@ from composition.errors import (
     DocumentUploadError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
+    RequirementsEvidenceUnavailableError,
 )
 from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
@@ -641,11 +642,17 @@ def build_analyze_requirements(
     )
 
     def execute(requirements: str):
+        from packs.software_delivery.errors import MissingEvidenceError
         from packs.software_delivery.requirements_analysis_contracts import (
             AnalyzeRequirementsRequest,
         )
 
-        return use_case.execute(AnalyzeRequirementsRequest(requirements))
+        try:
+            return use_case.execute(AnalyzeRequirementsRequest(requirements))
+        except MissingEvidenceError as error:
+            raise RequirementsEvidenceUnavailableError(
+                "No ingested document was relevant enough to ground this analysis."
+            ) from error
 
     return PackRequirementsAnalyzer(execute)
 

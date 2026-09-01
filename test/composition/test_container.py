@@ -36,6 +36,7 @@ from composition import (
     KnowledgeLoadError,
     RequirementsAnalysisView,
     RequirementsAnalyzer,
+    RequirementsEvidenceUnavailableError,
     Settings,
     available_providers,
     build_ask_service,
@@ -516,8 +517,25 @@ def test_relevance_threshold_filters_before_the_pack_sees_hits(
         load_settings(), chat_model=_StubChat()
     )
 
-    with pytest.raises(MissingEvidenceError):
+    with pytest.raises(RequirementsEvidenceUnavailableError):
         analyzer.analyze("Assess MFA")
+
+
+def test_missing_evidence_is_translated_at_the_composition_edge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Presentation cannot name a pack error, so composition renames it."""
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([]),
+    )
+    analyzer = build_analyze_requirements(load_settings(), chat_model=_StubChat())
+
+    with pytest.raises(RequirementsEvidenceUnavailableError) as excinfo:
+        analyzer.analyze("Assess MFA")
+
+    assert isinstance(excinfo.value.__cause__, MissingEvidenceError)
 
 
 def test_analysis_citations_projects_evidence_onto_application_citations() -> None:
