@@ -61,7 +61,7 @@ The model cites evidence with catalog ids `e0`, `e1`, … matching the ordered e
 | `RequirementsAnalysisValidationError` | Invalid or over-budget caller input / prompt before retrieval or the model |
 | `MissingEvidenceError` | No hits after retrieval (including below relevance threshold) |
 | `ProviderError` | Propagated unchanged from `ChatModel.complete()` |
-| `ToolFailureError` | Invalid model JSON, schema violations, unknown evidence ids, or unusable model output |
+| `RequirementsAnalysisOutputError` | Invalid model JSON, schema violations, unknown evidence ids, or unusable model output |
 
 Named budgets: `MAX_REQUIREMENTS_CHARS`, `MAX_TOTAL_INPUT_CHARS`, `MAX_MODEL_RESPONSE_CHARS`, `MAX_ANALYSIS_SUMMARY_CHARS`, `MAX_FINDINGS_PER_SECTION`, `MAX_FINDING_STATEMENT_CHARS`, `REQUIREMENTS_ANALYSIS_MODEL_SETTINGS`.
 

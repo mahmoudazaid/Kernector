@@ -211,6 +211,8 @@ operational types to fixed category sentences (see below).
 | store | `ChromaStoreError` | infrastructure | Subclass of `VectorStoreError` |
 | tool | `ToolArgumentValidationError` | domain | Invalid tool arguments before execution (`DomainValidationError`) |
 | tool | `ToolFailureError` | domain | Tool invocation failure after valid arguments |
+| pack | `RequirementsAnalysisValidationError` | domain | Invalid requirements-analysis caller input or prompt budget |
+| pack | `RequirementsAnalysisOutputError` | domain | Invalid requirements-analysis model output (`ProviderError` subclass) |
 | pack | `MissingEvidenceError` | domain | No retrieval hits cleared the relevance threshold for requirements analysis |
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
@@ -226,7 +228,7 @@ Exception type alone is never treated as proof that `str(error)` is safe:
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
 | `ApplicationValidationError` | boundary-authored `str(error)` | yes |
-| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`) | fixed provider sentence | no |
+| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`, `RequirementsAnalysisOutputError`) | fixed provider sentence | no |
 | `ToolFailureError` | fixed tool sentence | no |
 | `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
 
