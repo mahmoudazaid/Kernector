@@ -45,3 +45,5 @@ learning/
 output/
 data/chroma/
 data/catalog/
+
+.claude/
