@@ -60,6 +60,7 @@ def test_prompt_keeps_rules_in_system_and_story_plus_evidence_in_one_untrusted_r
     assert body.count(ASSESSMENT_CLOSE) == 1
     assert "As a user I want MFA." not in system
     assert "evidence_ids" in system
+    assert "acceptance_criteria_gaps" in system
     assert "any source kind" in system
     assert evidence_by_id == {"e0": SourceReference("US-1", "user_story")}
 

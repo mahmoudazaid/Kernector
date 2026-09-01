@@ -4,7 +4,6 @@ from composition.container import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
     available_providers,
-    analysis_citations,
     build_analyze_requirements,
     build_ask_knowledge,
     build_ask_service,
@@ -30,6 +29,12 @@ from composition.container import (
     reindex_filter_metadata,
     replace_uploaded_document,
 )
+from composition.requirements_analysis import (
+    RequirementsAnalysisFindingView,
+    RequirementsAnalysisView,
+    RequirementsAnalyzer,
+    analysis_citations,
+)
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -46,6 +51,9 @@ __all__ = [
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",
+    "RequirementsAnalysisFindingView",
+    "RequirementsAnalysisView",
+    "RequirementsAnalyzer",
     "analysis_citations",
     "available_providers",
     "build_analyze_requirements",

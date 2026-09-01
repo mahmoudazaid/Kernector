@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 
-from domain.errors import ProviderError, ToolFailureError
+from domain.errors import ToolFailureError
 from domain.knowledge import ScoredChunk, SourceReference
 from domain.models import AskResult
 from domain.ports import ChatModel
@@ -13,11 +13,11 @@ from packs.software_delivery.errors import MissingEvidenceError
 from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
 from packs.software_delivery.limits import (
     MAX_EVIDENCE_IDS_PER_FINDING,
+    MAX_FINDINGS_PER_SECTION,
     MAX_MODEL_RESPONSE_CHARS,
     REQUIREMENTS_ANALYSIS_MODEL_SETTINGS,
 )
 from packs.software_delivery.requirements_analysis_contracts import (
-    ANALYSIS_CATEGORIES,
     AnalyzeRequirementsRequest,
     RequirementsAnalysisResult,
     RequirementsFinding,
@@ -28,8 +28,20 @@ from packs.software_delivery.requirements_analysis_prompt import (
 
 RetrieveEvidence = Callable[[str], Sequence[ScoredChunk]]
 
-_FINDING_KEYS = frozenset({"category", "statement", "evidence_ids"})
-_ROOT_KEYS = frozenset({"answer", "findings"})
+_FINDING_KEYS = frozenset({"statement", "evidence_ids"})
+_ROOT_KEYS = frozenset(
+    {
+        "summary",
+        "acceptance_criteria_gaps",
+        "risks",
+        "clarification_questions",
+    }
+)
+_SECTION_FIELDS = (
+    "acceptance_criteria_gaps",
+    "risks",
+    "clarification_questions",
+)
 
 
 def cited_chunks(
@@ -77,7 +89,8 @@ class AnalyzeRequirements:
             RequirementsAnalysisValidationError: Propagated from request or prompt
                 validation before retrieval or the model.
             MissingEvidenceError: No hits returned from retrieval.
-            ToolFailureError: Provider failure or invalid model output.
+            ProviderError: Propagated unchanged from ``ChatModel.complete()``.
+            ToolFailureError: Invalid or unusable model output.
         """
         hits = tuple(self._retrieve(request.requirements))
         if not hits:
@@ -89,16 +102,9 @@ class AnalyzeRequirements:
         system, messages, evidence_by_id = build_requirements_analysis_prompt(
             request, bundle
         )
-        try:
-            result = self._chat_model.complete(
-                system, messages, dict(REQUIREMENTS_ANALYSIS_MODEL_SETTINGS)
-            )
-        except ProviderError as exc:
-            raise ToolFailureError(
-                "Requirements analysis model call failed"
-            ) from exc
-        except Exception as exc:  # noqa: BLE001 - operational failure after valid args
-            raise ToolFailureError("Requirements analysis failed") from exc
+        result = self._chat_model.complete(
+            system, messages, dict(REQUIREMENTS_ANALYSIS_MODEL_SETTINGS)
+        )
 
         if not isinstance(result, AskResult) or not isinstance(result.content, str):
             raise ToolFailureError(
@@ -115,13 +121,26 @@ class AnalyzeRequirements:
         except json.JSONDecodeError as exc:
             raise ToolFailureError("model response is not valid JSON") from exc
 
-        answer, findings = _parse_payload(payload, evidence_by_id)
+        parsed = _parse_payload(payload, evidence_by_id)
         all_refs = tuple(
-            ref for finding in findings for ref in finding.references
+            ref
+            for section in (
+                parsed.acceptance_criteria_gaps,
+                parsed.risks,
+                parsed.clarification_questions,
+            )
+            for finding in section
+            for ref in finding.references
         )
         evidence = cited_chunks(hits, references=all_refs)
         try:
-            return RequirementsAnalysisResult(answer, findings, evidence)
+            return RequirementsAnalysisResult(
+                parsed.summary,
+                parsed.acceptance_criteria_gaps,
+                parsed.risks,
+                parsed.clarification_questions,
+                evidence,
+            )
         except ValueError as exc:
             raise ToolFailureError(str(exc)) from exc
 
@@ -129,7 +148,7 @@ class AnalyzeRequirements:
 def _parse_payload(
     payload: object,
     evidence_by_id: Mapping[str, SourceReference],
-) -> tuple[str, tuple[RequirementsFinding, ...]]:
+) -> RequirementsAnalysisResult:
     if not isinstance(payload, dict):
         raise ToolFailureError("model JSON must be an object")
     unknown_root = set(payload) - _ROOT_KEYS
@@ -137,50 +156,65 @@ def _parse_payload(
         raise ToolFailureError(
             f"unexpected model fields: {sorted(unknown_root)}"
         )
-    if "answer" not in payload:
-        raise ToolFailureError("answer is required")
-    if "findings" not in payload:
-        raise ToolFailureError("findings is required")
+    for required in _ROOT_KEYS:
+        if required not in payload:
+            raise ToolFailureError(f"{required} is required")
 
-    answer = payload["answer"]
-    if not isinstance(answer, str) or not answer.strip():
-        raise ToolFailureError("answer must be a non-blank string")
+    summary = payload["summary"]
+    if not isinstance(summary, str) or not summary.strip():
+        raise ToolFailureError("summary must be a non-blank string")
 
-    raw_findings = payload["findings"]
-    if isinstance(raw_findings, (str, bytes)) or not isinstance(
-        raw_findings, Sequence
-    ):
-        raise ToolFailureError("findings must be a sequence")
-    if len(raw_findings) == 0:
-        raise ToolFailureError("findings must be non-empty")
+    sections = {
+        field: _parse_section(field, payload[field], evidence_by_id)
+        for field in _SECTION_FIELDS
+    }
+    return RequirementsAnalysisResult(
+        summary,
+        sections["acceptance_criteria_gaps"],
+        sections["risks"],
+        sections["clarification_questions"],
+        (),
+    )
+
+
+def _parse_section(
+    field_name: str,
+    raw_section: object,
+    evidence_by_id: Mapping[str, SourceReference],
+) -> tuple[RequirementsFinding, ...]:
+    if isinstance(raw_section, (str, bytes)) or not isinstance(raw_section, Sequence):
+        raise ToolFailureError(f"{field_name} must be a sequence")
+    if len(raw_section) > MAX_FINDINGS_PER_SECTION:
+        raise ToolFailureError(
+            f"{field_name} must have at most {MAX_FINDINGS_PER_SECTION} items"
+        )
+    if len(raw_section) == 0:
+        return ()
 
     parsed: list[RequirementsFinding] = []
-    for item in raw_findings:
-        parsed.append(_parse_finding(item, evidence_by_id))
-    return answer, tuple(parsed)
+    for item in raw_section:
+        parsed.append(_parse_finding(item, field_name, evidence_by_id))
+    return tuple(parsed)
 
 
 def _parse_finding(
     item: object,
+    field_name: str,
     evidence_by_id: Mapping[str, SourceReference],
 ) -> RequirementsFinding:
     if not isinstance(item, Mapping):
-        raise ToolFailureError("finding must be an object")
+        raise ToolFailureError(f"{field_name} item must be an object")
     for key in item:
         if not isinstance(key, str):
-            raise ToolFailureError("finding keys must be strings")
+            raise ToolFailureError(f"{field_name} item keys must be strings")
     unknown = set(item) - _FINDING_KEYS
     if unknown:
-        raise ToolFailureError(f"unexpected finding fields: {sorted(unknown)}")
+        raise ToolFailureError(
+            f"unexpected {field_name} item fields: {sorted(unknown)}"
+        )
     for required in _FINDING_KEYS:
         if required not in item:
             raise ToolFailureError(f"{required} is required")
-
-    category = item["category"]
-    if not isinstance(category, str) or category not in ANALYSIS_CATEGORIES:
-        raise ToolFailureError(
-            f"category must be one of {sorted(ANALYSIS_CATEGORIES)}"
-        )
 
     statement = item["statement"]
     if not isinstance(statement, str) or not statement.strip():
@@ -188,7 +222,7 @@ def _parse_finding(
 
     references = _resolve_evidence_ids(item["evidence_ids"], evidence_by_id)
     try:
-        return RequirementsFinding(category, statement, references)
+        return RequirementsFinding(statement, references)
     except ValueError as exc:
         raise ToolFailureError(str(exc)) from exc
 

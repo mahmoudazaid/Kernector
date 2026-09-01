@@ -4,19 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from domain.knowledge import ScoredChunk, SourceReference
 from packs.software_delivery.errors import RequirementsAnalysisValidationError
 from packs.software_delivery.limits import (
-    MAX_ANALYSIS_ANSWER_CHARS,
-    MAX_ANALYSIS_FINDINGS,
+    MAX_ANALYSIS_SUMMARY_CHARS,
+    MAX_FINDINGS_PER_SECTION,
     MAX_FINDING_STATEMENT_CHARS,
     MAX_REQUIREMENTS_CHARS,
 )
-
-ANALYSIS_CATEGORIES = frozenset({"gap", "risk", "clarification", "ambiguity"})
-AnalysisCategory = Literal["gap", "risk", "clarification", "ambiguity"]
 
 _E = TypeVar("_E", bound=Exception)
 
@@ -77,20 +74,14 @@ class AnalyzeRequirementsRequest:
 
 @dataclass(frozen=True, slots=True)
 class RequirementsFinding:
-    """One structured finding from requirements analysis."""
+    """One structured finding with trusted provenance references."""
 
-    category: str
     statement: str
     references: Sequence[SourceReference]
 
     def __post_init__(self) -> None:
         # Structural checks only; callers that interpret model output must map
         # failures to ToolFailureError, never RequirementsAnalysisValidationError.
-        if not isinstance(self.category, str) or self.category not in ANALYSIS_CATEGORIES:
-            raise ValueError(
-                f"category must be one of {sorted(ANALYSIS_CATEGORIES)}, "
-                f"got {self.category!r}"
-            )
         if not isinstance(self.statement, str) or not self.statement.strip():
             raise ValueError("statement must be non-empty")
         if len(self.statement) > MAX_FINDING_STATEMENT_CHARS:
@@ -114,32 +105,34 @@ class RequirementsFinding:
 class RequirementsAnalysisResult:
     """Structured outcome of requirements analysis with cited evidence chunks."""
 
-    answer: str
-    findings: Sequence[RequirementsFinding]
+    summary: str
+    acceptance_criteria_gaps: Sequence[RequirementsFinding]
+    risks: Sequence[RequirementsFinding]
+    clarification_questions: Sequence[RequirementsFinding]
     evidence: Sequence[ScoredChunk]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.answer, str) or not self.answer.strip():
-            raise ValueError("answer must be non-empty")
-        if len(self.answer) > MAX_ANALYSIS_ANSWER_CHARS:
+        if not isinstance(self.summary, str) or not self.summary.strip():
+            raise ValueError("summary must be non-empty")
+        if len(self.summary) > MAX_ANALYSIS_SUMMARY_CHARS:
             raise ValueError(
-                f"answer must be at most {MAX_ANALYSIS_ANSWER_CHARS} characters"
+                f"summary must be at most {MAX_ANALYSIS_SUMMARY_CHARS} characters"
             )
-        findings = _require_sequence(self.findings, "findings", ValueError)
-        if len(findings) == 0:
-            raise ValueError("findings must be non-empty")
-        if len(findings) > MAX_ANALYSIS_FINDINGS:
-            raise ValueError(
-                f"findings must have at most {MAX_ANALYSIS_FINDINGS} items"
-            )
-        normalized_findings: list[RequirementsFinding] = []
-        for finding in findings:
-            if not isinstance(finding, RequirementsFinding):
-                raise ValueError(
-                    f"findings items must be RequirementsFinding, got {finding!r}"
-                )
-            normalized_findings.append(finding)
-        object.__setattr__(self, "findings", tuple(normalized_findings))
+        object.__setattr__(
+            self,
+            "acceptance_criteria_gaps",
+            _normalize_findings(self.acceptance_criteria_gaps, "acceptance_criteria_gaps"),
+        )
+        object.__setattr__(
+            self,
+            "risks",
+            _normalize_findings(self.risks, "risks"),
+        )
+        object.__setattr__(
+            self,
+            "clarification_questions",
+            _normalize_findings(self.clarification_questions, "clarification_questions"),
+        )
 
         evidence = _require_sequence(self.evidence, "evidence", ValueError)
         normalized_evidence: list[ScoredChunk] = []
@@ -150,3 +143,22 @@ class RequirementsAnalysisResult:
                 )
             normalized_evidence.append(hit)
         object.__setattr__(self, "evidence", tuple(normalized_evidence))
+
+
+def _normalize_findings(
+    findings: object,
+    field_name: str,
+) -> tuple[RequirementsFinding, ...]:
+    items = _require_sequence(findings, field_name, ValueError)
+    if len(items) > MAX_FINDINGS_PER_SECTION:
+        raise ValueError(
+            f"{field_name} must have at most {MAX_FINDINGS_PER_SECTION} items"
+        )
+    normalized: list[RequirementsFinding] = []
+    for item in items:
+        if not isinstance(item, RequirementsFinding):
+            raise ValueError(
+                f"{field_name} items must be RequirementsFinding, got {item!r}"
+            )
+        normalized.append(item)
+    return tuple(normalized)

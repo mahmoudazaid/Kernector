@@ -8,6 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -26,12 +27,6 @@ from domain.knowledge import (
 )
 from packs.software_delivery.errors import MissingEvidenceError
 from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
-from packs.software_delivery.requirements_analysis import AnalyzeRequirements
-from packs.software_delivery.requirements_analysis_contracts import (
-    AnalyzeRequirementsRequest,
-    RequirementsAnalysisResult,
-    RequirementsFinding,
-)
 from packs.software_delivery.orchestration_policy import (
     EXPORT_TEST_CASES_MARKDOWN_TOOL,
     GENERATE_TEST_CASES_TOOL,
@@ -39,6 +34,8 @@ from packs.software_delivery.orchestration_policy import (
 )
 from composition import (
     KnowledgeLoadError,
+    RequirementsAnalysisView,
+    RequirementsAnalyzer,
     Settings,
     available_providers,
     build_ask_service,
@@ -437,7 +434,7 @@ class _RecordingRewriteRetrieve:
         )
 
 
-def test_build_analyze_requirements_wires_pack_use_case(
+def test_build_analyze_requirements_wires_typed_composition_facade(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _sd_env(monkeypatch)
@@ -446,12 +443,23 @@ def test_build_analyze_requirements_wires_pack_use_case(
         lambda settings, vector_store=None: _RecordingRewriteRetrieve([]),
     )
 
-    use_case = build_analyze_requirements(
-        load_settings(), chat_model=_StubChat()
-    )
+    analyzer = build_analyze_requirements(load_settings(), chat_model=_StubChat())
 
-    assert isinstance(use_case, AnalyzeRequirements)
-    assert callable(use_case._retrieve)
+    assert hasattr(analyzer, "analyze")
+    assert callable(analyzer.analyze)
+    assert get_type_hints(analyzer.analyze)["return"] is RequirementsAnalysisView
+
+
+def test_build_analyze_requirements_has_concrete_return_annotation() -> None:
+    hints = get_type_hints(build_analyze_requirements)
+    assert hints["return"] is RequirementsAnalyzer
+
+
+def test_analysis_citations_has_concrete_return_annotation() -> None:
+    hints = get_type_hints(analysis_citations)
+    return_hint = hints["return"]
+    assert return_hint.__origin__ is tuple
+    assert return_hint.__args__[0].__name__ == "Citation"
 
 
 def test_analyze_requirements_retrieval_is_not_narrowed_by_source_type(
@@ -464,9 +472,12 @@ def test_analyze_requirements_retrieval_is_not_narrowed_by_source_type(
         lambda settings, vector_store=None: recorder,
     )
     settings = load_settings()
-    use_case = build_analyze_requirements(settings, chat_model=_StubChat())
+    analyzer = build_analyze_requirements(settings, chat_model=_StubChat())
 
-    use_case._retrieve("Assess MFA requirements")
+    from composition.requirements_analysis import PackRequirementsAnalyzer
+
+    assert isinstance(analyzer, PackRequirementsAnalyzer)
+    analyzer._use_case._retrieve("Assess MFA requirements")  # type: ignore[attr-defined]
 
     assert len(recorder.requests) == 1
     assert recorder.requests[0].metadata_filters is None
@@ -484,34 +495,57 @@ def test_relevance_threshold_filters_before_the_pack_sees_hits(
             [_scored_hit(score=-1.0)]
         ),
     )
-    use_case = build_analyze_requirements(
+    analyzer = build_analyze_requirements(
         load_settings(), chat_model=_StubChat()
     )
 
     with pytest.raises(MissingEvidenceError):
-        use_case.execute(AnalyzeRequirementsRequest("Assess MFA"))
+        analyzer.analyze("Assess MFA")
 
 
 def test_analysis_citations_projects_evidence_onto_application_citations() -> None:
     hit = _scored_hit(content="MFA required")
-    result = RequirementsAnalysisResult(
-        "summary",
-        (
-            RequirementsFinding(
-                "gap",
-                "missing lockout",
-                (SourceReference("US-1", "user_story"),),
-            ),
-        ),
-        (hit,),
+    view = RequirementsAnalysisView(
+        summary="summary",
+        acceptance_criteria_gaps=(),
+        risks=(),
+        clarification_questions=(),
+        evidence=(hit,),
     )
 
-    citations = analysis_citations(result)
+    citations = analysis_citations(view)
 
     assert len(citations) == 1
     assert citations[0].reference == SourceReference("US-1", "user_story")
     assert citations[0].quote == "MFA required"
     assert citations[0].chunk_index == 0
+
+
+def test_presentation_can_import_composition_requirements_types_without_packs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    script = r"""
+import sys
+import importlib
+
+composition = importlib.import_module("composition")
+names = set(sys.modules)
+assert hasattr(composition, "RequirementsAnalysisView")
+assert hasattr(composition, "RequirementsAnalyzer")
+assert hasattr(composition, "build_analyze_requirements")
+assert not any(name.startswith("packs.") for name in names)
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "DOMAIN_TOOL_PACKS": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
 
 
 def test_build_analyze_requirements_requires_enabled_pack(

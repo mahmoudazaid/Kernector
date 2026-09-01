@@ -7,8 +7,10 @@ from pathlib import Path
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
-from application.citations import build_citations
-from application.contracts import Citation
+from composition.requirements_analysis import (
+    PackRequirementsAnalyzer,
+    RequirementsAnalyzer,
+)
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, ConfigurationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -594,7 +596,7 @@ def build_analyze_requirements(
     *,
     chat_model: ChatModel,
     vector_store: VectorStore | None = None,
-) -> object:
+) -> RequirementsAnalyzer:
     """Wire Software Delivery requirements analysis when the pack is enabled.
 
     Binds filter-less cross-source retrieval with a relevance threshold in
@@ -606,7 +608,7 @@ def build_analyze_requirements(
         vector_store (VectorStore | None): Optional shared vector store client.
 
     Returns:
-        AnalyzeRequirements: Pack requirements analysis use case.
+        RequirementsAnalyzer: Typed composition façade over the pack use case.
 
     Raises:
         ConfigurationError: Pack disabled or analysis use case cannot be built.
@@ -634,15 +636,11 @@ def build_analyze_requirements(
     registration = importlib.import_module(
         "packs.software_delivery.registration"
     )
-    return registration.build_analyze_requirements(
-        retrieve=retrieve, chat_model=chat_model
+    return PackRequirementsAnalyzer(
+        registration.build_analyze_requirements(
+            retrieve=retrieve, chat_model=chat_model
+        )
     )
-
-
-def analysis_citations(result: object) -> tuple[Citation, ...]:
-    """Project pack analysis evidence onto application Citation values."""
-    evidence = result.evidence  # type: ignore[attr-defined]
-    return build_citations(evidence)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
