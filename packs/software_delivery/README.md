@@ -2,9 +2,12 @@
 
 ## Requirements analysis (RAG)
 
-Use case: `AnalyzeRequirements` (wired via `composition.build_analyze_requirements` when the pack is enabled).
+Use case: `AnalyzeRequirements` (pack). Presentation calls the typed composition
+façade `composition.build_analyze_requirements` → `RequirementsAnalyzer.analyze()`.
 
-Analyzes pasted requirements text against multi-source retrieved evidence and returns structured findings (gaps, risks, clarification questions, ambiguities) with trusted provenance.
+Analyzes pasted requirements text against multi-source retrieved evidence and
+returns a structured result with `summary`, `acceptance_criteria_gaps`, `risks`,
+and `clarification_questions`.
 
 ### Input
 
@@ -20,19 +23,29 @@ Composition binds `RewriteAndRetrieveKnowledge` behind that callable, applies `s
 
 ```python
 RequirementsAnalysisResult(
-    answer="...",
-    findings=(
-        RequirementsFinding(category="gap", statement="...", references=(...)),
-        ...
-    ),
+    summary="...",
+    acceptance_criteria_gaps=(RequirementsFinding(statement="...", references=(...)), ...),
+    risks=(...),
+    clarification_questions=(...),
     evidence=(<ScoredChunk>, ...),  # cited chunks in retrieval-rank order
 )
 ```
 
-`evidence` carries domain `ScoredChunk` values (not `application.contracts.Citation`) because packs may not import application types. Composition projects citations via `analysis_citations(result)`.
+Composition exposes `RequirementsAnalysisView` with the same structured fields.
+`evidence` carries domain `ScoredChunk` values (not `application.contracts.Citation`) because packs may not import application types. Composition projects citations via `analysis_citations(view)`.
 
 ### Model JSON contract
 
+```json
+{
+  "summary": "...",
+  "acceptance_criteria_gaps": [{"statement": "...", "evidence_ids": ["e0"]}],
+  "risks": [],
+  "clarification_questions": []
+}
+```
+
+All four top-level fields are required. Individual sections may be empty arrays.
 The model cites evidence with catalog ids `e0`, `e1`, … matching the ordered evidence array inside the untrusted assessment block. Findings must not supply their own `references` — provenance is resolved from the catalog the pack built from retrieval hits.
 
 ### Rules
@@ -47,62 +60,9 @@ The model cites evidence with catalog ids `e0`, `e1`, … matching the ordered e
 |---|---|
 | `RequirementsAnalysisValidationError` | Invalid or over-budget caller input / prompt before retrieval or the model |
 | `MissingEvidenceError` | No hits after retrieval (including below relevance threshold) |
-| `ToolFailureError` | Provider failure or invalid model JSON / evidence ids |
+| `ProviderError` | Propagated unchanged from `ChatModel.complete()` |
+| `ToolFailureError` | Invalid model JSON, schema violations, unknown evidence ids, or unusable model output |
 
-Named budgets: `MAX_REQUIREMENTS_CHARS`, `MAX_TOTAL_INPUT_CHARS`, `MAX_MODEL_RESPONSE_CHARS`, `MAX_ANALYSIS_ANSWER_CHARS`, `MAX_ANALYSIS_FINDINGS`, `MAX_FINDING_STATEMENT_CHARS`, `REQUIREMENTS_ANALYSIS_MODEL_SETTINGS`.
+Named budgets: `MAX_REQUIREMENTS_CHARS`, `MAX_TOTAL_INPUT_CHARS`, `MAX_MODEL_RESPONSE_CHARS`, `MAX_ANALYSIS_SUMMARY_CHARS`, `MAX_FINDINGS_PER_SECTION`, `MAX_FINDING_STATEMENT_CHARS`, `REQUIREMENTS_ANALYSIS_MODEL_SETTINGS`.
 
 ## Markdown test-case export
-
-Tool: `software_delivery.export_test_cases_markdown`
-
-Exports structured test cases and their source citations as Markdown. The output contains generated cases and citations only — no objectives, strategy, coverage summaries, scope, or entry/exit criteria.
-
-### Input
-
-Same shape as the JSON output from `software_delivery.generate_test_cases`:
-
-```json
-{
-  "output_style": "steps",
-  "test_cases": [{
-    "title": "...",
-    "steps": ["..."],
-    "expected": "...",
-    "references": [{"source_id": "...", "source_type": "..."}]
-  }]
-}
-```
-
-### Output template
-
-```markdown
-# Test Cases
-
-**Output style:** {output_style}
-
-## {n}. {title}
-
-### Steps
-
-{numbered list when output_style is steps | bullet list when gherkin}
-
-### Expected result
-
-{expected}
-
-### References
-
-- `{source_id}` ({source_type})
-```
-
-### Formatting rules
-
-- One root `output_style` per export (`steps` or `gherkin`)
-- Case order preserved from input
-- References sorted by `(source_type, source_id)` as normalized by `GeneratedTestCase`
-- Single trailing newline at EOF
-- Heading levels: `#` document, `##` case, `###` section
-
-### Validation
-
-Invalid or empty input raises `MarkdownExportValidationError` before any Markdown is produced.

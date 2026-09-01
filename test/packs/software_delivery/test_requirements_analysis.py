@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 
 import pytest
 
+from domain.errors import ProviderError, ToolFailureError
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
@@ -14,7 +15,6 @@ from domain.knowledge import (
     SourceReference,
 )
 from domain.models import AskResult, Message
-from domain.errors import ProviderError, ToolFailureError
 from packs.software_delivery.errors import (
     MissingEvidenceError,
     RequirementsAnalysisValidationError,
@@ -79,17 +79,23 @@ def _request(requirements: str = "As a user I want MFA.") -> AnalyzeRequirements
     return AnalyzeRequirementsRequest(requirements)
 
 
-def _analysis_payload(*, evidence_ids: list[str] | None = None) -> str:
+def _analysis_payload(
+    *,
+    evidence_ids: list[str] | None = None,
+    gaps: list[dict[str, object]] | None = None,
+    risks: list[dict[str, object]] | None = None,
+    clarifications: list[dict[str, object]] | None = None,
+) -> str:
+    gap_item = {
+        "statement": "No acceptance criterion covers lockout after failed MFA.",
+        "evidence_ids": evidence_ids or ["e0"],
+    }
     return json.dumps(
         {
-            "answer": "MFA is required but lockout rules are unclear.",
-            "findings": [
-                {
-                    "category": "gap",
-                    "statement": "No acceptance criterion covers lockout after failed MFA.",
-                    "evidence_ids": evidence_ids or ["e0"],
-                }
-            ],
+            "summary": "MFA is required but lockout rules are unclear.",
+            "acceptance_criteria_gaps": gaps if gaps is not None else [gap_item],
+            "risks": risks if risks is not None else [],
+            "clarification_questions": clarifications if clarifications is not None else [],
         }
     )
 
@@ -104,9 +110,65 @@ def test_analysis_returns_cited_findings_from_retrieved_evidence() -> None:
 
     assert retrieve.queries == [requirements]
     assert chat.calls[0][2] == dict(REQUIREMENTS_ANALYSIS_MODEL_SETTINGS)
-    assert result.findings[0].category == "gap"
-    assert result.findings[0].references == (SourceReference("US-1", "user_story"),)
+    assert result.acceptance_criteria_gaps[0].statement.startswith(
+        "No acceptance criterion"
+    )
+    assert result.acceptance_criteria_gaps[0].references == (
+        SourceReference("US-1", "user_story"),
+    )
     assert result.evidence[0].chunk.content == "Need MFA"
+
+
+def test_all_four_structured_sections_are_present_and_independently_parsed() -> None:
+    payload = json.dumps(
+        {
+            "summary": "Cross-source review complete.",
+            "acceptance_criteria_gaps": [
+                {"statement": "Gap one.", "evidence_ids": ["e0"]}
+            ],
+            "risks": [{"statement": "Risk one.", "evidence_ids": ["e0"]}],
+            "clarification_questions": [
+                {"statement": "Question one.", "evidence_ids": ["e0"]}
+            ],
+        }
+    )
+    result = AnalyzeRequirements(
+        _RecordingRetrieve([_hit()]), _FakeChat(payload)
+    ).execute(_request())
+
+    assert result.summary == "Cross-source review complete."
+    assert len(result.acceptance_criteria_gaps) == 1
+    assert len(result.risks) == 1
+    assert len(result.clarification_questions) == 1
+
+
+def test_empty_sections_are_allowed_when_no_supported_finding_exists() -> None:
+    payload = json.dumps(
+        {
+            "summary": "No actionable gaps found.",
+            "acceptance_criteria_gaps": [],
+            "risks": [],
+            "clarification_questions": [],
+        }
+    )
+    result = AnalyzeRequirements(
+        _RecordingRetrieve([_hit()]), _FakeChat(payload)
+    ).execute(_request())
+
+    assert result.acceptance_criteria_gaps == ()
+    assert result.risks == ()
+    assert result.clarification_questions == ()
+    assert result.evidence == ()
+
+
+def test_every_returned_finding_has_at_least_one_trusted_citation() -> None:
+    result = AnalyzeRequirements(
+        _RecordingRetrieve([_hit()]), _FakeChat(_analysis_payload())
+    ).execute(_request())
+
+    for finding in result.acceptance_criteria_gaps:
+        assert finding.references
+        assert all(isinstance(ref, SourceReference) for ref in finding.references)
 
 
 def test_empty_retrieval_raises_missing_evidence_before_the_model() -> None:
@@ -142,31 +204,41 @@ def test_evidence_may_span_multiple_source_kinds_without_story_filtering() -> No
     ]
     payload = json.dumps(
         {
-            "answer": "Cross-source gaps found.",
-            "findings": [
+            "summary": "Cross-source gaps found.",
+            "acceptance_criteria_gaps": [
                 {
-                    "category": "gap",
                     "statement": "SRS lockout missing from story.",
                     "evidence_ids": ["e1"],
-                },
+                }
+            ],
+            "risks": [
                 {
-                    "category": "risk",
                     "statement": "OpenAPI lacks rate limit.",
                     "evidence_ids": ["e2"],
-                },
+                }
+            ],
+            "clarification_questions": [
                 {
-                    "category": "clarification",
                     "statement": "Code path unclear.",
                     "evidence_ids": ["e4"],
-                },
+                }
             ],
         }
     )
-    retrieve = _RecordingRetrieve(hits)
-    chat = _FakeChat(payload)
-    result = AnalyzeRequirements(retrieve, chat).execute(_request())
+    result = AnalyzeRequirements(_RecordingRetrieve(hits), _FakeChat(payload)).execute(
+        _request()
+    )
 
-    cited_types = {ref.source_type for f in result.findings for ref in f.references}
+    cited_types = {
+        ref.source_type
+        for section in (
+            result.acceptance_criteria_gaps,
+            result.risks,
+            result.clarification_questions,
+        )
+        for finding in section
+        for ref in finding.references
+    }
     assert cited_types == {"srs", "openapi", "code"}
     assert "user_story" not in cited_types
 
@@ -179,9 +251,8 @@ def test_every_retrieved_source_kind_reaches_the_untrusted_evidence_block() -> N
         _hit(source_type="confluence", source_id="CONF-1"),
         _hit(source_type="code", source_id="auth.py"),
     ]
-    retrieve = _RecordingRetrieve(hits)
     chat = _FakeChat(_analysis_payload())
-    AnalyzeRequirements(retrieve, chat).execute(_request())
+    AnalyzeRequirements(_RecordingRetrieve(hits), chat).execute(_request())
 
     body = chat.calls[0][1][0].content
     payload = json.loads(
@@ -200,21 +271,22 @@ def test_same_source_id_under_two_kinds_are_separate_catalog_entries() -> None:
     ]
     payload = json.dumps(
         {
-            "answer": "Both sources differ.",
-            "findings": [
+            "summary": "Both sources differ.",
+            "acceptance_criteria_gaps": [
                 {
-                    "category": "ambiguity",
                     "statement": "Story and SRS disagree.",
                     "evidence_ids": ["e0", "e1"],
                 }
             ],
+            "risks": [],
+            "clarification_questions": [],
         }
     )
-    retrieve = _RecordingRetrieve(hits)
-    chat = _FakeChat(payload)
-    result = AnalyzeRequirements(retrieve, chat).execute(_request())
+    result = AnalyzeRequirements(_RecordingRetrieve(hits), _FakeChat(payload)).execute(
+        _request()
+    )
 
-    refs = result.findings[0].references
+    refs = result.acceptance_criteria_gaps[0].references
     assert set(refs) == {
         SourceReference("REQ-1", "user_story"),
         SourceReference("REQ-1", "srs"),
@@ -253,58 +325,49 @@ def test_unknown_evidence_id_is_tool_failure() -> None:
 
 def test_empty_evidence_ids_is_tool_failure() -> None:
     payload = json.loads(_analysis_payload())
-    payload["findings"][0]["evidence_ids"] = []
+    payload["acceptance_criteria_gaps"][0]["evidence_ids"] = []
     with pytest.raises(ToolFailureError, match="evidence_ids must be non-empty"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
-
-
-def test_unknown_category_is_tool_failure() -> None:
-    payload = json.loads(_analysis_payload())
-    payload["findings"][0]["category"] = "unknown"
-    with pytest.raises(ToolFailureError, match="category"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
+        AnalyzeRequirements(
+            _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
+        ).execute(_request())
 
 
 def test_unexpected_root_keys_are_tool_failure() -> None:
     payload = json.loads(_analysis_payload())
     payload["extra"] = "nope"
     with pytest.raises(ToolFailureError, match="unexpected model fields"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
+        AnalyzeRequirements(
+            _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
+        ).execute(_request())
 
 
 def test_unexpected_finding_keys_are_tool_failure() -> None:
     payload = json.loads(_analysis_payload())
-    payload["findings"][0]["references"] = [
+    payload["acceptance_criteria_gaps"][0]["references"] = [
         {"source_id": "evil", "source_type": "srs"}
     ]
-    with pytest.raises(ToolFailureError, match="unexpected finding fields"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
+    with pytest.raises(ToolFailureError, match="unexpected acceptance_criteria_gaps"):
+        AnalyzeRequirements(
+            _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
+        ).execute(_request())
 
 
-def test_missing_answer_is_tool_failure() -> None:
+def test_missing_summary_is_tool_failure() -> None:
     payload = json.loads(_analysis_payload())
-    del payload["answer"]
-    with pytest.raises(ToolFailureError, match="answer is required"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
+    del payload["summary"]
+    with pytest.raises(ToolFailureError, match="summary is required"):
+        AnalyzeRequirements(
+            _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
+        ).execute(_request())
 
 
-def test_missing_findings_is_tool_failure() -> None:
+def test_missing_section_is_tool_failure() -> None:
     payload = json.loads(_analysis_payload())
-    del payload["findings"]
-    with pytest.raises(ToolFailureError, match="findings is required"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
+    del payload["risks"]
+    with pytest.raises(ToolFailureError, match="risks is required"):
+        AnalyzeRequirements(
+            _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
+        ).execute(_request())
 
 
 def test_non_json_response_is_tool_failure() -> None:
@@ -320,25 +383,25 @@ def test_oversized_raw_response_is_tool_failure() -> None:
         AnalyzeRequirements(_RecordingRetrieve([_hit()]), chat).execute(_request())
 
 
-def test_provider_error_maps_to_tool_failure_with_cause() -> None:
+def test_provider_error_propagates_unchanged() -> None:
     class _Boom(_FakeChat):
         def complete(self, system, messages, settings):  # type: ignore[no-untyped-def]
-            raise ProviderError("vendor")
+            raise ProviderError("vendor outage")
 
-    with pytest.raises(ToolFailureError) as captured:
+    with pytest.raises(ProviderError, match="vendor outage") as captured:
         AnalyzeRequirements(_RecordingRetrieve([_hit()]), _Boom("")).execute(_request())
-    assert isinstance(captured.value.__cause__, ProviderError)
+    assert captured.value.__cause__ is None
 
 
 def test_model_supplied_references_are_rejected() -> None:
     payload = json.loads(_analysis_payload())
-    payload["findings"][0]["references"] = [
+    payload["acceptance_criteria_gaps"][0]["references"] = [
         {"source_id": "evil", "source_type": "srs"}
     ]
-    with pytest.raises(ToolFailureError, match="unexpected finding fields"):
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))).execute(
-            _request()
-        )
+    with pytest.raises(ToolFailureError, match="unexpected acceptance_criteria_gaps"):
+        AnalyzeRequirements(
+            _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
+        ).execute(_request())
 
 
 def test_every_cited_chunk_came_from_retrieval() -> None:
@@ -364,7 +427,3 @@ def test_invalid_model_output_is_not_caller_validation() -> None:
         )
     except ToolFailureError:
         pass
-
-
-
-
