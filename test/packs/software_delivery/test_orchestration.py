@@ -7,7 +7,13 @@ import json
 import pytest
 
 from domain.errors import ToolFailureError
-from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
+from domain.knowledge import SourceReference
+from packs.software_delivery.errors import OrchestrationValidationError
+from packs.software_delivery.evidence_bundle import (
+    EvidenceBundle,
+    EvidenceBundleItem,
+    evidence_bundle_from_hits,
+)
 from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
 from packs.software_delivery.orchestration_contracts import (
     ExportMarkdownOutcome,
@@ -20,11 +26,6 @@ from packs.software_delivery.orchestration_policy import (
     GENERATE_TEST_CASES_TOOL,
     RISK_SCORE_TOOL,
     SoftwareDeliveryIntent,
-)
-from domain.knowledge import SourceReference
-from packs.software_delivery.evidence_bundle import (
-    EvidenceBundle,
-    evidence_bundle_from_hits,
 )
 from test.packs.software_delivery.test_evidence_bundle import _hit
 
@@ -194,14 +195,48 @@ def test_invalid_risk_json_fails_before_generate() -> None:
     assert invoke.calls[0][0] == RISK_SCORE_TOOL
 
 
-def test_empty_evidence_bundle_rejected_before_invoke() -> None:
+def test_empty_evidence_bundle_rejected_at_construction_before_invoke() -> None:
     invoke = _RecordingInvoke()
-    request = OrchestrateSoftwareDeliveryRequest(
-        intent=SoftwareDeliveryIntent.RISK_SCORE,
-        target="Assess MFA",
-        evidence=EvidenceBundle(items=()),
-    )
 
-    with pytest.raises(ToolFailureError, match="non-empty"):
-        OrchestrateSoftwareDelivery(invoke).execute(request)
+    with pytest.raises(OrchestrationValidationError, match="items must be non-empty"):
+        EvidenceBundle(items=())
+
+    assert invoke.calls == []
+
+
+def test_malformed_evidence_item_rejected_without_attribute_error() -> None:
+    invoke = _RecordingInvoke()
+
+    with pytest.raises(OrchestrationValidationError, match="reference must be"):
+        EvidenceBundleItem("not-a-reference", "text")  # type: ignore[arg-type]
+
+    with pytest.raises(OrchestrationValidationError, match="text must be non-empty"):
+        EvidenceBundleItem(SourceReference("US-1", "user_story"), "   ")
+
+    with pytest.raises(OrchestrationValidationError, match="is_complete must be a bool"):
+        EvidenceBundleItem(
+            SourceReference("US-1", "user_story"),
+            "text",
+            is_complete=1,  # type: ignore[arg-type]
+        )
+
+    assert invoke.calls == []
+
+
+def test_malformed_evidence_bundle_rejected_before_invoke_without_attribute_error() -> None:
+    invoke = _RecordingInvoke()
+
+    with pytest.raises(OrchestrationValidationError, match="items must be a sequence"):
+        EvidenceBundle(items="not-a-sequence")  # type: ignore[arg-type]
+
+    with pytest.raises(OrchestrationValidationError, match="items entries must be"):
+        EvidenceBundle(items=[{"source_id": "US-1"}])  # type: ignore[list-item]
+
+    with pytest.raises(OrchestrationValidationError, match="items must be non-empty"):
+        OrchestrateSoftwareDeliveryRequest(
+            intent=SoftwareDeliveryIntent.RISK_SCORE,
+            target="Assess MFA",
+            evidence=EvidenceBundle(items=()),
+        )
+
     assert invoke.calls == []
