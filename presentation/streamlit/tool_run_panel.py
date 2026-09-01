@@ -1,7 +1,8 @@
 """Streamlit renderers for Software Delivery tool-run results.
 
-Widgets only: accepts typed composition views from #170 or tests. No tool
-invocation, retrieval, or orchestration lives here.
+Widgets only: accepts ``SoftwareDeliveryRunView`` from test fixtures or from a
+future pack projection adapter — not from ``AskResponse.tool_outputs`` directly.
+No tool invocation, retrieval, or orchestration lives here.
 """
 
 from __future__ import annotations

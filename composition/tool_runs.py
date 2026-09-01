@@ -1,10 +1,10 @@
 """Generic tool-call envelope for presentation surfaces.
 
-Carries tool name, outcome status, and an explicitly authored summary.
-Summaries must be built from safe typed metadata (score, case count, tool
-name, success/failure) — never from ``InvokeToolResponse.result`` or any other
-opaque payload. #170 projects tool outcomes onto typed views before presentation
-renders.
+Carries tool name, outcome status, and an explicitly authored summary for
+renderers. Not stored on ``AskResponse.tool_outputs`` (opaque
+``InvokeToolResponse`` only). A future pack-specific projection adapter builds
+these views from validated typed metadata — never from ``InvokeToolResponse.result``
+or truncated opaque payloads.
 """
 
 from __future__ import annotations

@@ -120,21 +120,32 @@ pack is disabled, gated by `requirements_analysis_enabled` rather than by catchi
 
 The Streamlit **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,
-and Markdown preview/download — from fixtures or from future
-``AskResponse.tool_outputs`` populated by #170. They are absent when the pack
-is disabled, gated by ``software_delivery_tools_enabled`` rather than by
-catching ``ConfigurationError``. There is no standalone tool-run form and no
-parallel retrieval/orchestration path in composition.
+and Markdown preview/download — from **test fixtures only** in this PR. They
+are absent when the pack is disabled, gated by ``software_delivery_tools_enabled``
+rather than by catching ``ConfigurationError``. There is no standalone tool-run
+form and no parallel retrieval/orchestration path in composition.
+
+``AskResponse.tool_outputs`` remains ``Sequence[InvokeToolResponse]`` — opaque
+tool name plus opaque result string. Generic ``InvokeTool``, ``AskResponse``,
+and shared Streamlit code never interpret pack payloads. Presentation views
+(``SoftwareDeliveryRunView``, ``ToolCallView``, etc.) are **not** stored on
+``AskResponse``.
 
 The generic ``ToolCallView`` envelope carries tool name, success/failure
 status, and an explicitly authored summary (≤120 characters) built from typed
 metadata such as score or generated-case count — never from
 ``InvokeToolResponse.result`` or truncated opaque payloads. Raw tool payloads
-are never stored, exposed, or rendered. Shared Streamlit code
-stays pack-agnostic; Software Delivery renderers live in ``tool_run_panel.py``.
-``AskResponse.tool_outputs`` remains unpopulated until
-[#170](https://github.com/mahmoudazaid/Kernector/issues/170) wires chat-time
-tool selection and projection onto these views — #161 cannot close until then.
+are never stored, exposed, or rendered. Shared Streamlit code stays
+pack-agnostic; Software Delivery renderers live in ``tool_run_panel.py``.
+``AskResponse.tool_outputs`` is unpopulated by ``AskKnowledge`` today; #161
+cannot close until [#170](https://github.com/mahmoudazaid/Kernector/issues/170)
+wires chat-time tool selection and a pack-specific projection step.
+
+**Future flow (#170, not in this PR):** chat intent → retrieve/orchestrate →
+``AskResponse.tool_outputs`` containing opaque ``InvokeToolResponse`` entries →
+isolated Software Delivery projection adapter parses known pack outcomes into
+``SoftwareDeliveryRunView`` / ``ToolCallView`` (summaries authored from
+validated typed metadata only) → Streamlit renderers.
 
 #### Tool invocation boundary (#92 vs #95 vs #161 vs #170)
 
@@ -144,8 +155,10 @@ tool selection and projection onto these views — #161 cannot close until then.
   tool selection remains open ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
 - **#161** — presentation-only renderers and the generic ``ToolCallView`` envelope;
   testable with fixtures; blocked on #170 for chat-turn integration.
-- **#170** — chat intent → retrieve → orchestrate → populate
-  ``AskResponse.tool_outputs`` with typed views (not in this PR).
+- **#170** — chat intent → retrieve/orchestrate → populate
+  ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries; a
+  pack-specific projection adapter (not in #161) parses outcomes into typed
+  views for renderers.
 
 ### Grounded ask: system policy vs optional task prompts
 

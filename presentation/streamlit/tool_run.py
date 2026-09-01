@@ -1,7 +1,8 @@
 """Pure formatters for tool-run presentation.
 
 No execution, retrieval, or orchestration — only Markdown lines derived from
-typed composition views supplied by #170 or test fixtures.
+typed composition views supplied by a pack projection adapter or test fixtures.
+``AskResponse.tool_outputs`` carries opaque ``InvokeToolResponse`` entries only.
 """
 
 from __future__ import annotations
