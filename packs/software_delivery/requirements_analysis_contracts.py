@@ -81,7 +81,8 @@ class RequirementsFinding:
 
     def __post_init__(self) -> None:
         # Structural checks only; callers that interpret model output must map
-        # failures to ToolFailureError, never RequirementsAnalysisValidationError.
+        # failures to RequirementsAnalysisOutputError, never
+        # RequirementsAnalysisValidationError.
         if not isinstance(self.statement, str) or not self.statement.strip():
             raise ValueError("statement must be non-empty")
         if len(self.statement) > MAX_FINDING_STATEMENT_CHARS:

@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 
-from domain.errors import ToolFailureError
 from domain.knowledge import ScoredChunk, SourceReference
 from domain.models import AskResult
 from domain.ports import ChatModel
-from packs.software_delivery.errors import MissingEvidenceError
+from packs.software_delivery.errors import (
+    MissingEvidenceError,
+    RequirementsAnalysisOutputError,
+)
 from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
 from packs.software_delivery.limits import (
     MAX_EVIDENCE_IDS_PER_FINDING,
@@ -90,7 +92,7 @@ class AnalyzeRequirements:
                 validation before retrieval or the model.
             MissingEvidenceError: No hits returned from retrieval.
             ProviderError: Propagated unchanged from ``ChatModel.complete()``.
-            ToolFailureError: Invalid or unusable model output.
+            RequirementsAnalysisOutputError: Invalid or unusable model output.
         """
         hits = tuple(self._retrieve(request.requirements))
         if not hits:
@@ -107,11 +109,11 @@ class AnalyzeRequirements:
         )
 
         if not isinstance(result, AskResult) or not isinstance(result.content, str):
-            raise ToolFailureError(
+            raise RequirementsAnalysisOutputError(
                 "Requirements analysis returned unusable model content"
             )
         if len(result.content) > MAX_MODEL_RESPONSE_CHARS:
-            raise ToolFailureError(
+            raise RequirementsAnalysisOutputError(
                 f"model response must be at most {MAX_MODEL_RESPONSE_CHARS} characters, "
                 f"got {len(result.content)}"
             )
@@ -119,7 +121,9 @@ class AnalyzeRequirements:
         try:
             payload = json.loads(result.content)
         except json.JSONDecodeError as exc:
-            raise ToolFailureError("model response is not valid JSON") from exc
+            raise RequirementsAnalysisOutputError(
+                "model response is not valid JSON"
+            ) from exc
 
         parsed = _parse_payload(payload, evidence_by_id)
         evidence = _resolve_evidence(hits, parsed)
@@ -132,7 +136,7 @@ class AnalyzeRequirements:
                 evidence,
             )
         except ValueError as exc:
-            raise ToolFailureError(str(exc)) from exc
+            raise RequirementsAnalysisOutputError(str(exc)) from exc
 
 
 def _resolve_evidence(
@@ -160,19 +164,19 @@ def _parse_payload(
     evidence_by_id: Mapping[str, SourceReference],
 ) -> RequirementsAnalysisResult:
     if not isinstance(payload, dict):
-        raise ToolFailureError("model JSON must be an object")
+        raise RequirementsAnalysisOutputError("model JSON must be an object")
     unknown_root = set(payload) - _ROOT_KEYS
     if unknown_root:
-        raise ToolFailureError(
+        raise RequirementsAnalysisOutputError(
             f"unexpected model fields: {sorted(unknown_root)}"
         )
     for required in _ROOT_KEYS:
         if required not in payload:
-            raise ToolFailureError(f"{required} is required")
+            raise RequirementsAnalysisOutputError(f"{required} is required")
 
     summary = payload["summary"]
     if not isinstance(summary, str) or not summary.strip():
-        raise ToolFailureError("summary must be a non-blank string")
+        raise RequirementsAnalysisOutputError("summary must be a non-blank string")
 
     sections = {
         field: _parse_section(field, payload[field], evidence_by_id)
@@ -193,9 +197,9 @@ def _parse_section(
     evidence_by_id: Mapping[str, SourceReference],
 ) -> tuple[RequirementsFinding, ...]:
     if isinstance(raw_section, (str, bytes)) or not isinstance(raw_section, Sequence):
-        raise ToolFailureError(f"{field_name} must be a sequence")
+        raise RequirementsAnalysisOutputError(f"{field_name} must be a sequence")
     if len(raw_section) > MAX_FINDINGS_PER_SECTION:
-        raise ToolFailureError(
+        raise RequirementsAnalysisOutputError(
             f"{field_name} must have at most {MAX_FINDINGS_PER_SECTION} items"
         )
     if len(raw_section) == 0:
@@ -213,28 +217,28 @@ def _parse_finding(
     evidence_by_id: Mapping[str, SourceReference],
 ) -> RequirementsFinding:
     if not isinstance(item, Mapping):
-        raise ToolFailureError(f"{field_name} item must be an object")
+        raise RequirementsAnalysisOutputError(f"{field_name} item must be an object")
     for key in item:
         if not isinstance(key, str):
-            raise ToolFailureError(f"{field_name} item keys must be strings")
+            raise RequirementsAnalysisOutputError(f"{field_name} item keys must be strings")
     unknown = set(item) - _FINDING_KEYS
     if unknown:
-        raise ToolFailureError(
+        raise RequirementsAnalysisOutputError(
             f"unexpected {field_name} item fields: {sorted(unknown)}"
         )
     for required in _FINDING_KEYS:
         if required not in item:
-            raise ToolFailureError(f"{required} is required")
+            raise RequirementsAnalysisOutputError(f"{required} is required")
 
     statement = item["statement"]
     if not isinstance(statement, str) or not statement.strip():
-        raise ToolFailureError("statement must be a non-blank string")
+        raise RequirementsAnalysisOutputError("statement must be a non-blank string")
 
     references = _resolve_evidence_ids(item["evidence_ids"], evidence_by_id)
     try:
         return RequirementsFinding(statement, references)
     except ValueError as exc:
-        raise ToolFailureError(str(exc)) from exc
+        raise RequirementsAnalysisOutputError(str(exc)) from exc
 
 
 def _resolve_evidence_ids(
@@ -242,18 +246,18 @@ def _resolve_evidence_ids(
     evidence_by_id: Mapping[str, SourceReference],
 ) -> tuple[SourceReference, ...]:
     if isinstance(raw_ids, (str, bytes)) or not isinstance(raw_ids, Sequence):
-        raise ToolFailureError("evidence_ids must be a sequence")
+        raise RequirementsAnalysisOutputError("evidence_ids must be a sequence")
     if len(raw_ids) == 0:
-        raise ToolFailureError("evidence_ids must be non-empty")
+        raise RequirementsAnalysisOutputError("evidence_ids must be non-empty")
     if len(raw_ids) > MAX_EVIDENCE_IDS_PER_FINDING:
-        raise ToolFailureError(
+        raise RequirementsAnalysisOutputError(
             f"evidence_ids must have at most {MAX_EVIDENCE_IDS_PER_FINDING} items"
         )
     refs: list[SourceReference] = []
     for evidence_id in raw_ids:
         if not isinstance(evidence_id, str) or not evidence_id.strip():
-            raise ToolFailureError("evidence_ids items must be non-blank strings")
+            raise RequirementsAnalysisOutputError("evidence_ids items must be non-blank strings")
         if evidence_id not in evidence_by_id:
-            raise ToolFailureError(f"unknown evidence_id: {evidence_id!r}")
+            raise RequirementsAnalysisOutputError(f"unknown evidence_id: {evidence_id!r}")
         refs.append(evidence_by_id[evidence_id])
     return tuple(refs)

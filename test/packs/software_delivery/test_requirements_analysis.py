@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 
 import pytest
 
-from domain.errors import ProviderError, ToolFailureError
+from domain.errors import DomainValidationError, ProviderError, ToolArgumentValidationError
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
@@ -17,6 +17,7 @@ from domain.knowledge import (
 from domain.models import AskResult, Message
 from packs.software_delivery.errors import (
     MissingEvidenceError,
+    RequirementsAnalysisOutputError,
     RequirementsAnalysisValidationError,
 )
 from packs.software_delivery.limits import (
@@ -358,69 +359,69 @@ def test_invalid_requirements_reject_before_retrieval_or_model(
     assert chat.calls == []
 
 
-def test_unknown_evidence_id_is_tool_failure() -> None:
+def test_unknown_evidence_id_is_output_error() -> None:
     chat = _FakeChat(_analysis_payload(evidence_ids=["e99"]))
-    with pytest.raises(ToolFailureError, match="unknown evidence_id"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="unknown evidence_id"):
         AnalyzeRequirements(_RecordingRetrieve([_hit()]), chat).execute(_request())
 
 
-def test_empty_evidence_ids_is_tool_failure() -> None:
+def test_empty_evidence_ids_is_output_error() -> None:
     payload = json.loads(_analysis_payload())
     payload["acceptance_criteria_gaps"][0]["evidence_ids"] = []
-    with pytest.raises(ToolFailureError, match="evidence_ids must be non-empty"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="evidence_ids must be non-empty"):
         AnalyzeRequirements(
             _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
         ).execute(_request())
 
 
-def test_unexpected_root_keys_are_tool_failure() -> None:
+def test_unexpected_root_keys_are_output_error() -> None:
     payload = json.loads(_analysis_payload())
     payload["extra"] = "nope"
-    with pytest.raises(ToolFailureError, match="unexpected model fields"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="unexpected model fields"):
         AnalyzeRequirements(
             _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
         ).execute(_request())
 
 
-def test_unexpected_finding_keys_are_tool_failure() -> None:
+def test_unexpected_finding_keys_are_output_error() -> None:
     payload = json.loads(_analysis_payload())
     payload["acceptance_criteria_gaps"][0]["references"] = [
         {"source_id": "evil", "source_type": "srs"}
     ]
-    with pytest.raises(ToolFailureError, match="unexpected acceptance_criteria_gaps"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="unexpected acceptance_criteria_gaps"):
         AnalyzeRequirements(
             _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
         ).execute(_request())
 
 
-def test_missing_summary_is_tool_failure() -> None:
+def test_missing_summary_is_output_error() -> None:
     payload = json.loads(_analysis_payload())
     del payload["summary"]
-    with pytest.raises(ToolFailureError, match="summary is required"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="summary is required"):
         AnalyzeRequirements(
             _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
         ).execute(_request())
 
 
-def test_missing_section_is_tool_failure() -> None:
+def test_missing_section_is_output_error() -> None:
     payload = json.loads(_analysis_payload())
     del payload["risks"]
-    with pytest.raises(ToolFailureError, match="risks is required"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="risks is required"):
         AnalyzeRequirements(
             _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
         ).execute(_request())
 
 
-def test_non_json_response_is_tool_failure() -> None:
-    with pytest.raises(ToolFailureError, match="not valid JSON"):
+def test_non_json_response_is_output_error() -> None:
+    with pytest.raises(RequirementsAnalysisOutputError, match="not valid JSON"):
         AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat("not-json")).execute(
             _request()
         )
 
 
-def test_oversized_raw_response_is_tool_failure() -> None:
+def test_oversized_raw_response_is_output_error() -> None:
     chat = _FakeChat("x" * (MAX_MODEL_RESPONSE_CHARS + 1))
-    with pytest.raises(ToolFailureError, match="model response"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="model response"):
         AnalyzeRequirements(_RecordingRetrieve([_hit()]), chat).execute(_request())
 
 
@@ -439,7 +440,7 @@ def test_model_supplied_references_are_rejected() -> None:
     payload["acceptance_criteria_gaps"][0]["references"] = [
         {"source_id": "evil", "source_type": "srs"}
     ]
-    with pytest.raises(ToolFailureError, match="unexpected acceptance_criteria_gaps"):
+    with pytest.raises(RequirementsAnalysisOutputError, match="unexpected acceptance_criteria_gaps"):
         AnalyzeRequirements(
             _RecordingRetrieve([_hit()]), _FakeChat(json.dumps(payload))
         ).execute(_request())
@@ -453,18 +454,31 @@ def test_every_cited_chunk_came_from_retrieval() -> None:
     assert {c.chunk.content for c in result.evidence} <= {h.chunk.content for h in hits}
 
 
-def test_invalid_model_output_is_not_caller_validation() -> None:
-    with pytest.raises(ToolFailureError):
+def test_caller_validation_is_domain_validation_not_tool_argument() -> None:
+    assert issubclass(RequirementsAnalysisValidationError, DomainValidationError)
+    assert not issubclass(
+        RequirementsAnalysisValidationError, ToolArgumentValidationError
+    )
+
+
+def test_invalid_model_output_is_provider_error_subtype_not_tool_failure() -> None:
+    from domain.errors import ToolFailureError
+
+    assert issubclass(RequirementsAnalysisOutputError, ProviderError)
+    assert not issubclass(RequirementsAnalysisOutputError, ToolFailureError)
+    with pytest.raises(RequirementsAnalysisOutputError):
         AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat("not-json")).execute(
             _request()
         )
-    try:
-        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _FakeChat("{}")).execute(
-            _request()
-        )
-    except RequirementsAnalysisValidationError:
-        pytest.fail(
-            "model output must not raise RequirementsAnalysisValidationError"
-        )
-    except ToolFailureError:
-        pass
+
+
+def test_provider_error_from_chat_port_is_not_output_error_wrapper() -> None:
+    class _Boom(_FakeChat):
+        def complete(self, system, messages, settings):  # type: ignore[no-untyped-def]
+            raise ProviderError("vendor outage")
+
+    with pytest.raises(ProviderError) as captured:
+        AnalyzeRequirements(_RecordingRetrieve([_hit()]), _Boom("")).execute(_request())
+
+    assert type(captured.value) is ProviderError
+    assert not isinstance(captured.value, RequirementsAnalysisOutputError)
