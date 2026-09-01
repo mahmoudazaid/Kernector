@@ -10,6 +10,7 @@ from application.ask_service import AskService
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, ConfigurationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
+from application.invoke_tool import InvokeTool
 from application.manage_documents import (
     DocumentManagementError,
     ManageUploadedDocuments,
@@ -527,6 +528,63 @@ def build_ask_knowledge(
         relevance_threshold=settings.retrieval.relevance_threshold,
         max_input_length=settings.max_input_length,
     )
+
+
+def build_invoke_tool(
+    settings: Settings, *, chat_model: ChatModel | None = None
+) -> InvokeTool:
+    """Wire opaque ``InvokeTool`` to the configured domain tool registry.
+
+    Args:
+        settings (Settings): Runtime settings including enabled tool packs.
+        chat_model (ChatModel | None): Required when ``software-delivery`` is
+            enabled; injected only, never constructed here.
+
+    Returns:
+        InvokeTool: Generic lookup-and-run use case.
+    """
+    return InvokeTool(build_tool_registry(settings, chat_model=chat_model))
+
+
+def build_orchestrate_software_delivery(
+    settings: Settings,
+    *,
+    chat_model: ChatModel,
+) -> object:
+    """Wire Software Delivery orchestration when the pack is enabled.
+
+    Imports pack orchestration only for configured pack IDs so disabled packs
+    are not loaded at import time.
+
+    Args:
+        settings (Settings): Runtime settings including enabled tool packs.
+        chat_model (ChatModel): Shared chat adapter for generate-test-cases.
+
+    Returns:
+        OrchestrateSoftwareDelivery: Pack orchestration use case.
+
+    Raises:
+        ConfigurationError: Pack disabled or orchestrator cannot be built.
+    """
+    if "software-delivery" not in settings.domain_tools.enabled_packs:
+        raise ConfigurationError(
+            "software-delivery pack must be enabled to build orchestration"
+        )
+    invoke_tool = build_invoke_tool(settings, chat_model=chat_model)
+
+    def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
+        from application.contracts import InvokeToolRequest
+
+        return invoke_tool.execute(
+            InvokeToolRequest(tool_name, arguments)
+        ).result
+
+    import importlib
+
+    registration = importlib.import_module(
+        "packs.software_delivery.registration"
+    )
+    return registration.build_orchestrator(invoke=invoke)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

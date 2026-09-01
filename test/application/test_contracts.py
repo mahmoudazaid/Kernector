@@ -733,3 +733,15 @@ def test_application_contracts_import_without_streamlit() -> None:
     module = importlib.import_module("application.contracts")
     assert "streamlit" not in sys.modules
     assert hasattr(module, "AskRequest")
+
+
+def test_application_contracts_exclude_software_delivery_orchestration_types() -> None:
+    import application.contracts as contracts
+
+    forbidden = {
+        "SoftwareDeliveryIntent",
+        "OrchestrateSoftwareDeliveryRequest",
+        "OrchestrateSoftwareDeliveryResponse",
+    }
+    assert forbidden.isdisjoint(set(dir(contracts)))
+
