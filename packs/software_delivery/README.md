@@ -122,3 +122,44 @@ Same shape as the JSON output from `software_delivery.generate_test_cases`:
 ### Validation
 
 Invalid or empty input raises `MarkdownExportValidationError` before any Markdown is produced.
+
+## Chat-time intent selection
+
+`select_chat_intent(query)` decides which tool chain — if any — a chat message is
+asking for. It is a deterministic keyword policy, not a classifier: a chat-time
+tool call is a side effect, and an explicit table is reproducible and testable
+offline. Composition reaches it through `registration.build_chat_intent_selector`.
+
+### Input
+
+The raw chat message. It is lowercased and its whitespace collapsed before
+matching; nothing else is normalized.
+
+### Output
+
+`ChatToolSelection(generate_tests, output_style)`, or `None` when no Software
+Delivery workflow is named — which leaves the query on the ordinary grounded-RAG
+path.
+
+### Rules
+
+| Terms | Effect |
+|---|---|
+| `test case(s)`, `test scenario(s)`, `generate tests`, `write tests`, `test plan`, `acceptance test` | `generate_tests=True` |
+| `gherkin`, `given/when/then`, `given when then`, `feature file`, `cucumber` | `generate_tests=True`, `output_style="gherkin"` |
+| `risk score`, `score the risk`, `risk assessment`, `assess the risk`, `how risky`, `delivery risk` | `generate_tests=False` |
+| anything else | `None` |
+
+- A gherkin term implies generation on its own: "give me a feature file for the
+  login story" names a test artifact and needs no second signal.
+- Test-generation terms win over risk terms, because the generate chain already
+  scores risk first.
+- **Declining is the default, and the tables are deliberately narrow.** A false
+  negative costs a tool run the user can re-ask for; a false positive runs tools
+  nobody wanted. "Can you check the risk here?" does not match, by design.
+
+### Validation
+
+`ChatToolSelection` raises `OrchestrationValidationError` for a non-bool
+`generate_tests` or an `output_style` outside `TEST_CASE_STYLES` — the same error
+`OrchestrateSoftwareDeliveryRequest` raises for the identical field.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from application.contracts import AskRequest, AskResponse
+from application.contracts import AskRequest, AskResponse, InvokeToolResponse
 from application.errors import ApplicationValidationError
 from application.rewrite_and_retrieve import QueryRewriteFailure
 from domain.errors import (
@@ -15,7 +15,7 @@ from domain.errors import (
     VectorStoreError,
 )
 from domain.models import Message
-from presentation.streamlit.ask_turn import run_ask_turn
+from presentation.streamlit.ask_turn import run_ask_turn, tool_output_lines
 
 _FIXED_OPERATIONAL_MESSAGE = "Something went wrong while processing your request."
 _FIXED_PROVIDER_MESSAGE = "The model provider could not complete the request."
@@ -219,3 +219,64 @@ def test_successful_ask_returns_the_response() -> None:
     assert result.response is not None
     assert result.response.answer == "ok"
     assert ask.calls[0].history == history
+
+
+class _ToolAsk:
+    """A grounded ask whose turn ran tools, as the chat-time path produces."""
+
+    def __init__(self) -> None:
+        self.response = AskResponse(
+            answer="Scored risk, generated test cases, and exported Markdown.",
+            tool_outputs=(
+                InvokeToolResponse(
+                    "software_delivery.risk_score", '{"score": 62, "level": "high"}'
+                ),
+                InvokeToolResponse(
+                    "software_delivery.export_test_cases_markdown", "# Test Cases\n"
+                ),
+            ),
+        )
+
+    def execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None = None,
+    ) -> AskResponse:
+        return self.response
+
+
+def test_a_tool_turn_reaches_the_ui_with_its_outputs() -> None:
+    """AC4: what the tools returned survives the presentation boundary intact."""
+    result = run_ask_turn(
+        _ToolAsk(),  # type: ignore[arg-type]
+        query="Create test cases for AUTH-101",
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is True
+    assert result.response is not None
+    assert [output.tool_name for output in result.response.tool_outputs] == [
+        "software_delivery.risk_score",
+        "software_delivery.export_test_cases_markdown",
+    ]
+
+
+def test_tool_output_lines_name_each_tool_without_parsing_it() -> None:
+    """The payload is measured, never interpreted — that keeps the line generic."""
+    lines = tool_output_lines(
+        (
+            InvokeToolResponse("software_delivery.risk_score", '{"score": 62}'),
+            InvokeToolResponse("software_delivery.export_test_cases_markdown", "# T\n"),
+        )
+    )
+
+    assert lines == (
+        "- `software_delivery.risk_score` — 13 characters",
+        "- `software_delivery.export_test_cases_markdown` — 4 characters",
+    )
+    assert not any('"score"' in line for line in lines)
+
+
+def test_no_tool_outputs_render_no_lines() -> None:
+    assert tool_output_lines(()) == ()
