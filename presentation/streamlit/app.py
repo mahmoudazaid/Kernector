@@ -39,13 +39,6 @@ from presentation.streamlit.components import (
     render_run_meta,
 )
 from presentation.streamlit.modes import default_mode_index, mode_options
-from presentation.streamlit.tool_run import (
-    tool_run_result_after_successful_document_mutation,
-)
-from presentation.streamlit.tool_run_panel import (
-    TOOL_RUN_RESULT_KEY,
-    render_tool_run,
-)
 from presentation.streamlit.upload_ingest import (
     UploadIngestResult,
     create_new_document,
@@ -109,7 +102,6 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
     if st.button("New chat", icon=":material/add_comment:", width="stretch"):
         st.session_state.messages = []
         st.session_state.pop(_ANALYSIS_RESULT_KEY, None)
-        st.session_state.pop(TOOL_RUN_RESULT_KEY, None)
 
     selected_model = settings.openrouter.model
     ollama_base_url = settings.ollama.base_url
@@ -344,11 +336,6 @@ def _apply_action_result(result: UploadIngestResult) -> None:
             st.session_state.get(_ANALYSIS_RESULT_KEY)
         )
     )
-    st.session_state[TOOL_RUN_RESULT_KEY] = (
-        tool_run_result_after_successful_document_mutation(
-            st.session_state.get(TOOL_RUN_RESULT_KEY)
-        )
-    )
     if result.should_rerun:
         st.session_state[_ACTION_MESSAGE_KEY] = result.message
         st.rerun()  # Raises; nothing after this line runs.
@@ -502,13 +489,6 @@ def render() -> None:
         return
 
     _render_requirements_analysis(
-        settings,
-        chat_model,
-        provider=state.provider,
-        model=state.model,
-    )
-
-    render_tool_run(
         settings,
         chat_model,
         provider=state.provider,

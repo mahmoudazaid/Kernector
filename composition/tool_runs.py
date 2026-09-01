@@ -1,16 +1,15 @@
-"""Generic tool-call envelope shared by every domain-pack surface.
+"""Generic tool-call envelope for presentation surfaces.
 
-Recorded at the opaque ``InvokeTool`` boundary, so nothing here interprets a
-pack payload. Presentation consumes ``ToolCallView`` without knowing which
-pack produced it.
+Carries only what the UI may show safely: tool name, outcome status, and a
+bounded summary. Raw opaque tool payloads stay outside this type; #170 maps
+``InvokeToolResponse.result`` into typed views before presentation renders.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
-OpaqueInvoke = Callable[[str, Mapping[str, object]], str]
+MAX_TOOL_CALL_SUMMARY_CHARS = 120
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,51 +18,30 @@ class ToolCallView:
 
     Attributes:
         tool_name (str): Registered tool that ran.
-        ok (bool): Whether the invocation returned instead of raising.
-        result (str): Opaque tool output on success, empty on failure. Never
-            parsed here — that is what keeps the envelope pack-agnostic.
+        ok (bool): Whether the invocation completed successfully.
+        summary (str): Bounded, user-safe description of the outcome. Never the
+            full opaque tool payload.
     """
 
     tool_name: str
     ok: bool
-    result: str = ""
+    summary: str = ""
+
+    def __post_init__(self) -> None:
+        if len(self.summary) > MAX_TOOL_CALL_SUMMARY_CHARS:
+            raise ValueError(
+                f"summary must be at most {MAX_TOOL_CALL_SUMMARY_CHARS} "
+                f"characters, got {len(self.summary)}"
+            )
 
 
-class ToolRunFailedError(RuntimeError):
-    """A tool run stopped at a failing call, with the ledger up to that point.
-
-    The message is composition-authored and fixed; tool and vendor detail stay
-    on ``__cause__``. ``calls`` is carried because a failed run's most useful
-    output is which tool failed, and orchestration discards its outcomes when
-    it short-circuits.
-
-    Attributes:
-        calls (tuple[ToolCallView, ...]): Envelopes recorded before the raise,
-            ending with the failed one.
-    """
-
-    def __init__(self, message: str, *, calls: Sequence[ToolCallView] = ()) -> None:
-        super().__init__(message)
-        self.calls: tuple[ToolCallView, ...] = tuple(calls)
-
-
-class ToolCallRecorder:
-    """Wraps an opaque invoke callable and records one envelope per call."""
-
-    def __init__(self, invoke: OpaqueInvoke) -> None:
-        self._invoke = invoke
-        self._calls: list[ToolCallView] = []
-
-    @property
-    def calls(self) -> tuple[ToolCallView, ...]:
-        """Envelopes for every call so far, in invocation order."""
-        return tuple(self._calls)
-
-    def __call__(self, tool_name: str, arguments: Mapping[str, object]) -> str:
-        try:
-            result = self._invoke(tool_name, arguments)
-        except Exception:
-            self._calls.append(ToolCallView(tool_name, ok=False))
-            raise
-        self._calls.append(ToolCallView(tool_name, ok=True, result=result))
-        return result
+def bounded_tool_call_summary(
+    text: str,
+    *,
+    limit: int = MAX_TOOL_CALL_SUMMARY_CHARS,
+) -> str:
+    """Return a user-safe summary truncated to ``limit`` characters."""
+    stripped = text.strip()
+    if len(stripped) <= limit:
+        return stripped
+    return stripped[: limit - 1].rstrip() + "…"
