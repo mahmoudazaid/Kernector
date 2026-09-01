@@ -14,3 +14,13 @@ class ConfigurationError(RuntimeError):
     the composition root, which maps an adapter's own configuration exception
     onto this type; ordinary adapter failures keep their own error type.
     """
+
+
+class InsufficientEvidenceError(RuntimeError):
+    """A grounded use case found no retrieval hits above the relevance threshold.
+
+    Expected outcome for flows such as requirements analysis where the caller
+    supplied valid input but the corpus has nothing relevant enough to ground
+    a model call. Presentation maps this type to a fixed user-safe sentence;
+    diagnostic detail belongs on ``__cause__`` alone.
+    """

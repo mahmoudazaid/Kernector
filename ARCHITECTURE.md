@@ -114,7 +114,9 @@ Software Delivery requirements analysis (`AnalyzeRequirements`) receives
 retrieval through a single-argument callable wired in composition — no
 `metadata_filters` channel — with `RELEVANCE_THRESHOLD` applied before hits
 reach the pack, mirroring the insufficient-evidence semantics documented for
-`AskKnowledge`.
+`AskKnowledge`. The Streamlit requirements-analysis panel is absent when the
+pack is disabled, gated by `requirements_analysis_enabled` rather than by catching
+`ConfigurationError`.
 
 #### Tool invocation boundary (#92 vs #95)
 
@@ -201,6 +203,7 @@ operational types to fixed category sentences (see below).
 | Category | Type | Layer | Meaning |
 |---|---|---|---|
 | validation | `ApplicationValidationError`, `UnknownPromptError`, `UnknownDocumentError` | application | Contract / input reject |
+| outcome | `InsufficientEvidenceError` | application | Grounded use case; no retrieval hits cleared the relevance threshold |
 | validation | `DomainValidationError` | domain | Domain invariant violation |
 | config | `ConfigurationError` | application | Missing/invalid environment at composition |
 | config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` |
@@ -216,7 +219,7 @@ operational types to fixed category sentences (see below).
 | pack | `MissingEvidenceError` | domain | No retrieval hits cleared the relevance threshold for requirements analysis |
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
-| composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of the above |
+| composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of infrastructure / adapter failures |
 
 **Empty / below-threshold retrieval is not an error.** `AskKnowledge` returns
 `AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())` and does not
@@ -234,6 +237,17 @@ Exception type alone is never treated as proof that `str(error)` is safe:
 
 Technical and vendor detail may remain on `__cause__` (and in logs); it must
 not reach `st.error`.
+
+Streamlit requirements-analysis mapping (`run_analysis_turn`) uses the same
+fixed type → message policy:
+
+| Caught type | User-facing message |
+|---|---|
+| `ApplicationValidationError` | boundary-authored `str(error)` |
+| `ProviderError` (incl. `RequirementsAnalysisOutputError`) | fixed provider sentence |
+| `InsufficientEvidenceError` | fixed insufficient-evidence sentence |
+| `DomainValidationError`, `VectorStoreError`, other `RuntimeError` | fixed operational sentence |
+| anything else | logged, generic unexpected sentence |
 
 ## Architecture tests
 

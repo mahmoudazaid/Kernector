@@ -9,6 +9,9 @@ from typing import Protocol
 from application.citations import build_citations
 from application.contracts import Citation
 from domain.knowledge import ScoredChunk, SourceReference
+from infrastructure.config import Settings
+
+_REQUIREMENTS_ANALYSIS_PACK_ID = "software-delivery"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,3 +91,8 @@ class PackRequirementsAnalyzer:
 
     def analyze(self, requirements: str) -> RequirementsAnalysisView:
         return _to_view(self._execute(requirements))
+
+
+def requirements_analysis_enabled(settings: Settings) -> bool:
+    """Whether requirements analysis is wired for the current runtime settings."""
+    return _REQUIREMENTS_ANALYSIS_PACK_ID in settings.domain_tools.enabled_packs

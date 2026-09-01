@@ -12,7 +12,11 @@ from composition.requirements_analysis import (
     RequirementsAnalyzer,
 )
 from application.contracts import IngestRequest, IngestResponse
-from application.errors import ApplicationValidationError, ConfigurationError
+from application.errors import (
+    ApplicationValidationError,
+    ConfigurationError,
+    InsufficientEvidenceError,
+)
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.manage_documents import (
@@ -641,11 +645,15 @@ def build_analyze_requirements(
     )
 
     def execute(requirements: str):
+        from packs.software_delivery.errors import MissingEvidenceError
         from packs.software_delivery.requirements_analysis_contracts import (
             AnalyzeRequirementsRequest,
         )
 
-        return use_case.execute(AnalyzeRequirementsRequest(requirements))
+        try:
+            return use_case.execute(AnalyzeRequirementsRequest(requirements))
+        except MissingEvidenceError as error:
+            raise InsufficientEvidenceError() from error
 
     return PackRequirementsAnalyzer(execute)
 
