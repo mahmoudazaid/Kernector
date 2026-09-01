@@ -462,6 +462,26 @@ def test_analysis_citations_has_concrete_return_annotation() -> None:
     assert return_hint.__args__[0].__name__ == "Citation"
 
 
+class _AnalysisStubChat(_StubChat):
+    """Returns minimal valid requirements-analysis JSON from complete()."""
+
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        settings: Mapping[str, object],
+    ) -> AskResult:
+        payload = json.dumps(
+            {
+                "summary": "Stubbed analysis.",
+                "acceptance_criteria_gaps": [],
+                "risks": [],
+                "clarification_questions": [],
+            }
+        )
+        return AskResult(content=payload)
+
+
 def test_analyze_requirements_retrieval_is_not_narrowed_by_source_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -472,12 +492,9 @@ def test_analyze_requirements_retrieval_is_not_narrowed_by_source_type(
         lambda settings, vector_store=None: recorder,
     )
     settings = load_settings()
-    analyzer = build_analyze_requirements(settings, chat_model=_StubChat())
+    analyzer = build_analyze_requirements(settings, chat_model=_AnalysisStubChat())
 
-    from composition.requirements_analysis import PackRequirementsAnalyzer
-
-    assert isinstance(analyzer, PackRequirementsAnalyzer)
-    analyzer._use_case._retrieve("Assess MFA requirements")  # type: ignore[attr-defined]
+    analyzer.analyze("Assess MFA requirements")
 
     assert len(recorder.requests) == 1
     assert recorder.requests[0].metadata_filters is None

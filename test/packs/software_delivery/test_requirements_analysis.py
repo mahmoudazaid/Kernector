@@ -142,7 +142,11 @@ def test_all_four_structured_sections_are_present_and_independently_parsed() -> 
     assert len(result.clarification_questions) == 1
 
 
-def test_empty_sections_are_allowed_when_no_supported_finding_exists() -> None:
+def test_empty_sections_retain_retrieved_hits_as_summary_evidence() -> None:
+    hits = [
+        _hit(content="Need MFA"),
+        _hit(source_id="SRS-2", source_type="srs", content="SRS lockout rule"),
+    ]
     payload = json.dumps(
         {
             "summary": "No actionable gaps found.",
@@ -152,13 +156,50 @@ def test_empty_sections_are_allowed_when_no_supported_finding_exists() -> None:
         }
     )
     result = AnalyzeRequirements(
-        _RecordingRetrieve([_hit()]), _FakeChat(payload)
+        _RecordingRetrieve(hits), _FakeChat(payload)
     ).execute(_request())
 
     assert result.acceptance_criteria_gaps == ()
     assert result.risks == ()
     assert result.clarification_questions == ()
-    assert result.evidence == ()
+    assert {hit.chunk.content for hit in result.evidence} == {
+        "Need MFA",
+        "SRS lockout rule",
+    }
+
+
+def test_summary_only_evidence_chunks_all_came_from_retrieval() -> None:
+    hits = [_hit(content="trusted summary support")]
+    result = AnalyzeRequirements(
+        _RecordingRetrieve(hits),
+        _FakeChat(
+            json.dumps(
+                {
+                    "summary": "Looks complete.",
+                    "acceptance_criteria_gaps": [],
+                    "risks": [],
+                    "clarification_questions": [],
+                }
+            )
+        ),
+    ).execute(_request())
+
+    assert {c.chunk.content for c in result.evidence} <= {h.chunk.content for h in hits}
+
+
+def test_findings_do_not_cite_unrelated_retrieved_hits() -> None:
+    hits = [
+        _hit(source_id="US-1", source_type="user_story", content="Story MFA"),
+        _hit(source_id="SRS-2", source_type="srs", content="SRS lockout"),
+    ]
+    result = AnalyzeRequirements(
+        _RecordingRetrieve(hits),
+        _FakeChat(_analysis_payload(evidence_ids=["e0"])),
+    ).execute(_request())
+
+    assert len(result.evidence) == 1
+    assert result.evidence[0].chunk.content == "Story MFA"
+    assert result.evidence[0].chunk.reference == SourceReference("US-1", "user_story")
 
 
 def test_every_returned_finding_has_at_least_one_trusted_citation() -> None:
