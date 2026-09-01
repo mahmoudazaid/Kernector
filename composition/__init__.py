@@ -40,6 +40,7 @@ from composition.errors import (
     DocumentUploadError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
+    RequirementsEvidenceUnavailableError,
 )
 from infrastructure.config import Settings
 
@@ -48,6 +49,7 @@ __all__ = [
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
+    "RequirementsEvidenceUnavailableError",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
     "Settings",

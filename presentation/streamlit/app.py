@@ -9,9 +9,11 @@ from application.ask_knowledge import AskKnowledge
 from application.contracts import Citation
 from application.errors import ConfigurationError
 from composition import (
+    RequirementsAnalysisFindingView,
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
+    build_analyze_requirements,
     build_ask_knowledge,
     build_chat_model,
     build_prompt_repository,
@@ -19,7 +21,12 @@ from composition import (
     probe_ollama,
 )
 from domain.models import Message
-from domain.ports import PromptRepository
+from domain.ports import ChatModel, PromptRepository
+from presentation.streamlit.analysis_turn import (
+    analysis_enabled,
+    finding_bullets,
+    run_analysis_turn,
+)
 from presentation.streamlit.ask_turn import run_ask_turn
 from presentation.streamlit.components import (
     render_export_actions,
@@ -239,6 +246,59 @@ def _handle_input(
 
 
 _ACTION_MESSAGE_KEY = "document_action_message"
+_ANALYSIS_RESULT_KEY = "requirements_analysis_result"
+
+
+def _render_findings(
+    title: str, findings: Sequence[RequirementsAnalysisFindingView]
+) -> None:
+    if not findings:
+        return
+    st.markdown(f"**{title}**")
+    for bullet in finding_bullets(findings):
+        st.markdown(bullet)
+
+
+def _render_requirements_analysis(settings: Settings, chat_model: ChatModel) -> None:
+    """Analyze pasted requirements. Absent unless the domain pack is enabled."""
+    if not analysis_enabled(settings):
+        return
+
+    try:
+        analyzer = build_analyze_requirements(settings, chat_model=chat_model)
+    except ConfigurationError as error:
+        st.error(str(error))
+        return
+
+    st.subheader("Requirements analysis")
+    with st.form("requirements_analysis"):
+        requirements = st.text_area(
+            "Requirements",
+            height=180,
+            help="Paste a story or requirements text. Analysis is grounded in "
+            "ingested documents across every source kind.",
+        )
+        submitted = st.form_submit_button("Analyze")
+
+    if submitted:
+        with st.spinner("Analyzing..."):
+            st.session_state[_ANALYSIS_RESULT_KEY] = run_analysis_turn(
+                analyzer, requirements=requirements
+            )
+
+    result = st.session_state.get(_ANALYSIS_RESULT_KEY)
+    if result is None:
+        return
+    if not result.ok:
+        st.error(result.message)
+        return
+
+    assert result.view is not None
+    st.markdown(result.view.summary)
+    _render_findings("Acceptance criteria gaps", result.view.acceptance_criteria_gaps)
+    _render_findings("Risks", result.view.risks)
+    _render_findings("Clarification questions", result.view.clarification_questions)
+    _render_citations(result.citations)
 
 
 def _apply_action_result(result: UploadIngestResult) -> None:
@@ -389,19 +449,22 @@ def render() -> None:
     _render_upload_ingest(settings)
 
     try:
+        chat_model = build_chat_model(
+            settings,
+            provider=state.provider,
+            model=state.model,
+            base_url=state.ollama_base_url,
+        )
         ask = build_ask_knowledge(
             settings,
-            chat_model=build_chat_model(
-                settings,
-                provider=state.provider,
-                model=state.model,
-                base_url=state.ollama_base_url,
-            ),
+            chat_model=chat_model,
             prompt_repository=repository,
         )
     except ConfigurationError as error:
         st.error(str(error))
         return
+
+    _render_requirements_analysis(settings, chat_model)
 
     prompts = repository.all()
     off_topic_marker = (
