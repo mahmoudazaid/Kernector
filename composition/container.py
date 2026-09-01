@@ -10,6 +10,7 @@ from application.ask_service import AskService
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, ConfigurationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
+from application.invoke_tool import InvokeTool
 from application.manage_documents import (
     DocumentManagementError,
     ManageUploadedDocuments,
@@ -18,6 +19,7 @@ from application.manage_documents import (
     PartialReplaceFailure,
     UnknownDocumentError,
 )
+from application.orchestrate_software_delivery import OrchestrateSoftwareDelivery
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition.errors import (
@@ -523,6 +525,50 @@ def build_ask_knowledge(
         rewrite_and_retrieve,
         build_ask_service(chat_model),
         prompt_repository,
+        default_retrieval_limit=settings.retrieval.limit,
+        relevance_threshold=settings.retrieval.relevance_threshold,
+        max_input_length=settings.max_input_length,
+    )
+
+
+def build_invoke_tool(
+    settings: Settings, *, chat_model: ChatModel | None = None
+) -> InvokeTool:
+    """Wire opaque ``InvokeTool`` to the configured domain tool registry.
+
+    Args:
+        settings (Settings): Runtime settings including enabled tool packs.
+        chat_model (ChatModel | None): Required when ``software-delivery`` is
+            enabled; injected only, never constructed here.
+
+    Returns:
+        InvokeTool: Generic lookup-and-run use case.
+    """
+    return InvokeTool(build_tool_registry(settings, chat_model=chat_model))
+
+
+def build_orchestrate_software_delivery(
+    settings: Settings,
+    *,
+    chat_model: ChatModel,
+    vector_store: VectorStore | None = None,
+) -> OrchestrateSoftwareDelivery:
+    """Wire Software Delivery orchestration to retrieve + opaque invoke.
+
+    Args:
+        settings (Settings): Retrieval limits and enabled tool packs.
+        chat_model (ChatModel): Shared chat adapter for generate-test-cases.
+        vector_store (VectorStore | None): Optional injected store.
+
+    Returns:
+        OrchestrateSoftwareDelivery: Application orchestration use case.
+    """
+    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=vector_store
+    )
+    return OrchestrateSoftwareDelivery(
+        rewrite_and_retrieve,
+        build_invoke_tool(settings, chat_model=chat_model),
         default_retrieval_limit=settings.retrieval.limit,
         relevance_threshold=settings.retrieval.relevance_threshold,
         max_input_length=settings.max_input_length,

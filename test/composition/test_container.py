@@ -12,8 +12,16 @@ from pathlib import Path
 import pytest
 
 from application.ask_service import AskService
+from application.contracts import InvokeToolRequest
 from application.errors import ConfigurationError
 from application.ingest_knowledge import IngestKnowledge
+from application.invoke_tool import InvokeTool
+from application.orchestrate_software_delivery import (
+    EXPORT_TEST_CASES_MARKDOWN,
+    GENERATE_TEST_CASES,
+    RISK_SCORE,
+    OrchestrateSoftwareDelivery,
+)
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition import (
@@ -23,6 +31,8 @@ from composition import (
     build_ask_service,
     build_chat_model,
     build_ingest_knowledge,
+    build_invoke_tool,
+    build_orchestrate_software_delivery,
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
@@ -266,6 +276,83 @@ def test_build_ask_knowledge_routes_generation_through_ask_service(
     ask = build_ask_knowledge(load_settings(), chat_model=_StubChat())
 
     assert isinstance(ask._ask_service, AskService)
+
+
+def test_build_invoke_tool_registers_software_delivery_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+
+    invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
+
+    assert isinstance(invoke, InvokeTool)
+    assert set(invoke._registry.names()) == {
+        RISK_SCORE,
+        GENERATE_TEST_CASES,
+        EXPORT_TEST_CASES_MARKDOWN,
+    }
+
+
+def test_build_invoke_tool_runs_real_risk_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
+
+    response = invoke.execute(
+        InvokeToolRequest(
+            RISK_SCORE,
+            {
+                "target": "Assess MFA",
+                "evidence": [
+                    {
+                        "source_id": "US-1",
+                        "source_type": "user_story",
+                        "text": "As a user I want MFA so that accounts are safer.",
+                        "is_complete": True,
+                    }
+                ],
+            },
+        )
+    )
+
+    assert response.tool_name == RISK_SCORE
+    assert '"score"' in response.result
+
+
+def test_build_orchestrate_software_delivery_wires_settings_and_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    monkeypatch.setenv("PROMPT_PACKS", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("RETRIEVAL_LIMIT", "9")
+    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.42")
+    monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+
+    use_case = build_orchestrate_software_delivery(
+        load_settings(), chat_model=_StubChat()
+    )
+
+    assert isinstance(use_case, OrchestrateSoftwareDelivery)
+    assert use_case._default_retrieval_limit == 9
+    assert use_case._relevance_threshold == 0.42
+    assert use_case._max_input_length == 1234
+    assert set(use_case._invoke_tool._registry.names()) == {
+        RISK_SCORE,
+        GENERATE_TEST_CASES,
+        EXPORT_TEST_CASES_MARKDOWN,
+    }
 
 
 def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -> None:
