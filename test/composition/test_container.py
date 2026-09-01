@@ -37,6 +37,8 @@ from composition import (
     RequirementsAnalysisView,
     RequirementsAnalyzer,
     Settings,
+    SoftwareDeliveryRunView,
+    ToolCallView,
     available_providers,
     build_ask_service,
     build_analyze_requirements,
@@ -48,6 +50,7 @@ from composition import (
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
+    build_software_delivery_tools,
     build_vector_store,
     load_knowledge_documents,
     load_runtime_settings,
@@ -368,6 +371,33 @@ def test_build_orchestrate_requires_enabled_pack(
         )
 
 
+def test_build_software_delivery_tools_wires_a_typed_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    runner = build_software_delivery_tools(load_settings(), chat_model=_StubChat())
+
+    assert hasattr(runner, "run")
+    assert get_type_hints(runner.run)["return"] is SoftwareDeliveryRunView
+
+
+def test_build_software_delivery_tools_requires_the_enabled_pack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
+
+    with pytest.raises(
+        ConfigurationError, match="software-delivery pack must be enabled"
+    ):
+        build_software_delivery_tools(load_settings(), chat_model=_StubChat())
+
+
 def test_disabled_orchestration_does_not_import_pack_at_composition_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -568,6 +598,9 @@ names = set(sys.modules)
 assert hasattr(composition, "RequirementsAnalysisView")
 assert hasattr(composition, "RequirementsAnalyzer")
 assert hasattr(composition, "build_analyze_requirements")
+assert hasattr(composition, "SoftwareDeliveryRunView")
+assert hasattr(composition, "ToolCallView")
+assert hasattr(composition, "build_software_delivery_tools")
 assert not any(name.startswith("packs.") for name in names)
 print("ok")
 """
