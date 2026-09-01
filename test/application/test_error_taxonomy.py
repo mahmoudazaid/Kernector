@@ -155,3 +155,11 @@ def test_empty_retrieval_is_not_an_error_type() -> None:
     assert not hasattr(
         __import__("domain.errors", fromlist=["*"]), "RetrievalError"
     )
+
+
+def test_insufficient_evidence_error_is_application_owned() -> None:
+    from application.errors import InsufficientEvidenceError
+
+    assert issubclass(InsufficientEvidenceError, RuntimeError)
+    assert not issubclass(InsufficientEvidenceError, ApplicationValidationError)
+    assert not issubclass(InsufficientEvidenceError, DomainValidationError)

@@ -14,7 +14,7 @@ import pytest
 
 from application.ask_service import AskService
 from application.contracts import InvokeToolRequest, RetrieveRequest, RewriteRetrieveResponse
-from application.errors import ConfigurationError
+from application.errors import ConfigurationError, InsufficientEvidenceError
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.retrieve_knowledge import RetrieveKnowledge
@@ -36,7 +36,6 @@ from composition import (
     KnowledgeLoadError,
     RequirementsAnalysisView,
     RequirementsAnalyzer,
-    RequirementsEvidenceUnavailableError,
     Settings,
     available_providers,
     build_ask_service,
@@ -517,7 +516,7 @@ def test_relevance_threshold_filters_before_the_pack_sees_hits(
         load_settings(), chat_model=_StubChat()
     )
 
-    with pytest.raises(RequirementsEvidenceUnavailableError):
+    with pytest.raises(InsufficientEvidenceError):
         analyzer.analyze("Assess MFA")
 
 
@@ -532,7 +531,7 @@ def test_missing_evidence_is_translated_at_the_composition_edge(
     )
     analyzer = build_analyze_requirements(load_settings(), chat_model=_StubChat())
 
-    with pytest.raises(RequirementsEvidenceUnavailableError) as excinfo:
+    with pytest.raises(InsufficientEvidenceError) as excinfo:
         analyzer.analyze("Assess MFA")
 
     assert isinstance(excinfo.value.__cause__, MissingEvidenceError)

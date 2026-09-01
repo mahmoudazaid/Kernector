@@ -19,11 +19,15 @@ from composition import (
     build_prompt_repository,
     load_runtime_settings,
     probe_ollama,
+    requirements_analysis_enabled,
 )
 from domain.models import Message
 from domain.ports import ChatModel, PromptRepository
 from presentation.streamlit.analysis_turn import (
-    analysis_enabled,
+    AnalysisContext,
+    StoredAnalysisResult,
+    analysis_result_after_successful_document_mutation,
+    analysis_result_for_display,
     finding_bullets,
     run_analysis_turn,
 )
@@ -97,6 +101,7 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
 
     if st.button("New chat", icon=":material/add_comment:", width="stretch"):
         st.session_state.messages = []
+        st.session_state.pop(_ANALYSIS_RESULT_KEY, None)
 
     selected_model = settings.openrouter.model
     ollama_base_url = settings.ollama.base_url
@@ -259,9 +264,15 @@ def _render_findings(
         st.markdown(bullet)
 
 
-def _render_requirements_analysis(settings: Settings, chat_model: ChatModel) -> None:
+def _render_requirements_analysis(
+    settings: Settings,
+    chat_model: ChatModel,
+    *,
+    provider: str,
+    model: str,
+) -> None:
     """Analyze pasted requirements. Absent unless the domain pack is enabled."""
-    if not analysis_enabled(settings):
+    if not requirements_analysis_enabled(settings):
         return
 
     try:
@@ -280,13 +291,21 @@ def _render_requirements_analysis(settings: Settings, chat_model: ChatModel) -> 
         )
         submitted = st.form_submit_button("Analyze")
 
+    context = AnalysisContext(
+        requirements=requirements,
+        provider=provider,
+        model=model,
+    )
+
     if submitted:
         with st.spinner("Analyzing..."):
-            st.session_state[_ANALYSIS_RESULT_KEY] = run_analysis_turn(
-                analyzer, requirements=requirements
+            st.session_state[_ANALYSIS_RESULT_KEY] = StoredAnalysisResult(
+                context=context,
+                result=run_analysis_turn(analyzer, requirements=requirements),
             )
 
-    result = st.session_state.get(_ANALYSIS_RESULT_KEY)
+    stored = st.session_state.get(_ANALYSIS_RESULT_KEY)
+    result = analysis_result_for_display(stored, context=context)
     if result is None:
         return
     if not result.ok:
@@ -312,6 +331,11 @@ def _apply_action_result(result: UploadIngestResult) -> None:
     if not result.ok:
         st.error(result.message)
         return
+    st.session_state[_ANALYSIS_RESULT_KEY] = (
+        analysis_result_after_successful_document_mutation(
+            st.session_state.get(_ANALYSIS_RESULT_KEY)
+        )
+    )
     if result.should_rerun:
         st.session_state[_ACTION_MESSAGE_KEY] = result.message
         st.rerun()  # Raises; nothing after this line runs.
@@ -464,7 +488,12 @@ def render() -> None:
         st.error(str(error))
         return
 
-    _render_requirements_analysis(settings, chat_model)
+    _render_requirements_analysis(
+        settings,
+        chat_model,
+        provider=state.provider,
+        model=state.model,
+    )
 
     prompts = repository.all()
     off_topic_marker = (
