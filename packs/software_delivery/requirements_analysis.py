@@ -122,17 +122,7 @@ class AnalyzeRequirements:
             raise ToolFailureError("model response is not valid JSON") from exc
 
         parsed = _parse_payload(payload, evidence_by_id)
-        all_refs = tuple(
-            ref
-            for section in (
-                parsed.acceptance_criteria_gaps,
-                parsed.risks,
-                parsed.clarification_questions,
-            )
-            for finding in section
-            for ref in finding.references
-        )
-        evidence = cited_chunks(hits, references=all_refs)
+        evidence = _resolve_evidence(hits, parsed)
         try:
             return RequirementsAnalysisResult(
                 parsed.summary,
@@ -143,6 +133,26 @@ class AnalyzeRequirements:
             )
         except ValueError as exc:
             raise ToolFailureError(str(exc)) from exc
+
+
+def _resolve_evidence(
+    hits: Sequence[ScoredChunk],
+    parsed: RequirementsAnalysisResult,
+) -> tuple[ScoredChunk, ...]:
+    """Return cited chunks for findings, or all retrieved hits when sections are empty."""
+    all_refs = tuple(
+        ref
+        for section in (
+            parsed.acceptance_criteria_gaps,
+            parsed.risks,
+            parsed.clarification_questions,
+        )
+        for finding in section
+        for ref in finding.references
+    )
+    if all_refs:
+        return cited_chunks(hits, references=all_refs)
+    return tuple(hits)
 
 
 def _parse_payload(

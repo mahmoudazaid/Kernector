@@ -636,11 +636,18 @@ def build_analyze_requirements(
     registration = importlib.import_module(
         "packs.software_delivery.registration"
     )
-    return PackRequirementsAnalyzer(
-        registration.build_analyze_requirements(
-            retrieve=retrieve, chat_model=chat_model
-        )
+    use_case = registration.build_analyze_requirements(
+        retrieve=retrieve, chat_model=chat_model
     )
+
+    def execute(requirements: str):
+        from packs.software_delivery.requirements_analysis_contracts import (
+            AnalyzeRequirementsRequest,
+        )
+
+        return use_case.execute(AnalyzeRequirementsRequest(requirements))
+
+    return PackRequirementsAnalyzer(execute)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

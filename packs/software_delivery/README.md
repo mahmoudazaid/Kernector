@@ -65,4 +65,60 @@ The model cites evidence with catalog ids `e0`, `e1`, … matching the ordered e
 
 Named budgets: `MAX_REQUIREMENTS_CHARS`, `MAX_TOTAL_INPUT_CHARS`, `MAX_MODEL_RESPONSE_CHARS`, `MAX_ANALYSIS_SUMMARY_CHARS`, `MAX_FINDINGS_PER_SECTION`, `MAX_FINDING_STATEMENT_CHARS`, `REQUIREMENTS_ANALYSIS_MODEL_SETTINGS`.
 
+When every finding section is empty, `evidence` retains all threshold-cleared retrieval hits as supporting context for the summary. When any section contains findings, `evidence` includes only chunks referenced by those findings.
+
 ## Markdown test-case export
+
+Tool: `software_delivery.export_test_cases_markdown`
+
+Exports structured test cases and their source citations as Markdown. The output contains generated cases and citations only — no objectives, strategy, coverage summaries, scope, or entry/exit criteria.
+
+### Input
+
+Same shape as the JSON output from `software_delivery.generate_test_cases`:
+
+```json
+{
+  "output_style": "steps",
+  "test_cases": [{
+    "title": "...",
+    "steps": ["..."],
+    "expected": "...",
+    "references": [{"source_id": "...", "source_type": "..."}]
+  }]
+}
+```
+
+### Output template
+
+```markdown
+# Test Cases
+
+**Output style:** {output_style}
+
+## {n}. {title}
+
+### Steps
+
+{numbered list when output_style is steps | bullet list when gherkin}
+
+### Expected result
+
+{expected}
+
+### References
+
+- `{source_id}` ({source_type})
+```
+
+### Formatting rules
+
+- One root `output_style` per export (`steps` or `gherkin`)
+- Case order preserved from input
+- References sorted by `(source_type, source_id)` as normalized by `GeneratedTestCase`
+- Single trailing newline at EOF
+- Heading levels: `#` document, `##` case, `###` section
+
+### Validation
+
+Invalid or empty input raises `MarkdownExportValidationError` before any Markdown is produced.

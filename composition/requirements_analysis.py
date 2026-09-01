@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -37,47 +37,54 @@ class RequirementsAnalyzer(Protocol):
         """Run retrieval-backed analysis and return a typed structured result."""
 
 
+class _PackFinding(Protocol):
+    statement: str
+    references: Sequence[SourceReference]
+
+
+class _PackAnalysisResult(Protocol):
+    summary: str
+    acceptance_criteria_gaps: Sequence[_PackFinding]
+    risks: Sequence[_PackFinding]
+    clarification_questions: Sequence[_PackFinding]
+    evidence: Sequence[ScoredChunk]
+
+
+ExecuteRequirementsAnalysis = Callable[[str], _PackAnalysisResult]
+
+
 def analysis_citations(view: RequirementsAnalysisView) -> tuple[Citation, ...]:
     """Project analysis evidence onto generic application Citation values."""
     return build_citations(view.evidence)
 
 
 def _finding_views(
-    findings: Sequence[object],
+    findings: Sequence[_PackFinding],
 ) -> tuple[RequirementsAnalysisFindingView, ...]:
     return tuple(
         RequirementsAnalysisFindingView(
-            finding.statement,  # type: ignore[attr-defined]
-            tuple(finding.references),  # type: ignore[attr-defined]
+            finding.statement,
+            tuple(finding.references),
         )
         for finding in findings
     )
 
 
-def _to_view(result: object) -> RequirementsAnalysisView:
+def _to_view(result: _PackAnalysisResult) -> RequirementsAnalysisView:
     return RequirementsAnalysisView(
-        summary=result.summary,  # type: ignore[attr-defined]
-        acceptance_criteria_gaps=_finding_views(
-            result.acceptance_criteria_gaps  # type: ignore[attr-defined]
-        ),
-        risks=_finding_views(result.risks),  # type: ignore[attr-defined]
-        clarification_questions=_finding_views(
-            result.clarification_questions  # type: ignore[attr-defined]
-        ),
-        evidence=tuple(result.evidence),  # type: ignore[attr-defined]
+        summary=result.summary,
+        acceptance_criteria_gaps=_finding_views(result.acceptance_criteria_gaps),
+        risks=_finding_views(result.risks),
+        clarification_questions=_finding_views(result.clarification_questions),
+        evidence=tuple(result.evidence),
     )
 
 
 class PackRequirementsAnalyzer:
-    """Adapter from the lazy-loaded pack use case to the composition Protocol."""
+    """Adapter from the lazy-loaded pack executor to the composition Protocol."""
 
-    def __init__(self, use_case: object) -> None:
-        self._use_case = use_case
+    def __init__(self, execute: ExecuteRequirementsAnalysis) -> None:
+        self._execute = execute
 
     def analyze(self, requirements: str) -> RequirementsAnalysisView:
-        from packs.software_delivery.requirements_analysis_contracts import (
-            AnalyzeRequirementsRequest,
-        )
-
-        result = self._use_case.execute(AnalyzeRequirementsRequest(requirements))
-        return _to_view(result)
+        return _to_view(self._execute(requirements))
