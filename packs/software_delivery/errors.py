@@ -15,3 +15,8 @@ class TestCaseGenerationValidationError(ToolArgumentValidationError):
     """Invalid caller arguments for Software Delivery test-case generation."""
 
     __test__ = False
+
+
+class MarkdownExportValidationError(ToolArgumentValidationError):
+    """Invalid caller arguments for Software Delivery Markdown export."""
+
