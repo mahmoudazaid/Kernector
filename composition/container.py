@@ -32,6 +32,7 @@ from composition.errors import (
 )
 from composition.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
+from composition.recording_chat import RecordingChatModel
 from composition.software_delivery_chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -717,10 +718,14 @@ def build_tool_augmented_ask(
     import importlib
 
     registration = importlib.import_module("packs.software_delivery.registration")
+    # Tools invoke ChatModel through the opaque boundary; record AskResult so
+    # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
+    model_calls = RecordingChatModel(chat_model)
     runner = PackSoftwareDeliveryChat(
         retrieve=_relevant_retrieve(settings, vector_store=vector_store),
-        invoke=build_opaque_invoke(settings, chat_model=chat_model),
+        invoke=build_opaque_invoke(settings, chat_model=model_calls),
         orchestrate=orchestrate,
+        model_calls=model_calls,
     )
 
     return CorrelatedAsk(

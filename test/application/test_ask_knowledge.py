@@ -57,16 +57,24 @@ def _hit(
 
 
 class _FakeRewriteRetrieve:
-    def __init__(self, hits: Sequence[ScoredChunk]) -> None:
+    def __init__(
+        self,
+        hits: Sequence[ScoredChunk],
+        *,
+        original_query: str = "what broke?",
+        rewritten_query: str = "payment service failure last week",
+    ) -> None:
         self._hits = tuple(hits)
+        self._original_query = original_query
+        self._rewritten_query = rewritten_query
         self.requests: list[object] = []
 
     def execute(self, request: object) -> RewriteRetrieveResponse:
         self.requests.append(request)
         return RewriteRetrieveResponse(
             hits=self._hits,
-            original_query="unused",
-            rewritten_query="unused rewritten",
+            original_query=self._original_query,
+            rewritten_query=self._rewritten_query,
         )
 
 
@@ -133,9 +141,15 @@ def _use_case(
     threshold: float = THRESHOLD,
     limit: int = 5,
     max_input_length: int = 10_000,
+    original_query: str = "what broke?",
+    rewritten_query: str = "payment service failure last week",
 ) -> AskKnowledge:
     return AskKnowledge(
-        _FakeRewriteRetrieve(hits),
+        _FakeRewriteRetrieve(
+            hits,
+            original_query=original_query,
+            rewritten_query=rewritten_query,
+        ),
         AskService(chat),
         prompts or _EmptyPrompts(),
         default_retrieval_limit=limit,
@@ -173,9 +187,28 @@ def test_run_meta_carries_observability_without_duplicating_the_answer() -> None
     assert response.run.usage == Usage(total_tokens=99)
     assert response.run.outcome == "success"
     assert response.run.hit_count == 1
+    assert response.run.query_rewritten is True
+    assert response.run.citation_count == len(response.citations)
+    assert response.run.citation_count == 1
     assert response.run.source_type == "knowledge_document"
     assert "Use the restart runbook." not in str(response.run)
     assert "How do I restart?" not in str(response.run)
+
+
+def test_run_meta_query_rewritten_false_when_queries_match() -> None:
+    chat = _RecordingChat("Use the restart runbook.")
+    unchanged = "payment service failure last week"
+
+    response = _use_case(
+        (_hit(),),
+        chat,
+        original_query=unchanged,
+        rewritten_query=unchanged,
+    ).execute(AskRequest(prompt_key=None, query="How do I restart?"))
+
+    assert response.run is not None
+    assert response.run.query_rewritten is False
+    assert response.run.citation_count == 1
 
 
 def test_run_meta_includes_bound_request_id() -> None:
@@ -416,6 +449,8 @@ def test_no_hits_states_insufficient_knowledge() -> None:
     assert response.run is not None
     assert response.run.outcome == "insufficient"
     assert response.run.hit_count == 0
+    assert response.run.query_rewritten is True
+    assert response.run.citation_count == 0
     assert chat.calls == []
 
 
@@ -434,6 +469,8 @@ def test_hits_below_threshold_state_insufficient_knowledge() -> None:
     assert response.run is not None
     assert response.run.outcome == "insufficient"
     assert response.run.hit_count == 0
+    assert response.run.query_rewritten is True
+    assert response.run.citation_count == 0
     assert chat.calls == []
 
 

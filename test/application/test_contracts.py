@@ -184,6 +184,8 @@ def test_run_meta_defaults_are_empty() -> None:
     assert meta.request_id is None
     assert meta.outcome is None
     assert meta.hit_count is None
+    assert meta.query_rewritten is None
+    assert meta.citation_count is None
     assert meta.pack is None
     assert meta.path is None
     assert meta.prompt_key is None
@@ -244,6 +246,22 @@ def test_run_meta_accepts_safe_execution_fields() -> None:
 def test_run_meta_rejects_negative_hit_count() -> None:
     with pytest.raises(ApplicationValidationError, match="hit_count"):
         RunMeta(hit_count=-1)
+
+
+def test_run_meta_accepts_query_rewritten_and_citation_count() -> None:
+    meta = RunMeta(query_rewritten=True, citation_count=3, hit_count=3)
+    assert meta.query_rewritten is True
+    assert meta.citation_count == 3
+
+
+def test_run_meta_rejects_negative_citation_count() -> None:
+    with pytest.raises(ApplicationValidationError, match="citation_count"):
+        RunMeta(citation_count=-1)
+
+
+def test_run_meta_rejects_non_bool_query_rewritten() -> None:
+    with pytest.raises(ApplicationValidationError, match="query_rewritten"):
+        RunMeta(query_rewritten=1)  # type: ignore[arg-type]
 
 
 def test_run_meta_rejects_blank_request_id() -> None:

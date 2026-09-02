@@ -153,6 +153,10 @@ class AskKnowledge:
                     request_id=current_request_id(),
                     outcome="insufficient",
                     hit_count=0,
+                    query_rewritten=(
+                        retrieved.original_query != retrieved.rewritten_query
+                    ),
+                    citation_count=0,
                     prompt_key=request.prompt_key,
                 ),
             )
@@ -168,6 +172,7 @@ class AskKnowledge:
             history=prelude,
         )
         source_type = _source_types(hits)
+        citations = build_citations(hits)
         run = RunMeta(
             model=result.model,
             latency_ms=result.latency_ms,
@@ -176,6 +181,8 @@ class AskKnowledge:
             request_id=current_request_id(),
             outcome="success",
             hit_count=len(hits),
+            query_rewritten=retrieved.original_query != retrieved.rewritten_query,
+            citation_count=len(citations),
             prompt_key=request.prompt_key,
             source_type=source_type,
         )
@@ -196,7 +203,7 @@ class AskKnowledge:
         )
         return AskResponse(
             answer=result.content,
-            citations=build_citations(hits),
+            citations=citations,
             run=run,
         )
 

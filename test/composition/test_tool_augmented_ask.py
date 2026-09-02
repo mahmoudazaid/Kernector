@@ -168,6 +168,42 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
     assert '{"score": 62}' not in str(response.run)
 
 
+def test_tool_turn_preserves_model_latency_and_tokens_on_run_meta() -> None:
+    """Tools-path AskResult metadata must survive _merge_run into AskResponse.run."""
+    from domain.models import Usage
+
+    ask = _RecordingAsk()
+    outcome = ToolRunOutcome(
+        answer="Generated cases.",
+        tool_outputs=(
+            InvokeToolResponse("software_delivery.generate_test_cases", "{}"),
+        ),
+        run=RunMeta(
+            model="test-model",
+            latency_ms=42,
+            usage=Usage(total_tokens=99),
+        ),
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(outcome),
+        select=lambda query: _Selection(generate_tests=True, output_style="steps"),
+        pack_id="software-delivery",
+    )
+
+    response = wrapper.execute(
+        AskRequest(query="Create test cases for AUTH-101", prompt_key=None)
+    )
+
+    assert response.run is not None
+    assert response.run.path == "tools"
+    assert response.run.latency_ms == 42
+    assert response.run.model == "test-model"
+    assert response.run.usage is not None
+    assert response.run.usage.total_tokens == 99
+    assert "Generated cases." not in str(response.run)
+
+
 def test_a_tool_turn_exposes_run_view_via_consume_not_ask_response() -> None:
     """#178 carrier B: typed view stays off AskResponse; consume-once side path."""
     from composition.software_delivery_tools import SoftwareDeliveryRunView
