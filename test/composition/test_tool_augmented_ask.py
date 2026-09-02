@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import logging
 
 import pytest
 
+from application import observability
 from application.contracts import (
     AskRequest,
     AskResponse,
@@ -24,7 +26,7 @@ from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from composition.tool_augmented_ask import ToolAugmentedAsk, ToolRunOutcome
 from domain.knowledge import SourceReference
 from domain.models import Message, Usage
-
+from test.log_record import flatten_log_record, operation_records
 
 @dataclass(frozen=True)
 class _Selection:
@@ -398,3 +400,85 @@ def test_analysis_outcome_run_meta_reaches_ask_response() -> None:
     assert runner.runs == []
     assert ask.calls == []
     assert response.answer == "Gaps found in acceptance criteria."
+
+
+class _AskCapturingRequestId(_RecordingAsk):
+    """Records the bound request_id while grounded ask runs."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seen_request_id: str | None = None
+
+    def execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None = None,
+    ) -> AskResponse:
+        self.seen_request_id = observability.current_request_id()
+        return super().execute(request, settings)
+
+
+def test_rag_turn_binds_request_id_and_logs_path(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ask = _AskCapturingRequestId()
+    wrapper = ToolAugmentedAsk(
+        ask, runner=_RecordingRunner(_outcome()), select=lambda query: None
+    )
+    with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
+        wrapper.execute(AskRequest(query="What is the session timeout?", prompt_key=None))
+
+    assert ask.seen_request_id is not None
+    assert observability.current_request_id() is None
+    records = operation_records(caplog.records, operation="ask_turn")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=success" in message
+    assert "path=rag" in message
+    assert f"request_id={ask.seen_request_id}" in message
+    flat = flatten_log_record(records[0])
+    assert "session timeout" not in flat
+
+
+def test_tool_turn_logs_path_tools_with_shared_request_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ask = _RecordingAsk()
+    seen: dict[str, str | None] = {}
+
+    class _RunnerCapturingId(_RecordingRunner):
+        def run(
+            self,
+            target: str,
+            *,
+            generate_tests: bool = True,
+            output_style: str = "steps",
+        ) -> ToolRunOutcome:
+            seen["request_id"] = observability.current_request_id()
+            return super().run(
+                target, generate_tests=generate_tests, output_style=output_style
+            )
+
+    capturer = _RunnerCapturingId(
+        ToolRunOutcome(
+            answer="Scored risk.",
+            tool_outputs=(InvokeToolResponse("software_delivery.risk_score", "{}"),),
+        )
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=capturer,
+        select=lambda query: _Selection(generate_tests=False, output_style="steps"),
+    )
+    with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
+        wrapper.execute(AskRequest(query="Score risk for AUTH-101", prompt_key=None))
+
+    assert seen["request_id"] is not None
+    records = operation_records(caplog.records, operation="ask_turn")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "path=tools" in message
+    assert f"request_id={seen['request_id']}" in message
+    flat = flatten_log_record(records[0])
+    assert "AUTH-101" not in flat
+    assert "Scored risk" not in flat

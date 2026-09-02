@@ -37,6 +37,7 @@ from composition.errors import (
     KnowledgeLoadError,
     PartialDocumentOperationError,
 )
+from composition.logging_config import configure_logging
 from composition.software_delivery_chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -121,6 +122,7 @@ def load_runtime_settings() -> Settings:
 
     Wraps ``infrastructure.config.load_settings`` so presentation never imports
     infrastructure. Expected parse failures become ``ConfigurationError``.
+    Also applies ``LOG_LEVEL`` via :func:`composition.logging_config.configure_logging`.
 
     Returns:
         Settings: Frozen runtime configuration for composition factories.
@@ -128,6 +130,7 @@ def load_runtime_settings() -> Settings:
     Raises:
         ConfigurationError: If environment values fail known config validation.
     """
+    configure_logging()
     try:
         return load_settings()
     except ValueError as error:

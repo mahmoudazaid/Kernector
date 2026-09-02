@@ -35,3 +35,32 @@ If ingest fails because the store expects a different embedding size, remove the
 ```bash
 rm -rf data/chroma
 ```
+
+## Logging and monitoring
+
+Kernector emits structured stdlib logging for ask, rewrite/retrieve, ingest, and
+tool invocation. Set the process log level with `LOG_LEVEL` (default `INFO`):
+
+```bash
+LOG_LEVEL=DEBUG uv run streamlit run main.py
+```
+
+`load_runtime_settings()` applies this at composition bootstrap.
+
+Each chat turn binds a `request_id` (UUID) via a context variable so nested
+operations share one correlation id. Typical fields when available:
+
+- `operation` / `outcome` (e.g. `ask`, `rewrite_retrieve`, `invoke_tool`, `ingest`, `ask_turn`)
+- `request_id`
+- `path` (`rag` | `tools` | `task_prompt` | `analysis`)
+- `tool`, `prompt_key`, `source_type`
+- `hit_count` / `chunk_count` / `source_count`
+- `latency_ms`, `model`, token usage ints from `RunMeta`
+
+**Do not expect logs to contain:** document or chunk text, prompts, secrets or
+API keys, raw provider bodies, tool arguments/results, or exception *messages*
+(only exception type names such as `error_type=ProviderError`).
+
+Workspace/tenant correlation is deferred until an authorized identity exists;
+storage details such as the Chroma collection name are not logged as a
+workspace id.

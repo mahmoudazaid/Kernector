@@ -1,9 +1,11 @@
 """AskKnowledge grounded chat, observed through ports and public contracts."""
 
 from collections.abc import Mapping, Sequence
+import logging
 
 import pytest
 
+from application import observability
 from application.ask_knowledge import AskKnowledge, UnknownPromptError
 from application.ask_service import AskService
 from application.citations import build_citations
@@ -13,9 +15,11 @@ from application.grounded_rag_policy import (
     CONTEXT_CLOSE,
     CONTEXT_OPEN,
     GROUNDED_RAG_SYSTEM,
+    INSUFFICIENT_KNOWLEDGE_ANSWER,
 )
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
+from domain.errors import ProviderError
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
@@ -25,6 +29,7 @@ from domain.knowledge import (
 )
 from domain.models import AskResult, Message, PromptVariant, Usage
 from test.doubles import InMemoryVectorStore, RecordingEmbeddingModel
+from test.log_record import flatten_log_record, operation_records
 
 THRESHOLD = 0.5
 
@@ -749,3 +754,75 @@ def test_oversized_history_content_is_rejected_before_any_port_call() -> None:
     assert embedder.queries == []
     assert store.searches == []
     assert chat.calls == []
+
+
+def test_ask_success_logs_operation_with_run_meta(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    chat = _RecordingChat("Use the restart runbook.")
+    observability.bind_request_id("req-ask-1")
+    try:
+        with caplog.at_level(logging.INFO, logger="application.ask_knowledge"):
+            _use_case((_hit(),), chat).execute(
+                AskRequest(prompt_key=None, query="How do I restart?")
+            )
+    finally:
+        observability.clear_request_id()
+
+    records = operation_records(caplog.records, operation="ask")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=success" in message
+    assert "request_id=req-ask-1" in message
+    assert "latency_ms=12" in message
+    assert "model=test-model" in message
+    assert "total_tokens=99" in message
+    assert "hit_count=1" in message
+    assert "source_type=knowledge_document" in message
+
+
+def test_ask_insufficient_knowledge_logs_distinct_outcome(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    chat = _RecordingChat()
+    with caplog.at_level(logging.INFO, logger="application.ask_knowledge"):
+        response = _use_case((), chat).execute(
+            AskRequest(prompt_key=None, query="How do I restart?")
+        )
+
+    assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
+    records = operation_records(caplog.records, operation="ask")
+    assert len(records) == 1
+    assert "outcome=insufficient" in records[0].getMessage()
+    assert "hit_count=0" in records[0].getMessage()
+
+
+def test_ask_provider_failure_logs_error_type_without_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    leak = "vendor body with sk-live-secret and AUTH-101 chunk text"
+
+    class _FailingChat(_RecordingChat):
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            raise ProviderError(leak)
+
+    with caplog.at_level(logging.ERROR, logger="application.ask_knowledge"):
+        with pytest.raises(ProviderError, match="sk-live-secret"):
+            _use_case((_hit(content=leak),), _FailingChat()).execute(
+                AskRequest(prompt_key=None, query="How do I restart?")
+            )
+
+    records = operation_records(caplog.records, operation="ask")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=error" in message
+    assert "error_type=ProviderError" in message
+    assert records[0].exc_info is None
+    flat = flatten_log_record(records[0])
+    assert leak not in flat
+    assert "sk-live-secret" not in flat

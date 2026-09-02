@@ -10,11 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import logging
 from typing import Protocol
 
 from application.contracts import AskRequest, AskResponse, Citation, InvokeToolResponse, RunMeta
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
+from application.observability import bind_request_id, clear_request_id, log_operation
+
+logger = logging.getLogger(__name__)
 
 
 class GroundedAsk(Protocol):
@@ -126,21 +130,60 @@ class ToolAugmentedAsk:
         task prompt delegates the original ``AskRequest``, history, and
         generation settings unchanged to ``AskKnowledge`` — routing never moves
         into Streamlit.
+
+        Binds a per-turn ``request_id`` for structured logs across nested
+        ask/retrieve/tool operations.
         """
+        bind_request_id()
+        try:
+            return self._execute(request, settings)
+        finally:
+            clear_request_id()
+
+    def _execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
         if request.prompt_key is not None:
-            return self._ask.execute(request, settings)
+            response = self._ask.execute(request, settings)
+            log_operation(
+                logger,
+                operation="ask_turn",
+                outcome="success",
+                path="task_prompt",
+                prompt_key=request.prompt_key,
+            )
+            return response
         selection = self._select(request.query)
         if selection is None:
-            return self._ask.execute(request, settings)
+            response = self._ask.execute(request, settings)
+            log_operation(
+                logger, operation="ask_turn", outcome="success", path="rag"
+            )
+            return response
 
         if getattr(selection, "analyze_requirements", False):
             if self._analysis_runner is None:
-                return self._ask.execute(request, settings)
+                response = self._ask.execute(request, settings)
+                log_operation(
+                    logger, operation="ask_turn", outcome="success", path="rag"
+                )
+                return response
             target = getattr(selection, "analysis_target", "") or request.query
             try:
                 outcome = self._analysis_runner.run(target)
             except InsufficientEvidenceError:
+                log_operation(
+                    logger,
+                    operation="ask_turn",
+                    outcome="insufficient",
+                    path="analysis",
+                )
                 return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+            log_operation(
+                logger, operation="ask_turn", outcome="success", path="analysis"
+            )
             return AskResponse(
                 answer=outcome.answer,
                 citations=outcome.citations,
@@ -155,7 +198,14 @@ class ToolAugmentedAsk:
                 output_style=selection.output_style,
             )
         except InsufficientEvidenceError:
+            log_operation(
+                logger,
+                operation="ask_turn",
+                outcome="insufficient",
+                path="tools",
+            )
             return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+        log_operation(logger, operation="ask_turn", outcome="success", path="tools")
         return AskResponse(
             answer=outcome.answer,
             citations=outcome.citations,

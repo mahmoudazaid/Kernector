@@ -1,14 +1,16 @@
 """Tests for generic ToolRegistry and InvokeTool."""
 
 from collections.abc import Mapping
+import logging
 
 import pytest
 
+from application import observability
 from application.contracts import InvokeToolRequest
 from application.errors import ApplicationValidationError, ConfigurationError
 from application.invoke_tool import InvokeTool, ToolRegistry
 from domain.errors import ToolArgumentValidationError, ToolFailureError
-
+from test.log_record import flatten_log_record, operation_records
 
 class _FakeTool:
     def __init__(self, name: str = "fake.tool", result: str = "ok") -> None:
@@ -114,3 +116,55 @@ def test_invoke_tool_passes_generate_test_cases_shaped_payload_untouched() -> No
     response = use_case.execute(InvokeToolRequest("fake.tool", args))
     assert response.result.startswith("{")
     assert tool.calls[0] == args
+
+
+def test_invoke_success_logs_tool_and_latency_without_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret_args = {"api_key": "sk-live-secret", "evidence": "CONFIDENTIAL_EVIDENCE"}
+    tool = _FakeTool(result="CONFIDENTIAL_TOOL_RESULT")
+    use_case = InvokeTool(ToolRegistry([tool]))
+    observability.bind_request_id("req-tool-1")
+    try:
+        with caplog.at_level(logging.INFO, logger="application.invoke_tool"):
+            use_case.execute(InvokeToolRequest("fake.tool", secret_args))
+    finally:
+        observability.clear_request_id()
+
+    records = operation_records(caplog.records, operation="invoke_tool")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=success" in message
+    assert "request_id=req-tool-1" in message
+    assert "tool=fake.tool" in message
+    assert "latency_ms=" in message
+    flat = flatten_log_record(records[0])
+    assert "sk-live-secret" not in flat
+    assert "CONFIDENTIAL_EVIDENCE" not in flat
+    assert "CONFIDENTIAL_TOOL_RESULT" not in flat
+
+
+def test_invoke_failure_logs_error_type_without_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    leak = "tool boom with sk-live-secret"
+
+    class _Failing(_FakeTool):
+        def run(self, arguments: Mapping[str, object]) -> str:
+            raise ToolFailureError(leak)
+
+    use_case = InvokeTool(ToolRegistry([_Failing()]))
+    with caplog.at_level(logging.ERROR, logger="application.invoke_tool"):
+        with pytest.raises(ToolFailureError, match="sk-live-secret"):
+            use_case.execute(InvokeToolRequest("fake.tool", {"q": 1}))
+
+    records = operation_records(caplog.records, operation="invoke_tool")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=error" in message
+    assert "tool=fake.tool" in message
+    assert "error_type=ToolFailureError" in message
+    assert records[0].exc_info is None
+    flat = flatten_log_record(records[0])
+    assert leak not in flat
+    assert "sk-live-secret" not in flat

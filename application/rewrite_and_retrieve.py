@@ -1,11 +1,18 @@
 """Rewrite a knowledge query, then retrieve ranked chunks."""
 
+from collections.abc import Sequence
+import logging
+
 from application.contracts import RetrieveRequest, RewriteRetrieveResponse
 from application.errors import ApplicationValidationError
 from application.input_safety import reject_unsafe_query
+from application.observability import log_operation
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.errors import ProviderError, QueryRewriterError
+from domain.knowledge import ScoredChunk
 from domain.ports import QueryRewriter
+
+logger = logging.getLogger(__name__)
 
 
 class QueryRewriteFailure(ProviderError):
@@ -74,6 +81,21 @@ class RewriteAndRetrieveKnowledge:
             ProviderError: Propagated from the embedding provider.
             VectorStoreError: Propagated from the vector store.
         """
+        try:
+            return self._execute(request)
+        except ApplicationValidationError:
+            raise
+        except Exception as error:
+            log_operation(
+                logger,
+                operation="rewrite_retrieve",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+            )
+            raise
+
+    def _execute(self, request: RetrieveRequest) -> RewriteRetrieveResponse:
         if len(request.query) > self._max_input_length:
             raise ApplicationValidationError(
                 f"query must be at most {self._max_input_length} characters, "
@@ -96,8 +118,23 @@ class RewriteAndRetrieveKnowledge:
                 metadata_filters=request.metadata_filters,
             )
         )
+        log_operation(
+            logger,
+            operation="rewrite_retrieve",
+            outcome="success",
+            hit_count=len(retrieve_response.hits),
+            source_type=_source_types(retrieve_response.hits),
+        )
         return RewriteRetrieveResponse(
             hits=retrieve_response.hits,
             original_query=request.query,
             rewritten_query=rewritten,
         )
+
+
+def _source_types(hits: Sequence[ScoredChunk]) -> str | None:
+    """Sorted unique source_type values from hits, or ``None`` when empty."""
+    types = sorted({hit.chunk.reference.source_type for hit in hits})
+    if not types:
+        return None
+    return ",".join(types)

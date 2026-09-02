@@ -1,7 +1,10 @@
 """Behavior of the IngestKnowledge use case, observed through ports only."""
 
+import logging
+
 import pytest
 
+from application import observability
 from application.contracts import IngestRequest
 from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -19,7 +22,7 @@ from test.doubles import (
     WrongLengthEmbeddingModel,
     vector_for,
 )
-
+from test.log_record import flatten_log_record, operation_records
 CHUNK_SIZE = 10
 CHUNK_OVERLAP = 2
 # 26 characters. Size 10 with overlap 2 gives step 8, so the windows are
@@ -219,3 +222,60 @@ def test_an_embedding_failure_preserves_previously_stored_data() -> None:
     assert raised.value.vector_mutation_started is False
     assert isinstance(raised.value.__cause__, EmbeddingUnavailable)
     assert store.records == before
+
+
+def test_ingest_success_logs_counts_without_document_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = InMemoryVectorStore()
+    secret = "CONFIDENTIAL_" + CONTENT  # same chunk geometry as CONTENT → 3 chunks
+    observability.bind_request_id("req-ingest-1")
+    try:
+        with caplog.at_level(logging.INFO, logger="application.ingest_knowledge"):
+            response = _use_case(store).execute(
+                IngestRequest(documents=[_document(content=secret)])
+            )
+    finally:
+        observability.clear_request_id()
+
+    records = operation_records(caplog.records, operation="ingest")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=success" in message
+    assert "request_id=req-ingest-1" in message
+    assert "source_count=1" in message
+    assert f"chunk_count={response.chunk_count}" in message
+    assert "source_type=knowledge_document" in message
+    flat = flatten_log_record(records[0])
+    assert secret not in flat
+    assert "CONFIDENTIAL_" not in flat
+
+
+def test_ingest_failure_logs_error_type_without_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = InMemoryVectorStore()
+    failing = IngestKnowledge(
+        FailingEmbeddingModel(),
+        store,
+        chunk_size=30,
+        chunk_overlap=0,
+    )
+    with caplog.at_level(logging.ERROR, logger="application.ingest_knowledge"):
+        with pytest.raises(IngestFailure) as raised:
+            failing.execute(
+                IngestRequest(
+                    documents=[_document(content="abcdefghijklmnopqrstuvwxyz")]
+                )
+            )
+
+    leak = str(raised.value)
+    records = operation_records(caplog.records, operation="ingest")
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "outcome=error" in message
+    assert "error_type=IngestFailure" in message
+    assert records[0].exc_info is None
+    flat = flatten_log_record(records[0])
+    assert leak not in flat
+    assert "abcdefghijklmnopqrstuvwxyz" not in flat
