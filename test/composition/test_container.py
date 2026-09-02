@@ -444,14 +444,17 @@ def test_build_tool_augmented_ask_adds_tool_selection_when_the_pack_is_enabled(
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
 
-    assert isinstance(ask, ToolAugmentedAsk)
-    assert isinstance(ask._ask, AskKnowledge)
+    from composition.correlated_ask import CorrelatedAsk
+
+    assert isinstance(ask, CorrelatedAsk)
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+    assert isinstance(ask._ask._ask, AskKnowledge)
 
 
 def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC3: with no pack enabled the chat path is exactly what it is today."""
+    """AC3: with no pack enabled the chat path is still correlated AskKnowledge."""
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
@@ -461,7 +464,10 @@ def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
 
-    assert isinstance(ask, AskKnowledge)
+    from composition.correlated_ask import CorrelatedAsk
+
+    assert isinstance(ask, CorrelatedAsk)
+    assert isinstance(ask._ask, AskKnowledge)
 
 
 def test_build_tool_augmented_ask_has_concrete_return_annotation() -> None:

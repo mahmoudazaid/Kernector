@@ -1,10 +1,15 @@
 """Generic tool registry and single-tool invocation use case."""
 
 from collections.abc import Iterable
+import logging
+import time
 
 from application.contracts import InvokeToolRequest, InvokeToolResponse
 from application.errors import ApplicationValidationError, ConfigurationError
+from application.observability import log_operation
 from domain.ports import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -61,5 +66,27 @@ class InvokeTool:
             raise ApplicationValidationError(
                 f"unknown tool_name: {request.tool_name!r}"
             )
-        result = tool.run(request.arguments)
+        started = time.perf_counter()
+        try:
+            result = tool.run(request.arguments)
+        except Exception as error:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            log_operation(
+                logger,
+                operation="invoke_tool",
+                outcome="error",
+                level=logging.ERROR,
+                tool=request.tool_name,
+                error_type=type(error).__name__,
+                latency_ms=latency_ms,
+            )
+            raise
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        log_operation(
+            logger,
+            operation="invoke_tool",
+            outcome="success",
+            tool=request.tool_name,
+            latency_ms=latency_ms,
+        )
         return InvokeToolResponse(request.tool_name, result)

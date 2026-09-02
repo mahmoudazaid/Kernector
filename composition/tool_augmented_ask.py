@@ -4,17 +4,24 @@
 ``packs``, and the vocabulary that recognises a domain workflow request is
 pack-owned. So the routing lives here, in the one layer already allowed to join
 both — the "thin composition wrapper" the story names.
+
+Request-id correlation is owned by :class:`composition.correlated_ask.CorrelatedAsk`
+outside this router so zero-pack chats are observed the same way.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import logging
 from typing import Protocol
 
 from application.contracts import AskRequest, AskResponse, Citation, InvokeToolResponse, RunMeta
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
+from application.observability import log_operation
+
+logger = logging.getLogger(__name__)
 
 
 class GroundedAsk(Protocol):
@@ -93,6 +100,7 @@ class ToolAugmentedAsk:
         analysis_runner (AnalysisRunner | None): Requirements analysis path when
             the pack enables it; absent means analysis intents fall through to
             grounded RAG.
+        pack_id (str | None): Pack identifier logged on tool/analysis routes.
     """
 
     def __init__(
@@ -102,11 +110,13 @@ class ToolAugmentedAsk:
         runner: ToolRunner,
         select: SelectToolIntent,
         analysis_runner: AnalysisRunner | None = None,
+        pack_id: str | None = None,
     ) -> None:
         self._ask = ask
         self._runner = runner
         self._select = select
         self._analysis_runner = analysis_runner
+        self._pack_id = pack_id
 
     def execute(
         self,
@@ -126,21 +136,55 @@ class ToolAugmentedAsk:
         task prompt delegates the original ``AskRequest``, history, and
         generation settings unchanged to ``AskKnowledge`` — routing never moves
         into Streamlit.
+
+        Delegation to ``AskKnowledge`` logs ``outcome=delegated``; the nested ask
+        emits the terminal ``success`` / ``insufficient`` / ``error`` event.
+        Tool and analysis paths log their own terminal outcomes.
         """
         if request.prompt_key is not None:
-            return self._ask.execute(request, settings)
+            response = self._ask.execute(request, settings)
+            log_operation(
+                logger,
+                operation="ask_turn",
+                outcome="delegated",
+                path="task_prompt",
+                prompt_key=request.prompt_key,
+            )
+            return response
         selection = self._select(request.query)
         if selection is None:
-            return self._ask.execute(request, settings)
+            response = self._ask.execute(request, settings)
+            log_operation(
+                logger, operation="ask_turn", outcome="delegated", path="rag"
+            )
+            return response
 
         if getattr(selection, "analyze_requirements", False):
             if self._analysis_runner is None:
-                return self._ask.execute(request, settings)
+                response = self._ask.execute(request, settings)
+                log_operation(
+                    logger, operation="ask_turn", outcome="delegated", path="rag"
+                )
+                return response
             target = getattr(selection, "analysis_target", "") or request.query
             try:
                 outcome = self._analysis_runner.run(target)
             except InsufficientEvidenceError:
+                log_operation(
+                    logger,
+                    operation="ask_turn",
+                    outcome="insufficient",
+                    path="analysis",
+                    pack=self._pack_id,
+                )
                 return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+            log_operation(
+                logger,
+                operation="ask_turn",
+                outcome="success",
+                path="analysis",
+                pack=self._pack_id,
+            )
             return AskResponse(
                 answer=outcome.answer,
                 citations=outcome.citations,
@@ -155,7 +199,21 @@ class ToolAugmentedAsk:
                 output_style=selection.output_style,
             )
         except InsufficientEvidenceError:
+            log_operation(
+                logger,
+                operation="ask_turn",
+                outcome="insufficient",
+                path="tools",
+                pack=self._pack_id,
+            )
             return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="success",
+            path="tools",
+            pack=self._pack_id,
+        )
         return AskResponse(
             answer=outcome.answer,
             citations=outcome.citations,

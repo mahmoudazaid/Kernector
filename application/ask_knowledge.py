@@ -1,6 +1,7 @@
 """Grounded ask: retrieve context, hold the policy, optionally add a task prompt."""
 
 from collections.abc import Mapping, Sequence
+import logging
 
 from application.ask_service import AskService
 from application.citations import build_citations
@@ -13,10 +14,13 @@ from application.grounded_rag_policy import (
     INSUFFICIENT_KNOWLEDGE_ANSWER,
 )
 from application.input_safety import reject_unsafe_query
+from application.observability import log_operation
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from domain.knowledge import ScoredChunk
 from domain.models import Message, PromptVariant
 from domain.ports import PromptRepository
+
+logger = logging.getLogger(__name__)
 
 
 class UnknownPromptError(ApplicationValidationError):
@@ -91,6 +95,26 @@ class AskKnowledge:
             VectorStoreError: Vector-store search failed.
             QueryRewriteFailure: Query rewrite failed before retrieval.
         """
+        try:
+            return self._execute(request, settings)
+        except ApplicationValidationError:
+            raise
+        except Exception as error:
+            log_operation(
+                logger,
+                operation="ask",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                prompt_key=request.prompt_key,
+            )
+            raise
+
+    def _execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
         if len(request.query) > self._max_input_length:
             raise ApplicationValidationError(
                 f"query must be at most {self._max_input_length} characters, "
@@ -115,6 +139,13 @@ class AskKnowledge:
 
         hits = self._relevant(retrieved.hits)
         if not hits:
+            log_operation(
+                logger,
+                operation="ask",
+                outcome="insufficient",
+                hit_count=0,
+                prompt_key=request.prompt_key,
+            )
             return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())
 
         prelude = [*request.history, _context_message(hits)]
@@ -127,10 +158,26 @@ class AskKnowledge:
             settings=settings,
             history=prelude,
         )
+        run = RunMeta.from_result(result)
+        log_operation(
+            logger,
+            operation="ask",
+            outcome="success",
+            hit_count=len(hits),
+            source_type=_source_types(hits),
+            prompt_key=request.prompt_key,
+            model=run.model,
+            latency_ms=run.latency_ms,
+            prompt_tokens=None if run.usage is None else run.usage.prompt_tokens,
+            completion_tokens=(
+                None if run.usage is None else run.usage.completion_tokens
+            ),
+            total_tokens=None if run.usage is None else run.usage.total_tokens,
+        )
         return AskResponse(
             answer=result.content,
             citations=build_citations(hits),
-            run=RunMeta.from_result(result),
+            run=run,
         )
 
     def _relevant(self, hits: Sequence[ScoredChunk]) -> tuple[ScoredChunk, ...]:
@@ -153,6 +200,14 @@ class AskKnowledge:
         if variant is None:
             raise UnknownPromptError(f"Unknown prompt key {prompt_key!r}")
         return variant
+
+
+def _source_types(hits: Sequence[ScoredChunk]) -> str | None:
+    """Sorted unique source_type values from hits, or ``None`` when empty."""
+    types = sorted({hit.chunk.reference.source_type for hit in hits})
+    if not types:
+        return None
+    return ",".join(types)
 
 
 def _defang(text: str) -> str:
