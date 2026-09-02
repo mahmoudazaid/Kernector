@@ -52,3 +52,18 @@ def test_build_conversation_transcript_pdf_omits_secret_payload_text() -> None:
     text = _pdf_text(pdf)
     assert "sk-leaked-payload" not in text
     assert '{"secret"' not in text
+
+
+def test_build_conversation_transcript_pdf_accepts_em_dash_and_smart_quotes() -> None:
+    pdf = build_conversation_transcript_pdf(
+        (
+            {
+                "role": "assistant",
+                "content": "Risk is medium — “watch auth” paths…",
+            },
+        )
+    )
+    assert pdf.startswith(b"%PDF")
+    text = _pdf_text(pdf)
+    assert "Risk is medium" in text
+    assert "watch auth" in text
