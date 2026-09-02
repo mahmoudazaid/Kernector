@@ -18,7 +18,7 @@ from composition import (
     TestCasesView,
     ToolCallView,
 )
-from presentation.streamlit.components import render_export_actions
+from presentation.streamlit.components import render_test_cases_export_actions
 from presentation.streamlit.tool_run import (
     case_lines,
     risk_factor_bullets,
@@ -52,12 +52,21 @@ def render_test_cases(test_cases: TestCasesView) -> None:
 
 
 def render_markdown_export(
-    markdown: str, *, key_prefix: str, filename_prefix: str = "test_cases"
+    markdown: str,
+    *,
+    key_prefix: str,
+    filename_prefix: str = "test_cases",
+    test_cases: TestCasesView | None = None,
 ) -> None:
-    st.markdown("**Markdown export**")
+    st.markdown("**Test cases export**")
     with st.expander("Preview"):
         st.code(markdown, language="markdown")
-    render_export_actions(markdown, filename_prefix, key_prefix=key_prefix)
+    render_test_cases_export_actions(
+        markdown,
+        key_prefix=key_prefix,
+        filename_prefix=filename_prefix,
+        test_cases=test_cases,
+    )
 
 
 def render_software_delivery_tool_results(
@@ -72,4 +81,8 @@ def render_software_delivery_tool_results(
     if view.test_cases is not None:
         render_test_cases(view.test_cases)
     if view.markdown:
-        render_markdown_export(view.markdown, key_prefix=key_prefix)
+        render_markdown_export(
+            view.markdown,
+            key_prefix=key_prefix,
+            test_cases=view.test_cases,
+        )

@@ -26,7 +26,6 @@ from presentation.streamlit.ask_turn import (
     tool_output_lines,
 )
 from presentation.streamlit.components import (
-    render_export_actions,
     render_model_settings,
     render_reply,
     render_run_meta,
@@ -184,11 +183,6 @@ def _render_history() -> None:
                     message.get("tool_run_view"), key_prefix=f"export_{index}"
                 )
                 render_run_meta(message.get("run"))
-                render_export_actions(
-                    message["content"],
-                    f"analysis_{index}",
-                    key_prefix=f"analysis_{index}",
-                )
             else:
                 st.markdown(message["content"])
 
@@ -233,11 +227,6 @@ def _handle_input(
             key_prefix=f"export_{len(st.session_state.messages)}",
         )
         render_run_meta(response.run)
-        render_export_actions(
-            response.answer,
-            f"analysis_{len(st.session_state.messages)}",
-            key_prefix=f"analysis_{len(st.session_state.messages)}",
-        )
 
     apply_ask_turn_to_session_messages(st.session_state.messages, result)
 

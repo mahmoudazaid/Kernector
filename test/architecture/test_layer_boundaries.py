@@ -25,6 +25,7 @@ IO_PACKAGES = {
     "chromadb", "milvus", "pymilvus", "sqlalchemy", "psycopg",
     "requests", "httpx", "aiohttp",
     "pypdf",
+    "fpdf",
     "numpy", "pandas",
     "dotenv",
 }

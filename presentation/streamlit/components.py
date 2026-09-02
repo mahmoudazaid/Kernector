@@ -5,9 +5,16 @@ from collections.abc import Mapping
 import streamlit as st
 
 from application.contracts import RunMeta
+from composition import TestCasesView
+from composition.conversation_export import build_conversation_pdf
 from domain.model_settings import SETTINGS
 from domain.validation import is_off_topic
 from presentation.streamlit.run_details import run_detail_lines
+from presentation.streamlit.cases_export import (
+    cases_pdf_turns,
+    cases_to_csv,
+    cases_to_json,
+)
 
 
 def render_reply(reply: str, off_topic_marker: str | None = None) -> None:
@@ -30,15 +37,41 @@ def render_run_meta(result: RunMeta | None) -> None:
             st.caption(line)
 
 
-def render_export_actions(
-    content: str, filename_prefix: str, *, key_prefix: str
+def render_test_cases_export_actions(
+    markdown: str,
+    *,
+    key_prefix: str,
+    filename_prefix: str = "test_cases",
+    test_cases: TestCasesView | None = None,
 ) -> None:
+    """Offer MD / JSON / CSV / PDF downloads for generated test cases."""
     st.download_button(
-        "Download output",
-        data=content,
+        "export tests as MD",
+        data=markdown,
         file_name=f"{filename_prefix}.md",
         mime="text/markdown",
-        key=f"download_{key_prefix}",
+        key=f"download_{key_prefix}_md",
+    )
+    st.download_button(
+        "export tests as JSON",
+        data=cases_to_json(markdown, test_cases),
+        file_name=f"{filename_prefix}.json",
+        mime="application/json",
+        key=f"download_{key_prefix}_json",
+    )
+    st.download_button(
+        "export tests as CSV",
+        data=cases_to_csv(markdown, test_cases),
+        file_name=f"{filename_prefix}.csv",
+        mime="text/csv",
+        key=f"download_{key_prefix}_csv",
+    )
+    st.download_button(
+        "export tests as PDF",
+        data=build_conversation_pdf(cases_pdf_turns(markdown, test_cases)),
+        file_name=f"{filename_prefix}.pdf",
+        mime="application/pdf",
+        key=f"download_{key_prefix}_pdf",
     )
 
 
