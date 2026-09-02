@@ -2,7 +2,7 @@
 
 ![Kernector overview](docs/images/kernector-overview.png)
 
-Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Connectors and uploads normalize material into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning; replaceable source adapters supply origin-specific ingestion. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
+Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, plus seed JSON corpora, normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning; the current ingest adapters are file upload and the on-disk seed JSON loader. External provider connectors (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
 Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
@@ -12,17 +12,19 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 ![Kernector architecture](docs/images/kernector-architecture.png)
 
-`domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and provider clients. `packs/` are optional executable modules (today `software_delivery`) that register domain tools and intent policies without importing application or presentation code. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the Streamlit app and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly.
+`domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` registers `software_delivery.risk_score`, `software_delivery.generate_test_cases`, `software_delivery.export_test_cases_markdown`, and a deterministic chat-intent policy, without importing application or presentation code. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the Streamlit app and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New source kinds arrive as connectors that emit `SourceDocument`. New product behavior arrives as a pack, not as a fork of the core pipeline.
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds would arrive as additional adapters that emit `SourceDocument`; only upload and seed JSON are implemented today.
 
 ## Knowledge path from source to cited answer
 
-Normalized documents follow one pipeline regardless of whether they arrived as an upload, a seed JSON row, or a future connector payload.
+Normalized documents follow one pipeline whether they arrived as an upload or a seed JSON row. Additional connector payloads are planned behind the same `SourceDocument` boundary.
 
 ![Knowledge pipeline](docs/images/kernector-knowledge-pipeline.png)
 
-After chunking and embedding, passages land in Chroma with metadata that preserves source identity. When hybrid search is enabled, the same corpus also feeds a BM25 lexical index; retrieval fuses the two channels with a configurable alpha weight, then applies provenance so each hit still names its origin. Grounded ask attaches retrieved chunks as context and returns citations. When a Software Delivery pack is enabled and a General-mode query explicitly requests a pack workflow (for example risk scoring or test-case generation), composition routes through evidence-bundle orchestration instead of free-form generation, still citing the underlying hits. Unmatched queries stay on the ordinary RAG path — intent matching is deterministic policy, not a speculative classifier.
+After chunking and embedding, passages land in Chroma with metadata that preserves source identity. When hybrid search is enabled, the same corpus also feeds a BM25 lexical index; retrieval fuses the two channels with a configurable alpha weight (`alpha * BM25 + (1 - alpha) * vector`), then keeps provenance on each hit. Grounded ask attaches retrieved chunks as context. Streamlit renders citations from `Citation` as source ID, source type, optional chunk index, and quote — not page or section links (see `_render_citations` in `presentation/streamlit/app.py`).
+
+When `DOMAIN_TOOL_PACKS` includes `software-delivery` and a General-mode query explicitly requests risk scoring or test-case generation, composition routes through evidence-bundle orchestration instead of free-form generation, still citing the underlying hits. Unmatched queries stay on the ordinary RAG path — intent matching is a deterministic pack policy, not a speculative classifier.
 
 ## Run the Streamlit app
 
@@ -148,7 +150,7 @@ retrieved chunks, document content, tool arguments/results, secrets, raw
 provider responses, generation settings blobs, or exception text (including
 `error_type`).
 
-The diagrams above match the current layering and pipeline contracts. Extending
-Kernector means adding connectors that emit `SourceDocument`, or packs that
-register tools behind composition’s allowlist — without widening the shared
-domain with product-specific entities.
+The diagrams document implemented layering and the current ingest path. Extending
+Kernector means enabling packs behind composition’s allowlist, or adding adapters
+that emit `SourceDocument`, without widening the shared domain with
+product-specific entities.
