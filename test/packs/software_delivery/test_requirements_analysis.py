@@ -120,6 +120,40 @@ def test_analysis_returns_cited_findings_from_retrieved_evidence() -> None:
     assert result.evidence[0].chunk.content == "Need MFA"
 
 
+def test_successful_analysis_attaches_ask_result_metadata() -> None:
+    """Model-call observability must survive the pack result for composition RunMeta."""
+    from domain.models import Usage
+
+    class _MetaChat(_FakeChat):
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            self.calls.append((system, messages, settings))
+            return AskResult(
+                content=self.content,
+                model="req-analysis-model",
+                latency_ms=33,
+                usage=Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+                settings=dict(settings),
+            )
+
+    use_case = AnalyzeRequirements(
+        _RecordingRetrieve([_hit()]), _MetaChat(_analysis_payload())
+    )
+
+    result = use_case.execute(_request())
+
+    assert result.ask_result is not None
+    assert result.ask_result.model == "req-analysis-model"
+    assert result.ask_result.latency_ms == 33
+    assert result.ask_result.usage is not None
+    assert result.ask_result.usage.total_tokens == 15
+    assert result.ask_result.settings == dict(REQUIREMENTS_ANALYSIS_MODEL_SETTINGS)
+
+
 def test_all_four_structured_sections_are_present_and_independently_parsed() -> None:
     payload = json.dumps(
         {

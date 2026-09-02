@@ -36,6 +36,7 @@ from composition.requirements_analysis import (
     RequirementsAnalysisView,
     RequirementsAnalyzer,
     analysis_citations,
+    format_requirements_analysis_answer,
     requirements_analysis_enabled,
 )
 from composition.software_delivery_tools import (
@@ -88,6 +89,7 @@ __all__ = [
     "ToolRunFailedError",
     "ToolRunOutcome",
     "analysis_citations",
+    "format_requirements_analysis_answer",
     "requirements_analysis_enabled",
     "software_delivery_tools_enabled",
     "available_providers",

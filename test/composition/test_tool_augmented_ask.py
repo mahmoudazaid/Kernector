@@ -17,12 +17,13 @@ from application.contracts import (
     AskResponse,
     Citation,
     InvokeToolResponse,
+    RunMeta,
 )
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from composition.tool_augmented_ask import ToolAugmentedAsk, ToolRunOutcome
 from domain.knowledge import SourceReference
-from domain.models import Message
+from domain.models import Message, Usage
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,26 @@ class _RecordingRunner:
     ) -> ToolRunOutcome:
         self.runs.append((target, generate_tests, output_style))
         return self._outcome
+
+
+class _RecordingAnalysisRunner:
+    """Stands in for chat-time requirements analysis."""
+
+    def __init__(self, outcome: ToolRunOutcome) -> None:
+        self._outcome = outcome
+        self.runs: list[str] = []
+
+    def run(self, requirements: str) -> ToolRunOutcome:
+        self.runs.append(requirements)
+        return self._outcome
+
+
+@dataclass(frozen=True)
+class _AnalysisSelection:
+    generate_tests: bool = False
+    output_style: str = "steps"
+    analyze_requirements: bool = True
+    analysis_target: str = "Need MFA."
 
 
 def _outcome() -> ToolRunOutcome:
@@ -198,6 +219,64 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
     assert response.citations == ()
 
 
+def test_an_analysis_intent_runs_the_analyzer_not_the_tool_runner() -> None:
+    ask = _RecordingAsk()
+    runner = _RecordingRunner(_outcome())
+    analysis = _RecordingAnalysisRunner(
+        ToolRunOutcome(
+            answer="The story omits lockout.",
+            citations=(
+                Citation(
+                    reference=SourceReference("AUTH-101", "user_story"),
+                    quote="MFA is required.",
+                    chunk_index=0,
+                ),
+            ),
+        )
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=runner,
+        select=lambda query: _AnalysisSelection(
+            analysis_target="As a user I want MFA."
+        ),
+        analysis_runner=analysis,
+    )
+
+    response = wrapper.execute(
+        AskRequest(
+            query="Analyze these requirements:\nAs a user I want MFA.",
+            prompt_key=None,
+        )
+    )
+
+    assert analysis.runs == ["As a user I want MFA."]
+    assert runner.runs == []
+    assert ask.calls == []
+    assert response.answer == "The story omits lockout."
+    assert response.citations[0].reference.source_id == "AUTH-101"
+    assert response.tool_outputs == ()
+    assert response.run is None
+
+
+def test_analysis_without_a_runner_falls_through_to_grounded_rag() -> None:
+    ask = _RecordingAsk()
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(_outcome()),
+        select=lambda query: _AnalysisSelection(),
+    )
+    request = AskRequest(
+        query="Analyze these requirements:\nNeed MFA.",
+        prompt_key=None,
+    )
+
+    response = wrapper.execute(request)
+
+    assert response is ask.response
+    assert ask.calls == [(request, None)]
+
+
 @pytest.mark.parametrize(
     "query",
     [
@@ -211,6 +290,9 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
         "Do not create test cases for AUTH-101",
         "Never generate tests for AUTH-101",
         "Do not assess the risk for AUTH-101",
+        "Do not analyze these requirements",
+        "Analyze these requirements",
+        "How do I analyze requirements?",
     ],
 )
 def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
@@ -219,7 +301,13 @@ def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
 
     ask = _RecordingAsk()
     runner = _RecordingRunner(_outcome())
-    wrapper = ToolAugmentedAsk(ask, runner=runner, select=select_chat_intent)
+    analysis = _RecordingAnalysisRunner(_outcome())
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=runner,
+        select=select_chat_intent,
+        analysis_runner=analysis,
+    )
     request = AskRequest(query=query, prompt_key=None)
 
     response = wrapper.execute(request)
@@ -228,6 +316,7 @@ def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
     assert response is ask.response
     assert ask.calls == [(request, None)]
     assert runner.runs == []
+    assert analysis.runs == []
 
 
 @pytest.mark.parametrize(
@@ -259,3 +348,53 @@ def test_accepted_intent_phrases_invoke_the_runner(
     assert ask.calls == []
     assert response.answer == "Scored risk."
     assert response.tool_outputs == ()
+
+
+def test_analysis_outcome_run_meta_reaches_ask_response() -> None:
+    """Requirements-analysis model calls must surface RunMeta on AskResponse.run."""
+    run = RunMeta(
+        model="analysis-model",
+        latency_ms=42,
+        usage=Usage(total_tokens=17),
+        settings={"temperature": 0.0},
+    )
+    ask = _RecordingAsk()
+    analysis = _RecordingAnalysisRunner(
+        ToolRunOutcome(answer="Gaps found in acceptance criteria.", run=run)
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(_outcome()),
+        select=lambda query: _AnalysisSelection(),
+        analysis_runner=analysis,
+    )
+
+    response = wrapper.execute(
+        AskRequest(query="Analyze these requirements: Need MFA.", prompt_key=None)
+    )
+
+    assert response.run == run
+    assert response.answer == "Gaps found in acceptance criteria."
+    assert ask.calls == []
+
+    from packs.software_delivery.chat_intent import select_chat_intent
+
+    ask = _RecordingAsk()
+    runner = _RecordingRunner(_outcome())
+    analysis = _RecordingAnalysisRunner(
+        ToolRunOutcome(answer="Gaps found in acceptance criteria.")
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=runner,
+        select=select_chat_intent,
+        analysis_runner=analysis,
+    )
+    query = "Analyze these requirements:\nAs a customer I want to sign in."
+
+    response = wrapper.execute(AskRequest(query=query, prompt_key=None))
+
+    assert analysis.runs == ["As a customer I want to sign in."]
+    assert runner.runs == []
+    assert ask.calls == []
+    assert response.answer == "Gaps found in acceptance criteria."

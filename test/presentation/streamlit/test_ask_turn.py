@@ -280,3 +280,72 @@ def test_tool_output_lines_name_each_tool_without_parsing_it() -> None:
 
 def test_no_tool_outputs_render_no_lines() -> None:
     assert tool_output_lines(()) == ()
+
+
+def test_provider_and_operational_errors_persist_as_display_only_entries() -> None:
+    """Sanitized errors survive reruns as conversation entries the model never sees."""
+    from presentation.streamlit.ask_turn import (
+        apply_ask_turn_to_session_messages,
+        messages_for_model_history,
+    )
+
+    messages: list[dict[str, object]] = [
+        {"role": "user", "content": "Earlier question"},
+        {"role": "assistant", "content": "Earlier answer"},
+    ]
+    messages.append({"role": "user", "content": "Analyze these requirements: AUTH-101"})
+
+    provider_result = run_ask_turn(
+        _RaisingAsk(ProviderError("vendor body with sk-leaked")),  # type: ignore[arg-type]
+        query="Analyze these requirements: AUTH-101",
+        history=messages_for_model_history(messages[:-1]),
+    )
+    apply_ask_turn_to_session_messages(messages, provider_result)
+
+    assert provider_result.ok is False
+    assert provider_result.drop_user_turn is False
+    assert messages[-1] == {
+        "role": "assistant",
+        "content": _FIXED_PROVIDER_MESSAGE,
+        "display_only": True,
+    }
+    assert "sk-leaked" not in str(messages[-1]["content"])
+
+    history = messages_for_model_history(messages)
+    assert history == (
+        Message(role="user", content="Earlier question"),
+        Message(role="assistant", content="Earlier answer"),
+        Message(role="user", content="Analyze these requirements: AUTH-101"),
+    )
+
+
+def test_rejected_validation_still_drops_the_user_turn_without_display_only_entry() -> None:
+    """AC: boundary rejection must not leave a replayable or display-only error turn."""
+    from presentation.streamlit.ask_turn import (
+        apply_ask_turn_to_session_messages,
+        messages_for_model_history,
+    )
+
+    messages: list[dict[str, object]] = [
+        {"role": "user", "content": "Earlier question"},
+        {"role": "assistant", "content": "Earlier answer"},
+    ]
+    messages.append({"role": "user", "content": "   "})
+
+    result = run_ask_turn(
+        _OkAsk(),  # type: ignore[arg-type]
+        query="   ",
+        history=messages_for_model_history(messages[:-1]),
+    )
+    apply_ask_turn_to_session_messages(messages, result)
+
+    assert result.ok is False
+    assert result.drop_user_turn is True
+    assert messages == [
+        {"role": "user", "content": "Earlier question"},
+        {"role": "assistant", "content": "Earlier answer"},
+    ]
+    assert messages_for_model_history(messages) == (
+        Message(role="user", content="Earlier question"),
+        Message(role="assistant", content="Earlier answer"),
+    )
