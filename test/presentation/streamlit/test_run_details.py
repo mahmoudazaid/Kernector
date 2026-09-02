@@ -95,7 +95,7 @@ def test_successful_history_turn_renders_run_details_after_reply_and_outputs() -
     tools_at = assistant.index("_render_tool_outputs(")
     projected_at = assistant.index("render_projected_results(")
     run_at = assistant.index("render_run_meta(")
-    export_at = assistant.index("render_export_actions(")
+    export_at = assistant.index("render_conversation_export_actions(")
     assert reply_at < citations_at < tools_at < projected_at < run_at < export_at
 
 
@@ -108,7 +108,7 @@ def test_successful_live_turn_renders_run_details_after_reply_and_outputs() -> N
     tools_at = success.index("_render_tool_outputs(")
     projected_at = success.index("render_projected_results(")
     run_at = success.index("render_run_meta(")
-    export_at = success.index("render_export_actions(")
+    export_at = success.index("render_conversation_export_actions(")
     assert reply_at < citations_at < tools_at < projected_at < run_at < export_at
     # Must not also render Run details before the reply on the success path.
     before_reply = success[:reply_at]
