@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -52,12 +54,27 @@ def test_vector_store_cache_returns_same_instance_and_builds_once(
     assert len(builds) == 1
 
 
-def test_cached_store_is_injected_into_chat_construction(
+def test_render_injects_cached_store_into_upload_and_chat(
     app_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = object()
-    monkeypatch.setattr(app_module, "_vector_store", lambda: store)
+    cached_store = object()
+    ask_sentinel = object()
     captured: dict[str, object] = {}
+    sidebar = app_module._SidebarState(
+        provider="openrouter",
+        model="test/model",
+        ollama_base_url="http://localhost:11434",
+        settings={"temperature": 0},
+    )
+
+    monkeypatch.setattr(app_module, "_settings", lambda: object())
+    monkeypatch.setattr(app_module, "_prompt_repository", lambda: object())
+    monkeypatch.setattr(app_module, "_vector_store", lambda: cached_store)
+    monkeypatch.setattr(app_module, "_render_sidebar", lambda settings: sidebar)
+    monkeypatch.setattr(app_module, "build_chat_model", lambda *a, **k: object())
+
+    def _capture_upload(settings: object, *, vector_store: object) -> None:
+        captured["upload_store"] = vector_store
 
     def _capture_ask(
         settings: object,
@@ -66,20 +83,30 @@ def test_cached_store_is_injected_into_chat_construction(
         vector_store: VectorStore | None = None,
         prompt_repository: object = None,
     ) -> object:
-        captured["vector_store"] = vector_store
-        return object()
+        captured["ask_store"] = vector_store
+        return ask_sentinel
 
+    def _capture_handle(ask: object, settings: object) -> None:
+        captured["handled_ask"] = ask
+
+    monkeypatch.setattr(app_module, "_render_upload_ingest", _capture_upload)
     monkeypatch.setattr(app_module, "build_tool_augmented_ask", _capture_ask)
+    monkeypatch.setattr(app_module, "_render_history", lambda: None)
+    monkeypatch.setattr(app_module, "_handle_input", _capture_handle)
 
-    # Same injection render() performs after resolving the cached store.
-    app_module.build_tool_augmented_ask(
-        object(),
-        chat_model=object(),
-        prompt_repository=object(),
-        vector_store=app_module._vector_store(),
+    fake_st = SimpleNamespace(
+        session_state={},
+        title=lambda *_a, **_k: None,
+        sidebar=MagicMock(),
+        error=lambda *_a, **_k: None,
     )
+    monkeypatch.setattr(app_module, "st", fake_st)
 
-    assert captured["vector_store"] is store
+    app_module.render()
+
+    assert captured["upload_store"] is cached_store
+    assert captured["ask_store"] is cached_store
+    assert captured["handled_ask"] is ask_sentinel
 
 
 def test_document_mutations_forward_shared_store_to_composition(

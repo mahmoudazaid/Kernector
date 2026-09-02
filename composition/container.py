@@ -179,6 +179,9 @@ def build_vector_store(settings: Settings) -> VectorStore:
     chroma = ChromaVectorStore(settings.chroma)
     if not settings.retrieval.hybrid_enabled:
         return chroma
+    if settings.retrieval.hybrid_alpha == 0.0:
+        # Vector-only hybrid endpoint: no BM25 hydrate.
+        return chroma
     lexical = Bm25LexicalIndex()
     lexical.upsert(chroma.list_embedded_chunks())
     return DualWriteVectorStore(chroma, lexical)
@@ -228,31 +231,44 @@ def build_retrieve_knowledge(
     that already holds a store passes it in rather than opening a second client
     on the same collection.
 
+    When hybrid alpha is ``1``, no embedding adapter is constructed. When hybrid
+    alpha is ``0``, BM25 is not required on the retrieve path.
+
     Raises:
         ConfigurationError: The embedding credentials are missing or unusable.
     """
-    try:
-        embedding_model = build_embedding_model(settings)
-    except EmbeddingConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+    hybrid = settings.retrieval.hybrid_enabled
+    alpha = settings.retrieval.hybrid_alpha
+    needs_embedding = (not hybrid) or alpha < 1.0
+    needs_lexical = hybrid and alpha > 0.0
+
+    embedding_model = None
+    if needs_embedding:
+        try:
+            embedding_model = build_embedding_model(settings)
+        except EmbeddingConfigError as exc:
+            raise ConfigurationError(str(exc)) from exc
+
     if vector_store is None:
         vector_store = build_vector_store(settings)
+
     lexical_index = None
-    if settings.retrieval.hybrid_enabled:
+    if needs_lexical:
         if not isinstance(vector_store, DualWriteVectorStore):
             raise ConfigurationError(
-                "hybrid search requires DualWriteVectorStore from "
-                "build_vector_store; got "
+                "hybrid search with hybrid_alpha > 0 requires DualWriteVectorStore "
+                "from build_vector_store; got "
                 f"{type(vector_store).__name__}"
             )
         lexical_index = vector_store.lexical
+
     return RetrieveKnowledge(
         embedding_model,
-        vector_store,
+        vector_store if needs_embedding else None,
         max_input_length=settings.max_input_length,
-        hybrid_enabled=settings.retrieval.hybrid_enabled,
+        hybrid_enabled=hybrid,
         lexical_index=lexical_index,
-        hybrid_alpha=settings.retrieval.hybrid_alpha,
+        hybrid_alpha=alpha,
     )
 
 
