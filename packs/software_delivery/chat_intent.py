@@ -90,18 +90,29 @@ _READ_ONLY_TRANSFORM = re.compile(
     r"(?:summary|list|overview|report)\b"
 )
 
+# Explicit review requests only — bare "analyze" / "analyze AUTH-101" stay on RAG.
+_ANALYSIS_REQUEST = re.compile(
+    r"\b(?:analyze|review)\s+"
+    r"(?:(?:these|the following|the|this)\s+)?"
+    r"(?:requirements|user story|story)\b"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ChatToolSelection:
-    """The tool chain a chat query asked for.
+    """The workflow a chat query asked for.
 
     Attributes:
         generate_tests (bool): Whether the chain generates and exports cases.
         output_style (TestCaseStyle): Style for generated cases.
+        analyze_requirements (bool): Whether to run requirements analysis.
+        analysis_target (str): Requirements text when ``analyze_requirements``.
     """
 
     generate_tests: bool
     output_style: TestCaseStyle
+    analyze_requirements: bool = False
+    analysis_target: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.generate_tests, bool):
@@ -115,6 +126,26 @@ class ChatToolSelection:
             raise OrchestrationValidationError(
                 f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
                 f"got {self.output_style!r}"
+            )
+        if not isinstance(self.analyze_requirements, bool):
+            raise OrchestrationValidationError(
+                "analyze_requirements must be a bool, "
+                f"got {self.analyze_requirements!r}"
+            )
+        if self.analyze_requirements and self.generate_tests:
+            raise OrchestrationValidationError(
+                "analyze_requirements and generate_tests are mutually exclusive"
+            )
+        if self.analyze_requirements and (
+            not isinstance(self.analysis_target, str)
+            or not self.analysis_target.strip()
+        ):
+            raise OrchestrationValidationError(
+                "analysis_target must be non-blank when analyze_requirements is True"
+            )
+        if not self.analyze_requirements and self.analysis_target:
+            raise OrchestrationValidationError(
+                "analysis_target is only valid when analyze_requirements is True"
             )
 
 
@@ -151,14 +182,24 @@ def _first_active_match(
     return None
 
 
+def _analysis_target(text: str, match: re.Match[str]) -> str | None:
+    """Return the body after the matched analysis cue, or ``None`` if empty."""
+    after = text[match.end() :].lstrip(" :")
+    return after or None
+
+
 def select_chat_intent(query: str) -> ChatToolSelection | None:
-    """Return the tool chain ``query`` asks for, or ``None`` for grounded chat.
+    """Return the workflow ``query`` asks for, or ``None`` for grounded chat.
 
     Test generation requires a same-clause creation verb bound to a test
     artifact (optional articles/style modifiers only between them). Negation
     cancels only when it governs that matched action; constraint wording and
     other-clause negation do not. When generation is cancelled but an explicit
     risk request remains active, the risk-only chain is selected.
+
+    Requirements analysis matches explicit ``analyze|review … requirements|story``
+    phrasing with a non-empty body after the cue. Generation wins over analysis;
+    analysis wins over risk-only.
 
     Args:
         query (str): The user's chat message, unmodified.
@@ -182,6 +223,18 @@ def select_chat_intent(query: str) -> ChatToolSelection | None:
     if generation is not None:
         style: TestCaseStyle = "gherkin" if _GHERKIN_STYLE.search(text) else "steps"
         return ChatToolSelection(generate_tests=True, output_style=style)
+
+    analysis = _first_active_match(_ANALYSIS_REQUEST, text)
+    if analysis is not None:
+        target = _analysis_target(text, analysis)
+        if target is None:
+            return None
+        return ChatToolSelection(
+            generate_tests=False,
+            output_style="steps",
+            analyze_requirements=True,
+            analysis_target=target,
+        )
 
     if _RISK_EXPLANATORY.search(text):
         return None

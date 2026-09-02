@@ -61,6 +61,34 @@ def analysis_citations(view: RequirementsAnalysisView) -> tuple[Citation, ...]:
     return build_citations(view.evidence)
 
 
+def _finding_bullets(
+    findings: Sequence[RequirementsAnalysisFindingView],
+) -> tuple[str, ...]:
+    return tuple(
+        f"- {finding.statement} — "
+        + ", ".join(
+            f"`{ref.source_id}` ({ref.source_type})" for ref in finding.references
+        )
+        for finding in findings
+    )
+
+
+def format_requirements_analysis_answer(view: RequirementsAnalysisView) -> str:
+    """Render a chat reply from a structured requirements-analysis view."""
+    sections = [view.summary]
+    for title, findings in (
+        ("Acceptance criteria gaps", view.acceptance_criteria_gaps),
+        ("Risks", view.risks),
+        ("Clarification questions", view.clarification_questions),
+    ):
+        bullets = _finding_bullets(findings)
+        if not bullets:
+            continue
+        sections.append(f"**{title}**")
+        sections.extend(bullets)
+    return "\n\n".join(sections)
+
+
 def _finding_views(
     findings: Sequence[_PackFinding],
 ) -> tuple[RequirementsAnalysisFindingView, ...]:

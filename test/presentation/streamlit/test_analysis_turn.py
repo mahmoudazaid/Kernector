@@ -325,8 +325,8 @@ def test_analysis_module_reaches_the_pack_only_through_composition() -> None:
     assert not hasattr(helper_mod, "analysis_enabled")
 
 
-def test_streamlit_app_wires_analysis_through_composition_only() -> None:
-    """AC1: the panel names the composition factory, never the pack."""
+def test_streamlit_app_routes_analysis_through_chat_not_a_form() -> None:
+    """Requirements analysis is chat-only; no pack imports in presentation."""
     import presentation.streamlit.app as app_mod
 
     source = Path(app_mod.__file__).read_text(encoding="utf-8")
@@ -334,9 +334,11 @@ def test_streamlit_app_wires_analysis_through_composition_only() -> None:
     assert "from packs" not in source
     assert "software_delivery" not in source
     assert "AnalyzeRequirements" not in source
-    assert "build_analyze_requirements" in source
-    assert "requirements_analysis_enabled" in source
-    assert "run_analysis_turn" in source
+    assert "build_analyze_requirements" not in source
+    assert "requirements_analysis_enabled" not in source
+    assert "run_analysis_turn" not in source
+    assert "requirements_analysis" not in source
+    assert "build_tool_augmented_ask" in source
 
 
 def test_missing_evidence_is_reported_as_a_corpus_gap_not_a_crash() -> None:
