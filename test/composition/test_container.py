@@ -72,6 +72,7 @@ from infrastructure.llm.ollama import OllamaChat
 from infrastructure.llm.openrouter import OpenRouterChat
 from infrastructure.llm.query_rewrite import OpenRouterQueryRewriter
 from infrastructure.vectorstore.chroma import ChromaVectorStore
+from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -926,6 +927,28 @@ def test_build_vector_store_returns_the_chroma_adapter(
     sees the port.
     """
     assert isinstance(build_vector_store(chroma_settings), ChromaVectorStore)
+
+
+def test_build_vector_store_wraps_dual_write_when_hybrid_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("HYBRID_ALPHA", "0.6")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    settings = load_settings()
+
+    store = build_vector_store(settings)
+    use_case = build_retrieve_knowledge(settings, vector_store=store)
+
+    assert isinstance(store, DualWriteVectorStore)
+    assert use_case._hybrid_enabled is True
+    assert use_case._hybrid_alpha == 0.6
+    assert use_case._lexical_index is store.lexical
 
 
 def test_built_vector_store_satisfies_the_port(chroma_settings: Settings) -> None:

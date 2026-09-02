@@ -141,6 +141,34 @@ class VectorStore(Protocol):
         """
 
 
+class LexicalIndex(Protocol):
+    """A lexical (e.g. BM25) index of chunk text searchable by query string."""
+
+    def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
+        """Insert or replace chunks keyed by their derived identity.
+
+        Idempotent: re-adding the same identity replaces content and metadata.
+        Empty ``embedded`` is a no-op.
+        """
+
+    def search(
+        self,
+        query: str,
+        limit: int,
+        *,
+        metadata_filters: Mapping[str, str] | None = None,
+    ) -> Sequence[ScoredChunk]:
+        """Return the ``limit`` best lexical matches for ``query``, best first.
+
+        Filters apply **before** the limit with the same ``extra`` AND semantics
+        as ``VectorStore.search``. ``None`` and ``{}`` mean unfiltered.
+        Empty corpus or ``limit <= 0`` returns an empty sequence.
+        """
+
+    def delete_source(self, reference: SourceReference) -> None:
+        """Remove all chunks for ``reference``. Missing references are a no-op."""
+
+
 class Tool(Protocol):
     """A named capability a use case can expose to the model."""
 

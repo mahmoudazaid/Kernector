@@ -67,7 +67,9 @@ from infrastructure.llm.query_rewrite import (
     QueryRewriteConfigError,
 )
 from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
+from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
+from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
@@ -174,7 +176,12 @@ def build_embedding_model(settings: Settings) -> EmbeddingModel:
 
 
 def build_vector_store(settings: Settings) -> VectorStore:
-    return ChromaVectorStore(settings.chroma)
+    chroma = ChromaVectorStore(settings.chroma)
+    if not settings.retrieval.hybrid_enabled:
+        return chroma
+    lexical = Bm25LexicalIndex()
+    lexical.upsert(chroma.list_embedded_chunks())
+    return DualWriteVectorStore(chroma, lexical)
 
 
 def build_ingest_knowledge(
@@ -230,10 +237,22 @@ def build_retrieve_knowledge(
         raise ConfigurationError(str(exc)) from exc
     if vector_store is None:
         vector_store = build_vector_store(settings)
+    lexical_index = None
+    if settings.retrieval.hybrid_enabled:
+        if not isinstance(vector_store, DualWriteVectorStore):
+            raise ConfigurationError(
+                "hybrid search requires DualWriteVectorStore from "
+                "build_vector_store; got "
+                f"{type(vector_store).__name__}"
+            )
+        lexical_index = vector_store.lexical
     return RetrieveKnowledge(
         embedding_model,
         vector_store,
         max_input_length=settings.max_input_length,
+        hybrid_enabled=settings.retrieval.hybrid_enabled,
+        lexical_index=lexical_index,
+        hybrid_alpha=settings.retrieval.hybrid_alpha,
     )
 
 
