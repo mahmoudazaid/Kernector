@@ -171,7 +171,25 @@ def test_run_meta_carries_observability_without_duplicating_the_answer() -> None
     assert response.run.model == "test-model"
     assert response.run.latency_ms == 12
     assert response.run.usage == Usage(total_tokens=99)
+    assert response.run.outcome == "success"
+    assert response.run.hit_count == 1
+    assert response.run.source_type == "knowledge_document"
     assert "Use the restart runbook." not in str(response.run)
+    assert "How do I restart?" not in str(response.run)
+
+
+def test_run_meta_includes_bound_request_id() -> None:
+    chat = _RecordingChat("ok")
+    _bound, token = observability.bind_request_id("req-ask-meta")
+    try:
+        response = _use_case((_hit(),), chat).execute(
+            AskRequest(prompt_key=None, query="How do I restart?")
+        )
+    finally:
+        observability.reset_request_id(token)
+
+    assert response.run is not None
+    assert response.run.request_id == "req-ask-meta"
 
 
 def test_history_precedes_context_and_query() -> None:
@@ -395,7 +413,9 @@ def test_no_hits_states_insufficient_knowledge() -> None:
 
     assert "insufficient" in response.answer.lower()
     assert response.citations == ()
-    assert response.run is None
+    assert response.run is not None
+    assert response.run.outcome == "insufficient"
+    assert response.run.hit_count == 0
     assert chat.calls == []
 
 
@@ -411,7 +431,9 @@ def test_hits_below_threshold_state_insufficient_knowledge() -> None:
 
     assert "insufficient" in response.answer.lower()
     assert response.citations == ()
-    assert response.run is None
+    assert response.run is not None
+    assert response.run.outcome == "insufficient"
+    assert response.run.hit_count == 0
     assert chat.calls == []
 
 

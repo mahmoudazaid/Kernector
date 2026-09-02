@@ -88,3 +88,26 @@ API keys, raw provider bodies, tool arguments/results, or exception *messages*
 Workspace/tenant correlation is deferred until an authorized identity exists;
 storage details such as the Chroma collection name are not logged as a
 workspace id.
+
+### Run details in Streamlit
+
+Each completed Ask turn (success, insufficient evidence, or operational failure)
+can show a collapsed **Run details** expander. Metadata reaches the UI only
+through typed `RunMeta` on `AskResponse.run` / `AskTurnResult.run` — never by
+parsing log files.
+
+When present, the expander may show:
+
+- request ID
+- outcome (`success` / `insufficient` / `error`)
+- latency
+- model
+- token usage
+- pack
+- retrieval hit count
+- invoked tool **names**
+
+Unset optional fields are omitted. The UI does **not** display prompts, queries,
+retrieved chunks, document content, tool arguments/results, secrets, raw
+provider responses, generation settings blobs, or exception text (including
+`error_type`).

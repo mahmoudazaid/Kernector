@@ -11,17 +11,49 @@ outside this router so zero-pack chats are observed the same way.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 import logging
 from typing import Protocol
 
 from application.contracts import AskRequest, AskResponse, Citation, InvokeToolResponse, RunMeta
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
-from application.observability import log_operation
+from application.observability import current_request_id, log_operation
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_run(
+    run: RunMeta | None,
+    *,
+    outcome: str,
+    path: str,
+    pack: str | None = None,
+    tools: Sequence[str] = (),
+    prompt_key: str | None = None,
+    hit_count: int | None = None,
+) -> RunMeta:
+    """Overlay route fields onto an existing or empty ``RunMeta``."""
+    base = run if run is not None else RunMeta()
+    updates: dict[str, object] = {
+        "outcome": outcome,
+        "path": path,
+        "request_id": base.request_id or current_request_id(),
+    }
+    if pack is not None:
+        updates["pack"] = pack
+    if tools:
+        updates["tools"] = tuple(tools)
+    if prompt_key is not None:
+        updates["prompt_key"] = prompt_key
+    if hit_count is not None:
+        updates["hit_count"] = hit_count
+    return replace(base, **updates)
+
+
+def _tool_names(outputs: Sequence[InvokeToolResponse]) -> tuple[str, ...]:
+    return tuple(output.tool_name for output in outputs)
 
 
 class GroundedAsk(Protocol):
@@ -150,14 +182,33 @@ class ToolAugmentedAsk:
                 path="task_prompt",
                 prompt_key=request.prompt_key,
             )
-            return response
+            return AskResponse(
+                answer=response.answer,
+                citations=response.citations,
+                tool_outputs=response.tool_outputs,
+                run=_merge_run(
+                    response.run,
+                    outcome=response.run.outcome if response.run and response.run.outcome else "success",
+                    path="task_prompt",
+                    prompt_key=request.prompt_key,
+                ),
+            )
         selection = self._select(request.query)
         if selection is None:
             response = self._ask.execute(request, settings)
             log_operation(
                 logger, operation="ask_turn", outcome="delegated", path="rag"
             )
-            return response
+            return AskResponse(
+                answer=response.answer,
+                citations=response.citations,
+                tool_outputs=response.tool_outputs,
+                run=_merge_run(
+                    response.run,
+                    outcome=response.run.outcome if response.run and response.run.outcome else "success",
+                    path="rag",
+                ),
+            )
 
         if getattr(selection, "analyze_requirements", False):
             if self._analysis_runner is None:
@@ -165,7 +216,20 @@ class ToolAugmentedAsk:
                 log_operation(
                     logger, operation="ask_turn", outcome="delegated", path="rag"
                 )
-                return response
+                return AskResponse(
+                    answer=response.answer,
+                    citations=response.citations,
+                    tool_outputs=response.tool_outputs,
+                    run=_merge_run(
+                        response.run,
+                        outcome=(
+                            response.run.outcome
+                            if response.run and response.run.outcome
+                            else "success"
+                        ),
+                        path="rag",
+                    ),
+                )
             target = getattr(selection, "analysis_target", "") or request.query
             try:
                 outcome = self._analysis_runner.run(target)
@@ -177,7 +241,16 @@ class ToolAugmentedAsk:
                     path="analysis",
                     pack=self._pack_id,
                 )
-                return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+                return AskResponse(
+                    answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+                    run=_merge_run(
+                        None,
+                        outcome="insufficient",
+                        path="analysis",
+                        pack=self._pack_id,
+                        hit_count=0,
+                    ),
+                )
             log_operation(
                 logger,
                 operation="ask_turn",
@@ -189,7 +262,13 @@ class ToolAugmentedAsk:
                 answer=outcome.answer,
                 citations=outcome.citations,
                 tool_outputs=outcome.tool_outputs,
-                run=outcome.run,
+                run=_merge_run(
+                    outcome.run,
+                    outcome="success",
+                    path="analysis",
+                    pack=self._pack_id,
+                    tools=_tool_names(outcome.tool_outputs),
+                ),
             )
 
         try:
@@ -206,7 +285,16 @@ class ToolAugmentedAsk:
                 path="tools",
                 pack=self._pack_id,
             )
-            return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+            return AskResponse(
+                answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+                run=_merge_run(
+                    None,
+                    outcome="insufficient",
+                    path="tools",
+                    pack=self._pack_id,
+                    hit_count=0,
+                ),
+            )
         log_operation(
             logger,
             operation="ask_turn",
@@ -218,5 +306,11 @@ class ToolAugmentedAsk:
             answer=outcome.answer,
             citations=outcome.citations,
             tool_outputs=outcome.tool_outputs,
-            run=outcome.run,
+            run=_merge_run(
+                outcome.run,
+                outcome="success",
+                path="tools",
+                pack=self._pack_id,
+                tools=_tool_names(outcome.tool_outputs),
+            ),
         )
