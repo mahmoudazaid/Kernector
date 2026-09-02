@@ -9,9 +9,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from application.ask_knowledge import AskKnowledge
-from application.contracts import AskRequest, AskResponse
+from application.contracts import AskRequest, AskResponse, InvokeToolResponse
 from application.errors import ApplicationValidationError
+from composition import GroundedAsk
 from domain.errors import DomainValidationError, ProviderError, ToolFailureError
 from domain.models import Message
 
@@ -48,8 +48,24 @@ def _validation_message(error: BaseException) -> str:
     return text or f"The request failed ({type(error).__name__})."
 
 
+def tool_output_lines(
+    tool_outputs: Sequence[InvokeToolResponse],
+) -> tuple[str, ...]:
+    """Name each tool that contributed, and measure what it returned.
+
+    The payload is measured, never parsed. Interpreting it here would put pack
+    knowledge into the one part of the chat surface that must stay generic —
+    ``AskResponse.tool_outputs`` is opaque by contract, and structured rendering
+    belongs to a pack-specific projection adapter.
+    """
+    return tuple(
+        f"- `{output.tool_name}` — {len(output.result)} characters"
+        for output in tool_outputs
+    )
+
+
 def run_ask_turn(
-    ask: AskKnowledge,
+    ask: GroundedAsk,
     *,
     query: str,
     prompt_key: str | None,

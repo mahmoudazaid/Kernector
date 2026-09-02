@@ -13,10 +13,12 @@ from composition.container import (
     build_ingest_knowledge,
     build_invoke_tool,
     build_manage_uploaded_documents,
+    build_opaque_invoke,
     build_orchestrate_software_delivery,
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
+    build_tool_augmented_ask,
     build_tool_registry,
     build_vector_store,
     create_uploaded_document,
@@ -44,6 +46,15 @@ from composition.software_delivery_tools import (
     TestCasesView,
     software_delivery_tools_enabled,
 )
+from composition.software_delivery_chat import (
+    SOFTWARE_DELIVERY_TEST_STYLES,
+    ToolRunFailedError,
+)
+from composition.tool_augmented_ask import (
+    GroundedAsk,
+    ToolAugmentedAsk,
+    ToolRunOutcome,
+)
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
     DocumentOperationError,
@@ -59,8 +70,10 @@ __all__ = [
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
     "MAX_TOOL_CALL_SUMMARY_CHARS",
+    "SOFTWARE_DELIVERY_TEST_STYLES",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
+    "GroundedAsk",
     "Settings",
     "RequirementsAnalysisFindingView",
     "RequirementsAnalysisView",
@@ -70,7 +83,10 @@ __all__ = [
     "SoftwareDeliveryRunView",
     "TestCaseView",
     "TestCasesView",
+    "ToolAugmentedAsk",
     "ToolCallView",
+    "ToolRunFailedError",
+    "ToolRunOutcome",
     "analysis_citations",
     "requirements_analysis_enabled",
     "software_delivery_tools_enabled",
@@ -84,10 +100,12 @@ __all__ = [
     "build_ingest_knowledge",
     "build_invoke_tool",
     "build_manage_uploaded_documents",
+    "build_opaque_invoke",
     "build_orchestrate_software_delivery",
     "build_prompt_repository",
     "build_retrieve_knowledge",
     "build_rewrite_and_retrieve_knowledge",
+    "build_tool_augmented_ask",
     "build_tool_registry",
     "build_vector_store",
     "create_uploaded_document",
