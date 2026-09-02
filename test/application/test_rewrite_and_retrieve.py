@@ -91,7 +91,21 @@ def test_rewritten_query_is_embedded_and_both_queries_are_observable() -> None:
     assert embedder.queries == [rewritten]
     assert response.original_query == original
     assert response.rewritten_query == rewritten
+    assert response.query_rewritten is True
     assert len(response.hits) == 2
+
+
+def test_query_rewritten_false_when_rewrite_matches_original() -> None:
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("doc-1"))
+    original = "payment service failure last week"
+    use_case, _ = _use_case(store, rewritten=original)
+
+    response = use_case.execute(RetrieveRequest(query=original, retrieval_limit=1))
+
+    assert response.original_query == original
+    assert response.rewritten_query == original
+    assert response.query_rewritten is False
 
 
 def test_retrieval_limit_and_metadata_filters_pass_through_unchanged() -> None:

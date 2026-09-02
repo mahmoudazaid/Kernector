@@ -34,8 +34,14 @@ def run_detail_lines(result: RunMeta | None) -> tuple[str, ...]:
             )
     if result.pack:
         lines.append(f"Pack: {result.pack}")
+    if result.query_rewritten is not None:
+        lines.append(
+            f"Query rewritten: {'yes' if result.query_rewritten else 'no'}"
+        )
     if result.hit_count is not None:
         lines.append(f"Retrieval hits: {result.hit_count}")
+    if result.citation_count is not None:
+        lines.append(f"Citations: {result.citation_count}")
     if result.tools:
         lines.append(f"Tools: {', '.join(result.tools)}")
     return tuple(lines)
