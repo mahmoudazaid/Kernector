@@ -34,6 +34,7 @@ def _merge_run(
     tools: Sequence[str] = (),
     prompt_key: str | None = None,
     hit_count: int | None = None,
+    citation_count: int | None = None,
 ) -> RunMeta:
     """Overlay route fields onto an existing or empty ``RunMeta``."""
     base = run if run is not None else RunMeta()
@@ -50,6 +51,8 @@ def _merge_run(
         updates["prompt_key"] = prompt_key
     if hit_count is not None:
         updates["hit_count"] = hit_count
+    if citation_count is not None:
+        updates["citation_count"] = citation_count
     return replace(base, **updates)
 
 
@@ -79,10 +82,13 @@ class ToolRunOutcome:
             grounded in.
         tool_outputs (tuple[InvokeToolResponse, ...]): One opaque entry per
             successful tool invocation, in call order.
-        run (RunMeta | None): Observability for a model call made during the
-            run. Requirements-free tool chains leave this ``None`` unless a
-            tool invoked the chat model (e.g. test generation); then latency /
-            tokens / model are projected here. RAG leaves this ``None``.
+        run (RunMeta | None): Observability for the tool turn. Always carries
+            ``hit_count`` / ``citation_count`` when the run completed with
+            evidence. Model latency / tokens are included when a tool invoked
+            the chat model (e.g. test generation). ``query_rewritten`` stays
+            ``None`` on this path (rewrite metadata is not surfaced through
+            the tool retrieve seam). RAG leaves this ``None`` only when the
+            grounded ask did not attach metadata.
         run_view (SoftwareDeliveryRunView | None): Typed presentation projection
             for Software Delivery tool chains. Not placed on ``AskResponse``;
             callers consume it via the composition side path. RAG leaves this
@@ -238,6 +244,7 @@ class ToolAugmentedAsk:
                     path="tools",
                     pack=self._pack_id,
                     hit_count=0,
+                    citation_count=0,
                 ),
             )
         log_operation(

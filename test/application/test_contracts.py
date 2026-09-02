@@ -403,6 +403,23 @@ def test_rewrite_retrieve_response_constructs() -> None:
     assert response.hits == (hit,)
     assert response.original_query == "what broke?"
     assert response.rewritten_query == "payment service failure last week"
+    assert response.was_rewritten is True
+
+
+def test_rewrite_retrieve_response_was_rewritten_ignores_whitespace() -> None:
+    response = RewriteRetrieveResponse(
+        original_query="what broke?\n",
+        rewritten_query="what broke?",
+    )
+    assert response.was_rewritten is False
+
+
+def test_rewrite_retrieve_response_was_rewritten_false_when_identical() -> None:
+    response = RewriteRetrieveResponse(
+        original_query="what broke?",
+        rewritten_query="what broke?",
+    )
+    assert response.was_rewritten is False
 
 
 def test_rewrite_retrieve_response_defaults_hits_empty() -> None:
