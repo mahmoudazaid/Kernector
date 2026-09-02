@@ -282,6 +282,87 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
     assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
     assert response.tool_outputs == ()
     assert response.citations == ()
+    assert response.run is not None
+    assert response.run.outcome == "insufficient"
+    assert response.run.path == "tools"
+    assert response.run.hit_count == 0
+    assert response.run.citation_count == 0
+    assert response.run.query_rewritten is None
+
+
+def test_tool_turn_carries_retrieval_and_citation_counts_on_run_meta() -> None:
+    ask = _RecordingAsk()
+    outcome = ToolRunOutcome(
+        answer="Scored risk.",
+        citations=(
+            Citation(
+                reference=SourceReference("AUTH-101", "user_story"),
+                quote="MFA is required.",
+                chunk_index=0,
+            ),
+            Citation(
+                reference=SourceReference("AUTH-101", "user_story"),
+                quote="Lock after five attempts.",
+                chunk_index=1,
+            ),
+        ),
+        tool_outputs=(
+            InvokeToolResponse("software_delivery.risk_score", '{"score": 62}'),
+        ),
+        run=RunMeta(hit_count=2, citation_count=2),
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(outcome),
+        select=lambda query: _Selection(generate_tests=False, output_style="steps"),
+        pack_id="software-delivery",
+    )
+
+    response = wrapper.execute(
+        AskRequest(query="Score the risk for AUTH-101", prompt_key=None)
+    )
+
+    assert response.run is not None
+    assert response.run.path == "tools"
+    assert response.run.hit_count == 2
+    assert response.run.citation_count == 2
+    assert response.run.citation_count == len(response.citations)
+    assert response.run.query_rewritten is None
+
+    from presentation.streamlit.run_details import run_detail_lines
+
+    joined = "\n".join(run_detail_lines(response.run))
+    assert "Retrieval hits: 2" in joined
+    assert "Citations: 2" in joined
+    assert "Query rewritten:" not in joined
+
+
+def test_rag_turn_still_preserves_ask_knowledge_rag_metadata() -> None:
+    ask = _RecordingAsk()
+    ask.response = AskResponse(
+        answer="grounded answer",
+        run=RunMeta(
+            hit_count=1,
+            citation_count=1,
+            query_rewritten=True,
+            outcome="success",
+        ),
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(_outcome()),
+        select=lambda query: None,
+    )
+
+    response = wrapper.execute(
+        AskRequest(query="What is the session timeout?", prompt_key=None)
+    )
+
+    assert response.run is not None
+    assert response.run.path == "rag"
+    assert response.run.hit_count == 1
+    assert response.run.citation_count == 1
+    assert response.run.query_rewritten is True
 
 
 def test_analysis_cues_fall_through_to_grounded_rag() -> None:

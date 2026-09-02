@@ -548,3 +548,8 @@ class RewriteRetrieveResponse:
                     f"hits items must be ScoredChunk, got {item!r}"
                 )
         object.__setattr__(self, "hits", tuple(hits))
+
+    @property
+    def was_rewritten(self) -> bool:
+        """Whether rewrite changed the query beyond leading/trailing whitespace."""
+        return self.original_query.strip() != self.rewritten_query.strip()
