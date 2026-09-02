@@ -297,6 +297,50 @@ def test_a_risk_only_run_attaches_a_run_view_without_markdown() -> None:
     assert outcome.run_view.markdown == ""
     assert outcome.run_view.test_cases is None
     assert outcome.run_view.risk is not None
+    assert outcome.run is None
+
+
+def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
+    from application.contracts import RunMeta
+    from composition.recording_chat import RecordingChatModel
+    from domain.models import AskResult, Message, Usage
+
+    class _Inner:
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            return AskResult(
+                content="{}",
+                model="gen-model",
+                latency_ms=55,
+                usage=Usage(total_tokens=12),
+            )
+
+    recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
+    # Simulate the generate-test-cases tool calling the shared chat model.
+    recording.complete("sys", (Message(role="user", content="q"),), {})
+
+    runner = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=_RecordingOrchestrate(
+            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+        ),
+        model_calls=recording,
+    )
+
+    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+
+    assert outcome.run == RunMeta(
+        model="gen-model",
+        latency_ms=55,
+        usage=Usage(total_tokens=12),
+        settings={},
+    )
+    assert recording.consume_last() is None
     assert outcome.run_view.risk.score == 62
 
 

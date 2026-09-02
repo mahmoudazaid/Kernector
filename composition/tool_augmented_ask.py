@@ -80,7 +80,9 @@ class ToolRunOutcome:
         tool_outputs (tuple[InvokeToolResponse, ...]): One opaque entry per
             successful tool invocation, in call order.
         run (RunMeta | None): Observability for a model call made during the
-            run. Tool chains leave this ``None``.
+            run. Requirements-free tool chains leave this ``None`` unless a
+            tool invoked the chat model (e.g. test generation); then latency /
+            tokens / model are projected here. RAG leaves this ``None``.
         run_view (SoftwareDeliveryRunView | None): Typed presentation projection
             for Software Delivery tool chains. Not placed on ``AskResponse``;
             callers consume it via the composition side path. RAG leaves this
