@@ -1,0 +1,212 @@
+"""Composition correlation wrapper around any GroundedAsk."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+import pytest
+
+from application import observability
+from application.contracts import AskRequest, AskResponse
+from application.errors import InsufficientEvidenceError
+from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
+from composition.correlated_ask import CorrelatedAsk
+from composition.tool_augmented_ask import ToolAugmentedAsk, ToolRunOutcome
+from test.log_record import operation_payload, operation_records
+
+
+@dataclass(frozen=True)
+class _Selection:
+    generate_tests: bool = False
+    output_style: str = "steps"
+
+
+class _AskCapturingRequestId:
+    def __init__(self, response: AskResponse | None = None) -> None:
+        self.response = response or AskResponse(answer="grounded answer")
+        self.seen_request_id: str | None = None
+        self.calls: list[AskRequest] = []
+
+    def execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None = None,
+    ) -> AskResponse:
+        self.seen_request_id = observability.current_request_id()
+        self.calls.append(request)
+        return self.response
+
+
+class _FailingAsk:
+    def execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None = None,
+    ) -> AskResponse:
+        raise RuntimeError("provider boom")
+
+
+def test_correlated_ask_binds_request_id_for_zero_pack_chat() -> None:
+    inner = _AskCapturingRequestId()
+    ask = CorrelatedAsk(inner)
+
+    response = ask.execute(AskRequest(query="What is the session timeout?", prompt_key=None))
+
+    assert response.answer == "grounded answer"
+    assert inner.seen_request_id is not None
+    assert observability.current_request_id() is None
+
+
+def test_correlated_ask_reuses_prebound_outer_id_and_leaves_it_bound() -> None:
+    inner = _AskCapturingRequestId()
+    ask = CorrelatedAsk(inner)
+    outer, token = observability.bind_request_id("req-outer-turn")
+    try:
+        ask.execute(AskRequest(query="hello", prompt_key=None))
+        assert inner.seen_request_id == outer
+        assert observability.current_request_id() == outer
+    finally:
+        observability.reset_request_id(token)
+    assert observability.current_request_id() is None
+
+
+def test_correlated_ask_restores_outer_context_when_inner_raises() -> None:
+    ask = CorrelatedAsk(_FailingAsk())
+    outer, token = observability.bind_request_id("req-outer-turn")
+    try:
+        with pytest.raises(RuntimeError, match="provider boom"):
+            ask.execute(AskRequest(query="hello", prompt_key=None))
+        assert observability.current_request_id() == outer
+    finally:
+        observability.reset_request_id(token)
+
+
+def test_pack_nested_ops_share_one_request_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    seen: dict[str, str | None] = {}
+
+    class _Runner:
+        def run(
+            self,
+            target: str,
+            *,
+            generate_tests: bool = True,
+            output_style: str = "steps",
+        ) -> ToolRunOutcome:
+            seen["runner"] = observability.current_request_id()
+            return ToolRunOutcome(answer="ok")
+
+    class _Ask:
+        def execute(
+            self,
+            request: AskRequest,
+            settings: Mapping[str, object] | None = None,
+        ) -> AskResponse:
+            seen["ask"] = observability.current_request_id()
+            return AskResponse(answer="rag")
+
+    routed = ToolAugmentedAsk(
+        _Ask(),
+        runner=_Runner(),
+        select=lambda query: _Selection(),
+        pack_id="software-delivery",
+    )
+    ask = CorrelatedAsk(routed)
+    with caplog.at_level(logging.INFO):
+        ask.execute(AskRequest(query="Score risk", prompt_key=None))
+
+    assert seen["runner"] is not None
+    assert seen.get("ask") is None
+    records = operation_records(caplog.records, operation="ask_turn")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["request_id"] == seen["runner"]
+    assert payload["path"] == "tools"
+    assert payload["pack"] == "software-delivery"
+    assert payload["outcome"] == "success"
+
+
+def test_rag_delegation_logs_delegated_not_success(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _InsufficientAsk:
+        def execute(
+            self,
+            request: AskRequest,
+            settings: Mapping[str, object] | None = None,
+        ) -> AskResponse:
+            return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
+
+    routed = ToolAugmentedAsk(
+        _InsufficientAsk(),
+        runner=_RunnerNever(),
+        select=lambda query: None,
+        pack_id="software-delivery",
+    )
+    with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
+        response = routed.execute(
+            AskRequest(query="What is the session timeout?", prompt_key=None)
+        )
+
+    assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
+    records = operation_records(caplog.records, operation="ask_turn")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "delegated"
+    assert payload["path"] == "rag"
+    assert payload.get("pack") is None
+
+
+def test_analysis_insufficient_logs_insufficient_with_pack(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _Ask:
+        def execute(
+            self,
+            request: AskRequest,
+            settings: Mapping[str, object] | None = None,
+        ) -> AskResponse:
+            return AskResponse(answer="should not run")
+
+    class _Analysis:
+        def run(self, requirements: str) -> ToolRunOutcome:
+            raise InsufficientEvidenceError()
+
+    @dataclass(frozen=True)
+    class _AnalysisSelection:
+        generate_tests: bool = False
+        output_style: str = "steps"
+        analyze_requirements: bool = True
+        analysis_target: str = "Need MFA."
+
+    routed = ToolAugmentedAsk(
+        _Ask(),
+        runner=_RunnerNever(),
+        select=lambda query: _AnalysisSelection(),
+        analysis_runner=_Analysis(),
+        pack_id="software-delivery",
+    )
+    with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
+        response = routed.execute(AskRequest(query="Analyze these requirements", prompt_key=None))
+
+    assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
+    payload = operation_payload(
+        operation_records(caplog.records, operation="ask_turn")[0]
+    )
+    assert payload["outcome"] == "insufficient"
+    assert payload["path"] == "analysis"
+    assert payload["pack"] == "software-delivery"
+
+
+class _RunnerNever:
+    def run(
+        self,
+        target: str,
+        *,
+        generate_tests: bool = True,
+        output_style: str = "steps",
+    ) -> ToolRunOutcome:
+        raise AssertionError("runner must not be called")

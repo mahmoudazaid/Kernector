@@ -1,7 +1,10 @@
 """Behavior of RewriteAndRetrieveKnowledge, observed through ports only."""
 
+import logging
+
 import pytest
 
+from application import observability
 from application.contracts import RetrieveRequest
 from application.errors import ApplicationValidationError
 from application.retrieve_knowledge import RetrieveKnowledge
@@ -25,7 +28,7 @@ from test.doubles import (
     StubQueryRewriter,
     vector_for,
 )
-
+from test.log_record import flatten_log_record, operation_payload, operation_records
 
 def _chunk(
     source_id: str,
@@ -241,3 +244,62 @@ def test_exact_limit_original_and_rewrite_proceed_to_embed() -> None:
     assert len(response.hits) == 1
     assert response.original_query == original
     assert response.rewritten_query == rewritten
+
+
+def test_rewrite_retrieve_success_logs_hit_count_without_query_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = InMemoryVectorStore()
+    secret_chunk = "CONFIDENTIAL_CHUNK_BODY_NEVER_LOG"
+    _seed(store, _chunk("doc-1", content=secret_chunk), _chunk("doc-2"))
+    original = "what broke with AUTH-101?"
+    rewritten = "payment service failure AUTH-101 last week"
+    use_case, _ = _use_case(store, rewritten=rewritten)
+    _bound, token = observability.bind_request_id("req-retrieve-1")
+    try:
+        with caplog.at_level(
+            logging.INFO, logger="application.rewrite_and_retrieve"
+        ):
+            use_case.execute(RetrieveRequest(query=original, retrieval_limit=2))
+    finally:
+        observability.reset_request_id(token)
+
+    records = operation_records(caplog.records, operation="rewrite_retrieve")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "success"
+    assert payload["request_id"] == "req-retrieve-1"
+    assert payload["hit_count"] == 2
+    flat = flatten_log_record(records[0])
+    assert original not in flat
+    assert rewritten not in flat
+    assert secret_chunk not in flat
+    assert "AUTH-101" not in flat
+
+
+def test_rewrite_failure_logs_error_type_without_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    leak = "vendor rewrite body with sk-live-secret"
+
+    class _LeakyRewriter:
+        def rewrite(self, query: str) -> str:
+            raise QueryRewriterError(leak)
+
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("doc-1"))
+    use_case, _ = _use_case(store, rewriter=_LeakyRewriter())
+
+    with caplog.at_level(logging.ERROR, logger="application.rewrite_and_retrieve"):
+        with pytest.raises(QueryRewriteFailure):
+            use_case.execute(RetrieveRequest(query="what broke?", retrieval_limit=1))
+
+    records = operation_records(caplog.records, operation="rewrite_retrieve")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "QueryRewriteFailure"
+    assert records[0].exc_info is None
+    flat = flatten_log_record(records[0])
+    assert leak not in flat
+    assert "sk-live-secret" not in flat

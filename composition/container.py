@@ -37,6 +37,8 @@ from composition.errors import (
     KnowledgeLoadError,
     PartialDocumentOperationError,
 )
+from composition.correlated_ask import CorrelatedAsk
+from composition.logging_config import configure_logging
 from composition.software_delivery_chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -121,6 +123,7 @@ def load_runtime_settings() -> Settings:
 
     Wraps ``infrastructure.config.load_settings`` so presentation never imports
     infrastructure. Expected parse failures become ``ConfigurationError``.
+    Also applies ``LOG_LEVEL`` via :func:`composition.logging_config.configure_logging`.
 
     Returns:
         Settings: Frozen runtime configuration for composition factories.
@@ -128,6 +131,7 @@ def load_runtime_settings() -> Settings:
     Raises:
         ConfigurationError: If environment values fail known config validation.
     """
+    configure_logging()
     try:
         return load_settings()
     except ValueError as error:
@@ -659,10 +663,11 @@ def build_tool_augmented_ask(
 ) -> GroundedAsk:
     """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
 
-    With no pack enabled this is exactly ``build_ask_knowledge`` — the chat path
-    degrades to today's behaviour rather than failing, which is what keeps the
-    tool feature genuinely optional. The gate reads settings only, so a disabled
-    pack is never imported.
+    Always wraps the result in :class:`CorrelatedAsk` so every chat turn — pack
+    enabled or not — shares one ``request_id`` across ask / retrieve / tools.
+
+    With no pack enabled the inner ask is ``build_ask_knowledge``. The gate reads
+    settings only, so a disabled pack is never imported.
 
     Args:
         settings (Settings): Runtime settings including enabled tool packs.
@@ -671,7 +676,8 @@ def build_tool_augmented_ask(
         prompt_repository (PromptRepository | None): Optional shared prompts.
 
     Returns:
-        GroundedAsk: Either ``AskKnowledge`` or a tool-augmented wrapper of it.
+        GroundedAsk: ``CorrelatedAsk`` around ``AskKnowledge`` or
+        ``ToolAugmentedAsk``.
     """
     if chat_model is None:
         chat_model = build_chat_model(settings)
@@ -682,7 +688,7 @@ def build_tool_augmented_ask(
         prompt_repository=prompt_repository,
     )
     if not software_delivery_tools_enabled(settings):
-        return ask
+        return CorrelatedAsk(ask)
 
     def orchestrate(
         *,
@@ -741,11 +747,14 @@ def build_tool_augmented_ask(
                 run=run,
             )
 
-    return ToolAugmentedAsk(
-        ask,
-        runner=runner,
-        select=registration.build_chat_intent_selector(),
-        analysis_runner=_AnalysisRunner(),
+    return CorrelatedAsk(
+        ToolAugmentedAsk(
+            ask,
+            runner=runner,
+            select=registration.build_chat_intent_selector(),
+            analysis_runner=_AnalysisRunner(),
+            pack_id="software-delivery",
+        )
     )
 
 
