@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+import pytest
+
 from application.contracts import (
     AskRequest,
     AskResponse,
@@ -194,3 +196,32 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
     assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
     assert response.tool_outputs == ()
     assert response.citations == ()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Create a summary, not test cases",
+        "Create a summary of existing test cases",
+        "Create a list of test cases",
+        "How do I create test cases?",
+        "Generate a report without creating tests",
+        "How to write Gherkin scenarios",
+        "Explain how to generate tests",
+    ],
+)
+def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
+    """False positives must not reach retrieval or tools at the wrapper boundary."""
+    from packs.software_delivery.chat_intent import select_chat_intent
+
+    ask = _RecordingAsk()
+    runner = _RecordingRunner(_outcome())
+    wrapper = ToolAugmentedAsk(ask, runner=runner, select=select_chat_intent)
+    request = AskRequest(query=query, prompt_key=None)
+
+    response = wrapper.execute(request)
+
+    assert select_chat_intent(query) is None
+    assert response is ask.response
+    assert ask.calls == [(request, None)]
+    assert runner.runs == []

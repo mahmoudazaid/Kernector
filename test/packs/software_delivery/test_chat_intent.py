@@ -8,38 +8,30 @@ from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_i
 from packs.software_delivery.errors import OrchestrationValidationError
 
 
-def test_a_test_case_request_selects_the_generate_chain() -> None:
-    """AC1: 'Create test cases for AUTH-101' must reach the generate chain."""
-    assert select_chat_intent("Create test cases for AUTH-101") == ChatToolSelection(
-        generate_tests=True, output_style="steps"
-    )
-
-
-def test_an_explicit_steps_request_selects_the_steps_style() -> None:
-    assert select_chat_intent("Generate tests for AUTH-101") == ChatToolSelection(
-        generate_tests=True, output_style="steps"
-    )
-
-
 @pytest.mark.parametrize(
-    "query",
+    ("query", "style"),
     [
-        "Write gherkin test cases for AUTH-101",
-        "Generate tests for AUTH-101 in Given/When/Then form",
-        "Write a feature file for the login story",
-        "Produce cucumber test scenarios for AUTH-101",
+        ("Create test cases for AUTH-101", "steps"),
+        ("Generate tests for AUTH-101", "steps"),
+        ("Generate comprehensive tests for AUTH-101", "steps"),
+        ("Draft a test plan for AUTH-101", "steps"),
+        ("Write gherkin test cases for AUTH-101", "gherkin"),
+        ("Generate tests for AUTH-101 in Given/When/Then form", "gherkin"),
+        ("Write a Gherkin feature file", "gherkin"),
+        ("Write a feature file for the login story", "gherkin"),
+        ("Produce Cucumber scenarios", "gherkin"),
+        ("Produce cucumber test scenarios for AUTH-101", "gherkin"),
+        (
+            "Score the risk and write gherkin test cases for AUTH-101",
+            "gherkin",
+        ),
     ],
 )
-def test_explicit_creation_with_style_terms_selects_gherkin(query: str) -> None:
-    selection = select_chat_intent(query)
-
-    assert selection is not None
-    assert selection.output_style == "gherkin"
-
-
-def test_explicit_creation_without_style_terms_selects_steps() -> None:
-    assert select_chat_intent("Draft a test plan for AUTH-101") == ChatToolSelection(
-        generate_tests=True, output_style="steps"
+def test_explicit_generation_requests_select_the_expected_chain(
+    query: str, style: str
+) -> None:
+    assert select_chat_intent(query) == ChatToolSelection(
+        generate_tests=True, output_style=style  # type: ignore[arg-type]
     )
 
 
@@ -60,16 +52,17 @@ def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> Non
     )
 
 
-def test_a_gherkin_test_request_generates_tests_in_gherkin() -> None:
-    """Both signals in one query: the chain wins on tests, the style on gherkin."""
-    assert select_chat_intent(
-        "Score the risk and write gherkin test cases for AUTH-101"
-    ) == ChatToolSelection(generate_tests=True, output_style="gherkin")
-
-
 @pytest.mark.parametrize(
     "query",
     [
+        "Create a summary, not test cases",
+        "Create a summary of existing test cases",
+        "Create a list of test cases",
+        "Create an overview of the test plan",
+        "Generate a report without creating tests",
+        "How do I create test cases?",
+        "How to write Gherkin scenarios",
+        "Explain how to generate tests",
         "What is Gherkin?",
         "How is a risk score calculated?",
         "Summarise the test plan",
@@ -78,43 +71,16 @@ def test_a_gherkin_test_request_generates_tests_in_gherkin() -> None:
         "Show me the test plan for AUTH-101",
         "What is a risk score?",
         "Explain the risk score model",
-    ],
-)
-def test_conceptual_or_read_only_phrases_select_no_tool(query: str) -> None:
-    assert select_chat_intent(query) is None
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
         "Do not generate test cases for AUTH-101",
         "Don't create tests for AUTH-101",
         "Dont write test cases for AUTH-101",
         "Never generate test scenarios for login",
         "Do not assess the risk for AUTH-101",
-    ],
-)
-def test_negated_explicit_requests_select_no_tool(query: str) -> None:
-    assert select_chat_intent(query) is None
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
         "gherkin",
         "cucumber scenarios",
         "feature file",
         "test plan",
         "test cases for AUTH-101",
-    ],
-)
-def test_artifact_terms_without_a_creation_verb_select_no_tool(query: str) -> None:
-    assert select_chat_intent(query) is None
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
         "What is the session timeout?",
         "Summarise the auth docs",
         "Who owns AUTH-101?",
@@ -123,8 +89,7 @@ def test_artifact_terms_without_a_creation_verb_select_no_tool(query: str) -> No
         "   ",
     ],
 )
-def test_a_general_question_selects_no_tool(query: str) -> None:
-    """AC3: an ordinary question must not trigger a tool call."""
+def test_non_generation_requests_select_no_tool(query: str) -> None:
     assert select_chat_intent(query) is None
 
 
@@ -142,4 +107,5 @@ def test_registration_exposes_the_chat_intent_selector() -> None:
     assert select("Create test cases for AUTH-101") == ChatToolSelection(
         generate_tests=True, output_style="steps"
     )
+    assert select("Create a summary of existing test cases") is None
     assert select("What is the session timeout?") is None
