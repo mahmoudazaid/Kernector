@@ -22,7 +22,7 @@ from test.doubles import (
     WrongLengthEmbeddingModel,
     vector_for,
 )
-from test.log_record import flatten_log_record, operation_records
+from test.log_record import flatten_log_record, operation_payload, operation_records
 CHUNK_SIZE = 10
 CHUNK_OVERLAP = 2
 # 26 characters. Size 10 with overlap 2 gives step 8, so the windows are
@@ -229,23 +229,23 @@ def test_ingest_success_logs_counts_without_document_content(
 ) -> None:
     store = InMemoryVectorStore()
     secret = "CONFIDENTIAL_" + CONTENT  # same chunk geometry as CONTENT → 3 chunks
-    observability.bind_request_id("req-ingest-1")
+    _bound, token = observability.bind_request_id("req-ingest-1")
     try:
         with caplog.at_level(logging.INFO, logger="application.ingest_knowledge"):
             response = _use_case(store).execute(
                 IngestRequest(documents=[_document(content=secret)])
             )
     finally:
-        observability.clear_request_id()
+        observability.reset_request_id(token)
 
     records = operation_records(caplog.records, operation="ingest")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=success" in message
-    assert "request_id=req-ingest-1" in message
-    assert "source_count=1" in message
-    assert f"chunk_count={response.chunk_count}" in message
-    assert "source_type=knowledge_document" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "success"
+    assert payload["request_id"] == "req-ingest-1"
+    assert payload["source_count"] == 1
+    assert payload["chunk_count"] == response.chunk_count
+    assert payload["source_type"] == "knowledge_document"
     flat = flatten_log_record(records[0])
     assert secret not in flat
     assert "CONFIDENTIAL_" not in flat
@@ -272,9 +272,9 @@ def test_ingest_failure_logs_error_type_without_message(
     leak = str(raised.value)
     records = operation_records(caplog.records, operation="ingest")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=error" in message
-    assert "error_type=IngestFailure" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "IngestFailure"
     assert records[0].exc_info is None
     flat = flatten_log_record(records[0])
     assert leak not in flat

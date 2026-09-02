@@ -28,7 +28,7 @@ from test.doubles import (
     StubQueryRewriter,
     vector_for,
 )
-from test.log_record import flatten_log_record, operation_records
+from test.log_record import flatten_log_record, operation_payload, operation_records
 
 def _chunk(
     source_id: str,
@@ -255,21 +255,21 @@ def test_rewrite_retrieve_success_logs_hit_count_without_query_text(
     original = "what broke with AUTH-101?"
     rewritten = "payment service failure AUTH-101 last week"
     use_case, _ = _use_case(store, rewritten=rewritten)
-    observability.bind_request_id("req-retrieve-1")
+    _bound, token = observability.bind_request_id("req-retrieve-1")
     try:
         with caplog.at_level(
             logging.INFO, logger="application.rewrite_and_retrieve"
         ):
             use_case.execute(RetrieveRequest(query=original, retrieval_limit=2))
     finally:
-        observability.clear_request_id()
+        observability.reset_request_id(token)
 
     records = operation_records(caplog.records, operation="rewrite_retrieve")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=success" in message
-    assert "request_id=req-retrieve-1" in message
-    assert "hit_count=2" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "success"
+    assert payload["request_id"] == "req-retrieve-1"
+    assert payload["hit_count"] == 2
     flat = flatten_log_record(records[0])
     assert original not in flat
     assert rewritten not in flat
@@ -296,9 +296,9 @@ def test_rewrite_failure_logs_error_type_without_message(
 
     records = operation_records(caplog.records, operation="rewrite_retrieve")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=error" in message
-    assert "error_type=QueryRewriteFailure" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "QueryRewriteFailure"
     assert records[0].exc_info is None
     flat = flatten_log_record(records[0])
     assert leak not in flat

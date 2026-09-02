@@ -4,6 +4,9 @@
 ``packs``, and the vocabulary that recognises a domain workflow request is
 pack-owned. So the routing lives here, in the one layer already allowed to join
 both — the "thin composition wrapper" the story names.
+
+Request-id correlation is owned by :class:`composition.correlated_ask.CorrelatedAsk`
+outside this router so zero-pack chats are observed the same way.
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ from typing import Protocol
 from application.contracts import AskRequest, AskResponse, Citation, InvokeToolResponse, RunMeta
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
-from application.observability import bind_request_id, clear_request_id, log_operation
+from application.observability import log_operation
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,7 @@ class ToolAugmentedAsk:
         analysis_runner (AnalysisRunner | None): Requirements analysis path when
             the pack enables it; absent means analysis intents fall through to
             grounded RAG.
+        pack_id (str | None): Pack identifier logged on tool/analysis routes.
     """
 
     def __init__(
@@ -106,11 +110,13 @@ class ToolAugmentedAsk:
         runner: ToolRunner,
         select: SelectToolIntent,
         analysis_runner: AnalysisRunner | None = None,
+        pack_id: str | None = None,
     ) -> None:
         self._ask = ask
         self._runner = runner
         self._select = select
         self._analysis_runner = analysis_runner
+        self._pack_id = pack_id
 
     def execute(
         self,
@@ -131,26 +137,16 @@ class ToolAugmentedAsk:
         generation settings unchanged to ``AskKnowledge`` — routing never moves
         into Streamlit.
 
-        Binds a per-turn ``request_id`` for structured logs across nested
-        ask/retrieve/tool operations.
+        Delegation to ``AskKnowledge`` logs ``outcome=delegated``; the nested ask
+        emits the terminal ``success`` / ``insufficient`` / ``error`` event.
+        Tool and analysis paths log their own terminal outcomes.
         """
-        bind_request_id()
-        try:
-            return self._execute(request, settings)
-        finally:
-            clear_request_id()
-
-    def _execute(
-        self,
-        request: AskRequest,
-        settings: Mapping[str, object] | None,
-    ) -> AskResponse:
         if request.prompt_key is not None:
             response = self._ask.execute(request, settings)
             log_operation(
                 logger,
                 operation="ask_turn",
-                outcome="success",
+                outcome="delegated",
                 path="task_prompt",
                 prompt_key=request.prompt_key,
             )
@@ -159,7 +155,7 @@ class ToolAugmentedAsk:
         if selection is None:
             response = self._ask.execute(request, settings)
             log_operation(
-                logger, operation="ask_turn", outcome="success", path="rag"
+                logger, operation="ask_turn", outcome="delegated", path="rag"
             )
             return response
 
@@ -167,7 +163,7 @@ class ToolAugmentedAsk:
             if self._analysis_runner is None:
                 response = self._ask.execute(request, settings)
                 log_operation(
-                    logger, operation="ask_turn", outcome="success", path="rag"
+                    logger, operation="ask_turn", outcome="delegated", path="rag"
                 )
                 return response
             target = getattr(selection, "analysis_target", "") or request.query
@@ -179,10 +175,15 @@ class ToolAugmentedAsk:
                     operation="ask_turn",
                     outcome="insufficient",
                     path="analysis",
+                    pack=self._pack_id,
                 )
                 return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
             log_operation(
-                logger, operation="ask_turn", outcome="success", path="analysis"
+                logger,
+                operation="ask_turn",
+                outcome="success",
+                path="analysis",
+                pack=self._pack_id,
             )
             return AskResponse(
                 answer=outcome.answer,
@@ -203,9 +204,16 @@ class ToolAugmentedAsk:
                 operation="ask_turn",
                 outcome="insufficient",
                 path="tools",
+                pack=self._pack_id,
             )
             return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER)
-        log_operation(logger, operation="ask_turn", outcome="success", path="tools")
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="success",
+            path="tools",
+            pack=self._pack_id,
+        )
         return AskResponse(
             answer=outcome.answer,
             citations=outcome.citations,

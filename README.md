@@ -47,19 +47,43 @@ LOG_LEVEL=DEBUG uv run streamlit run main.py
 
 `load_runtime_settings()` applies this at composition bootstrap.
 
-Each chat turn binds a `request_id` (UUID) via a context variable so nested
-operations share one correlation id. Typical fields when available:
+### Correlation lifecycle
 
-- `operation` / `outcome` (e.g. `ask`, `rewrite_retrieve`, `invoke_tool`, `ingest`, `ask_turn`)
-- `request_id`
-- `path` (`rag` | `tools` | `task_prompt` | `analysis`)
+Every chat path from `build_tool_augmented_ask` is wrapped in `CorrelatedAsk`,
+including when no Software Delivery pack is enabled. On each
+`GroundedAsk.execute` turn:
+
+1. Bind a `request_id` (UUID hex) via a `ContextVar`, or **reuse** an id already
+   bound by an outer caller.
+2. Nested ask / rewrite-retrieve / invoke-tool / analysis logs read that same id.
+3. Restore the previous ContextVar binding with `reset(token)` in a `finally`
+   block — never force-clear a caller’s outer context.
+
+### Log format
+
+Each operation emits **one single-line JSON object** (sorted keys), for example:
+
+```json
+{"hit_count":1,"latency_ms":12,"model":"test-model","operation":"ask","outcome":"success","request_id":"…","source_type":"knowledge_document","total_tokens":99}
+```
+
+Typical fields when available:
+
+- `operation` / `outcome` (`ask`, `rewrite_retrieve`, `invoke_tool`, `ingest`, `ask_turn`)
+- `outcome` values: `success`, `insufficient`, `error`, or `delegated` (router
+  handed off to grounded ask; the nested `ask` event is terminal)
+- `request_id`, `path` (`rag` | `tools` | `task_prompt` | `analysis`)
+- `pack` (`software-delivery` on tool/analysis routes)
 - `tool`, `prompt_key`, `source_type`
 - `hit_count` / `chunk_count` / `source_count`
 - `latency_ms`, `model`, token usage ints from `RunMeta`
 
+String field values are normalized (control characters / newlines replaced) so
+one call cannot forge additional log lines or alternate `operation` events.
+
 **Do not expect logs to contain:** document or chunk text, prompts, secrets or
 API keys, raw provider bodies, tool arguments/results, or exception *messages*
-(only exception type names such as `error_type=ProviderError`).
+(only exception type names such as `"error_type":"ProviderError"`).
 
 Workspace/tenant correlation is deferred until an authorized identity exists;
 storage details such as the Chroma collection name are not logged as a

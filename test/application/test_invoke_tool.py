@@ -10,7 +10,7 @@ from application.contracts import InvokeToolRequest
 from application.errors import ApplicationValidationError, ConfigurationError
 from application.invoke_tool import InvokeTool, ToolRegistry
 from domain.errors import ToolArgumentValidationError, ToolFailureError
-from test.log_record import flatten_log_record, operation_records
+from test.log_record import flatten_log_record, operation_payload, operation_records
 
 class _FakeTool:
     def __init__(self, name: str = "fake.tool", result: str = "ok") -> None:
@@ -124,20 +124,20 @@ def test_invoke_success_logs_tool_and_latency_without_payload(
     secret_args = {"api_key": "sk-live-secret", "evidence": "CONFIDENTIAL_EVIDENCE"}
     tool = _FakeTool(result="CONFIDENTIAL_TOOL_RESULT")
     use_case = InvokeTool(ToolRegistry([tool]))
-    observability.bind_request_id("req-tool-1")
+    _bound, token = observability.bind_request_id("req-tool-1")
     try:
         with caplog.at_level(logging.INFO, logger="application.invoke_tool"):
             use_case.execute(InvokeToolRequest("fake.tool", secret_args))
     finally:
-        observability.clear_request_id()
+        observability.reset_request_id(token)
 
     records = operation_records(caplog.records, operation="invoke_tool")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=success" in message
-    assert "request_id=req-tool-1" in message
-    assert "tool=fake.tool" in message
-    assert "latency_ms=" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "success"
+    assert payload["request_id"] == "req-tool-1"
+    assert payload["tool"] == "fake.tool"
+    assert isinstance(payload["latency_ms"], int)
     flat = flatten_log_record(records[0])
     assert "sk-live-secret" not in flat
     assert "CONFIDENTIAL_EVIDENCE" not in flat
@@ -160,10 +160,10 @@ def test_invoke_failure_logs_error_type_without_message(
 
     records = operation_records(caplog.records, operation="invoke_tool")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=error" in message
-    assert "tool=fake.tool" in message
-    assert "error_type=ToolFailureError" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["tool"] == "fake.tool"
+    assert payload["error_type"] == "ToolFailureError"
     assert records[0].exc_info is None
     flat = flatten_log_record(records[0])
     assert leak not in flat
