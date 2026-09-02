@@ -243,6 +243,8 @@ class RunMeta:
         request_id (str | None): Correlation id for the turn.
         outcome (str | None): ``success``, ``insufficient``, or ``error``.
         hit_count (int | None): Retrieval hits used as evidence.
+        query_rewritten (bool | None): Whether rewrite changed the query string.
+        citation_count (int | None): Number of citations on the ask response.
         pack (str | None): Pack identifier when a pack routed the turn.
         path (str | None): Route label (``rag``, ``tools``, ``task_prompt``,
             ``analysis``).
@@ -260,6 +262,8 @@ class RunMeta:
     request_id: str | None = None
     outcome: str | None = None
     hit_count: int | None = None
+    query_rewritten: bool | None = None
+    citation_count: int | None = None
     pack: str | None = None
     path: str | None = None
     prompt_key: str | None = None
@@ -306,6 +310,21 @@ class RunMeta:
         ):
             raise ApplicationValidationError(
                 f"hit_count must be a non-negative integer, got {self.hit_count!r}"
+            )
+        if self.query_rewritten is not None and not isinstance(
+            self.query_rewritten, bool
+        ):
+            raise ApplicationValidationError(
+                f"query_rewritten must be a bool, got {self.query_rewritten!r}"
+            )
+        if self.citation_count is not None and (
+            not isinstance(self.citation_count, int)
+            or isinstance(self.citation_count, bool)
+            or self.citation_count < 0
+        ):
+            raise ApplicationValidationError(
+                "citation_count must be a non-negative integer, "
+                f"got {self.citation_count!r}"
             )
         tools = _require_sequence(self.tools, "tools")
         for item in tools:
@@ -513,15 +532,22 @@ class RewriteRetrieveResponse:
         hits (Sequence[ScoredChunk]): Ranked chunks with full provenance.
         original_query (str): The caller's natural-language query before rewrite.
         rewritten_query (str): The retrieval-oriented query that was embedded.
+        query_rewritten (bool): True when the rewritten string differs from the
+            original after strip — safe flag for UI / RunMeta; not the query text.
     """
 
     original_query: str
     rewritten_query: str
+    query_rewritten: bool
     hits: Sequence[ScoredChunk] = ()
 
     def __post_init__(self) -> None:
         _require_text(self.original_query, "original_query")
         _require_text(self.rewritten_query, "rewritten_query")
+        if not isinstance(self.query_rewritten, bool):
+            raise ApplicationValidationError(
+                f"query_rewritten must be a bool, got {self.query_rewritten!r}"
+            )
         hits = _require_sequence(self.hits, "hits")
         for item in hits:
             if not isinstance(item, ScoredChunk):

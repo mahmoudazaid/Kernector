@@ -57,8 +57,14 @@ def _hit(
 
 
 class _FakeRewriteRetrieve:
-    def __init__(self, hits: Sequence[ScoredChunk]) -> None:
+    def __init__(
+        self,
+        hits: Sequence[ScoredChunk],
+        *,
+        query_rewritten: bool = True,
+    ) -> None:
         self._hits = tuple(hits)
+        self._query_rewritten = query_rewritten
         self.requests: list[object] = []
 
     def execute(self, request: object) -> RewriteRetrieveResponse:
@@ -67,6 +73,7 @@ class _FakeRewriteRetrieve:
             hits=self._hits,
             original_query="unused",
             rewritten_query="unused rewritten",
+            query_rewritten=self._query_rewritten,
         )
 
 
@@ -133,9 +140,10 @@ def _use_case(
     threshold: float = THRESHOLD,
     limit: int = 5,
     max_input_length: int = 10_000,
+    query_rewritten: bool = True,
 ) -> AskKnowledge:
     return AskKnowledge(
-        _FakeRewriteRetrieve(hits),
+        _FakeRewriteRetrieve(hits, query_rewritten=query_rewritten),
         AskService(chat),
         prompts or _EmptyPrompts(),
         default_retrieval_limit=limit,
@@ -173,9 +181,24 @@ def test_run_meta_carries_observability_without_duplicating_the_answer() -> None
     assert response.run.usage == Usage(total_tokens=99)
     assert response.run.outcome == "success"
     assert response.run.hit_count == 1
+    assert response.run.query_rewritten is True
+    assert response.run.citation_count == len(response.citations)
+    assert response.run.citation_count == 1
     assert response.run.source_type == "knowledge_document"
     assert "Use the restart runbook." not in str(response.run)
     assert "How do I restart?" not in str(response.run)
+
+
+def test_run_meta_copies_query_rewritten_false_from_carrier() -> None:
+    chat = _RecordingChat("Use the restart runbook.")
+
+    response = _use_case((_hit(),), chat, query_rewritten=False).execute(
+        AskRequest(prompt_key=None, query="How do I restart?")
+    )
+
+    assert response.run is not None
+    assert response.run.query_rewritten is False
+    assert response.run.citation_count == 1
 
 
 def test_run_meta_includes_bound_request_id() -> None:
@@ -416,6 +439,8 @@ def test_no_hits_states_insufficient_knowledge() -> None:
     assert response.run is not None
     assert response.run.outcome == "insufficient"
     assert response.run.hit_count == 0
+    assert response.run.query_rewritten is True
+    assert response.run.citation_count == 0
     assert chat.calls == []
 
 
@@ -434,6 +459,8 @@ def test_hits_below_threshold_state_insufficient_knowledge() -> None:
     assert response.run is not None
     assert response.run.outcome == "insufficient"
     assert response.run.hit_count == 0
+    assert response.run.query_rewritten is True
+    assert response.run.citation_count == 0
     assert chat.calls == []
 
 

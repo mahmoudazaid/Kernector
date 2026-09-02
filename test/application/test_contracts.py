@@ -184,6 +184,8 @@ def test_run_meta_defaults_are_empty() -> None:
     assert meta.request_id is None
     assert meta.outcome is None
     assert meta.hit_count is None
+    assert meta.query_rewritten is None
+    assert meta.citation_count is None
     assert meta.pack is None
     assert meta.path is None
     assert meta.prompt_key is None
@@ -244,6 +246,22 @@ def test_run_meta_accepts_safe_execution_fields() -> None:
 def test_run_meta_rejects_negative_hit_count() -> None:
     with pytest.raises(ApplicationValidationError, match="hit_count"):
         RunMeta(hit_count=-1)
+
+
+def test_run_meta_accepts_query_rewritten_and_citation_count() -> None:
+    meta = RunMeta(query_rewritten=True, citation_count=3, hit_count=3)
+    assert meta.query_rewritten is True
+    assert meta.citation_count == 3
+
+
+def test_run_meta_rejects_negative_citation_count() -> None:
+    with pytest.raises(ApplicationValidationError, match="citation_count"):
+        RunMeta(citation_count=-1)
+
+
+def test_run_meta_rejects_non_bool_query_rewritten() -> None:
+    with pytest.raises(ApplicationValidationError, match="query_rewritten"):
+        RunMeta(query_rewritten=1)  # type: ignore[arg-type]
 
 
 def test_run_meta_rejects_blank_request_id() -> None:
@@ -381,18 +399,22 @@ def test_rewrite_retrieve_response_constructs() -> None:
         hits=[hit],
         original_query="what broke?",
         rewritten_query="payment service failure last week",
+        query_rewritten=True,
     )
     assert response.hits == (hit,)
     assert response.original_query == "what broke?"
     assert response.rewritten_query == "payment service failure last week"
+    assert response.query_rewritten is True
 
 
 def test_rewrite_retrieve_response_defaults_hits_empty() -> None:
     response = RewriteRetrieveResponse(
         original_query="what broke?",
         rewritten_query="payment service failure",
+        query_rewritten=True,
     )
     assert response.hits == ()
+    assert response.query_rewritten is True
 
 
 def test_invoke_tool_response_constructs() -> None:
@@ -579,6 +601,7 @@ def test_rewrite_retrieve_response_rejects_blank_original_query(blank: str) -> N
         RewriteRetrieveResponse(
             original_query=blank,
             rewritten_query="rewritten",
+            query_rewritten=True,
         )
 
 
@@ -588,6 +611,7 @@ def test_rewrite_retrieve_response_rejects_blank_rewritten_query(blank: str) -> 
         RewriteRetrieveResponse(
             original_query="original",
             rewritten_query=blank,
+            query_rewritten=True,
         )
 
 
@@ -597,6 +621,7 @@ def test_rewrite_retrieve_response_rejects_non_sequence_hits() -> None:
             hits="chunk",  # type: ignore[arg-type]
             original_query="original",
             rewritten_query="rewritten",
+            query_rewritten=True,
         )
 
 
@@ -606,6 +631,7 @@ def test_rewrite_retrieve_response_rejects_non_scored_chunk_item() -> None:
             hits=[_reference()],  # type: ignore[list-item]
             original_query="original",
             rewritten_query="rewritten",
+            query_rewritten=True,
         )
 
 
@@ -752,6 +778,7 @@ def test_rewrite_retrieve_response_hits_are_independent_of_input_list() -> None:
         hits=hits,
         original_query="original",
         rewritten_query="rewritten",
+        query_rewritten=True,
     )
     hits.clear()
     assert len(response.hits) == 1
@@ -784,6 +811,7 @@ def test_contracts_serialize_with_asdict() -> None:
         hits=[_scored_chunk()],
         original_query="what broke?",
         rewritten_query="payment failure",
+        query_rewritten=True,
     )
 
     ask_dict = asdict(ask_request)
@@ -820,6 +848,7 @@ def test_contracts_serialize_with_asdict() -> None:
         "hits": asdict(retrieve_response)["hits"],
         "original_query": "what broke?",
         "rewritten_query": "payment failure",
+        "query_rewritten": True,
     }
 
 
