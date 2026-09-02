@@ -1,23 +1,20 @@
 """Streamlit rendering helpers."""
 
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Mapping
 
 import streamlit as st
 
 from application.contracts import RunMeta
+from composition import TestCasesView
 from composition.conversation_export import build_conversation_pdf
 from domain.model_settings import SETTINGS
 from domain.validation import is_off_topic
-from presentation.streamlit.conversation_export import (
-    conversation_to_csv,
-    conversation_to_json,
-    conversation_to_markdown,
-    project_conversation_turns,
-    project_single_turn,
-    turns_for_pdf,
-)
 from presentation.streamlit.run_details import run_detail_lines
+from presentation.streamlit.cases_export import (
+    cases_pdf_turns,
+    cases_to_csv,
+    cases_to_json,
+)
 
 
 def render_reply(reply: str, off_topic_marker: str | None = None) -> None:
@@ -40,91 +37,41 @@ def render_run_meta(result: RunMeta | None) -> None:
             st.caption(line)
 
 
-def render_export_actions(
-    content: str, filename_prefix: str, *, key_prefix: str
-) -> None:
-    st.download_button(
-        "export tests as MD",
-        data=content,
-        file_name=f"{filename_prefix}.md",
-        mime="text/markdown",
-        key=f"download_{key_prefix}",
-    )
-
-
-def render_conversation_export_actions(
-    session_messages: Sequence[Mapping[str, Any]],
+def render_test_cases_export_actions(
+    markdown: str,
     *,
-    turn_index: int,
-    filename_prefix: str,
     key_prefix: str,
+    filename_prefix: str = "test_cases",
+    test_cases: TestCasesView | None = None,
 ) -> None:
-    """Offer per-turn conversation downloads (MD, JSON, CSV, PDF)."""
-    turns = project_single_turn(session_messages, turn_index)
+    """Offer MD / JSON / CSV / PDF downloads for generated test cases."""
     st.download_button(
         "export tests as MD",
-        data=conversation_to_markdown(turns),
+        data=markdown,
         file_name=f"{filename_prefix}.md",
         mime="text/markdown",
         key=f"download_{key_prefix}_md",
     )
     st.download_button(
         "export tests as JSON",
-        data=conversation_to_json(turns),
+        data=cases_to_json(markdown, test_cases),
         file_name=f"{filename_prefix}.json",
         mime="application/json",
         key=f"download_{key_prefix}_json",
     )
     st.download_button(
         "export tests as CSV",
-        data=conversation_to_csv(turns),
+        data=cases_to_csv(markdown, test_cases),
         file_name=f"{filename_prefix}.csv",
         mime="text/csv",
         key=f"download_{key_prefix}_csv",
     )
     st.download_button(
         "export tests as PDF",
-        data=build_conversation_pdf(turns_for_pdf(turns)),
+        data=build_conversation_pdf(cases_pdf_turns(markdown, test_cases)),
         file_name=f"{filename_prefix}.pdf",
         mime="application/pdf",
         key=f"download_{key_prefix}_pdf",
-    )
-
-
-def render_full_conversation_export(
-    session_messages: Sequence[Mapping[str, Any]],
-) -> None:
-    """Offer full-thread downloads when the session has exportable turns."""
-    turns = project_conversation_turns(session_messages)
-    if not turns:
-        return
-    st.download_button(
-        "export tests as MD",
-        data=conversation_to_markdown(turns),
-        file_name="conversation.md",
-        mime="text/markdown",
-        key="download_conversation_md",
-    )
-    st.download_button(
-        "export tests as JSON",
-        data=conversation_to_json(turns),
-        file_name="conversation.json",
-        mime="application/json",
-        key="download_conversation_json",
-    )
-    st.download_button(
-        "export tests as CSV",
-        data=conversation_to_csv(turns),
-        file_name="conversation.csv",
-        mime="text/csv",
-        key="download_conversation_csv",
-    )
-    st.download_button(
-        "export tests as PDF",
-        data=build_conversation_pdf(turns_for_pdf(turns)),
-        file_name="conversation.pdf",
-        mime="application/pdf",
-        key="download_conversation_pdf",
     )
 
 
