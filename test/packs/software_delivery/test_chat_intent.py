@@ -43,19 +43,19 @@ def test_explicit_generation_requests_select_the_expected_chain(
     [
         (
             "Analyze these requirements:\nAs a user I want MFA.",
-            "as a user i want mfa.",
+            "As a user I want MFA.",
         ),
         (
             "Review this story: Login must lock after five failures.",
-            "login must lock after five failures.",
+            "Login must lock after five failures.",
         ),
         (
             "Analyze requirements for AUTH-101",
-            "for auth-101",
+            "for AUTH-101",
         ),
         (
             "Do not generate tests; analyze these requirements: Need MFA.",
-            "need mfa.",
+            "Need MFA.",
         ),
     ],
 )
@@ -67,6 +67,27 @@ def test_explicit_analysis_requests_select_requirements_analysis(
         output_style="steps",
         analyze_requirements=True,
         analysis_target=target,
+    )
+
+
+def test_analysis_target_preserves_case_and_newlines_from_original_query() -> None:
+    """Matching may normalize; the extracted body must stay faithful to the user text."""
+    query = (
+        "Analyze these requirements:\n"
+        "As a user I want MFA on AUTH-101.\n"
+        "Given an existing Session, lock after 5 failures."
+    )
+
+    selection = select_chat_intent(query)
+
+    assert selection == ChatToolSelection(
+        generate_tests=False,
+        output_style="steps",
+        analyze_requirements=True,
+        analysis_target=(
+            "As a user I want MFA on AUTH-101.\n"
+            "Given an existing Session, lock after 5 failures."
+        ),
     )
 
 
@@ -180,5 +201,5 @@ def test_registration_exposes_the_chat_intent_selector() -> None:
         generate_tests=False,
         output_style="steps",
         analyze_requirements=True,
-        analysis_target="need mfa enrollment.",
+        analysis_target="Need MFA enrollment.",
     )

@@ -96,6 +96,7 @@ _ANALYSIS_REQUEST = re.compile(
     r"(?:(?:these|the following|the|this)\s+)?"
     r"(?:requirements|user story|story)\b"
 )
+_ANALYSIS_REQUEST_IGNORE_CASE = re.compile(_ANALYSIS_REQUEST.pattern, re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,8 +185,32 @@ def _first_active_match(
 
 def _analysis_target(text: str, match: re.Match[str]) -> str | None:
     """Return the body after the matched analysis cue, or ``None`` if empty."""
-    after = text[match.end() :].lstrip(" :")
+    after = text[match.end() :].lstrip(" :\t\r\n")
     return after or None
+
+
+def _analysis_target_from_original(
+    query: str, normalized_match_index: int
+) -> str | None:
+    """Slice the analysis body from ``query`` using the Nth cue match.
+
+    Intent matching runs on a normalized copy; the body must come from the
+    original so case-sensitive IDs and internal newlines stay intact.
+    """
+    original_matches = list(_ANALYSIS_REQUEST_IGNORE_CASE.finditer(query))
+    if normalized_match_index >= len(original_matches):
+        return None
+    return _analysis_target(query, original_matches[normalized_match_index])
+
+
+def _first_active_match_index(
+    pattern: re.Pattern[str], text: str
+) -> tuple[int, re.Match[str]] | None:
+    """Return the index and match of the first non-negated pattern hit."""
+    for index, match in enumerate(pattern.finditer(text)):
+        if not _match_is_governed_by_negation(text, match):
+            return index, match
+    return None
 
 
 def select_chat_intent(query: str) -> ChatToolSelection | None:
@@ -199,7 +224,8 @@ def select_chat_intent(query: str) -> ChatToolSelection | None:
 
     Requirements analysis matches explicit ``analyze|review … requirements|story``
     phrasing with a non-empty body after the cue. Generation wins over analysis;
-    analysis wins over risk-only.
+    analysis wins over risk-only. Matching uses a normalized copy; the analysis
+    body is sliced from the original ``query``.
 
     Args:
         query (str): The user's chat message, unmodified.
@@ -224,9 +250,10 @@ def select_chat_intent(query: str) -> ChatToolSelection | None:
         style: TestCaseStyle = "gherkin" if _GHERKIN_STYLE.search(text) else "steps"
         return ChatToolSelection(generate_tests=True, output_style=style)
 
-    analysis = _first_active_match(_ANALYSIS_REQUEST, text)
+    analysis = _first_active_match_index(_ANALYSIS_REQUEST, text)
     if analysis is not None:
-        target = _analysis_target(text, analysis)
+        match_index, _match = analysis
+        target = _analysis_target_from_original(query, match_index)
         if target is None:
             return None
         return ChatToolSelection(
