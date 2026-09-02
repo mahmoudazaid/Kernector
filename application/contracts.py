@@ -228,11 +228,11 @@ class AskRequest:
 
 @dataclass(frozen=True, slots=True)
 class RunMeta:
-    """Observability for one model call: what ran, how long, at what cost.
+    """Safe execution metadata for one ask / tool / analysis turn.
 
-    Deliberately carries no answer text. ``AskResponse.answer`` is the single
-    source of the reply; reusing ``AskResult`` here would put a second copy of
-    the content on the response, free to drift from the first.
+    Deliberately carries no answer, query, chunk, or tool-payload text.
+    ``AskResponse.answer`` remains the single source of the reply; this type is
+    the shared observability contract for logs and UI.
 
     Attributes:
         model (str | None): Model the adapter actually invoked.
@@ -240,12 +240,32 @@ class RunMeta:
         usage (Usage | None): Token counts and cost, when the provider reports.
         settings (Mapping[str, object]): Generation settings that were applied,
             after the domain allowlist filtered them.
+        request_id (str | None): Correlation id for the turn.
+        outcome (str | None): ``success``, ``insufficient``, or ``error``.
+        hit_count (int | None): Retrieval hits used as evidence.
+        pack (str | None): Pack identifier when a pack routed the turn.
+        path (str | None): Route label (``rag``, ``tools``, ``task_prompt``,
+            ``analysis``).
+        prompt_key (str | None): Selected task prompt key, when any.
+        source_type (str | None): Sorted unique source types from hits.
+        tools (Sequence[str]): Invoked tool **names** only.
+        error_type (str | None): Exception type name on failure — never the
+            exception message.
     """
 
     model: str | None = None
     latency_ms: int | None = None
     usage: Usage | None = None
     settings: Mapping[str, object] = field(default_factory=dict)
+    request_id: str | None = None
+    outcome: str | None = None
+    hit_count: int | None = None
+    pack: str | None = None
+    path: str | None = None
+    prompt_key: str | None = None
+    source_type: str | None = None
+    tools: Sequence[str] = ()
+    error_type: str | None = None
 
     def __post_init__(self) -> None:
         if self.model is not None:
@@ -267,6 +287,33 @@ class RunMeta:
                 f"settings must be a mapping, got {self.settings!r}"
             )
         object.__setattr__(self, "settings", dict(self.settings))
+        for name in (
+            "request_id",
+            "outcome",
+            "pack",
+            "path",
+            "prompt_key",
+            "source_type",
+            "error_type",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                _require_text(value, name)
+        if self.hit_count is not None and (
+            not isinstance(self.hit_count, int)
+            or isinstance(self.hit_count, bool)
+            or self.hit_count < 0
+        ):
+            raise ApplicationValidationError(
+                f"hit_count must be a non-negative integer, got {self.hit_count!r}"
+            )
+        tools = _require_sequence(self.tools, "tools")
+        for item in tools:
+            if not isinstance(item, str) or not item.strip():
+                raise ApplicationValidationError(
+                    f"tools items must be non-empty strings, got {item!r}"
+                )
+        object.__setattr__(self, "tools", tuple(tools))
 
     @classmethod
     def from_result(cls, result: AskResult) -> "RunMeta":
@@ -287,9 +334,9 @@ class AskResponse:
         answer (str): Model answer text.
         citations (Sequence[Citation]): Sources supporting the answer.
         tool_outputs (Sequence[InvokeToolResponse]): Optional tool results.
-        run (RunMeta | None): Observability for the model call. ``None`` when no
-            call was made — the insufficient-evidence path short-circuits before
-            the model, so presentation must tolerate its absence.
+        run (RunMeta | None): Safe execution metadata for the turn. May be set
+            without a model call (insufficient evidence). ``None`` only when the
+            caller did not attach metadata.
     """
 
     answer: str

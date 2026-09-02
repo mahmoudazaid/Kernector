@@ -173,6 +173,7 @@ def _render_history() -> None:
         with st.chat_message(message["role"]):
             if message.get("display_only"):
                 st.error(message["content"])
+                render_run_meta(message.get("run"))
                 continue
             if message["role"] == "assistant":
                 render_run_meta(message.get("run"))
@@ -212,6 +213,7 @@ def _handle_input(
                 # survives the next Streamlit rerun without entering model history.
                 apply_ask_turn_to_session_messages(st.session_state.messages, result)
                 st.error(result.message)
+                render_run_meta(result.run)
                 return
             response = result.response
             assert response is not None
