@@ -9,6 +9,7 @@ from typing import Protocol
 from application.citations import build_citations
 from application.contracts import Citation
 from domain.knowledge import ScoredChunk, SourceReference
+from domain.models import AskResult
 from infrastructure.config import Settings
 
 _REQUIREMENTS_ANALYSIS_PACK_ID = "software-delivery"
@@ -31,6 +32,7 @@ class RequirementsAnalysisView:
     risks: tuple[RequirementsAnalysisFindingView, ...]
     clarification_questions: tuple[RequirementsAnalysisFindingView, ...]
     evidence: tuple[ScoredChunk, ...]
+    ask_result: AskResult | None = None
 
 
 class RequirementsAnalyzer(Protocol):
@@ -51,6 +53,7 @@ class _PackAnalysisResult(Protocol):
     risks: Sequence[_PackFinding]
     clarification_questions: Sequence[_PackFinding]
     evidence: Sequence[ScoredChunk]
+    ask_result: AskResult | None
 
 
 ExecuteRequirementsAnalysis = Callable[[str], _PackAnalysisResult]
@@ -108,6 +111,7 @@ def _to_view(result: _PackAnalysisResult) -> RequirementsAnalysisView:
         risks=_finding_views(result.risks),
         clarification_questions=_finding_views(result.clarification_questions),
         evidence=tuple(result.evidence),
+        ask_result=getattr(result, "ask_result", None),
     )
 
 

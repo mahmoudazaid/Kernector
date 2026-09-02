@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from application.contracts import AskRequest, AskResponse, Citation, InvokeToolResponse
+from application.contracts import AskRequest, AskResponse, Citation, InvokeToolResponse, RunMeta
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 
@@ -40,11 +40,15 @@ class ToolRunOutcome:
             grounded in.
         tool_outputs (tuple[InvokeToolResponse, ...]): One opaque entry per
             successful tool invocation, in call order. Empty for analysis.
+        run (RunMeta | None): Observability for a model call made during the
+            run. Tool chains leave this ``None``; requirements analysis projects
+            ``AskResult`` metadata here.
     """
 
     answer: str
     citations: tuple[Citation, ...] = ()
     tool_outputs: tuple[InvokeToolResponse, ...] = ()
+    run: RunMeta | None = None
 
 
 class ToolSelection(Protocol):
@@ -141,6 +145,7 @@ class ToolAugmentedAsk:
                 answer=outcome.answer,
                 citations=outcome.citations,
                 tool_outputs=outcome.tool_outputs,
+                run=outcome.run,
             )
 
         try:
@@ -155,4 +160,5 @@ class ToolAugmentedAsk:
             answer=outcome.answer,
             citations=outcome.citations,
             tool_outputs=outcome.tool_outputs,
+            run=outcome.run,
         )

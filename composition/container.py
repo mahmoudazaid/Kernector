@@ -13,7 +13,7 @@ from composition.requirements_analysis import (
     analysis_citations,
     format_requirements_analysis_answer,
 )
-from application.contracts import IngestRequest, IngestResponse
+from application.contracts import IngestRequest, IngestResponse, RunMeta
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
@@ -730,9 +730,15 @@ def build_tool_augmented_ask(
     class _AnalysisRunner:
         def run(self, requirements: str) -> ToolRunOutcome:
             view = analyzer.analyze(requirements)
+            run = (
+                RunMeta.from_result(view.ask_result)
+                if view.ask_result is not None
+                else None
+            )
             return ToolRunOutcome(
                 answer=format_requirements_analysis_answer(view),
                 citations=analysis_citations(view),
+                run=run,
             )
 
     return ToolAugmentedAsk(
