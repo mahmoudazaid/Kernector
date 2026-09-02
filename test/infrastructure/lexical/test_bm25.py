@@ -9,6 +9,7 @@ from domain.knowledge import (
 )
 from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from test.doubles import InMemoryLexicalIndex, vector_for
+import pytest
 
 
 def _chunk(
@@ -60,20 +61,52 @@ def test_bm25_empty_corpus_returns_no_hits() -> None:
 
 
 def test_bm25_ranks_exact_token_match_above_unrelated() -> None:
-    # BM25Okapi IDF is zero for df=1 when N=2; use N>=3 so scores discriminate.
+    # BM25Okapi IDF is zero for df=1 when N=2; use N>=3 so scores discriminate
+    # among overlapping docs. Unrelated docs share no query tokens and are omitted.
     index = Bm25LexicalIndex()
     index.upsert(
         [
             _embed(_chunk("error", "Error ERR-4021 means the API key is missing")),
             _embed(_chunk("other", "Deploy the service with blue-green rollout")),
             _embed(_chunk("third", "Unrelated capacity planning notes")),
+            _embed(_chunk("also", "Also mentions ERR-4021 in a footnote")),
         ]
     )
 
     hits = index.search("ERR-4021", 3)
 
-    assert hits[0].chunk.source_id == "error"
-    assert hits[0].score > hits[1].score
+    assert {hit.chunk.source_id for hit in hits} <= {"error", "also"}
+    assert hits[0].chunk.source_id in {"error", "also"}
+    assert all("err-4021" in hit.chunk.content.casefold() for hit in hits)
+
+
+def test_bm25_unrelated_query_returns_no_hits() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("a", "restart runbook steps")),
+            _embed(_chunk("b", "deploy blue-green rollout")),
+            _embed(_chunk("c", "capacity planning notes")),
+        ]
+    )
+
+    assert index.search("zzzz-not-present-qqqq", 5) == ()
+
+
+def test_bm25_keeps_overlap_even_when_raw_score_is_non_positive() -> None:
+    # N=2 and df=1 → BM25Okapi IDF cancels to 0.0 for the matching term.
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("hit", "unique-token-xyz appears here")),
+            _embed(_chunk("miss", "totally different deploy notes")),
+        ]
+    )
+
+    hits = index.search("unique-token-xyz", 5)
+
+    assert [hit.chunk.source_id for hit in hits] == ["hit"]
+    assert hits[0].score == pytest.approx(0.0)
 
 
 def test_bm25_filters_apply_before_limit() -> None:

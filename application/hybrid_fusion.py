@@ -6,7 +6,9 @@ from collections.abc import Sequence
 def normalize_scores(scores: Sequence[float]) -> tuple[float, ...]:
     """Min-max normalize ``scores`` into ``[0, 1]``.
 
-    A flat span (including a single value or an empty input) yields all zeros.
+    An empty input yields ``()``. A single present score or a flat span of equal
+    scores yields ``1.0`` for each entry so channel evidence is preserved (missing
+    candidates stay ``0.0`` only via sparse fusion, not via flat collapse).
     """
     if not scores:
         return ()
@@ -14,7 +16,7 @@ def normalize_scores(scores: Sequence[float]) -> tuple[float, ...]:
     high = max(scores)
     span = high - low
     if span == 0:
-        return tuple(0.0 for _ in scores)
+        return tuple(1.0 for _ in scores)
     return tuple((value - low) / span for value in scores)
 
 
@@ -44,6 +46,7 @@ def fuse_hybrid_scores(
     ``None`` means the candidate was absent from that channel. Only genuine
     scores participate in min-max normalization; absent slots get normalized
     contribution ``0.0`` afterward (never a raw ``0.0`` inserted before norm).
+    Flat or single-score channels normalize to ``1.0`` so evidence is kept.
     """
     if not isinstance(alpha, (int, float)) or isinstance(alpha, bool):
         raise ValueError(f"alpha must be a number in [0, 1], got {alpha!r}")
