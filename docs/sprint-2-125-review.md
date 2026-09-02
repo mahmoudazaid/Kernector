@@ -12,10 +12,10 @@
 | Area | Count |
 |------|-------|
 | Mandatory Done | 16 / 16 |
-| Optional Done | 9 |
+| Optional Done | 10 |
 | Optional Partial | 1 |
-| Optional Not done | 11 |
-| Max bonus (≥2 medium + 1 hard) | Medium met; no hard optional done |
+| Optional Not done | 10 |
+| Max bonus (≥2 medium + 1 hard) | Met (medium × several + hybrid hard #185) |
 
 **Note:** Tool calling is intent-routed (`#170`), not LLM native `bind_tools` / function calling. Valid for 125.md; be ready to explain at review.
 
@@ -62,7 +62,7 @@
 | Remote MCP tools | Medium | Not done | — | [#184](https://github.com/mahmoudazaid/Kernector/issues/184) | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
 | Rate limiting + API keys | Medium | Not done | — | [#183](https://github.com/mahmoudazaid/Kernector/issues/183) (+ #20) | [#72](https://github.com/mahmoudazaid/Kernector/issues/72) |
 | Logging and monitoring | Medium | Done | `application/observability.py` | #160 | [#74](https://github.com/mahmoudazaid/Kernector/issues/74) |
-| Hybrid search | Hard | Not done | — | [#185](https://github.com/mahmoudazaid/Kernector/issues/185) | [#68](https://github.com/mahmoudazaid/Kernector/issues/68) |
+| Hybrid search | Hard | Done | `application/hybrid_fusion.py`, dual-write BM25 + vector retrieve | [#185](https://github.com/mahmoudazaid/Kernector/issues/185) (closed) | [#68](https://github.com/mahmoudazaid/Kernector/issues/68) |
 | A/B testing RAG | Hard | Not done | — | [#186](https://github.com/mahmoudazaid/Kernector/issues/186) | [#74](https://github.com/mahmoudazaid/Kernector/issues/74) |
 | Automated KB updates | Hard | Not done | — | [#187](https://github.com/mahmoudazaid/Kernector/issues/187) | [#68](https://github.com/mahmoudazaid/Kernector/issues/68) |
 | Multi-language | Hard | Not done | — | [#188](https://github.com/mahmoudazaid/Kernector/issues/188) | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
