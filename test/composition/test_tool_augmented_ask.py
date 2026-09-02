@@ -26,7 +26,7 @@ from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from composition.tool_augmented_ask import ToolAugmentedAsk, ToolRunOutcome
 from domain.knowledge import SourceReference
 from domain.models import Message, Usage
-from test.log_record import flatten_log_record, operation_records
+from test.log_record import flatten_log_record, operation_payload, operation_records
 
 @dataclass(frozen=True)
 class _Selection:
@@ -425,17 +425,24 @@ def test_rag_turn_binds_request_id_and_logs_path(
     wrapper = ToolAugmentedAsk(
         ask, runner=_RecordingRunner(_outcome()), select=lambda query: None
     )
-    with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
-        wrapper.execute(AskRequest(query="What is the session timeout?", prompt_key=None))
+    # Correlation is owned by CorrelatedAsk; bind here to exercise nested logging.
+    _bound, token = observability.bind_request_id()
+    try:
+        with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
+            wrapper.execute(
+                AskRequest(query="What is the session timeout?", prompt_key=None)
+            )
+    finally:
+        observability.reset_request_id(token)
 
     assert ask.seen_request_id is not None
     assert observability.current_request_id() is None
     records = operation_records(caplog.records, operation="ask_turn")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=success" in message
-    assert "path=rag" in message
-    assert f"request_id={ask.seen_request_id}" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "delegated"
+    assert payload["path"] == "rag"
+    assert payload["request_id"] == ask.seen_request_id
     flat = flatten_log_record(records[0])
     assert "session timeout" not in flat
 
@@ -469,16 +476,22 @@ def test_tool_turn_logs_path_tools_with_shared_request_id(
         ask,
         runner=capturer,
         select=lambda query: _Selection(generate_tests=False, output_style="steps"),
+        pack_id="software-delivery",
     )
-    with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
-        wrapper.execute(AskRequest(query="Score risk for AUTH-101", prompt_key=None))
+    _bound, token = observability.bind_request_id()
+    try:
+        with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
+            wrapper.execute(AskRequest(query="Score risk for AUTH-101", prompt_key=None))
+    finally:
+        observability.reset_request_id(token)
 
     assert seen["request_id"] is not None
     records = operation_records(caplog.records, operation="ask_turn")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "path=tools" in message
-    assert f"request_id={seen['request_id']}" in message
+    payload = operation_payload(records[0])
+    assert payload["path"] == "tools"
+    assert payload["pack"] == "software-delivery"
+    assert payload["request_id"] == seen["request_id"]
     flat = flatten_log_record(records[0])
     assert "AUTH-101" not in flat
     assert "Scored risk" not in flat

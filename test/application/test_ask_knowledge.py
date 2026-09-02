@@ -29,7 +29,7 @@ from domain.knowledge import (
 )
 from domain.models import AskResult, Message, PromptVariant, Usage
 from test.doubles import InMemoryVectorStore, RecordingEmbeddingModel
-from test.log_record import flatten_log_record, operation_records
+from test.log_record import flatten_log_record, operation_payload, operation_records
 
 THRESHOLD = 0.5
 
@@ -760,25 +760,25 @@ def test_ask_success_logs_operation_with_run_meta(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     chat = _RecordingChat("Use the restart runbook.")
-    observability.bind_request_id("req-ask-1")
+    _bound, token = observability.bind_request_id("req-ask-1")
     try:
         with caplog.at_level(logging.INFO, logger="application.ask_knowledge"):
             _use_case((_hit(),), chat).execute(
                 AskRequest(prompt_key=None, query="How do I restart?")
             )
     finally:
-        observability.clear_request_id()
+        observability.reset_request_id(token)
 
     records = operation_records(caplog.records, operation="ask")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=success" in message
-    assert "request_id=req-ask-1" in message
-    assert "latency_ms=12" in message
-    assert "model=test-model" in message
-    assert "total_tokens=99" in message
-    assert "hit_count=1" in message
-    assert "source_type=knowledge_document" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "success"
+    assert payload["request_id"] == "req-ask-1"
+    assert payload["latency_ms"] == 12
+    assert payload["model"] == "test-model"
+    assert payload["total_tokens"] == 99
+    assert payload["hit_count"] == 1
+    assert payload["source_type"] == "knowledge_document"
 
 
 def test_ask_insufficient_knowledge_logs_distinct_outcome(
@@ -793,8 +793,9 @@ def test_ask_insufficient_knowledge_logs_distinct_outcome(
     assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
     records = operation_records(caplog.records, operation="ask")
     assert len(records) == 1
-    assert "outcome=insufficient" in records[0].getMessage()
-    assert "hit_count=0" in records[0].getMessage()
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "insufficient"
+    assert payload["hit_count"] == 0
 
 
 def test_ask_provider_failure_logs_error_type_without_message(
@@ -819,9 +820,9 @@ def test_ask_provider_failure_logs_error_type_without_message(
 
     records = operation_records(caplog.records, operation="ask")
     assert len(records) == 1
-    message = records[0].getMessage()
-    assert "outcome=error" in message
-    assert "error_type=ProviderError" in message
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "ProviderError"
     assert records[0].exc_info is None
     flat = flatten_log_record(records[0])
     assert leak not in flat
