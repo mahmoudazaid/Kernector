@@ -14,14 +14,25 @@ from dataclasses import dataclass
 from packs.software_delivery.contracts import TEST_CASE_STYLES, TestCaseStyle
 from packs.software_delivery.errors import OrchestrationValidationError
 
-_CREATION = re.compile(r"\b(?:create|generate|write|produce|draft|build)\b")
-
-_TEST_ARTIFACT = re.compile(
-    r"\b(?:"
+_CREATION_VERBS = r"create|generate|write|produce|draft|build"
+_TEST_ARTIFACTS = (
     r"test cases?|test scenarios?|acceptance tests?|test plan|"
-    r"feature files?|cucumber scenarios?"
-    r"|tests"
-    r")\b"
+    r"feature files?|cucumber scenarios?|tests|scenarios?"
+)
+
+# Same-clause only: verb → optional article/adjective/style → artifact.
+# Independent verb∩artifact substring checks are too wide ("Create a summary of
+# existing test cases" must not match).
+_TEST_GENERATION_REQUEST = re.compile(
+    r"\b(?:"
+    + _CREATION_VERBS
+    + r")\s+"
+    r"(?:(?:a|an|the|some|more)\s+)?"
+    r"(?:(?:comprehensive|detailed|new)\s+)?"
+    r"(?:(?:gherkin|cucumber|given/when/then|given when then)\s+)?"
+    r"(?:"
+    + _TEST_ARTIFACTS
+    + r")\b"
 )
 
 _GHERKIN_STYLE = re.compile(
@@ -47,7 +58,25 @@ _RISK_EXPLANATORY = re.compile(
     r")"
 )
 
-_NEGATION = re.compile(r"\b(?:do not|dont|never)\b")
+_SCOPED_NEGATION = re.compile(
+    r"(?:"
+    r"\b(?:do not|dont|never)\b"
+    r"|\bnot\s+(?:a |an |the |any |more )?(?:"
+    + _TEST_ARTIFACTS
+    + r")\b"
+    r"|\bwithout\s+(?:a |an |the )?(?:creating|generating|writing|producing|"
+    r"drafting|building)\b"
+    r")"
+)
+
+_HOWTO = re.compile(
+    r"(?:"
+    r"\bhow do i\b"
+    r"|\bhow to\b"
+    r"|\bhow can i\b"
+    r"|\bexplain how to\b"
+    r")"
+)
 
 _CONCEPTUAL = re.compile(
     r"(?:"
@@ -56,6 +85,13 @@ _CONCEPTUAL = re.compile(
     r"|summari[sz]e (?:the )?test plan"
     r"|which test cases\b"
     r")"
+)
+
+_READ_ONLY_TRANSFORM = re.compile(
+    r"\b(?:"
+    + _CREATION_VERBS
+    + r")\s+(?:a |an |the )?"
+    r"(?:summary|list|overview|report)\b"
 )
 
 
@@ -93,22 +129,11 @@ def _normalize(query: str) -> str:
     return " ".join(text.split())
 
 
-def _is_negated(text: str) -> bool:
-    """Return whether negation blocks an otherwise explicit tool request."""
-    if not _NEGATION.search(text):
-        return False
-    return bool(
-        _CREATION.search(text)
-        or _TEST_ARTIFACT.search(text)
-        or _GHERKIN_STYLE.search(text)
-        or _RISK_REQUEST.search(text)
-    )
-
-
 def select_chat_intent(query: str) -> ChatToolSelection | None:
     """Return the tool chain ``query`` asks for, or ``None`` for grounded chat.
 
-    Test generation requires a creation verb **and** a test artifact — gherkin,
+    Test generation requires a same-clause creation verb bound to a test
+    artifact (optional articles/style modifiers only between them). Gherkin,
     cucumber, feature file, test plan, or test cases alone are not enough.
     Risk routing accepts explicit score/assessment requests, not explanatory
     questions about how scoring works.
@@ -126,9 +151,13 @@ def select_chat_intent(query: str) -> ChatToolSelection | None:
         return None
     if _CONCEPTUAL.search(text):
         return None
-    if _is_negated(text):
+    if _HOWTO.search(text):
         return None
-    if _CREATION.search(text) and _TEST_ARTIFACT.search(text):
+    if _SCOPED_NEGATION.search(text):
+        return None
+    if _READ_ONLY_TRANSFORM.search(text):
+        return None
+    if _TEST_GENERATION_REQUEST.search(text):
         style: TestCaseStyle = "gherkin" if _GHERKIN_STYLE.search(text) else "steps"
         return ChatToolSelection(generate_tests=True, output_style=style)
     if _RISK_EXPLANATORY.search(text):

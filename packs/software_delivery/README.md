@@ -146,14 +146,17 @@ grounded-RAG path.
 
 | Requirement | Effect |
 |---|---|
-| Creation verb **and** test artifact | `generate_tests=True`, `output_style="steps"` unless a gherkin-style term is also present |
+| Same-clause creation → artifact | `generate_tests=True`, `output_style="steps"` unless a gherkin-style term appears anywhere in the query |
 | Creation verbs | `create`, `generate`, `write`, `produce`, `draft`, `build` |
-| Test artifacts | `test case(s)`, `test scenario(s)`, `tests`, `acceptance test(s)`, `test plan`, `feature file(s)`, `cucumber scenario(s)` |
-| Gherkin-style terms (with creation + artifact) | `output_style="gherkin"` when `gherkin`, `cucumber`, `given/when/then`, `given when then`, or `feature file` appears |
+| Allowed between verb and artifact | optional article (`a`/`an`/`the`/`some`/`more`), optional adjective (`comprehensive`/`detailed`/`new`), optional style (`gherkin`/`cucumber`/`given/when/then`/`given when then`) |
+| Test artifacts | `test case(s)`, `test scenario(s)`, `tests`, `scenarios`, `acceptance test(s)`, `test plan`, `feature file(s)`, `cucumber scenario(s)` |
+| Gherkin-style terms (with a matched generation request) | `output_style="gherkin"` when `gherkin`, `cucumber`, `given/when/then`, `given when then`, or `feature file` appears |
 | Explicit risk requests | `generate_tests=False` — e.g. `assess/score/evaluate the risk`, `what is the risk score for <target>`, `how risky is <target>`, `risk assessment of <target>` |
-| Negation + tool signal | `None` — e.g. `do not generate test cases`, `don't create tests`, `never assess the risk` |
-| Conceptual / read-only | `None` — e.g. `What is Gherkin?`, `How is a risk score calculated?`, `Summarise the test plan`, `Which test cases cover AUTH-101?` |
-| Artifact or style term alone | `None` — `gherkin`, `cucumber`, `feature file`, `test plan`, and `test cases` are not sufficient without a creation verb |
+| Scoped negation | `None` — `do not` / `don't` / `dont` / `never`, `not <artifact>`, `without creating/generating…` |
+| How-to / conceptual | `None` — e.g. `How do I create test cases?`, `How to write Gherkin scenarios`, `Explain how to generate tests`, `What is Gherkin?` |
+| Read-only transforms | `None` — e.g. `Create a summary/list/overview of the existing test cases`, `Generate a report without creating tests` |
+| Distant verb∩artifact co-occurrence | `None` — independent substring presence is not enough |
+| Artifact or style term alone | `None` — `gherkin`, `cucumber`, `feature file`, `test plan`, and `test cases` need a bound creation verb |
 
 - Test-generation requests win over risk terms, because the generate chain
   already scores risk first.

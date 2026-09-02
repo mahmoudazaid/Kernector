@@ -160,18 +160,22 @@ queries are delegated to the grounded path verbatim, so ordinary chat is
 unchanged and no tool runs speculatively.
 
 The policy is **explicit-request matching, not a classifier**. Test generation
-requires a creation verb (``create``, ``generate``, ``write``, ``produce``,
-``draft``, ``build``) paired with a test artifact; ``gherkin``, ``cucumber``,
-``feature file``, ``test plan``, or ``test cases`` alone are not sufficient.
+requires a same-clause creation verb (``create``, ``generate``, ``write``,
+``produce``, ``draft``, ``build``) bound directly to a test artifact, with only
+optional articles, adjectives, or style modifiers between them —
+``gherkin``, ``cucumber``, ``feature file``, ``test plan``, or ``test cases``
+alone are not sufficient, and distant verb∩artifact co-occurrence is ignored.
 Risk routing accepts explicit score/assessment requests (for example
 ``assess/score/evaluate the risk``, ``what is the risk score for <target>``,
 ``how risky is <target>``) and rejects conceptual or read-only questions.
-Negated forms (``do not generate test cases``, ``don't create tests``, and
-normalized equivalents) never invoke tools. Determinism is the point: a
-chat-time tool call is a side effect, and an explicit table is reproducible,
-testable offline, and narrow in the safe direction — an unmatched query simply
-stays on the grounded path. Vocabulary stays in the pack because "test cases"
-and "risk score" are business terms; composition reaches the policy through
+Scoped negations (``do not``, ``don't``/``dont``, ``never``, ``not <artifact>``,
+``without creating/generating…``), how-to forms (``How do I create test
+cases?``), and read-only transforms (``Create a summary/list of the existing
+test cases``) never invoke tools. Determinism is the point: a chat-time tool
+call is a side effect, and an explicit table is reproducible, testable offline,
+and narrow in the safe direction — an unmatched query simply stays on the
+grounded path. Vocabulary stays in the pack because "test cases" and "risk
+score" are business terms; composition reaches the policy through
 ``registration.build_chat_intent_selector`` and ``importlib``, never at module
 scope.
 
