@@ -1,12 +1,22 @@
 """Streamlit rendering helpers."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import streamlit as st
 
 from application.contracts import RunMeta
+from composition.conversation_export import build_conversation_pdf
 from domain.model_settings import SETTINGS
 from domain.validation import is_off_topic
+from presentation.streamlit.conversation_export import (
+    conversation_to_csv,
+    conversation_to_json,
+    conversation_to_markdown,
+    project_conversation_turns,
+    project_single_turn,
+    turns_for_pdf,
+)
 from presentation.streamlit.run_details import run_detail_lines
 
 
@@ -34,11 +44,87 @@ def render_export_actions(
     content: str, filename_prefix: str, *, key_prefix: str
 ) -> None:
     st.download_button(
-        "Download output",
+        "export tests as MD",
         data=content,
         file_name=f"{filename_prefix}.md",
         mime="text/markdown",
         key=f"download_{key_prefix}",
+    )
+
+
+def render_conversation_export_actions(
+    session_messages: Sequence[Mapping[str, Any]],
+    *,
+    turn_index: int,
+    filename_prefix: str,
+    key_prefix: str,
+) -> None:
+    """Offer per-turn conversation downloads (MD, JSON, CSV, PDF)."""
+    turns = project_single_turn(session_messages, turn_index)
+    st.download_button(
+        "export tests as MD",
+        data=conversation_to_markdown(turns),
+        file_name=f"{filename_prefix}.md",
+        mime="text/markdown",
+        key=f"download_{key_prefix}_md",
+    )
+    st.download_button(
+        "export tests as JSON",
+        data=conversation_to_json(turns),
+        file_name=f"{filename_prefix}.json",
+        mime="application/json",
+        key=f"download_{key_prefix}_json",
+    )
+    st.download_button(
+        "export tests as CSV",
+        data=conversation_to_csv(turns),
+        file_name=f"{filename_prefix}.csv",
+        mime="text/csv",
+        key=f"download_{key_prefix}_csv",
+    )
+    st.download_button(
+        "export tests as PDF",
+        data=build_conversation_pdf(turns_for_pdf(turns)),
+        file_name=f"{filename_prefix}.pdf",
+        mime="application/pdf",
+        key=f"download_{key_prefix}_pdf",
+    )
+
+
+def render_full_conversation_export(
+    session_messages: Sequence[Mapping[str, Any]],
+) -> None:
+    """Offer full-thread downloads when the session has exportable turns."""
+    turns = project_conversation_turns(session_messages)
+    if not turns:
+        return
+    st.download_button(
+        "export tests as MD",
+        data=conversation_to_markdown(turns),
+        file_name="conversation.md",
+        mime="text/markdown",
+        key="download_conversation_md",
+    )
+    st.download_button(
+        "export tests as JSON",
+        data=conversation_to_json(turns),
+        file_name="conversation.json",
+        mime="application/json",
+        key="download_conversation_json",
+    )
+    st.download_button(
+        "export tests as CSV",
+        data=conversation_to_csv(turns),
+        file_name="conversation.csv",
+        mime="text/csv",
+        key="download_conversation_csv",
+    )
+    st.download_button(
+        "export tests as PDF",
+        data=build_conversation_pdf(turns_for_pdf(turns)),
+        file_name="conversation.pdf",
+        mime="application/pdf",
+        key="download_conversation_pdf",
     )
 
 
