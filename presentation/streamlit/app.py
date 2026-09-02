@@ -15,10 +15,11 @@ from composition import (
     build_chat_model,
     build_prompt_repository,
     build_tool_augmented_ask,
+    build_vector_store,
     load_runtime_settings,
     probe_ollama,
 )
-from domain.ports import PromptRepository
+from domain.ports import PromptRepository, VectorStore
 from presentation.streamlit.ask_turn import (
     apply_ask_turn_to_session_messages,
     messages_for_model_history,
@@ -58,6 +59,12 @@ def _settings() -> Settings:
 @st.cache_resource
 def _prompt_repository() -> PromptRepository:
     return build_prompt_repository(_settings())
+
+
+@st.cache_resource
+def _vector_store() -> VectorStore:
+    """One Chroma/DualWrite client per process; shared by chat and uploads."""
+    return build_vector_store(_settings())
 
 
 @st.cache_data(ttl=30)
@@ -252,7 +259,9 @@ def _apply_action_result(result: UploadIngestResult) -> None:
     st.success(result.message)
 
 
-def _render_upload_ingest(settings: Settings) -> None:
+def _render_upload_ingest(
+    settings: Settings, *, vector_store: VectorStore
+) -> None:
     """List uploaded documents and support create, explicit replace, and delete."""
     st.subheader("Uploaded documents")
     completed = st.session_state.pop(_ACTION_MESSAGE_KEY, None)
@@ -319,6 +328,7 @@ def _render_upload_ingest(settings: Settings) -> None:
                     settings,
                     filename=uploaded.name if uploaded is not None else None,
                     content=uploaded.getvalue() if uploaded is not None else None,
+                    vector_store=vector_store,
                 )
             )
         return
@@ -350,6 +360,7 @@ def _render_upload_ingest(settings: Settings) -> None:
                     content=(
                         replacement.getvalue() if replacement is not None else None
                     ),
+                    vector_store=vector_store,
                 )
             )
         return
@@ -364,7 +375,11 @@ def _render_upload_ingest(settings: Settings) -> None:
     )
     if st.button("Delete", disabled=not confirm):
         _apply_action_result(
-            delete_existing_document(settings, reference=selected.reference)
+            delete_existing_document(
+                settings,
+                reference=selected.reference,
+                vector_store=vector_store,
+            )
         )
 
 
@@ -373,13 +388,14 @@ def render() -> None:
 
     settings = _settings()
     repository = _prompt_repository()
+    vector_store = _vector_store()
 
     st.title("Kernector")
 
     with st.sidebar:
         state = _render_sidebar(settings)
 
-    _render_upload_ingest(settings)
+    _render_upload_ingest(settings, vector_store=vector_store)
 
     try:
         chat_model = build_chat_model(
@@ -392,6 +408,7 @@ def render() -> None:
             settings,
             chat_model=chat_model,
             prompt_repository=repository,
+            vector_store=vector_store,
         )
     except ConfigurationError as error:
         st.error(str(error))

@@ -58,16 +58,27 @@ class PromptSettings:
 class RetrievalSettings:
     """How much evidence to fetch, and how close it must be to count.
 
-    `relevance_threshold` is a cosine similarity in [-1.0, 1.0], matching
-    `VectorStore.search`. The default of 0.0 is a floor, not a tuned value: it
-    discards only actively dissimilar chunks. Raising it is what makes the
-    insufficient-knowledge path fire on merely-unrelated results, and the right
-    number depends on the embedding model and corpus — measure the score spread
-    over known on-topic and off-topic queries before setting it.
+    `relevance_threshold` is always a raw cosine similarity floor in
+    [-1.0, 1.0], matching `VectorStore.search` scores. The default of 0.0
+    discards only actively dissimilar vector chunks. Raising it is what makes
+    the insufficient-knowledge path fire on merely-unrelated results; the right
+    number depends on the embedding model and corpus — measure the score
+    spread over known on-topic and off-topic queries before setting it.
+
+    When `hybrid_enabled` is true, that same value is applied as the vector-
+    channel eligibility floor *before* normalization and fusion. Hybrid hit
+    scores returned to ask/tool paths are fused ranking scores in [0, 1], not
+    absolute relevance probabilities — do not reinterpret
+    `relevance_threshold` against those fused values. Lexical eligibility is
+    controlled by BM25 token overlap, not this cosine floor.
+
+    `hybrid_alpha` weights BM25 (1 = BM25 only, 0 = vector only).
     """
 
     limit: int
     relevance_threshold: float
+    hybrid_enabled: bool = False
+    hybrid_alpha: float = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +219,18 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
     )
 
 
+def _env_bool(name: str, default: str) -> bool:
+    raw = os.getenv(name, default)
+    if raw is None:
+        raise ValueError(f"{name} must be a boolean, got {raw!r}")
+    normalized = str(raw).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"{name} must be a boolean, got {raw!r}")
+
+
 def _load_retrieval_settings() -> RetrievalSettings:
     limit = _env_int("RETRIEVAL_LIMIT", "5")
     if limit <= 0:
@@ -223,7 +246,24 @@ def _load_retrieval_settings() -> RetrievalSettings:
         raise ValueError(
             f"RELEVANCE_THRESHOLD must be within [-1.0, 1.0], got {threshold}"
         )
-    return RetrievalSettings(limit=limit, relevance_threshold=threshold)
+    hybrid_enabled = _env_bool("HYBRID_SEARCH_ENABLED", "false")
+    raw_alpha = os.getenv("HYBRID_ALPHA", "0.5")
+    try:
+        hybrid_alpha = float(raw_alpha)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"HYBRID_ALPHA must be a number, got {raw_alpha!r}"
+        ) from exc
+    if not 0.0 <= hybrid_alpha <= 1.0:
+        raise ValueError(
+            f"HYBRID_ALPHA must be within [0.0, 1.0], got {hybrid_alpha}"
+        )
+    return RetrievalSettings(
+        limit=limit,
+        relevance_threshold=threshold,
+        hybrid_enabled=hybrid_enabled,
+        hybrid_alpha=hybrid_alpha,
+    )
 
 
 def _load_prompt_settings() -> PromptSettings:

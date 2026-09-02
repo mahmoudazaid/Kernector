@@ -165,6 +165,8 @@ KNOWLEDGE_CORPUS_PATH=data/knowledge/packs/story-intelligence/documents.json \
 | `KNOWLEDGE_CORPUS_PATH` | Path to the JSON corpus array | `data/knowledge/documents.json` |
 | `CHROMA_PERSIST_PATH` | Chroma persistence directory | `data/chroma` |
 | `CHROMA_COLLECTION` | Chroma collection name | `kernector_knowledge` |
+| `HYBRID_SEARCH_ENABLED` | Enable BM25+vector hybrid retrieve | `false` |
+| `HYBRID_ALPHA` | BM25 weight in hybrid fusion (`[0,1]`) | `0.5` |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | Chunking window | `500` / `50` |
 | `OPENROUTER_API_KEY` | Embedding credentials | (required) |
 | `OPENROUTER_BASE_URL` | Embedding API base URL | (required) |

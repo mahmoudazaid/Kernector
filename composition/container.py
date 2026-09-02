@@ -67,7 +67,9 @@ from infrastructure.llm.query_rewrite import (
     QueryRewriteConfigError,
 )
 from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
+from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
+from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
@@ -174,7 +176,15 @@ def build_embedding_model(settings: Settings) -> EmbeddingModel:
 
 
 def build_vector_store(settings: Settings) -> VectorStore:
-    return ChromaVectorStore(settings.chroma)
+    chroma = ChromaVectorStore(settings.chroma)
+    if not settings.retrieval.hybrid_enabled:
+        return chroma
+    if settings.retrieval.hybrid_alpha == 0.0:
+        # Vector-only hybrid endpoint: no BM25 hydrate.
+        return chroma
+    lexical = Bm25LexicalIndex()
+    lexical.upsert(chroma.list_embedded_chunks())
+    return DualWriteVectorStore(chroma, lexical)
 
 
 def build_ingest_knowledge(
@@ -221,19 +231,47 @@ def build_retrieve_knowledge(
     that already holds a store passes it in rather than opening a second client
     on the same collection.
 
+    When hybrid alpha is ``1``, no embedding adapter is constructed. When hybrid
+    alpha is ``0``, BM25 is not required on the retrieve path.
+
     Raises:
         ConfigurationError: The embedding credentials are missing or unusable.
     """
-    try:
-        embedding_model = build_embedding_model(settings)
-    except EmbeddingConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+    hybrid = settings.retrieval.hybrid_enabled
+    alpha = settings.retrieval.hybrid_alpha
+    needs_embedding = (not hybrid) or alpha < 1.0
+    needs_lexical = hybrid and alpha > 0.0
+
+    embedding_model = None
+    if needs_embedding:
+        try:
+            embedding_model = build_embedding_model(settings)
+        except EmbeddingConfigError as exc:
+            raise ConfigurationError(str(exc)) from exc
+
     if vector_store is None:
         vector_store = build_vector_store(settings)
+
+    lexical_index = None
+    if needs_lexical:
+        if not isinstance(vector_store, DualWriteVectorStore):
+            raise ConfigurationError(
+                "hybrid search with hybrid_alpha > 0 requires DualWriteVectorStore "
+                "from build_vector_store; got "
+                f"{type(vector_store).__name__}"
+            )
+        lexical_index = vector_store.lexical
+
     return RetrieveKnowledge(
         embedding_model,
-        vector_store,
+        vector_store if needs_embedding else None,
         max_input_length=settings.max_input_length,
+        hybrid_enabled=hybrid,
+        lexical_index=lexical_index,
+        hybrid_alpha=alpha,
+        vector_score_floor=(
+            settings.retrieval.relevance_threshold if hybrid and alpha < 1.0 else None
+        ),
     )
 
 
@@ -268,21 +306,18 @@ def build_rewrite_and_retrieve_knowledge(
 def reindex_filter_metadata(settings: Settings) -> int:
     """Promote stored ``extra`` keys so metadata filters work on legacy records.
 
-    Opens the configured Chroma collection and rewrites every record's metadata
-    without re-embedding. Safe to run repeatedly.
+    Opens the configured Chroma collection directly (not via ``build_vector_store``)
+    and rewrites every record's metadata without re-embedding. Safe to run
+    repeatedly. Hybrid/BM25 hydration is intentionally skipped: reindex is
+    Chroma-specific and does not need a lexical index.
 
     Returns:
         The number of records rewritten.
 
     Raises:
         ChromaStoreError: The adapter could not read or rewrite the collection.
-        TypeError: The configured vector store is not a ``ChromaVectorStore``.
     """
-    store = build_vector_store(settings)
-    if not isinstance(store, ChromaVectorStore):
-        raise TypeError(
-            f"reindex_filter_metadata requires ChromaVectorStore, got {type(store)!r}"
-        )
+    store = ChromaVectorStore(settings.chroma)
     return store.reindex_filter_metadata()
 
 
@@ -380,7 +415,9 @@ def build_document_extractor() -> UploadedFileExtractor:
     return UploadedFileExtractor()
 
 
-def build_manage_uploaded_documents(settings: Settings) -> ManageUploadedDocuments:
+def build_manage_uploaded_documents(
+    settings: Settings, *, vector_store: VectorStore | None = None
+) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
 
     The store and the ingest pipeline are passed as factories the use case calls
@@ -389,9 +426,18 @@ def build_manage_uploaded_documents(settings: Settings) -> ManageUploadedDocumen
     lists on every rerun, and because `list` and `delete` never embed anything.
     Each operation opens at most one store, and both paths open it through the
     same factory, so ingest and delete cannot drift onto different collections.
+
+    Pass ``vector_store`` to reuse a cached DualWrite/Chroma client (hybrid BM25
+    stays in sync with uploads). When omitted, each mutating call builds a fresh
+    store via ``build_vector_store``.
     """
+    shared = vector_store
+
     def _vector_store() -> VectorStore:
-        return build_vector_store(settings)
+        nonlocal shared
+        if shared is None:
+            shared = build_vector_store(settings)
+        return shared
 
     def _ingest() -> IngestKnowledge:
         return build_ingest_knowledge(settings, vector_store=_vector_store())
@@ -414,7 +460,10 @@ def list_uploaded_documents(settings: Settings) -> tuple[CatalogDocument, ...]:
 
 
 def create_uploaded_document(
-    settings: Settings, payload: UploadPayload
+    settings: Settings,
+    payload: UploadPayload,
+    *,
+    vector_store: VectorStore | None = None,
 ) -> CatalogDocument:
     """Create a new uploaded document with a system-managed source ID.
 
@@ -425,7 +474,9 @@ def create_uploaded_document(
         DocumentOperationError: The catalog could not be read or written.
     """
     try:
-        return build_manage_uploaded_documents(settings).create(payload)
+        return build_manage_uploaded_documents(
+            settings, vector_store=vector_store
+        ).create(payload)
     except DocumentExtractionError as error:
         raise DocumentUploadError(str(error)) from error
     except DomainValidationError as error:
@@ -449,6 +500,8 @@ def replace_uploaded_document(
     settings: Settings,
     reference: SourceReference,
     payload: UploadPayload,
+    *,
+    vector_store: VectorStore | None = None,
 ) -> CatalogDocument:
     """Replace an existing uploaded document under the same source ID.
 
@@ -459,7 +512,9 @@ def replace_uploaded_document(
         DocumentUploadError: The replacement file could not be extracted.
     """
     try:
-        return build_manage_uploaded_documents(settings).replace(reference, payload)
+        return build_manage_uploaded_documents(
+            settings, vector_store=vector_store
+        ).replace(reference, payload)
     except UnknownDocumentError as error:
         raise DocumentOperationError(str(error)) from error
     except DocumentExtractionError as error:
@@ -485,7 +540,10 @@ def replace_uploaded_document(
 
 
 def delete_uploaded_document(
-    settings: Settings, reference: SourceReference
+    settings: Settings,
+    reference: SourceReference,
+    *,
+    vector_store: VectorStore | None = None,
 ) -> None:
     """Delete vector chunks then the catalog row for ``reference``.
 
@@ -495,7 +553,9 @@ def delete_uploaded_document(
         DocumentOperationError: The delete stopped before removing anything.
     """
     try:
-        build_manage_uploaded_documents(settings).delete(reference)
+        build_manage_uploaded_documents(
+            settings, vector_store=vector_store
+        ).delete(reference)
     except PartialDeleteFailure as error:
         raise PartialDocumentOperationError(str(error)) from error
     except DocumentManagementError as error:
@@ -541,6 +601,7 @@ def build_ask_knowledge(
         default_retrieval_limit=settings.retrieval.limit,
         relevance_threshold=settings.retrieval.relevance_threshold,
         max_input_length=settings.max_input_length,
+        keep_retrieved_hits=settings.retrieval.hybrid_enabled,
     )
 
 
@@ -630,12 +691,17 @@ def _relevant_retrieve(
     ``AskKnowledge._relevant`` documents. There is no ``metadata_filters``
     channel, which is what makes narrowing to one source kind structurally
     impossible for the caller.
+
+    In Hybrid mode, raw cosine eligibility is applied inside retrieve before
+    fusion; this binder keeps already-qualified hits and does not re-apply the
+    raw cosine threshold to fused ranking scores.
     """
     rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
         settings, vector_store=vector_store
     )
     threshold = settings.retrieval.relevance_threshold
     limit = settings.retrieval.limit
+    keep_retrieved = settings.retrieval.hybrid_enabled
 
     def retrieve(query: str) -> tuple[ScoredChunk, ...]:
         from application.contracts import RetrieveRequest
@@ -643,6 +709,8 @@ def _relevant_retrieve(
         response = rewrite_and_retrieve.execute(
             RetrieveRequest(query=query, retrieval_limit=limit)
         )
+        if keep_retrieved:
+            return tuple(response.hits)
         return tuple(hit for hit in response.hits if hit.score >= threshold)
 
     return retrieve
@@ -663,6 +731,11 @@ def build_tool_augmented_ask(
     With no pack enabled the inner ask is ``build_ask_knowledge``. The gate reads
     settings only, so a disabled pack is never imported.
 
+    When ``vector_store`` is omitted and a software-delivery pack is enabled,
+    one store is built and shared by grounded ask and pack retrieve so hybrid
+    BM25 hydration runs at most once. Streamlit should inject a
+    ``cache_resource`` store so uploads mutate the same DualWrite index.
+
     Args:
         settings (Settings): Runtime settings including enabled tool packs.
         chat_model (ChatModel | None): Shared chat adapter; built when absent.
@@ -675,14 +748,25 @@ def build_tool_augmented_ask(
     """
     if chat_model is None:
         chat_model = build_chat_model(settings)
+    if not software_delivery_tools_enabled(settings):
+        ask = build_ask_knowledge(
+            settings,
+            chat_model=chat_model,
+            vector_store=vector_store,
+            prompt_repository=prompt_repository,
+        )
+        return CorrelatedAsk(ask)
+
+    # Pack path uses grounded ask and a second retrieve; share one store so
+    # hybrid BM25 hydration runs at most once when the caller did not inject.
+    if vector_store is None:
+        vector_store = build_vector_store(settings)
     ask = build_ask_knowledge(
         settings,
         chat_model=chat_model,
         vector_store=vector_store,
         prompt_repository=prompt_repository,
     )
-    if not software_delivery_tools_enabled(settings):
-        return CorrelatedAsk(ask)
 
     import importlib
 

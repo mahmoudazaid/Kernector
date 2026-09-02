@@ -25,6 +25,10 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
+    monkeypatch.delenv("HYBRID_SEARCH_ENABLED", raising=False)
+    monkeypatch.delenv("HYBRID_ALPHA", raising=False)
+    monkeypatch.delenv("RETRIEVAL_LIMIT", raising=False)
+    monkeypatch.delenv("RELEVANCE_THRESHOLD", raising=False)
     return monkeypatch
 
 
@@ -167,14 +171,44 @@ def test_retrieval_defaults(env: pytest.MonkeyPatch) -> None:
     retrieval = load_settings().retrieval
     assert retrieval.limit == 5
     assert retrieval.relevance_threshold == 0.0
+    assert retrieval.hybrid_enabled is False
+    assert retrieval.hybrid_alpha == 0.5
 
 
 def test_retrieval_settings_are_read_from_env(env: pytest.MonkeyPatch) -> None:
     env.setenv("RETRIEVAL_LIMIT", "12")
     env.setenv("RELEVANCE_THRESHOLD", "0.35")
+    env.setenv("HYBRID_SEARCH_ENABLED", "true")
+    env.setenv("HYBRID_ALPHA", "0.75")
     retrieval = load_settings().retrieval
     assert retrieval.limit == 12
     assert retrieval.relevance_threshold == 0.35
+    assert retrieval.hybrid_enabled is True
+    assert retrieval.hybrid_alpha == 0.75
+
+
+@pytest.mark.parametrize("raw", ["maybe", "2", "TRUEE"])
+def test_invalid_hybrid_search_enabled_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("HYBRID_SEARCH_ENABLED", raw)
+    with pytest.raises(ValueError, match="HYBRID_SEARCH_ENABLED must be a boolean"):
+        load_settings()
+
+
+@pytest.mark.parametrize("raw", ["-0.1", "1.1", "2"])
+def test_out_of_range_hybrid_alpha_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("HYBRID_ALPHA", raw)
+    with pytest.raises(ValueError, match="HYBRID_ALPHA must be within"):
+        load_settings()
+
+
+def test_non_numeric_hybrid_alpha_is_rejected(env: pytest.MonkeyPatch) -> None:
+    env.setenv("HYBRID_ALPHA", "half")
+    with pytest.raises(ValueError, match="HYBRID_ALPHA must be a number"):
+        load_settings()
 
 
 @pytest.mark.parametrize("raw", ["0", "-1"])
