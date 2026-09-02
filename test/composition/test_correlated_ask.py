@@ -219,7 +219,7 @@ def test_rag_delegation_logs_delegated_not_success(
     assert payload.get("pack") is None
 
 
-def test_analysis_insufficient_logs_insufficient_with_pack(
+def test_tools_insufficient_logs_insufficient_with_pack(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     class _Ask:
@@ -230,33 +230,38 @@ def test_analysis_insufficient_logs_insufficient_with_pack(
         ) -> AskResponse:
             return AskResponse(answer="should not run")
 
-    class _Analysis:
-        def run(self, requirements: str) -> ToolRunOutcome:
+    class _InsufficientRunner:
+        def run(
+            self,
+            target: str,
+            *,
+            generate_tests: bool = True,
+            output_style: str = "steps",
+        ) -> ToolRunOutcome:
             raise InsufficientEvidenceError()
 
     @dataclass(frozen=True)
-    class _AnalysisSelection:
+    class _Selection:
         generate_tests: bool = False
         output_style: str = "steps"
-        analyze_requirements: bool = True
-        analysis_target: str = "Need MFA."
 
     routed = ToolAugmentedAsk(
         _Ask(),
-        runner=_RunnerNever(),
-        select=lambda query: _AnalysisSelection(),
-        analysis_runner=_Analysis(),
+        runner=_InsufficientRunner(),
+        select=lambda query: _Selection(),
         pack_id="software-delivery",
     )
     with caplog.at_level(logging.INFO, logger="composition.tool_augmented_ask"):
-        response = routed.execute(AskRequest(query="Analyze these requirements", prompt_key=None))
+        response = routed.execute(
+            AskRequest(query="Assess the risk for AUTH-101", prompt_key=None)
+        )
 
     assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
     payload = operation_payload(
         operation_records(caplog.records, operation="ask_turn")[0]
     )
     assert payload["outcome"] == "insufficient"
-    assert payload["path"] == "analysis"
+    assert payload["path"] == "tools"
     assert payload["pack"] == "software-delivery"
 
 

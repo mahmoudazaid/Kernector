@@ -24,7 +24,6 @@ from application.contracts import (
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
-    InsufficientEvidenceError,
 )
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -36,7 +35,6 @@ from domain.knowledge import (
     SourceMetadata,
     SourceReference,
 )
-from packs.software_delivery.errors import MissingEvidenceError
 from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
 from packs.software_delivery.orchestration_policy import (
     EXPORT_TEST_CASES_MARKDOWN_TOOL,
@@ -46,16 +44,12 @@ from packs.software_delivery.orchestration_policy import (
 from composition import (
     GroundedAsk,
     KnowledgeLoadError,
-    RequirementsAnalysisView,
-    RequirementsAnalyzer,
     Settings,
     SoftwareDeliveryRunView,
     ToolAugmentedAsk,
     ToolCallView,
     available_providers,
     build_ask_service,
-    build_analyze_requirements,
-    analysis_citations,
     build_chat_model,
     build_ingest_knowledge,
     build_invoke_tool,
@@ -738,128 +732,7 @@ class _RecordingRewriteRetrieve:
         )
 
 
-def test_build_analyze_requirements_wires_typed_composition_facade(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _sd_env(monkeypatch)
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve([]),
-    )
-
-    analyzer = build_analyze_requirements(load_settings(), chat_model=_StubChat())
-
-    assert hasattr(analyzer, "analyze")
-    assert callable(analyzer.analyze)
-    assert get_type_hints(analyzer.analyze)["return"] is RequirementsAnalysisView
-
-
-def test_build_analyze_requirements_has_concrete_return_annotation() -> None:
-    hints = get_type_hints(build_analyze_requirements)
-    assert hints["return"] is RequirementsAnalyzer
-
-
-def test_analysis_citations_has_concrete_return_annotation() -> None:
-    hints = get_type_hints(analysis_citations)
-    return_hint = hints["return"]
-    assert return_hint.__origin__ is tuple
-    assert return_hint.__args__[0].__name__ == "Citation"
-
-
-class _AnalysisStubChat(_StubChat):
-    """Returns minimal valid requirements-analysis JSON from complete()."""
-
-    def complete(
-        self,
-        system: str,
-        messages: Sequence[Message],
-        settings: Mapping[str, object],
-    ) -> AskResult:
-        payload = json.dumps(
-            {
-                "summary": "Stubbed analysis.",
-                "acceptance_criteria_gaps": [],
-                "risks": [],
-                "clarification_questions": [],
-            }
-        )
-        return AskResult(content=payload)
-
-
-def test_analyze_requirements_retrieval_is_not_narrowed_by_source_type(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _sd_env(monkeypatch)
-    recorder = _RecordingRewriteRetrieve([_scored_hit()])
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: recorder,
-    )
-    settings = load_settings()
-    analyzer = build_analyze_requirements(settings, chat_model=_AnalysisStubChat())
-
-    analyzer.analyze("Assess MFA requirements")
-
-    assert len(recorder.requests) == 1
-    assert recorder.requests[0].metadata_filters is None
-    assert recorder.requests[0].retrieval_limit == settings.retrieval.limit
-
-
-def test_relevance_threshold_filters_before_the_pack_sees_hits(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _sd_env(monkeypatch)
-    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.0")
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve(
-            [_scored_hit(score=-1.0)]
-        ),
-    )
-    analyzer = build_analyze_requirements(
-        load_settings(), chat_model=_StubChat()
-    )
-
-    with pytest.raises(InsufficientEvidenceError):
-        analyzer.analyze("Assess MFA")
-
-
-def test_missing_evidence_is_translated_at_the_composition_edge(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Presentation cannot name a pack error, so composition renames it."""
-    _sd_env(monkeypatch)
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve([]),
-    )
-    analyzer = build_analyze_requirements(load_settings(), chat_model=_StubChat())
-
-    with pytest.raises(InsufficientEvidenceError) as excinfo:
-        analyzer.analyze("Assess MFA")
-
-    assert isinstance(excinfo.value.__cause__, MissingEvidenceError)
-
-
-def test_analysis_citations_projects_evidence_onto_application_citations() -> None:
-    hit = _scored_hit(content="MFA required")
-    view = RequirementsAnalysisView(
-        summary="summary",
-        acceptance_criteria_gaps=(),
-        risks=(),
-        clarification_questions=(),
-        evidence=(hit,),
-    )
-
-    citations = analysis_citations(view)
-
-    assert len(citations) == 1
-    assert citations[0].reference == SourceReference("US-1", "user_story")
-    assert citations[0].quote == "MFA required"
-    assert citations[0].chunk_index == 0
-
-
-def test_presentation_can_import_composition_requirements_types_without_packs(
+def test_presentation_can_import_composition_tool_types_without_packs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
@@ -869,9 +742,9 @@ import importlib
 
 composition = importlib.import_module("composition")
 names = set(sys.modules)
-assert hasattr(composition, "RequirementsAnalysisView")
-assert hasattr(composition, "RequirementsAnalyzer")
-assert hasattr(composition, "build_analyze_requirements")
+assert not hasattr(composition, "RequirementsAnalysisView")
+assert not hasattr(composition, "RequirementsAnalyzer")
+assert not hasattr(composition, "build_analyze_requirements")
 assert hasattr(composition, "SoftwareDeliveryRunView")
 assert hasattr(composition, "ToolCallView")
 assert hasattr(composition, "software_delivery_tools_enabled")
@@ -890,17 +763,7 @@ print("ok")
     assert "ok" in result.stdout
 
 
-def test_build_analyze_requirements_requires_enabled_pack(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
-    monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
-
-    with pytest.raises(ConfigurationError, match="software-delivery pack must be enabled"):
-        build_analyze_requirements(load_settings(), chat_model=_StubChat())
-
-
-def test_disabled_pack_does_not_import_requirements_analysis_at_composition_import(
+def test_disabled_pack_does_not_import_software_delivery_at_composition_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
