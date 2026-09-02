@@ -399,22 +399,18 @@ def test_rewrite_retrieve_response_constructs() -> None:
         hits=[hit],
         original_query="what broke?",
         rewritten_query="payment service failure last week",
-        query_rewritten=True,
     )
     assert response.hits == (hit,)
     assert response.original_query == "what broke?"
     assert response.rewritten_query == "payment service failure last week"
-    assert response.query_rewritten is True
 
 
 def test_rewrite_retrieve_response_defaults_hits_empty() -> None:
     response = RewriteRetrieveResponse(
         original_query="what broke?",
         rewritten_query="payment service failure",
-        query_rewritten=True,
     )
     assert response.hits == ()
-    assert response.query_rewritten is True
 
 
 def test_invoke_tool_response_constructs() -> None:
@@ -601,7 +597,6 @@ def test_rewrite_retrieve_response_rejects_blank_original_query(blank: str) -> N
         RewriteRetrieveResponse(
             original_query=blank,
             rewritten_query="rewritten",
-            query_rewritten=True,
         )
 
 
@@ -611,7 +606,6 @@ def test_rewrite_retrieve_response_rejects_blank_rewritten_query(blank: str) -> 
         RewriteRetrieveResponse(
             original_query="original",
             rewritten_query=blank,
-            query_rewritten=True,
         )
 
 
@@ -621,7 +615,6 @@ def test_rewrite_retrieve_response_rejects_non_sequence_hits() -> None:
             hits="chunk",  # type: ignore[arg-type]
             original_query="original",
             rewritten_query="rewritten",
-            query_rewritten=True,
         )
 
 
@@ -631,7 +624,6 @@ def test_rewrite_retrieve_response_rejects_non_scored_chunk_item() -> None:
             hits=[_reference()],  # type: ignore[list-item]
             original_query="original",
             rewritten_query="rewritten",
-            query_rewritten=True,
         )
 
 
@@ -778,7 +770,6 @@ def test_rewrite_retrieve_response_hits_are_independent_of_input_list() -> None:
         hits=hits,
         original_query="original",
         rewritten_query="rewritten",
-        query_rewritten=True,
     )
     hits.clear()
     assert len(response.hits) == 1
@@ -811,7 +802,6 @@ def test_contracts_serialize_with_asdict() -> None:
         hits=[_scored_chunk()],
         original_query="what broke?",
         rewritten_query="payment failure",
-        query_rewritten=True,
     )
 
     ask_dict = asdict(ask_request)
@@ -848,7 +838,6 @@ def test_contracts_serialize_with_asdict() -> None:
         "hits": asdict(retrieve_response)["hits"],
         "original_query": "what broke?",
         "rewritten_query": "payment failure",
-        "query_rewritten": True,
     }
 
 
