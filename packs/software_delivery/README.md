@@ -152,9 +152,9 @@ grounded-RAG path.
 | Test artifacts | `test case(s)`, `test scenario(s)`, `tests`, `scenarios`, `acceptance test(s)`, `test plan`, `feature file(s)`, `cucumber scenario(s)` |
 | Gherkin-style terms (with a matched generation request) | `output_style="gherkin"` when `gherkin`, `cucumber`, `given/when/then`, `given when then`, or `feature file` appears |
 | Explicit risk requests | `generate_tests=False` — e.g. `assess/score/evaluate the risk`, `what is the risk score for <target>`, `how risky is <target>`, `risk assessment of <target>` |
-| Scoped negation | `None` — `do not` / `don't` / `dont` / `never`, `not <artifact>`, `without creating/generating…` |
+| Intent-local negation | Cancels only the governed match — `Do not create test cases`, `Never generate tests`, `Do not assess the risk`. Constraint wording (`that do not require…`) and other-clause negation (`…; never use…`) do not cancel. Mixed requests keep the active intent (`Do not generate tests; assess the risk` → risk-only). |
 | How-to / conceptual | `None` — e.g. `How do I create test cases?`, `How to write Gherkin scenarios`, `Explain how to generate tests`, `What is Gherkin?` |
-| Read-only transforms | `None` — e.g. `Create a summary/list/overview of the existing test cases`, `Generate a report without creating tests` |
+| Read-only transforms | `None` — e.g. `Create a summary/list/overview of the existing test cases`, `Generate a report without creating tests`, `Create a summary, not test cases` |
 | Distant verb∩artifact co-occurrence | `None` — independent substring presence is not enough |
 | Artifact or style term alone | `None` — `gherkin`, `cucumber`, `feature file`, `test plan`, and `test cases` need a bound creation verb |
 

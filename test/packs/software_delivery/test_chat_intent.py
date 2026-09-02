@@ -25,6 +25,9 @@ from packs.software_delivery.errors import OrchestrationValidationError
             "Score the risk and write gherkin test cases for AUTH-101",
             "gherkin",
         ),
+        ("Create test cases that do not require admin access", "steps"),
+        ("Create tests; never use production credentials", "steps"),
+        ("Do not summarize the docs; create test cases for AUTH-101", "steps"),
     ],
 )
 def test_explicit_generation_requests_select_the_expected_chain(
@@ -44,6 +47,7 @@ def test_explicit_generation_requests_select_the_expected_chain(
         "Assess the risk for the MFA rollout",
         "Score the delivery risk for AUTH-101",
         "Evaluate the risk before we ship",
+        "Do not generate tests; assess the risk for AUTH-101",
     ],
 )
 def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> None:
@@ -71,10 +75,13 @@ def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> Non
         "Show me the test plan for AUTH-101",
         "What is a risk score?",
         "Explain the risk score model",
+        "Do not create test cases",
         "Do not generate test cases for AUTH-101",
         "Don't create tests for AUTH-101",
         "Dont write test cases for AUTH-101",
+        "Never generate tests",
         "Never generate test scenarios for login",
+        "Do not assess the risk",
         "Do not assess the risk for AUTH-101",
         "gherkin",
         "cucumber scenarios",
@@ -89,7 +96,7 @@ def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> Non
         "   ",
     ],
 )
-def test_non_generation_requests_select_no_tool(query: str) -> None:
+def test_non_tool_requests_select_no_tool(query: str) -> None:
     assert select_chat_intent(query) is None
 
 
@@ -109,3 +116,6 @@ def test_registration_exposes_the_chat_intent_selector() -> None:
     )
     assert select("Create a summary of existing test cases") is None
     assert select("What is the session timeout?") is None
+    assert select(
+        "Do not generate tests; assess the risk for AUTH-101"
+    ) == ChatToolSelection(generate_tests=False, output_style="steps")

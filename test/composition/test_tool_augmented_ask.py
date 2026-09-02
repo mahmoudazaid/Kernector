@@ -208,6 +208,9 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
         "Generate a report without creating tests",
         "How to write Gherkin scenarios",
         "Explain how to generate tests",
+        "Do not create test cases for AUTH-101",
+        "Never generate tests for AUTH-101",
+        "Do not assess the risk for AUTH-101",
     ],
 )
 def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
@@ -225,3 +228,34 @@ def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
     assert response is ask.response
     assert ask.calls == [(request, None)]
     assert runner.runs == []
+
+
+@pytest.mark.parametrize(
+    ("query", "generate_tests", "output_style"),
+    [
+        ("Create test cases that do not require admin access", True, "steps"),
+        ("Create tests; never use production credentials", True, "steps"),
+        (
+            "Do not summarize the docs; create test cases for AUTH-101",
+            True,
+            "steps",
+        ),
+        ("Do not generate tests; assess the risk for AUTH-101", False, "steps"),
+    ],
+)
+def test_accepted_intent_phrases_invoke_the_runner(
+    query: str, generate_tests: bool, output_style: str
+) -> None:
+    """Constraint or other-clause negation must not cancel an active request."""
+    from packs.software_delivery.chat_intent import select_chat_intent
+
+    ask = _RecordingAsk()
+    runner = _RecordingRunner(_outcome())
+    wrapper = ToolAugmentedAsk(ask, runner=runner, select=select_chat_intent)
+
+    response = wrapper.execute(AskRequest(query=query, prompt_key=None))
+
+    assert runner.runs == [(query, generate_tests, output_style)]
+    assert ask.calls == []
+    assert response.answer == "Scored risk."
+    assert response.tool_outputs == ()
