@@ -367,7 +367,7 @@ def test_accepted_analysis_phrases_invoke_the_analysis_runner() -> None:
 
     response = wrapper.execute(AskRequest(query=query, prompt_key=None))
 
-    assert analysis.runs == ["as a customer i want to sign in."]
+    assert analysis.runs == ["As a customer I want to sign in."]
     assert runner.runs == []
     assert ask.calls == []
     assert response.answer == "Gaps found in acceptance criteria."
