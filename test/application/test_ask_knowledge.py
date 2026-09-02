@@ -61,19 +61,20 @@ class _FakeRewriteRetrieve:
         self,
         hits: Sequence[ScoredChunk],
         *,
-        query_rewritten: bool = True,
+        original_query: str = "what broke?",
+        rewritten_query: str = "payment service failure last week",
     ) -> None:
         self._hits = tuple(hits)
-        self._query_rewritten = query_rewritten
+        self._original_query = original_query
+        self._rewritten_query = rewritten_query
         self.requests: list[object] = []
 
     def execute(self, request: object) -> RewriteRetrieveResponse:
         self.requests.append(request)
         return RewriteRetrieveResponse(
             hits=self._hits,
-            original_query="unused",
-            rewritten_query="unused rewritten",
-            query_rewritten=self._query_rewritten,
+            original_query=self._original_query,
+            rewritten_query=self._rewritten_query,
         )
 
 
@@ -140,10 +141,15 @@ def _use_case(
     threshold: float = THRESHOLD,
     limit: int = 5,
     max_input_length: int = 10_000,
-    query_rewritten: bool = True,
+    original_query: str = "what broke?",
+    rewritten_query: str = "payment service failure last week",
 ) -> AskKnowledge:
     return AskKnowledge(
-        _FakeRewriteRetrieve(hits, query_rewritten=query_rewritten),
+        _FakeRewriteRetrieve(
+            hits,
+            original_query=original_query,
+            rewritten_query=rewritten_query,
+        ),
         AskService(chat),
         prompts or _EmptyPrompts(),
         default_retrieval_limit=limit,
@@ -189,12 +195,16 @@ def test_run_meta_carries_observability_without_duplicating_the_answer() -> None
     assert "How do I restart?" not in str(response.run)
 
 
-def test_run_meta_copies_query_rewritten_false_from_carrier() -> None:
+def test_run_meta_query_rewritten_false_when_queries_match() -> None:
     chat = _RecordingChat("Use the restart runbook.")
+    unchanged = "payment service failure last week"
 
-    response = _use_case((_hit(),), chat, query_rewritten=False).execute(
-        AskRequest(prompt_key=None, query="How do I restart?")
-    )
+    response = _use_case(
+        (_hit(),),
+        chat,
+        original_query=unchanged,
+        rewritten_query=unchanged,
+    ).execute(AskRequest(prompt_key=None, query="How do I restart?"))
 
     assert response.run is not None
     assert response.run.query_rewritten is False

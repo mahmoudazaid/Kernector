@@ -728,7 +728,6 @@ class _RecordingRewriteRetrieve:
         return RewriteRetrieveResponse(
             original_query=request.query,
             rewritten_query=request.query,
-            query_rewritten=False,
             hits=self.hits,
         )
 

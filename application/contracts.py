@@ -532,22 +532,15 @@ class RewriteRetrieveResponse:
         hits (Sequence[ScoredChunk]): Ranked chunks with full provenance.
         original_query (str): The caller's natural-language query before rewrite.
         rewritten_query (str): The retrieval-oriented query that was embedded.
-        query_rewritten (bool): True when the rewritten string differs from the
-            original after strip — safe flag for UI / RunMeta; not the query text.
     """
 
     original_query: str
     rewritten_query: str
-    query_rewritten: bool
     hits: Sequence[ScoredChunk] = ()
 
     def __post_init__(self) -> None:
         _require_text(self.original_query, "original_query")
         _require_text(self.rewritten_query, "rewritten_query")
-        if not isinstance(self.query_rewritten, bool):
-            raise ApplicationValidationError(
-                f"query_rewritten must be a bool, got {self.query_rewritten!r}"
-            )
         hits = _require_sequence(self.hits, "hits")
         for item in hits:
             if not isinstance(item, ScoredChunk):

@@ -129,7 +129,6 @@ class RewriteAndRetrieveKnowledge:
             hits=retrieve_response.hits,
             original_query=request.query,
             rewritten_query=rewritten,
-            query_rewritten=request.query.strip() != rewritten,
         )
 
 
