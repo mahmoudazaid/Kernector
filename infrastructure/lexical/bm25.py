@@ -40,6 +40,7 @@ class Bm25LexicalIndex:
     def __init__(self) -> None:
         self._records: dict[tuple[str, str, int], EmbeddedChunk] = {}
         self._order: list[tuple[str, str, int]] = []
+        self._doc_tokens: list[list[str]] = []
         self._bm25: BM25Okapi | None = None
 
     def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
@@ -87,12 +88,17 @@ class Bm25LexicalIndex:
             raise VectorStoreError(
                 f"metadata_filters must be a mapping, got {type(filters)!r}"
             )
-        tokens = tokenize(query)
-        if not tokens:
+        query_tokens = tokenize(query)
+        if not query_tokens:
             return ()
-        scores = self._bm25.get_scores(tokens)
+        query_set = set(query_tokens)
+        scores = self._bm25.get_scores(query_tokens)
         ranked: list[ScoredChunk] = []
-        for key, score in zip(self._order, scores, strict=True):
+        for key, score, doc_tokens in zip(
+            self._order, scores, self._doc_tokens, strict=True
+        ):
+            if not query_set.intersection(doc_tokens):
+                continue
             item = self._records[key]
             if filters and not _matches_extra(item, filters):
                 continue
@@ -103,10 +109,12 @@ class Bm25LexicalIndex:
     def _rebuild(self) -> None:
         if not self._order:
             self._bm25 = None
+            self._doc_tokens = []
             return
         tokenized = [
             tokenize(self._records[key].chunk.content) for key in self._order
         ]
+        self._doc_tokens = tokenized
         if not any(tokenized):
             # All punctuation / empty-token docs: BM25Okapi([]) divides by zero.
             self._bm25 = None

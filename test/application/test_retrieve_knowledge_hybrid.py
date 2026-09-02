@@ -290,3 +290,47 @@ def test_hybrid_tie_break_is_deterministic_by_chunk_identity() -> None:
 
     assert [hit.chunk.source_id for hit in response.hits] == ["a", "b"]
     assert response.hits[0].score == response.hits[1].score
+
+
+def test_hybrid_single_vector_hit_score_is_one_and_clears_positive_threshold() -> None:
+    chunk = _chunk("only", "semantic paraphrase about outages")
+    vector = _ScriptedVectorStore([ScoredChunk(chunk=chunk, score=0.31)])
+    lexical = InMemoryLexicalIndex()
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.0,
+    ).execute(RetrieveRequest(query="unrelated query terms xyz", retrieval_limit=3))
+
+    assert len(response.hits) == 1
+    assert response.hits[0].chunk.source_id == "only"
+    assert response.hits[0].score == pytest.approx(1.0)
+    assert response.hits[0].score >= 0.25
+
+
+def test_hybrid_without_lexical_overlap_keeps_only_vector_candidates() -> None:
+    from infrastructure.lexical.bm25 import Bm25LexicalIndex
+
+    vector_hit = _chunk("vec", "semantic paraphrase about payment outages")
+    noise = _chunk("noise", "blue-green deploy rollout capacity notes")
+    vector = _ScriptedVectorStore([ScoredChunk(chunk=vector_hit, score=0.88)])
+    lexical = Bm25LexicalIndex()
+    lexical.upsert([_embed(noise), _embed(_chunk("filler-a", "alpha")), _embed(_chunk("filler-b", "beta"))])
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.5,
+    ).execute(
+        RetrieveRequest(query="zzzz-not-in-corpus-qqqq", retrieval_limit=5)
+    )
+
+    assert [hit.chunk.source_id for hit in response.hits] == ["vec"]
+    assert response.hits[0].score == pytest.approx(0.5)
