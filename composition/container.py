@@ -1,7 +1,7 @@
 """Composition root: the only place that constructs infrastructure."""
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -35,6 +35,12 @@ from composition.errors import (
     KnowledgeLoadError,
     PartialDocumentOperationError,
 )
+from composition.software_delivery_chat import (
+    OpaqueInvoke,
+    PackSoftwareDeliveryChat,
+)
+from composition.software_delivery_tools import software_delivery_tools_enabled
+from composition.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk
 from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     build_tool_registry,
@@ -554,10 +560,31 @@ def build_invoke_tool(
     return InvokeTool(build_tool_registry(settings, chat_model=chat_model))
 
 
+def build_opaque_invoke(
+    settings: Settings, *, chat_model: ChatModel | None = None
+) -> OpaqueInvoke:
+    """Return the tool boundary as a plain callable, results still opaque.
+
+    Exposed so a caller can wrap it — the chat path records one
+    ``InvokeToolResponse`` per call — without rebuilding the registry itself.
+    """
+    invoke_tool = build_invoke_tool(settings, chat_model=chat_model)
+
+    def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
+        from application.contracts import InvokeToolRequest
+
+        return invoke_tool.execute(
+            InvokeToolRequest(tool_name, arguments)
+        ).result
+
+    return invoke
+
+
 def build_orchestrate_software_delivery(
     settings: Settings,
     *,
     chat_model: ChatModel,
+    invoke: OpaqueInvoke | None = None,
 ) -> object:
     """Wire Software Delivery orchestration when the pack is enabled.
 
@@ -567,6 +594,9 @@ def build_orchestrate_software_delivery(
     Args:
         settings (Settings): Runtime settings including enabled tool packs.
         chat_model (ChatModel): Shared chat adapter for generate-test-cases.
+        invoke (OpaqueInvoke | None): Optional replacement for the tool boundary,
+            so a caller can observe the chain without a second orchestrator.
+            Defaults to the registry-backed callable.
 
     Returns:
         OrchestrateSoftwareDelivery: Pack orchestration use case.
@@ -578,14 +608,8 @@ def build_orchestrate_software_delivery(
         raise ConfigurationError(
             "software-delivery pack must be enabled to build orchestration"
         )
-    invoke_tool = build_invoke_tool(settings, chat_model=chat_model)
-
-    def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
-        from application.contracts import InvokeToolRequest
-
-        return invoke_tool.execute(
-            InvokeToolRequest(tool_name, arguments)
-        ).result
+    if invoke is None:
+        invoke = build_opaque_invoke(settings, chat_model=chat_model)
 
     import importlib
 
@@ -593,6 +617,113 @@ def build_orchestrate_software_delivery(
         "packs.software_delivery.registration"
     )
     return registration.build_orchestrator(invoke=invoke)
+
+
+def _relevant_retrieve(
+    settings: Settings, *, vector_store: VectorStore | None = None
+) -> Callable[[str], tuple[ScoredChunk, ...]]:
+    """Bind filter-less cross-source retrieval with the relevance threshold.
+
+    The threshold belongs here rather than in a pack: top-k on a non-empty store
+    returns ``k`` chunks for *any* query, so without it "the store returned rows"
+    would be mistaken for "we have evidence" — the reasoning
+    ``AskKnowledge._relevant`` documents. There is no ``metadata_filters``
+    channel, which is what makes narrowing to one source kind structurally
+    impossible for the caller.
+    """
+    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=vector_store
+    )
+    threshold = settings.retrieval.relevance_threshold
+    limit = settings.retrieval.limit
+
+    def retrieve(query: str) -> tuple[ScoredChunk, ...]:
+        from application.contracts import RetrieveRequest
+
+        response = rewrite_and_retrieve.execute(
+            RetrieveRequest(query=query, retrieval_limit=limit)
+        )
+        return tuple(hit for hit in response.hits if hit.score >= threshold)
+
+    return retrieve
+
+
+def build_tool_augmented_ask(
+    settings: Settings,
+    *,
+    chat_model: ChatModel | None = None,
+    vector_store: VectorStore | None = None,
+    prompt_repository: PromptRepository | None = None,
+) -> GroundedAsk:
+    """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
+
+    With no pack enabled this is exactly ``build_ask_knowledge`` — the chat path
+    degrades to today's behaviour rather than failing, which is what keeps the
+    tool feature genuinely optional. The gate reads settings only, so a disabled
+    pack is never imported.
+
+    Args:
+        settings (Settings): Runtime settings including enabled tool packs.
+        chat_model (ChatModel | None): Shared chat adapter; built when absent.
+        vector_store (VectorStore | None): Optional shared vector store client.
+        prompt_repository (PromptRepository | None): Optional shared prompts.
+
+    Returns:
+        GroundedAsk: Either ``AskKnowledge`` or a tool-augmented wrapper of it.
+    """
+    if chat_model is None:
+        chat_model = build_chat_model(settings)
+    ask = build_ask_knowledge(
+        settings,
+        chat_model=chat_model,
+        vector_store=vector_store,
+        prompt_repository=prompt_repository,
+    )
+    if not software_delivery_tools_enabled(settings):
+        return ask
+
+    def orchestrate(
+        *,
+        target: str,
+        hits: Sequence[ScoredChunk],
+        generate_tests: bool,
+        output_style: str,
+        invoke: OpaqueInvoke,
+    ):
+        from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
+        from packs.software_delivery.orchestration_contracts import (
+            OrchestrateSoftwareDeliveryRequest,
+        )
+        from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+
+        orchestrator = build_orchestrate_software_delivery(
+            settings, chat_model=chat_model, invoke=invoke
+        )
+        intent = (
+            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+            if generate_tests
+            else SoftwareDeliveryIntent.RISK_SCORE
+        )
+        return orchestrator.execute(
+            OrchestrateSoftwareDeliveryRequest(
+                intent=intent,
+                target=target,
+                evidence=evidence_bundle_from_hits(hits),
+                output_style=output_style,
+            )
+        )
+
+    import importlib
+
+    registration = importlib.import_module("packs.software_delivery.registration")
+    runner = PackSoftwareDeliveryChat(
+        retrieve=_relevant_retrieve(settings, vector_store=vector_store),
+        invoke=build_opaque_invoke(settings, chat_model=chat_model),
+        orchestrate=orchestrate,
+    )
+    return ToolAugmentedAsk(
+        ask, runner=runner, select=registration.build_chat_intent_selector()
+    )
 
 
 def build_analyze_requirements(
@@ -621,19 +752,7 @@ def build_analyze_requirements(
         raise ConfigurationError(
             "software-delivery pack must be enabled to build requirements analysis"
         )
-    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
-        settings, vector_store=vector_store
-    )
-    threshold = settings.retrieval.relevance_threshold
-    limit = settings.retrieval.limit
-
-    def retrieve(query: str) -> tuple[ScoredChunk, ...]:
-        from application.contracts import RetrieveRequest
-
-        response = rewrite_and_retrieve.execute(
-            RetrieveRequest(query=query, retrieval_limit=limit)
-        )
-        return tuple(hit for hit in response.hits if hit.score >= threshold)
+    retrieve = _relevant_retrieve(settings, vector_store=vector_store)
 
     import importlib
 

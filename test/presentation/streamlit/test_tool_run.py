@@ -155,12 +155,17 @@ def test_composition_has_no_parallel_tool_run_entry_point() -> None:
     assert "PackSoftwareDeliveryTools" not in source
 
 
-def test_ask_turn_still_ignores_tool_outputs() -> None:
-    """#170-owned chat integration stays untouched in this PR."""
+def test_ask_turn_surfaces_tool_outputs_without_reaching_for_typed_views() -> None:
+    """#170 carries the opaque contract; typed views stay the renderers' business.
+
+    This replaces the #161-era fence that required ``tool_outputs`` to be absent
+    here. What survives the handover is the half that is an invariant rather than
+    a schedule: the chat mapper never touches a pack-shaped view.
+    """
     import presentation.streamlit.ask_turn as ask_turn_mod
 
     source = Path(ask_turn_mod.__file__).read_text(encoding="utf-8")
-    assert "tool_outputs" not in source
+    assert "tool_outputs" in source
     assert "render_software_delivery" not in source
     assert "SoftwareDeliveryRunView" not in source
 
@@ -175,12 +180,28 @@ def test_architecture_docs_do_not_store_typed_views_on_ask_response() -> None:
     assert "opaque ``InvokeToolResponse``" in architecture
 
 
-def test_app_does_not_wire_tool_outputs_to_renderers() -> None:
+def test_app_surfaces_tool_outputs_generically_not_through_pack_renderers() -> None:
+    """#170 shows what ran; the typed renderers still await a projection adapter.
+
+    ``app.py`` cannot import ``render_software_delivery_tool_results`` without
+    breaking its own pack-free source scan, which is why the chat bubble carries
+    the substance in ``answer`` and only names the tools underneath.
+    """
     import presentation.streamlit.app as app_mod
 
     source = Path(app_mod.__file__).read_text(encoding="utf-8")
-    assert "tool_outputs" not in source
+    assert "tool_outputs" in source
+    assert "tool_output_lines" in source
     assert "render_software_delivery_tool_results" not in source
+
+
+def test_the_chat_flow_builds_the_tool_augmented_ask() -> None:
+    """AC1: the chat surface is the one that gained tool selection."""
+    import presentation.streamlit.app as app_mod
+
+    source = Path(app_mod.__file__).read_text(encoding="utf-8")
+    assert "build_tool_augmented_ask" in source
+    assert "build_ask_knowledge" not in source
 
 
 def test_render_software_delivery_tool_results_accepts_fixture_view() -> None:

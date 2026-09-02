@@ -105,6 +105,11 @@ composition) → `AnalyzeRequirements` → structured findings with
 `ScoredChunk` evidence → `analysis_citations` projects to generic
 `Citation` values at the composition edge.
 
+Chat-time tool selection follows a third: chat query → pack intent policy →
+filter-less cross-source retrieval → evidence bundle → ordered tool chain
+through the opaque `InvokeTool` boundary → `AskResponse` carrying opaque
+`tool_outputs` and citations built from the raw hits.
+
 One domain tool consumes a multi-source evidence bundle. A new source kind does
 not require a new risk tool or shared-core contract change. Absence-based
 policies (for example missing acceptance criteria) apply only when evidence is
@@ -120,10 +125,11 @@ pack is disabled, gated by `requirements_analysis_enabled` rather than by catchi
 
 The Streamlit **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,
-and Markdown preview/download — from **test fixtures only** in this PR. They
-are absent when the pack is disabled, gated by ``software_delivery_tools_enabled``
-rather than by catching ``ConfigurationError``. There is no standalone tool-run
-form and no parallel retrieval/orchestration path in composition.
+and Markdown preview/download — from **test fixtures only**; no adapter feeds
+them from a live run yet. They are absent when the pack is disabled, gated by
+``software_delivery_tools_enabled`` rather than by catching
+``ConfigurationError``. There is no standalone tool-run form: the only path that
+retrieves and orchestrates is the chat-time one described below.
 
 ``AskResponse.tool_outputs`` remains ``Sequence[InvokeToolResponse]`` — opaque
 tool name plus opaque result string. Generic ``InvokeTool``, ``AskResponse``,
@@ -137,28 +143,82 @@ metadata such as score or generated-case count — never from
 ``InvokeToolResponse.result`` or truncated opaque payloads. Raw tool payloads
 are never stored, exposed, or rendered. Shared Streamlit code stays
 pack-agnostic; Software Delivery renderers live in ``tool_run_panel.py``.
-``AskResponse.tool_outputs`` is unpopulated by ``AskKnowledge`` today; #161
-cannot close until [#170](https://github.com/mahmoudazaid/Kernector/issues/170)
-wires chat-time tool selection and a pack-specific projection step.
+``AskResponse.tool_outputs`` is never populated by ``AskKnowledge`` itself: the
+application layer may not import ``packs``, so the vocabulary that recognises a
+tool request cannot live there.
 
-**Future flow (#170, not in this PR):** chat intent → retrieve/orchestrate →
-``AskResponse.tool_outputs`` containing opaque ``InvokeToolResponse`` entries →
-isolated Software Delivery projection adapter parses known pack outcomes into
-``SoftwareDeliveryRunView`` / ``ToolCallView`` (summaries authored from
-validated typed metadata only) → Streamlit renderers.
+#### Chat-time tool selection (#170)
+
+``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) wraps
+``AskKnowledge`` and asks the enabled pack's deterministic policy —
+``select_chat_intent`` in ``packs/software_delivery/chat_intent.py`` — which
+chain, if any, a query names. **Tool selection runs only in General mode**
+(``AskRequest.prompt_key is None``). Any selected task prompt delegates the
+original request, history, and generation settings unchanged to
+``AskKnowledge`` — routing never moves into Streamlit. Unmatched General-mode
+queries are delegated to the grounded path verbatim, so ordinary chat is
+unchanged and no tool runs speculatively.
+
+The policy is **explicit-request matching, not a classifier**. Test generation
+requires a same-clause creation verb (``create``, ``generate``, ``write``,
+``produce``, ``draft``, ``build``) bound directly to a test artifact, with only
+optional articles, adjectives, or style modifiers between them —
+``gherkin``, ``cucumber``, ``feature file``, ``test plan``, or ``test cases``
+alone are not sufficient, and distant verb∩artifact co-occurrence is ignored.
+Risk routing accepts explicit score/assessment requests (for example
+``assess/score/evaluate the risk``, ``what is the risk score for <target>``,
+``how risky is <target>``) and rejects conceptual or read-only questions.
+Scoped negations cancel only when they govern the matched action in the same
+clause (``Do not create test cases``, ``Never generate tests``, ``Do not assess
+the risk``). Constraint wording after a match (``Create test cases that do not
+require admin access``) and negation in another clause (``Create tests; never
+use production credentials``) do not cancel. Mixed requests keep the
+non-negated intent (``Do not generate tests; assess the risk for AUTH-101``
+selects risk-only). How-to forms and read-only transforms
+(``Create a summary/list of the existing test cases``) never invoke tools. Determinism is the point: a chat-time tool
+call is a side effect, and an explicit table is reproducible, testable offline,
+and narrow in the safe direction — an unmatched query simply stays on the
+grounded path. Vocabulary stays in the pack because "test cases" and "risk
+score" are business terms; composition reaches the policy through
+``registration.build_chat_intent_selector`` and ``importlib``, never at module
+scope.
+
+A matched turn runs through ``PackSoftwareDeliveryChat``
+(``composition/software_delivery_chat.py``): filter-less cross-source retrieval
+with the relevance threshold applied in composition → ``require_evidence`` →
+evidence bundle → ``OrchestrateSoftwareDelivery`` via the opaque tool boundary,
+wrapped in a ``ToolCallRecorder`` that keeps one ``InvokeToolResponse`` per
+successful call. The reply is composed deterministically from the tools' typed
+results — the export step's Markdown for generated cases, the risk step's score
+band and rationale — never from a second model call.
+
+Two properties are worth naming because they are easy to lose:
+
+- **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it
+  retrieves through ``RewriteAndRetrieveKnowledge``, which applies
+  ``reject_unsafe_query`` and the length cap before returning hits — and hits
+  are required before any tool is invoked.
+- **Citations come from the raw hits**, not from the evidence bundle, which
+  merges chunks by ``(source_type, source_id)`` and loses ``chunk_index``.
+  Row-level provenance survives only outside that merge.
+
+Streamlit surfaces a tool turn generically: the answer carries the substance,
+and ``tool_output_lines`` names each tool and measures its payload without
+parsing it. Projecting opaque outputs into ``SoftwareDeliveryRunView`` for the
+#161 renderers remains a separate pack-specific adapter — ``app.py`` cannot
+import a pack-named renderer without breaking its own source scan.
 
 #### Tool invocation boundary (#92 vs #95 vs #161 vs #170)
 
 - **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
   ``InvokeTool`` that treats arguments and results as opaque strings.
-- **#95** — orchestration over a retrieved evidence bundle (delivered); chat-time
-  tool selection remains open ([#170](https://github.com/mahmoudazaid/Kernector/issues/170)).
+- **#95** — orchestration over a retrieved evidence bundle (delivered).
 - **#161** — presentation-only renderers and the generic ``ToolCallView`` envelope;
-  testable with fixtures; blocked on #170 for chat-turn integration.
+  testable with fixtures.
 - **#170** — chat intent → retrieve/orchestrate → populate
-  ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries; a
-  pack-specific projection adapter (not in #161) parses outcomes into typed
-  views for renderers.
+  ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
+  (delivered). The pack-specific projection adapter that would feed the #161
+  renderers from those outputs is still open.
 
 ### Grounded ask: system policy vs optional task prompts
 
