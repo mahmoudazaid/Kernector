@@ -58,6 +58,7 @@ class AskKnowledge:
         default_retrieval_limit: int,
         relevance_threshold: float,
         max_input_length: int,
+        keep_retrieved_hits: bool = False,
     ) -> None:
         self._rewrite_and_retrieve = rewrite_and_retrieve
         self._ask_service = ask_service
@@ -65,6 +66,7 @@ class AskKnowledge:
         self._default_retrieval_limit = default_retrieval_limit
         self._relevance_threshold = relevance_threshold
         self._max_input_length = max_input_length
+        self._keep_retrieved_hits = keep_retrieved_hits
 
     def execute(
         self,
@@ -216,7 +218,13 @@ class AskKnowledge:
         confidently from noise; the threshold is what makes the
         insufficient-knowledge path reachable in production rather than only
         against an empty collection.
+
+        When ``keep_retrieved_hits`` is true (Hybrid mode), raw cosine
+        eligibility was already applied before fusion; fused ranking scores are
+        kept as already-qualified evidence.
         """
+        if self._keep_retrieved_hits:
+            return tuple(hits)
         return tuple(hit for hit in hits if hit.score >= self._relevance_threshold)
 
     def _resolve_variant(self, prompt_key: str | None) -> PromptVariant | None:

@@ -27,9 +27,12 @@ export HYBRID_SEARCH_ENABLED=true
 export HYBRID_ALPHA=0.5   # BM25 weight; 1=BM25 only, 0=vector only
 ```
 
-When hybrid is on, hit scores are fused values in `[0, 1]` (not raw cosine).
-Keep `RELEVANCE_THRESHOLD` at its default `0.0` unless you retune for fused
-scores. Metadata filters still apply to both sides.
+When hybrid is on, `RELEVANCE_THRESHOLD` remains a **raw cosine** eligibility
+floor for the vector channel (applied before normalization/fusion). Hybrid hit
+scores returned to ask/tool paths are fused ranking scores in `[0, 1]`, not
+absolute relevance probabilities — do not retune the threshold against those
+fused values. Lexical eligibility is token-overlap BM25. Metadata filters still
+apply to both sides.
 
 Streamlit caches one vector store (`st.cache_resource`) and injects it into chat
 retrieval and document create/replace/delete so the in-memory BM25 index stays

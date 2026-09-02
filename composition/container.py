@@ -269,6 +269,9 @@ def build_retrieve_knowledge(
         hybrid_enabled=hybrid,
         lexical_index=lexical_index,
         hybrid_alpha=alpha,
+        vector_score_floor=(
+            settings.retrieval.relevance_threshold if hybrid and alpha < 1.0 else None
+        ),
     )
 
 
@@ -598,6 +601,7 @@ def build_ask_knowledge(
         default_retrieval_limit=settings.retrieval.limit,
         relevance_threshold=settings.retrieval.relevance_threshold,
         max_input_length=settings.max_input_length,
+        keep_retrieved_hits=settings.retrieval.hybrid_enabled,
     )
 
 
@@ -687,12 +691,17 @@ def _relevant_retrieve(
     ``AskKnowledge._relevant`` documents. There is no ``metadata_filters``
     channel, which is what makes narrowing to one source kind structurally
     impossible for the caller.
+
+    In Hybrid mode, raw cosine eligibility is applied inside retrieve before
+    fusion; this binder keeps already-qualified hits and does not re-apply the
+    raw cosine threshold to fused ranking scores.
     """
     rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
         settings, vector_store=vector_store
     )
     threshold = settings.retrieval.relevance_threshold
     limit = settings.retrieval.limit
+    keep_retrieved = settings.retrieval.hybrid_enabled
 
     def retrieve(query: str) -> tuple[ScoredChunk, ...]:
         from application.contracts import RetrieveRequest
@@ -700,6 +709,8 @@ def _relevant_retrieve(
         response = rewrite_and_retrieve.execute(
             RetrieveRequest(query=query, retrieval_limit=limit)
         )
+        if keep_retrieved:
+            return tuple(response.hits)
         return tuple(hit for hit in response.hits if hit.score >= threshold)
 
     return retrieve
