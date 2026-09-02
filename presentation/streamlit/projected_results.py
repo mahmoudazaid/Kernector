@@ -11,8 +11,14 @@ from composition.software_delivery_tools import SoftwareDeliveryRunView
 from presentation.streamlit.tool_run_panel import render_software_delivery_tool_results
 
 
-def render_projected_results(view: SoftwareDeliveryRunView | None) -> None:
-    """Render projected Software Delivery panels when a typed view is present."""
+def render_projected_results(
+    view: SoftwareDeliveryRunView | None, *, key_prefix: str
+) -> None:
+    """Render projected Software Delivery panels when a typed view is present.
+
+    ``key_prefix`` must be unique per chat turn so Streamlit download buttons
+    do not collide when history and live exports render in one run.
+    """
     if view is None:
         return
-    render_software_delivery_tool_results(view)
+    render_software_delivery_tool_results(view, key_prefix=key_prefix)

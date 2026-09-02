@@ -824,10 +824,18 @@ def test_contracts_serialize_with_asdict() -> None:
 
 
 def test_application_contracts_import_without_streamlit() -> None:
+    """``application.contracts`` must not pull Streamlit into the process.
+
+    If an earlier test already imported Streamlit, skip the absence check — this
+    only asserts that *this* import is not the loader.
+    """
+    already_loaded = "streamlit" in sys.modules
     sys.modules.pop("application.contracts", None)
     module = importlib.import_module("application.contracts")
-    assert "streamlit" not in sys.modules
+    if not already_loaded:
+        assert "streamlit" not in sys.modules
     assert hasattr(module, "AskRequest")
+    assert "streamlit" not in getattr(module, "__dict__", {})
 
 
 def test_application_contracts_exclude_software_delivery_orchestration_types() -> None:

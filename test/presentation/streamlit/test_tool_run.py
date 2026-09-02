@@ -210,4 +210,15 @@ def test_the_chat_flow_builds_the_tool_augmented_ask() -> None:
 def test_render_software_delivery_tool_results_accepts_fixture_view() -> None:
     from presentation.streamlit.tool_run_panel import render_software_delivery_tool_results
 
-    render_software_delivery_tool_results(_fixture_view())
+    render_software_delivery_tool_results(_fixture_view(), key_prefix="export_fixture")
+
+
+def test_app_wires_per_turn_export_key_prefix_from_message_index() -> None:
+    """History uses the loop index; live uses the pending assistant index."""
+    import presentation.streamlit.app as app_mod
+
+    source = Path(app_mod.__file__).read_text(encoding="utf-8")
+    assert 'key_prefix=f"export_{index}"' in source
+    assert 'key_prefix=f"export_{len(st.session_state.messages)}"' in source
+    assert "software_delivery" not in source
+    assert "render_software_delivery_tool_results" not in source
