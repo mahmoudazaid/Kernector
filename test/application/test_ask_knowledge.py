@@ -211,6 +211,72 @@ def test_run_meta_query_rewritten_false_when_queries_match() -> None:
     assert response.run.citation_count == 1
 
 
+def test_run_meta_query_rewritten_false_for_whitespace_only_difference() -> None:
+    chat = _RecordingChat("Use the restart runbook.")
+
+    response = _use_case(
+        (_hit(),),
+        chat,
+        original_query="what broke?\n",
+        rewritten_query="what broke?",
+    ).execute(AskRequest(prompt_key=None, query="How do I restart?"))
+
+    assert response.run is not None
+    assert response.run.query_rewritten is False
+
+
+def test_insufficient_path_uses_same_was_rewritten_invariant() -> None:
+    chat = _RecordingChat("should not be used")
+
+    whitespace = _use_case(
+        (),
+        chat,
+        original_query="what broke?\n",
+        rewritten_query="what broke?",
+    ).execute(AskRequest(prompt_key=None, query="What is the secret formula?"))
+    assert whitespace.run is not None
+    assert whitespace.run.outcome == "insufficient"
+    assert whitespace.run.query_rewritten is False
+
+    rewritten = _use_case(
+        (),
+        chat,
+        original_query="what broke?",
+        rewritten_query="payment service failure last week",
+    ).execute(AskRequest(prompt_key=None, query="What is the secret formula?"))
+    assert rewritten.run is not None
+    assert rewritten.run.outcome == "insufficient"
+    assert rewritten.run.query_rewritten is True
+
+
+def test_run_meta_does_not_retain_query_or_chunk_markers() -> None:
+    query_marker = "UNIQUE_QUERY_MARKER_leak_check_179"
+    chunk_marker = "UNIQUE_CHUNK_MARKER_leak_check_179"
+    chat = _RecordingChat("safe answer without markers")
+
+    response = _use_case(
+        (_hit(content=chunk_marker),),
+        chat,
+        original_query=query_marker,
+        rewritten_query=f"{query_marker} rewritten",
+    ).execute(AskRequest(prompt_key=None, query=query_marker))
+
+    assert response.run is not None
+    assert response.run.query_rewritten is True
+    assert isinstance(response.run.query_rewritten, bool)
+    assert query_marker not in repr(response.run)
+    assert query_marker not in str(response.run)
+    assert chunk_marker not in repr(response.run)
+    assert chunk_marker not in str(response.run)
+
+    from presentation.streamlit.run_details import run_detail_lines
+
+    joined = "\n".join(run_detail_lines(response.run))
+    assert query_marker not in joined
+    assert chunk_marker not in joined
+    assert "Query rewritten: yes" in joined
+
+
 def test_run_meta_includes_bound_request_id() -> None:
     chat = _RecordingChat("ok")
     _bound, token = observability.bind_request_id("req-ask-meta")

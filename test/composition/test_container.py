@@ -63,7 +63,7 @@ from composition import (
     load_runtime_settings,
 )
 from domain.knowledge import SourceType
-from domain.models import AskResult, Message
+from domain.models import AskResult, Message, Usage
 from domain.ports import ChatModel, PromptRepository, VectorStore
 from infrastructure.config import load_settings
 from infrastructure.embeddings.openrouter import OpenRouterEmbeddings
@@ -587,6 +587,57 @@ def test_a_chat_tool_turn_runs_the_real_pack_chain(
     assert "**Risk 62/100 (high)**" in response.answer
     assert response.answer.endswith("# Test Cases\n")
     assert [citation.reference.source_id for citation in response.citations] == ["US-1"]
+
+
+def test_generate_test_case_turn_receives_model_metadata_via_recording_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public container wiring: generate tool uses RecordingChatModel → RunMeta."""
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    class _GeneratingChat:
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            payload = {
+                "test_cases": [
+                    {
+                        "title": "Lock after five failed MFA attempts",
+                        "steps": [
+                            "Sign in with a valid password.",
+                            "Fail MFA five times.",
+                        ],
+                        "expected": "The account is locked.",
+                        "evidence_ids": ["e0"],
+                    }
+                ]
+            }
+            return AskResult(
+                content=json.dumps(payload),
+                model="gen-model",
+                latency_ms=55,
+                usage=Usage(total_tokens=12),
+            )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_GeneratingChat())  # type: ignore[arg-type]
+    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+
+    assert response.run is not None
+    assert response.run.path == "tools"
+    assert response.run.model == "gen-model"
+    assert response.run.latency_ms == 55
+    assert response.run.usage is not None
+    assert response.run.usage.total_tokens == 12
+    assert response.run.hit_count == 1
+    assert response.run.citation_count == 1
+    assert GENERATE_TEST_CASES_TOOL in response.run.tools
 
 
 def test_a_general_chat_query_never_reaches_a_tool(

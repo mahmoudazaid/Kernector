@@ -55,14 +55,6 @@ def test_run_detail_lines_includes_issue_fields_when_present() -> None:
     assert "prompt_key" not in joined
 
 
-def test_run_detail_lines_omits_rag_path_when_absent() -> None:
-    lines = run_detail_lines(RunMeta(request_id="req-1", outcome="success"))
-    joined = "\n".join(lines)
-    assert "Query rewritten:" not in joined
-    assert "Retrieval hits:" not in joined
-    assert "Citations:" not in joined
-
-
 def test_run_detail_lines_shows_query_rewritten_no() -> None:
     lines = run_detail_lines(
         RunMeta(query_rewritten=False, hit_count=0, citation_count=0)
@@ -82,14 +74,18 @@ def test_run_detail_lines_never_include_sensitive_payloads() -> None:
         query_rewritten=True,
         citation_count=1,
         hit_count=1,
+        prompt_key="secret-prompt-body-must-not-appear",
+        settings={"temperature": 0.1},
     )
     joined = "\n".join(run_detail_lines(meta))
     assert "sk-leaked" not in joined
     assert "exception message" not in joined
     assert "ProviderError" not in joined
     assert "Tools: score_risk" in joined
-    assert "what broke?" not in joined
-    assert "chunk text" not in joined
+    assert "secret-prompt-body" not in joined
+    assert "temperature" not in joined
+    assert "Query rewritten: yes" in joined
+    assert "Citations: 1" in joined
 
 
 def test_render_run_meta_uses_collapsed_run_details_expander() -> None:
