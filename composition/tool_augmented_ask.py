@@ -1,4 +1,4 @@
-"""Chat-time tool and analysis selection layered over the grounded ask path.
+"""Chat-time tool selection layered over the grounded ask path.
 
 ``AskKnowledge`` cannot make this decision: ``application/`` may not import
 ``packs``, and the vocabulary that recognises a domain workflow request is
@@ -70,23 +70,21 @@ class GroundedAsk(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ToolRunOutcome:
-    """What one completed tool or analysis run contributes to an answer.
+    """What one completed tool run contributes to an answer.
 
     Attributes:
         answer (str): Deterministic text built from typed results — never a
-            second model call for tool chains; analysis already produced its
-            structured view before formatting.
+            second model call for tool chains.
         citations (tuple[Citation, ...]): Provenance for the evidence the run was
             grounded in.
         tool_outputs (tuple[InvokeToolResponse, ...]): One opaque entry per
-            successful tool invocation, in call order. Empty for analysis.
+            successful tool invocation, in call order.
         run (RunMeta | None): Observability for a model call made during the
-            run. Tool chains leave this ``None``; requirements analysis projects
-            ``AskResult`` metadata here.
+            run. Tool chains leave this ``None``.
         run_view (SoftwareDeliveryRunView | None): Typed presentation projection
             for Software Delivery tool chains. Not placed on ``AskResponse``;
-            callers consume it via the composition side path. Analysis and RAG
-            leave this ``None``.
+            callers consume it via the composition side path. RAG leaves this
+            ``None``.
     """
 
     answer: str
@@ -116,13 +114,6 @@ class ToolRunner(Protocol):
         """Run the chain and project its typed results onto one outcome."""
 
 
-class AnalysisRunner(Protocol):
-    """Run requirements analysis and project the view onto one outcome."""
-
-    def run(self, requirements: str) -> ToolRunOutcome:
-        """Analyze ``requirements`` and return a chat-ready outcome."""
-
-
 SelectToolIntent = Callable[[str], ToolSelection | None]
 
 
@@ -135,10 +126,7 @@ class ToolAugmentedAsk:
         runner (ToolRunner): Retrieves evidence and runs the tool chain for a
             matched generate/risk intent.
         select (SelectToolIntent): The pack's deterministic intent policy.
-        analysis_runner (AnalysisRunner | None): Requirements analysis path when
-            the pack enables it; absent means analysis intents fall through to
-            grounded RAG.
-        pack_id (str | None): Pack identifier logged on tool/analysis routes.
+        pack_id (str | None): Pack identifier logged on tool routes.
     """
 
     def __init__(
@@ -147,13 +135,11 @@ class ToolAugmentedAsk:
         *,
         runner: ToolRunner,
         select: SelectToolIntent,
-        analysis_runner: AnalysisRunner | None = None,
         pack_id: str | None = None,
     ) -> None:
         self._ask = ask
         self._runner = runner
         self._select = select
-        self._analysis_runner = analysis_runner
         self._pack_id = pack_id
         self._pending_run_view: SoftwareDeliveryRunView | None = None
 
@@ -174,8 +160,8 @@ class ToolAugmentedAsk:
     ) -> AskResponse:
         """Run the workflow the query names, or fall through to grounded RAG.
 
-        ``request.history`` is deliberately not forwarded to the tool or analysis
-        paths: both are grounded in retrieved evidence, not in the conversation.
+        ``request.history`` is deliberately not forwarded to the tool path: it is
+        grounded in retrieved evidence, not in the conversation.
 
         An empty corpus answers with the grounded path's own
         insufficient-knowledge sentence rather than a tool-flavoured variant —
@@ -188,7 +174,7 @@ class ToolAugmentedAsk:
 
         Delegation to ``AskKnowledge`` logs ``outcome=delegated``; the nested ask
         emits the terminal ``success`` / ``insufficient`` / ``error`` event.
-        Tool and analysis paths log their own terminal outcomes.
+        Tool paths log their own terminal outcomes.
         """
         self._pending_run_view = None
         if request.prompt_key is not None:
@@ -225,67 +211,6 @@ class ToolAugmentedAsk:
                     response.run,
                     outcome=response.run.outcome if response.run and response.run.outcome else "success",
                     path="rag",
-                ),
-            )
-
-        if getattr(selection, "analyze_requirements", False):
-            if self._analysis_runner is None:
-                response = self._ask.execute(request, settings)
-                log_operation(
-                    logger, operation="ask_turn", outcome="delegated", path="rag"
-                )
-                return AskResponse(
-                    answer=response.answer,
-                    citations=response.citations,
-                    tool_outputs=response.tool_outputs,
-                    run=_merge_run(
-                        response.run,
-                        outcome=(
-                            response.run.outcome
-                            if response.run and response.run.outcome
-                            else "success"
-                        ),
-                        path="rag",
-                    ),
-                )
-            target = getattr(selection, "analysis_target", "") or request.query
-            try:
-                outcome = self._analysis_runner.run(target)
-            except InsufficientEvidenceError:
-                log_operation(
-                    logger,
-                    operation="ask_turn",
-                    outcome="insufficient",
-                    path="analysis",
-                    pack=self._pack_id,
-                )
-                return AskResponse(
-                    answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
-                    run=_merge_run(
-                        None,
-                        outcome="insufficient",
-                        path="analysis",
-                        pack=self._pack_id,
-                        hit_count=0,
-                    ),
-                )
-            log_operation(
-                logger,
-                operation="ask_turn",
-                outcome="success",
-                path="analysis",
-                pack=self._pack_id,
-            )
-            return AskResponse(
-                answer=outcome.answer,
-                citations=outcome.citations,
-                tool_outputs=outcome.tool_outputs,
-                run=_merge_run(
-                    outcome.run,
-                    outcome="success",
-                    path="analysis",
-                    pack=self._pack_id,
-                    tools=_tool_names(outcome.tool_outputs),
                 ),
             )
 

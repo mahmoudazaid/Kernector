@@ -172,25 +172,6 @@ def test_composition_does_not_reexport_raw_load_settings() -> None:
     assert callable(composition.load_runtime_settings)
 
 
-@pytest.mark.parametrize(
-    "module_path",
-    [
-        REPO_ROOT / "packs/software_delivery/requirements_analysis.py",
-        REPO_ROOT / "packs/software_delivery/requirements_analysis_contracts.py",
-        REPO_ROOT / "packs/software_delivery/requirements_analysis_prompt.py",
-    ],
-    ids=lambda path: path.name,
-)
-def test_requirements_analysis_modules_import_only_domain_and_stdlib(
-    module_path: Path,
-) -> None:
-    forbidden = find_forbidden_imports(module_path, LAYER_RULES["packs"])
-    assert not forbidden, (
-        f"{module_path.relative_to(REPO_ROOT)} imports {sorted(forbidden)}, "
-        "which packs/ may not depend on"
-    )
-
-
 def test_chat_intent_imports_only_domain_and_stdlib() -> None:
     """Chat-time intent selection is pack vocabulary, so it stays pack-shaped."""
     module_path = REPO_ROOT / "packs/software_delivery/chat_intent.py"
