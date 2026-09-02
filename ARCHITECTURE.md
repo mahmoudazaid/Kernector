@@ -168,10 +168,14 @@ alone are not sufficient, and distant verb∩artifact co-occurrence is ignored.
 Risk routing accepts explicit score/assessment requests (for example
 ``assess/score/evaluate the risk``, ``what is the risk score for <target>``,
 ``how risky is <target>``) and rejects conceptual or read-only questions.
-Scoped negations (``do not``, ``don't``/``dont``, ``never``, ``not <artifact>``,
-``without creating/generating…``), how-to forms (``How do I create test
-cases?``), and read-only transforms (``Create a summary/list of the existing
-test cases``) never invoke tools. Determinism is the point: a chat-time tool
+Scoped negations cancel only when they govern the matched action in the same
+clause (``Do not create test cases``, ``Never generate tests``, ``Do not assess
+the risk``). Constraint wording after a match (``Create test cases that do not
+require admin access``) and negation in another clause (``Create tests; never
+use production credentials``) do not cancel. Mixed requests keep the
+non-negated intent (``Do not generate tests; assess the risk for AUTH-101``
+selects risk-only). How-to forms and read-only transforms
+(``Create a summary/list of the existing test cases``) never invoke tools. Determinism is the point: a chat-time tool
 call is a side effect, and an explicit table is reproducible, testable offline,
 and narrow in the safe direction — an unmatched query simply stays on the
 grounded path. Vocabulary stays in the pack because "test cases" and "risk

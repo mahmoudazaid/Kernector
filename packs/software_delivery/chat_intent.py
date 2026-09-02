@@ -58,16 +58,12 @@ _RISK_EXPLANATORY = re.compile(
     r")"
 )
 
-_SCOPED_NEGATION = re.compile(
-    r"(?:"
-    r"\b(?:do not|dont|never)\b"
-    r"|\bnot\s+(?:a |an |the |any |more )?(?:"
-    + _TEST_ARTIFACTS
-    + r")\b"
-    r"|\bwithout\s+(?:a |an |the )?(?:creating|generating|writing|producing|"
-    r"drafting|building)\b"
-    r")"
-)
+# Negation that governs the matched action (must sit immediately before it
+# within the same clause). Constraint wording after the match ("that do not
+# require…") and negation in another clause ("…; never use…") do not cancel.
+_GOVERNING_NEGATOR = re.compile(r"(?:do not|dont|never)\s*$")
+
+_CLAUSE_BOUNDARY = re.compile(r"[;.!?\n]")
 
 _HOWTO = re.compile(
     r"(?:"
@@ -129,14 +125,40 @@ def _normalize(query: str) -> str:
     return " ".join(text.split())
 
 
+def _clause_prefix(text: str, start: int) -> str:
+    """Return the text from the start of the containing clause to ``start``."""
+    prefix = text[:start]
+    boundary = -1
+    for match in _CLAUSE_BOUNDARY.finditer(prefix):
+        boundary = match.end() - 1
+    if boundary >= 0:
+        return prefix[boundary + 1 :]
+    return prefix
+
+
+def _match_is_governed_by_negation(text: str, match: re.Match[str]) -> bool:
+    """True when a negator in the same clause cancels this matched action."""
+    return bool(_GOVERNING_NEGATOR.search(_clause_prefix(text, match.start()).rstrip()))
+
+
+def _first_active_match(
+    pattern: re.Pattern[str], text: str
+) -> re.Match[str] | None:
+    """Return the first match that is not cancelled by intent-local negation."""
+    for match in pattern.finditer(text):
+        if not _match_is_governed_by_negation(text, match):
+            return match
+    return None
+
+
 def select_chat_intent(query: str) -> ChatToolSelection | None:
     """Return the tool chain ``query`` asks for, or ``None`` for grounded chat.
 
     Test generation requires a same-clause creation verb bound to a test
-    artifact (optional articles/style modifiers only between them). Gherkin,
-    cucumber, feature file, test plan, or test cases alone are not enough.
-    Risk routing accepts explicit score/assessment requests, not explanatory
-    questions about how scoring works.
+    artifact (optional articles/style modifiers only between them). Negation
+    cancels only when it governs that matched action; constraint wording and
+    other-clause negation do not. When generation is cancelled but an explicit
+    risk request remains active, the risk-only chain is selected.
 
     Args:
         query (str): The user's chat message, unmodified.
@@ -153,15 +175,16 @@ def select_chat_intent(query: str) -> ChatToolSelection | None:
         return None
     if _HOWTO.search(text):
         return None
-    if _SCOPED_NEGATION.search(text):
-        return None
     if _READ_ONLY_TRANSFORM.search(text):
         return None
-    if _TEST_GENERATION_REQUEST.search(text):
+
+    generation = _first_active_match(_TEST_GENERATION_REQUEST, text)
+    if generation is not None:
         style: TestCaseStyle = "gherkin" if _GHERKIN_STYLE.search(text) else "steps"
         return ChatToolSelection(generate_tests=True, output_style=style)
+
     if _RISK_EXPLANATORY.search(text):
         return None
-    if _RISK_REQUEST.search(text):
+    if _first_active_match(_RISK_REQUEST, text) is not None:
         return ChatToolSelection(generate_tests=False, output_style="steps")
     return None
