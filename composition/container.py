@@ -703,6 +703,13 @@ def build_tool_augmented_ask(
     if not software_delivery_tools_enabled(settings):
         return CorrelatedAsk(ask)
 
+    import importlib
+
+    registration = importlib.import_module("packs.software_delivery.registration")
+    # Tools invoke ChatModel through the opaque boundary; record safe RunMeta so
+    # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
+    model_calls = RecordingChatModel(chat_model)
+
     def orchestrate(
         *,
         target: str,
@@ -717,8 +724,10 @@ def build_tool_augmented_ask(
         )
         from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
 
+        # Pass the recording wrapper so any future path that builds tools from
+        # chat_model (when invoke is absent) still contributes to RunMeta.
         orchestrator = build_orchestrate_software_delivery(
-            settings, chat_model=chat_model, invoke=invoke
+            settings, chat_model=model_calls, invoke=invoke
         )
         intent = (
             SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
@@ -734,12 +743,6 @@ def build_tool_augmented_ask(
             )
         )
 
-    import importlib
-
-    registration = importlib.import_module("packs.software_delivery.registration")
-    # Tools invoke ChatModel through the opaque boundary; record AskResult so
-    # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
-    model_calls = RecordingChatModel(chat_model)
     runner = PackSoftwareDeliveryChat(
         retrieve=_relevant_retrieve(settings, vector_store=vector_store),
         invoke=build_opaque_invoke(settings, chat_model=model_calls),

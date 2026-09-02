@@ -10,26 +10,37 @@ structurally, never imported: this module is reachable from
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Protocol
 
 from application.citations import build_citations
-from application.contracts import InvokeToolResponse, RunMeta
+from application.contracts import Citation, InvokeToolResponse, RunMeta
 from application.errors import ApplicationValidationError, InsufficientEvidenceError
-from composition.recording_chat import RecordingChatModel
 from composition.software_delivery_tools import (
     RiskFactorView,
     RiskScoreView,
     SoftwareDeliveryRunView,
-    TestCaseView,
     TestCasesView,
+    TestCaseView,
 )
 from composition.tool_augmented_ask import ToolRunOutcome
 from composition.tool_runs import ToolCallView
 from domain.errors import DomainValidationError
 from domain.knowledge import ScoredChunk
-from domain.models import AskResult
 
 OpaqueInvoke = Callable[[str, Mapping[str, object]], str]
+
+
+class ModelCallRecorder(Protocol):
+    """Per-run lifecycle for safe model-call metadata on tool turns."""
+
+    def clear(self) -> None:
+        """Discard any leftover recording from a prior run."""
+        ...
+
+    def consume(self) -> RunMeta | None:
+        """Return and clear metadata recorded during the current run."""
+        ...
 
 # Duplicated from the pack's TEST_CASE_STYLES on purpose: validating here would
 # otherwise mean importing the pack at ``import composition`` time. The drift is
@@ -265,9 +276,10 @@ class PackSoftwareDeliveryChat:
             ledger belongs to that run alone.
         orchestrate (Orchestrate): Lazily-imported pack call that builds the
             evidence bundle and runs the chain.
-        model_calls (RecordingChatModel | None): Shared recorder for ChatModel
-            calls made inside tools (e.g. test generation). When present, the
-            last ``AskResult`` becomes ``ToolRunOutcome.run``.
+        model_calls (ModelCallRecorder | None): Shared recorder for ChatModel
+            calls made inside tools (e.g. test generation). Cleared at run
+            start and on every exit; consumed metadata is merged into
+            ``ToolRunOutcome.run`` with retrieval/citation counts.
     """
 
     def __init__(
@@ -276,7 +288,7 @@ class PackSoftwareDeliveryChat:
         retrieve: RetrieveHits,
         invoke: OpaqueInvoke,
         orchestrate: Orchestrate,
-        model_calls: RecordingChatModel | None = None,
+        model_calls: ModelCallRecorder | None = None,
     ) -> None:
         self._retrieve = retrieve
         self._invoke = invoke
@@ -304,42 +316,62 @@ class PackSoftwareDeliveryChat:
                 "output_style must be one of "
                 f"{sorted(SOFTWARE_DELIVERY_TEST_STYLES)}"
             )
-        hits = require_evidence(self._retrieve(target))
-        recorder = ToolCallRecorder(self._invoke)
+        if self._model_calls is not None:
+            self._model_calls.clear()
         try:
-            response = self._orchestrate(
-                target=target,
-                hits=hits,
-                generate_tests=generate_tests,
-                output_style=output_style,
-                invoke=recorder,
+            hits = require_evidence(self._retrieve(target))
+            recorder = ToolCallRecorder(self._invoke)
+            try:
+                response = self._orchestrate(
+                    target=target,
+                    hits=hits,
+                    generate_tests=generate_tests,
+                    output_style=output_style,
+                    invoke=recorder,
+                )
+            except (DomainValidationError, RuntimeError) as error:
+                raise ToolRunFailedError(
+                    _TOOL_RUN_FAILED_MESSAGE, tool_outputs=recorder.tool_outputs
+                ) from error
+            # Citations come from the raw hits, not from the bundle orchestration
+            # builds: that merges chunks by (source_type, source_id) and loses
+            # chunk_index, so row-level provenance only survives out here.
+            citations = build_citations(hits)
+            model_meta = (
+                None if self._model_calls is None else self._model_calls.consume()
             )
-        except (DomainValidationError, RuntimeError) as error:
-            if self._model_calls is not None:
-                self._model_calls.consume_last()
-            raise ToolRunFailedError(
-                _TOOL_RUN_FAILED_MESSAGE, tool_outputs=recorder.tool_outputs
-            ) from error
-        # Citations come from the raw hits, not from the bundle orchestration
-        # builds: that merges chunks by (source_type, source_id) and loses
-        # chunk_index, so row-level provenance only survives out here.
-        return ToolRunOutcome(
-            answer=tool_run_answer(response, tool_outputs=recorder.tool_outputs),
-            citations=build_citations(hits),
-            tool_outputs=recorder.tool_outputs,
-            run=_run_meta_from_model_call(self._model_calls),
-            run_view=project_software_delivery_run_view(
+            answer = tool_run_answer(
                 response, tool_outputs=recorder.tool_outputs
-            ),
-        )
+            )
+            run_view = project_software_delivery_run_view(
+                response, tool_outputs=recorder.tool_outputs
+            )
+            return ToolRunOutcome(
+                answer=answer,
+                citations=citations,
+                tool_outputs=recorder.tool_outputs,
+                run=_run_meta_for_tool_outcome(
+                    model_meta,
+                    hits=hits,
+                    citations=citations,
+                ),
+                run_view=run_view,
+            )
+        finally:
+            if self._model_calls is not None:
+                self._model_calls.clear()
 
 
-def _run_meta_from_model_call(
-    model_calls: RecordingChatModel | None,
-) -> RunMeta | None:
-    if model_calls is None:
-        return None
-    result: AskResult | None = model_calls.consume_last()
-    if result is None:
-        return None
-    return RunMeta.from_result(result)
+def _run_meta_for_tool_outcome(
+    model_meta: RunMeta | None,
+    *,
+    hits: Sequence[ScoredChunk],
+    citations: Sequence[Citation],
+) -> RunMeta:
+    """Attach retrieval/citation counts; preserve any model latency/tokens."""
+    base = model_meta if model_meta is not None else RunMeta()
+    return replace(
+        base,
+        hit_count=len(hits),
+        citation_count=len(citations),
+    )
