@@ -10,8 +10,10 @@ from application.ask_service import AskService
 from composition.requirements_analysis import (
     PackRequirementsAnalyzer,
     RequirementsAnalyzer,
+    analysis_citations,
+    format_requirements_analysis_answer,
 )
-from application.contracts import IngestRequest, IngestResponse
+from application.contracts import IngestRequest, IngestResponse, RunMeta
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
@@ -40,7 +42,7 @@ from composition.software_delivery_chat import (
     PackSoftwareDeliveryChat,
 )
 from composition.software_delivery_tools import software_delivery_tools_enabled
-from composition.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk
+from composition.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk, ToolRunOutcome
 from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     build_tool_registry,
@@ -721,8 +723,29 @@ def build_tool_augmented_ask(
         invoke=build_opaque_invoke(settings, chat_model=chat_model),
         orchestrate=orchestrate,
     )
+    analyzer = build_analyze_requirements(
+        settings, chat_model=chat_model, vector_store=vector_store
+    )
+
+    class _AnalysisRunner:
+        def run(self, requirements: str) -> ToolRunOutcome:
+            view = analyzer.analyze(requirements)
+            run = (
+                RunMeta.from_result(view.ask_result)
+                if view.ask_result is not None
+                else None
+            )
+            return ToolRunOutcome(
+                answer=format_requirements_analysis_answer(view),
+                citations=analysis_citations(view),
+                run=run,
+            )
+
     return ToolAugmentedAsk(
-        ask, runner=runner, select=registration.build_chat_intent_selector()
+        ask,
+        runner=runner,
+        select=registration.build_chat_intent_selector(),
+        analysis_runner=_AnalysisRunner(),
     )
 
 

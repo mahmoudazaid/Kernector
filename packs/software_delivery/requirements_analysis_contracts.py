@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from domain.knowledge import ScoredChunk, SourceReference
+from domain.models import AskResult
 from packs.software_delivery.errors import RequirementsAnalysisValidationError
 from packs.software_delivery.limits import (
     MAX_ANALYSIS_SUMMARY_CHARS,
@@ -111,6 +112,7 @@ class RequirementsAnalysisResult:
     risks: Sequence[RequirementsFinding]
     clarification_questions: Sequence[RequirementsFinding]
     evidence: Sequence[ScoredChunk]
+    ask_result: AskResult | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.summary, str) or not self.summary.strip():
@@ -118,6 +120,10 @@ class RequirementsAnalysisResult:
         if len(self.summary) > MAX_ANALYSIS_SUMMARY_CHARS:
             raise ValueError(
                 f"summary must be at most {MAX_ANALYSIS_SUMMARY_CHARS} characters"
+            )
+        if self.ask_result is not None and not isinstance(self.ask_result, AskResult):
+            raise ValueError(
+                f"ask_result must be an AskResult, got {self.ask_result!r}"
             )
         object.__setattr__(
             self,

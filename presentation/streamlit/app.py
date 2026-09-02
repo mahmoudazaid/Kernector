@@ -9,36 +9,28 @@ from application.contracts import Citation, InvokeToolResponse
 from application.errors import ConfigurationError
 from composition import (
     GroundedAsk,
-    RequirementsAnalysisFindingView,
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
-    build_analyze_requirements,
     build_chat_model,
     build_prompt_repository,
     build_tool_augmented_ask,
     load_runtime_settings,
     probe_ollama,
-    requirements_analysis_enabled,
 )
-from domain.models import Message
-from domain.ports import ChatModel, PromptRepository
-from presentation.streamlit.analysis_turn import (
-    AnalysisContext,
-    StoredAnalysisResult,
-    analysis_result_after_successful_document_mutation,
-    analysis_result_for_display,
-    finding_bullets,
-    run_analysis_turn,
+from domain.ports import PromptRepository
+from presentation.streamlit.ask_turn import (
+    apply_ask_turn_to_session_messages,
+    messages_for_model_history,
+    run_ask_turn,
+    tool_output_lines,
 )
-from presentation.streamlit.ask_turn import run_ask_turn, tool_output_lines
 from presentation.streamlit.components import (
     render_export_actions,
     render_model_settings,
     render_reply,
     render_run_meta,
 )
-from presentation.streamlit.modes import default_mode_index, mode_options
 from presentation.streamlit.upload_ingest import (
     UploadIngestResult,
     create_new_document,
@@ -56,7 +48,6 @@ class _SidebarState:
     model: str
     ollama_base_url: str
     settings: Mapping[str, object]
-    prompt_key: str | None
 
 
 @st.cache_resource
@@ -88,9 +79,7 @@ def _render_citations(citations: Sequence[Citation]) -> None:
                 st.caption(citation.quote)
 
 
-def _render_sidebar(settings: Settings, repository: PromptRepository) -> _SidebarState:
-    prompts = repository.all()
-
+def _render_sidebar(settings: Settings) -> _SidebarState:
     providers = available_providers()
     provider = st.radio(
         "Provider",
@@ -101,7 +90,6 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
 
     if st.button("New chat", icon=":material/add_comment:", width="stretch"):
         st.session_state.messages = []
-        st.session_state.pop(_ANALYSIS_RESULT_KEY, None)
 
     selected_model = settings.openrouter.model
     ollama_base_url = settings.ollama.base_url
@@ -156,30 +144,13 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
             st.caption("No OpenRouter models available")
 
     settings_values = render_model_settings(provider)
-
-    # The (key, label) pairs are the options themselves. Mapping `None` onto a
-    # blank-string sentinel would collide with a pack whose frontmatter `key:`
-    # is empty — nothing validates that — and the collision silently turns
-    # General into that pack's prompt.
-    options = mode_options(prompts)
-    selected_option = st.selectbox(
-        "Mode",
-        options=options,
-        format_func=lambda option: option[1],
-        index=default_mode_index(options),
-    )
-    prompt_key = selected_option[0]
-    if prompt_key is None:
-        st.caption("General grounded chat over ingested documents.")
-    else:
-        st.caption(prompts[prompt_key].description)
+    st.caption("General grounded chat over ingested documents.")
 
     return _SidebarState(
         provider=provider,
         model=selected_model,
         ollama_base_url=ollama_base_url,
         settings=settings_values,
-        prompt_key=prompt_key,
     )
 
 
@@ -200,6 +171,9 @@ def _render_tool_outputs(tool_outputs: Sequence[InvokeToolResponse]) -> None:
 def _render_history() -> None:
     for index, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
+            if message.get("display_only"):
+                st.error(message["content"])
+                continue
             if message["role"] == "assistant":
                 render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
@@ -212,18 +186,13 @@ def _render_history() -> None:
 
 def _handle_input(
     ask: GroundedAsk,
-    prompt_key: str | None,
     settings: Mapping[str, object],
-    off_topic_marker: str | None,
 ) -> None:
     user_input = st.chat_input("Start typing...")
     if not user_input:
         return
 
-    history = [
-        Message(role=m["role"], content=m["content"])
-        for m in st.session_state.messages
-    ]
+    history = messages_for_model_history(st.session_state.messages)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.chat_message("user"):
@@ -234,107 +203,30 @@ def _handle_input(
             result = run_ask_turn(
                 ask,
                 query=user_input,
-                prompt_key=prompt_key,
                 history=history,
                 settings=settings,
             )
             if not result.ok:
-                # A rejected turn must not persist. `history` is rebuilt from
-                # session state on the next submit and handed to the model, so
-                # keeping it would ship the exact text the boundary refused.
-                # The bubble drawn above disappears on the next rerun.
-                if result.drop_user_turn:
-                    st.session_state.messages.pop()
+                # Rejected turns drop the user message; operational failures keep
+                # it and append a display-only sanitized error so the banner
+                # survives the next Streamlit rerun without entering model history.
+                apply_ask_turn_to_session_messages(st.session_state.messages, result)
                 st.error(result.message)
                 return
             response = result.response
             assert response is not None
         render_run_meta(response.run)
-        render_reply(response.answer, off_topic_marker)
+        render_reply(response.answer)
         _render_citations(response.citations)
         _render_tool_outputs(response.tool_outputs)
         render_export_actions(
             response.answer, f"analysis_{len(st.session_state.messages)}"
         )
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": response.answer,
-        "citations": response.citations,
-        "tool_outputs": response.tool_outputs,
-        "run": response.run,
-        "off_topic_marker": off_topic_marker,
-    })
+    apply_ask_turn_to_session_messages(st.session_state.messages, result)
 
 
 _ACTION_MESSAGE_KEY = "document_action_message"
-_ANALYSIS_RESULT_KEY = "requirements_analysis_result"
-
-
-def _render_findings(
-    title: str, findings: Sequence[RequirementsAnalysisFindingView]
-) -> None:
-    if not findings:
-        return
-    st.markdown(f"**{title}**")
-    for bullet in finding_bullets(findings):
-        st.markdown(bullet)
-
-
-def _render_requirements_analysis(
-    settings: Settings,
-    chat_model: ChatModel,
-    *,
-    provider: str,
-    model: str,
-) -> None:
-    """Analyze pasted requirements. Absent unless the domain pack is enabled."""
-    if not requirements_analysis_enabled(settings):
-        return
-
-    try:
-        analyzer = build_analyze_requirements(settings, chat_model=chat_model)
-    except ConfigurationError as error:
-        st.error(str(error))
-        return
-
-    st.subheader("Requirements analysis")
-    with st.form("requirements_analysis"):
-        requirements = st.text_area(
-            "Requirements",
-            height=180,
-            help="Paste a story or requirements text. Analysis is grounded in "
-            "ingested documents across every source kind.",
-        )
-        submitted = st.form_submit_button("Analyze")
-
-    context = AnalysisContext(
-        requirements=requirements,
-        provider=provider,
-        model=model,
-    )
-
-    if submitted:
-        with st.spinner("Analyzing..."):
-            st.session_state[_ANALYSIS_RESULT_KEY] = StoredAnalysisResult(
-                context=context,
-                result=run_analysis_turn(analyzer, requirements=requirements),
-            )
-
-    stored = st.session_state.get(_ANALYSIS_RESULT_KEY)
-    result = analysis_result_for_display(stored, context=context)
-    if result is None:
-        return
-    if not result.ok:
-        st.error(result.message)
-        return
-
-    assert result.view is not None
-    st.markdown(result.view.summary)
-    _render_findings("Acceptance criteria gaps", result.view.acceptance_criteria_gaps)
-    _render_findings("Risks", result.view.risks)
-    _render_findings("Clarification questions", result.view.clarification_questions)
-    _render_citations(result.citations)
 
 
 def _apply_action_result(result: UploadIngestResult) -> None:
@@ -348,11 +240,6 @@ def _apply_action_result(result: UploadIngestResult) -> None:
     if not result.ok:
         st.error(result.message)
         return
-    st.session_state[_ANALYSIS_RESULT_KEY] = (
-        analysis_result_after_successful_document_mutation(
-            st.session_state.get(_ANALYSIS_RESULT_KEY)
-        )
-    )
     if result.should_rerun:
         st.session_state[_ACTION_MESSAGE_KEY] = result.message
         st.rerun()  # Raises; nothing after this line runs.
@@ -485,7 +372,7 @@ def render() -> None:
     st.title("Kernector")
 
     with st.sidebar:
-        state = _render_sidebar(settings, repository)
+        state = _render_sidebar(settings)
 
     _render_upload_ingest(settings)
 
@@ -505,24 +392,5 @@ def render() -> None:
         st.error(str(error))
         return
 
-    _render_requirements_analysis(
-        settings,
-        chat_model,
-        provider=state.provider,
-        model=state.model,
-    )
-
-    prompts = repository.all()
-    off_topic_marker = (
-        prompts[state.prompt_key].off_topic_marker
-        if state.prompt_key is not None
-        else None
-    )
-
     _render_history()
-    _handle_input(
-        ask,
-        state.prompt_key,
-        state.settings,
-        off_topic_marker,
-    )
+    _handle_input(ask, state.settings)
