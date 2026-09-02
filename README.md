@@ -55,7 +55,7 @@ including when no Software Delivery pack is enabled. On each
 
 1. Bind a `request_id` (UUID hex) via a `ContextVar`, or **reuse** an id already
    bound by an outer caller.
-2. Nested ask / rewrite-retrieve / invoke-tool / analysis logs read that same id.
+2. Nested ask / rewrite-retrieve / invoke-tool logs read that same id.
 3. Restore the previous ContextVar binding with `reset(token)` in a `finally`
    block — never force-clear a caller’s outer context.
 
@@ -72,8 +72,8 @@ Typical fields when available:
 - `operation` / `outcome` (`ask`, `rewrite_retrieve`, `invoke_tool`, `ingest`, `ask_turn`)
 - `outcome` values: `success`, `insufficient`, `error`, or `delegated` (router
   handed off to grounded ask; the nested `ask` event is terminal)
-- `request_id`, `path` (`rag` | `tools` | `task_prompt` | `analysis`)
-- `pack` (`software-delivery` on tool/analysis routes)
+- `request_id`, `path` (`rag` | `tools` | `task_prompt`)
+- `pack` (`software-delivery` on tool routes)
 - `tool`, `prompt_key`, `source_type`
 - `hit_count` / `chunk_count` / `source_count`
 - `latency_ms`, `model`, token usage ints from `RunMeta`

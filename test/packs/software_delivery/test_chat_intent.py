@@ -39,56 +39,22 @@ def test_explicit_generation_requests_select_the_expected_chain(
 
 
 @pytest.mark.parametrize(
-    ("query", "target"),
+    "query",
     [
+        "Analyze these requirements:\nAs a user I want MFA.",
+        "Review this story: Login must lock after five failures.",
+        "Analyze requirements for AUTH-101",
+        "Do not generate tests; analyze these requirements: Need MFA.",
         (
-            "Analyze these requirements:\nAs a user I want MFA.",
-            "As a user I want MFA.",
-        ),
-        (
-            "Review this story: Login must lock after five failures.",
-            "Login must lock after five failures.",
-        ),
-        (
-            "Analyze requirements for AUTH-101",
-            "for AUTH-101",
-        ),
-        (
-            "Do not generate tests; analyze these requirements: Need MFA.",
-            "Need MFA.",
-        ),
-    ],
-)
-def test_explicit_analysis_requests_select_requirements_analysis(
-    query: str, target: str
-) -> None:
-    assert select_chat_intent(query) == ChatToolSelection(
-        generate_tests=False,
-        output_style="steps",
-        analyze_requirements=True,
-        analysis_target=target,
-    )
-
-
-def test_analysis_target_preserves_case_and_newlines_from_original_query() -> None:
-    """Matching may normalize; the extracted body must stay faithful to the user text."""
-    query = (
-        "Analyze these requirements:\n"
-        "As a user I want MFA on AUTH-101.\n"
-        "Given an existing Session, lock after 5 failures."
-    )
-
-    selection = select_chat_intent(query)
-
-    assert selection == ChatToolSelection(
-        generate_tests=False,
-        output_style="steps",
-        analyze_requirements=True,
-        analysis_target=(
+            "Analyze these requirements:\n"
             "As a user I want MFA on AUTH-101.\n"
             "Given an existing Session, lock after 5 failures."
         ),
-    )
+    ],
+)
+def test_analysis_cues_select_no_tool(query: str) -> None:
+    """Requirements-analysis phrasing is no longer a dedicated chat workflow."""
+    assert select_chat_intent(query) is None
 
 
 @pytest.mark.parametrize(
@@ -160,25 +126,15 @@ def test_non_tool_requests_select_no_tool(query: str) -> None:
     assert select_chat_intent(query) is None
 
 
-def test_generation_wins_over_analysis_in_the_same_query() -> None:
+def test_generation_wins_over_risk_in_the_same_query() -> None:
     assert select_chat_intent(
-        "Analyze these requirements and create test cases for AUTH-101"
+        "Assess the risk and create test cases for AUTH-101"
     ) == ChatToolSelection(generate_tests=True, output_style="steps")
 
 
 def test_an_unknown_style_cannot_be_constructed() -> None:
     with pytest.raises(OrchestrationValidationError, match="output_style"):
         ChatToolSelection(generate_tests=True, output_style="prose")  # type: ignore[arg-type]
-
-
-def test_analysis_and_generation_are_mutually_exclusive() -> None:
-    with pytest.raises(OrchestrationValidationError, match="mutually exclusive"):
-        ChatToolSelection(
-            generate_tests=True,
-            output_style="steps",
-            analyze_requirements=True,
-            analysis_target="Need MFA.",
-        )
 
 
 def test_registration_exposes_the_chat_intent_selector() -> None:
@@ -195,11 +151,4 @@ def test_registration_exposes_the_chat_intent_selector() -> None:
     assert select(
         "Do not generate tests; assess the risk for AUTH-101"
     ) == ChatToolSelection(generate_tests=False, output_style="steps")
-    assert select(
-        "Analyze these requirements:\nNeed MFA enrollment."
-    ) == ChatToolSelection(
-        generate_tests=False,
-        output_style="steps",
-        analyze_requirements=True,
-        analysis_target="Need MFA enrollment.",
-    )
+    assert select("Analyze these requirements:\nNeed MFA enrollment.") is None

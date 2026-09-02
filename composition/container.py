@@ -7,17 +7,10 @@ from pathlib import Path
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
-from composition.requirements_analysis import (
-    PackRequirementsAnalyzer,
-    RequirementsAnalyzer,
-    analysis_citations,
-    format_requirements_analysis_answer,
-)
-from application.contracts import IngestRequest, IngestResponse, RunMeta
+from application.contracts import IngestRequest, IngestResponse
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
-    InsufficientEvidenceError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -44,7 +37,7 @@ from composition.software_delivery_chat import (
     PackSoftwareDeliveryChat,
 )
 from composition.software_delivery_tools import software_delivery_tools_enabled
-from composition.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk, ToolRunOutcome
+from composition.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk
 from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     build_tool_registry,
@@ -729,84 +722,15 @@ def build_tool_augmented_ask(
         invoke=build_opaque_invoke(settings, chat_model=chat_model),
         orchestrate=orchestrate,
     )
-    analyzer = build_analyze_requirements(
-        settings, chat_model=chat_model, vector_store=vector_store
-    )
-
-    class _AnalysisRunner:
-        def run(self, requirements: str) -> ToolRunOutcome:
-            view = analyzer.analyze(requirements)
-            run = (
-                RunMeta.from_result(view.ask_result)
-                if view.ask_result is not None
-                else None
-            )
-            return ToolRunOutcome(
-                answer=format_requirements_analysis_answer(view),
-                citations=analysis_citations(view),
-                run=run,
-            )
 
     return CorrelatedAsk(
         ToolAugmentedAsk(
             ask,
             runner=runner,
             select=registration.build_chat_intent_selector(),
-            analysis_runner=_AnalysisRunner(),
             pack_id="software-delivery",
         )
     )
-
-
-def build_analyze_requirements(
-    settings: Settings,
-    *,
-    chat_model: ChatModel,
-    vector_store: VectorStore | None = None,
-) -> RequirementsAnalyzer:
-    """Wire Software Delivery requirements analysis when the pack is enabled.
-
-    Binds filter-less cross-source retrieval with a relevance threshold in
-    composition so the pack sees only hits that cleared the cutoff.
-
-    Args:
-        settings (Settings): Runtime settings including enabled tool packs.
-        chat_model (ChatModel): Shared chat adapter for requirements analysis.
-        vector_store (VectorStore | None): Optional shared vector store client.
-
-    Returns:
-        RequirementsAnalyzer: Typed composition façade over the pack use case.
-
-    Raises:
-        ConfigurationError: Pack disabled or analysis use case cannot be built.
-    """
-    if "software-delivery" not in settings.domain_tools.enabled_packs:
-        raise ConfigurationError(
-            "software-delivery pack must be enabled to build requirements analysis"
-        )
-    retrieve = _relevant_retrieve(settings, vector_store=vector_store)
-
-    import importlib
-
-    registration = importlib.import_module(
-        "packs.software_delivery.registration"
-    )
-    use_case = registration.build_analyze_requirements(
-        retrieve=retrieve, chat_model=chat_model
-    )
-
-    def execute(requirements: str):
-        from packs.software_delivery.errors import MissingEvidenceError
-        from packs.software_delivery.requirements_analysis_contracts import (
-            AnalyzeRequirementsRequest,
-        )
-
-        try:
-            return use_case.execute(AnalyzeRequirementsRequest(requirements))
-        except MissingEvidenceError as error:
-            raise InsufficientEvidenceError() from error
-
-    return PackRequirementsAnalyzer(execute)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
