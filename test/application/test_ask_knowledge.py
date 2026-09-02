@@ -143,6 +143,7 @@ def _use_case(
     max_input_length: int = 10_000,
     original_query: str = "what broke?",
     rewritten_query: str = "payment service failure last week",
+    keep_retrieved_hits: bool = False,
 ) -> AskKnowledge:
     return AskKnowledge(
         _FakeRewriteRetrieve(
@@ -155,6 +156,7 @@ def _use_case(
         default_retrieval_limit=limit,
         relevance_threshold=threshold,
         max_input_length=max_input_length,
+        keep_retrieved_hits=keep_retrieved_hits,
     )
 
 
@@ -551,6 +553,85 @@ def test_hit_exactly_at_threshold_counts_as_evidence() -> None:
     assert response.answer == "answered"
     assert response.citations == build_citations((at_threshold,))
     assert len(chat.calls) == 1
+
+
+def test_hybrid_keep_retrieved_hits_skips_raw_threshold_on_fused_scores() -> None:
+    """Hybrid already applied the raw cosine floor; fused scores must not be re-gated."""
+    chat = _RecordingChat("from qualified hybrid hit")
+    weak_fused = _hit(score=0.1)
+
+    response = _use_case(
+        (weak_fused,),
+        chat,
+        threshold=0.5,
+        keep_retrieved_hits=True,
+    ).execute(AskRequest(prompt_key=None, query="How do I restart?"))
+
+    assert response.answer == "from qualified hybrid hit"
+    assert response.citations == build_citations((weak_fused,))
+    assert len(chat.calls) == 1
+
+
+def test_hybrid_no_eligible_channel_evidence_is_insufficient_without_generation() -> None:
+    from infrastructure.lexical.bm25 import Bm25LexicalIndex
+    from test.doubles import StubEmbeddingModel, StubQueryRewriter, vector_for
+    from domain.knowledge import EmbeddedChunk
+
+    class _ScriptedStore:
+        def upsert(self, embedded):  # type: ignore[no-untyped-def]
+            return None
+
+        def search(self, vector, limit, *, metadata_filters=None):  # type: ignore[no-untyped-def]
+            return (
+                _hit(source_id="bad-a", score=-0.9),
+                _hit(source_id="bad-b", score=-0.8),
+            )
+
+        def delete_source(self, reference):  # type: ignore[no-untyped-def]
+            return None
+
+    lexical = Bm25LexicalIndex()
+    lexical.upsert(
+        [
+            EmbeddedChunk(
+                chunk=_hit(source_id="noise", content="blue-green deploy").chunk,
+                vector=vector_for("blue-green deploy"),
+            )
+        ]
+    )
+    retrieve = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        _ScriptedStore(),
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.5,
+        vector_score_floor=0.0,
+    )
+    chat = _RecordingChat("should not be used")
+    ask = AskKnowledge(
+        RewriteAndRetrieveKnowledge(
+            StubQueryRewriter("zzzz-not-in-corpus-qqqq"),
+            retrieve,
+            max_input_length=10_000,
+        ),
+        AskService(chat),
+        _EmptyPrompts(),
+        default_retrieval_limit=5,
+        relevance_threshold=0.0,
+        max_input_length=10_000,
+        keep_retrieved_hits=True,
+    )
+
+    response = ask.execute(
+        AskRequest(prompt_key=None, query="zzzz-not-in-corpus-qqqq")
+    )
+
+    assert response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
+    assert response.citations == ()
+    assert response.run.outcome == "insufficient"
+    assert response.run.hit_count == 0
+    assert chat.calls == []
 
 
 def test_below_threshold_hits_are_dropped_from_context_and_citations() -> None:

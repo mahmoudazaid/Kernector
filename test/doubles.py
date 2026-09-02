@@ -190,3 +190,47 @@ class InMemoryVectorStore:
         scope = (str(reference.source_type), reference.source_id)
         for key in [key for key in self.records if key[:2] == scope]:
             del self.records[key]
+
+
+class InMemoryLexicalIndex:
+    """Dict-backed LexicalIndex for use-case tests (no BM25 dependency).
+
+    ``search`` ranks by simple token overlap count (case-insensitive whitespace
+    tokens), not BM25. Filters address ``SourceMetadata.extra`` only and apply
+    before the limit. ``records`` is public for assertions.
+    """
+
+    def __init__(self) -> None:
+        self.records: dict[tuple[str, str, int], EmbeddedChunk] = {}
+
+    def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
+        for item in embedded:
+            self.records[record_key(item.chunk)] = item
+
+    def search(
+        self,
+        query: str,
+        limit: int,
+        *,
+        metadata_filters: Mapping[str, str] | None = None,
+    ) -> Sequence[ScoredChunk]:
+        if limit <= 0 or not self.records:
+            return ()
+        filters = metadata_filters or {}
+        query_tokens = {token.lower() for token in query.split() if token}
+        scored: list[ScoredChunk] = []
+        for item in self.records.values():
+            if filters and not _matches_extra_filters(item.chunk, filters):
+                continue
+            content_tokens = {
+                token.lower() for token in item.chunk.content.split() if token
+            }
+            score = float(len(query_tokens & content_tokens))
+            scored.append(ScoredChunk(chunk=item.chunk, score=score))
+        scored.sort(key=lambda hit: hit.score, reverse=True)
+        return tuple(scored[:limit])
+
+    def delete_source(self, reference: SourceReference) -> None:
+        scope = (str(reference.source_type), reference.source_id)
+        for key in [key for key in self.records if key[:2] == scope]:
+            del self.records[key]

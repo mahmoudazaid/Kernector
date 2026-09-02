@@ -25,6 +25,7 @@ from composition import (
 )
 from domain.errors import DomainValidationError
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
+from domain.ports import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ def create_new_document(
     *,
     filename: str | None,
     content: bytes | None,
+    vector_store: VectorStore | None = None,
 ) -> UploadIngestResult:
     """Validate and create a new upload with a system-managed source ID."""
     validated = _validate_upload(filename, content)
@@ -113,7 +115,9 @@ def create_new_document(
         return validated
 
     try:
-        document = create_uploaded_document(settings, validated)
+        document = create_uploaded_document(
+            settings, validated, vector_store=vector_store
+        )
     except PartialDocumentOperationError:
         # Not logged here. Composition already recorded the safe diagnostic
         # fields for this exact failure, and `logger.exception` would print the
@@ -160,6 +164,7 @@ def replace_existing_document(
     reference: SourceReference,
     filename: str | None,
     content: bytes | None,
+    vector_store: VectorStore | None = None,
 ) -> UploadIngestResult:
     """Replace content for a selected catalog document under the same ID."""
     validated = _validate_upload(filename, content)
@@ -167,7 +172,9 @@ def replace_existing_document(
         return validated
 
     try:
-        document = replace_uploaded_document(settings, reference, validated)
+        document = replace_uploaded_document(
+            settings, reference, validated, vector_store=vector_store
+        )
     except PartialDocumentOperationError as error:
         return UploadIngestResult(
             ok=False,
@@ -205,10 +212,13 @@ def delete_existing_document(
     settings: Settings,
     *,
     reference: SourceReference,
+    vector_store: VectorStore | None = None,
 ) -> UploadIngestResult:
     """Delete vector chunks and the catalog row for a selected document."""
     try:
-        delete_uploaded_document(settings, reference)
+        delete_uploaded_document(
+            settings, reference, vector_store=vector_store
+        )
     except PartialDocumentOperationError as error:
         return UploadIngestResult(
             ok=False,

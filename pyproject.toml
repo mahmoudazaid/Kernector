@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=2.5.1",
     "pypdf>=6.16.2",
     "python-dotenv>=1.2.2",
+    "rank-bm25>=0.2.2",
     "requests>=2.34.2",
     "streamlit>=1.60.0",
     "watchdog>=6.0.0",
