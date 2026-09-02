@@ -173,12 +173,13 @@ def _render_history() -> None:
         with st.chat_message(message["role"]):
             if message.get("display_only"):
                 st.error(message["content"])
+                render_run_meta(message.get("run"))
                 continue
             if message["role"] == "assistant":
-                render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
                 _render_citations(message.get("citations") or ())
                 _render_tool_outputs(message.get("tool_outputs") or ())
+                render_run_meta(message.get("run"))
                 render_export_actions(message["content"], f"analysis_{index}")
             else:
                 st.markdown(message["content"])
@@ -212,13 +213,14 @@ def _handle_input(
                 # survives the next Streamlit rerun without entering model history.
                 apply_ask_turn_to_session_messages(st.session_state.messages, result)
                 st.error(result.message)
+                render_run_meta(result.run)
                 return
             response = result.response
             assert response is not None
-        render_run_meta(response.run)
         render_reply(response.answer)
         _render_citations(response.citations)
         _render_tool_outputs(response.tool_outputs)
+        render_run_meta(response.run)
         render_export_actions(
             response.answer, f"analysis_{len(st.session_state.messages)}"
         )
