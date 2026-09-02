@@ -10,8 +10,9 @@ from collections.abc import Mapping, MutableSequence, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from application.contracts import AskRequest, AskResponse, InvokeToolResponse
+from application.contracts import AskRequest, AskResponse, InvokeToolResponse, RunMeta
 from application.errors import ApplicationValidationError
+from application.observability import bind_request_id, reset_request_id
 from composition import GroundedAsk
 from domain.errors import DomainValidationError, ProviderError, ToolFailureError
 from domain.models import Message
@@ -37,18 +38,32 @@ class AskTurnResult:
         drop_user_turn: When true, presentation must remove the user message
             already appended to session state — a rejected query must not be
             replayed as history on the next submit.
+        run: Safe execution metadata when execution started; ``None`` when the
+            request never reached ``execute`` (e.g. blank query construction).
     """
 
     ok: bool
     message: str = ""
     response: AskResponse | None = None
     drop_user_turn: bool = False
+    run: RunMeta | None = None
 
 
 def _validation_message(error: BaseException) -> str:
     """Validation messages are authored at the application boundary."""
     text = str(error).strip()
     return text or f"The request failed ({type(error).__name__})."
+
+
+def _error_run(request_id: str | None, error: BaseException) -> RunMeta | None:
+    """Build sanitized failure metadata; omit when execution never started."""
+    if request_id is None:
+        return None
+    return RunMeta(
+        request_id=request_id,
+        outcome="error",
+        error_type=type(error).__name__,
+    )
 
 
 def tool_output_lines(
@@ -90,13 +105,20 @@ def messages_for_model_history(
     return tuple(history)
 
 
-def display_only_error_entry(message: str) -> dict[str, object]:
+def display_only_error_entry(
+    message: str,
+    *,
+    run: RunMeta | None = None,
+) -> dict[str, object]:
     """Build a conversation row that renders after reruns but is not model history."""
-    return {
+    entry: dict[str, object] = {
         "role": "assistant",
         "content": message,
         _DISPLAY_ONLY_KEY: True,
     }
+    if run is not None:
+        entry["run"] = run
+    return entry
 
 
 def apply_ask_turn_to_session_messages(
@@ -128,7 +150,7 @@ def apply_ask_turn_to_session_messages(
         if messages and messages[-1].get("role") == "user":
             messages.pop()
         return
-    messages.append(display_only_error_entry(result.message))
+    messages.append(display_only_error_entry(result.message, run=result.run))
 
 
 def run_ask_turn(
@@ -150,6 +172,9 @@ def run_ask_turn(
     Operational failures keep the turn: the text was accepted; only the call
     failed.
 
+    Binds a ``request_id`` before ``execute`` so ``CorrelatedAsk`` reuses it and
+    failures can still expose sanitized ``AskTurnResult.run``.
+
     Message policy by type (fixed mapping — never ``str(error)`` for
     operational types):
 
@@ -160,35 +185,44 @@ def run_ask_turn(
     * ``VectorStoreError``, ``DomainValidationError``, other ``RuntimeError`` —
       fixed operational sentence.
     """
+    request_id: str | None = None
+    token = None
     try:
         request = AskRequest(
             prompt_key=prompt_key,
             query=query,
             history=history,
         )
+        request_id, token = bind_request_id()
         response = ask.execute(request, settings=settings)
     except ApplicationValidationError as error:
         return AskTurnResult(
             ok=False,
             message=_validation_message(error),
             drop_user_turn=True,
+            run=_error_run(request_id, error),
         )
-    except ProviderError:
+    except ProviderError as error:
         return AskTurnResult(
             ok=False,
             message=_PROVIDER_FAILURE_MESSAGE,
             drop_user_turn=False,
+            run=_error_run(request_id, error),
         )
-    except ToolFailureError:
+    except ToolFailureError as error:
         return AskTurnResult(
             ok=False,
             message=_TOOL_FAILURE_MESSAGE,
             drop_user_turn=False,
+            run=_error_run(request_id, error),
         )
-    except (DomainValidationError, RuntimeError):
+    except (DomainValidationError, RuntimeError) as error:
         return AskTurnResult(
             ok=False,
             message=_OPERATIONAL_FAILURE_MESSAGE,
             drop_user_turn=False,
+            run=_error_run(request_id, error),
         )
-    return AskTurnResult(ok=True, response=response)
+    finally:
+        reset_request_id(token)
+    return AskTurnResult(ok=True, response=response, run=response.run)

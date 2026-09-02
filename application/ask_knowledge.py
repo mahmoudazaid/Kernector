@@ -14,7 +14,7 @@ from application.grounded_rag_policy import (
     INSUFFICIENT_KNOWLEDGE_ANSWER,
 )
 from application.input_safety import reject_unsafe_query
-from application.observability import log_operation
+from application.observability import current_request_id, log_operation
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from domain.knowledge import ScoredChunk
 from domain.models import Message, PromptVariant
@@ -146,7 +146,16 @@ class AskKnowledge:
                 hit_count=0,
                 prompt_key=request.prompt_key,
             )
-            return AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())
+            return AskResponse(
+                answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+                citations=(),
+                run=RunMeta(
+                    request_id=current_request_id(),
+                    outcome="insufficient",
+                    hit_count=0,
+                    prompt_key=request.prompt_key,
+                ),
+            )
 
         prelude = [*request.history, _context_message(hits)]
         if task is not None:
@@ -158,13 +167,24 @@ class AskKnowledge:
             settings=settings,
             history=prelude,
         )
-        run = RunMeta.from_result(result)
+        source_type = _source_types(hits)
+        run = RunMeta(
+            model=result.model,
+            latency_ms=result.latency_ms,
+            usage=result.usage,
+            settings=result.settings,
+            request_id=current_request_id(),
+            outcome="success",
+            hit_count=len(hits),
+            prompt_key=request.prompt_key,
+            source_type=source_type,
+        )
         log_operation(
             logger,
             operation="ask",
             outcome="success",
             hit_count=len(hits),
-            source_type=_source_types(hits),
+            source_type=source_type,
             prompt_key=request.prompt_key,
             model=run.model,
             latency_ms=run.latency_ms,

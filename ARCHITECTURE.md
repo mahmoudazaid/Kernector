@@ -344,11 +344,14 @@ operational types to fixed category sentences (see below).
 | composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of infrastructure / adapter failures |
 
 **Empty / below-threshold retrieval is not an error.** `AskKnowledge` returns
-`AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=())` and does not
-call the model.
+`AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=(), run=RunMeta(...))`
+with `outcome="insufficient"` and does not call the model.
 
 Streamlit ask mapping (`run_ask_turn`) uses a **fixed type → message map**.
-Exception type alone is never treated as proof that `str(error)` is safe:
+Exception type alone is never treated as proof that `str(error)` is safe.
+When execution starts, failures also set `AskTurnResult.run` to a sanitized
+`RunMeta` (`request_id`, `outcome="error"`, `error_type` only — never
+exception text). Pre-execute construction failures leave `run=None`.
 
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
@@ -358,7 +361,8 @@ Exception type alone is never treated as proof that `str(error)` is safe:
 | `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
 
 Technical and vendor detail may remain on `__cause__` (and in logs); it must
-not reach `st.error`.
+not reach `st.error`. The collapsed Streamlit **Run details** expander reads
+only typed `RunMeta` fields (see README); it never parses logs.
 
 Chat-time requirements analysis reuses the same ask-turn mapping: analysis
 failures surface through `run_ask_turn` / `ToolAugmentedAsk` (for example

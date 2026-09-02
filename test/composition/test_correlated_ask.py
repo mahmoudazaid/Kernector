@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import pytest
 
 from application import observability
-from application.contracts import AskRequest, AskResponse
+from application.contracts import AskRequest, AskResponse, RunMeta
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from composition.correlated_ask import CorrelatedAsk
@@ -56,7 +56,38 @@ def test_correlated_ask_binds_request_id_for_zero_pack_chat() -> None:
 
     assert response.answer == "grounded answer"
     assert inner.seen_request_id is not None
+    assert response.run is not None
+    assert response.run.request_id == inner.seen_request_id
     assert observability.current_request_id() is None
+
+
+def test_correlated_ask_stamps_request_id_when_inner_run_is_missing() -> None:
+    inner = _AskCapturingRequestId(AskResponse(answer="insufficient"))
+    ask = CorrelatedAsk(inner)
+
+    response = ask.execute(AskRequest(query="unknown", prompt_key=None))
+
+    assert response.run is not None
+    assert response.run.request_id == inner.seen_request_id
+    assert len(response.run.request_id or "") == 32
+
+
+def test_correlated_ask_preserves_inner_run_fields_when_stamping() -> None:
+    inner = _AskCapturingRequestId(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(outcome="success", hit_count=2, model="m"),
+        )
+    )
+    ask = CorrelatedAsk(inner)
+
+    response = ask.execute(AskRequest(query="hello", prompt_key=None))
+
+    assert response.run is not None
+    assert response.run.request_id == inner.seen_request_id
+    assert response.run.outcome == "success"
+    assert response.run.hit_count == 2
+    assert response.run.model == "m"
 
 
 def test_correlated_ask_reuses_prebound_outer_id_and_leaves_it_bound() -> None:

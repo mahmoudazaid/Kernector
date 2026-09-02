@@ -72,7 +72,44 @@ def test_blank_query_construction_failure_drops_the_user_turn() -> None:
     assert result.ok is False
     assert result.drop_user_turn is True
     assert "query must be non-empty" in result.message
+    assert result.run is None
     assert ask.calls == []
+
+
+def test_provider_failure_exposes_sanitized_run_meta() -> None:
+    result = run_ask_turn(
+        _RaisingAsk(ProviderError("vendor body with sk-leaked")),  # type: ignore[arg-type]
+        query="How do I restart?",
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.run is not None
+    assert result.run.outcome == "error"
+    assert result.run.error_type == "ProviderError"
+    assert result.run.request_id is not None
+    assert "sk-leaked" not in str(result.run)
+    assert result.message == _FIXED_PROVIDER_MESSAGE
+
+
+def test_application_validation_error_from_execute_includes_run_meta() -> None:
+    ask = _RaisingAsk(
+        ApplicationValidationError("query must be at most 10 characters, got 11")
+    )
+
+    result = run_ask_turn(
+        ask,  # type: ignore[arg-type]
+        query="x" * 11,
+        prompt_key=None,
+        history=(),
+    )
+
+    assert result.ok is False
+    assert result.drop_user_turn is True
+    assert result.run is not None
+    assert result.run.outcome == "error"
+    assert result.run.error_type == "ApplicationValidationError"
+    assert result.run.request_id is not None
 
 
 def test_application_validation_error_drops_the_user_turn() -> None:
@@ -304,11 +341,12 @@ def test_provider_and_operational_errors_persist_as_display_only_entries() -> No
 
     assert provider_result.ok is False
     assert provider_result.drop_user_turn is False
-    assert messages[-1] == {
-        "role": "assistant",
-        "content": _FIXED_PROVIDER_MESSAGE,
-        "display_only": True,
-    }
+    assert provider_result.run is not None
+    assert messages[-1]["role"] == "assistant"
+    assert messages[-1]["content"] == _FIXED_PROVIDER_MESSAGE
+    assert messages[-1]["display_only"] is True
+    assert messages[-1]["run"] == provider_result.run
+    assert "sk-leaked" not in str(messages[-1])
     assert "sk-leaked" not in str(messages[-1]["content"])
 
     history = messages_for_model_history(messages)

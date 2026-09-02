@@ -7,6 +7,7 @@ import streamlit as st
 from application.contracts import RunMeta
 from domain.model_settings import SETTINGS
 from domain.validation import is_off_topic
+from presentation.streamlit.run_details import run_detail_lines
 
 
 def render_reply(reply: str, off_topic_marker: str | None = None) -> None:
@@ -16,38 +17,17 @@ def render_reply(reply: str, off_topic_marker: str | None = None) -> None:
 
 
 def render_run_meta(result: RunMeta | None) -> None:
-    """Caption one model call. ``None`` means no call was made — draw nothing.
+    """Collapsed Run details expander. ``None`` or empty projection draws nothing.
 
-    The insufficient-evidence path returns no run meta, and history re-renders
-    those replies on every rerun, so absence has to be ordinary here.
+    History re-renders these rows on every Streamlit rerun, so absence must stay
+    ordinary.
     """
-    if result is None:
+    lines = run_detail_lines(result)
+    if not lines:
         return
-
-    bits = []
-
-    if result.model:
-        bits.append(f"Model: {result.model}")
-
-    if result.latency_ms is not None:
-        bits.append(f"Latency: {result.latency_ms}ms")
-
-    usage = result.usage
-    if usage:
-        if usage.total_tokens is not None:
-            bits.append(f"Tokens: {usage.total_tokens}")
-        elif usage.prompt_tokens is not None and usage.completion_tokens is not None:
-            bits.append(
-                f"Tokens: {usage.prompt_tokens} in / {usage.completion_tokens} out"
-            )
-        if usage.cost is not None:
-            bits.append(f"Cost: ${usage.cost}")
-
-    if result.settings:
-        bits.append(" · ".join(f"{k}={v}" for k, v in result.settings.items()))
-
-    if bits:
-        st.caption(" | ".join(bits))
+    with st.expander("Run details", expanded=False):
+        for line in lines:
+            st.caption(line)
 
 
 def render_export_actions(content: str, filename_prefix: str) -> None:

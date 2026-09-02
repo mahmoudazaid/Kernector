@@ -90,8 +90,10 @@ class _AnalysisSelection:
     analysis_target: str = "Need MFA."
 
 
-def _outcome() -> ToolRunOutcome:
-    return ToolRunOutcome(answer="Scored risk.")
+def _outcome(
+    tool_outputs: tuple[InvokeToolResponse, ...] = (),
+) -> ToolRunOutcome:
+    return ToolRunOutcome(answer="Scored risk.", tool_outputs=tool_outputs)
 
 
 def test_an_unmatched_query_is_answered_by_grounded_rag() -> None:
@@ -107,7 +109,9 @@ def test_an_unmatched_query_is_answered_by_grounded_rag() -> None:
 
     response = wrapper.execute(request, settings={"temperature": 0})
 
-    assert response is ask.response
+    assert response.answer == ask.response.answer
+    assert response.run is not None
+    assert response.run.path == "rag"
     assert ask.calls == [(request, {"temperature": 0})]
     assert runner.runs == []
 
@@ -130,7 +134,10 @@ def test_a_selected_mode_delegates_verbatim_without_calling_the_runner() -> None
 
     response = wrapper.execute(request, settings=settings)
 
-    assert response is ask.response
+    assert response.answer == ask.response.answer
+    assert response.run is not None
+    assert response.run.path == "task_prompt"
+    assert response.run.prompt_key == "story-review"
     assert ask.calls == [(request, settings)]
     assert runner.runs == []
 
@@ -172,7 +179,13 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
     assert response.answer == outcome.answer
     assert response.citations == outcome.citations
     assert response.tool_outputs == outcome.tool_outputs
-    assert response.run is None
+    assert response.run is not None
+    assert response.run.path == "tools"
+    assert response.run.tools == (
+        "software_delivery.risk_score",
+        "software_delivery.generate_test_cases",
+    )
+    assert '{"score": 62}' not in str(response.run)
 
 
 def test_the_selected_style_reaches_the_chain() -> None:
@@ -258,7 +271,9 @@ def test_an_analysis_intent_runs_the_analyzer_not_the_tool_runner() -> None:
     assert response.answer == "The story omits lockout."
     assert response.citations[0].reference.source_id == "AUTH-101"
     assert response.tool_outputs == ()
-    assert response.run is None
+    assert response.run is not None
+    assert response.run.path == "analysis"
+    assert response.run.outcome == "success"
 
 
 def test_analysis_without_a_runner_falls_through_to_grounded_rag() -> None:
@@ -275,7 +290,9 @@ def test_analysis_without_a_runner_falls_through_to_grounded_rag() -> None:
 
     response = wrapper.execute(request)
 
-    assert response is ask.response
+    assert response.answer == ask.response.answer
+    assert response.run is not None
+    assert response.run.path == "rag"
     assert ask.calls == [(request, None)]
 
 
@@ -315,7 +332,9 @@ def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
     response = wrapper.execute(request)
 
     assert select_chat_intent(query) is None
-    assert response is ask.response
+    assert response.answer == ask.response.answer
+    assert response.run is not None
+    assert response.run.path == "rag"
     assert ask.calls == [(request, None)]
     assert runner.runs == []
     assert analysis.runs == []
@@ -369,16 +388,49 @@ def test_analysis_outcome_run_meta_reaches_ask_response() -> None:
         runner=_RecordingRunner(_outcome()),
         select=lambda query: _AnalysisSelection(),
         analysis_runner=analysis,
+        pack_id="software-delivery",
     )
 
     response = wrapper.execute(
         AskRequest(query="Analyze these requirements: Need MFA.", prompt_key=None)
     )
 
-    assert response.run == run
+    assert response.run is not None
+    assert response.run.model == "analysis-model"
+    assert response.run.latency_ms == 42
+    assert response.run.usage == Usage(total_tokens=17)
+    assert response.run.outcome == "success"
+    assert response.run.path == "analysis"
+    assert response.run.pack == "software-delivery"
     assert response.answer == "Gaps found in acceptance criteria."
     assert ask.calls == []
 
+
+def test_tools_path_run_meta_includes_tool_names_and_pack() -> None:
+    ask = _RecordingAsk()
+    outputs = (
+        InvokeToolResponse(tool_name="score_risk", result="opaque-a"),
+        InvokeToolResponse(tool_name="generate_tests", result="opaque-b"),
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(_outcome(tool_outputs=outputs)),
+        select=lambda query: _Selection(generate_tests=True, output_style="steps"),
+        pack_id="software-delivery",
+    )
+
+    response = wrapper.execute(AskRequest(query="Score risk for AUTH-101", prompt_key=None))
+
+    assert response.run is not None
+    assert response.run.outcome == "success"
+    assert response.run.path == "tools"
+    assert response.run.pack == "software-delivery"
+    assert response.run.tools == ("score_risk", "generate_tests")
+    assert "opaque-a" not in str(response.run)
+    assert ask.calls == []
+
+
+def test_pack_intent_analysis_still_routes_to_analysis_runner() -> None:
     from packs.software_delivery.chat_intent import select_chat_intent
 
     ask = _RecordingAsk()
@@ -400,6 +452,8 @@ def test_analysis_outcome_run_meta_reaches_ask_response() -> None:
     assert runner.runs == []
     assert ask.calls == []
     assert response.answer == "Gaps found in acceptance criteria."
+    assert response.run is not None
+    assert response.run.path == "analysis"
 
 
 class _AskCapturingRequestId(_RecordingAsk):

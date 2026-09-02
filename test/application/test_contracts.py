@@ -181,6 +181,15 @@ def test_run_meta_defaults_are_empty() -> None:
     assert meta.latency_ms is None
     assert meta.usage is None
     assert meta.settings == {}
+    assert meta.request_id is None
+    assert meta.outcome is None
+    assert meta.hit_count is None
+    assert meta.pack is None
+    assert meta.path is None
+    assert meta.prompt_key is None
+    assert meta.source_type is None
+    assert meta.tools == ()
+    assert meta.error_type is None
 
 
 def test_run_meta_from_result_drops_answer_content() -> None:
@@ -205,6 +214,66 @@ def test_run_meta_from_result_drops_answer_content() -> None:
 def test_run_meta_rejects_negative_latency() -> None:
     with pytest.raises(ApplicationValidationError, match="latency_ms"):
         RunMeta(latency_ms=-1)
+
+
+def test_run_meta_accepts_safe_execution_fields() -> None:
+    meta = RunMeta(
+        request_id="req-abc",
+        outcome="success",
+        hit_count=2,
+        pack="software-delivery",
+        path="tools",
+        prompt_key="default",
+        source_type="knowledge_document",
+        tools=("score_risk", "generate_tests"),
+        error_type=None,
+        model="test-model",
+        latency_ms=12,
+    )
+    assert meta.request_id == "req-abc"
+    assert meta.outcome == "success"
+    assert meta.hit_count == 2
+    assert meta.pack == "software-delivery"
+    assert meta.path == "tools"
+    assert meta.prompt_key == "default"
+    assert meta.source_type == "knowledge_document"
+    assert meta.tools == ("score_risk", "generate_tests")
+    assert meta.error_type is None
+
+
+def test_run_meta_rejects_negative_hit_count() -> None:
+    with pytest.raises(ApplicationValidationError, match="hit_count"):
+        RunMeta(hit_count=-1)
+
+
+def test_run_meta_rejects_blank_request_id() -> None:
+    with pytest.raises(ApplicationValidationError, match="request_id"):
+        RunMeta(request_id="   ")
+
+
+def test_run_meta_tools_are_names_only_tuples() -> None:
+    meta = RunMeta(tools=["score_risk"])  # type: ignore[arg-type]
+    assert meta.tools == ("score_risk",)
+    with pytest.raises(ApplicationValidationError, match="tools"):
+        RunMeta(tools=["", "ok"])  # type: ignore[arg-type]
+
+
+def test_run_meta_has_no_content_bearing_fields() -> None:
+    forbidden = {
+        "query",
+        "content",
+        "prompt",
+        "arguments",
+        "result",
+        "message",
+        "body",
+        "text",
+        "answer",
+        "history",
+        "chunks",
+        "documents",
+    }
+    assert forbidden.isdisjoint(RunMeta.__dataclass_fields__)
 
 
 def test_ask_response_defaults_run_to_none() -> None:
