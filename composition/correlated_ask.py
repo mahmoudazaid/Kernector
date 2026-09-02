@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from application.contracts import AskRequest, AskResponse, RunMeta
 from application.observability import bind_request_id, reset_request_id
+from composition.software_delivery_tools import SoftwareDeliveryRunView
 from composition.tool_augmented_ask import GroundedAsk
 
 
@@ -21,6 +22,13 @@ class CorrelatedAsk:
 
     def __init__(self, ask: GroundedAsk) -> None:
         self._ask = ask
+
+    def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
+        """Forward the typed tool-run view side path when the inner ask exposes it."""
+        consume = getattr(self._ask, "consume_tool_run_view", None)
+        if consume is None:
+            return None
+        return consume()
 
     def execute(
         self,

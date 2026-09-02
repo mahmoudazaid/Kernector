@@ -48,6 +48,34 @@ class _FailingAsk:
         raise RuntimeError("provider boom")
 
 
+def test_correlated_ask_forwards_consume_tool_run_view() -> None:
+    from composition.software_delivery_tools import SoftwareDeliveryRunView
+
+    run_view = SoftwareDeliveryRunView(summary="Scored risk.", calls=())
+
+    class _Inner:
+        def __init__(self) -> None:
+            self._view = run_view
+
+        def execute(
+            self,
+            request: AskRequest,
+            settings: Mapping[str, object] | None = None,
+        ) -> AskResponse:
+            return AskResponse(answer="ok", run=RunMeta(outcome="success", path="tools"))
+
+        def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
+            view = self._view
+            self._view = None
+            return view
+
+    ask = CorrelatedAsk(_Inner())  # type: ignore[arg-type]
+    ask.execute(AskRequest(query="Score the risk for AUTH-101", prompt_key=None))
+
+    assert ask.consume_tool_run_view() is run_view
+    assert ask.consume_tool_run_view() is None
+
+
 def test_correlated_ask_binds_request_id_for_zero_pack_chat() -> None:
     inner = _AskCapturingRequestId()
     ask = CorrelatedAsk(inner)

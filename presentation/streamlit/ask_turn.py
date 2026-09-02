@@ -14,6 +14,7 @@ from application.contracts import AskRequest, AskResponse, InvokeToolResponse, R
 from application.errors import ApplicationValidationError
 from application.observability import bind_request_id, reset_request_id
 from composition import GroundedAsk
+from composition.software_delivery_tools import SoftwareDeliveryRunView
 from domain.errors import DomainValidationError, ProviderError, ToolFailureError
 from domain.models import Message
 
@@ -40,6 +41,9 @@ class AskTurnResult:
             replayed as history on the next submit.
         run: Safe execution metadata when execution started; ``None`` when the
             request never reached ``execute`` (e.g. blank query construction).
+        tool_run_view: Typed Software Delivery projection from the composition
+            side path (not on ``AskResponse``). ``None`` for RAG / analysis /
+            non-pack turns.
     """
 
     ok: bool
@@ -47,6 +51,7 @@ class AskTurnResult:
     response: AskResponse | None = None
     drop_user_turn: bool = False
     run: RunMeta | None = None
+    tool_run_view: SoftwareDeliveryRunView | None = None
 
 
 def _validation_message(error: BaseException) -> str:
@@ -74,7 +79,7 @@ def tool_output_lines(
     The payload is measured, never parsed. Interpreting it here would put pack
     knowledge into the one part of the chat surface that must stay generic —
     ``AskResponse.tool_outputs`` is opaque by contract, and structured rendering
-    belongs to a pack-specific projection adapter.
+    belongs to the composition projection carried beside the response.
     """
     return tuple(
         f"- `{output.tool_name}` — {len(output.result)} characters"
@@ -136,15 +141,16 @@ def apply_ask_turn_to_session_messages(
         response = result.response
         if response is None:
             return
-        messages.append(
-            {
-                "role": "assistant",
-                "content": response.answer,
-                "citations": response.citations,
-                "tool_outputs": response.tool_outputs,
-                "run": response.run,
-            }
-        )
+        entry: dict[str, Any] = {
+            "role": "assistant",
+            "content": response.answer,
+            "citations": response.citations,
+            "tool_outputs": response.tool_outputs,
+            "run": response.run,
+        }
+        if result.tool_run_view is not None:
+            entry["tool_run_view"] = result.tool_run_view
+        messages.append(entry)
         return
     if result.drop_user_turn:
         if messages and messages[-1].get("role") == "user":
@@ -225,4 +231,13 @@ def run_ask_turn(
         )
     finally:
         reset_request_id(token)
-    return AskTurnResult(ok=True, response=response, run=response.run)
+    tool_run_view: SoftwareDeliveryRunView | None = None
+    consume = getattr(ask, "consume_tool_run_view", None)
+    if consume is not None:
+        tool_run_view = consume()
+    return AskTurnResult(
+        ok=True,
+        response=response,
+        run=response.run,
+        tool_run_view=tool_run_view,
+    )

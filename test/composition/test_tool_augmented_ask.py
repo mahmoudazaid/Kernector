@@ -188,6 +188,40 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
     assert '{"score": 62}' not in str(response.run)
 
 
+def test_a_tool_turn_exposes_run_view_via_consume_not_ask_response() -> None:
+    """#178 carrier B: typed view stays off AskResponse; consume-once side path."""
+    from composition.software_delivery_tools import SoftwareDeliveryRunView
+
+    run_view = SoftwareDeliveryRunView(summary="Scored risk.", calls=())
+    ask = _RecordingAsk()
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(
+            ToolRunOutcome(answer="Scored risk.", run_view=run_view)
+        ),
+        select=lambda query: _Selection(generate_tests=False, output_style="steps"),
+    )
+
+    response = wrapper.execute(
+        AskRequest(query="Score the risk for AUTH-101", prompt_key=None)
+    )
+
+    assert "run_view" not in AskResponse.__dataclass_fields__
+    assert response.answer == "Scored risk."
+    assert wrapper.consume_tool_run_view() is run_view
+    assert wrapper.consume_tool_run_view() is None
+
+
+def test_a_rag_turn_leaves_consume_empty() -> None:
+    wrapper = ToolAugmentedAsk(
+        _RecordingAsk(),
+        runner=_RecordingRunner(_outcome()),
+        select=lambda query: None,
+    )
+    wrapper.execute(AskRequest(query="What is MFA?", prompt_key=None))
+    assert wrapper.consume_tool_run_view() is None
+
+
 def test_the_selected_style_reaches_the_chain() -> None:
     runner = _RecordingRunner(_outcome())
     wrapper = ToolAugmentedAsk(

@@ -2,9 +2,9 @@
 
 Carries tool name, outcome status, and an explicitly authored summary for
 renderers. Not stored on ``AskResponse.tool_outputs`` (opaque
-``InvokeToolResponse`` only). A future pack-specific projection adapter builds
-these views from validated typed metadata — never from ``InvokeToolResponse.result``
-or truncated opaque payloads.
+``InvokeToolResponse`` only). ``project_software_delivery_run_view`` builds
+these views from validated typed metadata — never from
+``InvokeToolResponse.result`` or truncated opaque payloads.
 """
 
 from __future__ import annotations

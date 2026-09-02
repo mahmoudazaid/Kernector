@@ -20,6 +20,7 @@ from application.contracts import AskRequest, AskResponse, Citation, InvokeToolR
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from application.observability import current_request_id, log_operation
+from composition.software_delivery_tools import SoftwareDeliveryRunView
 
 logger = logging.getLogger(__name__)
 
@@ -82,12 +83,17 @@ class ToolRunOutcome:
         run (RunMeta | None): Observability for a model call made during the
             run. Tool chains leave this ``None``; requirements analysis projects
             ``AskResult`` metadata here.
+        run_view (SoftwareDeliveryRunView | None): Typed presentation projection
+            for Software Delivery tool chains. Not placed on ``AskResponse``;
+            callers consume it via the composition side path. Analysis and RAG
+            leave this ``None``.
     """
 
     answer: str
     citations: tuple[Citation, ...] = ()
     tool_outputs: tuple[InvokeToolResponse, ...] = ()
     run: RunMeta | None = None
+    run_view: SoftwareDeliveryRunView | None = None
 
 
 class ToolSelection(Protocol):
@@ -149,6 +155,17 @@ class ToolAugmentedAsk:
         self._select = select
         self._analysis_runner = analysis_runner
         self._pack_id = pack_id
+        self._pending_run_view: SoftwareDeliveryRunView | None = None
+
+    def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
+        """Return and clear the typed view from the last tools-path execute.
+
+        Carrier beside ``AskResponse``: presentation reads this after ``execute``
+        so typed views never enter the application contract.
+        """
+        view = self._pending_run_view
+        self._pending_run_view = None
+        return view
 
     def execute(
         self,
@@ -173,6 +190,7 @@ class ToolAugmentedAsk:
         emits the terminal ``success`` / ``insufficient`` / ``error`` event.
         Tool and analysis paths log their own terminal outcomes.
         """
+        self._pending_run_view = None
         if request.prompt_key is not None:
             response = self._ask.execute(request, settings)
             log_operation(
@@ -302,6 +320,7 @@ class ToolAugmentedAsk:
             path="tools",
             pack=self._pack_id,
         )
+        self._pending_run_view = outcome.run_view
         return AskResponse(
             answer=outcome.answer,
             citations=outcome.citations,
