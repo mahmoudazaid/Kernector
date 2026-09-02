@@ -297,11 +297,15 @@ def test_a_risk_only_run_attaches_a_run_view_without_markdown() -> None:
     assert outcome.run_view.markdown == ""
     assert outcome.run_view.test_cases is None
     assert outcome.run_view.risk is not None
-    assert outcome.run is None
+    assert outcome.run_view.risk.score == 62
+    assert outcome.run is not None
+    assert outcome.run.hit_count == 1
+    assert outcome.run.citation_count == 1
+    assert outcome.run.model is None
+    assert outcome.run.query_rewritten is None
 
 
 def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
-    from application.contracts import RunMeta
     from composition.recording_chat import RecordingChatModel
     from domain.models import AskResult, Message, Usage
 
@@ -320,8 +324,52 @@ def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
             )
 
     recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
-    # Simulate the generate-test-cases tool calling the shared chat model.
-    recording.complete("sys", (Message(role="user", content="q"),), {})
+
+    def orchestrate(**kwargs: object) -> _Response:
+        # Simulate the generate-test-cases tool calling the shared chat model.
+        recording.complete("sys", (Message(role="user", content="q"),), {})
+        kwargs["invoke"](_RISK_TOOL, {})  # type: ignore[operator]
+        return _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+
+    runner = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=orchestrate,
+        model_calls=recording,
+    )
+
+    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+
+    assert outcome.run is not None
+    assert outcome.run.model == "gen-model"
+    assert outcome.run.latency_ms == 55
+    assert outcome.run.usage == Usage(total_tokens=12)
+    assert outcome.run.settings == {}
+    assert outcome.run.hit_count == 1
+    assert outcome.run.citation_count == 1
+    assert recording.consume() is None
+
+
+def test_stale_recording_before_run_is_ignored_by_model_free_risk_run() -> None:
+    from composition.recording_chat import RecordingChatModel
+    from domain.models import AskResult, Message, Usage
+
+    class _Inner:
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            return AskResult(
+                content="stale",
+                model="stale-model",
+                latency_ms=99,
+                usage=Usage(total_tokens=1),
+            )
+
+    recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
+    recording.complete("sys", (Message(role="user", content="prior"),), {})
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
@@ -334,14 +382,149 @@ def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
 
     outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
 
-    assert outcome.run == RunMeta(
-        model="gen-model",
-        latency_ms=55,
-        usage=Usage(total_tokens=12),
-        settings={},
+    assert outcome.run is not None
+    assert outcome.run.model is None
+    assert outcome.run.latency_ms is None
+    assert outcome.run.hit_count == 1
+    assert recording.consume() is None
+
+
+def test_failed_run_clears_model_metadata_so_next_run_does_not_inherit_it() -> None:
+    from composition.recording_chat import RecordingChatModel
+    from domain.models import AskResult, Message, Usage
+
+    class _Inner:
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            return AskResult(
+                content="{}",
+                model="failed-run-model",
+                latency_ms=44,
+                usage=Usage(total_tokens=8),
+            )
+
+    recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
+
+    def failing_orchestrate(**kwargs: object) -> _Response:
+        recording.complete("sys", (Message(role="user", content="q"),), {})
+        raise RuntimeError("orchestrate blew up")
+
+    failing = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=failing_orchestrate,
+        model_calls=recording,
     )
-    assert recording.consume_last() is None
-    assert outcome.run_view.risk.score == 62
+    with pytest.raises(ToolRunFailedError):
+        failing.run("Create test cases for AUTH-101")
+
+    assert recording.consume() is None
+
+    following = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=_RecordingOrchestrate(
+            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+        ),
+        model_calls=recording,
+    )
+    outcome = following.run("Score the risk for AUTH-101", generate_tests=False)
+
+    assert outcome.run is not None
+    assert outcome.run.model is None
+    assert outcome.run.latency_ms is None
+    assert outcome.run.hit_count == 1
+
+
+def test_projection_failure_after_model_call_clears_recorder() -> None:
+    """tool_run_answer / projection errors must not leak metadata to the next run."""
+    from composition.recording_chat import RecordingChatModel
+    from domain.models import AskResult, Message, Usage
+
+    class _Inner:
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            return AskResult(
+                content="{}",
+                model="proj-fail-model",
+                latency_ms=33,
+                usage=Usage(total_tokens=5),
+            )
+
+    recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
+
+    def orchestrate(**kwargs: object) -> _Response:
+        recording.complete("sys", (Message(role="user", content="q"),), {})
+        kwargs["invoke"](_RISK_TOOL, {})  # type: ignore[operator]
+        return _Response("Ran something new.", (object(),))
+
+    runner = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=orchestrate,
+        model_calls=recording,
+    )
+    with pytest.raises(ToolRunFailedError):
+        runner.run("Create test cases for AUTH-101")
+
+    assert recording.consume() is None
+
+
+def test_fake_recorder_protocol_works_without_inner_chat_model() -> None:
+    """Orchestration depends on ModelCallRecorder, not RecordingChatModel."""
+    from application.contracts import RunMeta
+    from domain.models import Usage
+
+    class _FakeRecorder:
+        def __init__(self) -> None:
+            self._meta: RunMeta | None = None
+            self.cleared = 0
+
+        def clear(self) -> None:
+            self.cleared += 1
+            self._meta = None
+
+        def consume(self) -> RunMeta | None:
+            last, self._meta = self._meta, None
+            return last
+
+        def seed(self, meta: RunMeta) -> None:
+            self._meta = meta
+
+    fake = _FakeRecorder()
+
+    def orchestrate(**kwargs: object) -> _Response:
+        fake.seed(
+            RunMeta(
+                model="fake-model",
+                latency_ms=10,
+                usage=Usage(total_tokens=2),
+            )
+        )
+        kwargs["invoke"](_RISK_TOOL, {})  # type: ignore[operator]
+        return _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+
+    runner = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=orchestrate,
+        model_calls=fake,
+    )
+    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+
+    assert fake.cleared >= 2  # start + finally
+    assert outcome.run is not None
+    assert outcome.run.model == "fake-model"
+    assert outcome.run.latency_ms == 10
+    assert outcome.run.hit_count == 1
 
 
 def test_every_citation_came_from_the_retrieved_evidence() -> None:
