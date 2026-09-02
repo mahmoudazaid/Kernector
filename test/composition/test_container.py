@@ -1037,6 +1037,57 @@ def test_build_vector_store_wraps_dual_write_when_hybrid_enabled(
     assert use_case._lexical_index is store.lexical
 
 
+def test_build_vector_store_skips_bm25_when_hybrid_alpha_is_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("HYBRID_ALPHA", "0")
+    settings = load_settings()
+
+    hydrate_calls: list[object] = []
+
+    def _boom(self):  # type: ignore[no-untyped-def]
+        hydrate_calls.append(self)
+        raise AssertionError("alpha=0 must not hydrate BM25")
+
+    monkeypatch.setattr(ChromaVectorStore, "list_embedded_chunks", _boom)
+
+    store = build_vector_store(settings)
+
+    assert isinstance(store, ChromaVectorStore)
+    assert hydrate_calls == []
+
+
+def test_build_retrieve_knowledge_skips_embedding_when_hybrid_alpha_is_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("HYBRID_ALPHA", "1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    settings = load_settings()
+
+    def _boom_embed(settings):  # type: ignore[no-untyped-def]
+        raise AssertionError("alpha=1 must not construct embedding adapter")
+
+    monkeypatch.setattr("composition.container.build_embedding_model", _boom_embed)
+    store = build_vector_store(settings)
+    use_case = build_retrieve_knowledge(settings, vector_store=store)
+
+    assert isinstance(store, DualWriteVectorStore)
+    assert use_case._embedding_model is None
+    assert use_case._vector_store is None
+    assert use_case._lexical_index is store.lexical
+    assert use_case._hybrid_alpha == 1.0
+
+
 def test_reindex_filter_metadata_works_with_hybrid_enabled_without_bm25_hydrate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
