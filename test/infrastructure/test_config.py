@@ -25,6 +25,10 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
+    monkeypatch.delenv("HYBRID_SEARCH_ENABLED", raising=False)
+    monkeypatch.delenv("HYBRID_ALPHA", raising=False)
+    monkeypatch.delenv("RETRIEVAL_LIMIT", raising=False)
+    monkeypatch.delenv("RELEVANCE_THRESHOLD", raising=False)
     return monkeypatch
 
 

@@ -63,7 +63,9 @@ def test_create_returns_source_id_for_the_success_banner(
 ) -> None:
     document = _document()
 
-    def _create(_settings: object, payload: UploadPayload) -> CatalogDocument:
+    def _create(
+        _settings: object, payload: UploadPayload, **_kwargs: object
+    ) -> CatalogDocument:
         assert payload.file_name == "guide.txt"
         return document
 
@@ -165,7 +167,10 @@ def test_replace_preserves_reference_in_success_message(
     document = _document(file_name="guide-v2.md")
 
     def _replace(
-        _settings: object, reference: SourceReference, payload: UploadPayload
+        _settings: object,
+        reference: SourceReference,
+        payload: UploadPayload,
+        **_kwargs: object,
     ) -> CatalogDocument:
         assert reference.source_id == "id-1"
         assert payload.file_name == "guide-v2.md"

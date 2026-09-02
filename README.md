@@ -31,6 +31,10 @@ When hybrid is on, hit scores are fused values in `[0, 1]` (not raw cosine).
 Keep `RELEVANCE_THRESHOLD` at its default `0.0` unless you retune for fused
 scores. Metadata filters still apply to both sides.
 
+Streamlit caches one vector store (`st.cache_resource`) and injects it into chat
+retrieval and document create/replace/delete so the in-memory BM25 index stays
+current without re-hydrating from Chroma on every rerun.
+
 ## Upload and manage documents
 
 1. Start the app with the command above.

@@ -126,14 +126,13 @@ class RetrieveKnowledge:
             return ()
         keys = list(chunks.keys())
         fused = fuse_hybrid_scores(
-            bm25_scores=[bm25_scores.get(key, 0.0) for key in keys],
-            vector_scores=[vector_scores.get(key, 0.0) for key in keys],
+            bm25_scores=[bm25_scores.get(key) for key in keys],
+            vector_scores=[vector_scores.get(key) for key in keys],
             alpha=self._hybrid_alpha,
         )
         ranked = sorted(
             zip(keys, fused, strict=True),
-            key=lambda pair: pair[1],
-            reverse=True,
+            key=lambda pair: (-pair[1], pair[0]),
         )
         limit = request.retrieval_limit
         return tuple(
