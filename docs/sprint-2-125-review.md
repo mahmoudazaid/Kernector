@@ -12,8 +12,8 @@
 | Area | Count |
 |------|-------|
 | Mandatory Done | 16 / 16 |
-| Optional Done | 8 |
-| Optional Partial | 1 |
+| Optional Done | 7 |
+| Optional Partial | 2 |
 | Optional Not done | 12 |
 | Max bonus (≥2 medium + 1 hard) | Medium met; no hard optional done |
 
@@ -48,7 +48,7 @@
 
 | Requirement | type | status | location | ticket | epic |
 |---|---|---|---|---|---|
-| Conversation history + export | Easy | Done (history + multi-format) | `app.py`, `components.render_conversation_export_actions` | #34, [#181](https://github.com/mahmoudazaid/Kernector/issues/181) | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
+| Conversation history + export | Easy | Done (Markdown) | `app.py`, `components.render_export_actions` | #34 | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
 | Visualise RAG process | Easy | Not done | — | [#179](https://github.com/mahmoudazaid/Kernector/issues/179) | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
 | Source citations | Easy | Done | `application/citations.py` | #88 | [#70](https://github.com/mahmoudazaid/Kernector/issues/70) |
 | Interactive help / guide | Easy | Not done | — | [#180](https://github.com/mahmoudazaid/Kernector/issues/180) | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
@@ -58,7 +58,7 @@
 | Auth + personalisation | Medium | Not done | — | [#182](https://github.com/mahmoudazaid/Kernector/issues/182) | [#72](https://github.com/mahmoudazaid/Kernector/issues/72) |
 | Token usage and costs | Medium | Partial | tokens in `run_details.py`; no cost | [#40](https://github.com/mahmoudazaid/Kernector/issues/40), [#49](https://github.com/mahmoudazaid/Kernector/issues/49), [#50](https://github.com/mahmoudazaid/Kernector/issues/50) | [#148](https://github.com/mahmoudazaid/Kernector/issues/148) |
 | Tool-result visualisation | Medium | Done | `tool_run_panel.py` via `projected_results.py` | [#178](https://github.com/mahmoudazaid/Kernector/issues/178) (closed) | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
-| Export PDF / CSV / JSON | Medium | Done | `conversation_export.py`, `components.render_conversation_export_actions`, `infrastructure/export/conversation_transcript_pdf.py` | [#181](https://github.com/mahmoudazaid/Kernector/issues/181) | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
+| Export PDF / CSV / JSON | Medium | Partial (MD only) | `render_export_actions` | [#181](https://github.com/mahmoudazaid/Kernector/issues/181) | [#73](https://github.com/mahmoudazaid/Kernector/issues/73) |
 | Remote MCP tools | Medium | Not done | — | [#184](https://github.com/mahmoudazaid/Kernector/issues/184) | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
 | Rate limiting + API keys | Medium | Not done | — | [#183](https://github.com/mahmoudazaid/Kernector/issues/183) (+ #20) | [#72](https://github.com/mahmoudazaid/Kernector/issues/72) |
 | Logging and monitoring | Medium | Done | `application/observability.py` | #160 | [#74](https://github.com/mahmoudazaid/Kernector/issues/74) |
