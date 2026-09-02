@@ -142,7 +142,10 @@ def test_shared_app_flow_does_not_name_the_pack_or_tool_run_form() -> None:
     assert "risk_score" not in source
     assert "render_tool_run" not in source
     assert "TOOL_RUN_RESULT_KEY" not in source
-    assert "tool_run" not in source
+    assert "tool_run_panel" not in source
+    assert "build_software_delivery_tools" not in source
+    assert "render_projected_results" in source
+    assert "tool_run_view" in source
 
 
 def test_composition_has_no_parallel_tool_run_entry_point() -> None:
@@ -156,18 +159,20 @@ def test_composition_has_no_parallel_tool_run_entry_point() -> None:
 
 
 def test_ask_turn_surfaces_tool_outputs_without_reaching_for_typed_views() -> None:
-    """#170 carries the opaque contract; typed views stay the renderers' business.
+    """#178: ask_turn may store SoftwareDeliveryRunView; it must not render it.
 
-    This replaces the #161-era fence that required ``tool_outputs`` to be absent
-    here. What survives the handover is the half that is an invariant rather than
-    a schedule: the chat mapper never touches a pack-shaped view.
+    Opaque ``tool_outputs`` stay on AskResponse. Typed views ride the side path
+    onto session messages; #161 widgets remain outside the chat mapper.
     """
     import presentation.streamlit.ask_turn as ask_turn_mod
 
     source = Path(ask_turn_mod.__file__).read_text(encoding="utf-8")
     assert "tool_outputs" in source
+    assert "tool_run_view" in source
+    assert "SoftwareDeliveryRunView" in source
     assert "render_software_delivery" not in source
-    assert "SoftwareDeliveryRunView" not in source
+    assert "tool_run_panel" not in source
+    assert "render_markdown_export" not in source
 
 
 def test_architecture_docs_do_not_store_typed_views_on_ask_response() -> None:
@@ -181,18 +186,16 @@ def test_architecture_docs_do_not_store_typed_views_on_ask_response() -> None:
 
 
 def test_app_surfaces_tool_outputs_generically_not_through_pack_renderers() -> None:
-    """#170 shows what ran; the typed renderers still await a projection adapter.
-
-    ``app.py`` cannot import ``render_software_delivery_tool_results`` without
-    breaking its own pack-free source scan, which is why the chat bubble carries
-    the substance in ``answer`` and only names the tools underneath.
-    """
+    """#178: app calls the generic projected-results seam, never pack renderers."""
     import presentation.streamlit.app as app_mod
 
     source = Path(app_mod.__file__).read_text(encoding="utf-8")
     assert "tool_outputs" in source
     assert "tool_output_lines" in source
+    assert "render_projected_results" in source
     assert "render_software_delivery_tool_results" not in source
+    assert "from packs" not in source
+    assert "import packs" not in source
 
 
 def test_the_chat_flow_builds_the_tool_augmented_ask() -> None:

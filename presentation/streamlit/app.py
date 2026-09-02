@@ -31,6 +31,7 @@ from presentation.streamlit.components import (
     render_reply,
     render_run_meta,
 )
+from presentation.streamlit.projected_results import render_projected_results
 from presentation.streamlit.upload_ingest import (
     UploadIngestResult,
     create_new_document,
@@ -179,6 +180,7 @@ def _render_history() -> None:
                 render_reply(message["content"], message.get("off_topic_marker"))
                 _render_citations(message.get("citations") or ())
                 _render_tool_outputs(message.get("tool_outputs") or ())
+                render_projected_results(message.get("tool_run_view"))
                 render_run_meta(message.get("run"))
                 render_export_actions(message["content"], f"analysis_{index}")
             else:
@@ -220,6 +222,7 @@ def _handle_input(
         render_reply(response.answer)
         _render_citations(response.citations)
         _render_tool_outputs(response.tool_outputs)
+        render_projected_results(result.tool_run_view)
         render_run_meta(response.run)
         render_export_actions(
             response.answer, f"analysis_{len(st.session_state.messages)}"

@@ -19,7 +19,16 @@ from composition.software_delivery_chat import (
     PackSoftwareDeliveryChat,
     ToolCallRecorder,
     ToolRunFailedError,
+    project_software_delivery_run_view,
 )
+from composition.software_delivery_tools import (
+    RiskFactorView,
+    RiskScoreView,
+    SoftwareDeliveryRunView,
+    TestCaseView,
+    TestCasesView,
+)
+from composition.tool_runs import ToolCallView
 from domain.errors import ToolFailureError
 from domain.knowledge import (
     DocumentChunk,
@@ -239,6 +248,7 @@ def test_the_answer_carries_the_exported_cases_not_prose() -> None:
             ),
         ),
     )
+    markdown = "# Test Cases\n\n## 1. `Lock the account`\n"
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
         invoke=_ok,
@@ -248,7 +258,7 @@ def test_the_answer_carries_the_exported_cases_not_prose() -> None:
                 (
                     _RiskOutcome(_assessment()),
                     _TestsOutcome(generation),
-                    _ExportOutcome("# Test Cases\n\n## 1. `Lock the account`\n"),
+                    _ExportOutcome(markdown),
                 ),
             ),
             tools=(_RISK_TOOL, _GENERATE_TOOL, _EXPORT_TOOL),
@@ -260,12 +270,34 @@ def test_the_answer_carries_the_exported_cases_not_prose() -> None:
     assert outcome.answer.startswith(
         "Scored risk, generated test cases, and exported Markdown."
     )
-    assert outcome.answer.endswith("# Test Cases\n\n## 1. `Lock the account`\n")
+    assert outcome.answer.endswith(markdown)
     assert outcome.tool_outputs == (
         InvokeToolResponse(_RISK_TOOL, '{"score": 62}'),
         InvokeToolResponse(_GENERATE_TOOL, '{"score": 62}'),
         InvokeToolResponse(_EXPORT_TOOL, '{"score": 62}'),
     )
+    assert outcome.run_view is not None
+    assert outcome.run_view.markdown == markdown
+    assert outcome.run_view.risk is not None
+    assert outcome.run_view.risk.score == 62
+
+
+def test_a_risk_only_run_attaches_a_run_view_without_markdown() -> None:
+    runner = PackSoftwareDeliveryChat(
+        retrieve=_RecordingRetrieve((_hit(),)),
+        invoke=_ok,
+        orchestrate=_RecordingOrchestrate(
+            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+        ),
+    )
+
+    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+
+    assert outcome.run_view is not None
+    assert outcome.run_view.markdown == ""
+    assert outcome.run_view.test_cases is None
+    assert outcome.run_view.risk is not None
+    assert outcome.run_view.risk.score == 62
 
 
 def test_every_citation_came_from_the_retrieved_evidence() -> None:
@@ -372,3 +404,100 @@ def test_exported_styles_match_the_pack() -> None:
     from packs.software_delivery.contracts import TEST_CASE_STYLES
 
     assert set(SOFTWARE_DELIVERY_TEST_STYLES) == set(TEST_CASE_STYLES)
+
+
+def _generation() -> _Generation:
+    return _Generation(
+        output_style="steps",
+        test_cases=(
+            _Case(
+                title="Lock the account after five failed MFA attempts",
+                steps=("Sign in with a valid password.", "Fail MFA five times."),
+                expected="The account is locked.",
+                references=(SourceReference("AUTH-101", "user_story"),),
+            ),
+        ),
+    )
+
+
+def test_project_run_view_maps_full_chain_to_typed_views() -> None:
+    """#178: typed outcomes become SoftwareDeliveryRunView without opaque payloads."""
+    markdown = "# Test Cases\n\n## 1. `Lock the account`\n"
+    response = _Response(
+        "Scored risk, generated test cases, and exported Markdown.",
+        (
+            _RiskOutcome(_assessment()),
+            _TestsOutcome(_generation()),
+            _ExportOutcome(markdown),
+        ),
+    )
+
+    view = project_software_delivery_run_view(response)
+
+    assert view == SoftwareDeliveryRunView(
+        summary="Scored risk, generated test cases, and exported Markdown.",
+        calls=(
+            ToolCallView(
+                _RISK_TOOL, ok=True, summary="Scored risk at 62/100"
+            ),
+            ToolCallView(
+                _GENERATE_TOOL, ok=True, summary="Generated 1 test case"
+            ),
+            ToolCallView(
+                _EXPORT_TOOL, ok=True, summary="Exported test cases as Markdown"
+            ),
+        ),
+        risk=RiskScoreView(
+            score=62,
+            level="high",
+            rationale="Acceptance criteria are absent from a complete story.",
+            factors=(
+                RiskFactorView(
+                    factor_id="missing_acceptance_criteria",
+                    weight=30,
+                    references=(SourceReference("SRS-2", "srs"),),
+                ),
+            ),
+        ),
+        test_cases=TestCasesView(
+            output_style="steps",
+            cases=(
+                TestCaseView(
+                    title="Lock the account after five failed MFA attempts",
+                    steps=(
+                        "Sign in with a valid password.",
+                        "Fail MFA five times.",
+                    ),
+                    expected="The account is locked.",
+                    references=(SourceReference("AUTH-101", "user_story"),),
+                ),
+            ),
+        ),
+        markdown=markdown,
+    )
+    rendered = " ".join(call.summary for call in view.calls)
+    assert '{"score"' not in rendered
+    assert "sk-live" not in rendered
+
+
+def test_project_run_view_maps_risk_only_without_export() -> None:
+    view = project_software_delivery_run_view(
+        _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+    )
+
+    assert view.risk is not None
+    assert view.risk.score == 62
+    assert view.test_cases is None
+    assert view.markdown == ""
+    assert view.calls == (
+        ToolCallView(_RISK_TOOL, ok=True, summary="Scored risk at 62/100"),
+    )
+
+
+def test_project_run_view_rejects_unrecognised_outcome() -> None:
+    with pytest.raises(ToolRunFailedError) as excinfo:
+        project_software_delivery_run_view(
+            _Response("Ran something new.", (object(),))
+        )
+
+    assert str(excinfo.value) == "The tool run produced an unrecognised result."
