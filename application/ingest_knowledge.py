@@ -1,10 +1,12 @@
 """Ingest normalized knowledge sources into the vector store through ports."""
 
 from collections.abc import Sequence
+import logging
 
 from application.chunking import chunk_document
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError
+from application.observability import log_operation
 from domain.knowledge import (
     DocumentChunk,
     EmbeddedChunk,
@@ -12,6 +14,8 @@ from domain.knowledge import (
     SourceReference,
 )
 from domain.ports import EmbeddingModel, VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class IngestFailure(RuntimeError):
@@ -78,6 +82,31 @@ class IngestKnowledge:
             IngestFailure: Embedding or vector-store failure, annotated with
                 whether vector mutation may have started.
         """
+        try:
+            response = self._execute(request)
+        except ApplicationValidationError:
+            raise
+        except Exception as error:
+            log_operation(
+                logger,
+                operation="ingest",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_count=len(request.documents),
+            )
+            raise
+        log_operation(
+            logger,
+            operation="ingest",
+            outcome="success",
+            source_count=len(response.accepted_ids),
+            chunk_count=response.chunk_count,
+            source_type=_source_types(request.documents),
+        )
+        return response
+
+    def _execute(self, request: IngestRequest) -> IngestResponse:
         _reject_duplicate_references(request.documents)
         try:
             chunks_by_document = tuple(
@@ -132,6 +161,14 @@ class IngestKnowledge:
             chunk_size=self._chunk_size,
             chunk_overlap=self._chunk_overlap,
         )
+
+
+def _source_types(documents: Sequence[SourceDocument]) -> str | None:
+    """Sorted unique source_type values from documents, or ``None`` when empty."""
+    types = sorted({document.reference.source_type for document in documents})
+    if not types:
+        return None
+    return ",".join(types)
 
 
 def _regroup(
