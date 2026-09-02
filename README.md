@@ -106,7 +106,7 @@ When present, the expander may show:
 - pack
 - query rewritten (`yes` / `no`) — flag only, never the query text
 - retrieval hit count
-- citation count
+- citation count (one entry per citation attached to the response; same as hit count today because citations are built 1:1 from hits without deduplication)
 - invoked tool **names**
 
 Unset optional fields are omitted. The UI does **not** display prompts, queries,

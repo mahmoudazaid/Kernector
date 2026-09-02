@@ -83,8 +83,10 @@ class AskKnowledge:
         Returns:
             Model answer with citations from the chunks that cleared the
             relevance threshold, plus ``RunMeta`` for the call. When nothing
-            clears it, a fixed insufficient-knowledge answer with no citations
-            and ``run=None`` — the model is not called at all.
+            clears it, a fixed insufficient-knowledge answer with empty
+            citations; the model is not called, and ``run`` still carries
+            retrieval/rewrite/count metadata (``hit_count=0``,
+            ``citation_count=0``, ``query_rewritten``).
 
         Raises:
             ApplicationValidationError: ``query`` or a ``history`` message
@@ -153,9 +155,7 @@ class AskKnowledge:
                     request_id=current_request_id(),
                     outcome="insufficient",
                     hit_count=0,
-                    query_rewritten=(
-                        retrieved.original_query != retrieved.rewritten_query
-                    ),
+                    query_rewritten=retrieved.was_rewritten,
                     citation_count=0,
                     prompt_key=request.prompt_key,
                 ),
@@ -181,7 +181,7 @@ class AskKnowledge:
             request_id=current_request_id(),
             outcome="success",
             hit_count=len(hits),
-            query_rewritten=retrieved.original_query != retrieved.rewritten_query,
+            query_rewritten=retrieved.was_rewritten,
             citation_count=len(citations),
             prompt_key=request.prompt_key,
             source_type=source_type,
