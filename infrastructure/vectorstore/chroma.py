@@ -806,6 +806,51 @@ class ChromaVectorStore:
         )
         return len(ids)
 
+    def list_embedded_chunks(self) -> Sequence[EmbeddedChunk]:
+        """Return every stored chunk with its embedding for lexical hydrate.
+
+        Empty collections yield an empty sequence. Used by composition to
+        rebuild a BM25 index on cold start when hybrid search is enabled.
+        """
+        try:
+            result = self._collection.get(
+                include=["metadatas", "documents", "embeddings"]
+            )
+        except (ChromaError, ValueError) as exc:
+            raise ChromaStoreError(
+                f"could not read collection {self._collection.name!r} for "
+                f"lexical hydrate: {exc}"
+            ) from exc
+        ids = result.get("ids") or []
+        if not ids:
+            return ()
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        embeddings = result.get("embeddings")
+        if embeddings is None:
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: lexical hydrate requires "
+                "stored embeddings, but none were returned"
+            )
+        if not (
+            len(documents) == len(ids)
+            and len(metadatas) == len(ids)
+            and len(embeddings) == len(ids)
+        ):
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: hydrate get() returned "
+                f"mismatched lengths ids={len(ids)} documents={len(documents)} "
+                f"metadatas={len(metadatas)} embeddings={len(embeddings)}"
+            )
+        embedded: list[EmbeddedChunk] = []
+        for record_id, document, metadata, embedding in zip(
+            ids, documents, metadatas, embeddings, strict=True
+        ):
+            chunk = _decode_chunk(record_id, document, metadata)
+            vector = _validate_vector(list(embedding), f"record {record_id}")
+            embedded.append(EmbeddedChunk(chunk=chunk, vector=vector))
+        return tuple(embedded)
+
     def search(
         self,
         vector: Vector,

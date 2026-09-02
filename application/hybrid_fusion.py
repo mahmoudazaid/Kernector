@@ -1,0 +1,46 @@
+"""Min-max normalization and alpha-weighted BM25 + vector score fusion."""
+
+from collections.abc import Sequence
+
+
+def normalize_scores(scores: Sequence[float]) -> tuple[float, ...]:
+    """Min-max normalize ``scores`` into ``[0, 1]``.
+
+    A flat span (including a single value or an empty input) yields all zeros.
+    """
+    if not scores:
+        return ()
+    low = min(scores)
+    high = max(scores)
+    span = high - low
+    if span == 0:
+        return tuple(0.0 for _ in scores)
+    return tuple((value - low) / span for value in scores)
+
+
+def fuse_hybrid_scores(
+    *,
+    bm25_scores: Sequence[float],
+    vector_scores: Sequence[float],
+    alpha: float,
+) -> tuple[float, ...]:
+    """Fuse aligned BM25 and vector scores.
+
+    Formula: ``alpha * norm(BM25) + (1 - alpha) * norm(vector)``.
+    ``alpha`` weights BM25 (``1`` = BM25 only, ``0`` = vector only).
+    """
+    if not isinstance(alpha, (int, float)) or isinstance(alpha, bool):
+        raise ValueError(f"alpha must be a number in [0, 1], got {alpha!r}")
+    if alpha < 0 or alpha > 1:
+        raise ValueError(f"alpha must be in [0, 1], got {alpha!r}")
+    if len(bm25_scores) != len(vector_scores):
+        raise ValueError(
+            "bm25_scores and vector_scores must have the same length, "
+            f"got {len(bm25_scores)} and {len(vector_scores)}"
+        )
+    bm25_norm = normalize_scores(bm25_scores)
+    vector_norm = normalize_scores(vector_scores)
+    return tuple(
+        alpha * bm25 + (1.0 - alpha) * vector
+        for bm25, vector in zip(bm25_norm, vector_norm, strict=True)
+    )

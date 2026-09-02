@@ -17,6 +17,20 @@ Seed format details: [data/knowledge/README.md](data/knowledge/README.md).
 uv run streamlit run main.py
 ```
 
+## Hybrid search (optional)
+
+Retrieval defaults to vector-only (Chroma cosine). To combine BM25 with vector
+scores on the product retrieve path:
+
+```bash
+export HYBRID_SEARCH_ENABLED=true
+export HYBRID_ALPHA=0.5   # BM25 weight; 1=BM25 only, 0=vector only
+```
+
+When hybrid is on, hit scores are fused values in `[0, 1]` (not raw cosine).
+Keep `RELEVANCE_THRESHOLD` at its default `0.0` unless you retune for fused
+scores. Metadata filters still apply to both sides.
+
 ## Upload and manage documents
 
 1. Start the app with the command above.
