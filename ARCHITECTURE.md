@@ -127,11 +127,12 @@ marked complete; chunk-level evidence may still contribute positive signals.
 
 The Streamlit **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,
-and Markdown preview/download — from **test fixtures only**; no adapter feeds
-them from a live run yet. They are absent when the pack is disabled, gated by
-``software_delivery_tools_enabled`` rather than by catching
-``ConfigurationError``. There is no standalone tool-run form: the only path that
-retrieves and orchestrates is the chat-time one described below.
+and Markdown preview/download. Live chat turns feed them through the #178
+projection adapter (``project_software_delivery_run_view``), not by parsing
+opaque ``AskResponse.tool_outputs``. They are absent when no typed view was
+projected (RAG / analysis / non-pack turns). There is no standalone tool-run
+form: the only path that retrieves and orchestrates is the chat-time one
+described below.
 
 ``AskResponse.tool_outputs`` remains ``Sequence[InvokeToolResponse]`` — opaque
 tool name plus opaque result string. Generic ``InvokeTool``, ``AskResponse``,
@@ -197,7 +198,9 @@ evidence bundle → ``OrchestrateSoftwareDelivery`` via the opaque tool boundary
 wrapped in a ``ToolCallRecorder`` that keeps one ``InvokeToolResponse`` per
 successful call. The reply is composed deterministically from the tools' typed
 results — the export step's Markdown for generated cases, the risk step's score
-band and rationale — never from a second model call.
+band and rationale — never from a second model call. The same typed outcomes are
+projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
+(#178); that view is **not** placed on ``AskResponse``.
 
 Two properties are worth naming because they are easy to lose:
 
@@ -209,13 +212,15 @@ Two properties are worth naming because they are easy to lose:
   merges chunks by ``(source_type, source_id)`` and loses ``chunk_index``.
   Row-level provenance survives only outside that merge.
 
-Streamlit surfaces a tool turn generically: the answer carries the substance,
-and ``tool_output_lines`` names each tool and measures its payload without
-parsing it. Projecting opaque outputs into ``SoftwareDeliveryRunView`` for the
-#161 renderers remains a separate pack-specific adapter — ``app.py`` cannot
-import a pack-named renderer without breaking its own source scan.
+Streamlit surfaces a tool turn in this order: reply → citations → opaque
+**Tools used** → #161 projected panels (when a view is present) → **Run
+details** → answer **Download output**. ``ToolAugmentedAsk.consume_tool_run_view``
+(forwarded by ``CorrelatedAsk``) hands the typed view to ``ask_turn``, which
+stores it on the session message beside — not inside — ``AskResponse``.
+``app.py`` calls ``render_projected_results`` and never imports pack-named
+renderers or ``packs``.
 
-#### Tool invocation boundary (#92 vs #95 vs #161 vs #170)
+#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178)
 
 - **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
   ``InvokeTool`` that treats arguments and results as opaque strings.
@@ -224,8 +229,11 @@ import a pack-named renderer without breaking its own source scan.
   testable with fixtures.
 - **#170** — chat intent → retrieve/orchestrate → populate
   ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
-  (delivered). The pack-specific projection adapter that would feed the #161
-  renderers from those outputs is still open.
+  (delivered).
+- **#178** — composition projects typed pack outcomes into
+  ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Streamlit Ask
+  renders #161 panels via ``render_projected_results`` without putting views on
+  ``AskResponse`` (delivered).
 
 ### Grounded ask: system policy vs optional task prompts
 

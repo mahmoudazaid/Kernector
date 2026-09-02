@@ -2,11 +2,11 @@
 
 Typed dataclasses only — no retrieval, orchestration, or invocation. These
 views are **not** stored on ``AskResponse.tool_outputs``; that field holds
-opaque ``InvokeToolResponse`` entries only. #170 will retrieve/orchestrate and
-populate ``AskResponse.tool_outputs``; a future pack-specific projection
-adapter will parse known outcomes into ``SoftwareDeliveryRunView`` and
-``ToolCallView`` (summaries from validated typed metadata, never raw payload
-text). #161 renderers consume those views from fixtures today.
+opaque ``InvokeToolResponse`` entries only. #178 projects typed pack outcomes
+into ``SoftwareDeliveryRunView`` / ``ToolCallView`` (summaries from validated
+typed metadata, never raw payload text) onto ``ToolRunOutcome``, then carries
+the view beside ``AskResponse`` into Streamlit. #161 renderers consume those
+views from fixtures or from that live projection.
 """
 
 from __future__ import annotations

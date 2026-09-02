@@ -299,6 +299,51 @@ def test_a_tool_turn_reaches_the_ui_with_its_outputs() -> None:
     ]
 
 
+def test_a_tool_turn_with_run_view_reaches_session_via_ask_turn() -> None:
+    """#178: typed view rides AskTurnResult/session, never AskResponse."""
+    from composition.software_delivery_tools import SoftwareDeliveryRunView
+    from presentation.streamlit.ask_turn import apply_ask_turn_to_session_messages
+
+    run_view = SoftwareDeliveryRunView(
+        summary="Exported.",
+        calls=(),
+        markdown="# Test Cases\n",
+    )
+
+    class _AskWithView:
+        def execute(
+            self,
+            request: AskRequest,
+            settings: Mapping[str, object] | None = None,
+        ) -> AskResponse:
+            return AskResponse(
+                answer="Exported.",
+                tool_outputs=(
+                    InvokeToolResponse(
+                        "software_delivery.export_test_cases_markdown",
+                        "# Test Cases\n",
+                    ),
+                ),
+            )
+
+        def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
+            return run_view
+
+    result = run_ask_turn(
+        _AskWithView(),  # type: ignore[arg-type]
+        query="Create test cases for AUTH-101",
+        history=(),
+    )
+    messages: list[dict[str, object]] = []
+    apply_ask_turn_to_session_messages(messages, result)
+
+    assert result.ok is True
+    assert result.tool_run_view is run_view
+    assert "run_view" not in AskResponse.__dataclass_fields__
+    assert messages[-1]["tool_run_view"] is run_view
+    assert messages[-1]["content"] == "Exported."
+
+
 def test_tool_output_lines_name_each_tool_without_parsing_it() -> None:
     """The payload is measured, never interpreted — that keeps the line generic."""
     lines = tool_output_lines(
