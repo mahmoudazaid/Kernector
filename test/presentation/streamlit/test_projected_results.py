@@ -69,14 +69,23 @@ def test_two_historical_exports_use_distinct_download_keys(
     render_projected_results(_export_view("# One\n"), key_prefix="export_1")
     render_projected_results(_export_view("# Two\n"), key_prefix="export_3")
 
-    assert keys == ["download_export_1", "download_export_3"]
-    assert len(set(keys)) == 2
+    assert keys == [
+        "download_export_1_md",
+        "download_export_1_json",
+        "download_export_1_csv",
+        "download_export_1_pdf",
+        "download_export_3_md",
+        "download_export_3_json",
+        "download_export_3_csv",
+        "download_export_3_pdf",
+    ]
+    assert len(set(keys)) == 8
 
 
 def test_history_plus_live_exports_use_distinct_download_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """History replay plus a live turn must keep three distinct export keys."""
+    """History replay plus a live turn must keep distinct export keys."""
     keys: list[str] = []
 
     def capture_download_button(*args: object, **kwargs: object) -> bool:
@@ -101,11 +110,20 @@ def test_history_plus_live_exports_use_distinct_download_keys(
     render_projected_results(_export_view("# Live\n"), key_prefix="export_5")
 
     assert keys == [
-        "download_export_1",
-        "download_export_3",
-        "download_export_5",
+        "download_export_1_md",
+        "download_export_1_json",
+        "download_export_1_csv",
+        "download_export_1_pdf",
+        "download_export_3_md",
+        "download_export_3_json",
+        "download_export_3_csv",
+        "download_export_3_pdf",
+        "download_export_5_md",
+        "download_export_5_json",
+        "download_export_5_csv",
+        "download_export_5_pdf",
     ]
-    assert len(set(keys)) == 3
+    assert len(set(keys)) == 12
 
 
 class _NullContext:
