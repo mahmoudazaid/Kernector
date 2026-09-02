@@ -516,3 +516,128 @@ def test_hybrid_intermediate_alpha_still_invokes_both_channels() -> None:
 
     assert len(vector.searches) == 1
     assert len(lexical.searches) == 1
+
+
+def test_hybrid_alpha_zero_rejects_all_negative_raw_vector_scores() -> None:
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=_chunk("bad-a", "unrelated a"), score=-0.9),
+            ScoredChunk(chunk=_chunk("bad-b", "unrelated b"), score=-0.8),
+        ]
+    )
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        hybrid_alpha=0.0,
+        vector_score_floor=0.0,
+    ).execute(RetrieveRequest(query="anything", retrieval_limit=5))
+
+    assert response.hits == ()
+
+
+def test_hybrid_intermediate_negative_vectors_without_lexical_overlap_return_empty() -> None:
+    from infrastructure.lexical.bm25 import Bm25LexicalIndex
+
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=_chunk("bad-a", "unrelated a"), score=-0.9),
+            ScoredChunk(chunk=_chunk("bad-b", "unrelated b"), score=-0.8),
+        ]
+    )
+    lexical = Bm25LexicalIndex()
+    lexical.upsert(
+        [
+            _embed(_chunk("noise", "blue-green deploy notes")),
+            _embed(_chunk("filler", "capacity planning")),
+        ]
+    )
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.5,
+        vector_score_floor=0.0,
+    ).execute(RetrieveRequest(query="zzzz-not-in-corpus-qqqq", retrieval_limit=5))
+
+    assert response.hits == ()
+
+
+def test_hybrid_vector_floor_keeps_only_eligible_before_normalization() -> None:
+    below = _chunk("below", "dissimilar below floor")
+    low = _chunk("low", "weak but eligible")
+    high = _chunk("high", "stronger eligible")
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=below, score=-0.5),
+            ScoredChunk(chunk=low, score=0.2),
+            ScoredChunk(chunk=high, score=0.4),
+        ]
+    )
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        hybrid_alpha=0.0,
+        vector_score_floor=0.0,
+    ).execute(RetrieveRequest(query="topic", retrieval_limit=5))
+
+    assert [hit.chunk.source_id for hit in response.hits] == ["high", "low"]
+    assert response.hits[0].score == pytest.approx(1.0)
+    assert response.hits[1].score == pytest.approx(0.0)
+    assert "below" not in {hit.chunk.source_id for hit in response.hits}
+
+
+def test_hybrid_rejected_vector_candidates_do_not_affect_surviving_normalization() -> None:
+    """If -0.5 entered min-max with 0.2/0.4, low would not normalize to 0.0."""
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=_chunk("below", "noise"), score=-0.5),
+            ScoredChunk(chunk=_chunk("low", "eligible low"), score=0.2),
+            ScoredChunk(chunk=_chunk("high", "eligible high"), score=0.4),
+        ]
+    )
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        hybrid_alpha=0.0,
+        vector_score_floor=0.0,
+    ).execute(RetrieveRequest(query="topic", retrieval_limit=5))
+
+    by_id = {hit.chunk.source_id: hit.score for hit in response.hits}
+    assert by_id == {"high": pytest.approx(1.0), "low": pytest.approx(0.0)}
+
+
+def test_hybrid_lexical_match_survives_when_all_vector_candidates_rejected() -> None:
+    lexical_hit = _chunk("lex", "ERR-4021 recovery steps")
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=_chunk("bad-a", "unrelated a"), score=-0.9),
+            ScoredChunk(chunk=_chunk("bad-b", "unrelated b"), score=-0.7),
+        ]
+    )
+    lexical = InMemoryLexicalIndex()
+    lexical.upsert([_embed(lexical_hit)])
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.5,
+        vector_score_floor=0.0,
+    ).execute(RetrieveRequest(query="ERR-4021", retrieval_limit=3))
+
+    assert [hit.chunk.source_id for hit in response.hits] == ["lex"]
+    assert response.hits[0].score == pytest.approx(0.5)

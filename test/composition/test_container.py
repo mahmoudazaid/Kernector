@@ -226,6 +226,7 @@ def test_build_ask_knowledge_wires_configured_retrieval_settings(
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
     monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "false")
     monkeypatch.setenv("RETRIEVAL_LIMIT", "9")
     monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.42")
 
@@ -233,6 +234,7 @@ def test_build_ask_knowledge_wires_configured_retrieval_settings(
 
     assert ask._default_retrieval_limit == 9
     assert ask._relevance_threshold == 0.42
+    assert ask._keep_retrieved_hits is False
 
 
 def test_build_ask_knowledge_wires_max_input_length_from_settings(
@@ -1035,6 +1037,7 @@ def test_build_vector_store_wraps_dual_write_when_hybrid_enabled(
     assert use_case._hybrid_enabled is True
     assert use_case._hybrid_alpha == 0.6
     assert use_case._lexical_index is store.lexical
+    assert use_case._vector_score_floor == settings.retrieval.relevance_threshold
 
 
 def test_build_vector_store_skips_bm25_when_hybrid_alpha_is_zero(
@@ -1086,6 +1089,133 @@ def test_build_retrieve_knowledge_skips_embedding_when_hybrid_alpha_is_one(
     assert use_case._vector_store is None
     assert use_case._lexical_index is store.lexical
     assert use_case._hybrid_alpha == 1.0
+    assert use_case._vector_score_floor is None
+
+
+def test_build_ask_knowledge_keeps_hybrid_hits_without_refiltering_fused_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from composition import build_ask_knowledge
+
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("PROMPT_PACKS", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("HYBRID_ALPHA", "0.5")
+    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.35")
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", "/tmp/kernector-hybrid-ask-floor")
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+
+    ask = build_ask_knowledge(load_settings(), chat_model=_StubChat())
+
+    assert ask._keep_retrieved_hits is True
+    assert ask._relevance_threshold == 0.35
+
+
+def test_relevant_retrieve_keeps_hybrid_hits_without_reapplying_raw_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from application.contracts import RewriteRetrieveResponse
+    from composition import container as container_mod
+    from domain.knowledge import (
+        DocumentChunk,
+        ScoredChunk,
+        SourceMetadata,
+        SourceReference,
+        SourceType,
+    )
+
+    weak = ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(
+                SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+            ),
+            index=0,
+            content="already qualified hybrid evidence",
+        ),
+        score=0.1,
+    )
+
+    class _FakeRewrite:
+        def execute(self, request: object) -> RewriteRetrieveResponse:
+            return RewriteRetrieveResponse(
+                hits=(weak,),
+                original_query="q",
+                rewritten_query="q",
+            )
+
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("HYBRID_ALPHA", "0.5")
+    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.5")
+    monkeypatch.setenv("RETRIEVAL_LIMIT", "3")
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", "/tmp/kernector-hybrid-relevant")
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setattr(
+        container_mod,
+        "build_rewrite_and_retrieve_knowledge",
+        lambda *a, **k: _FakeRewrite(),
+    )
+
+    retrieve = container_mod._relevant_retrieve(load_settings())
+    assert retrieve("anything") == (weak,)
+
+
+def test_relevant_retrieve_applies_raw_threshold_when_hybrid_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from application.contracts import RewriteRetrieveResponse
+    from composition import container as container_mod
+    from domain.knowledge import (
+        DocumentChunk,
+        ScoredChunk,
+        SourceMetadata,
+        SourceReference,
+        SourceType,
+    )
+
+    weak = ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(
+                SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+            ),
+            index=0,
+            content="below raw threshold",
+        ),
+        score=0.1,
+    )
+
+    class _FakeRewrite:
+        def execute(self, request: object) -> RewriteRetrieveResponse:
+            return RewriteRetrieveResponse(
+                hits=(weak,),
+                original_query="q",
+                rewritten_query="q",
+            )
+
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.5")
+    monkeypatch.setenv("RETRIEVAL_LIMIT", "3")
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", "/tmp/kernector-vector-relevant")
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setattr(
+        container_mod,
+        "build_rewrite_and_retrieve_knowledge",
+        lambda *a, **k: _FakeRewrite(),
+    )
+
+    retrieve = container_mod._relevant_retrieve(load_settings())
+    assert retrieve("anything") == ()
 
 
 def test_reindex_filter_metadata_works_with_hybrid_enabled_without_bm25_hydrate(

@@ -50,6 +50,9 @@ class RetrieveKnowledge:
     (``1`` = BM25 only, ``0`` = vector only). Endpoint alphas invoke only the
     active channel. Intermediate alphas fuse both. Hybrid hit scores are in
     ``[0, 1]``, not raw cosine.
+
+    ``vector_score_floor`` is a raw cosine eligibility floor applied only when
+    Hybrid mode has an active vector channel, before normalization/fusion.
     """
 
     def __init__(
@@ -61,6 +64,7 @@ class RetrieveKnowledge:
         hybrid_enabled: bool = False,
         lexical_index: LexicalIndex | None = None,
         hybrid_alpha: float = 0.5,
+        vector_score_floor: float | None = None,
     ) -> None:
         if not isinstance(hybrid_alpha, (int, float)) or isinstance(
             hybrid_alpha, bool
@@ -71,6 +75,14 @@ class RetrieveKnowledge:
         if hybrid_alpha < 0 or hybrid_alpha > 1:
             raise ValueError(
                 f"hybrid_alpha must be in [0, 1], got {hybrid_alpha!r}"
+            )
+        if vector_score_floor is not None and (
+            not isinstance(vector_score_floor, (int, float))
+            or isinstance(vector_score_floor, bool)
+        ):
+            raise ValueError(
+                "vector_score_floor must be a number or None, "
+                f"got {vector_score_floor!r}"
             )
         alpha = float(hybrid_alpha)
         needs_vector = (not hybrid_enabled) or alpha < 1.0
@@ -96,6 +108,9 @@ class RetrieveKnowledge:
         self._hybrid_enabled = hybrid_enabled
         self._lexical_index = lexical_index
         self._hybrid_alpha = alpha
+        self._vector_score_floor = (
+            None if vector_score_floor is None else float(vector_score_floor)
+        )
 
     def execute(self, request: RetrieveRequest) -> RetrieveResponse:
         """Return ranked chunks for ``request.query``, optionally metadata-filtered.
@@ -120,7 +135,9 @@ class RetrieveKnowledge:
             return RetrieveResponse(hits=self._vector_search(request))
         if self._hybrid_alpha == 0.0:
             return RetrieveResponse(
-                hits=_normalized_hits(self._vector_search(request))
+                hits=_normalized_hits(
+                    self._eligible_vector_hits(self._vector_search(request))
+                )
             )
         if self._hybrid_alpha == 1.0:
             return RetrieveResponse(
@@ -129,6 +146,14 @@ class RetrieveKnowledge:
                 )
             )
         return RetrieveResponse(hits=self._fuse_search(request))
+
+    def _eligible_vector_hits(
+        self, hits: Sequence[ScoredChunk]
+    ) -> tuple[ScoredChunk, ...]:
+        floor = self._vector_score_floor
+        if floor is None:
+            return tuple(hits)
+        return tuple(hit for hit in hits if hit.score >= floor)
 
     def _vector_search(
         self, request: RetrieveRequest, *, limit: int | None = None
@@ -161,7 +186,9 @@ class RetrieveKnowledge:
         assert self._embedding_model is not None
         assert self._vector_store is not None
         candidate_limit = _candidate_limit(request.retrieval_limit)
-        vector_hits = self._vector_search(request, limit=candidate_limit)
+        vector_hits = self._eligible_vector_hits(
+            self._vector_search(request, limit=candidate_limit)
+        )
         lexical_hits = self._lexical_search(request, limit=candidate_limit)
         chunks: dict[tuple[str, str, int], ScoredChunk] = {}
         vector_scores: dict[tuple[str, str, int], float] = {}

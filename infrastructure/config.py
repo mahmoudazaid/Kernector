@@ -58,18 +58,21 @@ class PromptSettings:
 class RetrievalSettings:
     """How much evidence to fetch, and how close it must be to count.
 
-    `relevance_threshold` is a cosine similarity in [-1.0, 1.0], matching
-    `VectorStore.search`, when hybrid search is off. The default of 0.0 is a
-    floor, not a tuned value: it discards only actively dissimilar chunks.
-    Raising it is what makes the insufficient-knowledge path fire on
-    merely-unrelated results, and the right number depends on the embedding
-    model and corpus — measure the score spread over known on-topic and
-    off-topic queries before setting it.
+    `relevance_threshold` is always a raw cosine similarity floor in
+    [-1.0, 1.0], matching `VectorStore.search` scores. The default of 0.0
+    discards only actively dissimilar vector chunks. Raising it is what makes
+    the insufficient-knowledge path fire on merely-unrelated results; the right
+    number depends on the embedding model and corpus — measure the score
+    spread over known on-topic and off-topic queries before setting it.
 
-    When `hybrid_enabled` is true, retrieve fuses BM25 and vector scores;
-    `hybrid_alpha` weights BM25 (1 = BM25 only, 0 = vector only). Hybrid hit
-    scores are fused values in [0, 1], so reinterpret `relevance_threshold`
-    accordingly (the default 0.0 still keeps all hybrid hits).
+    When `hybrid_enabled` is true, that same value is applied as the vector-
+    channel eligibility floor *before* normalization and fusion. Hybrid hit
+    scores returned to ask/tool paths are fused ranking scores in [0, 1], not
+    absolute relevance probabilities — do not reinterpret
+    `relevance_threshold` against those fused values. Lexical eligibility is
+    controlled by BM25 token overlap, not this cosine floor.
+
+    `hybrid_alpha` weights BM25 (1 = BM25 only, 0 = vector only).
     """
 
     limit: int
