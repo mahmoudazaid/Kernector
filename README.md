@@ -104,7 +104,9 @@ When present, the expander may show:
 - model
 - token usage
 - pack
+- query rewritten (`yes` / `no`) — flag only, never the query text
 - retrieval hit count
+- citation count
 - invoked tool **names**
 
 Unset optional fields are omitted. The UI does **not** display prompts, queries,
