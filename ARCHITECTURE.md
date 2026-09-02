@@ -163,7 +163,7 @@ Risk routing accepts explicit score/assessment requests (for example
 ``how risky is <target>``) and rejects conceptual or read-only questions.
 Scoped negations cancel only when they govern the matched action in the same
 clause (``Do not create test cases``, ``Never generate tests``, ``Do not assess
-the risk``, ``Do not analyze these requirements``). Constraint wording after a match (``Create test cases that do not
+the risk``). Constraint wording after a match (``Create test cases that do not
 require admin access``) and negation in another clause (``Create tests; never
 use production credentials``) do not cancel. Mixed requests keep the
 non-negated intent (``Do not generate tests; assess the risk for AUTH-101``
