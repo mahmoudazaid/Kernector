@@ -13,8 +13,9 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
 from application.citations import build_citations
-from application.contracts import InvokeToolResponse
+from application.contracts import InvokeToolResponse, RunMeta
 from application.errors import ApplicationValidationError, InsufficientEvidenceError
+from composition.recording_chat import RecordingChatModel
 from composition.software_delivery_tools import (
     RiskFactorView,
     RiskScoreView,
@@ -26,6 +27,7 @@ from composition.tool_augmented_ask import ToolRunOutcome
 from composition.tool_runs import ToolCallView
 from domain.errors import DomainValidationError
 from domain.knowledge import ScoredChunk
+from domain.models import AskResult
 
 OpaqueInvoke = Callable[[str, Mapping[str, object]], str]
 
@@ -263,6 +265,9 @@ class PackSoftwareDeliveryChat:
             ledger belongs to that run alone.
         orchestrate (Orchestrate): Lazily-imported pack call that builds the
             evidence bundle and runs the chain.
+        model_calls (RecordingChatModel | None): Shared recorder for ChatModel
+            calls made inside tools (e.g. test generation). When present, the
+            last ``AskResult`` becomes ``ToolRunOutcome.run``.
     """
 
     def __init__(
@@ -271,10 +276,12 @@ class PackSoftwareDeliveryChat:
         retrieve: RetrieveHits,
         invoke: OpaqueInvoke,
         orchestrate: Orchestrate,
+        model_calls: RecordingChatModel | None = None,
     ) -> None:
         self._retrieve = retrieve
         self._invoke = invoke
         self._orchestrate = orchestrate
+        self._model_calls = model_calls
 
     def run(
         self,
@@ -308,6 +315,8 @@ class PackSoftwareDeliveryChat:
                 invoke=recorder,
             )
         except (DomainValidationError, RuntimeError) as error:
+            if self._model_calls is not None:
+                self._model_calls.consume_last()
             raise ToolRunFailedError(
                 _TOOL_RUN_FAILED_MESSAGE, tool_outputs=recorder.tool_outputs
             ) from error
@@ -318,7 +327,19 @@ class PackSoftwareDeliveryChat:
             answer=tool_run_answer(response, tool_outputs=recorder.tool_outputs),
             citations=build_citations(hits),
             tool_outputs=recorder.tool_outputs,
+            run=_run_meta_from_model_call(self._model_calls),
             run_view=project_software_delivery_run_view(
                 response, tool_outputs=recorder.tool_outputs
             ),
         )
+
+
+def _run_meta_from_model_call(
+    model_calls: RecordingChatModel | None,
+) -> RunMeta | None:
+    if model_calls is None:
+        return None
+    result: AskResult | None = model_calls.consume_last()
+    if result is None:
+        return None
+    return RunMeta.from_result(result)
