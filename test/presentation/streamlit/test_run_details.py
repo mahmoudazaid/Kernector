@@ -70,3 +70,60 @@ def test_render_run_meta_uses_collapsed_run_details_expander() -> None:
     assert 'st.expander("Run details"' in source
     assert "expanded=False" in source
     assert "run_detail_lines" in source
+
+
+def _app_source() -> str:
+    return Path("presentation/streamlit/app.py").read_text(encoding="utf-8")
+
+
+def _block_between(source: str, start: str, end: str) -> str:
+    begin = source.index(start)
+    stop = source.index(end, begin)
+    return source[begin:stop]
+
+
+def test_successful_history_turn_renders_run_details_after_reply_and_outputs() -> None:
+    """History success: reply → citations → tools → Run details (not before reply)."""
+    history = _block_between(_app_source(), "def _render_history()", "def _handle_input(")
+    assistant = _block_between(
+        history,
+        'if message["role"] == "assistant":',
+        'else:\n                st.markdown(message["content"])',
+    )
+    reply_at = assistant.index("render_reply(")
+    citations_at = assistant.index("_render_citations(")
+    tools_at = assistant.index("_render_tool_outputs(")
+    run_at = assistant.index("render_run_meta(")
+    export_at = assistant.index("render_export_actions(")
+    assert reply_at < citations_at < tools_at < run_at < export_at
+
+
+def test_successful_live_turn_renders_run_details_after_reply_and_outputs() -> None:
+    """Live success: reply → citations → tools → Run details (not before reply)."""
+    handle = _block_between(_app_source(), "def _handle_input(", "_ACTION_MESSAGE_KEY")
+    success = handle.split("assert response is not None", 1)[1]
+    reply_at = success.index("render_reply(")
+    citations_at = success.index("_render_citations(")
+    tools_at = success.index("_render_tool_outputs(")
+    run_at = success.index("render_run_meta(")
+    export_at = success.index("render_export_actions(")
+    assert reply_at < citations_at < tools_at < run_at < export_at
+    # Must not also render Run details before the reply on the success path.
+    before_reply = success[:reply_at]
+    assert "render_run_meta(" not in before_reply
+
+
+def test_failed_turn_keeps_error_before_run_details() -> None:
+    """Operational failure: st.error then Run details (live and history)."""
+    source = _app_source()
+    history = _block_between(source, "def _render_history()", "def _handle_input(")
+    display_only = _block_between(
+        history,
+        'if message.get("display_only"):',
+        'if message["role"] == "assistant":',
+    )
+    assert display_only.index("st.error(") < display_only.index("render_run_meta(")
+
+    handle = _block_between(source, "def _handle_input(", "_ACTION_MESSAGE_KEY")
+    failure = _block_between(handle, "if not result.ok:", "response = result.response")
+    assert failure.index("st.error(") < failure.index("render_run_meta(")

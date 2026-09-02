@@ -176,10 +176,10 @@ def _render_history() -> None:
                 render_run_meta(message.get("run"))
                 continue
             if message["role"] == "assistant":
-                render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
                 _render_citations(message.get("citations") or ())
                 _render_tool_outputs(message.get("tool_outputs") or ())
+                render_run_meta(message.get("run"))
                 render_export_actions(message["content"], f"analysis_{index}")
             else:
                 st.markdown(message["content"])
@@ -217,10 +217,10 @@ def _handle_input(
                 return
             response = result.response
             assert response is not None
-        render_run_meta(response.run)
         render_reply(response.answer)
         _render_citations(response.citations)
         _render_tool_outputs(response.tool_outputs)
+        render_run_meta(response.run)
         render_export_actions(
             response.answer, f"analysis_{len(st.session_state.messages)}"
         )
