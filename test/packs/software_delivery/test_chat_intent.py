@@ -39,6 +39,38 @@ def test_explicit_generation_requests_select_the_expected_chain(
 
 
 @pytest.mark.parametrize(
+    ("query", "target"),
+    [
+        (
+            "Analyze these requirements:\nAs a user I want MFA.",
+            "as a user i want mfa.",
+        ),
+        (
+            "Review this story: Login must lock after five failures.",
+            "login must lock after five failures.",
+        ),
+        (
+            "Analyze requirements for AUTH-101",
+            "for auth-101",
+        ),
+        (
+            "Do not generate tests; analyze these requirements: Need MFA.",
+            "need mfa.",
+        ),
+    ],
+)
+def test_explicit_analysis_requests_select_requirements_analysis(
+    query: str, target: str
+) -> None:
+    assert select_chat_intent(query) == ChatToolSelection(
+        generate_tests=False,
+        output_style="steps",
+        analyze_requirements=True,
+        analysis_target=target,
+    )
+
+
+@pytest.mark.parametrize(
     "query",
     [
         "What is the risk score for AUTH-101?",
@@ -48,6 +80,7 @@ def test_explicit_generation_requests_select_the_expected_chain(
         "Score the delivery risk for AUTH-101",
         "Evaluate the risk before we ship",
         "Do not generate tests; assess the risk for AUTH-101",
+        "Do not analyze these requirements; assess the risk for AUTH-101",
     ],
 )
 def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> None:
@@ -67,6 +100,7 @@ def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> Non
         "How do I create test cases?",
         "How to write Gherkin scenarios",
         "Explain how to generate tests",
+        "How do I analyze requirements?",
         "What is Gherkin?",
         "How is a risk score calculated?",
         "Summarise the test plan",
@@ -83,6 +117,11 @@ def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> Non
         "Never generate test scenarios for login",
         "Do not assess the risk",
         "Do not assess the risk for AUTH-101",
+        "Do not analyze these requirements",
+        "Never review this story",
+        "Analyze these requirements",
+        "Review this story",
+        "analyze AUTH-101",
         "gherkin",
         "cucumber scenarios",
         "feature file",
@@ -100,9 +139,25 @@ def test_non_tool_requests_select_no_tool(query: str) -> None:
     assert select_chat_intent(query) is None
 
 
+def test_generation_wins_over_analysis_in_the_same_query() -> None:
+    assert select_chat_intent(
+        "Analyze these requirements and create test cases for AUTH-101"
+    ) == ChatToolSelection(generate_tests=True, output_style="steps")
+
+
 def test_an_unknown_style_cannot_be_constructed() -> None:
     with pytest.raises(OrchestrationValidationError, match="output_style"):
         ChatToolSelection(generate_tests=True, output_style="prose")  # type: ignore[arg-type]
+
+
+def test_analysis_and_generation_are_mutually_exclusive() -> None:
+    with pytest.raises(OrchestrationValidationError, match="mutually exclusive"):
+        ChatToolSelection(
+            generate_tests=True,
+            output_style="steps",
+            analyze_requirements=True,
+            analysis_target="Need MFA.",
+        )
 
 
 def test_registration_exposes_the_chat_intent_selector() -> None:
@@ -119,3 +174,11 @@ def test_registration_exposes_the_chat_intent_selector() -> None:
     assert select(
         "Do not generate tests; assess the risk for AUTH-101"
     ) == ChatToolSelection(generate_tests=False, output_style="steps")
+    assert select(
+        "Analyze these requirements:\nNeed MFA enrollment."
+    ) == ChatToolSelection(
+        generate_tests=False,
+        output_style="steps",
+        analyze_requirements=True,
+        analysis_target="need mfa enrollment.",
+    )

@@ -99,29 +99,31 @@ connector/upload → SourceDocument → chunks/index
        → cited / structured result
 ```
 
-Requirements analysis follows a parallel path: pasted requirements →
-filter-less cross-source retrieval (relevance threshold applied in
-composition) → `AnalyzeRequirements` → structured findings with
-`ScoredChunk` evidence → `analysis_citations` projects to generic
-`Citation` values at the composition edge.
+Requirements analysis and chat-time tool selection share one chat surface.
+A General-mode query is matched by the pack intent policy:
 
-Chat-time tool selection follows a third: chat query → pack intent policy →
-filter-less cross-source retrieval → evidence bundle → ordered tool chain
-through the opaque `InvokeTool` boundary → `AskResponse` carrying opaque
-`tool_outputs` and citations built from the raw hits.
+- explicit ``analyze|review … requirements|story`` → ``AnalyzeRequirements``
+  (filter-less cross-source retrieval, structured findings, citations)
+- explicit generate/risk phrasing → evidence bundle → ordered tool chain
+  through the opaque ``InvokeTool`` boundary → ``AskResponse`` with opaque
+  ``tool_outputs`` and citations from the raw hits
+- anything else → grounded RAG via ``AskKnowledge``
 
-One domain tool consumes a multi-source evidence bundle. A new source kind does
-not require a new risk tool or shared-core contract change. Absence-based
-policies (for example missing acceptance criteria) apply only when evidence is
-marked complete; chunk-level evidence may still contribute positive signals.
+There is no separate requirements-analysis form: paste the story into chat
+with an analysis cue (for example ``Analyze these requirements: …``).
 
 Software Delivery requirements analysis (`AnalyzeRequirements`) receives
 retrieval through a single-argument callable wired in composition — no
 `metadata_filters` channel — with `RELEVANCE_THRESHOLD` applied before hits
 reach the pack, mirroring the insufficient-evidence semantics documented for
-`AskKnowledge`. The Streamlit requirements-analysis panel is absent when the
-pack is disabled, gated by `requirements_analysis_enabled` rather than by catching
-`ConfigurationError`.
+`AskKnowledge`. Chat-time analysis is gated with the pack via
+`software_delivery_tools_enabled` / ``DOMAIN_TOOL_PACKS`` (same gate as
+tool-augmented ask).
+
+One domain tool consumes a multi-source evidence bundle. A new source kind does
+not require a new risk tool or shared-core contract change. Absence-based
+policies (for example missing acceptance criteria) apply only when evidence is
+marked complete; chunk-level evidence may still contribute positive signals.
 
 The Streamlit **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,
@@ -152,12 +154,17 @@ tool request cannot live there.
 ``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) wraps
 ``AskKnowledge`` and asks the enabled pack's deterministic policy —
 ``select_chat_intent`` in ``packs/software_delivery/chat_intent.py`` — which
-chain, if any, a query names. **Tool selection runs only in General mode**
+workflow, if any, a query names. **Selection runs only in General mode**
 (``AskRequest.prompt_key is None``). Any selected task prompt delegates the
 original request, history, and generation settings unchanged to
 ``AskKnowledge`` — routing never moves into Streamlit. Unmatched General-mode
 queries are delegated to the grounded path verbatim, so ordinary chat is
 unchanged and no tool runs speculatively.
+
+Matched intents are either requirements analysis (``analyze|review …
+requirements|story`` with a non-empty body after the cue →
+``RequirementsAnalyzer``), a generate/risk tool chain, or neither. Generation
+wins over analysis; analysis wins over risk-only.
 
 The policy is **explicit-request matching, not a classifier**. Test generation
 requires a same-clause creation verb (``create``, ``generate``, ``write``,
@@ -170,7 +177,7 @@ Risk routing accepts explicit score/assessment requests (for example
 ``how risky is <target>``) and rejects conceptual or read-only questions.
 Scoped negations cancel only when they govern the matched action in the same
 clause (``Do not create test cases``, ``Never generate tests``, ``Do not assess
-the risk``). Constraint wording after a match (``Create test cases that do not
+the risk``, ``Do not analyze these requirements``). Constraint wording after a match (``Create test cases that do not
 require admin access``) and negation in another clause (``Create tests; never
 use production credentials``) do not cancel. Mixed requests keep the
 non-negated intent (``Do not generate tests; assess the risk for AUTH-101``

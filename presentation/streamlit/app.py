@@ -9,28 +9,17 @@ from application.contracts import Citation, InvokeToolResponse
 from application.errors import ConfigurationError
 from composition import (
     GroundedAsk,
-    RequirementsAnalysisFindingView,
     SUPPORTED_UPLOAD_SUFFIXES,
     Settings,
     available_providers,
-    build_analyze_requirements,
     build_chat_model,
     build_prompt_repository,
     build_tool_augmented_ask,
     load_runtime_settings,
     probe_ollama,
-    requirements_analysis_enabled,
 )
 from domain.models import Message
-from domain.ports import ChatModel, PromptRepository
-from presentation.streamlit.analysis_turn import (
-    AnalysisContext,
-    StoredAnalysisResult,
-    analysis_result_after_successful_document_mutation,
-    analysis_result_for_display,
-    finding_bullets,
-    run_analysis_turn,
-)
+from domain.ports import PromptRepository
 from presentation.streamlit.ask_turn import run_ask_turn, tool_output_lines
 from presentation.streamlit.components import (
     render_export_actions,
@@ -101,7 +90,6 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
 
     if st.button("New chat", icon=":material/add_comment:", width="stretch"):
         st.session_state.messages = []
-        st.session_state.pop(_ANALYSIS_RESULT_KEY, None)
 
     selected_model = settings.openrouter.model
     ollama_base_url = settings.ollama.base_url
@@ -268,73 +256,6 @@ def _handle_input(
 
 
 _ACTION_MESSAGE_KEY = "document_action_message"
-_ANALYSIS_RESULT_KEY = "requirements_analysis_result"
-
-
-def _render_findings(
-    title: str, findings: Sequence[RequirementsAnalysisFindingView]
-) -> None:
-    if not findings:
-        return
-    st.markdown(f"**{title}**")
-    for bullet in finding_bullets(findings):
-        st.markdown(bullet)
-
-
-def _render_requirements_analysis(
-    settings: Settings,
-    chat_model: ChatModel,
-    *,
-    provider: str,
-    model: str,
-) -> None:
-    """Analyze pasted requirements. Absent unless the domain pack is enabled."""
-    if not requirements_analysis_enabled(settings):
-        return
-
-    try:
-        analyzer = build_analyze_requirements(settings, chat_model=chat_model)
-    except ConfigurationError as error:
-        st.error(str(error))
-        return
-
-    st.subheader("Requirements analysis")
-    with st.form("requirements_analysis"):
-        requirements = st.text_area(
-            "Requirements",
-            height=180,
-            help="Paste a story or requirements text. Analysis is grounded in "
-            "ingested documents across every source kind.",
-        )
-        submitted = st.form_submit_button("Analyze")
-
-    context = AnalysisContext(
-        requirements=requirements,
-        provider=provider,
-        model=model,
-    )
-
-    if submitted:
-        with st.spinner("Analyzing..."):
-            st.session_state[_ANALYSIS_RESULT_KEY] = StoredAnalysisResult(
-                context=context,
-                result=run_analysis_turn(analyzer, requirements=requirements),
-            )
-
-    stored = st.session_state.get(_ANALYSIS_RESULT_KEY)
-    result = analysis_result_for_display(stored, context=context)
-    if result is None:
-        return
-    if not result.ok:
-        st.error(result.message)
-        return
-
-    assert result.view is not None
-    st.markdown(result.view.summary)
-    _render_findings("Acceptance criteria gaps", result.view.acceptance_criteria_gaps)
-    _render_findings("Risks", result.view.risks)
-    _render_findings("Clarification questions", result.view.clarification_questions)
-    _render_citations(result.citations)
 
 
 def _apply_action_result(result: UploadIngestResult) -> None:
@@ -348,11 +269,6 @@ def _apply_action_result(result: UploadIngestResult) -> None:
     if not result.ok:
         st.error(result.message)
         return
-    st.session_state[_ANALYSIS_RESULT_KEY] = (
-        analysis_result_after_successful_document_mutation(
-            st.session_state.get(_ANALYSIS_RESULT_KEY)
-        )
-    )
     if result.should_rerun:
         st.session_state[_ACTION_MESSAGE_KEY] = result.message
         st.rerun()  # Raises; nothing after this line runs.
@@ -504,13 +420,6 @@ def render() -> None:
     except ConfigurationError as error:
         st.error(str(error))
         return
-
-    _render_requirements_analysis(
-        settings,
-        chat_model,
-        provider=state.provider,
-        model=state.model,
-    )
 
     prompts = repository.all()
     off_topic_marker = (
