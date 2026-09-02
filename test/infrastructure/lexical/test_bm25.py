@@ -131,3 +131,67 @@ def test_bm25_upsert_replaces_same_identity() -> None:
 
     assert all(hit.chunk.source_id != "doc" or "xyzzy" not in hit.chunk.content for hit in obsolete)
     assert replacement[0].chunk.content == "replacement phrase plugh"
+
+
+def test_bm25_matches_arabic_query_to_arabic_content() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("ar", "إعادة تشغيل خدمة الدفع تتطلب تصريفاً أولاً")),
+            _embed(_chunk("en", "Restart the payment service by draining first")),
+            _embed(_chunk("other", "Capacity planning notes only")),
+        ]
+    )
+
+    hits = index.search("تصريفاً", 3)
+
+    assert hits[0].chunk.source_id == "ar"
+    assert hits[0].score > 0
+
+
+def test_bm25_matches_mixed_arabic_and_english() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("mixed", "Error ERR-4021 مفتاح API مفقود")),
+            _embed(_chunk("en", "Unrelated English rollout notes")),
+            _embed(_chunk("ar", "ملاحظات غير ذات صلة")),
+        ]
+    )
+
+    hits = index.search("ERR-4021 مفتاح", 3)
+
+    assert hits[0].chunk.source_id == "mixed"
+
+
+def test_bm25_punctuation_only_corpus_returns_empty_without_error() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("dots", "...!!!???")),
+            _embed(_chunk("commas", ",,,;;;")),
+        ]
+    )
+
+    assert index.search("anything", 5) == ()
+    assert index.search("...", 5) == ()
+
+
+def test_bm25_tokenless_query_returns_empty() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("a", "restart runbook")),
+            _embed(_chunk("b", "deploy service")),
+            _embed(_chunk("c", "capacity notes")),
+        ]
+    )
+
+    assert index.search("...", 5) == ()
+    assert index.search("", 5) == ()
+
+
+def test_tokenize_preserves_hyphenated_identifier() -> None:
+    from infrastructure.lexical.bm25 import tokenize
+
+    assert "err-4021" in tokenize("see ERR-4021 now")

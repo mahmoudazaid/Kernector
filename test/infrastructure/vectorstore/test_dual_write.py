@@ -68,3 +68,17 @@ def test_dual_write_search_delegates_to_vector_store_only() -> None:
     assert len(hits) == 1
     assert hits[0].chunk.source_id == "doc"
     assert hits[0].score == 1.0
+
+
+def test_dual_write_replace_updates_lexical_retrieval_immediately() -> None:
+    vector = InMemoryVectorStore()
+    lexical = InMemoryLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    store.upsert([_embed(_chunk("doc", "obsolete xyzzy phrase"))])
+
+    store.upsert([_embed(_chunk("doc", "replacement plugh phrase"))])
+
+    assert lexical.search("xyzzy", 5) == () or all(
+        "xyzzy" not in hit.chunk.content for hit in lexical.search("xyzzy", 5)
+    )
+    assert lexical.search("plugh", 1)[0].chunk.source_id == "doc"

@@ -236,3 +236,57 @@ def test_hybrid_enabled_without_lexical_index_is_rejected() -> None:
             hybrid_enabled=True,
             lexical_index=None,
         )
+
+
+def test_hybrid_lexical_only_candidate_not_inflated_by_negative_vector_peers() -> None:
+    """Disjoint channels: missing vector score must not become raw 0.0 before norm."""
+    lexical_only = _chunk("lex", "ERR-4021 unique-token")
+    lexical_weak = _chunk("lex-weak", "other lexical filler")
+    vector_low = _chunk("vlow", "unrelated paraphrase low")
+    vector_high = _chunk("vhigh", "unrelated paraphrase high")
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=vector_low, score=-0.8),
+            ScoredChunk(chunk=vector_high, score=0.8),
+        ]
+    )
+    lexical = InMemoryLexicalIndex()
+    lexical.upsert([_embed(lexical_only), _embed(lexical_weak)])
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.5,
+    ).execute(RetrieveRequest(query="ERR-4021 unique-token", retrieval_limit=4))
+
+    by_id = {hit.chunk.source_id: hit.score for hit in response.hits}
+    assert by_id["lex"] == pytest.approx(0.5)
+    assert by_id["lex"] < 0.75
+
+
+def test_hybrid_tie_break_is_deterministic_by_chunk_identity() -> None:
+    chunk_a = _chunk("a", "shared token alpha")
+    chunk_b = _chunk("b", "shared token beta")
+    vector = _ScriptedVectorStore(
+        [
+            ScoredChunk(chunk=chunk_b, score=0.5),
+            ScoredChunk(chunk=chunk_a, score=0.5),
+        ]
+    )
+    lexical = InMemoryLexicalIndex()
+    lexical.upsert([_embed(chunk_a), _embed(chunk_b)])
+
+    response = RetrieveKnowledge(
+        StubEmbeddingModel(),
+        vector,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        lexical_index=lexical,
+        hybrid_alpha=0.0,
+    ).execute(RetrieveRequest(query="shared token", retrieval_limit=2))
+
+    assert [hit.chunk.source_id for hit in response.hits] == ["a", "b"]
+    assert response.hits[0].score == response.hits[1].score

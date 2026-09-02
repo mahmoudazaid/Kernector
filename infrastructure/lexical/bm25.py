@@ -10,12 +10,17 @@ from rank_bm25 import BM25Okapi
 from domain.knowledge import EmbeddedChunk, ScoredChunk, SourceReference
 from domain.errors import VectorStoreError
 
-_TOKEN_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# Unicode letters/numbers with optional hyphenated continuations (ERR-4021).
+# ``\w`` is Unicode-aware; exclude underscore so tokens stay lexical words.
+_TOKEN_PATTERN = re.compile(r"[^\W_]+(?:-[^\W_]+)*", re.UNICODE)
+
+# Placeholder for documents that tokenize to nothing so BM25Okapi never sees [].
+_EMPTY_DOC_PLACEHOLDER = "\0"
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase alphanumeric tokens; no stemming (lab convention)."""
-    return _TOKEN_PATTERN.findall(text.lower())
+    """Unicode-aware tokens; casefold; no stemming. Keeps hyphenated ids."""
+    return _TOKEN_PATTERN.findall(text.casefold())
 
 
 def _record_key(chunk_ref: SourceReference, index: int) -> tuple[str, str, int]:
@@ -78,7 +83,7 @@ class Bm25LexicalIndex:
         ):
             return ()
         filters = metadata_filters or {}
-        if filters is not None and not isinstance(filters, Mapping):
+        if not isinstance(filters, Mapping):
             raise VectorStoreError(
                 f"metadata_filters must be a mapping, got {type(filters)!r}"
             )
@@ -99,7 +104,14 @@ class Bm25LexicalIndex:
         if not self._order:
             self._bm25 = None
             return
-        corpus = [
+        tokenized = [
             tokenize(self._records[key].chunk.content) for key in self._order
+        ]
+        if not any(tokenized):
+            # All punctuation / empty-token docs: BM25Okapi([]) divides by zero.
+            self._bm25 = None
+            return
+        corpus = [
+            tokens if tokens else [_EMPTY_DOC_PLACEHOLDER] for tokens in tokenized
         ]
         self._bm25 = BM25Okapi(corpus)

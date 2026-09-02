@@ -61,6 +61,7 @@ from composition import (
     build_vector_store,
     load_knowledge_documents,
     load_runtime_settings,
+    reindex_filter_metadata,
 )
 from domain.knowledge import SourceType
 from domain.models import AskResult, Message, Usage
@@ -427,6 +428,34 @@ def test_build_orchestrate_software_delivery_accepts_a_recording_invoke(
     assert use_case._invoke is invoke
 
 
+def test_build_tool_augmented_ask_shares_one_store_across_pack_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pack ask + retrieve must not independently hydrate BM25 twice."""
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    settings = load_settings()
+
+    builds: list[object] = []
+    real_build = build_vector_store
+
+    def _counting_build(cfg):  # type: ignore[no-untyped-def]
+        store = real_build(cfg)
+        builds.append(store)
+        return store
+
+    monkeypatch.setattr("composition.container.build_vector_store", _counting_build)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    build_tool_augmented_ask(settings, chat_model=_StubChat())
+
+    assert len(builds) == 1
+
+
 def test_build_tool_augmented_ask_adds_tool_selection_when_the_pack_is_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -736,6 +765,11 @@ def _sd_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
     monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    # Pack wiring shares one store; stub construction unless a test replaces it.
+    monkeypatch.setattr(
+        "composition.container.build_vector_store",
+        lambda settings: object(),
+    )
 
 
 def _scored_hit(*, score: float = 0.9, content: str = "Need MFA") -> ScoredChunk:
@@ -961,6 +995,7 @@ def chroma_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings
     target = tmp_path / "chroma"
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(target))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "false")
 
     settings = load_settings()
     # Containment is asserted before anything is constructed, so a misresolved
@@ -1000,6 +1035,29 @@ def test_build_vector_store_wraps_dual_write_when_hybrid_enabled(
     assert use_case._hybrid_enabled is True
     assert use_case._hybrid_alpha == 0.6
     assert use_case._lexical_index is store.lexical
+
+
+def test_reindex_filter_metadata_works_with_hybrid_enabled_without_bm25_hydrate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
+    monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+    settings = load_settings()
+
+    hydrate_calls: list[object] = []
+
+    def _boom_hydrate(self):  # type: ignore[no-untyped-def]
+        hydrate_calls.append(self)
+        raise AssertionError("lexical hydrate must not run during reindex")
+
+    monkeypatch.setattr(
+        ChromaVectorStore, "list_embedded_chunks", _boom_hydrate
+    )
+
+    assert reindex_filter_metadata(settings) == 0
+    assert hydrate_calls == []
 
 
 def test_built_vector_store_satisfies_the_port(chroma_settings: Settings) -> None:
