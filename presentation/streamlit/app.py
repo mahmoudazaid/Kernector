@@ -26,6 +26,8 @@ from presentation.streamlit.ask_turn import (
     tool_output_lines,
 )
 from presentation.streamlit.components import (
+    render_conversation_export_actions,
+    render_full_conversation_export,
     render_model_settings,
     render_reply,
     render_run_meta,
@@ -90,6 +92,8 @@ def _render_sidebar(settings: Settings) -> _SidebarState:
 
     if st.button("New chat", icon=":material/add_comment:", width="stretch"):
         st.session_state.messages = []
+
+    render_full_conversation_export(st.session_state.messages)
 
     selected_model = settings.openrouter.model
     ollama_base_url = settings.ollama.base_url
@@ -183,6 +187,12 @@ def _render_history() -> None:
                     message.get("tool_run_view"), key_prefix=f"export_{index}"
                 )
                 render_run_meta(message.get("run"))
+                render_conversation_export_actions(
+                    st.session_state.messages,
+                    turn_index=index,
+                    filename_prefix=f"analysis_{index}",
+                    key_prefix=f"analysis_{index}",
+                )
             else:
                 st.markdown(message["content"])
 
@@ -227,6 +237,20 @@ def _handle_input(
             key_prefix=f"export_{len(st.session_state.messages)}",
         )
         render_run_meta(response.run)
+        live_index = len(st.session_state.messages)
+        render_conversation_export_actions(
+            [
+                *st.session_state.messages,
+                {
+                    "role": "assistant",
+                    "content": response.answer,
+                    "run": response.run,
+                },
+            ],
+            turn_index=live_index,
+            filename_prefix=f"analysis_{live_index}",
+            key_prefix=f"analysis_{live_index}",
+        )
 
     apply_ask_turn_to_session_messages(st.session_state.messages, result)
 
