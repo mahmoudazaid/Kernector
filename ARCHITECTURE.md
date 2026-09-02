@@ -154,11 +154,11 @@ tool request cannot live there.
 ``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) wraps
 ``AskKnowledge`` and asks the enabled pack's deterministic policy —
 ``select_chat_intent`` in ``packs/software_delivery/chat_intent.py`` — which
-workflow, if any, a query names. **Selection runs only in General mode**
-(``AskRequest.prompt_key is None``). Any selected task prompt delegates the
-original request, history, and generation settings unchanged to
-``AskKnowledge`` — routing never moves into Streamlit. Unmatched General-mode
-queries are delegated to the grounded path verbatim, so ordinary chat is
+workflow, if any, a query names. **Selection runs only when no task prompt is
+set** (``AskRequest.prompt_key is None`` — the Streamlit path). Any non-empty
+``prompt_key`` delegates the original request, history, and generation settings
+unchanged to ``AskKnowledge`` — routing never moves into Streamlit. Unmatched
+General queries are delegated to the grounded path verbatim, so ordinary chat is
 unchanged and no tool runs speculatively.
 
 Matched intents are either requirements analysis (``analyze|review …
@@ -229,18 +229,37 @@ import a pack-named renderer without breaking its own source scan.
 
 ### Grounded ask: system policy vs optional task prompts
 
-Chat over ingested documents is orchestrated by `AskKnowledge`, and the four
-inputs sit in **different privilege tiers**. The tier is decided by placement,
-not by wording — a rule stated in prose can be argued with by text the model
-reads later, but text that never reaches the system role cannot impersonate the
-policy that constrains it.
+Chat over ingested documents is orchestrated by `AskKnowledge`. The Streamlit
+UI is **intent-first**: there is no Mode selector and no preselected workflow
+form. Ordinary chat turns use General grounded chat (`AskRequest.prompt_key`
+unset); composition routes explicit Software Delivery intents (analysis, test
+generation, risk) when the pack is enabled. `PromptRepository` and
+`AskRequest.prompt_key` remain so saved commands / role instructions (#149) can
+supply optional task text later without restoring a pre-chat Mode control.
+
+The inputs that reach the model sit in **different privilege tiers**. The tier
+is decided by placement, not by wording — a rule stated in prose can be argued
+with by text the model reads later, but text that never reaches the system role
+cannot impersonate the policy that constrains it.
 
 | Tier | Input | Placement |
 |---|---|---|
 | Platform policy | `GROUNDED_RAG_SYSTEM` (`application/grounded_rag_policy.py`) | the `system` argument, **alone** |
 | Untrusted evidence | retrieved chunks with provenance | a `Message` between `BEGIN/END_RETRIEVED_CONTEXT` markers |
-| Optional task instruction | the selected Mode's `PromptVariant.system` | a `Message` after the context |
+| Optional task instruction | `PromptVariant.system` when `AskRequest.prompt_key` is set (API / future saved commands) | a `Message` after the context |
 | User input | `AskRequest.query` | the final user `Message` |
+
+These layers stay separate end to end:
+
+- **System policy** — grounding, provenance, trust boundaries, authorization,
+  safety, citations, and uncertainty; never replaced by user text.
+- **Role / saved instructions** (#149) — optional chat-invoked context; cannot
+  override platform policy.
+- **User intent** — free-text chat; pack intent policy may select zero or one
+  allowlisted capability.
+- **Retrieval context** — untrusted evidence with provenance markers.
+- **Tool schemas / typed outputs** — pack-owned contracts projected at the
+  composition edge; shared presentation stays pack-agnostic.
 
 Retrieved document text is attacker-influenceable: anyone who can get a document
 ingested chooses its words. A pack prompt is author-supplied but still
@@ -261,8 +280,9 @@ attacker-authored fields so a stored document cannot close the untrusted block
 early.
 
 The policy is a module constant, so `PROMPT_PACKS` can neither hide it nor offer
-it as a selectable Mode. `AskRequest.prompt_key=None` means General mode (no
-task template), and Streamlit defaults to it.
+it as a selectable Mode. `AskRequest.prompt_key=None` means General chat (no
+task template). Streamlit always submits General turns; optional `prompt_key`
+use stays on the application contract for #149.
 
 Generation runs through `AskService`, so the domain settings allowlist
 (`domain/model_settings.py`) is applied in exactly one place.
@@ -340,16 +360,10 @@ Exception type alone is never treated as proof that `str(error)` is safe:
 Technical and vendor detail may remain on `__cause__` (and in logs); it must
 not reach `st.error`.
 
-Streamlit requirements-analysis mapping (`run_analysis_turn`) uses the same
-fixed type → message policy:
-
-| Caught type | User-facing message |
-|---|---|
-| `ApplicationValidationError` | boundary-authored `str(error)` |
-| `ProviderError` (incl. `RequirementsAnalysisOutputError`) | fixed provider sentence |
-| `InsufficientEvidenceError` | fixed insufficient-evidence sentence |
-| `DomainValidationError`, `VectorStoreError`, other `RuntimeError` | fixed operational sentence |
-| anything else | logged, generic unexpected sentence |
+Chat-time requirements analysis reuses the same ask-turn mapping: analysis
+failures surface through `run_ask_turn` / `ToolAugmentedAsk` (for example
+`InsufficientEvidenceError` → the grounded insufficient-knowledge answer),
+not through a separate presentation analysis helper.
 
 ## Architecture tests
 

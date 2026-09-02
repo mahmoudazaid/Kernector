@@ -68,7 +68,7 @@ def run_ask_turn(
     ask: GroundedAsk,
     *,
     query: str,
-    prompt_key: str | None,
+    prompt_key: str | None = None,
     history: Sequence[Message] = (),
     settings: Mapping[str, object] | None = None,
 ) -> AskTurnResult:

@@ -27,7 +27,6 @@ from presentation.streamlit.components import (
     render_reply,
     render_run_meta,
 )
-from presentation.streamlit.modes import default_mode_index, mode_options
 from presentation.streamlit.upload_ingest import (
     UploadIngestResult,
     create_new_document,
@@ -45,7 +44,6 @@ class _SidebarState:
     model: str
     ollama_base_url: str
     settings: Mapping[str, object]
-    prompt_key: str | None
 
 
 @st.cache_resource
@@ -77,9 +75,7 @@ def _render_citations(citations: Sequence[Citation]) -> None:
                 st.caption(citation.quote)
 
 
-def _render_sidebar(settings: Settings, repository: PromptRepository) -> _SidebarState:
-    prompts = repository.all()
-
+def _render_sidebar(settings: Settings) -> _SidebarState:
     providers = available_providers()
     provider = st.radio(
         "Provider",
@@ -144,30 +140,13 @@ def _render_sidebar(settings: Settings, repository: PromptRepository) -> _Sideba
             st.caption("No OpenRouter models available")
 
     settings_values = render_model_settings(provider)
-
-    # The (key, label) pairs are the options themselves. Mapping `None` onto a
-    # blank-string sentinel would collide with a pack whose frontmatter `key:`
-    # is empty — nothing validates that — and the collision silently turns
-    # General into that pack's prompt.
-    options = mode_options(prompts)
-    selected_option = st.selectbox(
-        "Mode",
-        options=options,
-        format_func=lambda option: option[1],
-        index=default_mode_index(options),
-    )
-    prompt_key = selected_option[0]
-    if prompt_key is None:
-        st.caption("General grounded chat over ingested documents.")
-    else:
-        st.caption(prompts[prompt_key].description)
+    st.caption("General grounded chat over ingested documents.")
 
     return _SidebarState(
         provider=provider,
         model=selected_model,
         ollama_base_url=ollama_base_url,
         settings=settings_values,
-        prompt_key=prompt_key,
     )
 
 
@@ -200,9 +179,7 @@ def _render_history() -> None:
 
 def _handle_input(
     ask: GroundedAsk,
-    prompt_key: str | None,
     settings: Mapping[str, object],
-    off_topic_marker: str | None,
 ) -> None:
     user_input = st.chat_input("Start typing...")
     if not user_input:
@@ -222,7 +199,6 @@ def _handle_input(
             result = run_ask_turn(
                 ask,
                 query=user_input,
-                prompt_key=prompt_key,
                 history=history,
                 settings=settings,
             )
@@ -238,7 +214,7 @@ def _handle_input(
             response = result.response
             assert response is not None
         render_run_meta(response.run)
-        render_reply(response.answer, off_topic_marker)
+        render_reply(response.answer)
         _render_citations(response.citations)
         _render_tool_outputs(response.tool_outputs)
         render_export_actions(
@@ -251,7 +227,6 @@ def _handle_input(
         "citations": response.citations,
         "tool_outputs": response.tool_outputs,
         "run": response.run,
-        "off_topic_marker": off_topic_marker,
     })
 
 
@@ -401,7 +376,7 @@ def render() -> None:
     st.title("Kernector")
 
     with st.sidebar:
-        state = _render_sidebar(settings, repository)
+        state = _render_sidebar(settings)
 
     _render_upload_ingest(settings)
 
@@ -421,17 +396,5 @@ def render() -> None:
         st.error(str(error))
         return
 
-    prompts = repository.all()
-    off_topic_marker = (
-        prompts[state.prompt_key].off_topic_marker
-        if state.prompt_key is not None
-        else None
-    )
-
     _render_history()
-    _handle_input(
-        ask,
-        state.prompt_key,
-        state.settings,
-        off_topic_marker,
-    )
+    _handle_input(ask, state.settings)
