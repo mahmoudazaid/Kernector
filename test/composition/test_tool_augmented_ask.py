@@ -17,12 +17,13 @@ from application.contracts import (
     AskResponse,
     Citation,
     InvokeToolResponse,
+    RunMeta,
 )
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from composition.tool_augmented_ask import ToolAugmentedAsk, ToolRunOutcome
 from domain.knowledge import SourceReference
-from domain.models import Message
+from domain.models import Message, Usage
 
 
 @dataclass(frozen=True)
@@ -349,7 +350,33 @@ def test_accepted_intent_phrases_invoke_the_runner(
     assert response.tool_outputs == ()
 
 
-def test_accepted_analysis_phrases_invoke_the_analysis_runner() -> None:
+def test_analysis_outcome_run_meta_reaches_ask_response() -> None:
+    """Requirements-analysis model calls must surface RunMeta on AskResponse.run."""
+    run = RunMeta(
+        model="analysis-model",
+        latency_ms=42,
+        usage=Usage(total_tokens=17),
+        settings={"temperature": 0.0},
+    )
+    ask = _RecordingAsk()
+    analysis = _RecordingAnalysisRunner(
+        ToolRunOutcome(answer="Gaps found in acceptance criteria.", run=run)
+    )
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_RecordingRunner(_outcome()),
+        select=lambda query: _AnalysisSelection(),
+        analysis_runner=analysis,
+    )
+
+    response = wrapper.execute(
+        AskRequest(query="Analyze these requirements: Need MFA.", prompt_key=None)
+    )
+
+    assert response.run == run
+    assert response.answer == "Gaps found in acceptance criteria."
+    assert ask.calls == []
+
     from packs.software_delivery.chat_intent import select_chat_intent
 
     ask = _RecordingAsk()

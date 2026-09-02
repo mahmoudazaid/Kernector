@@ -30,10 +30,13 @@ RequirementsAnalysisResult(
     risks=(...),
     clarification_questions=(...),
     evidence=(<ScoredChunk>, ...),  # cited chunks in retrieval-rank order
+    ask_result=<AskResult>,  # model-call metadata; projected to AskResponse.run
 )
 ```
 
-Composition exposes `RequirementsAnalysisView` with the same structured fields.
+Composition exposes `RequirementsAnalysisView` with the same structured fields plus
+optional ``ask_result``. Chat-time analysis projects that metadata to
+``RunMeta`` on ``AskResponse.run`` without changing the model JSON contract below.
 `evidence` carries domain `ScoredChunk` values (not `application.contracts.Citation`) because packs may not import application types. Composition projects citations via `analysis_citations(view)`.
 
 ### Model JSON contract

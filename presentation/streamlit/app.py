@@ -18,9 +18,13 @@ from composition import (
     load_runtime_settings,
     probe_ollama,
 )
-from domain.models import Message
 from domain.ports import PromptRepository
-from presentation.streamlit.ask_turn import run_ask_turn, tool_output_lines
+from presentation.streamlit.ask_turn import (
+    apply_ask_turn_to_session_messages,
+    messages_for_model_history,
+    run_ask_turn,
+    tool_output_lines,
+)
 from presentation.streamlit.components import (
     render_export_actions,
     render_model_settings,
@@ -167,6 +171,9 @@ def _render_tool_outputs(tool_outputs: Sequence[InvokeToolResponse]) -> None:
 def _render_history() -> None:
     for index, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
+            if message.get("display_only"):
+                st.error(message["content"])
+                continue
             if message["role"] == "assistant":
                 render_run_meta(message.get("run"))
                 render_reply(message["content"], message.get("off_topic_marker"))
@@ -185,10 +192,7 @@ def _handle_input(
     if not user_input:
         return
 
-    history = [
-        Message(role=m["role"], content=m["content"])
-        for m in st.session_state.messages
-    ]
+    history = messages_for_model_history(st.session_state.messages)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.chat_message("user"):
@@ -203,12 +207,10 @@ def _handle_input(
                 settings=settings,
             )
             if not result.ok:
-                # A rejected turn must not persist. `history` is rebuilt from
-                # session state on the next submit and handed to the model, so
-                # keeping it would ship the exact text the boundary refused.
-                # The bubble drawn above disappears on the next rerun.
-                if result.drop_user_turn:
-                    st.session_state.messages.pop()
+                # Rejected turns drop the user message; operational failures keep
+                # it and append a display-only sanitized error so the banner
+                # survives the next Streamlit rerun without entering model history.
+                apply_ask_turn_to_session_messages(st.session_state.messages, result)
                 st.error(result.message)
                 return
             response = result.response
@@ -221,13 +223,7 @@ def _handle_input(
             response.answer, f"analysis_{len(st.session_state.messages)}"
         )
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": response.answer,
-        "citations": response.citations,
-        "tool_outputs": response.tool_outputs,
-        "run": response.run,
-    })
+    apply_ask_turn_to_session_messages(st.session_state.messages, result)
 
 
 _ACTION_MESSAGE_KEY = "document_action_message"

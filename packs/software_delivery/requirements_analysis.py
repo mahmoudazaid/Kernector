@@ -134,6 +134,7 @@ class AnalyzeRequirements:
                 parsed.risks,
                 parsed.clarification_questions,
                 evidence,
+                ask_result=result,
             )
         except ValueError as exc:
             raise RequirementsAnalysisOutputError(str(exc)) from exc

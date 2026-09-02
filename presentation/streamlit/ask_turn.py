@@ -6,8 +6,9 @@ session state. Widgets and ``st`` calls stay in ``app.py``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableSequence, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from application.contracts import AskRequest, AskResponse, InvokeToolResponse
 from application.errors import ApplicationValidationError
@@ -21,6 +22,8 @@ from domain.models import Message
 _PROVIDER_FAILURE_MESSAGE = "The model provider could not complete the request."
 _TOOL_FAILURE_MESSAGE = "A tool failed while processing your request."
 _OPERATIONAL_FAILURE_MESSAGE = "Something went wrong while processing your request."
+
+_DISPLAY_ONLY_KEY = "display_only"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +65,70 @@ def tool_output_lines(
         f"- `{output.tool_name}` — {len(output.result)} characters"
         for output in tool_outputs
     )
+
+
+def messages_for_model_history(
+    session_messages: Sequence[Mapping[str, Any]],
+) -> tuple[Message, ...]:
+    """Project session messages into model history, skipping display-only entries.
+
+    Display-only assistant rows (sanitized provider/operational errors) stay
+    visible in the UI after Streamlit reruns but must not be replayed to the
+    model on the next turn.
+    """
+    history: list[Message] = []
+    for message in session_messages:
+        if message.get(_DISPLAY_ONLY_KEY):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str):
+            continue
+        if not content.strip():
+            continue
+        history.append(Message(role=role, content=content))
+    return tuple(history)
+
+
+def display_only_error_entry(message: str) -> dict[str, object]:
+    """Build a conversation row that renders after reruns but is not model history."""
+    return {
+        "role": "assistant",
+        "content": message,
+        _DISPLAY_ONLY_KEY: True,
+    }
+
+
+def apply_ask_turn_to_session_messages(
+    messages: MutableSequence[dict[str, Any]],
+    result: AskTurnResult,
+) -> None:
+    """Mutate session messages after one ask turn.
+
+    Successful answers append a normal assistant row. Operational failures keep
+    the user turn and append a display-only sanitized error. Validation
+    rejections drop the just-appended user turn and add nothing — the refused
+    text must not survive into the next submit.
+    """
+    if result.ok:
+        response = result.response
+        if response is None:
+            return
+        messages.append(
+            {
+                "role": "assistant",
+                "content": response.answer,
+                "citations": response.citations,
+                "tool_outputs": response.tool_outputs,
+                "run": response.run,
+            }
+        )
+        return
+    if result.drop_user_turn:
+        if messages and messages[-1].get("role") == "user":
+            messages.pop()
+        return
+    messages.append(display_only_error_entry(result.message))
 
 
 def run_ask_turn(

@@ -38,7 +38,44 @@ def test_requirements_analysis_is_enabled_with_the_pack() -> None:
     assert requirements_analysis_enabled(_Settings("software-delivery")) is True
 
 
-def test_format_requirements_analysis_answer_includes_cited_sections() -> None:
+def test_pack_analyzer_projects_ask_result_onto_view_for_run_meta() -> None:
+    """Composition projects AskResult metadata without a new façade type."""
+    from composition.requirements_analysis import PackRequirementsAnalyzer
+    from domain.models import AskResult, Usage
+    from packs.software_delivery.requirements_analysis_contracts import (
+        RequirementsAnalysisResult,
+    )
+
+    ask_result = AskResult(
+        content='{"summary":"ok"}',
+        model="proj-model",
+        latency_ms=9,
+        usage=Usage(total_tokens=3),
+        settings={"temperature": 0.0},
+    )
+    pack_result = RequirementsAnalysisResult(
+        summary="ok",
+        acceptance_criteria_gaps=(),
+        risks=(),
+        clarification_questions=(),
+        evidence=(),
+        ask_result=ask_result,
+    )
+    analyzer = PackRequirementsAnalyzer(lambda _requirements: pack_result)
+
+    view = analyzer.analyze("Need MFA.")
+
+    assert view.ask_result is ask_result
+    # Import RunMeta with the same module identity AskResponse uses (top-level).
+    from application.contracts import RunMeta
+
+    assert RunMeta.from_result(view.ask_result) == RunMeta(
+        model="proj-model",
+        latency_ms=9,
+        usage=Usage(total_tokens=3),
+        settings={"temperature": 0.0},
+    )
+
     view = RequirementsAnalysisView(
         summary="The story omits lockout.",
         acceptance_criteria_gaps=(
