@@ -83,7 +83,7 @@ def _block_between(source: str, start: str, end: str) -> str:
 
 
 def test_successful_history_turn_renders_run_details_after_reply_and_outputs() -> None:
-    """History success: reply → citations → tools → projected → Run details."""
+    """History success: reply → citations → tools → projected → Run details → export."""
     history = _block_between(_app_source(), "def _render_history()", "def _handle_input(")
     assistant = _block_between(
         history,
@@ -95,12 +95,12 @@ def test_successful_history_turn_renders_run_details_after_reply_and_outputs() -
     tools_at = assistant.index("_render_tool_outputs(")
     projected_at = assistant.index("render_projected_results(")
     run_at = assistant.index("render_run_meta(")
-    assert reply_at < citations_at < tools_at < projected_at < run_at
-    assert "render_conversation_export_actions(" not in assistant
+    export_at = assistant.index("render_conversation_export_actions(")
+    assert reply_at < citations_at < tools_at < projected_at < run_at < export_at
 
 
 def test_successful_live_turn_renders_run_details_after_reply_and_outputs() -> None:
-    """Live success: reply → citations → tools → projected → Run details."""
+    """Live success: reply → citations → tools → projected → Run details → export."""
     handle = _block_between(_app_source(), "def _handle_input(", "_ACTION_MESSAGE_KEY")
     success = handle.split("assert response is not None", 1)[1]
     reply_at = success.index("render_reply(")
@@ -108,8 +108,8 @@ def test_successful_live_turn_renders_run_details_after_reply_and_outputs() -> N
     tools_at = success.index("_render_tool_outputs(")
     projected_at = success.index("render_projected_results(")
     run_at = success.index("render_run_meta(")
-    assert reply_at < citations_at < tools_at < projected_at < run_at
-    assert "render_conversation_export_actions(" not in success
+    export_at = success.index("render_conversation_export_actions(")
+    assert reply_at < citations_at < tools_at < projected_at < run_at < export_at
     # Must not also render Run details before the reply on the success path.
     before_reply = success[:reply_at]
     assert "render_run_meta(" not in before_reply
