@@ -29,16 +29,3 @@ TEST_GENERATION_MODEL_SETTINGS: Mapping[str, object] = MappingProxyType(
         "max_tokens": 2048,
     }
 )
-
-MAX_REQUIREMENTS_CHARS = 10_000
-MAX_ANALYSIS_SUMMARY_CHARS = 4_000
-MAX_FINDINGS_PER_SECTION = 25
-MAX_FINDING_STATEMENT_CHARS = 1_000
-MAX_EVIDENCE_IDS_PER_FINDING = MAX_EVIDENCE_ITEMS
-
-REQUIREMENTS_ANALYSIS_MODEL_SETTINGS: Mapping[str, object] = MappingProxyType(
-    {
-        "temperature": 0,
-        "max_tokens": 2048,
-    }
-)

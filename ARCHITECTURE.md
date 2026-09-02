@@ -99,26 +99,13 @@ connector/upload → SourceDocument → chunks/index
        → cited / structured result
 ```
 
-Requirements analysis and chat-time tool selection share one chat surface.
+Chat-time tool selection shares one chat surface with grounded RAG.
 A General-mode query is matched by the pack intent policy:
 
-- explicit ``analyze|review … requirements|story`` → ``AnalyzeRequirements``
-  (filter-less cross-source retrieval, structured findings, citations)
 - explicit generate/risk phrasing → evidence bundle → ordered tool chain
   through the opaque ``InvokeTool`` boundary → ``AskResponse`` with opaque
   ``tool_outputs`` and citations from the raw hits
 - anything else → grounded RAG via ``AskKnowledge``
-
-There is no separate requirements-analysis form: paste the story into chat
-with an analysis cue (for example ``Analyze these requirements: …``).
-
-Software Delivery requirements analysis (`AnalyzeRequirements`) receives
-retrieval through a single-argument callable wired in composition — no
-`metadata_filters` channel — with `RELEVANCE_THRESHOLD` applied before hits
-reach the pack, mirroring the insufficient-evidence semantics documented for
-`AskKnowledge`. Chat-time analysis is gated with the pack via
-`software_delivery_tools_enabled` / ``DOMAIN_TOOL_PACKS`` (same gate as
-tool-augmented ask).
 
 One domain tool consumes a multi-source evidence bundle. A new source kind does
 not require a new risk tool or shared-core contract change. Absence-based
@@ -130,7 +117,7 @@ composition views — risk score with factor citations, structured test cases,
 and Markdown preview/download. Live chat turns feed them through the #178
 projection adapter (``project_software_delivery_run_view``), not by parsing
 opaque ``AskResponse.tool_outputs``. They are absent when no typed view was
-projected (RAG / analysis / non-pack turns). There is no standalone tool-run
+projected (RAG / non-pack turns). There is no standalone tool-run
 form: the only path that retrieves and orchestrates is the chat-time one
 described below.
 
@@ -162,10 +149,8 @@ unchanged to ``AskKnowledge`` — routing never moves into Streamlit. Unmatched
 General queries are delegated to the grounded path verbatim, so ordinary chat is
 unchanged and no tool runs speculatively.
 
-Matched intents are either requirements analysis (``analyze|review …
-requirements|story`` with a non-empty body after the cue →
-``RequirementsAnalyzer``), a generate/risk tool chain, or neither. Generation
-wins over analysis; analysis wins over risk-only.
+Matched intents are either a generate/risk tool chain or neither. Generation
+wins over risk-only.
 
 The policy is **explicit-request matching, not a classifier**. Test generation
 requires a same-clause creation verb (``create``, ``generate``, ``write``,
@@ -240,7 +225,7 @@ renderers or ``packs``.
 Chat over ingested documents is orchestrated by `AskKnowledge`. The Streamlit
 UI is **intent-first**: there is no Mode selector and no preselected workflow
 form. Ordinary chat turns use General grounded chat (`AskRequest.prompt_key`
-unset); composition routes explicit Software Delivery intents (analysis, test
+unset); composition routes explicit Software Delivery intents (test
 generation, risk) when the pack is enabled. `PromptRepository` and
 `AskRequest.prompt_key` remain so saved commands / role instructions (#149) can
 supply optional task text later without restoring a pre-chat Mode control.
@@ -344,9 +329,6 @@ operational types to fixed category sentences (see below).
 | store | `ChromaStoreError` | infrastructure | Subclass of `VectorStoreError` |
 | tool | `ToolArgumentValidationError` | domain | Invalid tool arguments before execution (`DomainValidationError`) |
 | tool | `ToolFailureError` | domain | Tool invocation failure after valid arguments |
-| pack | `RequirementsAnalysisValidationError` | domain | Invalid requirements-analysis caller input or prompt budget |
-| pack | `RequirementsAnalysisOutputError` | domain | Invalid requirements-analysis model output (`ProviderError` subclass) |
-| pack | `MissingEvidenceError` | domain | No retrieval hits cleared the relevance threshold for requirements analysis |
 | ingest / documents | `IngestFailure`, `DocumentManagementError`, `Partial*Failure` | application | Upload / catalog mutation failures |
 | corpus / catalog / extract | `CorpusLoadError`, `CatalogError`, `DocumentExtractionError` (+ subclasses) | infrastructure | Adapter I/O for seed, catalog, file extract |
 | composition | `KnowledgeLoadError`, `DocumentUploadError`, `DocumentOperationError`, `PartialDocumentOperationError` | composition | Presentation-facing wraps of infrastructure / adapter failures |
@@ -364,18 +346,13 @@ exception text). Pre-execute construction failures leave `run=None`.
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
 | `ApplicationValidationError` | boundary-authored `str(error)` | yes |
-| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`, `RequirementsAnalysisOutputError`) | fixed provider sentence | no |
+| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`) | fixed provider sentence | no |
 | `ToolFailureError` | fixed tool sentence | no |
 | `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
 
 Technical and vendor detail may remain on `__cause__` (and in logs); it must
 not reach `st.error`. The collapsed Streamlit **Run details** expander reads
 only typed `RunMeta` fields (see README); it never parses logs.
-
-Chat-time requirements analysis reuses the same ask-turn mapping: analysis
-failures surface through `run_ask_turn` / `ToolAugmentedAsk` (for example
-`InsufficientEvidenceError` → the grounded insufficient-knowledge answer),
-not through a separate presentation analysis helper.
 
 ## Architecture tests
 
