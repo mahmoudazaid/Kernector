@@ -30,13 +30,15 @@ def render_run_meta(result: RunMeta | None) -> None:
             st.caption(line)
 
 
-def render_export_actions(content: str, filename_prefix: str) -> None:
+def render_export_actions(
+    content: str, filename_prefix: str, *, key_prefix: str
+) -> None:
     st.download_button(
         "Download output",
         data=content,
         file_name=f"{filename_prefix}.md",
         mime="text/markdown",
-        key=f"download_{filename_prefix}",
+        key=f"download_{key_prefix}",
     )
 
 

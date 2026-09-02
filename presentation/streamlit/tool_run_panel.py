@@ -51,14 +51,18 @@ def render_test_cases(test_cases: TestCasesView) -> None:
                 st.markdown(line)
 
 
-def render_markdown_export(markdown: str, *, filename_prefix: str = "test_cases") -> None:
+def render_markdown_export(
+    markdown: str, *, key_prefix: str, filename_prefix: str = "test_cases"
+) -> None:
     st.markdown("**Markdown export**")
     with st.expander("Preview"):
         st.code(markdown, language="markdown")
-    render_export_actions(markdown, filename_prefix)
+    render_export_actions(markdown, filename_prefix, key_prefix=key_prefix)
 
 
-def render_software_delivery_tool_results(view: SoftwareDeliveryRunView) -> None:
+def render_software_delivery_tool_results(
+    view: SoftwareDeliveryRunView, *, key_prefix: str
+) -> None:
     """Render a complete Software Delivery tool run from typed views only."""
     render_tool_call_envelope(view.calls)
     if view.summary:
@@ -68,4 +72,4 @@ def render_software_delivery_tool_results(view: SoftwareDeliveryRunView) -> None
     if view.test_cases is not None:
         render_test_cases(view.test_cases)
     if view.markdown:
-        render_markdown_export(view.markdown)
+        render_markdown_export(view.markdown, key_prefix=key_prefix)
