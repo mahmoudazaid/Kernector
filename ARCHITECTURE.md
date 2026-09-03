@@ -56,10 +56,15 @@ import `packs`; only composition activates an enabled pack.
   through `composition` and must not construct or import infrastructure
   adapters or packs directly. HTTPX is an HTTP **client** (legitimate in
   clients and tests); it is not a server-framework boundary.
-- Future `web/` (Next.js) communicates only through HTTP to the Python API. It
-  must never import Python packages, connect to Chroma, call embedding or LLM
-  providers, use document extractors, or reach into composition or other
-  Python internals.
+- Future `web/` (Next.js) communicates only through HTTP to the Python API
+  (versioned product endpoints under `/api/v1/…` and unversioned
+  `GET /health`). It must never **directly import, call, configure, or
+  expose** infrastructure adapters, and must never import Python packages,
+  connect to Chroma, call embedding or LLM providers, use document
+  extractors, import packs, reach into composition, or otherwise access
+  Python internals. Infrastructure may still run **indirectly** via
+  `web/ → HTTP → presentation/http/ → composition → application ports →
+  injected infrastructure adapters`.
 
 ## Composition root
 
@@ -84,13 +89,13 @@ Streamlit remains a peer presentation adapter via composition (no HTTP
 required) until separate feature-parity tickets and an explicit retirement
 decision. FastAPI-published OpenAPI is the TypeScript contract source of
 truth. HTTP failures use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)
-Problem Details (`application/problem+json`). Implementation follow-ups:
+Problem Details (`application/problem+json`). After `#125`,
+[#126](https://github.com/mahmoudazaid/Kernector/issues/126) (shell) and
 [#81](https://github.com/mahmoudazaid/Kernector/issues/81) (HTTP adapter +
-layer-boundary / error tests),
-[#128](https://github.com/mahmoudazaid/Kernector/issues/128) (dual-stack CI
-and contract-drift checks). Shell and typed client:
-[#126](https://github.com/mahmoudazaid/Kernector/issues/126),
-[#127](https://github.com/mahmoudazaid/Kernector/issues/127).
+layer-boundary / error tests) may proceed in parallel;
+[#127](https://github.com/mahmoudazaid/Kernector/issues/127) (typed client)
+needs both; [#128](https://github.com/mahmoudazaid/Kernector/issues/128)
+(dual-stack CI and contract-drift checks) follows `#126`, `#81`, and `#127`.
 
 ## Knowledge foundation
 

@@ -24,8 +24,11 @@ contract docs) is already closed as superseded by this track
 
 ## Decision
 
-1. **Target flow** — Next.js talks only to a versioned HTTP API. The FastAPI
-   adapter is a presentation peer to Streamlit and wires through composition:
+1. **Target flow** — Next.js reaches the Python stack only over HTTP. **Product
+   endpoints** use the versioned prefix `/api/v1/…`; operational health remains
+   the intentionally unversioned `GET /health`. Next.js may call both. The
+   FastAPI adapter is a presentation peer to Streamlit and wires through
+   composition:
 
 ```text
 web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
@@ -45,20 +48,25 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 
 2. **Ownership boundaries**
    - **`web/`** — Next.js UI, routing, design system, and typed HTTP client.
-     No business rules; no direct infrastructure access.
+     No business rules. Next.js must never **directly import, call, configure,
+     or expose** infrastructure adapters.
    - **`presentation/http/`** — FastAPI routes, Pydantic/OpenAPI schemas, CORS,
      and error mapping. Calls `composition` only; must not import
      `infrastructure` or `packs`. Owns server frameworks: `fastapi`,
      `uvicorn`, and `starlette`.
    - **`application/contracts.py`** — UI-agnostic dataclasses for use-case I/O
      (product behavior). Not the wire schema.
-   - **`infrastructure/`** — Concrete adapters only; never reachable from
-     Next.js.
+   - **`infrastructure/`** — Concrete adapters injected by composition. They
+     may run **indirectly** at request time through
+     `web/ → HTTP → presentation/http/ → composition → application ports →
+     injected infrastructure adapters`. Next.js still must not reach them
+     directly.
 
 3. **`web/` isolation** — The TypeScript tree communicates **only** over HTTP
-   to the Python API. It must never import Python packages, connect to Chroma,
-   call embedding or LLM providers, use document extractors, or reach into
-   composition or other Python internals.
+   to the Python API (versioned product routes under `/api/v1/…` and
+   unversioned `GET /health`). It must never import Python packages, connect
+   to Chroma, call embedding or LLM providers, use document extractors, import
+   packs, reach into composition, or otherwise access Python internals.
 
 4. **Contract source of truth** — FastAPI-published **OpenAPI** (from Pydantic
    models that live only in `presentation/http/`) is the single source of
@@ -69,8 +77,11 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
    [#128](https://github.com/mahmoudazaid/Kernector/issues/128).
 
 5. **API conventions**
-   - **Versioning** — Product endpoints under `/api/v1/…`.
-   - **Health** — Unversioned `GET /health` (outside `/api/v1`).
+   - **Versioning** — Product endpoints under `/api/v1/…`. Next.js calls these
+     for product behavior.
+   - **Health** — Unversioned `GET /health` (outside `/api/v1`). Next.js may
+     call this for readiness/ops checks without using the product version
+     prefix.
    - **CORS** — Allow a configured Next.js origin in development only; no
      permissive production defaults (implemented in
      [#81](https://github.com/mahmoudazaid/Kernector/issues/81)).
@@ -145,20 +156,22 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 
 - Contributors must not put FastAPI route logic or OpenAPI schemas in
   `application/` or `infrastructure/`.
-- Next.js work starts only after this ADR; shell (`#126`), HTTP foundation
-  (`#81`), typed client (`#127`), and dual-stack CI (`#128`) follow in order.
+- After this ADR (`#125`), shell (`#126`) and HTTP foundation (`#81`) may
+  proceed **in parallel**. Typed client (`#127`) starts only after both provide
+  the Next.js shell and a live OpenAPI contract. Dual-stack CI (`#128`) follows
+  `#126`, `#81`, and `#127`.
 - Streamlit remains the supported interactive UI until separate parity work
   and an explicit retirement decision.
 
 ## Migration sequence
 
-| Issue | Role |
-| ----- | ---- |
-| [#125](https://github.com/mahmoudazaid/Kernector/issues/125) | This ADR + `ARCHITECTURE.md` (docs only) |
-| [#126](https://github.com/mahmoudazaid/Kernector/issues/126) | Next.js application shell under `web/` |
-| [#81](https://github.com/mahmoudazaid/Kernector/issues/81) | Minimal versioned FastAPI under `presentation/http/` + boundary/error tests |
-| [#127](https://github.com/mahmoudazaid/Kernector/issues/127) | Typed Next.js client from OpenAPI |
-| [#128](https://github.com/mahmoudazaid/Kernector/issues/128) | Dual-stack CI, workflow docs, contract-drift checks |
+| Issue | Role | Depends on |
+| ----- | ---- | ---------- |
+| [#125](https://github.com/mahmoudazaid/Kernector/issues/125) | This ADR + `ARCHITECTURE.md` (docs only) | — |
+| [#126](https://github.com/mahmoudazaid/Kernector/issues/126) | Next.js application shell under `web/` | `#125` (may run in parallel with `#81`) |
+| [#81](https://github.com/mahmoudazaid/Kernector/issues/81) | Minimal FastAPI under `presentation/http/` (versioned `/api/v1/…` product routes + unversioned `/health`) + boundary/error tests | `#125` (may run in parallel with `#126`) |
+| [#127](https://github.com/mahmoudazaid/Kernector/issues/127) | Typed Next.js client from OpenAPI | `#126` and `#81` |
+| [#128](https://github.com/mahmoudazaid/Kernector/issues/128) | Dual-stack CI, workflow docs, contract-drift checks | `#126`, `#81`, and `#127` |
 
 Parent: [EPIC #124](https://github.com/mahmoudazaid/Kernector/issues/124).
 Coordinates with [#104](https://github.com/mahmoudazaid/Kernector/issues/104)
