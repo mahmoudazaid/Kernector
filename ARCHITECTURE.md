@@ -12,7 +12,11 @@ business logic and the UI stays replaceable.
 | `infrastructure/` | Concrete adapters and external integrations | `domain` and approved third-party libraries |
 | `packs/` | Optional executable domain packs (tools, scoring policies) | `domain` and standard library |
 | `composition/` | Settings loading, factories, and dependency injection | `application`, `domain`, `infrastructure`, and enabled `packs` (lazy) |
-| `presentation/` | Streamlit and future UI adapters | `application`, `domain`, and `composition` |
+| `presentation/` | Streamlit, CLI, and future `presentation/http/` FastAPI adapter | `application`, `domain`, and `composition` |
+
+Future `web/` (Next.js) is a TypeScript presentation client, not a Python
+layer. It is outside the table above and talks to Kernector only over HTTP
+(see [Next.js / HTTP presentation migration](#nextjs--http-presentation-migration)).
 
 ## Allowed dependency directions
 
@@ -45,14 +49,60 @@ import `packs`; only composition activates an enabled pack.
   allowlist; it must not import packs at module scope.
 - `packs/` may import `domain` and the standard library only. Packs must not
   import `application`, `infrastructure`, `presentation`, or `composition`.
-- `presentation` is the only layer allowed to import Streamlit. It must call
-  application behavior through `composition` and must not construct or import
-  infrastructure adapters or packs directly.
+- `presentation` is the only Python layer allowed to import Streamlit or the
+  HTTP server frameworks (`fastapi`, `uvicorn`, `starlette`). Streamlit stays
+  under `presentation/streamlit/`; server frameworks belong under
+  `presentation/http/` only. Presentation must call application behavior
+  through `composition` and must not construct or import infrastructure
+  adapters or packs directly. HTTPX is an HTTP **client** (legitimate in
+  clients and tests); it is not a server-framework boundary.
+- Future `web/` (Next.js) communicates only through HTTP to the Python API
+  (versioned product endpoints under `/api/v1/…` and unversioned
+  `GET /health`). It must never **directly import, call, configure, or
+  expose** infrastructure adapters, and must never import Python packages,
+  connect to Chroma, call embedding or LLM providers, use document
+  extractors, import packs, reach into composition, or otherwise access
+  Python internals. Infrastructure may still run **indirectly** via
+  `web/ → HTTP → presentation/http/ → composition → application ports →
+  injected infrastructure adapters`.
 
 ## Composition root
 
 `composition/container.py` wires concrete infrastructure implementations into
 application services. Presentation is not the composition root.
+
+## Next.js / HTTP presentation migration
+
+See [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md) for the full
+decision record. Target flow:
+
+```text
+web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
+                              │
+                              ▼
+                         composition → application → domain
+                                         ▲
+                                   infrastructure
+```
+
+Streamlit remains a peer presentation adapter via composition (no HTTP
+required) until separate feature-parity tickets and an explicit retirement
+decision. FastAPI-published OpenAPI is the TypeScript contract source of
+truth. Within `/api/v1`, only backward-compatible additive changes are
+allowed; removals, renames, required-field additions, type or semantic
+changes, and incompatible Problem Details changes require `/api/v2`
+(deprecated operations stay marked in OpenAPI until a future major version).
+`web/` uses **`npm`** (`package-lock.json`, `npm ci`, and Node-version pinning
+land in [#126](https://github.com/mahmoudazaid/Kernector/issues/126)). HTTP
+failures use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem
+Details (`application/problem+json`). After `#125`,
+[#126](https://github.com/mahmoudazaid/Kernector/issues/126) (shell) and
+[#81](https://github.com/mahmoudazaid/Kernector/issues/81) (HTTP adapter +
+layer-boundary / error tests) may proceed in parallel;
+[#127](https://github.com/mahmoudazaid/Kernector/issues/127) owns the typed
+client and local contract-drift check (needs both `#126` and `#81`);
+[#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires that drift
+check into dual-stack CI and follows `#126`, `#81`, and `#127`.
 
 ## Knowledge foundation
 
@@ -313,7 +363,11 @@ Operational failures cross the port boundary as typed errors so presentation can
 show user-safe messages instead of vendor bodies or tracebacks. Adapters raise
 fixed, adapter-authored exception text with vendor detail only on `__cause__`.
 Presentation does **not** treat that text as display-safe: `run_ask_turn` maps
-operational types to fixed category sentences (see below).
+operational types to fixed category sentences (see below). The future HTTP
+adapter under `presentation/http/` exposes the same failures as
+[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem Details
+(`application/problem+json`); the detailed type→status mapping is owned by
+[#81](https://github.com/mahmoudazaid/Kernector/issues/81).
 
 | Category | Type | Layer | Meaning |
 |---|---|---|---|
@@ -359,6 +413,15 @@ only typed `RunMeta` fields (see README); it never parses logs.
 Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
 package or when application code references Streamlit `session_state`.
+
+Those checks remain valid for today’s Python tree. Rules for FastAPI under
+`presentation/http/` are a follow-up owned by
+[#81](https://github.com/mahmoudazaid/Kernector/issues/81). The local OpenAPI
+contract-drift check is owned by
+[#127](https://github.com/mahmoudazaid/Kernector/issues/127);
+[#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires it into
+dual-stack CI. None of those are implemented in this document’s companion
+docs-only change.
 
 Run only the architecture boundary tests:
 
