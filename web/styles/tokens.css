@@ -21,7 +21,6 @@
   --kern-space-5: 22px;
   --kern-space-6: 28px;
   --kern-space-7: 32px;
-  --kern-bp-compact: 680px;
 }
 
 :root[data-theme="light"] {

@@ -38,4 +38,8 @@ Placeholder destinations (no invented product behavior):
 - `/chat` — Chat
 - `/settings` — Settings
 
-Global UI states: `loading.tsx`, `error.tsx`, `not-found.tsx`, plus reusable empty/unavailable components under `components/states/`.
+Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout failures), `not-found.tsx`, plus reusable empty/unavailable components under `components/states/`.
+
+## Responsive shell
+
+The compact-shell breakpoint is **680px** (`max-width` in `app/globals.css`). Below that width the sidebar collapses behind the header menu button. The value is kept as a literal media-query threshold (CSS custom properties are not portable across `@media` queries here).

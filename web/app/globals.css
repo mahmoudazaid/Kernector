@@ -321,6 +321,7 @@ a {
   color: var(--kern-ink);
 }
 
+/* Compact-shell breakpoint: collapse sidebar into a mobile drawer. */
 @media (max-width: 680px) {
   .kern-menu {
     display: inline-flex;
