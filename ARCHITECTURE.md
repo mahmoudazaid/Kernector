@@ -88,14 +88,21 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 Streamlit remains a peer presentation adapter via composition (no HTTP
 required) until separate feature-parity tickets and an explicit retirement
 decision. FastAPI-published OpenAPI is the TypeScript contract source of
-truth. HTTP failures use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)
-Problem Details (`application/problem+json`). After `#125`,
+truth. Within `/api/v1`, only backward-compatible additive changes are
+allowed; removals, renames, required-field additions, type or semantic
+changes, and incompatible Problem Details changes require `/api/v2`
+(deprecated operations stay marked in OpenAPI until a future major version).
+`web/` uses **`npm`** (`package-lock.json`, `npm ci`, and Node-version pinning
+land in [#126](https://github.com/mahmoudazaid/Kernector/issues/126)). HTTP
+failures use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem
+Details (`application/problem+json`). After `#125`,
 [#126](https://github.com/mahmoudazaid/Kernector/issues/126) (shell) and
 [#81](https://github.com/mahmoudazaid/Kernector/issues/81) (HTTP adapter +
 layer-boundary / error tests) may proceed in parallel;
-[#127](https://github.com/mahmoudazaid/Kernector/issues/127) (typed client)
-needs both; [#128](https://github.com/mahmoudazaid/Kernector/issues/128)
-(dual-stack CI and contract-drift checks) follows `#126`, `#81`, and `#127`.
+[#127](https://github.com/mahmoudazaid/Kernector/issues/127) owns the typed
+client and local contract-drift check (needs both `#126` and `#81`);
+[#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires that drift
+check into dual-stack CI and follows `#126`, `#81`, and `#127`.
 
 ## Knowledge foundation
 
@@ -408,10 +415,13 @@ Automated AST checks under `test/architecture/` and
 package or when application code references Streamlit `session_state`.
 
 Those checks remain valid for today’s Python tree. Rules for FastAPI under
-`presentation/http/` and for dual-stack / `web/` contract drift are follow-ups
-owned by [#81](https://github.com/mahmoudazaid/Kernector/issues/81) and
-[#128](https://github.com/mahmoudazaid/Kernector/issues/128); they are not
-implemented in this document’s companion docs-only change.
+`presentation/http/` are a follow-up owned by
+[#81](https://github.com/mahmoudazaid/Kernector/issues/81). The local OpenAPI
+contract-drift check is owned by
+[#127](https://github.com/mahmoudazaid/Kernector/issues/127);
+[#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires it into
+dual-stack CI. None of those are implemented in this document’s companion
+docs-only change.
 
 Run only the architecture boundary tests:
 

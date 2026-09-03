@@ -70,15 +70,22 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 
 4. **Contract source of truth** — FastAPI-published **OpenAPI** (from Pydantic
    models that live only in `presentation/http/`) is the single source of
-   truth for the generated TypeScript client
-   ([#127](https://github.com/mahmoudazaid/Kernector/issues/127)). The HTTP
-   adapter maps OpenAPI/Pydantic ↔ `application/contracts.py`. Dual-stack
-   contract-drift checks are owned by
-   [#128](https://github.com/mahmoudazaid/Kernector/issues/128).
+   truth for the generated TypeScript client.
+   [#127](https://github.com/mahmoudazaid/Kernector/issues/127) owns
+   reproducible OpenAPI client generation **and** the local contract-drift
+   check. [#128](https://github.com/mahmoudazaid/Kernector/issues/128) only
+   wires that check into CI (plus dual-stack workflow docs). The HTTP adapter
+   maps OpenAPI/Pydantic ↔ `application/contracts.py`.
 
 5. **API conventions**
    - **Versioning** — Product endpoints under `/api/v1/…`. Next.js calls these
      for product behavior.
+   - **Compatibility** — Within `/api/v1`, only **backward-compatible additive**
+     changes are allowed (for example optional fields or new endpoints).
+     Removals, renames, required-field additions, type or semantic changes, and
+     incompatible Problem Details changes require a new major prefix
+     (`/api/v2/…`). Deprecated operations are marked in OpenAPI and retained
+     until a future major version removes them.
    - **Health** — Unversioned `GET /health` (outside `/api/v1`). Next.js may
      call this for readiness/ops checks without using the product version
      prefix.
@@ -89,6 +96,10 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
      It is not a server-framework boundary and must not be treated as one.
      Server frameworks for the adapter are `fastapi`, `uvicorn`, and
      `starlette` under `presentation/http/` only.
+   - **`web/` package manager** — **`npm`** is the package manager for `web/`.
+     Lockfile (`package-lock.json`), `npm ci`, and Node-version pinning are
+     implemented later in [#126](https://github.com/mahmoudazaid/Kernector/issues/126);
+     this ADR only records the choice.
 
 6. **Errors — [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem
    Details** — HTTP failures return `application/problem+json`:
@@ -147,8 +158,12 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
      denylist packages; do not treat `httpx` as a server framework; optional
      mutual isolation between `presentation/http` and `presentation/streamlit`;
      implement and test RFC 9457 mapping.
+   - **[#127](https://github.com/mahmoudazaid/Kernector/issues/127)** —
+     Reproducible OpenAPI → TypeScript client generation and the **local**
+     contract-drift check.
    - **[#128](https://github.com/mahmoudazaid/Kernector/issues/128)** —
-     Dual-stack CI and OpenAPI/contract-drift checks for `web/`.
+     Dual-stack CI and workflow docs; **wires** the `#127` contract-drift
+     check into CI (does not own the check itself).
 
    Existing architecture AST checks remain valid for today’s Python tree.
 
@@ -157,9 +172,10 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 - Contributors must not put FastAPI route logic or OpenAPI schemas in
   `application/` or `infrastructure/`.
 - After this ADR (`#125`), shell (`#126`) and HTTP foundation (`#81`) may
-  proceed **in parallel**. Typed client (`#127`) starts only after both provide
-  the Next.js shell and a live OpenAPI contract. Dual-stack CI (`#128`) follows
-  `#126`, `#81`, and `#127`.
+  proceed **in parallel**. Typed client and local contract-drift check
+  (`#127`) start only after both provide the Next.js shell and a live OpenAPI
+  contract. Dual-stack CI (`#128`) follows `#126`, `#81`, and `#127`, and
+  wires the `#127` drift check into CI.
 - Streamlit remains the supported interactive UI until separate parity work
   and an explicit retirement decision.
 
@@ -168,10 +184,10 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 | Issue | Role | Depends on |
 | ----- | ---- | ---------- |
 | [#125](https://github.com/mahmoudazaid/Kernector/issues/125) | This ADR + `ARCHITECTURE.md` (docs only) | — |
-| [#126](https://github.com/mahmoudazaid/Kernector/issues/126) | Next.js application shell under `web/` | `#125` (may run in parallel with `#81`) |
+| [#126](https://github.com/mahmoudazaid/Kernector/issues/126) | Next.js application shell under `web/` (`npm`, lockfile, `npm ci`, Node pin) | `#125` (may run in parallel with `#81`) |
 | [#81](https://github.com/mahmoudazaid/Kernector/issues/81) | Minimal FastAPI under `presentation/http/` (versioned `/api/v1/…` product routes + unversioned `/health`) + boundary/error tests | `#125` (may run in parallel with `#126`) |
-| [#127](https://github.com/mahmoudazaid/Kernector/issues/127) | Typed Next.js client from OpenAPI | `#126` and `#81` |
-| [#128](https://github.com/mahmoudazaid/Kernector/issues/128) | Dual-stack CI, workflow docs, contract-drift checks | `#126`, `#81`, and `#127` |
+| [#127](https://github.com/mahmoudazaid/Kernector/issues/127) | Typed Next.js client from OpenAPI + local contract-drift check | `#126` and `#81` |
+| [#128](https://github.com/mahmoudazaid/Kernector/issues/128) | Dual-stack CI and workflow docs; wires `#127` drift check into CI | `#126`, `#81`, and `#127` |
 
 Parent: [EPIC #124](https://github.com/mahmoudazaid/Kernector/issues/124).
 Coordinates with [#104](https://github.com/mahmoudazaid/Kernector/issues/104)
