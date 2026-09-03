@@ -1,0 +1,49 @@
+:root {
+  color-scheme: light dark;
+  --kern-bg: light-dark(#f4f4f2, #151515);
+  --kern-surface: light-dark(#ffffff, #202020);
+  --kern-surface-2: light-dark(#eeeeeb, #292929);
+  --kern-ink: light-dark(#222222, #f1f1ef);
+  --kern-muted: light-dark(#666662, #adada7);
+  --kern-line: light-dark(#d4d4cf, #41413e);
+  --kern-active: light-dark(#deded8, #363633);
+  --kern-danger: light-dark(#8e2f2f, #ef9a9a);
+  --kern-radius: 10px;
+  --kern-sidebar-width: 220px;
+  --kern-font-sans: var(--font-kern-sans, "IBM Plex Sans"), "Segoe UI",
+    sans-serif;
+  --kern-font-mono: var(--font-kern-mono, "IBM Plex Mono"), ui-monospace,
+    SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --kern-space-1: 4px;
+  --kern-space-2: 8px;
+  --kern-space-3: 12px;
+  --kern-space-4: 16px;
+  --kern-space-5: 22px;
+  --kern-space-6: 28px;
+  --kern-space-7: 32px;
+  --kern-bp-compact: 680px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --kern-bg: #f4f4f2;
+  --kern-surface: #ffffff;
+  --kern-surface-2: #eeeeeb;
+  --kern-ink: #222222;
+  --kern-muted: #666662;
+  --kern-line: #d4d4cf;
+  --kern-active: #deded8;
+  --kern-danger: #8e2f2f;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --kern-bg: #151515;
+  --kern-surface: #202020;
+  --kern-surface-2: #292929;
+  --kern-ink: #f1f1ef;
+  --kern-muted: #adada7;
+  --kern-line: #41413e;
+  --kern-active: #363633;
+  --kern-danger: #ef9a9a;
+}

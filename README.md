@@ -32,6 +32,18 @@ When `DOMAIN_TOOL_PACKS` includes `software-delivery` and a General-mode query e
 uv run streamlit run main.py
 ```
 
+## Run the Next.js web shell
+
+The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See [`web/README.md`](web/README.md) for full details.
+
+```bash
+cd web
+npm ci
+npm run dev
+```
+
+Other commands: `npm run build`, `npm run lint`, `npm run typecheck`, `npm test`.
+
 ## Hybrid search (optional)
 
 Retrieval defaults to vector-only (Chroma cosine). To combine BM25 with vector
