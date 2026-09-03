@@ -17,7 +17,9 @@ describe("placeholder routes", () => {
         screen.getByRole("heading", { level: 2, name: /feature unavailable/i }),
       ).toBeInTheDocument();
       expect(
-        screen.getByText(/no metrics, forms, chat behavior, or mocked business data/i),
+        screen.getByText(
+          /no metrics, forms, chat behavior, or mocked business data/i,
+        ),
       ).toBeInTheDocument();
 
       expect(screen.queryByRole("form")).not.toBeInTheDocument();

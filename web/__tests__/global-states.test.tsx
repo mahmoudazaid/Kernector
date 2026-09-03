@@ -82,7 +82,9 @@ describe("global UI states", () => {
       screen.getByRole("heading", { name: /feature unavailable/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/intentionally a placeholder until its implementation ticket/i),
+      screen.getByText(
+        /intentionally a placeholder until its implementation ticket/i,
+      ),
     ).toBeInTheDocument();
   });
 });

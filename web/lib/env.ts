@@ -27,7 +27,10 @@ export function loadPublicEnv(
       continue;
     }
     const suffix = key.slice("NEXT_PUBLIC_".length);
-    if (FORBIDDEN_PUBLIC_PATTERN.test(suffix) || FORBIDDEN_PUBLIC_PATTERN.test(key)) {
+    if (
+      FORBIDDEN_PUBLIC_PATTERN.test(suffix) ||
+      FORBIDDEN_PUBLIC_PATTERN.test(key)
+    ) {
       throw new EnvValidationError(
         `Forbidden secret-shaped public environment key "${key}" must not be exposed through public env.`,
       );

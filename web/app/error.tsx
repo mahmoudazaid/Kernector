@@ -8,7 +8,11 @@ type ErrorPageProps = {
 
 export default function ErrorPage({ reset }: ErrorPageProps) {
   return (
-    <section className="kern-content-state" aria-live="polite" aria-atomic="true">
+    <section
+      className="kern-content-state"
+      aria-live="polite"
+      aria-atomic="true"
+    >
       <ErrorState onRetry={reset} />
     </section>
   );
