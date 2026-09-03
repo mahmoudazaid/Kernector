@@ -7,7 +7,9 @@ export function LoadingState() {
         <span />
       </div>
       <h2>Loading page shell…</h2>
-      <p>The global loading boundary keeps the surrounding navigation available.</p>
+      <p>
+        The global loading boundary keeps the surrounding navigation available.
+      </p>
     </div>
   );
 }

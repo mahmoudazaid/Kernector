@@ -21,7 +21,11 @@ export function RoutePlaceholder({ title }: RoutePlaceholderProps) {
         </div>
         <span className="kern-status">PLANNED</span>
       </div>
-      <section className="kern-content-state" aria-live="polite" aria-atomic="true">
+      <section
+        className="kern-content-state"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         <UnavailableState />
       </section>
       <footer className="kern-main-footer">

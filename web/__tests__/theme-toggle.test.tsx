@@ -33,11 +33,13 @@ describe("theme foundation", () => {
       </div>,
     );
 
-    expect(document.querySelector("[data-theme]")?.getAttribute("data-theme")).toBe(
-      "light",
-    );
+    expect(
+      document.querySelector("[data-theme]")?.getAttribute("data-theme"),
+    ).toBe("light");
 
-    await user.click(screen.getByRole("button", { name: /toggle color theme/i }));
+    await user.click(
+      screen.getByRole("button", { name: /toggle color theme/i }),
+    );
     expect(setTheme).toHaveBeenCalledWith("dark");
 
     theme = "dark";
@@ -47,8 +49,8 @@ describe("theme foundation", () => {
       </div>,
     );
 
-    expect(document.querySelector("[data-theme]")?.getAttribute("data-theme")).toBe(
-      "dark",
-    );
+    expect(
+      document.querySelector("[data-theme]")?.getAttribute("data-theme"),
+    ).toBe("dark");
   });
 });

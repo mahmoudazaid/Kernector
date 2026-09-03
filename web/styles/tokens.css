@@ -10,10 +10,11 @@
   --kern-danger: light-dark(#8e2f2f, #ef9a9a);
   --kern-radius: 10px;
   --kern-sidebar-width: 220px;
-  --kern-font-sans: var(--font-kern-sans, "IBM Plex Sans"), "Segoe UI",
-    sans-serif;
-  --kern-font-mono: var(--font-kern-mono, "IBM Plex Mono"), ui-monospace,
-    SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --kern-font-sans:
+    var(--font-kern-sans, "IBM Plex Sans"), "Segoe UI", sans-serif;
+  --kern-font-mono:
+    var(--font-kern-mono, "IBM Plex Mono"), ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, monospace;
   --kern-space-1: 4px;
   --kern-space-2: 8px;
   --kern-space-3: 12px;
