@@ -120,7 +120,7 @@ One independent check per course-worthy unit (theory and workshop). Criteria to 
 | pandas, watchdog (unused) | ignore |
 | `115.md` | ignore |
 | Streamlit skill trees under `.agents` / `.claude` | ignore |
-| pytest / CI | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) (PR to `main`) |
+| pytest / CI | deferred |
 | Hybrid columns in `evaluate.py` | deferred |
 | Duplicate `search_bm25` / `search_vector` after #66 | reference-only |
 | RAG inside the Streamlit app | deferred |

@@ -102,9 +102,8 @@ layer-boundary / error tests) may proceed in parallel;
 [#127](https://github.com/mahmoudazaid/Kernector/issues/127) owns the typed
 client and local contract-drift check (needs both `#126` and `#81`); run
 `npm run api:check` from `web/` (requires `uv`).
-Dual-stack PR CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml),
-[#128](https://github.com/mahmoudazaid/Kernector/issues/128)) runs that drift
-check alongside Python and Next foundation jobs.
+[#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires that drift
+check into dual-stack CI and follows `#126`, `#81`, and `#127`.
 
 ## Knowledge foundation
 
@@ -439,11 +438,9 @@ may appear only under `presentation/http/**` (path-prefix exception in
 `presentation/streamlit` must not import each other. The local OpenAPI
 contract-drift check is owned by
 [#127](https://github.com/mahmoudazaid/Kernector/issues/127)
-(`cd web && npm run api:check`); dual-stack PR CI
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml),
-[#128](https://github.com/mahmoudazaid/Kernector/issues/128)) runs the same
-check. Feature-migration readiness:
-[docs/migration-readiness.md](docs/migration-readiness.md).
+(`cd web && npm run api:check`);
+[#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires it into
+dual-stack CI.
 
 Run only the architecture boundary tests:
 
