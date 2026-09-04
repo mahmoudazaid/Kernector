@@ -24,6 +24,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/ollama/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Ollama Status
+     * @description Probe Ollama reachability and list installed models for ``base_url``.
+     */
+    get: operations["ollama_status_api_v1_ollama_status_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Runtime Settings
+     * @description Expose providers, env defaults, and model-settings catalog for Settings UI.
+     */
+    get: operations["runtime_settings_api_v1_settings_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -72,6 +112,60 @@ export interface components {
       status: string;
     };
     /**
+     * ModelSettingDefResponse
+     * @description One generation setting for Settings UI controls.
+     */
+    ModelSettingDefResponse: {
+      /** Default */
+      default: number;
+      /** Help */
+      help: string;
+      /** Key */
+      key: string;
+      /** Label */
+      label: string;
+      /** Max Value */
+      max_value: number;
+      /** Min Value */
+      min_value: number;
+      /** Providers */
+      providers: string[];
+      /** Step */
+      step: number;
+      /** Widget */
+      widget: string;
+    };
+    /**
+     * OllamaSettingsResponse
+     * @description Ollama defaults from runtime config (live models come from probe).
+     */
+    OllamaSettingsResponse: {
+      /** Default Base Url */
+      default_base_url?: string | null;
+      /** Default Model */
+      default_model?: string | null;
+    };
+    /**
+     * OllamaStatusResponse
+     * @description Ollama reachability and installed models for a base URL.
+     */
+    OllamaStatusResponse: {
+      /** Models */
+      models: string[];
+      /** Reachable */
+      reachable: boolean;
+    };
+    /**
+     * OpenRouterSettingsResponse
+     * @description OpenRouter models and default from runtime config.
+     */
+    OpenRouterSettingsResponse: {
+      /** Default Model */
+      default_model?: string | null;
+      /** Models */
+      models: string[];
+    };
+    /**
      * Problem
      * @description RFC 9457 Problem Details plus Kernector extensions.
      */
@@ -112,6 +206,20 @@ export interface components {
       /** Pointer */
       pointer: string;
     };
+    /**
+     * RuntimeSettingsResponse
+     * @description Catalog for provider/model/settings controls (Streamlit sidebar parity).
+     */
+    RuntimeSettingsResponse: {
+      /** Default Provider */
+      default_provider: string;
+      /** Model Settings */
+      model_settings: components["schemas"]["ModelSettingDefResponse"][];
+      ollama: components["schemas"]["OllamaSettingsResponse"];
+      openrouter: components["schemas"]["OpenRouterSettingsResponse"];
+      /** Providers */
+      providers: string[];
+    };
   };
   responses: never;
   parameters: never;
@@ -137,6 +245,94 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["CapabilitiesResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  ollama_status_api_v1_ollama_status_get: {
+    parameters: {
+      query: {
+        /** @description Ollama server base URL */
+        base_url: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OllamaStatusResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  runtime_settings_api_v1_settings_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeSettingsResponse"];
         };
       };
       /** @description Method not allowed */
