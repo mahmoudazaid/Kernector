@@ -100,7 +100,8 @@ Details (`application/problem+json`). After `#125`,
 [#81](https://github.com/mahmoudazaid/Kernector/issues/81) (HTTP adapter +
 layer-boundary / error tests) may proceed in parallel;
 [#127](https://github.com/mahmoudazaid/Kernector/issues/127) owns the typed
-client and local contract-drift check (needs both `#126` and `#81`);
+client and local contract-drift check (needs both `#126` and `#81`); run
+`npm run api:check` from `web/` (requires `uv`).
 [#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires that drift
 check into dual-stack CI and follows `#126`, `#81`, and `#127`.
 
@@ -436,7 +437,8 @@ may appear only under `presentation/http/**` (path-prefix exception in
 `test/architecture/test_layer_boundaries.py`); `presentation/http` and
 `presentation/streamlit` must not import each other. The local OpenAPI
 contract-drift check is owned by
-[#127](https://github.com/mahmoudazaid/Kernector/issues/127);
+[#127](https://github.com/mahmoudazaid/Kernector/issues/127)
+(`cd web && npm run api:check`);
 [#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires it into
 dual-stack CI.
 

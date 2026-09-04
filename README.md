@@ -55,10 +55,18 @@ uv run uvicorn presentation.http.app:app --reload
 The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See [`web/README.md`](web/README.md) for full details.
 
 ```bash
+# API with CORS for the Next.js origin (required for the header health chip)
+HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
+
+# separate terminal
 cd web
 npm ci
-npm run dev
+npm run dev   # http://localhost:3000
 ```
+
+Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
+
+OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check: `npm run api:check` (CI wiring is #128).
 
 Other commands: `npm run build`, `npm run lint`, `npm run typecheck`, `npm test`.
 
