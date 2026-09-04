@@ -32,6 +32,24 @@ When `DOMAIN_TOOL_PACKS` includes `software-delivery` and a General-mode query e
 uv run streamlit run main.py
 ```
 
+## Run the HTTP API
+
+FastAPI adapter under `presentation/http/` (peer to Streamlit). Development CORS for the Next.js origin is enabled only when `HTTP_DEV_CORS` is truthy (`1` / `true` / `yes` / `on`). Optional `HTTP_CORS_ORIGINS` (default `http://localhost:3000`; `*` is rejected). Both flags load through Settings / `.env` like other config.
+
+```bash
+HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
+```
+
+Or set the same keys in `.env`, then:
+
+```bash
+uv run uvicorn presentation.http.app:app --reload
+```
+
+- Unversioned ops: `GET /health`
+- Versioned prove-out: `GET /api/v1/capabilities`
+- OpenAPI: `GET /openapi.json` (also `/docs`)
+
 ## Run the Next.js web shell
 
 The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See [`web/README.md`](web/README.md) for full details.
