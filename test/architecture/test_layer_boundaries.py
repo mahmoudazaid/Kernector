@@ -6,6 +6,11 @@ reverse:
 
     presentation ──> composition ──> application ──> domain
                           └────────> infrastructure ─────┘
+
+Server frameworks (``fastapi`` / ``uvicorn`` / ``starlette``) may live only
+under ``presentation/http/``. ``httpx`` stays in ``IO_PACKAGES`` as an HTTP
+*client* library (ADR 0002 §5) — it is not a server-framework rule. ``test/``
+is outside :func:`_modules`, so TestClient imports of ``httpx`` are fine.
 """
 
 from pathlib import Path
@@ -14,6 +19,7 @@ import pytest
 
 from test.architecture.import_scan import (
     find_forbidden_imports,
+    find_forbidden_module_prefixes,
     references_attribute,
 )
 
@@ -30,6 +36,9 @@ IO_PACKAGES = {
     "dotenv",
 }
 
+# FastAPI stack — allowed only under presentation/http/** (path-prefix exception).
+SERVER_FRAMEWORKS = {"fastapi", "uvicorn", "starlette"}
+
 LAYER_RULES: dict[str, set[str]] = {
     # Use-case orchestration: domain only. No UI, no I/O, no adapters, no packs.
     "application": {
@@ -39,6 +48,7 @@ LAYER_RULES: dict[str, set[str]] = {
         "packs",
         "streamlit",
         *IO_PACKAGES,
+        *SERVER_FRAMEWORKS,
     },
     # Implements the ports. Never reaches back into the layers above it.
     "infrastructure": {
@@ -46,14 +56,18 @@ LAYER_RULES: dict[str, set[str]] = {
         "presentation",
         "composition",
         "packs",
+        *SERVER_FRAMEWORKS,
     },
     # The outermost edge: may wire anything inward, but is not a UI itself.
     "composition": {
         "presentation",
         "streamlit",
+        *SERVER_FRAMEWORKS,
     },
     # The only layer allowed to import Streamlit, and it must go through
     # `composition` to reach anything that touches the outside world.
+    # SERVER_FRAMEWORKS are applied via :func:`_forbidden_for` with an
+    # exception for presentation/http/**.
     "presentation": {
         "infrastructure",
         "packs",
@@ -67,12 +81,26 @@ LAYER_RULES: dict[str, set[str]] = {
         "composition",
         "streamlit",
         *IO_PACKAGES,
+        *SERVER_FRAMEWORKS,
     },
 }
 
 
 def _modules(layer: str) -> list[Path]:
     return sorted((REPO_ROOT / layer).rglob("*.py"))
+
+
+def _under_presentation_http(module_path: Path) -> bool:
+    rel = module_path.resolve().relative_to(REPO_ROOT)
+    return len(rel.parts) >= 2 and rel.parts[0] == "presentation" and rel.parts[1] == "http"
+
+
+def _forbidden_for(layer: str, module_path: Path) -> set[str]:
+    """Return the denylist for *module_path*, including http path-prefix exception."""
+    forbidden = set(LAYER_RULES[layer])
+    if layer == "presentation" and not _under_presentation_http(module_path):
+        forbidden |= SERVER_FRAMEWORKS
+    return forbidden
 
 
 CASES = [
@@ -91,7 +119,7 @@ def test_layer_modules_are_discovered(layer: str) -> None:
     "layer,module_path", CASES, ids=[f"{layer}/{m.name}" for layer, m in CASES]
 )
 def test_layer_imports_no_forbidden_packages(layer: str, module_path: Path) -> None:
-    forbidden = find_forbidden_imports(module_path, LAYER_RULES[layer])
+    forbidden = find_forbidden_imports(module_path, _forbidden_for(layer, module_path))
     assert not forbidden, (
         f"{module_path.relative_to(REPO_ROOT)} imports {sorted(forbidden)}, "
         f"which {layer}/ may not depend on"
@@ -115,6 +143,9 @@ def test_application_layer_never_touches_session_state() -> None:
         ("from streamlit import session_state\n", {"streamlit"}),
         ("import packs\n", {"packs"}),
         ("from packs.software_delivery import scoring\n", {"packs"}),
+        ("import fastapi\n", {"fastapi"}),
+        ("from starlette.responses import JSONResponse\n", {"starlette"}),
+        ("import uvicorn\n", {"uvicorn"}),
     ],
 )
 def test_planted_application_forbidden_import_is_detected(
@@ -132,6 +163,7 @@ def test_planted_application_forbidden_import_is_detected(
         ("import infrastructure\n", {"infrastructure"}),
         ("from composition.tool_registry import build_tool_registry\n", {"composition"}),
         ("import streamlit\n", {"streamlit"}),
+        ("import fastapi\n", {"fastapi"}),
     ],
 )
 def test_planted_pack_forbidden_import_is_detected(
@@ -140,6 +172,90 @@ def test_planted_pack_forbidden_import_is_detected(
     module = tmp_path / "bad_pack.py"
     module.write_text(source, encoding="utf-8")
     assert find_forbidden_imports(module, LAYER_RULES["packs"]) == expected
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("import fastapi\n", {"fastapi"}),
+        ("import uvicorn\n", {"uvicorn"}),
+        ("from starlette.middleware.cors import CORSMiddleware\n", {"starlette"}),
+    ],
+)
+def test_planted_non_http_presentation_server_framework_is_detected(
+    tmp_path: Path, source: str, expected: set[str]
+) -> None:
+    """Server frameworks are forbidden outside presentation/http/**."""
+    # Path must sit under presentation/streamlit so _forbidden_for applies
+    # SERVER_FRAMEWORKS (tmp_path never triggers the production helper).
+    module = tmp_path / "bad_presentation.py"
+    module.write_text(source, encoding="utf-8")
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "streamlit" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist) == expected
+
+
+def test_planted_presentation_http_may_import_fastapi(tmp_path: Path) -> None:
+    """The path-prefix exception allows FastAPI under presentation/http/**."""
+    module = tmp_path / "http_route.py"
+    module.write_text("from fastapi import FastAPI\n", encoding="utf-8")
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "http" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist) == set()
+    assert SERVER_FRAMEWORKS.isdisjoint(denylist)
+
+
+def test_presentation_http_and_streamlit_are_mutually_isolated() -> None:
+    """Keep the second UI replaceable: adapters must not import each other."""
+    http_root = REPO_ROOT / "presentation" / "http"
+    streamlit_root = REPO_ROOT / "presentation" / "streamlit"
+
+    if http_root.is_dir():
+        for path in sorted(http_root.rglob("*.py")):
+            streamlit_pkg = find_forbidden_imports(path, {"streamlit"})
+            streamlit_sub = find_forbidden_module_prefixes(
+                path, {"presentation.streamlit"}
+            )
+            assert not streamlit_pkg and not streamlit_sub, (
+                f"{path.relative_to(REPO_ROOT)} imports Streamlit from the HTTP adapter"
+            )
+
+    for path in sorted(streamlit_root.rglob("*.py")):
+        http_sub = find_forbidden_module_prefixes(path, {"presentation.http"})
+        assert not http_sub, (
+            f"{path.relative_to(REPO_ROOT)} imports presentation.http from Streamlit"
+        )
+
+
+def test_planted_relative_streamlit_import_from_http_is_detected(
+    tmp_path: Path,
+) -> None:
+    """``from ..streamlit import …`` inside presentation/http must be caught.
+
+    Builds a fake package under ``tmp_path`` so the architecture suite never
+    writes into ``REPO_ROOT`` (``_package_parts_for`` walks ``__init__.py``).
+    """
+    presentation = tmp_path / "presentation"
+    http_pkg = presentation / "http"
+    presentation.mkdir()
+    http_pkg.mkdir()
+    (presentation / "__init__.py").write_text("", encoding="utf-8")
+    (http_pkg / "__init__.py").write_text("", encoding="utf-8")
+    module = http_pkg / "leak.py"
+    module.write_text("from ..streamlit import ask_turn\n", encoding="utf-8")
+
+    hits = find_forbidden_module_prefixes(module, {"presentation.streamlit"})
+    assert hits == {"presentation.streamlit"}
+
+
+def test_planted_from_presentation_import_http_is_detected(tmp_path: Path) -> None:
+    """``from presentation import http`` inside streamlit must be caught."""
+    module = tmp_path / "bad_streamlit.py"
+    module.write_text("from presentation import http\n", encoding="utf-8")
+    hits = find_forbidden_module_prefixes(module, {"presentation.http"})
+    assert hits == {"presentation.http"}
 
 
 def test_planted_application_session_state_attribute_is_detected(tmp_path: Path) -> None:

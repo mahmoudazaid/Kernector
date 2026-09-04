@@ -17,13 +17,11 @@ from composition import GroundedAsk
 from composition.software_delivery_tools import SoftwareDeliveryRunView
 from domain.errors import DomainValidationError, ProviderError, ToolFailureError
 from domain.models import Message
-
-# Fixed category sentences — presentation never renders ``str(error)`` for
-# provider/tool/store failures. Exception type selects the sentence; type alone
-# is never treated as proof that the exception text is safe.
-_PROVIDER_FAILURE_MESSAGE = "The model provider could not complete the request."
-_TOOL_FAILURE_MESSAGE = "A tool failed while processing your request."
-_OPERATIONAL_FAILURE_MESSAGE = "Something went wrong while processing your request."
+from presentation.failure_messages import (
+    OPERATIONAL_FAILURE_MESSAGE,
+    PROVIDER_FAILURE_MESSAGE,
+    TOOL_FAILURE_MESSAGE,
+)
 
 _DISPLAY_ONLY_KEY = "display_only"
 
@@ -211,21 +209,21 @@ def run_ask_turn(
     except ProviderError as error:
         return AskTurnResult(
             ok=False,
-            message=_PROVIDER_FAILURE_MESSAGE,
+            message=PROVIDER_FAILURE_MESSAGE,
             drop_user_turn=False,
             run=_error_run(request_id, error),
         )
     except ToolFailureError as error:
         return AskTurnResult(
             ok=False,
-            message=_TOOL_FAILURE_MESSAGE,
+            message=TOOL_FAILURE_MESSAGE,
             drop_user_turn=False,
             run=_error_run(request_id, error),
         )
     except (DomainValidationError, RuntimeError) as error:
         return AskTurnResult(
             ok=False,
-            message=_OPERATIONAL_FAILURE_MESSAGE,
+            message=OPERATIONAL_FAILURE_MESSAGE,
             drop_user_turn=False,
             run=_error_run(request_id, error),
         )

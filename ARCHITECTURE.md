@@ -12,7 +12,7 @@ business logic and the UI stays replaceable.
 | `infrastructure/` | Concrete adapters and external integrations | `domain` and approved third-party libraries |
 | `packs/` | Optional executable domain packs (tools, scoring policies) | `domain` and standard library |
 | `composition/` | Settings loading, factories, and dependency injection | `application`, `domain`, `infrastructure`, and enabled `packs` (lazy) |
-| `presentation/` | Streamlit, CLI, and future `presentation/http/` FastAPI adapter | `application`, `domain`, and `composition` |
+| `presentation/` | Streamlit, CLI, and `presentation/http/` FastAPI adapter | `application`, `domain`, and `composition` |
 
 Future `web/` (Next.js) is a TypeScript presentation client, not a Python
 layer. It is outside the table above and talks to Kernector only over HTTP
@@ -363,11 +363,28 @@ Operational failures cross the port boundary as typed errors so presentation can
 show user-safe messages instead of vendor bodies or tracebacks. Adapters raise
 fixed, adapter-authored exception text with vendor detail only on `__cause__`.
 Presentation does **not** treat that text as display-safe: `run_ask_turn` maps
-operational types to fixed category sentences (see below). The future HTTP
-adapter under `presentation/http/` exposes the same failures as
+operational types to fixed category sentences (see below). The HTTP adapter under
+`presentation/http/` exposes the same failures as
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem Details
-(`application/problem+json`); the detailed type→status mapping is owned by
-[#81](https://github.com/mahmoudazaid/Kernector/issues/81).
+(`application/problem+json`) via `problem_from_exception`.
+
+| Exception type | HTTP status | Problem `code` | Detail source |
+|---|---|---|---|
+| `ApplicationValidationError` | 500 | `operational_error` | fixed operational sentence |
+| `DomainValidationError` | 500 | `operational_error` | fixed operational sentence |
+| `InsufficientEvidenceError` | 422 | `insufficient_evidence` | fixed sentence |
+| `ConfigurationError` | 500 | `configuration_error` | fixed sentence |
+| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence |
+| `ToolFailureError` | 500 | `tool_failure` | fixed tool sentence |
+| `VectorStoreError` | 500 | `store_error` | fixed operational sentence |
+| `KnowledgeLoadError` / document wraps | 500 | `operational_error` | fixed operational sentence |
+| other | 500 | `internal_error` | fixed internal sentence |
+
+Client request-shape failures remain **422** via Pydantic /
+`problem_from_validation_errors` (schema-authored field pointers). Domain and
+application validation exceptions that reach `problem_from_exception` are treated
+as internal contract violations (same fixed operational sentence as Streamlit's
+`DomainValidationError` mapping).
 
 | Category | Type | Layer | Meaning |
 |---|---|---|---|
@@ -414,14 +431,14 @@ Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
 package or when application code references Streamlit `session_state`.
 
-Those checks remain valid for today’s Python tree. Rules for FastAPI under
-`presentation/http/` are a follow-up owned by
-[#81](https://github.com/mahmoudazaid/Kernector/issues/81). The local OpenAPI
+Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette
+may appear only under `presentation/http/**` (path-prefix exception in
+`test/architecture/test_layer_boundaries.py`); `presentation/http` and
+`presentation/streamlit` must not import each other. The local OpenAPI
 contract-drift check is owned by
 [#127](https://github.com/mahmoudazaid/Kernector/issues/127);
 [#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires it into
-dual-stack CI. None of those are implemented in this document’s companion
-docs-only change.
+dual-stack CI.
 
 Run only the architecture boundary tests:
 
