@@ -34,7 +34,7 @@ export function GlobalErrorFallback({ onRetry }: GlobalErrorFallbackProps) {
       <p
         style={{
           margin: "0 0 18px",
-          color: "light-dark(#666662, #adada7)",
+          color: "light-dark(#5a6a76, #9aadb8)",
           fontSize: "0.95rem",
           lineHeight: 1.6,
         }}
@@ -47,10 +47,10 @@ export function GlobalErrorFallback({ onRetry }: GlobalErrorFallbackProps) {
         style={{
           minHeight: 44,
           padding: "0 14px",
-          border: "1px solid light-dark(#d4d4cf, #41413e)",
-          borderRadius: 7,
+          border: "1px solid light-dark(#c9d3db, #33424d)",
+          borderRadius: 6,
           color: "inherit",
-          background: "light-dark(#ffffff, #202020)",
+          background: "light-dark(#ffffff, #1a2128)",
           cursor: "pointer",
           font: "inherit",
         }}
@@ -76,8 +76,8 @@ export default function GlobalError({ reset }: GlobalErrorProps) {
           placeItems: "center",
           padding: "24px",
           fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-          color: "light-dark(#222222, #f1f1ef)",
-          background: "light-dark(#f4f4f2, #151515)",
+          color: "light-dark(#1a232b, #e8eef2)",
+          background: "light-dark(#f1f4f6, #0f1418)",
           colorScheme: "light dark",
         }}
       >
