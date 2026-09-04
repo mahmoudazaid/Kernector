@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  CHAT_MESSAGES_STORAGE_KEY,
   RUNTIME_SETTINGS_STORAGE_KEY,
-  clearChatMessages,
   loadRuntimeSettings,
   saveRuntimeSettings,
   type StoredRuntimeSettings,
@@ -42,15 +40,5 @@ describe("runtime settings storage", () => {
       JSON.stringify({ provider: "openrouter" }),
     );
     expect(loadRuntimeSettings()).toBeNull();
-  });
-
-  it("clearChatMessages removes only the chat history key", () => {
-    saveRuntimeSettings(SAMPLE);
-    localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify([{ role: "user" }]));
-
-    clearChatMessages();
-
-    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeNull();
-    expect(loadRuntimeSettings()).toEqual(SAMPLE);
   });
 });

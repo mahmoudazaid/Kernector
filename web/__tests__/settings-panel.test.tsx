@@ -74,11 +74,81 @@ describe("SettingsPanel", () => {
     expect(screen.getByLabelText(/OpenRouter model/i)).toHaveValue(
       "openai/gpt-4o-mini",
     );
-    expect(screen.getByLabelText(/Temperature/i)).toHaveValue(0.3);
+    expect(screen.getByLabelText(/Temperature/i)).toHaveAttribute("type", "range");
+    expect(screen.getByLabelText(/Temperature/i)).toHaveValue("0.3");
+    expect(screen.getByLabelText(/Max Tokens/i)).toHaveAttribute("type", "number");
 
     await waitFor(() => {
       expect(loadRuntimeSettings()?.provider).toBe("openrouter");
       expect(loadRuntimeSettings()?.model).toBe("openai/gpt-4o-mini");
+    });
+  });
+
+  it("replaces a stale stored OpenRouter model with the catalog default", async () => {
+    localStorage.setItem(
+      "kernector:runtime-settings:v1",
+      JSON.stringify({
+        provider: "openrouter",
+        model: "z/removed-model",
+        ollamaBaseUrl: "",
+        settings: { temperature: 0.3, max_tokens: 1000, top_p: 1 },
+      }),
+    );
+
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+      />,
+    );
+
+    expect(await screen.findByLabelText(/OpenRouter model/i)).toHaveValue(
+      "openai/gpt-4o-mini",
+    );
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.model).toBe("openai/gpt-4o-mini");
+    });
+  });
+
+  it("shows probe error guidance when the Ollama check fails", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+        probeOllama={async () => {
+          throw new Error("timeout");
+        }}
+      />,
+    );
+
+    await screen.findByRole("radio", { name: /Ollama/i });
+    await user.click(screen.getByRole("radio", { name: /Ollama/i }));
+
+    expect(
+      await screen.findByText(/Could not check Ollama/i),
+    ).toBeInTheDocument();
+  });
+
+  it("clamps model settings and ignores empty clears", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+      />,
+    );
+
+    const maxTokens = await screen.findByLabelText(/Max Tokens/i);
+    await user.clear(maxTokens);
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.settings.max_tokens).toBe(1000);
+    });
+
+    await user.clear(maxTokens);
+    await user.type(maxTokens, "99999");
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.settings.max_tokens).toBe(10000);
     });
   });
 

@@ -42,6 +42,10 @@ def test_settings_returns_runtime_catalog() -> None:
     ]
     assert body["model_settings"][0]["default"] == 0.3
     assert body["model_settings"][0]["providers"] == ["openrouter", "ollama"]
+    max_tokens = next(s for s in body["model_settings"] if s["key"] == "max_tokens")
+    assert max_tokens["default"] == 1000
+    assert isinstance(max_tokens["default"], int)
+    assert isinstance(max_tokens["step"], int)
 
 
 def test_openapi_includes_settings_path() -> None:

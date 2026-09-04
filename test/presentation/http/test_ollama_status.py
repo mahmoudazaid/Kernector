@@ -54,6 +54,22 @@ def test_ollama_status_rejects_blank_base_url() -> None:
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
+def test_ollama_status_rejects_non_local_base_url() -> None:
+    app = create_app()
+    app.dependency_overrides[get_probe_ollama_status] = lambda: ProbeOllamaStatus(
+        probe=lambda _url: {"reachable": True, "models": ["should-not-run"]}
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/ollama/status",
+        params={"base_url": "http://169.254.169.254/latest/meta-data/"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+
+
 def test_openapi_includes_ollama_status_path() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
     assert "/api/v1/ollama/status" in schema["paths"]

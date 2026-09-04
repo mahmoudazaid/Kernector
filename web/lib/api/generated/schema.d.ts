@@ -270,7 +270,7 @@ export interface operations {
   ollama_status_api_v1_ollama_status_get: {
     parameters: {
       query: {
-        /** @description Ollama server base URL */
+        /** @description Local Ollama server base URL */
         base_url: string;
       };
       header?: never;

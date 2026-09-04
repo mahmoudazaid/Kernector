@@ -1,6 +1,7 @@
 """Versioned Ollama status probe route."""
 
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query
 from pydantic import AfterValidator
@@ -11,18 +12,24 @@ from presentation.http.schemas import OllamaStatusResponse
 
 router = APIRouter(prefix="/api/v1", tags=["settings"])
 
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
-def _require_non_blank_base_url(value: str) -> str:
+
+def _require_local_base_url(value: str) -> str:
+    """Accept only non-blank local Ollama URLs (no SSRF via arbitrary hosts)."""
     stripped = value.strip()
     if not stripped:
         raise ValueError("base_url must be non-empty")
+    parsed = urlparse(stripped)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in _LOCAL_HOSTS:
+        raise ValueError("base_url must be a local Ollama address")
     return stripped
 
 
 BaseUrlQuery = Annotated[
     str,
-    Query(..., min_length=1, description="Ollama server base URL"),
-    AfterValidator(_require_non_blank_base_url),
+    Query(..., min_length=1, description="Local Ollama server base URL"),
+    AfterValidator(_require_local_base_url),
 ]
 
 

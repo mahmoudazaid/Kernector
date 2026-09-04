@@ -50,6 +50,14 @@ type ProbeView =
   | { kind: "ready"; status: OllamaStatusResponse }
   | { kind: "error" };
 
+function nonBlank(value: string | undefined | null): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function defaultsFromCatalog(
   catalog: RuntimeSettingsResponse,
   stored: StoredRuntimeSettings | null,
@@ -59,25 +67,35 @@ function defaultsFromCatalog(
       ? stored.provider
       : catalog.default_provider;
 
-  const settingDefaults: Record<string, number> = {};
-  for (const def of catalog.model_settings) {
-    if (def.providers.includes(provider)) {
-      settingDefaults[def.key] = def.default;
-    }
-  }
-
   const openrouterDefault =
     catalog.openrouter.default_model ?? catalog.openrouter.models[0] ?? "";
   const ollamaDefault = catalog.ollama.default_model ?? "";
+  const storedModel = nonBlank(stored?.model);
+
+  let model: string;
+  if (provider === "ollama") {
+    model = storedModel ?? ollamaDefault;
+  } else if (catalog.openrouter.models.length > 0) {
+    model =
+      storedModel && catalog.openrouter.models.includes(storedModel)
+        ? storedModel
+        : openrouterDefault;
+  } else {
+    model = storedModel ?? openrouterDefault;
+  }
 
   return {
     provider,
-    model:
-      stored?.model ??
-      (provider === "ollama" ? ollamaDefault : openrouterDefault),
+    model,
     ollamaBaseUrl:
-      stored?.ollamaBaseUrl ?? catalog.ollama.default_base_url ?? "",
-    settings: { ...settingDefaults, ...(stored?.settings ?? {}) },
+      nonBlank(stored?.ollamaBaseUrl) ??
+      catalog.ollama.default_base_url ??
+      "",
+    settings: Object.fromEntries(
+      catalog.model_settings
+        .filter((def) => def.providers.includes(provider))
+        .map((def) => [def.key, stored?.settings?.[def.key] ?? def.default]),
+    ),
   };
 }
 
@@ -302,6 +320,17 @@ export function SettingsPanel({
             <p className="kern-settings-hint">Checking Ollama…</p>
           ) : null}
 
+          {probeView.kind === "error" ? (
+            <div
+              className="kern-settings-callout kern-settings-callout--error"
+              role="alert"
+            >
+              <p>
+                Could not check Ollama. Enter a model name manually, or retry.
+              </p>
+            </div>
+          ) : null}
+
           {ollamaReachable === false ? (
             <div className="kern-settings-callout kern-settings-callout--error" role="alert">
               <p>Ollama is not reachable.</p>
@@ -380,11 +409,7 @@ export function SettingsPanel({
               <span>OpenRouter model</span>
               <select
                 className="kern-settings-input"
-                value={
-                  openrouterModels.includes(selection.model)
-                    ? selection.model
-                    : openrouterModels[0]
-                }
+                value={selection.model}
                 onChange={(event) =>
                   updateSelection({ model: event.target.value })
                 }
@@ -421,31 +446,48 @@ export function SettingsPanel({
           Defaults are safe. Change only what you need.
         </p>
         <div className="kern-settings-stack">
-          {modelDefs.map((def) => (
-            <label key={def.key} className="kern-settings-field">
-              <span>
-                {def.label}
-                <span className="kern-settings-help">{def.help}</span>
-              </span>
-              <input
-                className="kern-settings-input"
-                type="number"
-                min={def.min_value}
-                max={def.max_value}
-                step={def.step}
-                value={selection.settings[def.key] ?? def.default}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (!Number.isFinite(value)) {
-                    return;
-                  }
-                  updateSelection({
-                    settings: { ...selection.settings, [def.key]: value },
-                  });
-                }}
-              />
-            </label>
-          ))}
+          {modelDefs.map((def) => {
+            const current = selection.settings[def.key] ?? def.default;
+            const isSlider = def.widget === "slider";
+            return (
+              <label key={def.key} className="kern-settings-field">
+                <span>
+                  {def.label}
+                  <span className="kern-settings-help">{def.help}</span>
+                </span>
+                <input
+                  className="kern-settings-input"
+                  type={isSlider ? "range" : "number"}
+                  min={def.min_value}
+                  max={def.max_value}
+                  step={def.step}
+                  value={current}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === "") {
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) {
+                      return;
+                    }
+                    updateSelection({
+                      settings: {
+                        ...selection.settings,
+                        [def.key]: Math.min(
+                          def.max_value,
+                          Math.max(def.min_value, value),
+                        ),
+                      },
+                    });
+                  }}
+                />
+                {isSlider ? (
+                  <span className="kern-settings-help">{current}</span>
+                ) : null}
+              </label>
+            );
+          })}
         </div>
       </details>
 

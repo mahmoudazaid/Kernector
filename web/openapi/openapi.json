@@ -45,8 +45,15 @@
         "description": "One generation setting for Settings UI controls.",
         "properties": {
           "default": {
-            "title": "Default",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Default"
           },
           "help": {
             "title": "Help",
@@ -61,12 +68,26 @@
             "type": "string"
           },
           "max_value": {
-            "title": "Max Value",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Max Value"
           },
           "min_value": {
-            "title": "Min Value",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Min Value"
           },
           "providers": {
             "items": {
@@ -76,8 +97,15 @@
             "type": "array"
           },
           "step": {
-            "title": "Step",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Step"
           },
           "widget": {
             "title": "Widget",
@@ -348,12 +376,12 @@
         "operationId": "ollama_status_api_v1_ollama_status_get",
         "parameters": [
           {
-            "description": "Ollama server base URL",
+            "description": "Local Ollama server base URL",
             "in": "query",
             "name": "base_url",
             "required": true,
             "schema": {
-              "description": "Ollama server base URL",
+              "description": "Local Ollama server base URL",
               "minLength": 1,
               "title": "Base Url",
               "type": "string"

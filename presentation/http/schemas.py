@@ -37,10 +37,10 @@ class ModelSettingDefResponse(BaseModel):
     key: str
     label: str
     widget: str
-    default: float
-    min_value: float
-    max_value: float
-    step: float
+    default: float | int
+    min_value: float | int
+    max_value: float | int
+    step: float | int
     help: str
     providers: list[str]
 
