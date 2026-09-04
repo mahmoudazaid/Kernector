@@ -122,6 +122,8 @@ a {
   gap: var(--kern-space-2);
   margin-left: auto;
   max-width: 16rem;
+  /* Flex items default to min-width:auto, which blocks the detail ellipsis. */
+  min-width: 0;
   min-height: 40px;
   padding: 0 var(--kern-space-3);
   border: 1px solid var(--kern-line);
@@ -159,6 +161,7 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
   color: var(--kern-muted);
 }
 
@@ -493,6 +496,17 @@ a {
   }
 
   .kern-theme span:not(.kern-theme-icon) {
+    display: none;
+  }
+
+  /* Keep the dot + label (never color alone); drop the longer detail text,
+     which stays reachable via the chip's title attribute. */
+  .kern-backend-status {
+    max-width: none;
+    flex-shrink: 1;
+  }
+
+  .kern-backend-status-detail {
     display: none;
   }
 

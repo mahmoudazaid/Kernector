@@ -64,7 +64,7 @@ npm ci
 npm run dev   # http://localhost:3000
 ```
 
-Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
+Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`). These are inlined at build time — production builds must set `NEXT_PUBLIC_API_BASE_URL` explicitly.
 
 OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check: `npm run api:check` (CI wiring is #128).
 

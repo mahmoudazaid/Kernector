@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "api:export": "cd .. && uv run python -m presentation.cli.export_openapi",
-    "api:generate": "npm run api:export && openapi-typescript ./openapi/openapi.json -o ./lib/api/generated/schema.d.ts && prettier --write ./openapi/openapi.json ./lib/api/generated/schema.d.ts",
+    "api:generate": "node ./scripts/api-generate.mjs",
     "api:check": "node ./scripts/api-check.mjs"
   },
   "dependencies": {

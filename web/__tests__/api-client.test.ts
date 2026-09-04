@@ -28,20 +28,23 @@ describe("apiRequest", () => {
     );
   });
 
-  it("aborts when timeoutMs elapses", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi.fn(
+  /**
+   * Mirrors real `fetch`, which rejects with the aborting signal's *reason* —
+   * `TimeoutError` for `AbortSignal.timeout`, `AbortError` for a controller.
+   */
+  const abortAwareFetch = () =>
+    vi.fn(
       (_url: string, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
           const signal = init?.signal;
-          if (signal) {
-            signal.addEventListener("abort", () => {
-              reject(new DOMException("Aborted", "AbortError"));
-            });
-          }
+          signal?.addEventListener("abort", () => {
+            reject(signal.reason);
+          });
         }),
     );
-    vi.stubGlobal("fetch", fetchMock);
+
+  it("aborts with a cancellation error when timeoutMs elapses", async () => {
+    vi.stubGlobal("fetch", abortAwareFetch());
 
     const pending = apiRequest({
       baseUrl: "http://127.0.0.1:8000",
@@ -49,22 +52,16 @@ describe("apiRequest", () => {
       timeoutMs: 10,
     });
 
-    const expectation = expect(pending).rejects.toThrow(ApiError);
-    await vi.advanceTimersByTimeAsync(15);
-    await expectation;
+    // A real timeout surfaces as TimeoutError, never AbortError.
+    await expect(pending).rejects.toMatchObject({
+      name: "ApiError",
+      code: "aborted",
+    });
   });
 
   it("propagates caller AbortSignal", async () => {
     const controller = new AbortController();
-    const fetchMock = vi.fn(
-      (_url: string, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => {
-            reject(new DOMException("Aborted", "AbortError"));
-          });
-        }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", abortAwareFetch());
 
     const pending = apiRequest({
       baseUrl: "http://127.0.0.1:8000",
@@ -74,7 +71,61 @@ describe("apiRequest", () => {
     });
     controller.abort();
 
-    await expect(pending).rejects.toThrow(ApiError);
+    await expect(pending).rejects.toMatchObject({
+      name: "ApiError",
+      code: "aborted",
+    });
+  });
+
+  it("falls back when AbortSignal.any is unavailable", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", abortAwareFetch());
+
+    // Pre-Safari 17.4 / Firefox 124 have AbortSignal but not AbortSignal.any.
+    const originalAny = AbortSignal.any;
+    Reflect.deleteProperty(AbortSignal, "any");
+    try {
+      const pending = apiRequest({
+        baseUrl: "http://127.0.0.1:8000",
+        path: "/health",
+        signal: controller.signal,
+        timeoutMs: 60_000,
+      });
+      controller.abort();
+
+      await expect(pending).rejects.toMatchObject({ code: "aborted" });
+    } finally {
+      Object.defineProperty(AbortSignal, "any", {
+        value: originalAny,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+
+  it("uses a safe generic message for a malformed success body", async () => {
+    const toxic = "<html>provider dump sk-abc123 Traceback (most recent call)";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(toxic, {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }),
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await apiRequest({ baseUrl: "http://127.0.0.1:8000", path: "/health" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    const apiError = caught as ApiError;
+    expect(apiError.message).not.toMatch(/html|provider dump|sk-abc123/i);
+    expect(apiError.detail).not.toMatch(/html|provider dump|sk-abc123/i);
   });
 
   it("maps application/problem+json to ApiError without leaking raw body", async () => {
