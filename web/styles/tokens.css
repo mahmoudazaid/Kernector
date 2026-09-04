@@ -1,20 +1,38 @@
 :root {
   color-scheme: light dark;
-  --kern-bg: light-dark(#f4f4f2, #151515);
-  --kern-surface: light-dark(#ffffff, #202020);
-  --kern-surface-2: light-dark(#eeeeeb, #292929);
-  --kern-ink: light-dark(#222222, #f1f1ef);
-  --kern-muted: light-dark(#666662, #adada7);
-  --kern-line: light-dark(#d4d4cf, #41413e);
-  --kern-active: light-dark(#deded8, #363633);
-  --kern-danger: light-dark(#8e2f2f, #ef9a9a);
-  --kern-radius: 10px;
-  --kern-sidebar-width: 220px;
+
+  /* Surfaces — cool slate neutrals */
+  --kern-bg: light-dark(#f1f4f6, #0f1418);
+  --kern-surface: light-dark(#ffffff, #1a2128);
+  --kern-surface-2: light-dark(#e6ebef, #243038);
+  --kern-ink: light-dark(#1a232b, #e8eef2);
+  --kern-muted: light-dark(#5a6a76, #9aadb8);
+  --kern-line: light-dark(#c9d3db, #33424d);
+
+  /* Accent — restrained teal (Instrument panel) */
+  --kern-accent: light-dark(#0f766e, #2dd4bf);
+  --kern-accent-soft: light-dark(#d5f0ec, #163a3a);
+  --kern-focus: light-dark(#0f766e, #5eead4);
+  --kern-danger: light-dark(#b42318, #fca5a5);
+
+  /* Layout */
+  --kern-radius: 8px;
+  --kern-radius-sm: 6px;
+  --kern-sidebar-width: 232px;
+
+  /* Typography */
   --kern-font-sans:
     var(--font-kern-sans, "IBM Plex Sans"), "Segoe UI", sans-serif;
   --kern-font-mono:
     var(--font-kern-mono, "IBM Plex Mono"), ui-monospace, SFMono-Regular, Menlo,
     Monaco, Consolas, monospace;
+  --kern-text-xs: 11px;
+  --kern-text-sm: 12px;
+  --kern-text-md: 14px;
+  --kern-text-lg: 17px;
+  --kern-text-xl: 24px;
+
+  /* Spacing */
   --kern-space-1: 4px;
   --kern-space-2: 8px;
   --kern-space-3: 12px;
@@ -22,28 +40,54 @@
   --kern-space-5: 22px;
   --kern-space-6: 28px;
   --kern-space-7: 32px;
+
+  /* Elevation */
+  --kern-shadow-1: light-dark(
+    0 1px 2px rgb(15 20 24 / 0.06),
+    0 1px 2px rgb(0 0 0 / 0.35)
+  );
+  --kern-shadow-2: light-dark(
+    0 8px 24px rgb(15 20 24 / 0.1),
+    0 12px 28px rgb(0 0 0 / 0.45)
+  );
+
+  /* Icons */
+  --kern-icon-sm: 16px;
+  --kern-icon-md: 20px;
+
+  /* Motion */
+  --kern-duration: 160ms;
+  --kern-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --kern-bg: #f4f4f2;
+  --kern-bg: #f1f4f6;
   --kern-surface: #ffffff;
-  --kern-surface-2: #eeeeeb;
-  --kern-ink: #222222;
-  --kern-muted: #666662;
-  --kern-line: #d4d4cf;
-  --kern-active: #deded8;
-  --kern-danger: #8e2f2f;
+  --kern-surface-2: #e6ebef;
+  --kern-ink: #1a232b;
+  --kern-muted: #5a6a76;
+  --kern-line: #c9d3db;
+  --kern-accent: #0f766e;
+  --kern-accent-soft: #d5f0ec;
+  --kern-focus: #0f766e;
+  --kern-danger: #b42318;
+  --kern-shadow-1: 0 1px 2px rgb(15 20 24 / 0.06);
+  --kern-shadow-2: 0 8px 24px rgb(15 20 24 / 0.1);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --kern-bg: #151515;
-  --kern-surface: #202020;
-  --kern-surface-2: #292929;
-  --kern-ink: #f1f1ef;
-  --kern-muted: #adada7;
-  --kern-line: #41413e;
-  --kern-active: #363633;
-  --kern-danger: #ef9a9a;
+  --kern-bg: #0f1418;
+  --kern-surface: #1a2128;
+  --kern-surface-2: #243038;
+  --kern-ink: #e8eef2;
+  --kern-muted: #9aadb8;
+  --kern-line: #33424d;
+  --kern-accent: #2dd4bf;
+  --kern-accent-soft: #163a3a;
+  --kern-focus: #5eead4;
+  --kern-danger: #fca5a5;
+  --kern-shadow-1: 0 1px 2px rgb(0 0 0 / 0.35);
+  --kern-shadow-2: 0 12px 28px rgb(0 0 0 / 0.45);
 }

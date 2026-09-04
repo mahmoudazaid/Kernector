@@ -23,7 +23,28 @@ export function AppShell({ children }: AppShellProps) {
           aria-expanded={navOpen}
           onClick={() => setNavOpen((open) => !open)}
         >
-          <span aria-hidden="true">{navOpen ? "✕" : "☰"}</span>
+          <svg
+            className="kern-menu-icon"
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+          >
+            {navOpen ? (
+              <path
+                d="M5 5l10 10M15 5L5 15"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            ) : (
+              <path
+                d="M4 6.5h12M4 10h12M4 13.5h12"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            )}
+          </svg>
         </button>
         <Link className="kern-brand" href="/" aria-label="Kernector home">
           <span className="kern-brand-mark" aria-hidden="true">
