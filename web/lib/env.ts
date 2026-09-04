@@ -1,7 +1,26 @@
 import { z } from "zod";
 
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+
+const httpUrl = z
+  .string()
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const protocol = new URL(value).protocol;
+        return protocol === "http:" || protocol === "https:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "API base URL must be an absolute http(s) URL" },
+  )
+  .transform((value) => value.replace(/\/+$/, ""));
+
 const publicEnvSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default("Kernector"),
+  NEXT_PUBLIC_API_BASE_URL: httpUrl.default(DEFAULT_API_BASE_URL),
 });
 
 const FORBIDDEN_PUBLIC_PATTERN =
@@ -39,6 +58,8 @@ export function loadPublicEnv(
 
   const parsed = publicEnvSchema.safeParse({
     NEXT_PUBLIC_APP_NAME: source.NEXT_PUBLIC_APP_NAME ?? "Kernector",
+    NEXT_PUBLIC_API_BASE_URL:
+      source.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL,
   });
 
   if (!parsed.success) {

@@ -24,7 +24,13 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("@/lib/api/health", () => ({
+  getHealth: vi.fn(async () => ({ available: true })),
+}));
+
 import { AppShell } from "@/components/shell/AppShell";
+
+const API_BASE = "http://127.0.0.1:8000";
 
 describe("shell navigation", () => {
   beforeEach(() => {
@@ -33,7 +39,7 @@ describe("shell navigation", () => {
 
   it("shows Kernector brand and multi-source knowledge hub label", () => {
     render(
-      <AppShell>
+      <AppShell apiBaseUrl={API_BASE}>
         <div>content</div>
       </AppShell>,
     );
@@ -47,7 +53,7 @@ describe("shell navigation", () => {
 
   it("exposes Dashboard, Documents, Chat, and Settings destinations", () => {
     render(
-      <AppShell>
+      <AppShell apiBaseUrl={API_BASE}>
         <div>content</div>
       </AppShell>,
     );
@@ -74,7 +80,7 @@ describe("shell navigation", () => {
     usePathname.mockReturnValue("/documents");
 
     render(
-      <AppShell>
+      <AppShell apiBaseUrl={API_BASE}>
         <div>content</div>
       </AppShell>,
     );
@@ -90,7 +96,7 @@ describe("shell navigation", () => {
 
   it("does not show pack-specific story or interview labels by default", () => {
     render(
-      <AppShell>
+      <AppShell apiBaseUrl={API_BASE}>
         <div>content</div>
       </AppShell>,
     );
@@ -104,7 +110,7 @@ describe("shell navigation", () => {
     const user = userEvent.setup();
 
     render(
-      <AppShell>
+      <AppShell apiBaseUrl={API_BASE}>
         <div>content</div>
       </AppShell>,
     );

@@ -33,7 +33,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${plexSans.variable} ${plexMono.variable}`}>
         <Providers>
-          <AppShell>{children}</AppShell>
+          <AppShell apiBaseUrl={publicEnv.NEXT_PUBLIC_API_BASE_URL}>
+            {children}
+          </AppShell>
         </Providers>
       </body>
     </html>

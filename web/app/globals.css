@@ -116,12 +116,61 @@ a {
   font-size: var(--kern-text-sm);
 }
 
+.kern-backend-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kern-space-2);
+  margin-left: auto;
+  max-width: 16rem;
+  /* Flex items default to min-width:auto, which blocks the detail ellipsis. */
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--kern-space-3);
+  border: 1px solid var(--kern-line);
+  border-radius: var(--kern-radius-sm);
+  color: var(--kern-muted);
+  font-family: var(--kern-font-mono);
+  font-size: var(--kern-text-xs);
+}
+
+.kern-backend-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--kern-muted);
+  flex-shrink: 0;
+}
+
+.kern-backend-status--available {
+  color: var(--kern-ink);
+}
+
+.kern-backend-status--available .kern-backend-status-dot {
+  background: var(--kern-accent);
+}
+
+.kern-backend-status--unavailable .kern-backend-status-dot {
+  background: var(--kern-danger);
+}
+
+.kern-backend-status-label {
+  white-space: nowrap;
+}
+
+.kern-backend-status-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--kern-muted);
+}
+
 .kern-theme {
   display: inline-flex;
   align-items: center;
   gap: var(--kern-space-2);
   min-height: 40px;
-  margin-left: auto;
+  margin-left: 0;
   padding: 0 var(--kern-space-3);
   border: 1px solid var(--kern-line);
   border-radius: var(--kern-radius-sm);
@@ -447,6 +496,17 @@ a {
   }
 
   .kern-theme span:not(.kern-theme-icon) {
+    display: none;
+  }
+
+  /* Keep the dot + label (never color alone); drop the longer detail text,
+     which stays reachable via the chip's title attribute. */
+  .kern-backend-status {
+    max-width: none;
+    flex-shrink: 1;
+  }
+
+  .kern-backend-status-detail {
     display: none;
   }
 
