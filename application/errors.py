@@ -16,6 +16,10 @@ class ConfigurationError(RuntimeError):
     """
 
 
+class OllamaNotConfiguredError(ConfigurationError):
+    """``OLLAMA_BASE_URL`` is absent from runtime settings."""
+
+
 class InsufficientEvidenceError(RuntimeError):
     """A grounded use case found no retrieval hits above the relevance threshold.
 

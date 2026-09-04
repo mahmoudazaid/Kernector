@@ -2,6 +2,8 @@
  * Client-local runtime selections for Settings (#237) and Chat (#235).
  *
  * Keys are shared contracts — do not rename without coordinating both UIs.
+ * Ollama base URL is server-owned (`GET /api/v1/settings`); Chat should read it
+ * from the catalog, not from this store.
  */
 
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
@@ -9,7 +11,6 @@ export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 export type StoredRuntimeSettings = {
   provider: string;
   model: string;
-  ollamaBaseUrl: string;
   settings: Record<string, number>;
 };
 
@@ -21,7 +22,6 @@ function isStoredRuntimeSettings(value: unknown): value is StoredRuntimeSettings
   if (
     typeof record.provider !== "string" ||
     typeof record.model !== "string" ||
-    typeof record.ollamaBaseUrl !== "string" ||
     typeof record.settings !== "object" ||
     record.settings === null ||
     Array.isArray(record.settings)

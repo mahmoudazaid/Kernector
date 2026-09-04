@@ -594,7 +594,8 @@ a {
 }
 
 .kern-settings-callout p:last-child,
-.kern-settings-callout ol:last-child {
+.kern-settings-callout ol:last-child,
+.kern-settings-callout [role="status"] > :last-child {
   margin-bottom: 0;
 }
 

@@ -1,6 +1,7 @@
 """Versioned Ollama status probe route."""
 
-from fastapi import APIRouter, HTTPException
+from application.errors import OllamaNotConfiguredError
+from fastapi import APIRouter
 
 from presentation.http.deps import ProbeOllamaStatusDep, SettingsDep
 from presentation.http.errors import problem_responses
@@ -20,10 +21,7 @@ def ollama_status(
     """Probe the configured Ollama base URL (never a client-supplied target)."""
     configured = (settings.ollama.base_url or "").strip()
     if not configured:
-        raise HTTPException(
-            status_code=409,
-            detail="OLLAMA_BASE_URL is not configured",
-        )
+        raise OllamaNotConfiguredError("OLLAMA_BASE_URL is not configured")
     status = use_case.execute(configured)
     return OllamaStatusResponse(
         reachable=status.reachable,

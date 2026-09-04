@@ -90,7 +90,6 @@ describe("SettingsPanel", () => {
       JSON.stringify({
         provider: "openrouter",
         model: "z/removed-model",
-        ollamaBaseUrl: "",
         settings: { temperature: 0.3, max_tokens: 1000, top_p: 1 },
       }),
     );
@@ -128,7 +127,9 @@ describe("SettingsPanel", () => {
     expect(
       await screen.findByText(/Could not check Ollama/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Retry$/i })).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: /^Retry$/i });
+    expect(retry).toBeInTheDocument();
+    expect(retry.closest("[role='status']")).toBeNull();
   });
 
   it("shows unconfigured guidance when the server has no Ollama URL", async () => {
@@ -175,9 +176,8 @@ describe("SettingsPanel", () => {
     expect(url).toHaveAttribute("readonly");
     expect(url).toHaveValue("http://127.0.0.1:11434");
     await waitFor(() => {
-      expect(loadRuntimeSettings()?.ollamaBaseUrl).toBe(
-        "http://127.0.0.1:11434",
-      );
+      expect(loadRuntimeSettings()).not.toHaveProperty("ollamaBaseUrl");
+      expect(loadRuntimeSettings()?.provider).toBe("ollama");
     });
   });
 
@@ -187,7 +187,6 @@ describe("SettingsPanel", () => {
       JSON.stringify({
         provider: "openrouter",
         model: "openai/gpt-4o-mini",
-        ollamaBaseUrl: "",
         settings: { temperature: 99, max_tokens: -5, top_p: 1 },
       }),
     );

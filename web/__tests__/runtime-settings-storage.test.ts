@@ -9,7 +9,6 @@ import {
 const SAMPLE: StoredRuntimeSettings = {
   provider: "ollama",
   model: "llama3.2",
-  ollamaBaseUrl: "http://127.0.0.1:11434",
   settings: { temperature: 0.5, max_tokens: 800, top_p: 0.9 },
 };
 

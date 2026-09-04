@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState, startTransition } from "react";
+import {
+  useEffect,
+  useState,
+  startTransition,
+  type ReactNode,
+} from "react";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/api/errors";
 import {
@@ -42,16 +47,43 @@ type CatalogView =
 type SelectionState = {
   provider: string;
   model: string;
-  ollamaBaseUrl: string;
   settings: Record<string, number>;
 };
 
-type ProbeView =
+type ProbeOutcome =
   | { kind: "idle" }
-  | { kind: "loading" }
   | { kind: "ready"; status: OllamaStatusResponse }
   | { kind: "error" }
   | { kind: "unconfigured" };
+
+function ProbeCallout({
+  tone = "error",
+  onRetry,
+  retryDisabled = false,
+  retryLabel = "Retry",
+  children,
+}: {
+  tone?: "error" | "warn";
+  onRetry?: () => void;
+  retryDisabled?: boolean;
+  retryLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`kern-settings-callout kern-settings-callout--${tone}`}>
+      <div role="status">{children}</div>
+      {onRetry ? (
+        <Button
+          variant="secondary"
+          disabled={retryDisabled}
+          onClick={onRetry}
+        >
+          {retryLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 function nonBlank(value: string | undefined | null): string | undefined {
   if (typeof value !== "string") {
@@ -117,7 +149,6 @@ function defaultsFromCatalog(
   return {
     provider,
     model,
-    ollamaBaseUrl: catalog.ollama.default_base_url ?? "",
     settings: Object.fromEntries(
       catalog.model_settings
         .filter((def) => def.providers.includes(provider))
@@ -136,7 +167,6 @@ function persist(selection: SelectionState): void {
   saveRuntimeSettings({
     provider: selection.provider,
     model: selection.model,
-    ollamaBaseUrl: selection.ollamaBaseUrl,
     settings: selection.settings,
   });
 }
@@ -153,7 +183,10 @@ export function SettingsPanel({
     kind: "loading",
   });
   const [selection, setSelection] = useState<SelectionState | null>(null);
-  const [probeView, setProbeView] = useState<ProbeView>({ kind: "idle" });
+  const [probeOutcome, setProbeOutcome] = useState<ProbeOutcome>({
+    kind: "idle",
+  });
+  const [probeLoading, setProbeLoading] = useState(false);
   const [probeNonce, setProbeNonce] = useState(0);
 
   useEffect(() => {
@@ -191,13 +224,14 @@ export function SettingsPanel({
 
   useEffect(() => {
     if (provider !== "ollama") {
-      setProbeView({ kind: "idle" });
+      setProbeOutcome({ kind: "idle" });
+      setProbeLoading(false);
       return;
     }
 
     const controller = new AbortController();
     let active = true;
-    setProbeView({ kind: "loading" });
+    setProbeLoading(true);
     void probeOllama({
       baseUrl: apiBaseUrl,
       signal: controller.signal,
@@ -207,7 +241,7 @@ export function SettingsPanel({
           return;
         }
         startTransition(() => {
-          setProbeView({ kind: "ready", status });
+          setProbeOutcome({ kind: "ready", status });
           setSelection((current) => {
             if (!current || current.provider !== "ollama") {
               return current;
@@ -233,10 +267,15 @@ export function SettingsPanel({
           error instanceof ApiError &&
           (error.code === "ollama_unconfigured" || error.status === 409)
         ) {
-          setProbeView({ kind: "unconfigured" });
+          setProbeOutcome({ kind: "unconfigured" });
           return;
         }
-        setProbeView({ kind: "error" });
+        setProbeOutcome({ kind: "error" });
+      })
+      .finally(() => {
+        if (active) {
+          setProbeLoading(false);
+        }
       });
 
     return () => {
@@ -254,6 +293,10 @@ export function SettingsPanel({
       persist(next);
       return next;
     });
+  }
+
+  function retryProbe(): void {
+    setProbeNonce((nonce) => nonce + 1);
   }
 
   if (catalogView.kind === "loading") {
@@ -284,9 +327,13 @@ export function SettingsPanel({
   );
   const openrouterModels = catalog.openrouter.models;
   const ollamaModels =
-    probeView.kind === "ready" ? probeView.status.models : [];
+    probeOutcome.kind === "ready" ? probeOutcome.status.models : [];
   const ollamaReachable =
-    probeView.kind === "ready" ? probeView.status.reachable : null;
+    probeOutcome.kind === "ready" ? probeOutcome.status.reachable : null;
+  const showInitialProbeHint =
+    selection.provider === "ollama" &&
+    probeLoading &&
+    probeOutcome.kind === "idle";
 
   return (
     <div className="kern-settings">
@@ -325,7 +372,6 @@ export function SettingsPanel({
                     provider,
                     model: nextModel,
                     settings: nextSettings,
-                    ollamaBaseUrl: catalog.ollama.default_base_url ?? "",
                   });
                 }}
               />
@@ -351,39 +397,35 @@ export function SettingsPanel({
             </p>
           </div>
 
-          {probeView.kind === "loading" ? (
+          {showInitialProbeHint ? (
             <p className="kern-settings-hint">Checking Ollama…</p>
           ) : null}
 
-          {probeView.kind === "unconfigured" ? (
-            <div
-              className="kern-settings-callout kern-settings-callout--error"
-              role="alert"
-            >
+          {probeOutcome.kind === "unconfigured" ? (
+            <ProbeCallout>
               <p>
                 Ollama base URL is not configured on the server. Set{" "}
                 <code>OLLAMA_BASE_URL</code>, then reload this page.
               </p>
-            </div>
+            </ProbeCallout>
           ) : null}
 
-          {probeView.kind === "error" ? (
-            <div
-              className="kern-settings-callout kern-settings-callout--error"
-              role="alert"
+          {probeOutcome.kind === "error" ? (
+            <ProbeCallout
+              onRetry={retryProbe}
+              retryDisabled={probeLoading}
+              retryLabel={probeLoading ? "Checking…" : "Retry"}
             >
               <p>Could not check Ollama. Enter a model name manually, or retry.</p>
-              <Button
-                variant="secondary"
-                onClick={() => setProbeNonce((nonce) => nonce + 1)}
-              >
-                Retry
-              </Button>
-            </div>
+            </ProbeCallout>
           ) : null}
 
           {ollamaReachable === false ? (
-            <div className="kern-settings-callout kern-settings-callout--error" role="alert">
+            <ProbeCallout
+              onRetry={retryProbe}
+              retryDisabled={probeLoading}
+              retryLabel={probeLoading ? "Checking…" : "Retry"}
+            >
               <p>Ollama is not reachable.</p>
               <ol>
                 <li>
@@ -400,29 +442,22 @@ export function SettingsPanel({
                 <code>ollama pull</code> only works after Ollama is installed. If
                 you see <code>command not found</code>, finish step 1 first.
               </p>
-              <Button
-                variant="secondary"
-                onClick={() => setProbeNonce((nonce) => nonce + 1)}
-              >
-                Retry
-              </Button>
-            </div>
+            </ProbeCallout>
           ) : null}
 
           {ollamaReachable === true && ollamaModels.length === 0 ? (
-            <div className="kern-settings-callout kern-settings-callout--warn" role="status">
+            <ProbeCallout
+              tone="warn"
+              onRetry={retryProbe}
+              retryDisabled={probeLoading}
+              retryLabel={probeLoading ? "Checking…" : "Retry"}
+            >
               <p>Ollama is running, but no models are installed yet.</p>
               <p>
                 In a terminal, run: <code>ollama pull llama3.2</code>, then
                 refresh.
               </p>
-              <Button
-                variant="secondary"
-                onClick={() => setProbeNonce((nonce) => nonce + 1)}
-              >
-                Retry
-              </Button>
-            </div>
+            </ProbeCallout>
           ) : null}
 
           {ollamaReachable === true && ollamaModels.length > 0 ? (
