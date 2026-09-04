@@ -58,30 +58,57 @@ function nonBlank(value: string | undefined | null): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function clampSetting(
+  def: { min_value: number; max_value: number },
+  value: number,
+): number {
+  return Math.min(def.max_value, Math.max(def.min_value, value));
+}
+
+function resolveOpenRouterModel(
+  catalog: RuntimeSettingsResponse,
+  preferred: string | undefined,
+): string {
+  const models = catalog.openrouter.models;
+  if (models.length === 0) {
+    return preferred ?? "";
+  }
+  if (preferred && models.includes(preferred)) {
+    return preferred;
+  }
+  const catalogDefault = nonBlank(catalog.openrouter.default_model);
+  if (catalogDefault && models.includes(catalogDefault)) {
+    return catalogDefault;
+  }
+  return models[0] ?? "";
+}
+
+function resolveProvider(
+  catalog: RuntimeSettingsResponse,
+  storedProvider: string | undefined,
+): string {
+  if (storedProvider && catalog.providers.includes(storedProvider)) {
+    return storedProvider;
+  }
+  if (catalog.providers.includes(catalog.default_provider)) {
+    return catalog.default_provider;
+  }
+  return catalog.providers[0] ?? catalog.default_provider;
+}
+
 function defaultsFromCatalog(
   catalog: RuntimeSettingsResponse,
   stored: StoredRuntimeSettings | null,
 ): SelectionState {
-  const provider =
-    stored?.provider && catalog.providers.includes(stored.provider)
-      ? stored.provider
-      : catalog.default_provider;
-
-  const openrouterDefault =
-    catalog.openrouter.default_model ?? catalog.openrouter.models[0] ?? "";
-  const ollamaDefault = catalog.ollama.default_model ?? "";
+  const provider = resolveProvider(catalog, stored?.provider);
   const storedModel = nonBlank(stored?.model);
+  const ollamaDefault = catalog.ollama.default_model ?? "";
 
   let model: string;
   if (provider === "ollama") {
     model = storedModel ?? ollamaDefault;
-  } else if (catalog.openrouter.models.length > 0) {
-    model =
-      storedModel && catalog.openrouter.models.includes(storedModel)
-        ? storedModel
-        : openrouterDefault;
   } else {
-    model = storedModel ?? openrouterDefault;
+    model = resolveOpenRouterModel(catalog, storedModel);
   }
 
   return {
@@ -94,7 +121,13 @@ function defaultsFromCatalog(
     settings: Object.fromEntries(
       catalog.model_settings
         .filter((def) => def.providers.includes(provider))
-        .map((def) => [def.key, stored?.settings?.[def.key] ?? def.default]),
+        .map((def) => {
+          const raw = stored?.settings?.[def.key];
+          return [
+            def.key,
+            typeof raw === "number" ? clampSetting(def, raw) : def.default,
+          ];
+        }),
     ),
   };
 }
@@ -154,65 +187,55 @@ export function SettingsPanel({
   }, [apiBaseUrl, loadCatalog]);
 
   const provider = selection?.provider;
-  const ollamaBaseUrl = selection?.ollamaBaseUrl;
 
   useEffect(() => {
     if (provider !== "ollama") {
       setProbeView({ kind: "idle" });
       return;
     }
-    const trimmed = ollamaBaseUrl?.trim() ?? "";
-    if (!trimmed) {
-      setProbeView({ kind: "idle" });
-      return;
-    }
 
     const controller = new AbortController();
     let active = true;
-    const timer = window.setTimeout(() => {
-      setProbeView({ kind: "loading" });
-      void probeOllama({
-        baseUrl: apiBaseUrl,
-        ollamaBaseUrl: trimmed,
-        signal: controller.signal,
-      })
-        .then((status) => {
-          if (!active) {
-            return;
-          }
-          startTransition(() => {
-            setProbeView({ kind: "ready", status });
-            setSelection((current) => {
-              if (!current || current.provider !== "ollama") {
-                return current;
-              }
-              if (
-                status.reachable &&
-                status.models.length > 0 &&
-                !status.models.includes(current.model)
-              ) {
-                const next = { ...current, model: status.models[0] ?? "" };
-                persist(next);
-                return next;
-              }
+    setProbeView({ kind: "loading" });
+    void probeOllama({
+      baseUrl: apiBaseUrl,
+      signal: controller.signal,
+    })
+      .then((status) => {
+        if (!active) {
+          return;
+        }
+        startTransition(() => {
+          setProbeView({ kind: "ready", status });
+          setSelection((current) => {
+            if (!current || current.provider !== "ollama") {
               return current;
-            });
+            }
+            if (
+              status.reachable &&
+              status.models.length > 0 &&
+              !status.models.includes(current.model)
+            ) {
+              const next = { ...current, model: status.models[0] ?? "" };
+              persist(next);
+              return next;
+            }
+            return current;
           });
-        })
-        .catch(() => {
-          if (!active) {
-            return;
-          }
-          setProbeView({ kind: "error" });
         });
-    }, 250);
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setProbeView({ kind: "error" });
+      });
 
     return () => {
       active = false;
       controller.abort();
-      window.clearTimeout(timer);
     };
-  }, [apiBaseUrl, probeOllama, provider, ollamaBaseUrl]);
+  }, [apiBaseUrl, probeOllama, provider]);
 
   function updateSelection(patch: Partial<SelectionState>): void {
     setSelection((current) => {
@@ -279,16 +302,17 @@ export function SettingsPanel({
                   const nextSettings: Record<string, number> = {};
                   for (const def of catalog.model_settings) {
                     if (def.providers.includes(provider)) {
+                      const raw = selection.settings[def.key];
                       nextSettings[def.key] =
-                        selection.settings[def.key] ?? def.default;
+                        typeof raw === "number"
+                          ? clampSetting(def, raw)
+                          : def.default;
                     }
                   }
                   const nextModel =
                     provider === "ollama"
                       ? (catalog.ollama.default_model ?? "")
-                      : (catalog.openrouter.default_model ??
-                        catalog.openrouter.models[0] ??
-                        "");
+                      : resolveOpenRouterModel(catalog, undefined);
                   updateSelection({
                     provider,
                     model: nextModel,
@@ -449,19 +473,23 @@ export function SettingsPanel({
           {modelDefs.map((def) => {
             const current = selection.settings[def.key] ?? def.default;
             const isSlider = def.widget === "slider";
+            const inputId = `setting-${def.key}`;
+            const helpId = `setting-help-${def.key}`;
             return (
-              <label key={def.key} className="kern-settings-field">
-                <span>
-                  {def.label}
-                  <span className="kern-settings-help">{def.help}</span>
-                </span>
+              <div key={def.key} className="kern-settings-field">
+                <label htmlFor={inputId}>{def.label}</label>
+                <p id={helpId} className="kern-settings-help">
+                  {def.help}
+                </p>
                 <input
+                  id={inputId}
                   className="kern-settings-input"
                   type={isSlider ? "range" : "number"}
                   min={def.min_value}
                   max={def.max_value}
                   step={def.step}
                   value={current}
+                  aria-describedby={helpId}
                   onChange={(event) => {
                     const raw = event.target.value;
                     if (raw === "") {
@@ -474,18 +502,17 @@ export function SettingsPanel({
                     updateSelection({
                       settings: {
                         ...selection.settings,
-                        [def.key]: Math.min(
-                          def.max_value,
-                          Math.max(def.min_value, value),
-                        ),
+                        [def.key]: clampSetting(def, value),
                       },
                     });
                   }}
                 />
                 {isSlider ? (
-                  <span className="kern-settings-help">{current}</span>
+                  <span className="kern-settings-help" aria-hidden="true">
+                    {current}
+                  </span>
                 ) : null}
-              </label>
+              </div>
             );
           })}
         </div>

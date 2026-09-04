@@ -66,7 +66,7 @@ describe("getRuntimeSettings", () => {
 });
 
 describe("getOllamaStatus", () => {
-  it("returns probe status for a base URL", async () => {
+  it("returns probe status for the configured Ollama URL", async () => {
     const request = vi.fn().mockResolvedValue({
       reachable: true,
       models: ["llama3.2"],
@@ -74,33 +74,31 @@ describe("getOllamaStatus", () => {
 
     const result = await getOllamaStatus({
       baseUrl: "http://127.0.0.1:8000",
-      ollamaBaseUrl: "http://127.0.0.1:11434",
       request,
     });
 
     expect(result).toEqual({ reachable: true, models: ["llama3.2"] });
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: "/api/v1/ollama/status?base_url=http%3A%2F%2F127.0.0.1%3A11434",
+        path: "/api/v1/ollama/status",
         method: "GET",
       }),
     );
   });
 
-  it("propagates validation ApiError", async () => {
+  it("propagates conflict ApiError when Ollama is unconfigured", async () => {
     await expect(
       getOllamaStatus({
         baseUrl: "http://127.0.0.1:8000",
-        ollamaBaseUrl: "  ",
         request: async () => {
           throw new ApiError({
-            status: 422,
-            title: "Request validation failed",
-            detail: "Request validation failed",
-            code: "validation_error",
+            status: 409,
+            title: "HTTP error",
+            detail: "The request could not be completed.",
+            code: "http_409",
           });
         },
       }),
-    ).rejects.toMatchObject({ status: 422, code: "validation_error" });
+    ).rejects.toMatchObject({ status: 409, code: "http_409" });
   });
 });

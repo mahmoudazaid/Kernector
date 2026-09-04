@@ -537,13 +537,12 @@ a {
   gap: var(--kern-space-2);
 }
 
-.kern-settings-field > span {
-  display: grid;
-  gap: 2px;
+.kern-settings-field > label {
   font-weight: 500;
 }
 
 .kern-settings-help {
+  margin: 0;
   color: var(--kern-muted);
   font-weight: 400;
   font-size: var(--kern-text-sm);

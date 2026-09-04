@@ -100,6 +100,7 @@ def probe_ollama(base_url: str, timeout: float) -> dict:
         response = requests.get(
             f"{base_url.rstrip('/')}/api/tags",
             timeout=timeout,
+            allow_redirects=False,
         )
         response.raise_for_status()
         payload = response.json()

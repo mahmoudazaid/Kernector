@@ -33,7 +33,7 @@ export interface paths {
     };
     /**
      * Ollama Status
-     * @description Probe Ollama reachability and list installed models for ``base_url``.
+     * @description Probe the configured Ollama base URL (never a client-supplied target).
      */
     get: operations["ollama_status_api_v1_ollama_status_get"];
     put?: never;
@@ -269,10 +269,7 @@ export interface operations {
   };
   ollama_status_api_v1_ollama_status_get: {
     parameters: {
-      query: {
-        /** @description Local Ollama server base URL */
-        base_url: string;
-      };
+      query?: never;
       header?: never;
       path?: never;
       cookie?: never;
@@ -297,8 +294,8 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
-      /** @description Validation error */
-      422: {
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };

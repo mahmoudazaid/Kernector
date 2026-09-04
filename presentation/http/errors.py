@@ -58,6 +58,7 @@ _PROBLEM_MEDIA_TYPE = "application/problem+json"
 _PROBLEM_STATUS_DESCRIPTIONS: dict[int, str] = {
     404: "Not found",
     405: "Method not allowed",
+    409: "Conflict",
     422: "Validation error",
     500: "Server error",
     502: "Provider error",

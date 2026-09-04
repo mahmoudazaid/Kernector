@@ -372,22 +372,8 @@
     },
     "/api/v1/ollama/status": {
       "get": {
-        "description": "Probe Ollama reachability and list installed models for ``base_url``.",
+        "description": "Probe the configured Ollama base URL (never a client-supplied target).",
         "operationId": "ollama_status_api_v1_ollama_status_get",
-        "parameters": [
-          {
-            "description": "Local Ollama server base URL",
-            "in": "query",
-            "name": "base_url",
-            "required": true,
-            "schema": {
-              "description": "Local Ollama server base URL",
-              "minLength": 1,
-              "title": "Base Url",
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -409,7 +395,7 @@
             },
             "description": "Method not allowed"
           },
-          "422": {
+          "409": {
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -417,7 +403,7 @@
                 }
               }
             },
-            "description": "Validation error"
+            "description": "Conflict"
           },
           "500": {
             "content": {

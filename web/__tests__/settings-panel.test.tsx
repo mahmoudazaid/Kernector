@@ -130,6 +130,59 @@ describe("SettingsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("clamps out-of-range stored settings on hydrate", async () => {
+    localStorage.setItem(
+      "kernector:runtime-settings:v1",
+      JSON.stringify({
+        provider: "openrouter",
+        model: "openai/gpt-4o-mini",
+        ollamaBaseUrl: "",
+        settings: { temperature: 99, max_tokens: -5, top_p: 1 },
+      }),
+    );
+
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+      />,
+    );
+
+    expect(await screen.findByLabelText(/^Temperature$/i)).toHaveValue("2");
+    expect(screen.getByLabelText(/^Max Tokens$/i)).toHaveValue(100);
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.settings).toEqual({
+        temperature: 2,
+        max_tokens: 100,
+        top_p: 1,
+      });
+    });
+  });
+
+  it("falls back when catalog default_model is not in the models list", async () => {
+    const catalog: RuntimeSettingsResponse = {
+      ...CATALOG,
+      openrouter: {
+        models: ["a/one", "b/two"],
+        default_model: "z/not-in-list",
+      },
+    };
+
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => catalog}
+      />,
+    );
+
+    expect(await screen.findByLabelText(/OpenRouter model/i)).toHaveValue(
+      "a/one",
+    );
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.model).toBe("a/one");
+    });
+  });
+
   it("clamps model settings and ignores empty clears", async () => {
     const user = userEvent.setup();
     render(
