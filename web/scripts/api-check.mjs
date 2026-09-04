@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Local OpenAPI contract-drift check for #127 (CI wiring is #128).
+ * OpenAPI contract-drift check (#127). Run locally and on PRs to main (#128).
  *
  * Regenerates OpenAPI + TypeScript types into a temp directory using the exact
  * pipeline from `scripts/api-generate.mjs`, then diffs against the committed
