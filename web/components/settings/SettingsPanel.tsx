@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, startTransition } from "react";
-import { Button } from "@/components/ui/Button";
 import {
   getOllamaStatus,
   type GetOllamaStatusOptions,
@@ -13,7 +12,6 @@ import {
   type RuntimeSettingsResponse,
 } from "@/lib/api/settings";
 import {
-  clearChatMessages,
   loadRuntimeSettings,
   saveRuntimeSettings,
   type StoredRuntimeSettings,
@@ -105,7 +103,6 @@ export function SettingsPanel({
   });
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [probeView, setProbeView] = useState<ProbeView>({ kind: "idle" });
-  const [chatCleared, setChatCleared] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -249,23 +246,6 @@ export function SettingsPanel({
         Configure the provider and model used for grounded chat. Selections stay
         in this browser until Chat uses them.
       </p>
-
-      <div className="kern-settings-actions">
-        <Button
-          variant="secondary"
-          onClick={() => {
-            clearChatMessages();
-            setChatCleared(true);
-          }}
-        >
-          New chat
-        </Button>
-        {chatCleared ? (
-          <span className="kern-settings-hint" role="status">
-            Chat history cleared.
-          </span>
-        ) : null}
-      </div>
 
       <fieldset className="kern-settings-fieldset">
         <legend>Provider</legend>

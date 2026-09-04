@@ -3,11 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
-import {
-  CHAT_MESSAGES_STORAGE_KEY,
-  RUNTIME_SETTINGS_STORAGE_KEY,
-  loadRuntimeSettings,
-} from "@/lib/runtime-settings-storage";
+import { loadRuntimeSettings } from "@/lib/runtime-settings-storage";
 
 const CATALOG: RuntimeSettingsResponse = {
   providers: ["openrouter", "ollama"],
@@ -149,33 +145,6 @@ describe("SettingsPanel", () => {
     expect(
       within(select).getByRole("option", { name: "mistral" }),
     ).toBeInTheDocument();
-  });
-
-  it("New chat clears chat history without resetting provider settings", async () => {
-    const user = userEvent.setup();
-    localStorage.setItem(
-      CHAT_MESSAGES_STORAGE_KEY,
-      JSON.stringify([{ role: "user", content: "hi" }]),
-    );
-
-    render(
-      <SettingsPanel
-        apiBaseUrl="http://127.0.0.1:8000"
-        loadCatalog={async () => CATALOG}
-        probeOllama={async () => ({ reachable: false, models: [] })}
-      />,
-    );
-
-    await screen.findByRole("button", { name: /New chat/i });
-    await waitFor(() => {
-      expect(localStorage.getItem(RUNTIME_SETTINGS_STORAGE_KEY)).toBeTruthy();
-    });
-
-    await user.click(screen.getByRole("button", { name: /New chat/i }));
-
-    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeNull();
-    expect(loadRuntimeSettings()?.provider).toBe("openrouter");
-    expect(screen.getByText(/Chat history cleared/i)).toBeInTheDocument();
   });
 
   it("shows a safe error when the catalog fails", async () => {

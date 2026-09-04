@@ -502,18 +502,6 @@ a {
   color: var(--kern-muted);
 }
 
-.kern-settings-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--kern-space-3);
-}
-
-.kern-settings-actions .kern-btn,
-.kern-settings-actions .kern-btn-secondary {
-  margin-top: 0;
-}
-
 .kern-settings-fieldset {
   margin: 0;
   padding: var(--kern-space-3);

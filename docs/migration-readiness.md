@@ -34,9 +34,8 @@ A feature is ready to migrate only when all of the following hold:
 ### Settings controls (#237)
 
 Satisfied for provider/model/settings catalog + Ollama probe + Next Settings UI
-(client-local persistence under `kernector:runtime-settings:v1`; New chat clears
-`kernector:chat-messages:v1` for #235). Ask-turn consumption of those selections
-is owned by the chat parity ticket.
+(client-local persistence under `kernector:runtime-settings:v1`). Ask-turn
+consumption of those selections is owned by the chat parity ticket (#235).
 
 ## Out of scope for readiness alone
 

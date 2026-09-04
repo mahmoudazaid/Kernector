@@ -6,7 +6,7 @@
 
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
-/** Cleared by Settings "New chat"; owned by Chat (#235) for message history. */
+/** Owned by Chat (#235) for message history; not used by Settings. */
 export const CHAT_MESSAGES_STORAGE_KEY = "kernector:chat-messages:v1";
 
 export type StoredRuntimeSettings = {
@@ -64,7 +64,7 @@ export function saveRuntimeSettings(value: StoredRuntimeSettings): void {
 }
 
 /**
- * Clear chat message history only (Streamlit "New chat" parity).
+ * Clear chat message history (Streamlit "New chat" parity for Chat #235).
  * Does not reset provider/model/settings.
  */
 export function clearChatMessages(): void {
