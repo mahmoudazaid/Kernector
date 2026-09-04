@@ -65,6 +65,12 @@ a {
   background: var(--kern-surface-2);
 }
 
+.kern-menu-icon {
+  width: var(--kern-icon-md);
+  height: var(--kern-icon-md);
+  display: block;
+}
+
 .kern-brand {
   display: inline-flex;
   align-items: center;
