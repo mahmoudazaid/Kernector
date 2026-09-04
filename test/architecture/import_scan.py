@@ -27,24 +27,73 @@ def find_forbidden_imports(path: Path, forbidden: set[str]) -> set[str]:
     return imported_roots(path) & forbidden
 
 
+def _package_parts_for(path: Path) -> tuple[str, ...]:
+    """Best-effort dotted package prefix for *path* based on filesystem parents.
+
+    Walks upward while ``__init__.py`` is present so relative imports can be
+    resolved against the scanned module's own package.
+    """
+    parts: list[str] = []
+    current = path.parent
+    while (current / "__init__.py").exists():
+        parts.append(current.name)
+        if current.parent == current:
+            break
+        current = current.parent
+    return tuple(reversed(parts))
+
+
+def _resolve_import_from_module(
+    path: Path, node: ast.ImportFrom
+) -> str | None:
+    """Return the absolute dotted module for an ``ImportFrom`` node."""
+    if node.level == 0:
+        return node.module
+    package = _package_parts_for(path)
+    if not package:
+        return node.module
+    # level=1 → stay in package; level=2 → parent package; …
+    up = node.level - 1
+    if up >= len(package):
+        base: tuple[str, ...] = ()
+    else:
+        base = package[: len(package) - up] if up else package
+    if node.module:
+        return ".".join((*base, *node.module.split("."))) if base else node.module
+    return ".".join(base) if base else None
+
+
 def find_forbidden_module_prefixes(path: Path, forbidden_prefixes: set[str]) -> set[str]:
-    """Return absolute import modules that match a forbidden dotted prefix.
+    """Return imports that match a forbidden dotted prefix.
 
     Unlike :func:`find_forbidden_imports`, this matches full module paths (for
     example ``presentation.streamlit``), not only top-level package roots.
+    Relative ``ImportFrom`` nodes are resolved against *path*'s package.
+    ``from presentation import http`` is treated as ``presentation.http``.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     hits: set[str] = set()
+
+    def _match(name: str | None) -> None:
+        if not name:
+            return
+        for prefix in forbidden_prefixes:
+            if name == prefix or name.startswith(f"{prefix}."):
+                hits.add(prefix)
+
     for node in ast.walk(tree):
-        names: list[str] = []
         if isinstance(node, ast.Import):
-            names.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            names.append(node.module)
-        for name in names:
-            for prefix in forbidden_prefixes:
-                if name == prefix or name.startswith(f"{prefix}."):
-                    hits.add(prefix)
+            for alias in node.names:
+                _match(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            absolute = _resolve_import_from_module(path, node)
+            _match(absolute)
+            # ``from presentation import http`` → presentation.http
+            if node.module and node.level == 0:
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    _match(f"{node.module}.{alias.name}")
     return hits
 
 

@@ -186,9 +186,13 @@ def test_planted_non_http_presentation_server_framework_is_detected(
     tmp_path: Path, source: str, expected: set[str]
 ) -> None:
     """Server frameworks are forbidden outside presentation/http/**."""
+    # Path must sit under presentation/streamlit so _forbidden_for applies
+    # SERVER_FRAMEWORKS (tmp_path never triggers the production helper).
     module = tmp_path / "bad_presentation.py"
     module.write_text(source, encoding="utf-8")
-    denylist = LAYER_RULES["presentation"] | SERVER_FRAMEWORKS
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "streamlit" / "x.py"
+    )
     assert find_forbidden_imports(module, denylist) == expected
 
 
@@ -196,8 +200,11 @@ def test_planted_presentation_http_may_import_fastapi(tmp_path: Path) -> None:
     """The path-prefix exception allows FastAPI under presentation/http/**."""
     module = tmp_path / "http_route.py"
     module.write_text("from fastapi import FastAPI\n", encoding="utf-8")
-    # Same denylist as presentation/http modules: base presentation rules only.
-    assert find_forbidden_imports(module, LAYER_RULES["presentation"]) == set()
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "http" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist) == set()
+    assert SERVER_FRAMEWORKS.isdisjoint(denylist)
 
 
 def test_presentation_http_and_streamlit_are_mutually_isolated() -> None:
@@ -220,6 +227,35 @@ def test_presentation_http_and_streamlit_are_mutually_isolated() -> None:
         assert not http_sub, (
             f"{path.relative_to(REPO_ROOT)} imports presentation.http from Streamlit"
         )
+
+
+def test_planted_relative_streamlit_import_from_http_is_detected(
+    tmp_path: Path,
+) -> None:
+    """``from ..streamlit import …`` inside presentation/http must be caught.
+
+    Builds a fake package under ``tmp_path`` so the architecture suite never
+    writes into ``REPO_ROOT`` (``_package_parts_for`` walks ``__init__.py``).
+    """
+    presentation = tmp_path / "presentation"
+    http_pkg = presentation / "http"
+    presentation.mkdir()
+    http_pkg.mkdir()
+    (presentation / "__init__.py").write_text("", encoding="utf-8")
+    (http_pkg / "__init__.py").write_text("", encoding="utf-8")
+    module = http_pkg / "leak.py"
+    module.write_text("from ..streamlit import ask_turn\n", encoding="utf-8")
+
+    hits = find_forbidden_module_prefixes(module, {"presentation.streamlit"})
+    assert hits == {"presentation.streamlit"}
+
+
+def test_planted_from_presentation_import_http_is_detected(tmp_path: Path) -> None:
+    """``from presentation import http`` inside streamlit must be caught."""
+    module = tmp_path / "bad_streamlit.py"
+    module.write_text("from presentation import http\n", encoding="utf-8")
+    hits = find_forbidden_module_prefixes(module, {"presentation.http"})
+    assert hits == {"presentation.http"}
 
 
 def test_planted_application_session_state_attribute_is_detected(tmp_path: Path) -> None:

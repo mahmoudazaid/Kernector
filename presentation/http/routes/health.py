@@ -2,22 +2,15 @@
 
 from fastapi import APIRouter
 
+from presentation.http.errors import problem_responses
 from presentation.http.schemas import HealthResponse
-from presentation.http.errors import Problem
 
 router = APIRouter(tags=["ops"])
-
-_PROBLEM_RESPONSES = {
-    404: {"model": Problem, "description": "Not found"},
-    422: {"model": Problem, "description": "Validation error"},
-    500: {"model": Problem, "description": "Server error"},
-}
 
 
 @router.get(
     "/health",
-    response_model=HealthResponse,
-    responses=_PROBLEM_RESPONSES,
+    responses=problem_responses(405),
 )
 def health() -> HealthResponse:
     """Return process readiness without touching composition or infrastructure."""

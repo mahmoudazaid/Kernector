@@ -34,7 +34,13 @@ uv run streamlit run main.py
 
 ## Run the HTTP API
 
-FastAPI adapter under `presentation/http/` (peer to Streamlit). Development CORS for the Next.js origin is enabled only when `HTTP_DEV_CORS=true` (optional `HTTP_CORS_ORIGINS`, default `http://localhost:3000`).
+FastAPI adapter under `presentation/http/` (peer to Streamlit). Development CORS for the Next.js origin is enabled only when `HTTP_DEV_CORS` is truthy (`1` / `true` / `yes` / `on`). Optional `HTTP_CORS_ORIGINS` (default `http://localhost:3000`; `*` is rejected). Both flags load through Settings / `.env` like other config.
+
+```bash
+HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
+```
+
+Or set the same keys in `.env`, then:
 
 ```bash
 uv run uvicorn presentation.http.app:app --reload

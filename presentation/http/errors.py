@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from application.errors import (
     ApplicationValidationError,
@@ -50,7 +50,49 @@ class Problem(BaseModel):
     code: str
     instance: str | None = None
     request_id: str | None = None
-    errors: list[ProblemError] | None = Field(default=None)
+    errors: list[ProblemError] | None = None
+
+
+_PROBLEM_MEDIA_TYPE = "application/problem+json"
+
+_PROBLEM_STATUS_DESCRIPTIONS: dict[int, str] = {
+    404: "Not found",
+    405: "Method not allowed",
+    422: "Validation error",
+    500: "Server error",
+    502: "Provider error",
+}
+
+
+def problem_responses(*status_codes: int) -> dict[int, dict]:
+    """OpenAPI response map declaring ``application/problem+json`` only.
+
+    Uses a ``$ref`` to ``Problem``. Call :func:`register_problem_schemas` from
+    the app OpenAPI generator so the model is present under
+    ``components.schemas`` — a bare ``$ref`` does not register it.
+    """
+    responses: dict[int, dict] = {}
+    for code in status_codes:
+        description = _PROBLEM_STATUS_DESCRIPTIONS.get(code, "Error")
+        responses[code] = {
+            "description": description,
+            "content": {
+                _PROBLEM_MEDIA_TYPE: {
+                    "schema": {"$ref": "#/components/schemas/Problem"}
+                }
+            },
+        }
+    return responses
+
+
+def register_problem_schemas(components_schemas: dict) -> None:
+    """Merge ``Problem`` / ``ProblemError`` into an OpenAPI components map."""
+    raw = Problem.model_json_schema(
+        ref_template="#/components/schemas/{model}"
+    )
+    for name, subschema in raw.pop("$defs", {}).items():
+        components_schemas.setdefault(name, subschema)
+    components_schemas.setdefault("Problem", raw)
 
 
 def problem_from_exception(
@@ -61,25 +103,21 @@ def problem_from_exception(
 ) -> Problem:
     """Map a domain/application/composition failure to sanitized Problem Details.
 
-    Human-readable fields never include tracebacks, vendor bodies, or internal
-    paths. Validation failures may carry boundary-authored ``str(exc)``; provider
-    and operational failures use fixed category sentences (aligned with Streamlit).
+    Human-readable fields never include tracebacks, vendor bodies, prompts,
+    document content, or ``repr`` of rejected values. Client field errors are
+    already handled as 422 by Pydantic via :func:`problem_from_validation_errors`.
+    ``ApplicationValidationError`` / ``DomainValidationError`` that reach this
+    mapper are internal contract violations (usually ``__post_init__`` invariants)
+    and map to 500 with the fixed operational sentence — matching Streamlit's
+    ``DomainValidationError`` handling. Provider/tool/store failures use their
+    fixed category sentences.
     """
-    if isinstance(exc, ApplicationValidationError):
+    if isinstance(exc, (ApplicationValidationError, DomainValidationError)):
         return _problem(
-            code="validation_error",
-            title=_VALIDATION_TITLE,
-            status=422,
-            detail=str(exc) or "One or more fields are invalid.",
-            instance=instance,
-            request_id=request_id,
-        )
-    if isinstance(exc, DomainValidationError):
-        return _problem(
-            code="validation_error",
-            title=_VALIDATION_TITLE,
-            status=422,
-            detail=str(exc) or "One or more fields are invalid.",
+            code="operational_error",
+            title="Operational error",
+            status=500,
+            detail=OPERATIONAL_FAILURE_MESSAGE,
             instance=instance,
             request_id=request_id,
         )

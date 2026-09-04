@@ -29,6 +29,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("HYBRID_ALPHA", raising=False)
     monkeypatch.delenv("RETRIEVAL_LIMIT", raising=False)
     monkeypatch.delenv("RELEVANCE_THRESHOLD", raising=False)
+    monkeypatch.delenv("HTTP_DEV_CORS", raising=False)
+    monkeypatch.delenv("HTTP_CORS_ORIGINS", raising=False)
     return monkeypatch
 
 
@@ -333,3 +335,28 @@ def test_domain_tool_packs_rejects_duplicates(env: pytest.MonkeyPatch) -> None:
     env.setenv("DOMAIN_TOOL_PACKS", "software-delivery,software-delivery")
     with pytest.raises(ValueError, match="duplicate"):
         load_settings()
+
+
+def test_http_cors_origins_rejects_star(env: pytest.MonkeyPatch) -> None:
+    """``*`` is rejected at Settings load — intentional Streamlit/CLI blast radius.
+
+    A wildcard CORS allowlist is never safe in shared process config. Keeping
+    the check in ``load_settings`` (not only the HTTP adapter) ensures every
+    entrypoint fails fast rather than silently starting with an unsafe ``.env``.
+    """
+    env.setenv("HTTP_DEV_CORS", "true")
+    env.setenv("HTTP_CORS_ORIGINS", "*")
+    with pytest.raises(ValueError, match="must not include"):
+        load_settings()
+
+
+def test_http_cors_star_rejection_blocks_composition_load(
+    env: pytest.MonkeyPatch,
+) -> None:
+    """composition.load_runtime_settings wraps the same ValueError for all UIs."""
+    from application.errors import ConfigurationError
+    from composition import load_runtime_settings
+
+    env.setenv("HTTP_CORS_ORIGINS", "*")
+    with pytest.raises(ConfigurationError, match="must not include"):
+        load_runtime_settings()

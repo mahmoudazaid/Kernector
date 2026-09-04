@@ -89,6 +89,14 @@ class DomainToolSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class HttpAdapterSettings:
+    """HTTP presentation adapter flags (CORS). Loaded with the rest of Settings."""
+
+    dev_cors: bool
+    cors_origins: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -102,6 +110,7 @@ class Settings:
     prompts: PromptSettings
     retrieval: RetrievalSettings
     domain_tools: DomainToolSettings
+    http: HttpAdapterSettings
 
 
 def load_settings() -> Settings:
@@ -141,6 +150,7 @@ def load_settings() -> Settings:
         prompts=_load_prompt_settings(),
         retrieval=_load_retrieval_settings(),
         domain_tools=_load_domain_tool_settings(),
+        http=_load_http_adapter_settings(),
     )
 
 
@@ -300,3 +310,28 @@ def _load_domain_tool_settings() -> DomainToolSettings:
         seen.add(name)
         ordered.append(name)
     return DomainToolSettings(enabled_packs=tuple(ordered))
+
+
+def _env_truthy(name: str, default: str = "") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_http_adapter_settings() -> HttpAdapterSettings:
+    """Parse HTTP adapter CORS flags (after ``load_dotenv``).
+
+    ``HTTP_CORS_ORIGINS`` must not include ``*`` — that would be a permissive
+    production default. Rejection lives here (not only in the HTTP adapter) so
+    Streamlit and the CLI also refuse to start with that misconfiguration:
+    ``*`` in shared Settings is never a safe process-wide default. When
+    ``HTTP_DEV_CORS`` is off, origins are ignored at the adapter but the
+    ``*`` check still runs at load time.
+    """
+    origins = _csv(os.getenv("HTTP_CORS_ORIGINS", "http://localhost:3000"))
+    if "*" in origins:
+        raise ValueError(
+            "HTTP_CORS_ORIGINS must not include '*'; list explicit origins"
+        )
+    return HttpAdapterSettings(
+        dev_cors=_env_truthy("HTTP_DEV_CORS"),
+        cors_origins=origins,
+    )

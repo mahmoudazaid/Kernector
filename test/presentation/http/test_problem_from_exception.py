@@ -2,6 +2,7 @@
 
 import pytest
 
+from application.contracts import AskRequest
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
@@ -14,14 +15,16 @@ from domain.errors import (
     ToolFailureError,
     VectorStoreError,
 )
+from domain.models import Message
+from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE
 from presentation.http.errors import problem_from_exception
 
 
 @pytest.mark.parametrize(
     ("exc", "status", "code"),
     [
-        (ApplicationValidationError("bad field"), 422, "validation_error"),
-        (DomainValidationError("invariant"), 422, "validation_error"),
+        (ApplicationValidationError("bad field"), 500, "operational_error"),
+        (DomainValidationError("invariant"), 500, "operational_error"),
         (InsufficientEvidenceError("no hits"), 422, "insufficient_evidence"),
         (ConfigurationError("missing key"), 500, "configuration_error"),
         (ProviderError("upstream"), 502, "provider_error"),
@@ -63,8 +66,40 @@ def test_operational_errors_use_fixed_sanitized_detail() -> None:
     assert "/var/chroma" not in problem.detail
 
 
-def test_application_validation_preserves_boundary_authored_detail() -> None:
-    problem = problem_from_exception(ApplicationValidationError("Query must not be blank."))
+def test_application_validation_does_not_leak_exception_text() -> None:
+    problem = problem_from_exception(
+        ApplicationValidationError("Query must not be blank.")
+    )
 
-    assert problem.detail == "Query must not be blank."
-    assert problem.status == 422
+    assert problem.status == 500
+    assert problem.code == "operational_error"
+    assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
+    assert "Query must not be blank" not in problem.detail
+
+
+def test_domain_validation_from_message_invariant_does_not_leak_content() -> None:
+    with pytest.raises(DomainValidationError) as caught:
+        Message(role="bogus", content="secret-corpus-text")
+
+    problem = problem_from_exception(caught.value)
+    body = problem.model_dump_json()
+
+    assert problem.status == 500
+    assert problem.code == "operational_error"
+    assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
+    assert "secret-corpus-text" not in body
+    assert "bogus" not in body
+
+
+def test_application_validation_from_ask_history_does_not_leak_turn_text() -> None:
+    sensitive = "secret-user-turn-text"
+    with pytest.raises(ApplicationValidationError) as caught:
+        AskRequest(query="ok", history=[sensitive])  # type: ignore[list-item]
+
+    problem = problem_from_exception(caught.value)
+    body = problem.model_dump_json()
+
+    assert problem.status == 500
+    assert problem.code == "operational_error"
+    assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
+    assert sensitive not in body
