@@ -135,20 +135,32 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
     assert store_path.is_dir(), "the store was not created under tmp_path"
 
 
+def _openrouter_chat_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub OpenRouter chat settings so CI can build without a real `.env`."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+
+
 @pytest.mark.parametrize(
     "provider,expected",
     [("openrouter", OpenRouterChat), ("ollama", OllamaChat)],
 )
 def test_build_chat_model_returns_the_provider_implementation(
-    provider: str, expected: type
+    provider: str, expected: type, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _openrouter_chat_env(monkeypatch)
     settings = load_settings()
     model = build_chat_model(settings, provider=provider, base_url="http://h:11434")
     assert isinstance(model, expected)
 
 
-def test_every_advertised_provider_is_buildable() -> None:
+def test_every_advertised_provider_is_buildable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`available_providers()` must not advertise a factory that does not work."""
+    _openrouter_chat_env(monkeypatch)
     settings = load_settings()
     for provider in available_providers():
         assert build_chat_model(
@@ -979,7 +991,10 @@ def test_build_prompt_repository_rejects_unknown_default_key(
         repository.all()
 
 
-def test_built_chat_models_satisfy_the_port() -> None:
+def test_built_chat_models_satisfy_the_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _openrouter_chat_env(monkeypatch)
     settings = load_settings()
     model: ChatModel = build_chat_model(settings, provider="openrouter")
     assert callable(model.complete)
