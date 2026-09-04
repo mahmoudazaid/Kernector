@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, startTransition } from "react";
+import { Button } from "@/components/ui/Button";
+import { ApiError } from "@/lib/api/errors";
 import {
   getOllamaStatus,
   type GetOllamaStatusOptions,
@@ -48,7 +50,8 @@ type ProbeView =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "ready"; status: OllamaStatusResponse }
-  | { kind: "error" };
+  | { kind: "error" }
+  | { kind: "unconfigured" };
 
 function nonBlank(value: string | undefined | null): string | undefined {
   if (typeof value !== "string") {
@@ -114,10 +117,7 @@ function defaultsFromCatalog(
   return {
     provider,
     model,
-    ollamaBaseUrl:
-      nonBlank(stored?.ollamaBaseUrl) ??
-      catalog.ollama.default_base_url ??
-      "",
+    ollamaBaseUrl: catalog.ollama.default_base_url ?? "",
     settings: Object.fromEntries(
       catalog.model_settings
         .filter((def) => def.providers.includes(provider))
@@ -154,6 +154,7 @@ export function SettingsPanel({
   });
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [probeView, setProbeView] = useState<ProbeView>({ kind: "idle" });
+  const [probeNonce, setProbeNonce] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -224,8 +225,15 @@ export function SettingsPanel({
           });
         });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) {
+          return;
+        }
+        if (
+          error instanceof ApiError &&
+          (error.code === "ollama_unconfigured" || error.status === 409)
+        ) {
+          setProbeView({ kind: "unconfigured" });
           return;
         }
         setProbeView({ kind: "error" });
@@ -235,7 +243,7 @@ export function SettingsPanel({
       active = false;
       controller.abort();
     };
-  }, [apiBaseUrl, probeOllama, provider]);
+  }, [apiBaseUrl, probeOllama, provider, probeNonce]);
 
   function updateSelection(patch: Partial<SelectionState>): void {
     setSelection((current) => {
@@ -317,6 +325,7 @@ export function SettingsPanel({
                     provider,
                     model: nextModel,
                     settings: nextSettings,
+                    ollamaBaseUrl: catalog.ollama.default_base_url ?? "",
                   });
                 }}
               />
@@ -328,20 +337,34 @@ export function SettingsPanel({
 
       {selection.provider === "ollama" ? (
         <div className="kern-settings-stack">
-          <label className="kern-settings-field">
-            <span>Ollama base URL</span>
+          <div className="kern-settings-field">
+            <label htmlFor="ollama-base-url">Ollama base URL</label>
             <input
+              id="ollama-base-url"
               className="kern-settings-input"
               type="url"
-              value={selection.ollamaBaseUrl}
-              onChange={(event) =>
-                updateSelection({ ollamaBaseUrl: event.target.value })
-              }
+              readOnly
+              value={catalog.ollama.default_base_url ?? ""}
             />
-          </label>
+            <p className="kern-settings-hint">
+              Set via <code>OLLAMA_BASE_URL</code> on the server.
+            </p>
+          </div>
 
           {probeView.kind === "loading" ? (
             <p className="kern-settings-hint">Checking Ollama…</p>
+          ) : null}
+
+          {probeView.kind === "unconfigured" ? (
+            <div
+              className="kern-settings-callout kern-settings-callout--error"
+              role="alert"
+            >
+              <p>
+                Ollama base URL is not configured on the server. Set{" "}
+                <code>OLLAMA_BASE_URL</code>, then reload this page.
+              </p>
+            </div>
           ) : null}
 
           {probeView.kind === "error" ? (
@@ -349,9 +372,13 @@ export function SettingsPanel({
               className="kern-settings-callout kern-settings-callout--error"
               role="alert"
             >
-              <p>
-                Could not check Ollama. Enter a model name manually, or retry.
-              </p>
+              <p>Could not check Ollama. Enter a model name manually, or retry.</p>
+              <Button
+                variant="secondary"
+                onClick={() => setProbeNonce((nonce) => nonce + 1)}
+              >
+                Retry
+              </Button>
             </div>
           ) : null}
 
@@ -373,6 +400,12 @@ export function SettingsPanel({
                 <code>ollama pull</code> only works after Ollama is installed. If
                 you see <code>command not found</code>, finish step 1 first.
               </p>
+              <Button
+                variant="secondary"
+                onClick={() => setProbeNonce((nonce) => nonce + 1)}
+              >
+                Retry
+              </Button>
             </div>
           ) : null}
 
@@ -383,14 +416,21 @@ export function SettingsPanel({
                 In a terminal, run: <code>ollama pull llama3.2</code>, then
                 refresh.
               </p>
+              <Button
+                variant="secondary"
+                onClick={() => setProbeNonce((nonce) => nonce + 1)}
+              >
+                Retry
+              </Button>
             </div>
           ) : null}
 
           {ollamaReachable === true && ollamaModels.length > 0 ? (
             <>
-              <label className="kern-settings-field">
-                <span>Ollama model</span>
+              <div className="kern-settings-field">
+                <label htmlFor="ollama-model">Ollama model</label>
                 <select
+                  id="ollama-model"
                   className="kern-settings-input"
                   value={
                     ollamaModels.includes(selection.model)
@@ -407,15 +447,16 @@ export function SettingsPanel({
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
               <p className="kern-settings-hint">
                 Ollama connected · local, slower, no API cost.
               </p>
             </>
           ) : (
-            <label className="kern-settings-field">
-              <span>Ollama model</span>
+            <div className="kern-settings-field">
+              <label htmlFor="ollama-model-text">Ollama model</label>
               <input
+                id="ollama-model-text"
                 className="kern-settings-input"
                 type="text"
                 value={selection.model}
@@ -423,15 +464,16 @@ export function SettingsPanel({
                   updateSelection({ model: event.target.value })
                 }
               />
-            </label>
+            </div>
           )}
         </div>
       ) : (
         <div className="kern-settings-stack">
           {openrouterModels.length > 0 ? (
-            <label className="kern-settings-field">
-              <span>OpenRouter model</span>
+            <div className="kern-settings-field">
+              <label htmlFor="openrouter-model">OpenRouter model</label>
               <select
+                id="openrouter-model"
                 className="kern-settings-input"
                 value={selection.model}
                 onChange={(event) =>
@@ -444,12 +486,13 @@ export function SettingsPanel({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           ) : (
             <>
-              <label className="kern-settings-field">
-                <span>OpenRouter model</span>
+              <div className="kern-settings-field">
+                <label htmlFor="openrouter-model-text">OpenRouter model</label>
                 <input
+                  id="openrouter-model-text"
                   className="kern-settings-input"
                   type="text"
                   value={selection.model}
@@ -457,7 +500,7 @@ export function SettingsPanel({
                     updateSelection({ model: event.target.value })
                   }
                 />
-              </label>
+              </div>
               <p className="kern-settings-hint">No OpenRouter models available</p>
             </>
           )}

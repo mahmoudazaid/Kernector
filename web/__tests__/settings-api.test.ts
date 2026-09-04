@@ -93,12 +93,12 @@ describe("getOllamaStatus", () => {
         request: async () => {
           throw new ApiError({
             status: 409,
-            title: "HTTP error",
-            detail: "The request could not be completed.",
-            code: "http_409",
+            title: "Ollama not configured",
+            detail: "Ollama base URL is not configured on the server.",
+            code: "ollama_unconfigured",
           });
         },
       }),
-    ).rejects.toMatchObject({ status: 409, code: "http_409" });
+    ).rejects.toMatchObject({ status: 409, code: "ollama_unconfigured" });
   });
 });

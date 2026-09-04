@@ -128,6 +128,57 @@ describe("SettingsPanel", () => {
     expect(
       await screen.findByText(/Could not check Ollama/i),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Retry$/i })).toBeInTheDocument();
+  });
+
+  it("shows unconfigured guidance when the server has no Ollama URL", async () => {
+    const user = userEvent.setup();
+    const { ApiError } = await import("@/lib/api/errors");
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+        probeOllama={async () => {
+          throw new ApiError({
+            status: 409,
+            title: "Ollama not configured",
+            detail: "Ollama base URL is not configured on the server.",
+            code: "ollama_unconfigured",
+          });
+        }}
+      />,
+    );
+
+    await screen.findByRole("radio", { name: /Ollama/i });
+    await user.click(screen.getByRole("radio", { name: /Ollama/i }));
+
+    expect(
+      await screen.findByText(/not configured on the server/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Retry$/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Ollama base URL read-only from the catalog", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+        probeOllama={async () => ({ reachable: false, models: [] })}
+      />,
+    );
+
+    await screen.findByRole("radio", { name: /Ollama/i });
+    await user.click(screen.getByRole("radio", { name: /Ollama/i }));
+
+    const url = await screen.findByLabelText(/Ollama base URL/i);
+    expect(url).toHaveAttribute("readonly");
+    expect(url).toHaveValue("http://127.0.0.1:11434");
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.ollamaBaseUrl).toBe(
+        "http://127.0.0.1:11434",
+      );
+    });
   });
 
   it("clamps out-of-range stored settings on hydrate", async () => {

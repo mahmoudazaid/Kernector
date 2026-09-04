@@ -60,7 +60,9 @@ def test_ollama_status_conflicts_when_base_url_unconfigured() -> None:
     response = client.get("/api/v1/ollama/status")
 
     assert response.status_code == 409
-    assert response.json()["code"] == "http_409"
+    body = response.json()
+    assert body["code"] == "ollama_unconfigured"
+    assert "not configured" in body["detail"].lower()
     assert response.headers["content-type"].startswith("application/problem+json")
     assert probed == []
 

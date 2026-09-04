@@ -541,6 +541,11 @@ a {
   font-weight: 500;
 }
 
+.kern-settings-callout .kern-btn,
+.kern-settings-callout .kern-btn-secondary {
+  margin-top: var(--kern-space-3);
+}
+
 .kern-settings-help {
   margin: 0;
   color: var(--kern-muted);

@@ -134,6 +134,19 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
                 instance=str(request.url.path),
             )
             return _problem_response(problem, headers=exc.headers)
+        if (
+            exc.status_code == 409
+            and exc.detail == "OLLAMA_BASE_URL is not configured"
+        ):
+            problem = Problem(
+                type="https://kernector.dev/problems/ollama_unconfigured",
+                title="Ollama not configured",
+                status=409,
+                detail="Ollama base URL is not configured on the server.",
+                code="ollama_unconfigured",
+                instance=str(request.url.path),
+            )
+            return _problem_response(problem, headers=exc.headers)
         problem = Problem(
             type=f"https://kernector.dev/problems/http_{exc.status_code}",
             title="HTTP error",
