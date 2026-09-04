@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from presentation.http.errors import (
@@ -113,6 +113,11 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     ) -> JSONResponse:
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> Response:
+        """Browsers probe this automatically; avoid a noisy Problem Details 404."""
+        return Response(status_code=204)
 
     app.include_router(health_routes.router)
     app.include_router(capabilities_routes.router)

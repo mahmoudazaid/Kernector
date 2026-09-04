@@ -12,3 +12,9 @@ def test_health_returns_ok() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_favicon_returns_no_content() -> None:
+    response = TestClient(create_app()).get("/favicon.ico")
+
+    assert response.status_code == 204
