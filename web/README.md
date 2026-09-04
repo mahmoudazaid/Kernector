@@ -47,7 +47,7 @@ npm run dev   # origin must be http://localhost:3000 (matches HTTP_CORS_ORIGINS 
 | `npm run format:check` | Prettier check                                                                 |
 | `npm run api:export`   | Write `openapi/openapi.json` from FastAPI                                      |
 | `npm run api:generate` | Export OpenAPI + regenerate `lib/api/generated/schema.d.ts`                    |
-| `npm run api:check`    | Fail if committed OpenAPI/client artifacts are stale (PR CI on `main`) |
+| `npm run api:check`    | Fail if committed OpenAPI/client artifacts are stale (#128 wires this into CI) |
 
 ## Routes
 

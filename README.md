@@ -26,35 +26,15 @@ After chunking and embedding, passages land in Chroma with metadata that preserv
 
 When `DOMAIN_TOOL_PACKS` includes `software-delivery` and a General-mode query explicitly requests risk scoring or test-case generation, composition routes through evidence-bundle orchestration instead of free-form generation, still citing the underlying hits. Unmatched queries stay on the ordinary RAG path — intent matching is a deterministic pack policy, not a speculative classifier.
 
-## Dual-stack local workflow
-
-Streamlit and Next.js are peer presentation clients. Streamlit talks to
-composition directly; Next.js talks HTTP to FastAPI. Copy [`.env.example`](.env.example)
-to `.env` for Python/HTTP flags (no secrets committed). Next public vars:
-[`web/.env.example`](web/.env.example) → `web/.env.local`.
-
-| Process | Default URL | Command |
-| --- | --- | --- |
-| FastAPI | `http://127.0.0.1:8000` | `HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload` |
-| Next.js | `http://localhost:3000` | `cd web && npm ci && npm run dev` |
-| Streamlit | `http://localhost:8501` | `uv run streamlit run main.py` |
-
-**Startup order for Next:** start FastAPI first (health chip needs `/health` +
-CORS), then Next. Streamlit does not require FastAPI.
-
-### Run the Streamlit app
+## Run the Streamlit app
 
 ```bash
 uv run streamlit run main.py
 ```
 
-### Run the HTTP API
+## Run the HTTP API
 
-FastAPI adapter under `presentation/http/` (peer to Streamlit). Development CORS
-for the Next.js origin is enabled only when `HTTP_DEV_CORS` is truthy
-(`1` / `true` / `yes` / `on`). Optional `HTTP_CORS_ORIGINS` (default
-`http://localhost:3000`; `*` is rejected). Both flags load through Settings /
-`.env` like other config.
+FastAPI adapter under `presentation/http/` (peer to Streamlit). Development CORS for the Next.js origin is enabled only when `HTTP_DEV_CORS` is truthy (`1` / `true` / `yes` / `on`). Optional `HTTP_CORS_ORIGINS` (default `http://localhost:3000`; `*` is rejected). Both flags load through Settings / `.env` like other config.
 
 ```bash
 HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
@@ -70,15 +50,9 @@ uv run uvicorn presentation.http.app:app --reload
 - Versioned prove-out: `GET /api/v1/capabilities`
 - OpenAPI: `GET /openapi.json` (also `/docs`)
 
-**Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
-unless you intentionally set an explicit `HTTP_CORS_ORIGINS` allowlist. Never
-use `*`. `NEXT_PUBLIC_*` values are baked into the Next.js build — set
-`NEXT_PUBLIC_API_BASE_URL` in the build environment before `npm run build`.
+## Run the Next.js web shell
 
-### Run the Next.js web shell
-
-The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See
-[`web/README.md`](web/README.md) for full details.
+The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See [`web/README.md`](web/README.md) for full details.
 
 ```bash
 # API with CORS for the Next.js origin (required for the header health chip)
@@ -90,44 +64,11 @@ npm ci
 npm run dev   # http://localhost:3000
 ```
 
-Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`,
-`NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
+Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`). These are inlined at build time — production builds must set `NEXT_PUBLIC_API_BASE_URL` explicitly.
 
-OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check:
-`npm run api:check` (also run on PRs to `main`).
+OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check: `npm run api:check` (CI wiring is #128).
 
 Other commands: `npm run build`, `npm run lint`, `npm run typecheck`, `npm test`.
-
-### CI (pull requests to `main`)
-
-Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Reproduce
-locally (no provider API keys required):
-
-```bash
-uv sync --frozen && uv run pytest
-
-cd web
-npm ci
-npm run lint && npm run typecheck && npm test && npm run build
-npm run api:check   # needs uv at repo root
-```
-
-### Feature-migration readiness
-
-Before migrating a Streamlit feature to Next.js, use
-[docs/migration-readiness.md](docs/migration-readiness.md).
-
-### Troubleshooting
-
-- **Next health chip Unavailable / CORS errors** — Ensure FastAPI is up,
-  `HTTP_DEV_CORS` is truthy, and the browser origin matches `HTTP_CORS_ORIGINS`
-  (default `http://localhost:3000`).
-- **OpenAPI contract drift** — `cd web && npm run api:generate`, then commit
-  updated `openapi/openapi.json` and `lib/api/generated/schema.d.ts`.
-- **Port already in use** — Stop the other process on 8000 / 3000 / 8501, or
-  pass an alternate port to uvicorn / `next dev` / Streamlit.
-- **Embedding size / Chroma mismatch** — remove the local store and retry:
-  `rm -rf data/chroma`.
 
 ## Hybrid search (optional)
 

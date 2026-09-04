@@ -73,8 +73,8 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
    truth for the generated TypeScript client.
    [#127](https://github.com/mahmoudazaid/Kernector/issues/127) owns
    reproducible OpenAPI client generation **and** the local contract-drift
-   check. [#128](https://github.com/mahmoudazaid/Kernector/issues/128) wires
-   that check into PR CI (plus dual-stack workflow docs). The HTTP adapter
+   check. [#128](https://github.com/mahmoudazaid/Kernector/issues/128) only
+   wires that check into CI (plus dual-stack workflow docs). The HTTP adapter
    maps OpenAPI/Pydantic ↔ `application/contracts.py`.
 
 5. **API conventions**
@@ -162,8 +162,8 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
      Reproducible OpenAPI → TypeScript client generation and the **local**
      contract-drift check.
    - **[#128](https://github.com/mahmoudazaid/Kernector/issues/128)** —
-     Dual-stack CI and workflow docs; wires the `#127` contract-drift check
-     into PR CI (does not own the check itself).
+     Dual-stack CI and workflow docs; **wires** the `#127` contract-drift
+     check into CI (does not own the check itself).
 
    Existing architecture AST checks remain valid for today’s Python tree.
 
@@ -174,7 +174,7 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 - After this ADR (`#125`), shell (`#126`) and HTTP foundation (`#81`) may
   proceed **in parallel**. Typed client and local contract-drift check
   (`#127`) start only after both provide the Next.js shell and a live OpenAPI
-  contract. Dual-stack PR CI (`#128`) follows `#126`, `#81`, and `#127`, and
+  contract. Dual-stack CI (`#128`) follows `#126`, `#81`, and `#127`, and
   wires the `#127` drift check into CI.
 - Streamlit remains the supported interactive UI until separate parity work
   and an explicit retirement decision.
@@ -187,7 +187,7 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
 | [#126](https://github.com/mahmoudazaid/Kernector/issues/126) | Next.js application shell under `web/` (`npm`, lockfile, `npm ci`, Node pin) | `#125` (may run in parallel with `#81`) |
 | [#81](https://github.com/mahmoudazaid/Kernector/issues/81) | Minimal FastAPI under `presentation/http/` (versioned `/api/v1/…` product routes + unversioned `/health`) + boundary/error tests | `#125` (may run in parallel with `#126`) |
 | [#127](https://github.com/mahmoudazaid/Kernector/issues/127) | Typed Next.js client from OpenAPI + local contract-drift check | `#126` and `#81` |
-| [#128](https://github.com/mahmoudazaid/Kernector/issues/128) | Dual-stack PR CI and workflow docs; wires `#127` drift check into CI | `#126`, `#81`, and `#127` |
+| [#128](https://github.com/mahmoudazaid/Kernector/issues/128) | Dual-stack CI and workflow docs; wires `#127` drift check into CI | `#126`, `#81`, and `#127` |
 
 Parent: [EPIC #124](https://github.com/mahmoudazaid/Kernector/issues/124).
 Coordinates with [#104](https://github.com/mahmoudazaid/Kernector/issues/104)
