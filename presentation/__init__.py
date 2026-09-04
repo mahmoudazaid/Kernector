@@ -1,1 +1,1 @@
-"""Presentation layer: Streamlit UI and composition root."""
+"""Presentation layer: Streamlit UI, CLI, and HTTP (FastAPI) adapters."""

@@ -27,6 +27,27 @@ def find_forbidden_imports(path: Path, forbidden: set[str]) -> set[str]:
     return imported_roots(path) & forbidden
 
 
+def find_forbidden_module_prefixes(path: Path, forbidden_prefixes: set[str]) -> set[str]:
+    """Return absolute import modules that match a forbidden dotted prefix.
+
+    Unlike :func:`find_forbidden_imports`, this matches full module paths (for
+    example ``presentation.streamlit``), not only top-level package roots.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    hits: set[str] = set()
+    for node in ast.walk(tree):
+        names: list[str] = []
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            names.append(node.module)
+        for name in names:
+            for prefix in forbidden_prefixes:
+                if name == prefix or name.startswith(f"{prefix}."):
+                    hits.add(prefix)
+    return hits
+
+
 def find_non_allowed_imports(
     path: Path,
     *,
