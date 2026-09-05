@@ -116,12 +116,6 @@
     rgb(255 255 255 / 0.08) 42%,
     rgb(255 255 255 / 0.28) 100%
   );
-  --kern-control-emboss: inset 0 1px 1px var(--kern-control-highlight),
-    inset 0 -1px 1px var(--kern-control-shade),
-    0 3px 10px -3px var(--kern-control-shade);
-  --kern-control-emboss-press: inset 0 1px 1px var(--kern-control-highlight),
-    inset 0 -1px 1px var(--kern-control-shade),
-    0 1px 4px -1px var(--kern-control-shade);
   --kern-accent-pastel: color-mix(in srgb, var(--kern-accent) 58%, #a8bbb4);
 }
 
@@ -147,11 +141,5 @@
     rgb(255 255 255 / 0.02) 42%,
     rgb(255 255 255 / 0.08) 100%
   );
-  --kern-control-emboss: inset 0 1px 1px var(--kern-control-highlight),
-    inset 0 -1px 1px var(--kern-control-shade),
-    0 3px 10px -3px var(--kern-control-shade);
-  --kern-control-emboss-press: inset 0 1px 1px var(--kern-control-highlight),
-    inset 0 -1px 1px var(--kern-control-shade),
-    0 1px 4px -1px var(--kern-control-shade);
   --kern-accent-pastel: color-mix(in srgb, var(--kern-accent) 38%, #2c403c);
 }

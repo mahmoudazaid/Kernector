@@ -418,7 +418,7 @@ a {
 }
 
 .kern-btn {
-  color: #fff;
+  color: light-dark(#fff, var(--kern-bg));
   border-color: color-mix(in srgb, var(--kern-accent) 40%, transparent);
   background:
     var(--kern-control-sheen),
@@ -432,7 +432,6 @@ a {
     inset 0 -1px 1px var(--kern-control-shade),
     0 4px 12px -3px color-mix(in srgb, var(--kern-accent) 45%, transparent),
     0 1px 2px var(--kern-control-shade);
-  text-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
 }
 
 .kern-btn-secondary {
@@ -461,6 +460,7 @@ a {
 .kern-btn-secondary:hover {
   border-color: color-mix(in srgb, var(--kern-muted) 50%, var(--kern-line));
   box-shadow: var(--kern-control-emboss-press);
+  filter: none;
 }
 
 .kern-btn:active,
@@ -490,6 +490,7 @@ a {
   border-color: transparent;
   box-shadow: none;
   filter: none;
+  transform: none;
 }
 
 .kern-main-footer {
@@ -786,7 +787,19 @@ a {
   box-shadow: var(--kern-control-emboss);
 }
 
-.kern-select-option:focus-visible {
+.kern-select-option.is-active {
+  border-color: color-mix(in srgb, var(--kern-accent) 35%, transparent);
+  background:
+    var(--kern-control-sheen),
+    color-mix(in srgb, var(--kern-accent-soft) 70%, var(--kern-surface));
+  box-shadow: var(--kern-control-emboss);
+}
+
+.kern-select-menu:focus {
+  outline: none;
+}
+
+.kern-select-menu:focus-visible {
   outline: 2px solid var(--kern-focus);
   outline-offset: 2px;
 }
@@ -1160,13 +1173,13 @@ a {
   flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--kern-accent) 28%, transparent);
   border-radius: 50%;
-  color: #fff;
+  color: light-dark(#fff, var(--kern-bg));
   background:
     var(--kern-control-sheen),
     linear-gradient(
       180deg,
-      color-mix(in srgb, #fff 28%, var(--kern-accent-pastel)),
-      var(--kern-accent-pastel)
+      color-mix(in srgb, #fff 12%, var(--kern-accent)),
+      var(--kern-accent)
     );
   box-shadow: var(--kern-control-emboss);
   cursor: pointer;

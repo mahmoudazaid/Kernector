@@ -376,7 +376,7 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
         {messages.length === 0 && hydrated && !unavailable ? (
           <EmptyState
             title="Start a conversation"
-            description="Write a message… Ask a question grounded in your ingested documents."
+            description="Ask a question grounded in your ingested documents."
           />
         ) : (
           <div className="kern-chat-thread" aria-live="polite">
@@ -407,7 +407,7 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             id="chat-input"
             className="kern-chat-input"
             rows={1}
-            placeholder="What's in your mind!"
+            placeholder="Ask about your documents…"
             value={draft}
             disabled={sending}
             onChange={(event) => setDraft(event.target.value)}
