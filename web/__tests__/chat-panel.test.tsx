@@ -85,7 +85,7 @@ describe("ChatPanel", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
     ).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/ask about your documents/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/What's in your mind!/i)).toBeInTheDocument();
   });
 
   it("renders the happy path with citations, tools, projected results, and run details", async () => {
