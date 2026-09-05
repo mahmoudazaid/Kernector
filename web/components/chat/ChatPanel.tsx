@@ -4,7 +4,8 @@ import {
   useEffect,
   useState,
   startTransition,
-  type FormEvent,
+  type KeyboardEvent,
+  type SubmitEvent,
 } from "react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/states/EmptyState";
@@ -33,6 +34,27 @@ import {
   saveChatMessages,
 } from "@/lib/runtime-settings-storage";
 
+const SEND_ICON = (
+  <svg
+    className="kern-chat-send-icon"
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+  >
+    <path
+      d="M4.5 12.5 20 4.5l-4.2 15.2-3.6-5.4-5.7-1.8Z"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M12.2 14.3 20 4.5"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 export type ChatPanelProps = {
   apiBaseUrl: string;
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
@@ -242,7 +264,7 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
     saveChatMessages(toPersisted(messages));
   }, [messages, hydrated]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = draft.trim();
     if (!query || sending) {
@@ -312,12 +334,21 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             New chat
           </Button>
         </header>
-        <UnavailableState
-          title="Backend unavailable"
-          description="Kernector could not reach the API. Check that the FastAPI server is running, then try again."
-        />
+        <div className="kern-chat-body">
+          <UnavailableState
+            title="Backend unavailable"
+            description="Kernector could not reach the API. Check that the FastAPI server is running, then try again."
+          />
+        </div>
       </section>
     );
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
   }
 
   return (
@@ -334,30 +365,32 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
         </Button>
       </header>
 
-      {unavailable ? (
-        <UnavailableState
-          title="Backend unavailable"
-          description="Kernector could not reach the API. Check that the FastAPI server is running, then try again."
-        />
-      ) : null}
+      <div className="kern-chat-body">
+        {unavailable ? (
+          <UnavailableState
+            title="Backend unavailable"
+            description="Kernector could not reach the API. Check that the FastAPI server is running, then try again."
+          />
+        ) : null}
 
-      {messages.length === 0 && hydrated && !unavailable ? (
-        <EmptyState
-          title="Start a conversation"
-          description="Start typing… Ask a question grounded in your ingested documents."
-        />
-      ) : (
-        <div className="kern-chat-thread" aria-live="polite">
-          {messages.map((message) => (
-            <MessageRow key={message.id} message={message} />
-          ))}
-          {sending ? (
-            <p className="kern-chat-thinking" aria-busy="true">
-              Thinking…
-            </p>
-          ) : null}
-        </div>
-      )}
+        {messages.length === 0 && hydrated && !unavailable ? (
+          <EmptyState
+            title="Start a conversation"
+            description="Write a message… Ask a question grounded in your ingested documents."
+          />
+        ) : (
+          <div className="kern-chat-thread" aria-live="polite">
+            {messages.map((message) => (
+              <MessageRow key={message.id} message={message} />
+            ))}
+            {sending ? (
+              <p className="kern-chat-thinking" aria-busy="true">
+                Thinking…
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
 
       {inlineError ? (
         <p className="kern-chat-inline-error" role="alert">
@@ -366,21 +399,29 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
       ) : null}
 
       <form className="kern-chat-composer" onSubmit={handleSubmit}>
-        <label className="visually-hidden" htmlFor="chat-input">
-          Message
-        </label>
-        <textarea
-          id="chat-input"
-          className="kern-chat-input"
-          rows={2}
-          placeholder="Start typing…"
-          value={draft}
-          disabled={sending}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <Button type="submit" disabled={sending || !draft.trim()}>
-          Send
-        </Button>
+        <div className="kern-chat-composer-bar">
+          <label className="visually-hidden" htmlFor="chat-input">
+            Message
+          </label>
+          <textarea
+            id="chat-input"
+            className="kern-chat-input"
+            rows={1}
+            placeholder="Write a message..."
+            value={draft}
+            disabled={sending}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+          />
+          <button
+            type="submit"
+            className="kern-chat-send"
+            aria-label="Send"
+            disabled={sending || !draft.trim()}
+          >
+            {SEND_ICON}
+          </button>
+        </div>
       </form>
     </section>
   );

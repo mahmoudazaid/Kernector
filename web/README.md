@@ -19,11 +19,11 @@ Copy `.env.example` to `.env.local` if you need to override public vars. Only `N
 
 `NEXT_PUBLIC_API_BASE_URL` defaults to `http://127.0.0.1:8000` (browser-visible). Trailing slashes are stripped.
 
-> **Deploying:** `NEXT_PUBLIC_*` values are inlined at **build** time, not read at runtime. A production build with this unset ships the localhost default to every browser and the health chip reads Unavailable for all users. Set it in the build environment before `npm run build` — rebuilding is the only way to repoint an image at a different API host.
+> **Deploying:** `NEXT_PUBLIC_*` values are inlined at **build** time, not read at runtime. A production build with this unset ships the localhost default to every browser. Set it in the build environment before `npm run build` — rebuilding is the only way to repoint an image at a different API host.
 
 ### Local API + CORS
 
-The shell probes `GET /health` from the browser. Enable FastAPI CORS for the Next origin:
+Chat and Settings call the FastAPI origin from the browser. Enable CORS for the Next origin:
 
 ```bash
 # repo root
@@ -58,7 +58,7 @@ Placeholder destinations (no invented product behavior):
 - `/chat` — Chat
 - `/settings` — Settings
 
-Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout failures), `not-found.tsx`, plus reusable empty/unavailable components under `components/states/`. The header shows backend Available/Unavailable from `/health`.
+Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout failures), `not-found.tsx`, plus reusable empty/unavailable components under `components/states/`.
 
 ## Visual direction
 

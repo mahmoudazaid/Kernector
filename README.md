@@ -39,7 +39,7 @@ to `.env` for Python/HTTP flags (no secrets committed). Next public vars:
 | Next.js | `http://localhost:3000` | `cd web && npm ci && npm run dev` |
 | Streamlit | `http://localhost:8501` | `uv run streamlit run main.py` |
 
-**Startup order for Next:** start FastAPI first (health chip needs `/health` +
+**Startup order for Next:** start FastAPI first (browser calls need the API +
 CORS), then Next. Streamlit does not require FastAPI.
 
 ### Run the Streamlit app
@@ -83,7 +83,7 @@ The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See
 [`web/README.md`](web/README.md) for full details.
 
 ```bash
-# API with CORS for the Next.js origin (required for the header health chip)
+# API with CORS for the Next.js origin (required for Chat / Settings from the browser)
 HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
 
 # separate terminal
@@ -127,7 +127,7 @@ Before migrating a Streamlit feature to Next.js, use
 
 ### Troubleshooting
 
-- **Next health chip Unavailable / CORS errors** — Ensure FastAPI is up,
+- **Next Chat/Settings fail / CORS errors** — Ensure FastAPI is up,
   `HTTP_DEV_CORS` is truthy, and the browser origin matches `HTTP_CORS_ORIGINS`
   (default `http://localhost:3000`).
 - **OpenAPI contract drift** — `cd web && npm run api:generate`, then commit
