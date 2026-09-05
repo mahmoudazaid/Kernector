@@ -29,23 +29,31 @@ export function ConfirmDialog({
   const titleId = useId();
   const descriptionId = useId();
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
 
   useEffect(() => {
     if (!open) {
       return;
     }
     cancelRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !busy) {
         event.preventDefault();
-        onCancel();
+        onCancelRef.current();
       }
     }
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, busy, onCancel]);
+  }, [open, busy]);
 
   if (!open) {
     return null;

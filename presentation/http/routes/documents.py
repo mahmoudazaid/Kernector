@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
+from composition import unsupported_upload_type_detail
 from domain.knowledge import SourceReference, SourceType, UploadPayload
 from presentation.http.deps import DocumentOperationsDep
 from presentation.http.errors import (
+    MissingUploadFileError,
     UnsupportedDocumentTypeError,
     UploadTooLargeError,
     problem_responses,
@@ -24,20 +26,24 @@ from presentation.http.schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
-_MISSING_FILE_MSG = "Choose a document to upload before submitting."
+# Multipart framing adds path/headers beyond the file bytes themselves.
+_MULTIPART_OVERHEAD_BYTES = 64_000
 
 
-def _missing_file_error() -> RequestValidationError:
-    return RequestValidationError(
-        [
-            {
-                "type": "missing",
-                "loc": ("body", "file"),
-                "msg": _MISSING_FILE_MSG,
-                "input": None,
-            }
-        ]
-    )
+def _require_source_id(source_id: str) -> str:
+    """Reject blank/whitespace path segments before domain construction."""
+    if not source_id.strip():
+        raise RequestValidationError(
+            [
+                {
+                    "type": "string_too_short",
+                    "loc": ("path", "source_id"),
+                    "msg": "source_id must not be blank",
+                    "input": source_id,
+                }
+            ]
+        )
+    return source_id
 
 
 def _read_upload(
@@ -48,25 +54,47 @@ def _read_upload(
 ) -> UploadPayload:
     """Validate multipart file and return an application payload."""
     if upload is None or not upload.filename:
-        raise _missing_file_error()
+        raise MissingUploadFileError()
 
     advisory = upload.size
     if advisory is not None and advisory > max_upload_bytes:
         raise UploadTooLargeError(max_bytes=max_upload_bytes)
 
-    content = upload.file.read()
-    if len(content) > max_upload_bytes:
-        raise UploadTooLargeError(max_bytes=max_upload_bytes)
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = upload.file.read(65_536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_upload_bytes:
+            raise UploadTooLargeError(max_bytes=max_upload_bytes)
+        chunks.append(chunk)
+    content = b"".join(chunks)
     if len(content) == 0:
-        raise _missing_file_error()
+        raise MissingUploadFileError()
 
     suffix = Path(upload.filename).suffix.lower()
     if suffix not in supported_suffixes:
         raise UnsupportedDocumentTypeError(
-            f"unsupported document type ({suffix!r}); supported types are "
-            f"{', '.join(sorted(supported_suffixes))}"
+            unsupported_upload_type_detail(suffix)
         )
     return UploadPayload(file_name=upload.filename, content=content)
+
+
+async def _reject_oversized_content_length(
+    request: Request, max_upload_bytes: int
+) -> None:
+    """Fail fast when Content-Length already exceeds the upload budget."""
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return
+    try:
+        length = int(raw)
+    except ValueError:
+        return
+    if length > max_upload_bytes + _MULTIPART_OVERHEAD_BYTES:
+        raise UploadTooLargeError(max_bytes=max_upload_bytes)
 
 
 @router.get(
@@ -88,13 +116,15 @@ def list_documents(ops: DocumentOperationsDep) -> DocumentListResponse:
 @router.post(
     "/documents",
     status_code=201,
-    responses=problem_responses(405, 409, 413, 422, 500, 502),
+    responses=problem_responses(405, 409, 413, 422, 500),
 )
-def create_document(
+async def create_document(
+    request: Request,
     ops: DocumentOperationsDep,
     file: UploadFile | None = File(default=None),
 ) -> CatalogDocumentResponse:
     """Upload a new document; always allocates a system-managed source ID."""
+    await _reject_oversized_content_length(request, ops.max_upload_bytes)
     payload = _read_upload(
         file,
         max_upload_bytes=ops.max_upload_bytes,
@@ -106,14 +136,17 @@ def create_document(
 
 @router.put(
     "/documents/{source_id}",
-    responses=problem_responses(404, 405, 409, 413, 422, 500, 502),
+    responses=problem_responses(404, 405, 409, 413, 422, 500),
 )
-def replace_document(
+async def replace_document(
     source_id: str,
+    request: Request,
     ops: DocumentOperationsDep,
     file: UploadFile | None = File(default=None),
 ) -> CatalogDocumentResponse:
     """Replace document content under the same source ID."""
+    source_id = _require_source_id(source_id)
+    await _reject_oversized_content_length(request, ops.max_upload_bytes)
     payload = _read_upload(
         file,
         max_upload_bytes=ops.max_upload_bytes,
@@ -130,10 +163,11 @@ def replace_document(
 @router.delete(
     "/documents/{source_id}",
     status_code=204,
-    responses=problem_responses(405, 409, 500),
+    responses=problem_responses(405, 409, 422, 500),
 )
 def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     """Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op."""
+    source_id = _require_source_id(source_id)
     reference = SourceReference(
         source_id=source_id,
         source_type=SourceType.KNOWLEDGE_DOCUMENT,

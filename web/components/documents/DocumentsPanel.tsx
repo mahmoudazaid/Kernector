@@ -41,7 +41,12 @@ export type DocumentsPanelProps = {
 type CatalogView =
   | { kind: "loading" }
   | { kind: "unavailable" }
-  | { kind: "error"; message: string; documents: CatalogDocumentResponse[]; constraints: DocumentListResponse["constraints"] | null }
+  | {
+      kind: "error";
+      message: string;
+      documents: CatalogDocumentResponse[];
+      constraints: DocumentListResponse["constraints"] | null;
+    }
   | {
       kind: "ready";
       documents: CatalogDocumentResponse[];
@@ -69,7 +74,7 @@ function formatUploadedAt(value: string): string {
 
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    return error.detail;
+    return error.errors?.[0]?.detail ?? error.detail;
   }
   return "The request failed. Please try again later.";
 }
@@ -85,6 +90,8 @@ export function DocumentsPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
+  const [replaceInputKey, setReplaceInputKey] = useState(0);
   const [pendingDelete, setPendingDelete] =
     useState<CatalogDocumentResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -115,12 +122,18 @@ export function DocumentsPanel({
         return;
       }
       startTransition(() =>
-        setCatalog({
+        setCatalog((prev) => ({
           kind: "error",
           message: actionErrorMessage(error),
-          documents: [],
-          constraints: null,
-        }),
+          documents:
+            prev.kind === "ready" || prev.kind === "error"
+              ? prev.documents
+              : [],
+          constraints:
+            prev.kind === "ready" || prev.kind === "error"
+              ? prev.constraints
+              : null,
+        })),
       );
     }
   }
@@ -130,6 +143,11 @@ export function DocumentsPanel({
     // Initial load only — actions call refresh explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
+
+  useEffect(() => {
+    setReplaceFile(null);
+    setReplaceInputKey((key) => key + 1);
+  }, [selectedId]);
 
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
@@ -146,6 +164,16 @@ export function DocumentsPanel({
   const accept = constraints
     ? constraints.supported_suffixes.join(",")
     : ".md,.markdown,.txt,.pdf";
+
+  function clearUploadInput() {
+    setUploadFile(null);
+    setUploadInputKey((key) => key + 1);
+  }
+
+  function clearReplaceInput() {
+    setReplaceFile(null);
+    setReplaceInputKey((key) => key + 1);
+  }
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();
@@ -168,7 +196,7 @@ export function DocumentsPanel({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
       });
-      setUploadFile(null);
+      clearUploadInput();
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
@@ -200,7 +228,7 @@ export function DocumentsPanel({
         kind: "success",
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
       });
-      setReplaceFile(null);
+      clearReplaceInput();
       await refresh();
     } catch (error) {
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
@@ -221,7 +249,6 @@ export function DocumentsPanel({
         kind: "success",
         message: `Deleted document ${document.source_id}.`,
       });
-      setPendingDelete(null);
       setSelectedId((current) =>
         current === document.source_id ? null : current,
       );
@@ -229,6 +256,7 @@ export function DocumentsPanel({
     } catch (error) {
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
     } finally {
+      setPendingDelete(null);
       setBusy(false);
     }
   }
@@ -386,6 +414,7 @@ export function DocumentsPanel({
           <label className="kern-settings-field">
             <span>Document file</span>
             <input
+              key={uploadInputKey}
               type="file"
               accept={accept}
               className="kern-settings-input"
@@ -411,6 +440,7 @@ export function DocumentsPanel({
             <label className="kern-settings-field">
               <span>Replacement file</span>
               <input
+                key={replaceInputKey}
                 type="file"
                 accept={accept}
                 className="kern-settings-input"

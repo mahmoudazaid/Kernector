@@ -304,9 +304,6 @@ _ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
         "Ingestion did not finish cleanly; some chunks may be stored. "
         "Replace or delete this document."
     ),
-    CatalogStatus.PENDING: (
-        "Ingestion did not complete. Replace or delete this document."
-    ),
 }
 
 
@@ -351,7 +348,8 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
         status=document.status.value,
         uploaded_at=document.uploaded_at.isoformat(),
         chunk_count=document.chunk_count,
-        has_error=summary is not None,
+        has_error=document.status
+        in {CatalogStatus.FAILED, CatalogStatus.DEGRADED},
         error_summary=summary,
     )
 

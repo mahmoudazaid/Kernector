@@ -3,6 +3,7 @@
 from composition.container import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
+    unsupported_upload_type_detail,
     available_providers,
     build_ask_knowledge,
     build_ask_service,
@@ -71,6 +72,7 @@ __all__ = [
     "SOFTWARE_DELIVERY_TEST_STYLES",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
+    "unsupported_upload_type_detail",
     "GroundedAsk",
     "Settings",
     "RiskFactorView",

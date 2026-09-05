@@ -12,13 +12,12 @@ _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/settings": ("get", ("405", "500")),
     "/api/v1/ollama/status": ("get", ("405", "409", "500")),
     "/api/v1/chat/ask": ("post", ("405", "422", "500", "502")),
-    "/api/v1/documents": ("get", ("405", "500")),
 }
 
 
 _DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
     ("/api/v1/documents", "get"): ("405", "500"),
-    ("/api/v1/documents", "post"): ("405", "409", "413", "422", "500", "502"),
+    ("/api/v1/documents", "post"): ("405", "409", "413", "422", "500"),
     ("/api/v1/documents/{source_id}", "put"): (
         "404",
         "405",
@@ -26,9 +25,8 @@ _DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
         "413",
         "422",
         "500",
-        "502",
     ),
-    ("/api/v1/documents/{source_id}", "delete"): ("405", "409", "500"),
+    ("/api/v1/documents/{source_id}", "delete"): ("405", "409", "422", "500"),
 }
 
 

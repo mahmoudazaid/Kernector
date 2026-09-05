@@ -27,7 +27,7 @@ export function validateUpload(
   const dot = name.lastIndexOf(".");
   const suffix = dot >= 0 ? name.slice(dot).toLowerCase() : "";
   if (!constraints.supported_suffixes.includes(suffix)) {
-    const listed = [...constraints.supported_suffixes].toSorted().join(", ");
+    const listed = [...constraints.supported_suffixes].sort().join(", ");
     return {
       ok: false,
       message: `unsupported document type ('${suffix}'); supported types are ${listed}`,

@@ -17,6 +17,7 @@ from composition import Settings, load_runtime_settings
 from presentation.http.errors import (
     Problem,
     ProblemError,
+    UploadTooLargeError,
     problem_from_exception,
     problem_from_validation_errors,
     register_problem_schemas,
@@ -30,6 +31,10 @@ from presentation.http.routes import settings as settings_routes
 
 _PROBLEM_MEDIA_TYPE = "application/problem+json"
 _LOG = logging.getLogger("presentation.http")
+# Multipart framing adds path/headers beyond the file bytes themselves.
+_MULTIPART_OVERHEAD_BYTES = 64_000
+_DOCUMENT_UPLOAD_METHODS = frozenset({"POST", "PUT"})
+_DOCUMENT_UPLOAD_PREFIX = "/api/v1/documents"
 
 
 def cors_origins_from_settings(settings: Settings) -> tuple[str, ...]:
@@ -96,6 +101,35 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],
         )
+
+    max_upload_bytes = load_runtime_settings().max_upload_bytes
+
+    @app.middleware("http")
+    async def reject_oversized_document_uploads(
+        request: Request, call_next: Any
+    ) -> Response:
+        """Reject oversized document uploads before multipart buffering."""
+        path = request.url.path
+        if (
+            request.method in _DOCUMENT_UPLOAD_METHODS
+            and (
+                path == _DOCUMENT_UPLOAD_PREFIX
+                or path.startswith(f"{_DOCUMENT_UPLOAD_PREFIX}/")
+            )
+        ):
+            raw = request.headers.get("content-length")
+            if raw is not None:
+                try:
+                    length = int(raw)
+                except ValueError:
+                    length = -1
+                if length > max_upload_bytes + _MULTIPART_OVERHEAD_BYTES:
+                    problem = problem_from_exception(
+                        UploadTooLargeError(max_bytes=max_upload_bytes),
+                        instance=path,
+                    )
+                    return _problem_response(problem)
+        return await call_next(request)
 
     # Taxonomy failures are ValueError / RuntimeError subclasses. Registering
     # those roots (not bare Exception) keeps handlers on ExceptionMiddleware,

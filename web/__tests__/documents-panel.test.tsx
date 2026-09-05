@@ -85,6 +85,39 @@ describe("DocumentsPanel", () => {
     expect(screen.getByRole("button", { name: /upload new/i })).toBeInTheDocument();
   });
 
+  it("keeps upload enabled after a transient list failure once constraints were loaded", async () => {
+    const user = userEvent.setup();
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(listResponse([doc()]))
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 500,
+          title: "Operational error",
+          detail: "Something went wrong while processing your request.",
+          code: "operational_error",
+        }),
+      );
+    const upload = vi.fn().mockResolvedValue(doc({ source_id: "new-id" }));
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        upload={upload}
+      />,
+    );
+
+    await screen.findByText("spec.md");
+    const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
+    await user.upload(screen.getByLabelText(/document file/i), file);
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+  });
+
   it("uploads a new document and never treats file name as identity", async () => {
     const user = userEvent.setup();
     const list = vi

@@ -30,7 +30,9 @@ from presentation.http.errors import (
     DOCUMENT_NOT_FOUND_DETAIL,
     DOCUMENT_PARTIAL_DETAILS,
     DOCUMENT_UNREADABLE_DETAIL,
+    MISSING_UPLOAD_FILE_DETAIL,
     UPLOAD_TOO_LARGE_DETAIL,
+    MissingUploadFileError,
     UnsupportedDocumentTypeError,
     UploadTooLargeError,
     problem_from_exception,
@@ -222,3 +224,23 @@ def test_unsupported_document_type_maps_to_422() -> None:
     assert problem.status == 422
     assert problem.code == "unsupported_document_type"
     assert problem.detail == detail
+
+
+def test_missing_upload_file_maps_to_422_with_streamlit_copy() -> None:
+    problem = problem_from_exception(MissingUploadFileError())
+
+    assert problem.status == 422
+    assert problem.code == "missing_upload_file"
+    assert problem.detail == MISSING_UPLOAD_FILE_DETAIL
+
+
+def test_partial_document_unknown_operation_uses_fallback_detail() -> None:
+    exc = PartialDocumentOperationError("half", operation="create")
+    exc.operation = "unexpected"  # type: ignore[assignment]
+
+    problem = problem_from_exception(exc)
+
+    assert problem.status == 409
+    assert problem.code == "document_partial_failure"
+    assert "retry" in problem.detail.lower()
+    assert problem.detail not in DOCUMENT_PARTIAL_DETAILS.values()

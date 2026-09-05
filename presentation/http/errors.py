@@ -11,6 +11,7 @@ from application.errors import (
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
 )
+from application.manage_documents import PartialCreateFailure
 from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
@@ -36,6 +37,9 @@ _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
 _INTERNAL_FAILURE_DETAIL = "An unexpected error occurred."
 _VALIDATION_TITLE = "Request validation failed"
 _PROBLEM_BASE = "https://kernector.dev/problems"
+_DOCUMENT_PARTIAL_FALLBACK = (
+    "The document operation did not finish; retry or delete the document."
+)
 
 DOCUMENT_NOT_FOUND_DETAIL = "The requested document was not found."
 DOCUMENT_UNREADABLE_DETAIL = (
@@ -43,11 +47,9 @@ DOCUMENT_UNREADABLE_DETAIL = (
     "Try a different file or export it as plain text or Markdown."
 )
 UPLOAD_TOO_LARGE_DETAIL = "Upload must be at most {max_bytes} bytes."
+MISSING_UPLOAD_FILE_DETAIL = "Choose a document to upload before submitting."
 DOCUMENT_PARTIAL_DETAILS = {
-    "create": (
-        "Upload failed and its status could not be saved; retry, or "
-        "delete any visible pending document."
-    ),
+    "create": PartialCreateFailure.MESSAGE,
     "replace": "Replacement did not complete; retry Replace or Delete.",
     "delete": "Retry Delete to finish removing the catalog row.",
 }
@@ -67,6 +69,14 @@ class UnsupportedDocumentTypeError(RuntimeError):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class MissingUploadFileError(RuntimeError):
+    """Multipart upload omitted the file or sent zero bytes."""
+
+    def __init__(self) -> None:
+        self.detail = MISSING_UPLOAD_FILE_DETAIL
+        super().__init__(self.detail)
 
 
 class ProblemError(BaseModel):
@@ -170,6 +180,15 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
+    if isinstance(exc, MissingUploadFileError):
+        return _problem(
+            code="missing_upload_file",
+            title="Missing upload file",
+            status=422,
+            detail=exc.detail,
+            instance=instance,
+            request_id=request_id,
+        )
     if isinstance(exc, UnsupportedDocumentTypeError):
         return _problem(
             code="unsupported_document_type",
@@ -198,11 +217,14 @@ def problem_from_exception(
             request_id=request_id,
         )
     if isinstance(exc, PartialDocumentOperationError):
+        operation = getattr(exc, "operation", None)
         return _problem(
             code="document_partial_failure",
             title="Document partial failure",
             status=409,
-            detail=DOCUMENT_PARTIAL_DETAILS[exc.operation],
+            detail=DOCUMENT_PARTIAL_DETAILS.get(
+                operation, _DOCUMENT_PARTIAL_FALLBACK
+            ),
             instance=instance,
             request_id=request_id,
         )

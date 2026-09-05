@@ -58,3 +58,11 @@ def test_failed_document_uses_fixed_summary_not_adapter_text() -> None:
     )
     assert raw not in str(payload)
     assert "/var/tmp" not in str(payload)
+
+
+def test_pending_document_is_not_reported_as_error() -> None:
+    projected = catalog_document_response(_doc(status=CatalogStatus.PENDING))
+
+    assert projected.has_error is False
+    assert projected.error_summary is None
+    assert projected.status == "pending"

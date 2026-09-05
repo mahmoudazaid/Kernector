@@ -176,9 +176,8 @@ def test_create_rejects_missing_file(client_factory) -> None:
 
     assert response.status_code == 422
     body = response.json()
-    assert body["code"] == "validation_error"
-    pointers = [err["pointer"] for err in body.get("errors", [])]
-    assert "#/file" in pointers
+    assert body["code"] == "missing_upload_file"
+    assert body["detail"] == "Choose a document to upload before submitting."
 
 
 def test_create_rejects_unsupported_suffix(client_factory) -> None:
@@ -236,8 +235,26 @@ def test_create_rejects_zero_byte_file(client_factory) -> None:
 
     assert response.status_code == 422
     body = response.json()
-    assert body["code"] == "validation_error"
-    assert any(err["pointer"] == "#/file" for err in body.get("errors", []))
+    assert body["code"] == "missing_upload_file"
+    assert body["detail"] == "Choose a document to upload before submitting."
+
+
+def test_blank_source_id_is_422_not_500(client_factory) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    put = client.put(
+        "/api/v1/documents/%20",
+        files={"file": ("spec.md", b"# x", "text/markdown")},
+    )
+    delete = client.delete("/api/v1/documents/%20")
+
+    assert put.status_code == 422
+    assert put.json()["code"] == "validation_error"
+    assert delete.status_code == 422
+    assert delete.json()["code"] == "validation_error"
+    assert ledger["replaced"] == []
+    assert ledger["deleted"] == []
 
 
 def test_replace_keeps_source_id_and_forces_knowledge_document(

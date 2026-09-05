@@ -294,11 +294,6 @@ export interface components {
       /** Supported Suffixes */
       supported_suffixes: string[];
     };
-    /** HTTPValidationError */
-    HTTPValidationError: {
-      /** Detail */
-      detail?: components["schemas"]["ValidationError"][];
-    };
     /**
      * HealthResponse
      * @description Operational readiness payload for unversioned ``GET /health``.
@@ -551,19 +546,6 @@ export interface components {
       /** Tool Name */
       tool_name: string;
     };
-    /** ValidationError */
-    ValidationError: {
-      /** Context */
-      ctx?: Record<string, never>;
-      /** Input */
-      input?: unknown;
-      /** Location */
-      loc: (string | number)[];
-      /** Message */
-      msg: string;
-      /** Error Type */
-      type: string;
-    };
   };
   responses: never;
   parameters: never;
@@ -776,15 +758,6 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
-      /** @description Provider error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
-        };
-      };
     };
   };
   replace_document_api_v1_documents__source_id__put: {
@@ -865,15 +838,6 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
-      /** @description Provider error */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
-        };
-      };
     };
   };
   delete_document_api_v1_documents__source_id__delete: {
@@ -912,13 +876,13 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
-      /** @description Validation Error */
+      /** @description Validation error */
       422: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Server error */

@@ -56,6 +56,7 @@ from infrastructure.documents.uploaded_files import (
     UnreadableDocumentError,
     UploadedFileExtractor,
     extract_document,
+    unsupported_document_type_detail,
 )
 from infrastructure.embeddings.openrouter import (
     EmbeddingConfigError,
@@ -75,6 +76,9 @@ from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStor
 from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
+
+# Re-export so presentation adapters share one unsupported-type sentence.
+unsupported_upload_type_detail = unsupported_document_type_detail
 
 logger = logging.getLogger(__name__)
 
