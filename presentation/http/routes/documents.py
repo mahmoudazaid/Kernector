@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
@@ -25,9 +25,6 @@ from presentation.http.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
-
-# Multipart framing adds path/headers beyond the file bytes themselves.
-_MULTIPART_OVERHEAD_BYTES = 64_000
 
 
 def _require_source_id(source_id: str) -> str:
@@ -82,21 +79,6 @@ def _read_upload(
     return UploadPayload(file_name=upload.filename, content=content)
 
 
-async def _reject_oversized_content_length(
-    request: Request, max_upload_bytes: int
-) -> None:
-    """Fail fast when Content-Length already exceeds the upload budget."""
-    raw = request.headers.get("content-length")
-    if raw is None:
-        return
-    try:
-        length = int(raw)
-    except ValueError:
-        return
-    if length > max_upload_bytes + _MULTIPART_OVERHEAD_BYTES:
-        raise UploadTooLargeError(max_bytes=max_upload_bytes)
-
-
 @router.get(
     "/documents",
     responses=problem_responses(405, 500),
@@ -118,13 +100,11 @@ def list_documents(ops: DocumentOperationsDep) -> DocumentListResponse:
     status_code=201,
     responses=problem_responses(405, 409, 413, 422, 500),
 )
-async def create_document(
-    request: Request,
+def create_document(
     ops: DocumentOperationsDep,
     file: UploadFile | None = File(default=None),
 ) -> CatalogDocumentResponse:
     """Upload a new document; always allocates a system-managed source ID."""
-    await _reject_oversized_content_length(request, ops.max_upload_bytes)
     payload = _read_upload(
         file,
         max_upload_bytes=ops.max_upload_bytes,
@@ -138,15 +118,13 @@ async def create_document(
     "/documents/{source_id}",
     responses=problem_responses(404, 405, 409, 413, 422, 500),
 )
-async def replace_document(
+def replace_document(
     source_id: str,
-    request: Request,
     ops: DocumentOperationsDep,
     file: UploadFile | None = File(default=None),
 ) -> CatalogDocumentResponse:
     """Replace document content under the same source ID."""
     source_id = _require_source_id(source_id)
-    await _reject_oversized_content_length(request, ops.max_upload_bytes)
     payload = _read_upload(
         file,
         max_upload_bytes=ops.max_upload_bytes,

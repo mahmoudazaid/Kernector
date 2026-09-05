@@ -1031,7 +1031,6 @@ a {
 
 .kern-documents h1 {
   margin: 0;
-  font-family: var(--kern-font-display);
   font-size: clamp(1.8rem, 2.4vw, 2.4rem);
   letter-spacing: -0.02em;
 }
@@ -1089,7 +1088,7 @@ a {
 }
 
 .kern-documents-row-button:focus-visible {
-  outline: 2px solid var(--kern-focus-ring);
+  outline: 2px solid var(--kern-focus);
   outline-offset: 2px;
 }
 
@@ -1162,7 +1161,7 @@ a {
   padding: 0;
   margin: 0;
   cursor: pointer;
-  background: color-mix(in srgb, var(--kern-ink) 28%, transparent);
+  background: var(--kern-scrim);
 }
 
 .kern-dialog-backdrop:disabled {
@@ -1563,8 +1562,13 @@ a {
   .kern-theme,
   .kern-btn,
   .kern-btn-secondary,
-  .kern-btn-danger {
+  .kern-btn-danger,
+  .kern-documents-delete {
     min-height: 44px;
+  }
+
+  .kern-documents-delete {
+    min-width: 44px;
   }
 }
 
@@ -1587,7 +1591,8 @@ a {
   .kern-theme:active,
   .kern-nav-item:active,
   .kern-chat-send:hover:not(:disabled),
-  .kern-chat-send:active:not(:disabled) {
+  .kern-chat-send:active:not(:disabled),
+  .kern-documents-delete:hover:not(:disabled) {
     transform: none;
   }
 }

@@ -93,15 +93,9 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
         "HTTP CORS allowlist: %s",
         ", ".join(origins) if origins else "(empty — production default)",
     )
-    if origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_credentials=False,
-            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allow_headers=["*"],
-        )
 
+    # Register before CORSMiddleware so CORS stays outermost: a 413 from this
+    # middleware must still carry Access-Control-Allow-Origin for the browser.
     max_upload_bytes = load_runtime_settings().max_upload_bytes
 
     @app.middleware("http")
@@ -130,6 +124,15 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
                     )
                     return _problem_response(problem)
         return await call_next(request)
+
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+        )
 
     # Taxonomy failures are ValueError / RuntimeError subclasses. Registering
     # those roots (not bare Exception) keeps handlers on ExceptionMiddleware,

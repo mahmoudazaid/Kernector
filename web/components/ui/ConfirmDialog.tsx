@@ -15,6 +15,15 @@ export type ConfirmDialogProps = {
   onCancel: () => void;
 };
 
+const FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+
 export function ConfirmDialog({
   open,
   title,
@@ -29,6 +38,7 @@ export function ConfirmDialog({
   const titleId = useId();
   const descriptionId = useId();
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
 
@@ -36,24 +46,64 @@ export function ConfirmDialog({
     if (!open) {
       return;
     }
-    cancelRef.current?.focus();
-  }, [open]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    cancelRef.current?.focus();
+
+    function focusableNodes(): HTMLElement[] {
+      const root = dialogRef.current;
+      if (!root) {
+        return [];
+      }
+      return Array.from(
+        root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((node) => !node.hasAttribute("disabled") && node.tabIndex !== -1);
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) {
+      if (event.key === "Escape") {
         event.preventDefault();
         onCancelRef.current();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const nodes = focusableNodes();
+      if (nodes.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey) {
+        if (active === first || !dialogRef.current?.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (active === last || !dialogRef.current?.contains(active)) {
+        event.preventDefault();
+        first.focus();
       }
     }
 
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, busy]);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
+  }, [open]);
 
   if (!open) {
     return null;
@@ -65,14 +115,12 @@ export function ConfirmDialog({
         type="button"
         className="kern-dialog-backdrop"
         aria-label="Dismiss dialog"
-        disabled={busy}
         onClick={() => {
-          if (!busy) {
-            onCancel();
-          }
+          onCancel();
         }}
       />
       <div
+        ref={dialogRef}
         className="kern-dialog"
         role="dialog"
         aria-modal="true"
@@ -86,12 +134,7 @@ export function ConfirmDialog({
           {description}
         </p>
         <div className="kern-dialog-actions">
-          <Button
-            ref={cancelRef}
-            variant="secondary"
-            disabled={busy}
-            onClick={onCancel}
-          >
+          <Button ref={cancelRef} variant="secondary" onClick={onCancel}>
             {cancelLabel}
           </Button>
           <Button

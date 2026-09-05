@@ -74,7 +74,7 @@ function formatUploadedAt(value: string): string {
 
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    return error.errors?.[0]?.detail ?? error.detail;
+    return error.detail;
   }
   return "The request failed. Please try again later.";
 }
@@ -144,11 +144,7 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
-  useEffect(() => {
-    setReplaceFile(null);
-    setReplaceInputKey((key) => key + 1);
-  }, [selectedId]);
-
+  const dialogOpen = pendingDelete !== null;
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
@@ -173,6 +169,14 @@ export function DocumentsPanel({
   function clearReplaceInput() {
     setReplaceFile(null);
     setReplaceInputKey((key) => key + 1);
+  }
+
+  function selectDocument(sourceId: string) {
+    if (sourceId === selectedId) {
+      return;
+    }
+    setSelectedId(sourceId);
+    clearReplaceInput();
   }
 
   async function onUpload(event: FormEvent) {
@@ -335,7 +339,9 @@ export function DocumentsPanel({
                     key={doc.source_id}
                     className={selectedRow ? "is-selected" : undefined}
                     onClick={() => {
-                      setSelectedId(doc.source_id);
+                      if (!dialogOpen) {
+                        selectDocument(doc.source_id);
+                      }
                     }}
                   >
                     <td>
@@ -343,6 +349,7 @@ export function DocumentsPanel({
                         type="button"
                         className="kern-documents-row-button"
                         aria-pressed={selectedRow}
+                        disabled={dialogOpen}
                       >
                         {doc.file_name}
                       </button>
@@ -358,7 +365,7 @@ export function DocumentsPanel({
                         type="button"
                         className="kern-documents-delete"
                         aria-label={`Delete ${doc.file_name}`}
-                        disabled={busy}
+                        disabled={busy || dialogOpen}
                         onClick={(event) => {
                           event.stopPropagation();
                           setPendingDelete(doc);
@@ -406,7 +413,10 @@ export function DocumentsPanel({
       ) : null}
 
       <form className="kern-documents-form" onSubmit={onUpload}>
-        <fieldset className="kern-settings-fieldset" disabled={busy || !constraints}>
+        <fieldset
+          className="kern-settings-fieldset"
+          disabled={busy || dialogOpen || !constraints}
+        >
           <legend>Upload new</legend>
           <p className="kern-settings-help">
             A system-managed source ID is assigned automatically.
@@ -431,7 +441,10 @@ export function DocumentsPanel({
 
       {selected ? (
         <form className="kern-documents-form" onSubmit={onReplace}>
-          <fieldset className="kern-settings-fieldset" disabled={busy}>
+          <fieldset
+            className="kern-settings-fieldset"
+            disabled={busy || dialogOpen}
+          >
             <legend>Replace</legend>
             <p className="kern-settings-help">
               Keeps source ID {selected.source_id} and replaces stored chunks.
@@ -468,12 +481,10 @@ export function DocumentsPanel({
         tone="danger"
         busy={busy}
         onCancel={() => {
-          if (!busy) {
-            setPendingDelete(null);
-          }
+          setPendingDelete(null);
         }}
         onConfirm={() => {
-          if (pendingDelete) {
+          if (pendingDelete && !busy) {
             void onDelete(pendingDelete);
           }
         }}
