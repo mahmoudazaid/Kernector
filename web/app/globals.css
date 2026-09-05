@@ -485,6 +485,143 @@ a {
   background: var(--kern-accent);
 }
 
+.kern-settings {
+  display: grid;
+  gap: var(--kern-space-4);
+  max-width: 40rem;
+}
+
+.kern-settings h1 {
+  margin: 0;
+  font-size: var(--kern-text-xl);
+  font-weight: 500;
+}
+
+.kern-settings-lead {
+  margin: 0;
+  color: var(--kern-muted);
+}
+
+.kern-settings-fieldset {
+  margin: 0;
+  padding: var(--kern-space-3);
+  border: 1px solid var(--kern-line);
+  border-radius: var(--kern-radius-sm);
+}
+
+.kern-settings-fieldset legend {
+  padding: 0 var(--kern-space-2);
+  font-weight: 500;
+}
+
+.kern-settings-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kern-space-3);
+}
+
+.kern-settings-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kern-space-2);
+  cursor: pointer;
+}
+
+.kern-settings-stack {
+  display: grid;
+  gap: var(--kern-space-3);
+}
+
+.kern-settings-field {
+  display: grid;
+  gap: var(--kern-space-2);
+}
+
+.kern-settings-field > label {
+  font-weight: 500;
+}
+
+.kern-settings-callout .kern-btn,
+.kern-settings-callout .kern-btn-secondary {
+  margin-top: var(--kern-space-3);
+}
+
+.kern-settings-help {
+  margin: 0;
+  color: var(--kern-muted);
+  font-weight: 400;
+  font-size: var(--kern-text-sm);
+}
+
+.kern-settings-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--kern-space-3);
+  border: 1px solid var(--kern-line);
+  border-radius: var(--kern-radius-sm);
+  color: var(--kern-ink);
+  background: var(--kern-surface);
+  font: inherit;
+}
+
+.kern-settings-input:focus-visible {
+  outline: 2px solid var(--kern-focus);
+  outline-offset: 2px;
+}
+
+.kern-settings-hint {
+  margin: 0;
+  color: var(--kern-muted);
+  font-size: var(--kern-text-sm);
+}
+
+.kern-settings-hint code,
+.kern-settings-callout code {
+  font-family: var(--kern-font-mono);
+  font-size: 0.92em;
+}
+
+.kern-settings-callout {
+  padding: var(--kern-space-3);
+  border: 1px solid var(--kern-line);
+  border-radius: var(--kern-radius-sm);
+  background: var(--kern-surface-2);
+}
+
+.kern-settings-callout p,
+.kern-settings-callout ol {
+  margin: 0 0 var(--kern-space-2);
+}
+
+.kern-settings-callout p:last-child,
+.kern-settings-callout ol:last-child,
+.kern-settings-callout [role="status"] > :last-child {
+  margin-bottom: 0;
+}
+
+.kern-settings-callout--error {
+  border-color: color-mix(in srgb, var(--kern-danger) 45%, var(--kern-line));
+}
+
+.kern-settings-callout--warn {
+  border-color: color-mix(in srgb, var(--kern-accent) 40%, var(--kern-line));
+}
+
+.kern-settings-details {
+  padding: var(--kern-space-3);
+  border: 1px solid var(--kern-line);
+  border-radius: var(--kern-radius-sm);
+}
+
+.kern-settings-details summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.kern-settings-details[open] summary {
+  margin-bottom: var(--kern-space-3);
+}
+
 /* Compact-shell breakpoint: collapse sidebar into a mobile drawer. */
 @media (max-width: 680px) {
   .kern-menu {

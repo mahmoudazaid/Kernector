@@ -8,6 +8,7 @@ from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
     InsufficientEvidenceError,
+    OllamaNotConfiguredError,
 )
 from composition.errors import (
     DocumentOperationError,
@@ -58,6 +59,7 @@ _PROBLEM_MEDIA_TYPE = "application/problem+json"
 _PROBLEM_STATUS_DESCRIPTIONS: dict[int, str] = {
     404: "Not found",
     405: "Method not allowed",
+    409: "Conflict",
     422: "Validation error",
     500: "Server error",
     502: "Provider error",
@@ -127,6 +129,15 @@ def problem_from_exception(
             title="Insufficient evidence",
             status=422,
             detail=_INSUFFICIENT_EVIDENCE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, OllamaNotConfiguredError):
+        return _problem(
+            code="ollama_unconfigured",
+            title="Ollama not configured",
+            status=409,
+            detail="Ollama base URL is not configured on the server.",
             instance=instance,
             request_id=request_id,
         )

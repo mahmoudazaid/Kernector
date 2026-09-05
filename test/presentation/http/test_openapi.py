@@ -8,6 +8,8 @@ _PROBLEM = "application/problem+json"
 _ERROR_STATUSES = {
     "/health": ("405",),
     "/api/v1/capabilities": ("405", "500"),
+    "/api/v1/settings": ("405", "500"),
+    "/api/v1/ollama/status": ("405", "409", "500"),
 }
 
 

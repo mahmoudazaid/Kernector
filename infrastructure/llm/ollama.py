@@ -100,9 +100,18 @@ def probe_ollama(base_url: str, timeout: float) -> dict:
         response = requests.get(
             f"{base_url.rstrip('/')}/api/tags",
             timeout=timeout,
+            allow_redirects=False,
         )
         response.raise_for_status()
-        models = [m["name"] for m in response.json().get("models", [])]
+        payload = response.json()
+        raw_models = payload.get("models", []) if isinstance(payload, dict) else []
+        models: list[str] = []
+        if isinstance(raw_models, list):
+            for entry in raw_models:
+                if isinstance(entry, dict):
+                    name = entry.get("name")
+                    if isinstance(name, str) and name:
+                        models.append(name)
         return {"reachable": True, "models": models}
-    except requests.exceptions.RequestException:
+    except (requests.exceptions.RequestException, ValueError, TypeError):
         return {"reachable": False, "models": []}

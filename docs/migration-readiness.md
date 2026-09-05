@@ -31,6 +31,12 @@ A feature is ready to migrate only when all of the following hold:
 6. **No live-model requirement for foundation gates** — Contract and foundation
    tests do not require real external model or embedding calls.
 
+### Settings controls (#237)
+
+Satisfied for provider/model/settings catalog + Ollama probe + Next Settings UI
+(client-local persistence under `kernector:runtime-settings:v1`). Ask-turn
+consumption of those selections is owned by the chat parity ticket (#235).
+
 ## Out of scope for readiness alone
 
 - Public deployment or production hardening

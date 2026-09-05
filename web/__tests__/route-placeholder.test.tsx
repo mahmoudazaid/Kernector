@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import { RoutePlaceholder } from "@/components/placeholders/RoutePlaceholder";
 import { NAV_ITEMS } from "@/lib/navigation";
 
+const PLACEHOLDER_ITEMS = NAV_ITEMS.filter((item) => item.href !== "/settings");
+
 describe("placeholder routes", () => {
-  it.each(NAV_ITEMS)(
+  it.each(PLACEHOLDER_ITEMS)(
     "renders $label as a planned placeholder without feature UI",
     ({ label }) => {
       render(<RoutePlaceholder title={label} />);
