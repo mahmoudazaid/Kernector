@@ -18,6 +18,7 @@ const COLOR_TOKENS = [
   "--kern-control-highlight",
   "--kern-control-shade",
   "--kern-control-sheen",
+  "--kern-control-sheen-fill",
   "--kern-accent-pastel",
 ] as const;
 

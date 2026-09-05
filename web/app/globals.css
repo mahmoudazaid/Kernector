@@ -421,7 +421,7 @@ a {
   color: light-dark(#fff, var(--kern-bg));
   border-color: color-mix(in srgb, var(--kern-accent) 40%, transparent);
   background:
-    var(--kern-control-sheen),
+    var(--kern-control-sheen-fill),
     linear-gradient(
       180deg,
       color-mix(in srgb, #fff 8%, var(--kern-accent)),
@@ -791,10 +791,10 @@ a {
 }
 
 .kern-select-option.is-active {
-  border-color: color-mix(in srgb, var(--kern-accent) 55%, transparent);
+  border-color: var(--kern-accent);
   box-shadow:
     var(--kern-control-emboss),
-    inset 0 0 0 2px color-mix(in srgb, var(--kern-accent) 30%, transparent);
+    inset 0 0 0 2px var(--kern-accent);
 }
 
 .kern-select-menu:focus {
@@ -1177,7 +1177,7 @@ a {
   border-radius: 50%;
   color: light-dark(#fff, var(--kern-bg));
   background:
-    var(--kern-control-sheen),
+    var(--kern-control-sheen-fill),
     linear-gradient(
       180deg,
       color-mix(in srgb, #fff 12%, var(--kern-accent)),

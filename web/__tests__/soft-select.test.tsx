@@ -63,6 +63,16 @@ describe("SoftSelect", () => {
       "aria-activedescendant",
       before,
     );
+
+    const trigger = screen.getByLabelText(/^Model$/i);
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    rerender(<Host options={["a", "b", "c"]} />);
+    expect(trigger).toHaveFocus();
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "aria-activedescendant",
+      before,
+    );
   });
 
   it("closes when focus leaves the control", async () => {

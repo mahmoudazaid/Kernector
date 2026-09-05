@@ -82,6 +82,21 @@
       rgb(255 255 255 / 0.08) 100%
     )
   );
+  /* Weaker gloss for accent-filled controls so white labels stay AA */
+  --kern-control-sheen-fill: light-dark(
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.12) 0%,
+      rgb(255 255 255 / 0.02) 42%,
+      rgb(255 255 255 / 0.06) 100%
+    ),
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.16) 0%,
+      rgb(255 255 255 / 0.02) 42%,
+      rgb(255 255 255 / 0.08) 100%
+    )
+  );
   --kern-control-emboss: inset 0 1px 1px var(--kern-control-highlight),
     inset 0 -1px 1px var(--kern-control-shade),
     0 3px 10px -3px var(--kern-control-shade);
@@ -116,6 +131,12 @@
     rgb(255 255 255 / 0.08) 42%,
     rgb(255 255 255 / 0.28) 100%
   );
+  --kern-control-sheen-fill: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.12) 0%,
+    rgb(255 255 255 / 0.02) 42%,
+    rgb(255 255 255 / 0.06) 100%
+  );
   --kern-accent-pastel: color-mix(in srgb, var(--kern-accent) 58%, #a8bbb4);
 }
 
@@ -136,6 +157,12 @@
   --kern-control-highlight: rgb(255 255 255 / 0.14);
   --kern-control-shade: rgb(0 0 0 / 0.45);
   --kern-control-sheen: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.16) 0%,
+    rgb(255 255 255 / 0.02) 42%,
+    rgb(255 255 255 / 0.08) 100%
+  );
+  --kern-control-sheen-fill: linear-gradient(
     115deg,
     rgb(255 255 255 / 0.16) 0%,
     rgb(255 255 255 / 0.02) 42%,
