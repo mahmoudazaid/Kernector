@@ -87,3 +87,19 @@ def test_cors_does_not_echo_disallowed_origin() -> None:
     )
 
     assert response.headers.get("access-control-allow-origin") != "https://evil.example"
+
+
+def test_cors_preflight_allows_post() -> None:
+    client = TestClient(create_app(cors_origins=(_ORIGIN,)))
+    response = client.options(
+        "/api/v1/chat/ask",
+        headers={
+            "Origin": _ORIGIN,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.headers.get("access-control-allow-origin") == _ORIGIN
+    allow_methods = response.headers.get("access-control-allow-methods", "")
+    assert "POST" in allow_methods.upper()

@@ -8,10 +8,24 @@
 
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
+/** Versioned chat transcript key — owned by Chat (#235), not Settings. */
+export const CHAT_MESSAGES_STORAGE_KEY = "kernector:chat-messages:v1";
+
 export type StoredRuntimeSettings = {
   provider: string;
   model: string;
   settings: Record<string, number>;
+};
+
+export type StoredChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  displayOnly?: boolean;
+  citations?: unknown;
+  toolsUsed?: unknown;
+  run?: unknown;
+  toolRun?: unknown;
 };
 
 function isStoredRuntimeSettings(value: unknown): value is StoredRuntimeSettings {
@@ -30,6 +44,19 @@ function isStoredRuntimeSettings(value: unknown): value is StoredRuntimeSettings
   }
   return Object.values(record.settings as Record<string, unknown>).every(
     (entry) => typeof entry === "number" && Number.isFinite(entry),
+  );
+}
+
+function isStoredChatMessage(value: unknown): value is StoredChatMessage {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    (record.role === "user" || record.role === "assistant") &&
+    typeof record.content === "string" &&
+    (record.displayOnly === undefined || typeof record.displayOnly === "boolean")
   );
 }
 
@@ -57,5 +84,46 @@ export function saveRuntimeSettings(value: StoredRuntimeSettings): void {
     localStorage.setItem(RUNTIME_SETTINGS_STORAGE_KEY, JSON.stringify(value));
   } catch {
     // Quota / private mode — ignore; in-memory UI state still works.
+  }
+}
+
+/**
+ * Load the chat transcript, or ``[]`` when absent/invalid (never throws).
+ */
+export function loadChatMessages(): StoredChatMessage[] {
+  try {
+    const raw = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.every(isStoredChatMessage) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Persist the chat transcript for the next visit.
+ */
+export function saveChatMessages(messages: StoredChatMessage[]): void {
+  try {
+    localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
+  } catch {
+    // Quota / private mode — ignore.
+  }
+}
+
+/**
+ * Clear the persisted chat transcript (New chat). Leaves runtime settings alone.
+ */
+export function clearChatMessages(): void {
+  try {
+    localStorage.removeItem(CHAT_MESSAGES_STORAGE_KEY);
+  } catch {
+    // ignore
   }
 }

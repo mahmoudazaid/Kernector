@@ -24,6 +24,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/chat/ask": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Chat Ask
+     * @description Run one grounded ask turn through composition.
+     */
+    post: operations["chat_ask_api_v1_chat_ask_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/ollama/status": {
     parameters: {
       query?: never;
@@ -99,6 +119,74 @@ export interface components {
       providers: string[];
       /** Software Delivery Tools Enabled */
       software_delivery_tools_enabled: boolean;
+    };
+    /**
+     * ChatAskRequest
+     * @description Wire body for ``POST /api/v1/chat/ask``.
+     */
+    ChatAskRequest: {
+      /** History */
+      history?: components["schemas"]["ChatHistoryMessage"][];
+      /** Query */
+      query: string;
+      runtime?: components["schemas"]["ChatRuntimeRequest"] | null;
+    };
+    /**
+     * ChatAskResponse
+     * @description Successful grounded ask turn.
+     */
+    ChatAskResponse: {
+      /** Answer */
+      answer: string;
+      /** Citations */
+      citations: components["schemas"]["CitationResponse"][];
+      run?: components["schemas"]["RunMetaResponse"] | null;
+      tool_run?: components["schemas"]["ToolRunResponse"] | null;
+      /** Tools Used */
+      tools_used: components["schemas"]["ToolUsedResponse"][];
+    };
+    /**
+     * ChatHistoryMessage
+     * @description One prior conversation turn for grounded ask.
+     */
+    ChatHistoryMessage: {
+      /** Content */
+      content: string;
+      /**
+       * Role
+       * @enum {string}
+       */
+      role: "user" | "assistant";
+    };
+    /**
+     * ChatRuntimeRequest
+     * @description Optional client runtime overrides from Settings localStorage (#237).
+     */
+    ChatRuntimeRequest: {
+      /** Model */
+      model?: string | null;
+      /** Ollama Base Url */
+      ollama_base_url?: string | null;
+      /** Provider */
+      provider?: ("openrouter" | "ollama") | null;
+      /** Settings */
+      settings?: {
+        [key: string]: number;
+      };
+    };
+    /**
+     * CitationResponse
+     * @description Provenance pointer on a grounded answer.
+     */
+    CitationResponse: {
+      /** Chunk Index */
+      chunk_index?: number | null;
+      /** Quote */
+      quote?: string | null;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
     };
     /**
      * HealthResponse
@@ -207,6 +295,62 @@ export interface components {
       pointer: string;
     };
     /**
+     * RiskFactorResponse
+     * @description One risk factor with provenance ids only.
+     */
+    RiskFactorResponse: {
+      /** Factor Id */
+      factor_id: string;
+      /** References */
+      references: components["schemas"]["SourceReferenceResponse"][];
+      /** Weight */
+      weight: number;
+    };
+    /**
+     * RiskScoreResponse
+     * @description Structured risk assessment for the chat UI.
+     */
+    RiskScoreResponse: {
+      /** Factors */
+      factors: components["schemas"]["RiskFactorResponse"][];
+      /** Level */
+      level: string;
+      /** Rationale */
+      rationale: string;
+      /** Score */
+      score: number;
+    };
+    /**
+     * RunMetaResponse
+     * @description Safe run fields Streamlit ``run_detail_lines`` would render.
+     */
+    RunMetaResponse: {
+      /** Citation Count */
+      citation_count?: number | null;
+      /** Completion Tokens */
+      completion_tokens?: number | null;
+      /** Hit Count */
+      hit_count?: number | null;
+      /** Latency Ms */
+      latency_ms?: number | null;
+      /** Model */
+      model?: string | null;
+      /** Outcome */
+      outcome?: string | null;
+      /** Pack */
+      pack?: string | null;
+      /** Prompt Tokens */
+      prompt_tokens?: number | null;
+      /** Query Rewritten */
+      query_rewritten?: boolean | null;
+      /** Request Id */
+      request_id?: string | null;
+      /** Tools */
+      tools?: string[];
+      /** Total Tokens */
+      total_tokens?: number | null;
+    };
+    /**
      * RuntimeSettingsResponse
      * @description Catalog for provider/model/settings controls (Streamlit sidebar parity).
      */
@@ -219,6 +363,82 @@ export interface components {
       openrouter: components["schemas"]["OpenRouterSettingsResponse"];
       /** Providers */
       providers: string[];
+    };
+    /**
+     * SourceReferenceResponse
+     * @description Provenance id/type for projected tool results.
+     */
+    SourceReferenceResponse: {
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+    };
+    /**
+     * TestCaseResponse
+     * @description One generated test case.
+     */
+    TestCaseResponse: {
+      /** Expected */
+      expected: string;
+      /** References */
+      references: components["schemas"]["SourceReferenceResponse"][];
+      /** Steps */
+      steps: string[];
+      /** Title */
+      title: string;
+    };
+    /**
+     * TestCasesResponse
+     * @description Generated test cases for the chat UI.
+     */
+    TestCasesResponse: {
+      /** Cases */
+      cases: components["schemas"]["TestCaseResponse"][];
+      /** Output Style */
+      output_style: string;
+    };
+    /**
+     * ToolCallResponse
+     * @description One projected tool invocation (authored summary, never opaque payload).
+     */
+    ToolCallResponse: {
+      /** Ok */
+      ok: boolean;
+      /**
+       * Summary
+       * @default
+       */
+      summary: string;
+      /** Tool Name */
+      tool_name: string;
+    };
+    /**
+     * ToolRunResponse
+     * @description Projected Software Delivery tool-run view (no opaque payloads).
+     */
+    ToolRunResponse: {
+      /** Calls */
+      calls: components["schemas"]["ToolCallResponse"][];
+      /**
+       * Markdown
+       * @default
+       */
+      markdown: string;
+      risk?: components["schemas"]["RiskScoreResponse"] | null;
+      /** Summary */
+      summary: string;
+      test_cases?: components["schemas"]["TestCasesResponse"] | null;
+    };
+    /**
+     * ToolUsedResponse
+     * @description Opaque tool contribution measured by character count only.
+     */
+    ToolUsedResponse: {
+      /** Result Chars */
+      result_chars: number;
+      /** Tool Name */
+      tool_name: string;
     };
   };
   responses: never;
@@ -258,6 +478,66 @@ export interface operations {
       };
       /** @description Server error */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  chat_ask_api_v1_chat_ask_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChatAskRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChatAskResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
         headers: {
           [name: string]: unknown;
         };

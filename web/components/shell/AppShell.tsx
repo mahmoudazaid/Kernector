@@ -3,16 +3,14 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { PRODUCT_LABEL } from "@/lib/navigation";
-import { BackendStatus } from "@/components/shell/BackendStatus";
 import { SidebarNav } from "@/components/shell/SidebarNav";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
 type AppShellProps = {
   children: ReactNode;
-  apiBaseUrl: string;
 };
 
-export function AppShell({ children, apiBaseUrl }: AppShellProps) {
+export function AppShell({ children }: AppShellProps) {
   const [navOpen, setNavOpen] = useState(false);
 
   return (
@@ -55,7 +53,6 @@ export function AppShell({ children, apiBaseUrl }: AppShellProps) {
           <span className="kern-brand-text">Kernector</span>
         </Link>
         <span className="kern-product-label">{PRODUCT_LABEL}</span>
-        <BackendStatus apiBaseUrl={apiBaseUrl} />
         <ThemeToggle />
       </header>
       <div className="kern-body">

@@ -18,6 +18,7 @@
   /* Layout */
   --kern-radius: 8px;
   --kern-radius-sm: 6px;
+  --kern-radius-pill: 999px;
   --kern-sidebar-width: 232px;
 
   /* Typography */
@@ -57,7 +58,52 @@
 
   /* Motion */
   --kern-duration: 160ms;
+  --kern-duration-emphasis: 280ms;
   --kern-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --kern-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* Control / button face — soft glass emboss (shared across actions) */
+  --kern-control-highlight: light-dark(
+    rgb(255 255 255 / 0.55),
+    rgb(255 255 255 / 0.14)
+  );
+  --kern-control-shade: light-dark(rgb(15 20 24 / 0.12), rgb(0 0 0 / 0.45));
+  --kern-control-sheen: light-dark(
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.55) 0%,
+      rgb(255 255 255 / 0.08) 42%,
+      rgb(255 255 255 / 0.28) 100%
+    ),
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.16) 0%,
+      rgb(255 255 255 / 0.02) 42%,
+      rgb(255 255 255 / 0.08) 100%
+    )
+  );
+  /* Weaker gloss for accent-filled controls so white labels stay AA.
+     Dark matches --kern-control-sheen on purpose (peak α 0.16 already safe). */
+  --kern-control-sheen-fill: light-dark(
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.12) 0%,
+      rgb(255 255 255 / 0.02) 42%,
+      rgb(255 255 255 / 0.06) 100%
+    ),
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0.16) 0%,
+      rgb(255 255 255 / 0.02) 42%,
+      rgb(255 255 255 / 0.08) 100%
+    )
+  );
+  --kern-control-emboss: inset 0 1px 1px var(--kern-control-highlight),
+    inset 0 -1px 1px var(--kern-control-shade),
+    0 3px 10px -3px var(--kern-control-shade);
+  --kern-control-emboss-press: inset 0 1px 1px var(--kern-control-highlight),
+    inset 0 -1px 1px var(--kern-control-shade),
+    0 1px 4px -1px var(--kern-control-shade);
 }
 
 :root[data-theme="light"] {
@@ -74,6 +120,20 @@
   --kern-danger: #b42318;
   --kern-shadow-1: 0 1px 2px rgb(15 20 24 / 0.06);
   --kern-shadow-2: 0 8px 24px rgb(15 20 24 / 0.1);
+  --kern-control-highlight: rgb(255 255 255 / 0.55);
+  --kern-control-shade: rgb(15 20 24 / 0.12);
+  --kern-control-sheen: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.55) 0%,
+    rgb(255 255 255 / 0.08) 42%,
+    rgb(255 255 255 / 0.28) 100%
+  );
+  --kern-control-sheen-fill: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.12) 0%,
+    rgb(255 255 255 / 0.02) 42%,
+    rgb(255 255 255 / 0.06) 100%
+  );
 }
 
 :root[data-theme="dark"] {
@@ -90,4 +150,19 @@
   --kern-danger: #fca5a5;
   --kern-shadow-1: 0 1px 2px rgb(0 0 0 / 0.35);
   --kern-shadow-2: 0 12px 28px rgb(0 0 0 / 0.45);
+  --kern-control-highlight: rgb(255 255 255 / 0.14);
+  --kern-control-shade: rgb(0 0 0 / 0.45);
+  --kern-control-sheen: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.16) 0%,
+    rgb(255 255 255 / 0.02) 42%,
+    rgb(255 255 255 / 0.08) 100%
+  );
+  /* Intentionally matches --kern-control-sheen; only light needs a weaker fill gloss. */
+  --kern-control-sheen-fill: linear-gradient(
+    115deg,
+    rgb(255 255 255 / 0.16) 0%,
+    rgb(255 255 255 / 0.02) 42%,
+    rgb(255 255 255 / 0.08) 100%
+  );
 }

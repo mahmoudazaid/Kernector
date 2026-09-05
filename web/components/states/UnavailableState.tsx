@@ -1,4 +1,12 @@
-export function UnavailableState() {
+type UnavailableStateProps = {
+  title?: string;
+  description?: string;
+};
+
+export function UnavailableState({
+  title = "Feature unavailable",
+  description = "This destination is intentionally a placeholder until its implementation ticket is complete.",
+}: UnavailableStateProps) {
   return (
     <div className="kern-state">
       <div className="kern-state-mark" aria-hidden="true">
@@ -20,11 +28,8 @@ export function UnavailableState() {
           />
         </svg>
       </div>
-      <h2>Feature unavailable</h2>
-      <p>
-        This destination is intentionally a placeholder until its implementation
-        ticket is complete.
-      </p>
+      <h2>{title}</h2>
+      <p>{description}</p>
     </div>
   );
 }

@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from application.errors import ApplicationValidationError
+from application.errors import InputRejectedError
 from application.grounded_rag_policy import CONTEXT_CLOSE, CONTEXT_OPEN
 
 UNSAFE_QUERY_MESSAGE = (
@@ -58,7 +58,7 @@ def reject_unsafe_query(
             (case-insensitive). Empty for General mode / retrieve-only.
 
     Raises:
-        ApplicationValidationError: A platform or extra pattern matched.
+        InputRejectedError: A platform or extra pattern matched.
             The message is ``UNSAFE_QUERY_MESSAGE`` and never includes
             ``text`` or the matched pattern.
     """
@@ -68,4 +68,4 @@ def reject_unsafe_query(
             candidates.append(re.compile(re.escape(pattern), re.I))
     for compiled in candidates:
         if compiled.search(text):
-            raise ApplicationValidationError(UNSAFE_QUERY_MESSAGE)
+            raise InputRejectedError(UNSAFE_QUERY_MESSAGE)

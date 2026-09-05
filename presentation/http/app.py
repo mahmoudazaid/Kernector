@@ -22,6 +22,7 @@ from presentation.http.errors import (
     register_problem_schemas,
 )
 from presentation.http.routes import capabilities as capabilities_routes
+from presentation.http.routes import chat as chat_routes
 from presentation.http.routes import health as health_routes
 from presentation.http.routes import ollama_status as ollama_status_routes
 from presentation.http.routes import settings as settings_routes
@@ -91,7 +92,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
             CORSMiddleware,
             allow_origins=origins,
             allow_credentials=False,
-            allow_methods=["GET", "OPTIONS"],
+            allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=["*"],
         )
 
@@ -175,6 +176,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     app.include_router(capabilities_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(ollama_status_routes.router)
+    app.include_router(chat_routes.router)
 
     def custom_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:

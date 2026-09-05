@@ -5,6 +5,10 @@ class ApplicationValidationError(ValueError):
     """A use-case contract invariant was violated."""
 
 
+class InputRejectedError(ApplicationValidationError):
+    """Caller-supplied text was refused at a use-case boundary."""
+
+
 class ConfigurationError(RuntimeError):
     """A required piece of environment configuration is missing or invalid.
 

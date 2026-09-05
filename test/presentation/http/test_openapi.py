@@ -5,11 +5,13 @@ from fastapi.testclient import TestClient
 from presentation.http.app import create_app
 
 _PROBLEM = "application/problem+json"
-_ERROR_STATUSES = {
-    "/health": ("405",),
-    "/api/v1/capabilities": ("405", "500"),
-    "/api/v1/settings": ("405", "500"),
-    "/api/v1/ollama/status": ("405", "409", "500"),
+# path -> (http_method, expected error status codes as strings)
+_ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "/health": ("get", ("405",)),
+    "/api/v1/capabilities": ("get", ("405", "500")),
+    "/api/v1/settings": ("get", ("405", "500")),
+    "/api/v1/ollama/status": ("get", ("405", "409", "500")),
+    "/api/v1/chat/ask": ("post", ("405", "422", "500", "502")),
 }
 
 
@@ -50,12 +52,12 @@ def test_openapi_includes_problem_schema() -> None:
 def test_openapi_error_responses_use_problem_json_only() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
 
-    for path, statuses in _ERROR_STATUSES.items():
-        responses = schema["paths"][path]["get"]["responses"]
+    for path, (method, statuses) in _ERROR_STATUSES.items():
+        responses = schema["paths"][path][method]["responses"]
         for status in statuses:
             content = responses[status]["content"]
             assert list(content) == [_PROBLEM], (
-                f"{path} status {status} media types={list(content)}"
+                f"{path} {method} status {status} media types={list(content)}"
             )
             ref = content[_PROBLEM]["schema"].get("$ref", "")
             assert ref.endswith("/Problem"), f"{path} {status} schema ref={ref}"

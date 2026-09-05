@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    InputRejectedError,
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
 )
@@ -108,12 +109,23 @@ def problem_from_exception(
     Human-readable fields never include tracebacks, vendor bodies, prompts,
     document content, or ``repr`` of rejected values. Client field errors are
     already handled as 422 by Pydantic via :func:`problem_from_validation_errors`.
+    ``InputRejectedError`` is a client rejection (unsafe query, over-length
+    input) and maps to 422 with the boundary-authored ``str(error)``. Plain
     ``ApplicationValidationError`` / ``DomainValidationError`` that reach this
     mapper are internal contract violations (usually ``__post_init__`` invariants)
     and map to 500 with the fixed operational sentence — matching Streamlit's
     ``DomainValidationError`` handling. Provider/tool/store failures use their
     fixed category sentences.
     """
+    if isinstance(exc, InputRejectedError):
+        return _problem(
+            code="invalid_query",
+            title="Invalid query",
+            status=422,
+            detail=str(exc),
+            instance=instance,
+            request_id=request_id,
+        )
     if isinstance(exc, (ApplicationValidationError, DomainValidationError)):
         return _problem(
             code="operational_error",
