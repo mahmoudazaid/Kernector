@@ -1,6 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { computeAccessibleName } from "dom-accessibility-api";
 import { describe, expect, it, vi } from "vitest";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 
@@ -16,9 +15,7 @@ describe("SoftSelect", () => {
       />,
     );
 
-    const trigger = screen.getByLabelText(/^Model$/i);
-    expect(trigger).toHaveAttribute("role", "combobox");
-    expect(computeAccessibleName(trigger)).toBe("Model");
+    const trigger = screen.getByRole("combobox", { name: "Model" });
     expect(trigger).toHaveTextContent("openai/gpt-4o-mini");
   });
 
