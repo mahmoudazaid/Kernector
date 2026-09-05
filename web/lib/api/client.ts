@@ -6,6 +6,7 @@ export type ApiRequestOptions = {
   baseUrl: string;
   path: string;
   method?: string;
+  body?: unknown;
   signal?: AbortSignal;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -73,6 +74,7 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
     baseUrl,
     path,
     method = "GET",
+    body,
     signal,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     fetchImpl = fetch,
@@ -85,11 +87,21 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
       ? combineSignals(signal, timeoutSignal)
       : timeoutSignal;
 
+  const requestHeaders = new Headers(headers);
+  let serializedBody: string | undefined;
+  if (body !== undefined) {
+    serializedBody = JSON.stringify(body);
+    if (!requestHeaders.has("Content-Type")) {
+      requestHeaders.set("Content-Type", "application/json");
+    }
+  }
+
   let response: Response;
   try {
     response = await fetchImpl(joinUrl(baseUrl, path), {
       method,
-      headers,
+      headers: requestHeaders,
+      body: serializedBody,
       signal: combinedSignal,
     });
   } catch (error) {

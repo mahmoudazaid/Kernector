@@ -1,4 +1,12 @@
-export function EmptyState() {
+type EmptyStateProps = {
+  title?: string;
+  description?: string;
+};
+
+export function EmptyState({
+  title = "Nothing here yet",
+  description = "Neutral empty state; feature-specific actions belong to later tickets.",
+}: EmptyStateProps) {
   return (
     <div className="kern-state">
       <div className="kern-state-mark" aria-hidden="true">
@@ -15,10 +23,8 @@ export function EmptyState() {
           <path d="M3 8h14" stroke="currentColor" strokeWidth="1.5" />
         </svg>
       </div>
-      <h2>Nothing here yet</h2>
-      <p>
-        Neutral empty state; feature-specific actions belong to later tickets.
-      </p>
+      <h2>{title}</h2>
+      <p>{description}</p>
     </div>
   );
 }

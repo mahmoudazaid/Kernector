@@ -68,6 +68,8 @@ uv run uvicorn presentation.http.app:app --reload
 
 - Unversioned ops: `GET /health`
 - Versioned prove-out: `GET /api/v1/capabilities`
+- Settings catalog: `GET /api/v1/settings`
+- Grounded chat: `POST /api/v1/chat/ask`
 - OpenAPI: `GET /openapi.json` (also `/docs`)
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
@@ -92,6 +94,12 @@ npm run dev   # http://localhost:3000
 
 Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`,
 `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
+
+With both processes up, open `/settings` for provider/model controls and `/chat`
+for grounded ask (history, citations, tools-used, projected tool results). Chat
+reads runtime selections from `localStorage` (`kernector:runtime-settings:v1`)
+and persists the transcript under `kernector:chat-messages:v1`. Streamlit chat
+remains available until retirement (#228).
 
 OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check:
 `npm run api:check` (also run on PRs to `main`).

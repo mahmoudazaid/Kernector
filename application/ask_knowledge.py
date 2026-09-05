@@ -6,7 +6,7 @@ import logging
 from application.ask_service import AskService
 from application.citations import build_citations
 from application.contracts import AskRequest, AskResponse, RetrieveRequest, RunMeta
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, InputRejectedError
 from application.grounded_rag_policy import (
     CONTEXT_CLOSE,
     CONTEXT_OPEN,
@@ -91,9 +91,9 @@ class AskKnowledge:
             ``citation_count=0``, ``query_rewritten``).
 
         Raises:
-            ApplicationValidationError: ``query`` or a ``history`` message
-                exceeds ``max_input_length``, or a query fails the
-                platform/pack input-safety reject rules.
+            InputRejectedError: ``query`` or a ``history`` message exceeds
+                ``max_input_length``, or a query fails the platform/pack
+                input-safety reject rules.
             UnknownPromptError: ``prompt_key`` is set but not in the repository.
             ProviderError: Rewrite, embedding, or chat provider failed.
             VectorStoreError: Vector-store search failed.
@@ -120,13 +120,13 @@ class AskKnowledge:
         settings: Mapping[str, object] | None,
     ) -> AskResponse:
         if len(request.query) > self._max_input_length:
-            raise ApplicationValidationError(
+            raise InputRejectedError(
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )
         for index, message in enumerate(request.history):
             if len(message.content) > self._max_input_length:
-                raise ApplicationValidationError(
+                raise InputRejectedError(
                     f"history[{index}] content must be at most "
                     f"{self._max_input_length} characters, "
                     f"got {len(message.content)}"
