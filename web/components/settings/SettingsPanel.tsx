@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "@/components/ui/Button";
+import { SoftSelect } from "@/components/ui/SoftSelect";
 import { ApiError } from "@/lib/api/errors";
 import {
   getOllamaStatus,
@@ -462,27 +463,17 @@ export function SettingsPanel({
 
           {ollamaReachable === true && ollamaModels.length > 0 ? (
             <>
-              <div className="kern-settings-field">
-                <label htmlFor="ollama-model">Ollama model</label>
-                <select
-                  id="ollama-model"
-                  className="kern-settings-input"
-                  value={
-                    ollamaModels.includes(selection.model)
-                      ? selection.model
-                      : ollamaModels[0]
-                  }
-                  onChange={(event) =>
-                    updateSelection({ model: event.target.value })
-                  }
-                >
-                  {ollamaModels.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SoftSelect
+                id="ollama-model"
+                label="Ollama model"
+                value={
+                  ollamaModels.includes(selection.model)
+                    ? selection.model
+                    : ollamaModels[0]
+                }
+                options={ollamaModels}
+                onChange={(model) => updateSelection({ model })}
+              />
               <p className="kern-settings-hint">
                 Ollama connected · local, slower, no API cost.
               </p>
@@ -505,23 +496,13 @@ export function SettingsPanel({
       ) : (
         <div className="kern-settings-stack">
           {openrouterModels.length > 0 ? (
-            <div className="kern-settings-field">
-              <label htmlFor="openrouter-model">OpenRouter model</label>
-              <select
-                id="openrouter-model"
-                className="kern-settings-input"
-                value={selection.model}
-                onChange={(event) =>
-                  updateSelection({ model: event.target.value })
-                }
-              >
-                {openrouterModels.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SoftSelect
+              id="openrouter-model"
+              label="OpenRouter model"
+              value={selection.model}
+              options={openrouterModels}
+              onChange={(model) => updateSelection({ model })}
+            />
           ) : (
             <>
               <div className="kern-settings-field">
@@ -595,10 +576,6 @@ export function SettingsPanel({
           })}
         </div>
       </details>
-
-      <p className="kern-settings-hint">
-        General grounded chat over ingested documents.
-      </p>
     </div>
   );
 }

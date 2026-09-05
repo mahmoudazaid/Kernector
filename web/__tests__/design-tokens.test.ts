@@ -15,12 +15,16 @@ const COLOR_TOKENS = [
   "--kern-accent-soft",
   "--kern-focus",
   "--kern-danger",
+  "--kern-control-highlight",
+  "--kern-control-shade",
+  "--kern-control-sheen",
 ] as const;
 
 const ROOT_TOKENS = [
   ...COLOR_TOKENS,
   "--kern-radius",
   "--kern-radius-sm",
+  "--kern-radius-pill",
   "--kern-sidebar-width",
   "--kern-font-sans",
   "--kern-font-mono",
@@ -41,7 +45,12 @@ const ROOT_TOKENS = [
   "--kern-icon-sm",
   "--kern-icon-md",
   "--kern-duration",
+  "--kern-duration-emphasis",
   "--kern-ease",
+  "--kern-ease-out",
+  "--kern-control-highlight",
+  "--kern-control-shade",
+  "--kern-control-sheen",
 ] as const;
 
 function extractBlock(css: string, selector: string): string {

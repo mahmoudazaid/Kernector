@@ -70,8 +70,9 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 | Accent             | Restrained teal (`--kern-accent`, `--kern-accent-soft`) for active nav, brand mark, and status cues |
 | Focus              | Matching teal outline (`--kern-focus`) — never rely on color alone                                  |
 | Type               | IBM Plex Sans + IBM Plex Mono with `--kern-text-xs`…`--kern-text-xl`                                |
-| Radius / elevation | 6–8px radii; soft `--kern-shadow-1` / `--kern-shadow-2`                                             |
-| Motion             | `--kern-duration` + `--kern-ease` CSS transitions only; disabled under `prefers-reduced-motion`     |
+| Radius / elevation | 6–8px radii; soft `--kern-shadow-1` / `--kern-shadow-2`; controls use `--kern-radius-pill`          |
+| Controls           | Soft glass emboss (`--kern-control-sheen` / highlight / shade) with a light press-in on hover       |
+| Motion             | `--kern-duration` + `--kern-ease`; emphasis uses `--kern-duration-emphasis` + `--kern-ease-out`     |
 
 Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated.
 
