@@ -153,9 +153,16 @@ export function SoftSelect({
       typeahead.buffer =
         now - typeahead.at > 700 ? event.key : typeahead.buffer + event.key;
       typeahead.at = now;
-      const found = options.findIndex((option) =>
-        option.toLowerCase().startsWith(typeahead.buffer.toLowerCase()),
-      );
+      const needle = typeahead.buffer.toLowerCase();
+      const found = options.findIndex((option) => {
+        const lower = option.toLowerCase();
+        if (lower.startsWith(needle)) {
+          return true;
+        }
+        return lower
+          .split("/")
+          .some((segment) => segment.startsWith(needle));
+      });
       if (found >= 0) {
         event.preventDefault();
         setActiveIndex(found);
