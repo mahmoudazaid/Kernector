@@ -37,6 +37,14 @@ Satisfied for provider/model/settings catalog + Ollama probe + Next Settings UI
 (client-local persistence under `kernector:runtime-settings:v1`). Ask-turn
 consumption of those selections is owned by the chat parity ticket (#235).
 
+### Grounded chat (#235)
+
+Satisfied for `POST /api/v1/chat/ask` (composition → `GroundedAsk`), OpenAPI +
+typed client, and Next `/chat` (history, citations, tools-used, projected tool
+results, run details, rejected/operational/unavailable states). Transcript
+persistence uses `kernector:chat-messages:v1`. Streamlit chat stays until #228.
+Test-case CSV/JSON/PDF exports remain a follow-up (server-side `fpdf` surface).
+
 ## Out of scope for readiness alone
 
 - Public deployment or production hardening

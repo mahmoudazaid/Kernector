@@ -6,8 +6,10 @@ from application.contracts import AskRequest
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    InputRejectedError,
     InsufficientEvidenceError,
 )
+from application.input_safety import UNSAFE_QUERY_MESSAGE
 from composition.errors import KnowledgeLoadError
 from domain.errors import (
     DomainValidationError,
@@ -75,6 +77,23 @@ def test_application_validation_does_not_leak_exception_text() -> None:
     assert problem.code == "operational_error"
     assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
     assert "Query must not be blank" not in problem.detail
+
+
+def test_input_rejected_maps_to_422_invalid_query_with_boundary_message() -> None:
+    problem = problem_from_exception(InputRejectedError(UNSAFE_QUERY_MESSAGE))
+
+    assert problem.status == 422
+    assert problem.code == "invalid_query"
+    assert problem.detail == UNSAFE_QUERY_MESSAGE
+    assert problem.type == "https://kernector.dev/problems/invalid_query"
+
+
+def test_plain_application_validation_still_maps_to_500() -> None:
+    problem = problem_from_exception(ApplicationValidationError("bad field"))
+
+    assert problem.status == 500
+    assert problem.code == "operational_error"
+    assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
 
 
 def test_domain_validation_from_message_invariant_does_not_leak_content() -> None:

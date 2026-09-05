@@ -33,14 +33,6 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
           );
         })}
       </div>
-      <div className="kern-foundation-note">
-        <span className="kern-foundation-dot" aria-hidden="true" />
-        <span>
-          Foundation shell
-          <br />
-          <small>No API connected</small>
-        </span>
-      </div>
     </nav>
   );
 }

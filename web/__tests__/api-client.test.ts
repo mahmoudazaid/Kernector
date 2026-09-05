@@ -203,4 +203,51 @@ describe("apiRequest", () => {
     expect(apiError.detail).not.toContain("Traceback");
     expect(apiError.status).toBe(500);
   });
+
+  it("JSON-serializes body and sets Content-Type only when body is present", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ answer: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiRequest({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/chat/ask",
+      method: "POST",
+      body: { query: "hello", history: [] },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/chat/ask",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ query: "hello", history: [] }),
+      }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("does not set Content-Type when body is absent", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiRequest({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/health",
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBeNull();
+  });
 });

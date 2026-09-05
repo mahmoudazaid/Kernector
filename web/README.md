@@ -19,11 +19,11 @@ Copy `.env.example` to `.env.local` if you need to override public vars. Only `N
 
 `NEXT_PUBLIC_API_BASE_URL` defaults to `http://127.0.0.1:8000` (browser-visible). Trailing slashes are stripped.
 
-> **Deploying:** `NEXT_PUBLIC_*` values are inlined at **build** time, not read at runtime. A production build with this unset ships the localhost default to every browser and the health chip reads Unavailable for all users. Set it in the build environment before `npm run build` — rebuilding is the only way to repoint an image at a different API host.
+> **Deploying:** `NEXT_PUBLIC_*` values are inlined at **build** time, not read at runtime. A production build with this unset ships the localhost default to every browser. Set it in the build environment before `npm run build` — rebuilding is the only way to repoint an image at a different API host.
 
 ### Local API + CORS
 
-The shell probes `GET /health` from the browser. Enable FastAPI CORS for the Next origin:
+Chat and Settings call the FastAPI origin from the browser. Enable CORS for the Next origin:
 
 ```bash
 # repo root
@@ -58,7 +58,7 @@ Placeholder destinations (no invented product behavior):
 - `/chat` — Chat
 - `/settings` — Settings
 
-Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout failures), `not-found.tsx`, plus reusable empty/unavailable components under `components/states/`. The header shows backend Available/Unavailable from `/health`.
+Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout failures), `not-found.tsx`, plus reusable empty/unavailable components under `components/states/`.
 
 ## Visual direction
 
@@ -70,8 +70,9 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 | Accent             | Restrained teal (`--kern-accent`, `--kern-accent-soft`) for active nav, brand mark, and status cues |
 | Focus              | Matching teal outline (`--kern-focus`) — never rely on color alone                                  |
 | Type               | IBM Plex Sans + IBM Plex Mono with `--kern-text-xs`…`--kern-text-xl`                                |
-| Radius / elevation | 6–8px radii; soft `--kern-shadow-1` / `--kern-shadow-2`                                             |
-| Motion             | `--kern-duration` + `--kern-ease` CSS transitions only; disabled under `prefers-reduced-motion`     |
+| Radius / elevation | 6–8px radii; soft `--kern-shadow-1` / `--kern-shadow-2`; controls use `--kern-radius-pill`          |
+| Controls           | Soft glass emboss (`--kern-control-sheen` / highlight / shade) with a light press-in on hover       |
+| Motion             | `--kern-duration` + `--kern-ease`; emphasis uses `--kern-duration-emphasis` + `--kern-ease-out`     |
 
 Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated.
 

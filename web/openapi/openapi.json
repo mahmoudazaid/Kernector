@@ -28,6 +28,193 @@
         "title": "CapabilitiesResponse",
         "type": "object"
       },
+      "ChatAskRequest": {
+        "description": "Wire body for ``POST /api/v1/chat/ask``.",
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ChatHistoryMessage"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRuntimeRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["query"],
+        "title": "ChatAskRequest",
+        "type": "object"
+      },
+      "ChatAskResponse": {
+        "description": "Successful grounded ask turn.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationResponse"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunMetaResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools_used": {
+            "items": {
+              "$ref": "#/components/schemas/ToolUsedResponse"
+            },
+            "title": "Tools Used",
+            "type": "array"
+          }
+        },
+        "required": ["answer", "citations", "tools_used"],
+        "title": "ChatAskResponse",
+        "type": "object"
+      },
+      "ChatHistoryMessage": {
+        "description": "One prior conversation turn for grounded ask.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": ["user", "assistant"],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": ["role", "content"],
+        "title": "ChatHistoryMessage",
+        "type": "object"
+      },
+      "ChatRuntimeRequest": {
+        "description": "Optional client runtime overrides from Settings localStorage (#237).",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "ollama_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Base Url"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": ["openrouter", "ollama"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "settings": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "title": "Settings",
+            "type": "object"
+          }
+        },
+        "title": "ChatRuntimeRequest",
+        "type": "object"
+      },
+      "CitationResponse": {
+        "description": "Provenance pointer on a grounded answer.",
+        "properties": {
+          "chunk_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Index"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": ["source_id", "source_type"],
+        "title": "CitationResponse",
+        "type": "object"
+      },
       "HealthResponse": {
         "description": "Operational readiness payload for unversioned ``GET /health``.",
         "properties": {
@@ -283,6 +470,191 @@
         "title": "ProblemError",
         "type": "object"
       },
+      "RiskFactorResponse": {
+        "description": "One risk factor with provenance ids only.",
+        "properties": {
+          "factor_id": {
+            "title": "Factor Id",
+            "type": "string"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReferenceResponse"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": ["factor_id", "weight", "references"],
+        "title": "RiskFactorResponse",
+        "type": "object"
+      },
+      "RiskScoreResponse": {
+        "description": "Structured risk assessment for the chat UI.",
+        "properties": {
+          "factors": {
+            "items": {
+              "$ref": "#/components/schemas/RiskFactorResponse"
+            },
+            "title": "Factors",
+            "type": "array"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          }
+        },
+        "required": ["score", "level", "rationale", "factors"],
+        "title": "RiskScoreResponse",
+        "type": "object"
+      },
+      "RunMetaResponse": {
+        "description": "Safe run fields Streamlit ``run_detail_lines`` would render.",
+        "properties": {
+          "citation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Count"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "hit_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hit Count"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "pack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "query_rewritten": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Rewritten"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          }
+        },
+        "title": "RunMetaResponse",
+        "type": "object"
+      },
       "RuntimeSettingsResponse": {
         "description": "Catalog for provider/model/settings controls (Streamlit sidebar parity).",
         "properties": {
@@ -319,6 +691,152 @@
           "model_settings"
         ],
         "title": "RuntimeSettingsResponse",
+        "type": "object"
+      },
+      "SourceReferenceResponse": {
+        "description": "Provenance id/type for projected tool results.",
+        "properties": {
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": ["source_id", "source_type"],
+        "title": "SourceReferenceResponse",
+        "type": "object"
+      },
+      "TestCaseResponse": {
+        "description": "One generated test case.",
+        "properties": {
+          "expected": {
+            "title": "Expected",
+            "type": "string"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReferenceResponse"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["title", "steps", "expected", "references"],
+        "title": "TestCaseResponse",
+        "type": "object"
+      },
+      "TestCasesResponse": {
+        "description": "Generated test cases for the chat UI.",
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/TestCaseResponse"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "output_style": {
+            "title": "Output Style",
+            "type": "string"
+          }
+        },
+        "required": ["output_style", "cases"],
+        "title": "TestCasesResponse",
+        "type": "object"
+      },
+      "ToolCallResponse": {
+        "description": "One projected tool invocation (authored summary, never opaque payload).",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": ["tool_name", "ok"],
+        "title": "ToolCallResponse",
+        "type": "object"
+      },
+      "ToolRunResponse": {
+        "description": "Projected Software Delivery tool-run view (no opaque payloads).",
+        "properties": {
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallResponse"
+            },
+            "title": "Calls",
+            "type": "array"
+          },
+          "markdown": {
+            "default": "",
+            "title": "Markdown",
+            "type": "string"
+          },
+          "risk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskScoreResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "test_cases": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TestCasesResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["summary", "calls"],
+        "title": "ToolRunResponse",
+        "type": "object"
+      },
+      "ToolUsedResponse": {
+        "description": "Opaque tool contribution measured by character count only.",
+        "properties": {
+          "result_chars": {
+            "title": "Result Chars",
+            "type": "integer"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": ["tool_name", "result_chars"],
+        "title": "ToolUsedResponse",
         "type": "object"
       }
     }
@@ -368,6 +886,76 @@
         },
         "summary": "Capabilities",
         "tags": ["capabilities"]
+      }
+    },
+    "/api/v1/chat/ask": {
+      "post": {
+        "description": "Run one grounded ask turn through composition.",
+        "operationId": "chat_ask_api_v1_chat_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatAskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Chat Ask",
+        "tags": ["chat"]
       }
     },
     "/api/v1/ollama/status": {

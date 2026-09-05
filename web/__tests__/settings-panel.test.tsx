@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -71,7 +71,7 @@ describe("SettingsPanel", () => {
       await screen.findByRole("heading", { level: 1, name: "Settings" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /OpenRouter/i })).toBeChecked();
-    expect(screen.getByLabelText(/OpenRouter model/i)).toHaveValue(
+    expect(screen.getByLabelText(/OpenRouter model/i)).toHaveTextContent(
       "openai/gpt-4o-mini",
     );
     expect(screen.getByLabelText(/Temperature/i)).toHaveAttribute("type", "range");
@@ -101,7 +101,7 @@ describe("SettingsPanel", () => {
       />,
     );
 
-    expect(await screen.findByLabelText(/OpenRouter model/i)).toHaveValue(
+    expect(await screen.findByLabelText(/OpenRouter model/i)).toHaveTextContent(
       "openai/gpt-4o-mini",
     );
     await waitFor(() => {
@@ -225,7 +225,7 @@ describe("SettingsPanel", () => {
       />,
     );
 
-    expect(await screen.findByLabelText(/OpenRouter model/i)).toHaveValue(
+    expect(await screen.findByLabelText(/OpenRouter model/i)).toHaveTextContent(
       "a/one",
     );
     await waitFor(() => {
@@ -313,10 +313,11 @@ describe("SettingsPanel", () => {
     await user.click(screen.getByRole("radio", { name: /Ollama/i }));
 
     expect(await screen.findByText(/Ollama connected/i)).toBeInTheDocument();
-    const select = screen.getByLabelText(/^Ollama model$/i);
-    expect(select.tagName).toBe("SELECT");
+    const trigger = screen.getByLabelText(/^Ollama model$/i);
+    expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+    await user.click(trigger);
     expect(
-      within(select).getByRole("option", { name: "mistral" }),
+      screen.getByRole("option", { name: "mistral" }),
     ).toBeInTheDocument();
   });
 

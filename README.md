@@ -39,7 +39,7 @@ to `.env` for Python/HTTP flags (no secrets committed). Next public vars:
 | Next.js | `http://localhost:3000` | `cd web && npm ci && npm run dev` |
 | Streamlit | `http://localhost:8501` | `uv run streamlit run main.py` |
 
-**Startup order for Next:** start FastAPI first (health chip needs `/health` +
+**Startup order for Next:** start FastAPI first (browser calls need the API +
 CORS), then Next. Streamlit does not require FastAPI.
 
 ### Run the Streamlit app
@@ -68,6 +68,8 @@ uv run uvicorn presentation.http.app:app --reload
 
 - Unversioned ops: `GET /health`
 - Versioned prove-out: `GET /api/v1/capabilities`
+- Settings catalog: `GET /api/v1/settings`
+- Grounded chat: `POST /api/v1/chat/ask`
 - OpenAPI: `GET /openapi.json` (also `/docs`)
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
@@ -81,7 +83,7 @@ The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See
 [`web/README.md`](web/README.md) for full details.
 
 ```bash
-# API with CORS for the Next.js origin (required for the header health chip)
+# API with CORS for the Next.js origin (required for Chat / Settings from the browser)
 HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
 
 # separate terminal
@@ -92,6 +94,12 @@ npm run dev   # http://localhost:3000
 
 Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`,
 `NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
+
+With both processes up, open `/settings` for provider/model controls and `/chat`
+for grounded ask (history, citations, tools-used, projected tool results). Chat
+reads runtime selections from `localStorage` (`kernector:runtime-settings:v1`)
+and persists the transcript under `kernector:chat-messages:v1`. Streamlit chat
+remains available until retirement (#228).
 
 OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check:
 `npm run api:check` (also run on PRs to `main`).
@@ -119,7 +127,7 @@ Before migrating a Streamlit feature to Next.js, use
 
 ### Troubleshooting
 
-- **Next health chip Unavailable / CORS errors** — Ensure FastAPI is up,
+- **Next Chat/Settings fail / CORS errors** — Ensure FastAPI is up,
   `HTTP_DEV_CORS` is truthy, and the browser origin matches `HTTP_CORS_ORIGINS`
   (default `http://localhost:3000`).
 - **OpenAPI contract drift** — `cd web && npm run api:generate`, then commit
