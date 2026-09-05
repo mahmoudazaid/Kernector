@@ -125,6 +125,66 @@ describe("SoftSelect", () => {
     expect(onChange).toHaveBeenCalledWith("openai/gpt-4o-mini");
   });
 
+  it("commits the highlighted option with Space", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SoftSelect
+        id="model"
+        label="Model"
+        value="anthropic/claude"
+        options={[
+          "anthropic/claude",
+          "google/gemini-2.5-flash",
+          "openai/gpt-4o-mini",
+        ]}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/^Model$/i));
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard(" ");
+    expect(onChange).toHaveBeenCalledWith("google/gemini-2.5-flash");
+  });
+
+  it("cycles typeahead matches that share a prefix", async () => {
+    const user = userEvent.setup({ delay: null });
+    render(
+      <SoftSelect
+        id="model"
+        label="Model"
+        value="anthropic/claude"
+        options={[
+          "anthropic/claude",
+          "google/gemini-2.5-flash",
+          "openai/gpt-4o-mini",
+          "openai/gpt-4o",
+        ]}
+        onChange={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/^Model$/i));
+    await user.keyboard("g");
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "aria-activedescendant",
+      expect.stringMatching(/-1$/),
+    );
+
+    await user.keyboard("g");
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "aria-activedescendant",
+      expect.stringMatching(/-2$/),
+    );
+
+    await user.keyboard("g");
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "aria-activedescendant",
+      expect.stringMatching(/-3$/),
+    );
+  });
+
   it("keeps options out of the tab order", async () => {
     const user = userEvent.setup();
     render(

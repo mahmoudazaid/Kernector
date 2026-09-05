@@ -147,22 +147,52 @@ export function SoftSelect({
       return;
     }
 
-    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    const typeaheadActive =
+      typeaheadRef.current.buffer !== "" &&
+      Date.now() - typeaheadRef.current.at <= 700;
+
+    // Space only continues an active typeahead buffer; a standalone Space
+    // selects (APG listbox). See https://www.w3.org/WAI/ARIA/apg/patterns/listbox/
+    if (
+      event.key.length === 1 &&
+      (event.key !== " " || typeaheadActive) &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
       const now = Date.now();
       const typeahead = typeaheadRef.current;
-      typeahead.buffer =
-        now - typeahead.at > 700 ? event.key : typeahead.buffer + event.key;
+      if (now - typeahead.at > 700) {
+        typeahead.buffer = event.key;
+      } else if (
+        typeahead.buffer.length === 1 &&
+        typeahead.buffer === event.key
+      ) {
+        // Keep a single-character buffer so repeats cycle matches.
+      } else {
+        typeahead.buffer += event.key;
+      }
       typeahead.at = now;
       const needle = typeahead.buffer.toLowerCase();
-      const found = options.findIndex((option) => {
+      const matches = (option: string) => {
         const lower = option.toLowerCase();
-        if (lower.startsWith(needle)) {
-          return true;
-        }
-        return lower
-          .split("/")
-          .some((segment) => segment.startsWith(needle));
-      });
+        return (
+          lower.startsWith(needle) ||
+          lower.split("/").some((segment) => segment.startsWith(needle))
+        );
+      };
+
+      // Repeated single characters cycle from after the active option;
+      // a growing buffer re-anchors from the start.
+      if (options.length === 0) {
+        return;
+      }
+      const start = needle.length === 1 ? activeIndex + 1 : 0;
+      const order = Array.from(
+        { length: options.length },
+        (_, i) => (start + i) % options.length,
+      );
+      const found = order.find((i) => matches(options[i] ?? "")) ?? -1;
       if (found >= 0) {
         event.preventDefault();
         setActiveIndex(found);
