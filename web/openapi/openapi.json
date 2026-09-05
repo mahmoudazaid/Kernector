@@ -41,6 +41,165 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "ModelSettingDefResponse": {
+        "description": "One generation setting for Settings UI controls.",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Default"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Max Value"
+          },
+          "min_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Min Value"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Step"
+          },
+          "widget": {
+            "title": "Widget",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "widget",
+          "default",
+          "min_value",
+          "max_value",
+          "step",
+          "help",
+          "providers"
+        ],
+        "title": "ModelSettingDefResponse",
+        "type": "object"
+      },
+      "OllamaSettingsResponse": {
+        "description": "Ollama defaults from runtime config (live models come from probe).",
+        "properties": {
+          "default_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Base Url"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          }
+        },
+        "title": "OllamaSettingsResponse",
+        "type": "object"
+      },
+      "OllamaStatusResponse": {
+        "description": "Ollama reachability and installed models for a base URL.",
+        "properties": {
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          }
+        },
+        "required": ["reachable", "models"],
+        "title": "OllamaStatusResponse",
+        "type": "object"
+      },
+      "OpenRouterSettingsResponse": {
+        "description": "OpenRouter models and default from runtime config.",
+        "properties": {
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": ["models"],
+        "title": "OpenRouterSettingsResponse",
+        "type": "object"
+      },
       "Problem": {
         "description": "RFC 9457 Problem Details plus Kernector extensions.",
         "properties": {
@@ -123,6 +282,44 @@
         "required": ["pointer", "detail"],
         "title": "ProblemError",
         "type": "object"
+      },
+      "RuntimeSettingsResponse": {
+        "description": "Catalog for provider/model/settings controls (Streamlit sidebar parity).",
+        "properties": {
+          "default_provider": {
+            "title": "Default Provider",
+            "type": "string"
+          },
+          "model_settings": {
+            "items": {
+              "$ref": "#/components/schemas/ModelSettingDefResponse"
+            },
+            "title": "Model Settings",
+            "type": "array"
+          },
+          "ollama": {
+            "$ref": "#/components/schemas/OllamaSettingsResponse"
+          },
+          "openrouter": {
+            "$ref": "#/components/schemas/OpenRouterSettingsResponse"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers",
+          "default_provider",
+          "openrouter",
+          "ollama",
+          "model_settings"
+        ],
+        "title": "RuntimeSettingsResponse",
+        "type": "object"
       }
     }
   },
@@ -171,6 +368,96 @@
         },
         "summary": "Capabilities",
         "tags": ["capabilities"]
+      }
+    },
+    "/api/v1/ollama/status": {
+      "get": {
+        "description": "Probe the configured Ollama base URL (never a client-supplied target).",
+        "operationId": "ollama_status_api_v1_ollama_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Ollama Status",
+        "tags": ["settings"]
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "description": "Expose providers, env defaults, and model-settings catalog for Settings UI.",
+        "operationId": "runtime_settings_api_v1_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Runtime Settings",
+        "tags": ["settings"]
       }
     },
     "/health": {

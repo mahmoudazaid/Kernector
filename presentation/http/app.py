@@ -23,6 +23,8 @@ from presentation.http.errors import (
 )
 from presentation.http.routes import capabilities as capabilities_routes
 from presentation.http.routes import health as health_routes
+from presentation.http.routes import ollama_status as ollama_status_routes
+from presentation.http.routes import settings as settings_routes
 
 _PROBLEM_MEDIA_TYPE = "application/problem+json"
 _LOG = logging.getLogger("presentation.http")
@@ -171,6 +173,8 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
 
     app.include_router(health_routes.router)
     app.include_router(capabilities_routes.router)
+    app.include_router(settings_routes.router)
+    app.include_router(ollama_status_routes.router)
 
     def custom_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:

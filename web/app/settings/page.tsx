@@ -1,5 +1,7 @@
-import { RoutePlaceholder } from "@/components/placeholders/RoutePlaceholder";
+import { loadPublicEnv } from "@/lib/env";
+import { SettingsPanel } from "@/components/settings/SettingsPanel";
 
 export default function SettingsPage() {
-  return <RoutePlaceholder title="Settings" />;
+  const env = loadPublicEnv();
+  return <SettingsPanel apiBaseUrl={env.NEXT_PUBLIC_API_BASE_URL} />;
 }
