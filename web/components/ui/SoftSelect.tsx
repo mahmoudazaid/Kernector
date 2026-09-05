@@ -147,6 +147,10 @@ export function SoftSelect({
       return;
     }
 
+    if (options.length === 0) {
+      return;
+    }
+
     const typeaheadActive =
       typeaheadRef.current.buffer !== "" &&
       Date.now() - typeaheadRef.current.at <= 700;
@@ -184,17 +188,16 @@ export function SoftSelect({
 
       // Repeated single characters cycle from after the active option;
       // a growing buffer re-anchors from the start.
-      if (options.length === 0) {
-        return;
-      }
       const start = needle.length === 1 ? activeIndex + 1 : 0;
       const order = Array.from(
         { length: options.length },
         (_, i) => (start + i) % options.length,
       );
       const found = order.find((i) => matches(options[i] ?? "")) ?? -1;
+      // Own the key once treated as search — even on a miss — so Space
+      // during a live buffer does not scroll the listbox/page.
+      event.preventDefault();
       if (found >= 0) {
-        event.preventDefault();
         setActiveIndex(found);
       }
       return;

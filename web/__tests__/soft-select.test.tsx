@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SoftSelect } from "@/components/ui/SoftSelect";
@@ -123,6 +123,28 @@ describe("SoftSelect", () => {
 
     await user.keyboard("{Enter}");
     expect(onChange).toHaveBeenCalledWith("openai/gpt-4o-mini");
+  });
+
+  it("prevents default for Space during a live typeahead buffer", async () => {
+    const user = userEvent.setup({ delay: null });
+    render(
+      <SoftSelect
+        id="model"
+        label="Model"
+        value="anthropic/claude"
+        options={[
+          "anthropic/claude",
+          "google/gemini-2.5-flash",
+          "openai/gpt-4o-mini",
+        ]}
+        onChange={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/^Model$/i));
+    await user.keyboard("gpt");
+    const list = screen.getByRole("listbox");
+    expect(fireEvent.keyDown(list, { key: " " })).toBe(false);
   });
 
   it("commits the highlighted option with Space", async () => {
