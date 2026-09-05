@@ -543,6 +543,8 @@ a {
     var(--kern-control-sheen),
     var(--kern-surface);
   box-shadow: var(--kern-control-emboss);
+  display: grid;
+  gap: var(--kern-space-3);
 }
 
 .kern-settings-fieldset legend {
@@ -619,6 +621,19 @@ a {
     var(--kern-surface);
 }
 
+.kern-settings-radio input[type="checkbox"] {
+  border-radius: 5px;
+}
+
+.kern-settings-radio input[type="checkbox"]:checked {
+  border-color: var(--kern-accent);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2 6.4 11l6.1-6.6' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 12px 12px no-repeat,
+    var(--kern-control-sheen-fill),
+    var(--kern-accent);
+}
+
 .kern-settings-radio input:focus-visible {
   outline: 2px solid var(--kern-focus);
   outline-offset: 2px;
@@ -665,6 +680,39 @@ a {
   transition:
     box-shadow var(--kern-duration-emphasis) var(--kern-ease-out),
     border-color var(--kern-duration) var(--kern-ease);
+}
+
+.kern-settings-input[type="file"] {
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  color: var(--kern-muted);
+  cursor: pointer;
+}
+
+.kern-settings-input[type="file"]::file-selector-button {
+  appearance: none;
+  margin-right: var(--kern-space-3);
+  min-height: 32px;
+  padding: 0 var(--kern-space-3);
+  border: 1px solid color-mix(in srgb, var(--kern-line) 85%, transparent);
+  border-radius: var(--kern-radius-pill);
+  color: var(--kern-ink);
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    transform var(--kern-duration-emphasis) var(--kern-ease-out),
+    box-shadow var(--kern-duration-emphasis) var(--kern-ease-out);
+}
+
+.kern-settings-input[type="file"]::file-selector-button:hover {
+  transform: scale(0.98);
+  box-shadow: var(--kern-control-emboss-press);
 }
 
 .kern-select {
@@ -937,6 +985,102 @@ a {
 
 .kern-settings-callout--warn {
   border-color: color-mix(in srgb, var(--kern-accent) 40%, var(--kern-line));
+}
+
+.kern-settings-callout--ok {
+  border-color: color-mix(in srgb, var(--kern-success, #2f6f4e) 45%, var(--kern-line));
+}
+
+.kern-documents {
+  display: grid;
+  gap: var(--kern-space-5);
+  width: 100%;
+  min-width: 0;
+}
+
+.kern-documents h1 {
+  margin: 0;
+  font-family: var(--kern-font-display);
+  font-size: clamp(1.8rem, 2.4vw, 2.4rem);
+  letter-spacing: -0.02em;
+}
+
+.kern-documents-lead {
+  margin: 0;
+  color: var(--kern-muted);
+  max-width: 42rem;
+}
+
+.kern-documents-table-wrap {
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--kern-line) 85%, transparent);
+  border-radius: 20px;
+  background: var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+}
+
+.kern-documents-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--kern-text-sm);
+}
+
+.kern-documents-table th,
+.kern-documents-table td {
+  padding: var(--kern-space-3);
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--kern-line) 70%, transparent);
+  vertical-align: top;
+}
+
+.kern-documents-table th {
+  color: var(--kern-muted);
+  font-weight: 500;
+}
+
+.kern-documents-table tr:last-child td {
+  border-bottom: none;
+}
+
+.kern-documents-table tr.is-selected {
+  background: color-mix(in srgb, var(--kern-accent) 10%, transparent);
+}
+
+.kern-documents-row-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kern-documents-row-button:focus-visible {
+  outline: 2px solid var(--kern-focus-ring);
+  outline-offset: 2px;
+}
+
+.kern-documents-detail,
+.kern-documents-form {
+  display: grid;
+  gap: var(--kern-space-3);
+}
+
+.kern-documents-form .kern-btn,
+.kern-documents-form .kern-btn-secondary,
+.kern-documents .kern-settings-fieldset > .kern-btn,
+.kern-documents .kern-settings-fieldset > .kern-btn-secondary {
+  justify-self: start;
+}
+
+.kern-documents .kern-settings-fieldset {
+  gap: var(--kern-space-3);
+}
+
+.kern-documents .kern-settings-fieldset .kern-settings-help {
+  margin: 0;
 }
 
 .kern-settings-details {

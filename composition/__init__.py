@@ -51,18 +51,22 @@ from composition.tool_augmented_ask import (
 )
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
+    DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
+    UnknownUploadedDocumentError,
 )
 from infrastructure.config import Settings
 
 __all__ = [
+    "DocumentContentError",
     "DocumentOperationError",
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
+    "UnknownUploadedDocumentError",
     "MAX_TOOL_CALL_SUMMARY_CHARS",
     "SOFTWARE_DELIVERY_TEST_STYLES",
     "SUPPORTED_DOMAIN_TOOL_PACKS",

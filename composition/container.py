@@ -25,10 +25,12 @@ from application.manage_documents import (
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition.errors import (
+    DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
+    UnknownUploadedDocumentError,
 )
 from composition.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
@@ -51,6 +53,7 @@ from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
+    UnreadableDocumentError,
     UploadedFileExtractor,
     extract_document,
 )
@@ -503,13 +506,17 @@ def create_uploaded_document(
         return build_manage_uploaded_documents(
             settings, vector_store=vector_store
         ).create(payload)
+    except UnreadableDocumentError as error:
+        raise DocumentContentError(str(error)) from error
     except DocumentExtractionError as error:
         raise DocumentUploadError(str(error)) from error
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
     except PartialCreateFailure as error:
         _log_partial_create(error)
-        raise PartialDocumentOperationError(str(error)) from error
+        raise PartialDocumentOperationError(
+            str(error), operation="create"
+        ) from error
     except IngestFailure as error:
         raise _upload_error_from_ingest_failure(settings, error) from error
     except CatalogError as error:
@@ -534,7 +541,9 @@ def replace_uploaded_document(
     Raises:
         PartialDocumentOperationError: Chunks or the catalog row were left
             mid-replace, so a retry is genuinely required.
+        UnknownUploadedDocumentError: ``reference`` is not in the catalog.
         DocumentOperationError: The replace stopped without mutating anything.
+        DocumentContentError: The replacement file has no extractable text.
         DocumentUploadError: The replacement file could not be extracted.
     """
     try:
@@ -542,18 +551,24 @@ def replace_uploaded_document(
             settings, vector_store=vector_store
         ).replace(reference, payload)
     except UnknownDocumentError as error:
-        raise DocumentOperationError(str(error)) from error
+        raise UnknownUploadedDocumentError(str(error)) from error
+    except UnreadableDocumentError as error:
+        raise DocumentContentError(str(error)) from error
     except DocumentExtractionError as error:
         raise DocumentUploadError(str(error)) from error
     except DomainValidationError as error:
         raise DocumentUploadError(str(error)) from error
     except PartialReplaceFailure as error:
-        raise PartialDocumentOperationError(str(error)) from error
+        raise PartialDocumentOperationError(
+            str(error), operation="replace"
+        ) from error
     except IngestFailure as error:
         # A failure before the first `delete_source` left the previous version
         # stored and its catalog row restored: nothing for the user to retry.
         if error.vector_mutation_started:
-            raise PartialDocumentOperationError(str(error)) from error
+            raise PartialDocumentOperationError(
+                str(error), operation="replace"
+            ) from error
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
@@ -583,7 +598,9 @@ def delete_uploaded_document(
             settings, vector_store=vector_store
         ).delete(reference)
     except PartialDeleteFailure as error:
-        raise PartialDocumentOperationError(str(error)) from error
+        raise PartialDocumentOperationError(
+            str(error), operation="delete"
+        ) from error
     except DocumentManagementError as error:
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:

@@ -12,6 +12,23 @@ _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/settings": ("get", ("405", "500")),
     "/api/v1/ollama/status": ("get", ("405", "409", "500")),
     "/api/v1/chat/ask": ("post", ("405", "422", "500", "502")),
+    "/api/v1/documents": ("get", ("405", "500")),
+}
+
+
+_DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("/api/v1/documents", "get"): ("405", "500"),
+    ("/api/v1/documents", "post"): ("405", "409", "413", "422", "500", "502"),
+    ("/api/v1/documents/{source_id}", "put"): (
+        "404",
+        "405",
+        "409",
+        "413",
+        "422",
+        "500",
+        "502",
+    ),
+    ("/api/v1/documents/{source_id}", "delete"): ("405", "409", "500"),
 }
 
 
@@ -61,6 +78,25 @@ def test_openapi_error_responses_use_problem_json_only() -> None:
             )
             ref = content[_PROBLEM]["schema"].get("$ref", "")
             assert ref.endswith("/Problem"), f"{path} {status} schema ref={ref}"
+
+    for (path, method), statuses in _DOCUMENTS_ERROR_STATUSES.items():
+        responses = schema["paths"][path][method]["responses"]
+        for status in statuses:
+            content = responses[status]["content"]
+            assert list(content) == [_PROBLEM], (
+                f"{path} {method} status {status} media types={list(content)}"
+            )
+            ref = content[_PROBLEM]["schema"].get("$ref", "")
+            assert ref.endswith("/Problem"), f"{path} {status} schema ref={ref}"
+
+
+def test_openapi_documents_delete_does_not_declare_404() -> None:
+    """Delete unknown is a 204 no-op — 404 must not appear in the contract."""
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    delete = schema["paths"]["/api/v1/documents/{source_id}"]["delete"]["responses"]
+
+    assert "404" not in delete
+    assert "204" in delete
 
 
 def test_openapi_does_not_declare_unreachable_error_statuses() -> None:

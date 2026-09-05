@@ -10,7 +10,14 @@ from application.errors import (
     InsufficientEvidenceError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
-from composition.errors import KnowledgeLoadError
+from composition.errors import (
+    DocumentContentError,
+    DocumentOperationError,
+    DocumentUploadError,
+    KnowledgeLoadError,
+    PartialDocumentOperationError,
+    UnknownUploadedDocumentError,
+)
 from domain.errors import (
     DomainValidationError,
     ProviderError,
@@ -19,7 +26,15 @@ from domain.errors import (
 )
 from domain.models import Message
 from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE
-from presentation.http.errors import problem_from_exception
+from presentation.http.errors import (
+    DOCUMENT_NOT_FOUND_DETAIL,
+    DOCUMENT_PARTIAL_DETAILS,
+    DOCUMENT_UNREADABLE_DETAIL,
+    UPLOAD_TOO_LARGE_DETAIL,
+    UnsupportedDocumentTypeError,
+    UploadTooLargeError,
+    problem_from_exception,
+)
 
 
 @pytest.mark.parametrize(
@@ -122,3 +137,88 @@ def test_application_validation_from_ask_history_does_not_leak_turn_text() -> No
     assert problem.code == "operational_error"
     assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
     assert sensitive not in body
+
+
+def test_unknown_uploaded_document_maps_to_404() -> None:
+    problem = problem_from_exception(
+        UnknownUploadedDocumentError("missing source id-xyz")
+    )
+
+    assert problem.status == 404
+    assert problem.code == "document_not_found"
+    assert problem.detail == DOCUMENT_NOT_FOUND_DETAIL
+    assert "id-xyz" not in problem.detail
+
+
+def test_plain_document_operation_error_still_maps_to_500() -> None:
+    problem = problem_from_exception(
+        DocumentOperationError("catalog path /var/secret/uploads.json")
+    )
+
+    assert problem.status == 500
+    assert problem.code == "operational_error"
+    assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
+    assert "/var/secret" not in problem.detail
+
+
+def test_document_content_error_maps_to_422_unreadable() -> None:
+    problem = problem_from_exception(
+        DocumentContentError("/tmp/scan.pdf: no extractable text")
+    )
+
+    assert problem.status == 422
+    assert problem.code == "document_unreadable"
+    assert problem.detail == DOCUMENT_UNREADABLE_DETAIL
+    assert "/tmp/scan.pdf" not in problem.detail
+
+
+def test_document_upload_error_still_maps_to_500() -> None:
+    problem = problem_from_exception(DocumentUploadError("extractor blew up"))
+
+    assert problem.status == 500
+    assert problem.code == "operational_error"
+    assert problem.detail == OPERATIONAL_FAILURE_MESSAGE
+
+
+@pytest.mark.parametrize(
+    ("operation", "detail"),
+    [
+        ("create", DOCUMENT_PARTIAL_DETAILS["create"]),
+        ("replace", DOCUMENT_PARTIAL_DETAILS["replace"]),
+        ("delete", DOCUMENT_PARTIAL_DETAILS["delete"]),
+    ],
+)
+def test_partial_document_operation_maps_to_409(
+    operation: str, detail: str
+) -> None:
+    problem = problem_from_exception(
+        PartialDocumentOperationError(
+            "adapter leaked /var/chroma",
+            operation=operation,  # type: ignore[arg-type]
+        )
+    )
+
+    assert problem.status == 409
+    assert problem.code == "document_partial_failure"
+    assert problem.detail == detail
+    assert "/var/chroma" not in problem.detail
+
+
+def test_upload_too_large_maps_to_413() -> None:
+    problem = problem_from_exception(UploadTooLargeError(max_bytes=5_242_880))
+
+    assert problem.status == 413
+    assert problem.code == "upload_too_large"
+    assert problem.detail == UPLOAD_TOO_LARGE_DETAIL.format(max_bytes=5_242_880)
+
+
+def test_unsupported_document_type_maps_to_422() -> None:
+    detail = (
+        "unsupported document type ('.docx'); supported types are "
+        ".markdown, .md, .pdf, .txt"
+    )
+    problem = problem_from_exception(UnsupportedDocumentTypeError(detail))
+
+    assert problem.status == 422
+    assert problem.code == "unsupported_document_type"
+    assert problem.detail == detail

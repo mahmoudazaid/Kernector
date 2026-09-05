@@ -12,9 +12,12 @@ from application.errors import (
     OllamaNotConfiguredError,
 )
 from composition.errors import (
+    DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
     KnowledgeLoadError,
+    PartialDocumentOperationError,
+    UnknownUploadedDocumentError,
 )
 from domain.errors import (
     DomainValidationError,
@@ -33,6 +36,37 @@ _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
 _INTERNAL_FAILURE_DETAIL = "An unexpected error occurred."
 _VALIDATION_TITLE = "Request validation failed"
 _PROBLEM_BASE = "https://kernector.dev/problems"
+
+DOCUMENT_NOT_FOUND_DETAIL = "The requested document was not found."
+DOCUMENT_UNREADABLE_DETAIL = (
+    "The uploaded file has no extractable text. "
+    "Try a different file or export it as plain text or Markdown."
+)
+UPLOAD_TOO_LARGE_DETAIL = "Upload must be at most {max_bytes} bytes."
+DOCUMENT_PARTIAL_DETAILS = {
+    "create": (
+        "Upload failed and its status could not be saved; retry, or "
+        "delete any visible pending document."
+    ),
+    "replace": "Replacement did not complete; retry Replace or Delete.",
+    "delete": "Retry Delete to finish removing the catalog row.",
+}
+
+
+class UploadTooLargeError(RuntimeError):
+    """Request body exceeds the configured upload size limit."""
+
+    def __init__(self, *, max_bytes: int) -> None:
+        self.max_bytes = max_bytes
+        super().__init__(UPLOAD_TOO_LARGE_DETAIL.format(max_bytes=max_bytes))
+
+
+class UnsupportedDocumentTypeError(RuntimeError):
+    """Upload suffix is outside the supported set."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
 
 
 class ProblemError(BaseModel):
@@ -61,6 +95,7 @@ _PROBLEM_STATUS_DESCRIPTIONS: dict[int, str] = {
     404: "Not found",
     405: "Method not allowed",
     409: "Conflict",
+    413: "Payload too large",
     422: "Validation error",
     500: "Server error",
     502: "Provider error",
@@ -123,6 +158,51 @@ def problem_from_exception(
             title="Invalid query",
             status=422,
             detail=str(exc),
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, UploadTooLargeError):
+        return _problem(
+            code="upload_too_large",
+            title="Payload too large",
+            status=413,
+            detail=UPLOAD_TOO_LARGE_DETAIL.format(max_bytes=exc.max_bytes),
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, UnsupportedDocumentTypeError):
+        return _problem(
+            code="unsupported_document_type",
+            title="Unsupported document type",
+            status=422,
+            detail=exc.detail,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, UnknownUploadedDocumentError):
+        return _problem(
+            code="document_not_found",
+            title="Document not found",
+            status=404,
+            detail=DOCUMENT_NOT_FOUND_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, DocumentContentError):
+        return _problem(
+            code="document_unreadable",
+            title="Document unreadable",
+            status=422,
+            detail=DOCUMENT_UNREADABLE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, PartialDocumentOperationError):
+        return _problem(
+            code="document_partial_failure",
+            title="Document partial failure",
+            status=409,
+            detail=DOCUMENT_PARTIAL_DETAILS[exc.operation],
             instance=instance,
             request_id=request_id,
         )
