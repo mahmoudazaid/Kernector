@@ -852,14 +852,14 @@ a {
   width: 20px;
   height: 20px;
   margin-top: -7px;
-  border: 1px solid color-mix(in srgb, var(--kern-accent) 35%, transparent);
+  border: 1px solid var(--kern-accent);
   border-radius: 50%;
   background:
-    var(--kern-control-sheen),
+    var(--kern-control-sheen-fill),
     linear-gradient(
       180deg,
-      color-mix(in srgb, #fff 30%, var(--kern-accent-pastel)),
-      var(--kern-accent-pastel)
+      color-mix(in srgb, #fff 12%, var(--kern-accent)),
+      var(--kern-accent)
     );
   box-shadow: var(--kern-control-emboss);
 }
@@ -867,14 +867,14 @@ a {
 .kern-settings-input[type="range"]::-moz-range-thumb {
   width: 20px;
   height: 20px;
-  border: 1px solid color-mix(in srgb, var(--kern-accent) 35%, transparent);
+  border: 1px solid var(--kern-accent);
   border-radius: 50%;
   background:
-    var(--kern-control-sheen),
+    var(--kern-control-sheen-fill),
     linear-gradient(
       180deg,
-      color-mix(in srgb, #fff 30%, var(--kern-accent-pastel)),
-      var(--kern-accent-pastel)
+      color-mix(in srgb, #fff 12%, var(--kern-accent)),
+      var(--kern-accent)
     );
   box-shadow: var(--kern-control-emboss);
 }
