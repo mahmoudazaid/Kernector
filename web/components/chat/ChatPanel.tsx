@@ -407,7 +407,7 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             id="chat-input"
             className="kern-chat-input"
             rows={1}
-            placeholder="Ask about your documents…"
+            placeholder="What's in your mind!"
             value={draft}
             disabled={sending}
             onChange={(event) => setDraft(event.target.value)}

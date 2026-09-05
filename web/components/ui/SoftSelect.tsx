@@ -36,14 +36,26 @@ export function SoftSelect({
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const seedRef = useRef({ options, value });
+  seedRef.current = { options, value };
 
   useEffect(() => {
     if (!open) {
       return;
     }
-    setActiveIndex(indexOfOption(options, value));
+    const { options: seededOptions, value: seededValue } = seedRef.current;
+    setActiveIndex(indexOfOption(seededOptions, seededValue));
     listRef.current?.focus();
-  }, [open, options, value]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const option = document.getElementById(`${listId}-${activeIndex}`);
+    option?.scrollIntoView?.({ block: "nearest" });
+  }, [open, activeIndex, listId]);
 
   useEffect(() => {
     if (!open) {
@@ -60,10 +72,14 @@ export function SoftSelect({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
+  function focusTrigger() {
+    triggerRef.current?.focus();
+  }
+
   function choose(next: string) {
     onChange(next);
     setOpen(false);
-    document.getElementById(id)?.focus();
+    focusTrigger();
   }
 
   function onBlur(event: FocusEvent<HTMLDivElement>) {
@@ -101,7 +117,7 @@ export function SoftSelect({
     if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
-      document.getElementById(id)?.focus();
+      focusTrigger();
       return;
     }
 
@@ -147,6 +163,7 @@ export function SoftSelect({
       <div className="kern-select" ref={rootRef} onBlur={onBlur}>
         <button
           id={id}
+          ref={triggerRef}
           type="button"
           className="kern-select-trigger"
           aria-haspopup="listbox"

@@ -34,6 +34,37 @@ describe("SoftSelect", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("keeps the highlight after a parent re-render with inline options", async () => {
+    const user = userEvent.setup();
+
+    function Host({ options }: { options: string[] }) {
+      return (
+        <SoftSelect
+          id="model"
+          label="Model"
+          value="a"
+          options={options}
+          onChange={() => undefined}
+        />
+      );
+    }
+
+    const { rerender } = render(<Host options={["a", "b", "c"]} />);
+
+    await user.click(screen.getByLabelText(/^Model$/i));
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    const before = screen
+      .getByRole("listbox")
+      .getAttribute("aria-activedescendant");
+    expect(before).toMatch(/-2$/);
+
+    rerender(<Host options={["a", "b", "c"]} />);
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "aria-activedescendant",
+      before,
+    );
+  });
+
   it("closes when focus leaves the control", async () => {
     const user = userEvent.setup();
     render(
