@@ -74,7 +74,7 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 | Controls           | Soft glass emboss (`--kern-control-sheen` / highlight / shade) with a light press-in on hover       |
 | Motion             | `--kern-duration` + `--kern-ease`; emphasis uses `--kern-duration-emphasis` + `--kern-ease-out`     |
 
-Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated. Apply the emboss recipe on every product surface (shell, chat, settings, Knowledge Hub); do not ship native or flat controls that diverge from ADR 0003. Workspace pages (Knowledge Hub, Chat, Dashboard) fill `.kern-main` width; Settings may keep a narrow form column.
+Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated. Apply the emboss recipe on every product surface (shell, chat, settings, Knowledge Hub); do not ship native or flat controls that diverge from ADR 0003. Workspace pages (Knowledge Hub, Chat, Dashboard) fill `.kern-main` width; Settings may keep a narrow form column. Product confirms use `ConfirmDialog` — never `window.confirm` / `alert` / `prompt`.
 
 ## Responsive shell
 

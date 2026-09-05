@@ -68,20 +68,27 @@ inventing a local look.
    product surface that shows controls or chrome, including at least:
 
    - Shell: sidebar nav pills, brand mark, theme / menu triggers
-   - Buttons: `.kern-btn`, secondary / ghost variants
+   - Buttons: `.kern-btn`, secondary / ghost / danger variants
    - Chat: bubbles, composer, **circular** send control
    - Settings: fieldsets, radios, range thumbs, SoftSelect
    - Knowledge Hub: fieldsets, file inputs (`::file-selector-button`),
-     confirm checkbox, actions
+     row actions, confirm dialogs
+   - Dialogs: `ConfirmDialog` (`.kern-dialog`) for destructive or
+     irreversible confirms
 
    New routes must match before merge. Prefer shared classes
    (`.kern-settings-fieldset`, `.kern-settings-input`, `.kern-btn`, …) over
    page-local visual systems.
 
-6. **Native controls** — Do not ship unstyled browser chrome for product
-   forms. File inputs, checkboxes, radios, and range thumbs need the emboss
-   recipe (or SoftSelect for listboxes). Custom listboxes use
+6. **Native controls and system chrome** — Do not ship unstyled browser chrome
+   for product UI. File inputs, checkboxes, radios, and range thumbs need the
+   emboss recipe (or SoftSelect for listboxes). Custom listboxes use
    `web/components/ui/SoftSelect.tsx` rather than a second select pattern.
+   **Do not use `window.confirm`, `window.alert`, or `window.prompt`** for
+   product flows — they break Instrument panel identity. Use
+   `web/components/ui/ConfirmDialog.tsx` (soft-glass panel, embossed actions,
+   Escape / backdrop dismiss) or an equivalent token-backed dialog. Destructive
+   confirms use the danger button variant (`.kern-btn-danger`).
 
 7. **Geometry and motion** — Pill radii for many controls
    (`--kern-radius-pill`); chat send stays a **circle** (`border-radius: 50%`),
@@ -94,7 +101,8 @@ inventing a local look.
    marketing looks; broadsheet / newspaper dense columns; dark-mode-only
    defaults; multi-layer neon glow; emoji decoration as chrome; per-page
    accent colors; narrow “card column” layouts on workspace pages that waste
-   the main pane; or copied third-party widget markup that bypasses tokens.
+   the main pane; native system dialogs for confirms; or copied third-party
+   widget markup that bypasses tokens.
 
 9. **Guardrail tests** — `web/__tests__/design-tokens.test.ts` asserts the
    required token names on `:root` and theme overrides (including control
@@ -105,13 +113,13 @@ inventing a local look.
 ## Consequences
 
 - PRs that add or restyle `web/` UI are incomplete if controls look native or
-  flat relative to Settings / Chat / Knowledge Hub under the same theme, or if
+  flat relative to Settings / Chat / Knowledge Hub under the same theme, if
   workspace pages leave unused side gutters from an artificial content
-  `max-width`.
-- Changing the identity (palette, emboss model, type, or main-pane fill rule)
-  requires updating this ADR (or a superseding ADR), `tokens.css`,
-  `web/README.md` Visual direction, and the design-token tests together —
-  not a silent CSS drift on one route.
+  `max-width`, or if confirms use browser system dialogs.
+- Changing the identity (palette, emboss model, type, main-pane fill, or
+  dialog recipe) requires updating this ADR (or a superseding ADR),
+  `tokens.css`, `web/README.md` Visual direction, and the design-token tests
+  together — not a silent CSS drift on one route.
 - Accessibility for filled controls is part of the identity: prefer
   `--kern-control-sheen-fill` and verified contrast over stronger gloss.
 - Streamlit presentation is out of scope for this ADR; it is not required to
@@ -122,5 +130,7 @@ inventing a local look.
 - [web/README.md](../../web/README.md) — Visual direction summary for
   contributors
 - [web/styles/tokens.css](../../web/styles/tokens.css) — token definitions
+- [web/components/ui/ConfirmDialog.tsx](../../web/components/ui/ConfirmDialog.tsx)
+  — shared soft-glass confirm dialog
 - [ADR 0002](0002-nextjs-presentation-migration.md) — Next.js / HTTP ownership
   of `web/`

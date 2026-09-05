@@ -144,7 +144,47 @@ describe("DocumentsPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("requires delete confirmation before enabling Delete", async () => {
+  it("deletes from a row action after confirmation", async () => {
+    const user = userEvent.setup();
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(listResponse([doc()]))
+      .mockResolvedValueOnce(listResponse([]));
+    const remove = vi.fn().mockResolvedValue(undefined);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        remove={remove}
+      />,
+    );
+
+    await screen.findByText("spec.md");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: /i confirm deletion of this document/i,
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /delete spec\.md/i }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    expect(dialog).toHaveTextContent(/cannot be undone/i);
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    expect(remove).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceId: "src-1" }),
+    );
+    expect(
+      await screen.findByText(/deleted document src-1/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not delete when row confirmation is cancelled", async () => {
     const user = userEvent.setup();
     const list = vi.fn().mockResolvedValue(listResponse([doc()]));
     const remove = vi.fn().mockResolvedValue(undefined);
@@ -157,18 +197,17 @@ describe("DocumentsPanel", () => {
     );
 
     await screen.findByText("spec.md");
-    const deleteButton = screen.getByRole("button", { name: /^delete$/i });
-    expect(deleteButton).toBeDisabled();
-
     await user.click(
-      screen.getByLabelText(/i confirm deletion of this document/i),
+      screen.getByRole("button", { name: /delete spec\.md/i }),
     );
-    expect(deleteButton).toBeEnabled();
-    await user.click(deleteButton);
 
-    expect(remove).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceId: "src-1" }),
-    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows sanitized per-document warning from error_summary", async () => {

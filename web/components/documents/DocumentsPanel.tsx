@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/states/EmptyState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
@@ -84,7 +85,8 @@ export function DocumentsPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [pendingDelete, setPendingDelete] =
+    useState<CatalogDocumentResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
 
@@ -207,23 +209,22 @@ export function DocumentsPanel({
     }
   }
 
-  async function onDelete() {
-    if (!selected || !confirmDelete) {
-      return;
-    }
+  async function onDelete(document: CatalogDocumentResponse) {
     setBusy(true);
     setFeedback({ kind: "idle" });
     try {
       await remove({
         baseUrl: apiBaseUrl,
-        sourceId: selected.source_id,
+        sourceId: document.source_id,
       });
       setFeedback({
         kind: "success",
-        message: `Deleted document ${selected.source_id}.`,
+        message: `Deleted document ${document.source_id}.`,
       });
-      setConfirmDelete(false);
-      setSelectedId(null);
+      setPendingDelete(null);
+      setSelectedId((current) =>
+        current === document.source_id ? null : current,
+      );
       await refresh();
     } catch (error) {
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
@@ -293,6 +294,9 @@ export function DocumentsPanel({
                 <th scope="col">Source ID</th>
                 <th scope="col">Chunks</th>
                 <th scope="col">Uploaded</th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -304,7 +308,6 @@ export function DocumentsPanel({
                     className={selectedRow ? "is-selected" : undefined}
                     onClick={() => {
                       setSelectedId(doc.source_id);
-                      setConfirmDelete(false);
                     }}
                   >
                     <td>
@@ -322,6 +325,33 @@ export function DocumentsPanel({
                     </td>
                     <td>{doc.chunk_count}</td>
                     <td>{formatUploadedAt(doc.uploaded_at)}</td>
+                    <td className="kern-documents-actions">
+                      <button
+                        type="button"
+                        className="kern-documents-delete"
+                        aria-label={`Delete ${doc.file_name}`}
+                        disabled={busy}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPendingDelete(doc);
+                        }}
+                      >
+                        <svg
+                          className="kern-documents-delete-icon"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M7.5 4.5h5M5 6.5h10M8.25 6.5v7.25M11.75 6.5v7.25M7 6.5l.5 8.25h5l.5-8.25"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -371,55 +401,53 @@ export function DocumentsPanel({
       </form>
 
       {selected ? (
-        <>
-          <form className="kern-documents-form" onSubmit={onReplace}>
-            <fieldset className="kern-settings-fieldset" disabled={busy}>
-              <legend>Replace</legend>
-              <p className="kern-settings-help">
-                Keeps source ID {selected.source_id} and replaces stored chunks.
-                File name is ignored for identity.
-              </p>
-              <label className="kern-settings-field">
-                <span>Replacement file</span>
-                <input
-                  type="file"
-                  accept={accept}
-                  className="kern-settings-input"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                    setReplaceFile(event.target.files?.[0] ?? null);
-                  }}
-                />
-              </label>
-              <Button type="submit" disabled={busy || !replaceFile}>
-                Replace
-              </Button>
-            </fieldset>
-          </form>
-
+        <form className="kern-documents-form" onSubmit={onReplace}>
           <fieldset className="kern-settings-fieldset" disabled={busy}>
-            <legend>Delete</legend>
+            <legend>Replace</legend>
             <p className="kern-settings-help">
-              Deletes {selected.file_name} ({selected.source_id}). Confirm
-              before continuing.
+              Keeps source ID {selected.source_id} and replaces stored chunks.
+              File name is ignored for identity.
             </p>
-            <label className="kern-settings-radio">
+            <label className="kern-settings-field">
+              <span>Replacement file</span>
               <input
-                type="checkbox"
-                checked={confirmDelete}
-                onChange={(event) => setConfirmDelete(event.target.checked)}
+                type="file"
+                accept={accept}
+                className="kern-settings-input"
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setReplaceFile(event.target.files?.[0] ?? null);
+                }}
               />
-              <span>I confirm deletion of this document</span>
             </label>
-            <Button
-              variant="secondary"
-              disabled={busy || !confirmDelete}
-              onClick={() => void onDelete()}
-            >
-              Delete
+            <Button type="submit" disabled={busy || !replaceFile}>
+              Replace
             </Button>
           </fieldset>
-        </>
+        </form>
       ) : null}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete document"
+        description={
+          pendingDelete
+            ? `Delete ${pendingDelete.file_name} (${pendingDelete.source_id})? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        tone="danger"
+        busy={busy}
+        onCancel={() => {
+          if (!busy) {
+            setPendingDelete(null);
+          }
+        }}
+        onConfirm={() => {
+          if (pendingDelete) {
+            void onDelete(pendingDelete);
+          }
+        }}
+      />
     </section>
   );
 }
