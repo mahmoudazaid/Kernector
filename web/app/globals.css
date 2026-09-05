@@ -258,34 +258,6 @@ a {
   background: var(--kern-accent);
 }
 
-.kern-foundation-note {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--kern-space-2);
-  padding: var(--kern-space-3);
-  margin-top: var(--kern-space-4);
-  border: 1px solid var(--kern-line);
-  border-radius: var(--kern-radius);
-  background: var(--kern-bg);
-  color: var(--kern-muted);
-  font-family: var(--kern-font-mono);
-  font-size: var(--kern-text-sm);
-  line-height: 1.45;
-}
-
-.kern-foundation-dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 4px;
-  border-radius: 999px;
-  background: var(--kern-accent);
-  flex-shrink: 0;
-}
-
-.kern-foundation-note small {
-  color: var(--kern-muted);
-}
-
 .kern-main {
   display: flex;
   flex-direction: column;
