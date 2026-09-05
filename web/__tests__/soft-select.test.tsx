@@ -1,9 +1,27 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { computeAccessibleName } from "dom-accessibility-api";
 import { describe, expect, it, vi } from "vitest";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 
 describe("SoftSelect", () => {
+  it("exposes the selected value as a combobox", () => {
+    render(
+      <SoftSelect
+        id="model"
+        label="Model"
+        value="openai/gpt-4o-mini"
+        options={["openai/gpt-4o-mini", "openai/gpt-4o"]}
+        onChange={() => undefined}
+      />,
+    );
+
+    const trigger = screen.getByLabelText(/^Model$/i);
+    expect(trigger).toHaveAttribute("role", "combobox");
+    expect(computeAccessibleName(trigger)).toBe("Model");
+    expect(trigger).toHaveTextContent("openai/gpt-4o-mini");
+  });
+
   it("moves highlight with arrows and commits only on Enter", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -223,6 +223,7 @@ export function SoftSelect({
           id={id}
           ref={triggerRef}
           type="button"
+          role="combobox"
           className="kern-select-trigger"
           aria-haspopup="listbox"
           aria-expanded={open}
