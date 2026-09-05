@@ -39,6 +39,7 @@ export function SoftSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const seedRef = useRef({ options, value });
   seedRef.current = { options, value };
+  const typeaheadRef = useRef({ buffer: "", at: 0 });
 
   useEffect(() => {
     if (!open) {
@@ -47,6 +48,7 @@ export function SoftSelect({
     const { options: seededOptions, value: seededValue } = seedRef.current;
     setActiveIndex(indexOfOption(seededOptions, seededValue));
     listRef.current?.focus();
+    typeaheadRef.current = { buffer: "", at: 0 };
   }, [open]);
 
   useEffect(() => {
@@ -142,6 +144,22 @@ export function SoftSelect({
     if (event.key === "End") {
       event.preventDefault();
       setActiveIndex(Math.max(0, options.length - 1));
+      return;
+    }
+
+    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      const now = Date.now();
+      const typeahead = typeaheadRef.current;
+      typeahead.buffer =
+        now - typeahead.at > 700 ? event.key : typeahead.buffer + event.key;
+      typeahead.at = now;
+      const found = options.findIndex((option) =>
+        option.toLowerCase().startsWith(typeahead.buffer.toLowerCase()),
+      );
+      if (found >= 0) {
+        event.preventDefault();
+        setActiveIndex(found);
+      }
       return;
     }
 

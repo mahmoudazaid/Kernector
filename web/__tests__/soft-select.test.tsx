@@ -96,6 +96,35 @@ describe("SoftSelect", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("jumps to matching options via typeahead", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SoftSelect
+        id="model"
+        label="Model"
+        value="anthropic/claude"
+        options={[
+          "anthropic/claude",
+          "google/gemini-2.5-flash",
+          "openai/gpt-4o-mini",
+          "openai/gpt-4o",
+        ]}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/^Model$/i));
+    await user.keyboard("gpt");
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "aria-activedescendant",
+      expect.stringMatching(/-2$/),
+    );
+
+    await user.keyboard("{Enter}");
+    expect(onChange).toHaveBeenCalledWith("openai/gpt-4o-mini");
+  });
+
   it("keeps options out of the tab order", async () => {
     const user = userEvent.setup();
     render(
