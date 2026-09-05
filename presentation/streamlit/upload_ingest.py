@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from application.errors import ApplicationValidationError, ConfigurationError
+from application.manage_documents import PartialCreateFailure
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     DocumentOperationError,
@@ -22,6 +23,7 @@ from composition import (
     delete_uploaded_document,
     list_uploaded_documents,
     replace_uploaded_document,
+    unsupported_upload_type_detail,
 )
 from domain.errors import DomainValidationError
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
@@ -94,10 +96,7 @@ def _validate_upload(
     if suffix not in SUPPORTED_UPLOAD_SUFFIXES:
         return UploadIngestResult(
             ok=False,
-            message=(
-                f"unsupported document type ({suffix!r}); supported types are "
-                f"{', '.join(sorted(SUPPORTED_UPLOAD_SUFFIXES))}"
-            ),
+            message=unsupported_upload_type_detail(suffix),
         )
     return UploadPayload(file_name=filename, content=content)
 
@@ -125,10 +124,7 @@ def create_new_document(
         # credential echoed by a vendor would be sitting.
         return UploadIngestResult(
             ok=False,
-            message=(
-                "Upload failed and its status could not be saved; retry, or "
-                "delete any visible pending document."
-            ),
+            message=PartialCreateFailure.MESSAGE,
         )
     except DocumentUploadError as error:
         return UploadIngestResult(ok=False, message=str(error))

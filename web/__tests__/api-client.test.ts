@@ -250,4 +250,42 @@ describe("apiRequest", () => {
     const headers = new Headers(init.headers);
     expect(headers.get("Content-Type")).toBeNull();
   });
+
+  it("passes FormData through without setting Content-Type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ source_id: "x" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const form = new FormData();
+    form.append("file", new Blob(["# hi"]), "spec.md");
+
+    await apiRequest({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/documents",
+      method: "POST",
+      body: form,
+    });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.body).toBe(form);
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBeNull();
+  });
+
+  it("returns undefined for 204 No Content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await apiRequest<undefined>({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/documents/src-1",
+      method: "DELETE",
+    });
+
+    expect(result).toBeUndefined();
+  });
 });
