@@ -97,7 +97,7 @@ describe("SoftSelect", () => {
   });
 
   it("jumps to matching options via typeahead", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onChange = vi.fn();
     render(
       <SoftSelect
