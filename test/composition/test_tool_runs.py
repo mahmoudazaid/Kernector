@@ -12,7 +12,7 @@ import pytest
 import composition
 import composition.tool_runs as tool_runs_mod
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
-from presentation.streamlit.tool_run import tool_call_lines
+from presentation.http.schemas import ToolCallResponse
 
 
 def test_tool_call_view_fields_are_name_status_and_summary_only() -> None:
@@ -47,7 +47,7 @@ def test_composition_exports_no_raw_to_summary_helper() -> None:
     assert "def bounded_" not in source
 
 
-def test_rendered_tool_call_lines_never_include_raw_payload_secrets() -> None:
+def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> None:
     calls = (
         ToolCallView(
             "software_delivery.risk_score",
@@ -57,7 +57,13 @@ def test_rendered_tool_call_lines_never_include_raw_payload_secrets() -> None:
         ToolCallView("software_delivery.generate_test_cases", ok=False),
     )
 
-    rendered = " ".join(tool_call_lines(calls))
+    projected = [
+        ToolCallResponse(tool_name=call.tool_name, ok=call.ok, summary=call.summary)
+        for call in calls
+    ]
+    rendered = " ".join(
+        f"{call.tool_name} {call.ok} {call.summary}" for call in projected
+    )
 
     assert "sk-live-abc" not in rendered
     assert '{"score"' not in rendered

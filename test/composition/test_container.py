@@ -113,7 +113,6 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
         "assert model is not None, 'no chat model built'\n"
         "store = build_vector_store(settings)\n"
         "assert store is not None, 'no vector store built'\n"
-        "assert 'streamlit' not in sys.modules, 'streamlit was imported'\n"
         "leaked = [m for m in sys.modules if m.split('.')[0] == 'presentation']\n"
         "assert not leaked, f'presentation imported: {leaked}'\n"
     )

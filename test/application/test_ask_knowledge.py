@@ -271,13 +271,6 @@ def test_run_meta_does_not_retain_query_or_chunk_markers() -> None:
     assert chunk_marker not in repr(response.run)
     assert chunk_marker not in str(response.run)
 
-    from presentation.streamlit.run_details import run_detail_lines
-
-    joined = "\n".join(run_detail_lines(response.run))
-    assert query_marker not in joined
-    assert chunk_marker not in joined
-    assert "Query rewritten: yes" in joined
-
 
 def test_run_meta_includes_bound_request_id() -> None:
     chat = _RecordingChat("ok")

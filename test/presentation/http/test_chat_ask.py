@@ -309,3 +309,39 @@ def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
     assert body["tool_run"]["risk"]["score"] == 62
     assert body["tool_run"]["test_cases"]["cases"][0]["title"] == "Lock after five failures"
     assert body["tool_run"]["markdown"] == "# Test Cases\n"
+
+
+def test_run_meta_projection_omits_query_and_chunk_markers() -> None:
+    """HTTP ``RunMetaResponse`` never carries query/chunk text — only allowlisted flags."""
+    query_marker = "UNIQUE_QUERY_MARKER_leak_check_http"
+    chunk_marker = "UNIQUE_CHUNK_MARKER_leak_check_http"
+    ask = _StubAsk(
+        AskResponse(
+            answer="safe answer without markers",
+            run=RunMeta(
+                request_id="req-leak",
+                outcome="success",
+                query_rewritten=True,
+                hit_count=1,
+                citation_count=0,
+            ),
+        )
+    )
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": query_marker},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    run = body["run"]
+    assert run["query_rewritten"] is True
+    assert isinstance(run["query_rewritten"], bool)
+    assert query_marker not in response.text
+    assert chunk_marker not in response.text
+    assert "settings" not in run
+    assert "error_type" not in run
+    assert "source_type" not in run
+
