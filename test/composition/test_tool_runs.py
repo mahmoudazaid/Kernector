@@ -49,30 +49,37 @@ def test_composition_exports_no_raw_to_summary_helper() -> None:
 
 
 def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> None:
-    calls = (
-        ToolCallView(
-            "software_delivery.risk_score",
-            ok=True,
-            summary="Scored risk at 62/100",
+    from composition.software_delivery_chat import project_software_delivery_run_view
+    from application.contracts import InvokeToolResponse
+    
+    # Create tool outputs with secrets in the raw result field
+    tool_outputs = (
+        InvokeToolResponse(
+            "software_delivery.risk_score", 
+            '{"score": 62, "api_key": "sk-live-abc"}'
         ),
-        ToolCallView("software_delivery.generate_test_cases", ok=False),
-    )
-
-    view = SoftwareDeliveryRunView(
-        summary="Ran 2 tools",
-        calls=calls,
-        risk=RiskScoreView(
-            score=62,
-            level="medium",
-            rationale="Model identified moderate security concerns in the codebase",
-            factors=(),
+        InvokeToolResponse(
+            "software_delivery.generate_test_cases",
+            '{"score": 62, "secret_token": "sk-live-abc"}'
         ),
     )
-
+    
+    # Create a mock response that would contain the secrets
+    from test.composition.test_software_delivery_chat import _Response, _RiskOutcome, _assessment
+    response = _Response(
+        "Scored risk.", 
+        (_RiskOutcome(_assessment()),)
+    )
+    
+    # Project through the composition layer (this should filter out secrets)
+    view = project_software_delivery_run_view(response, tool_outputs=tool_outputs)
+    
+    # Project through the HTTP layer
     rendered = tool_run_response(view).model_dump_json()
 
-    # Verify no raw payload fields leak through projection
-    assert "result" not in rendered
+    # Verify secrets from raw payloads never leak through
+    assert "sk-live-abc" not in rendered
+    assert "secret_token" not in rendered
 
 
 def test_tool_run_projection_fields_are_locked() -> None:

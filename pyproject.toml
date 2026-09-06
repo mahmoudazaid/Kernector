@@ -16,7 +16,6 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "requests>=2.34.2",
     "uvicorn>=0.40.0",
-    "watchdog>=6.0.0",
 ]
 
 [dependency-groups]
