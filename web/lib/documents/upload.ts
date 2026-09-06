@@ -44,7 +44,9 @@ export function validateUpload(
   if (file.size > constraints.max_upload_bytes) {
     return {
       ok: false,
-      message: `Upload must be at most ${constraints.max_upload_bytes} bytes.`,
+      message:
+        `Upload must be at most ${constraints.max_upload_bytes} bytes; ` +
+        `this file is ${file.size} bytes.`,
     };
   }
 

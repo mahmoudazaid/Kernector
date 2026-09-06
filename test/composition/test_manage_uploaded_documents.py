@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from application.errors import ConfigurationError
+from application.errors import ConfigurationError, UploadTooLargeError
 from application.manage_documents import (
     PartialCreateFailure,
     PartialDeleteFailure,
@@ -25,6 +26,7 @@ from domain.knowledge import (
     UploadPayload,
 )
 from infrastructure.config import Settings, load_settings
+from presentation.http.errors import problem_from_exception
 
 
 @pytest.fixture
@@ -75,6 +77,61 @@ def test_list_create_replace_delete_round_trip(
 
     composition_container.delete_uploaded_document(settings, created.reference)
     assert composition_container.list_uploaded_documents(settings) == ()
+
+
+def test_oversize_create_passes_upload_too_large_through_to_mapper(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catch-all must not re-bury UploadTooLargeError as DocumentUploadError."""
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    tight = replace(settings, max_upload_bytes=16)
+    payload = UploadPayload(file_name="big.md", content=b"x" * 17)
+
+    with pytest.raises(UploadTooLargeError) as caught:
+        composition_container.create_uploaded_document(tight, payload)
+
+    problem = problem_from_exception(caught.value)
+    body = problem.model_dump_json()
+    assert problem.status == 413
+    assert problem.code == "upload_too_large"
+    assert "UploadPayload(" not in body
+    assert "big.md" not in body
+    assert not isinstance(caught.value, DocumentUploadError)
+
+
+def test_oversize_replace_passes_upload_too_large_through(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    created = composition_container.create_uploaded_document(
+        settings,
+        UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
+    )
+    tight = replace(settings, max_upload_bytes=16)
+
+    with pytest.raises(UploadTooLargeError) as caught:
+        composition_container.replace_uploaded_document(
+            tight,
+            created.reference,
+            UploadPayload(file_name="big.md", content=b"x" * 17),
+        )
+
+    problem = problem_from_exception(caught.value)
+    assert problem.status == 413
+    assert problem.code == "upload_too_large"
+    assert "big.md" not in problem.model_dump_json()
 
 
 def test_replace_unknown_becomes_document_operation_error(

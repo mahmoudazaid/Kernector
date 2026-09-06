@@ -10,6 +10,7 @@ from application.errors import (
     InputRejectedError,
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
+    UploadTooLargeError,
 )
 from application.manage_documents import PartialCreateFailure
 from composition.errors import (
@@ -46,21 +47,12 @@ DOCUMENT_UNREADABLE_DETAIL = (
     "The uploaded file has no extractable text. "
     "Try a different file or export it as plain text or Markdown."
 )
-UPLOAD_TOO_LARGE_DETAIL = "Upload must be at most {max_bytes} bytes."
 MISSING_UPLOAD_FILE_DETAIL = "Choose a document to upload before submitting."
 DOCUMENT_PARTIAL_DETAILS = {
     "create": PartialCreateFailure.MESSAGE,
     "replace": "Replacement did not complete; retry Replace or Delete.",
     "delete": "Retry Delete to finish removing the catalog row.",
 }
-
-
-class UploadTooLargeError(RuntimeError):
-    """Request body exceeds the configured upload size limit."""
-
-    def __init__(self, *, max_bytes: int) -> None:
-        self.max_bytes = max_bytes
-        super().__init__(UPLOAD_TOO_LARGE_DETAIL.format(max_bytes=max_bytes))
 
 
 class UnsupportedDocumentTypeError(RuntimeError):
@@ -154,29 +146,30 @@ def problem_from_exception(
     Human-readable fields never include tracebacks, vendor bodies, prompts,
     document content, or ``repr`` of rejected values. Client field errors are
     already handled as 422 by Pydantic via :func:`problem_from_validation_errors`.
-    ``InputRejectedError`` is a client rejection (unsafe query, over-length
-    input) and maps to 422 with the boundary-authored ``str(error)``. Plain
+    ``UploadTooLargeError`` (an ``InputRejectedError`` subclass) maps to 413
+    with the class-composed byte-limit sentence. Other ``InputRejectedError``
+    rejections map to 422 with the boundary-authored ``str(error)``. Plain
     ``ApplicationValidationError`` / ``DomainValidationError`` that reach this
     mapper are internal contract violations (usually ``__post_init__`` invariants)
     and map to 500 with the fixed operational sentence — matching Streamlit's
     ``DomainValidationError`` handling. Provider/tool/store failures use their
     fixed category sentences.
     """
+    if isinstance(exc, UploadTooLargeError):
+        return _problem(
+            code="upload_too_large",
+            title="Upload too large",
+            status=413,
+            detail=str(exc),
+            instance=instance,
+            request_id=request_id,
+        )
     if isinstance(exc, InputRejectedError):
         return _problem(
             code="invalid_query",
             title="Invalid query",
             status=422,
             detail=str(exc),
-            instance=instance,
-            request_id=request_id,
-        )
-    if isinstance(exc, UploadTooLargeError):
-        return _problem(
-            code="upload_too_large",
-            title="Payload too large",
-            status=413,
-            detail=UPLOAD_TOO_LARGE_DETAIL.format(max_bytes=exc.max_bytes),
             instance=instance,
             request_id=request_id,
         )
