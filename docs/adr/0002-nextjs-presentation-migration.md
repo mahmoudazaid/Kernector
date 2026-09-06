@@ -139,6 +139,7 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
    where useful).
 
 7. **Coexistence, rollback, and Streamlit retirement**
+   > Superseded in part by [ADR 0004](0004-retire-streamlit-presentation.md) (Streamlit retired; Next.js + FastAPI sole interactive UI).
    - Streamlit and Next.js may run during migration. Streamlit entry
      `uv run streamlit run main.py` stays supported.
    - **Rollback** — Stop using Next.js routes and/or disable the HTTP adapter
@@ -199,3 +200,4 @@ slice). Supersedes the documentation intent of closed [#100](https://github.com/
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — layers and Next.js / HTTP migration section
 - [ADR 0001](0001-domain-agnostic-knowledge-foundation.md) — domain-agnostic knowledge foundation
 - [ADR 0003](0003-nextjs-instrument-panel-visual-identity.md) — Next.js Instrument panel visual identity
+- [ADR 0004](0004-retire-streamlit-presentation.md) — Streamlit retired; Next.js + FastAPI sole interactive UI

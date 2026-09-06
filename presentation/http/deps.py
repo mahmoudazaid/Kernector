@@ -33,15 +33,15 @@ from presentation.http.schemas import ChatRuntimeRequest
 def get_settings() -> Settings:
     """Resolve runtime settings once per process through composition.
 
-    Mirrors Streamlit's ``@st.cache_resource`` settings load: avoids re-running
-    ``configure_logging`` / ``load_dotenv(override=True)`` on every request.
+    Process-cached settings load: avoids re-running ``configure_logging`` /
+    ``load_dotenv(override=True)`` on every FastAPI request.
     """
     return load_runtime_settings()
 
 
 @lru_cache(maxsize=1)
 def get_vector_store() -> VectorStore:
-    """Process-cached vector store (hybrid BM25 hydrate once, like Streamlit)."""
+    """Process-cached vector store (hybrid BM25 hydrate once per process)."""
     return build_vector_store(get_settings())
 
 

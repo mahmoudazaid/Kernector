@@ -173,7 +173,7 @@ function persist(selection: SelectionState): void {
 }
 
 /**
- * Streamlit-parity provider/model/settings controls with client-local persistence.
+ * Provider/model/settings controls with client-local persistence.
  */
 export function SettingsPanel({
   apiBaseUrl,

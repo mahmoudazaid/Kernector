@@ -35,7 +35,7 @@ class JsonDocumentCatalog:
     """Persist catalog rows as a JSON array with atomic replace writes.
 
     Every read reloads from disk. A process-wide lock keyed by the resolved
-    catalog path covers each read-modify-write so concurrent Streamlit threads
+    catalog path covers each read-modify-write so concurrent FastAPI requests
     do not lose updates. Simultaneous multi-process writers are unsupported.
     """
 

@@ -329,13 +329,6 @@ def test_tool_turn_carries_retrieval_and_citation_counts_on_run_meta() -> None:
     assert response.run.citation_count == len(response.citations)
     assert response.run.query_rewritten is None
 
-    from presentation.streamlit.run_details import run_detail_lines
-
-    joined = "\n".join(run_detail_lines(response.run))
-    assert "Retrieval hits: 2" in joined
-    assert "Citations: 2" in joined
-    assert "Query rewritten:" not in joined
-
 
 def test_rag_turn_still_preserves_ask_knowledge_rag_metadata() -> None:
     ask = _RecordingAsk()

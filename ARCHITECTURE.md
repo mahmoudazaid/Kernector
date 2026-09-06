@@ -12,9 +12,9 @@ business logic and the UI stays replaceable.
 | `infrastructure/` | Concrete adapters and external integrations | `domain` and approved third-party libraries |
 | `packs/` | Optional executable domain packs (tools, scoring policies) | `domain` and standard library |
 | `composition/` | Settings loading, factories, and dependency injection | `application`, `domain`, `infrastructure`, and enabled `packs` (lazy) |
-| `presentation/` | Streamlit, CLI, and `presentation/http/` FastAPI adapter | `application`, `domain`, and `composition` |
+| `presentation/` | CLI and `presentation/http/` FastAPI adapter | `application`, `domain`, and `composition` |
 
-Future `web/` (Next.js) is a TypeScript presentation client, not a Python
+`web/` (Next.js) is the interactive presentation client, not a Python
 layer. It is outside the table above and talks to Kernector only over HTTP
 (see [Next.js / HTTP presentation migration](#nextjs--http-presentation-migration)).
 
@@ -34,10 +34,10 @@ import `packs`; only composition activates an enabled pack.
 ## Rules
 
 - `domain` imports nothing but the standard library. No LangChain, no
-  OpenRouter, no Chroma, no Streamlit, no `requests`, no `config`.
-- `application` imports `domain` only. It never imports Streamlit, LangChain,
-  or anything that performs I/O; it talks to the outside world through the
-  port protocols in `domain/ports.py`.
+  OpenRouter, no Chroma, no UI frameworks, no `requests`, no `config`.
+- `application` imports `domain` only. It never imports presentation UI
+  frameworks, LangChain, or anything that performs I/O; it talks to the
+  outside world through the port protocols in `domain/ports.py`.
 - `infrastructure` implements those ports. It may import approved third-party
   libraries, but never `application`, `presentation`, or `composition`.
   Infrastructure does not import application because port protocols currently
@@ -49,14 +49,13 @@ import `packs`; only composition activates an enabled pack.
   allowlist; it must not import packs at module scope.
 - `packs/` may import `domain` and the standard library only. Packs must not
   import `application`, `infrastructure`, `presentation`, or `composition`.
-- `presentation` is the only Python layer allowed to import Streamlit or the
-  HTTP server frameworks (`fastapi`, `uvicorn`, `starlette`). Streamlit stays
-  under `presentation/streamlit/`; server frameworks belong under
+- `presentation` is the only Python layer allowed to import HTTP server
+  frameworks (`fastapi`, `uvicorn`, `starlette`), and those belong under
   `presentation/http/` only. Presentation must call application behavior
   through `composition` and must not construct or import infrastructure
   adapters or packs directly. HTTPX is an HTTP **client** (legitimate in
   clients and tests); it is not a server-framework boundary.
-- Future `web/` (Next.js) communicates only through HTTP to the Python API
+- `web/` (Next.js) communicates only through HTTP to the Python API
   (versioned product endpoints under `/api/v1/…` and unversioned
   `GET /health`). It must never **directly import, call, configure, or
   expose** infrastructure adapters, and must never import Python packages,
@@ -74,7 +73,9 @@ application services. Presentation is not the composition root.
 ## Next.js / HTTP presentation migration
 
 See [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md) for the full
-decision record. Next.js UI chrome follows the Instrument panel identity in
+decision record. Streamlit retirement is recorded in
+[ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). Next.js UI chrome
+follows the Instrument panel identity in
 [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Target flow:
 
 ```text
@@ -86,10 +87,9 @@ web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
                                    infrastructure
 ```
 
-Streamlit remains a peer presentation adapter via composition (no HTTP
-required) until separate feature-parity tickets and an explicit retirement
-decision. FastAPI-published OpenAPI is the TypeScript contract source of
-truth. Within `/api/v1`, only backward-compatible additive changes are
+Next.js is the sole interactive UI; it reaches composition only through the
+FastAPI HTTP adapter. FastAPI-published OpenAPI is the TypeScript contract
+source of truth. Within `/api/v1`, only backward-compatible additive changes are
 allowed; removals, renames, required-field additions, type or semantic
 changes, and incompatible Problem Details changes require `/api/v2`
 (deprecated operations stay marked in OpenAPI until a future major version).
@@ -165,9 +165,9 @@ not require a new risk tool or shared-core contract change. Absence-based
 policies (for example missing acceptance criteria) apply only when evidence is
 marked complete; chunk-level evidence may still contribute positive signals.
 
-The Streamlit **Software Delivery tool-result renderers** (#161) expose typed
+The Next.js **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,
-and Markdown preview/download. Live chat turns feed them through the #178
+and Markdown preview. Live chat turns feed them through the #178
 projection adapter (``project_software_delivery_run_view``), not by parsing
 opaque ``AskResponse.tool_outputs``. They are absent when no typed view was
 projected (RAG / non-pack turns). There is no standalone tool-run
@@ -176,7 +176,7 @@ described below.
 
 ``AskResponse.tool_outputs`` remains ``Sequence[InvokeToolResponse]`` — opaque
 tool name plus opaque result string. Generic ``InvokeTool``, ``AskResponse``,
-and shared Streamlit code never interpret pack payloads. Presentation views
+and shared presentation code never interpret pack payloads. Presentation views
 (``SoftwareDeliveryRunView``, ``ToolCallView``, etc.) are **not** stored on
 ``AskResponse``.
 
@@ -184,8 +184,10 @@ The generic ``ToolCallView`` envelope carries tool name, success/failure
 status, and an explicitly authored summary (≤120 characters) built from typed
 metadata such as score or generated-case count — never from
 ``InvokeToolResponse.result`` or truncated opaque payloads. Raw tool payloads
-are never stored, exposed, or rendered. Shared Streamlit code stays
-pack-agnostic; Software Delivery renderers live in ``tool_run_panel.py``.
+are never stored, exposed, or rendered. Shared presentation code stays
+pack-agnostic; Software Delivery renderers live in `ToolRunBlock`
+(`web/components/chat/ChatPanel.tsx`), which consumes only the typed projection
+and never imports pack-named modules.
 ``AskResponse.tool_outputs`` is never populated by ``AskKnowledge`` itself: the
 application layer may not import ``packs``, so the vocabulary that recognises a
 tool request cannot live there.
@@ -196,11 +198,11 @@ tool request cannot live there.
 ``AskKnowledge`` and asks the enabled pack's deterministic policy —
 ``select_chat_intent`` in ``packs/software_delivery/chat_intent.py`` — which
 workflow, if any, a query names. **Selection runs only when no task prompt is
-set** (``AskRequest.prompt_key is None`` — the Streamlit path). Any non-empty
+set** (``AskRequest.prompt_key is None`` — the General chat path). Any non-empty
 ``prompt_key`` delegates the original request, history, and generation settings
-unchanged to ``AskKnowledge`` — routing never moves into Streamlit. Unmatched
-General queries are delegated to the grounded path verbatim, so ordinary chat is
-unchanged and no tool runs speculatively.
+unchanged to ``AskKnowledge`` — routing never moves into the Next.js UI.
+Unmatched General queries are delegated to the grounded path verbatim, so
+ordinary chat is unchanged and no tool runs speculatively.
 
 Matched intents are either a generate/risk tool chain or neither. Generation
 wins over risk-only.
@@ -250,13 +252,12 @@ Two properties are worth naming because they are easy to lose:
   merges chunks by ``(source_type, source_id)`` and loses ``chunk_index``.
   Row-level provenance survives only outside that merge.
 
-Streamlit surfaces a tool turn in this order: reply → citations → opaque
+Next.js chat surfaces a tool turn in this order: reply → citations → opaque
 **Tools used** → #161 projected panels (when a view is present) → **Run
-details** → answer **Download output**. ``ToolAugmentedAsk.consume_tool_run_view``
-(forwarded by ``CorrelatedAsk``) hands the typed view to ``ask_turn``, which
-stores it on the session message beside — not inside — ``AskResponse``.
-``app.py`` calls ``render_projected_results`` and never imports pack-named
-renderers or ``packs``.
+details**. ``ToolAugmentedAsk.consume_tool_run_view`` (forwarded by
+``CorrelatedAsk``) hands the typed view beside — not inside — ``AskResponse``
+to the HTTP chat mapping; the Next.js chat UI renders projected results without
+importing pack-named modules or ``packs``.
 
 #### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178)
 
@@ -269,19 +270,19 @@ renderers or ``packs``.
   ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
   (delivered).
 - **#178** — composition projects typed pack outcomes into
-  ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Streamlit Ask
-  renders #161 panels via ``render_projected_results`` without putting views on
+  ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Next.js chat
+  renders #161 panels from the projected view without putting views on
   ``AskResponse`` (delivered).
 
 ### Grounded ask: system policy vs optional task prompts
 
-Chat over ingested documents is orchestrated by `AskKnowledge`. The Streamlit
-UI is **intent-first**: there is no Mode selector and no preselected workflow
-form. Ordinary chat turns use General grounded chat (`AskRequest.prompt_key`
-unset); composition routes explicit Software Delivery intents (test
-generation, risk) when the pack is enabled. `PromptRepository` and
-`AskRequest.prompt_key` remain so saved commands / role instructions (#149) can
-supply optional task text later without restoring a pre-chat Mode control.
+Chat over ingested documents is orchestrated by `AskKnowledge`. The Next.js
+chat UI is **intent-first**: there is no Mode selector and no preselected
+workflow form. Ordinary chat turns use General grounded chat
+(`AskRequest.prompt_key` unset); composition routes explicit Software Delivery
+intents (test generation, risk) when the pack is enabled. `PromptRepository`
+and `AskRequest.prompt_key` remain so saved commands / role instructions (#149)
+can supply optional task text later without restoring a pre-chat Mode control.
 
 The inputs that reach the model sit in **different privilege tiers**. The tier
 is decided by placement, not by wording — a rule stated in prose can be argued
@@ -327,7 +328,7 @@ early.
 
 The policy is a module constant, so `PROMPT_PACKS` can neither hide it nor offer
 it as a selectable Mode. `AskRequest.prompt_key=None` means General chat (no
-task template). Streamlit always submits General turns; optional `prompt_key`
+task template). Next.js chat always submits General turns; optional `prompt_key`
 use stays on the application contract for #149.
 
 Generation runs through `AskService`, so the domain settings allowlist
@@ -365,7 +366,7 @@ not implemented here.
 Operational failures cross the port boundary as typed errors so presentation can
 show user-safe messages instead of vendor bodies or tracebacks. Adapters raise
 fixed, adapter-authored exception text with vendor detail only on `__cause__`.
-Presentation does **not** treat that text as display-safe: `run_ask_turn` maps
+Presentation does **not** treat that text as display-safe: adapters map
 operational types to fixed category sentences (see below). The HTTP adapter under
 `presentation/http/` exposes the same failures as
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem Details
@@ -389,7 +390,7 @@ Client request-shape failures remain **422** via Pydantic /
 `problem_from_validation_errors` (schema-authored field pointers). Plain
 `ApplicationValidationError` / `DomainValidationError` that reach
 `problem_from_exception` are treated as internal contract violations (same fixed
-operational sentence as Streamlit's `DomainValidationError` mapping). The
+operational sentence as the presentation ``DomainValidationError`` mapping). The
 `InputRejectedError` subtree is the carve-out: caller-attributable refusals map
 to 4xx with boundary-authored (or class-composed) detail.
 
@@ -416,11 +417,13 @@ to 4xx with boundary-authored (or class-composed) detail.
 `AskResponse(answer=INSUFFICIENT_KNOWLEDGE_ANSWER, citations=(), run=RunMeta(...))`
 with `outcome="insufficient"` and does not call the model.
 
-Streamlit ask mapping (`run_ask_turn`) uses a **fixed type → message map**.
-Exception type alone is never treated as proof that `str(error)` is safe.
-When execution starts, failures also set `AskTurnResult.run` to a sanitized
-`RunMeta` (`request_id`, `outcome="error"`, `error_type` only — never
-exception text). Pre-execute construction failures leave `run=None`.
+HTTP / Next.js ask mapping uses a **fixed type → message map** (shared
+category sentences in `presentation/failure_messages.py`; Next.js
+`classifyFailure` for wire status). Exception type alone is never treated as
+proof that `str(error)` is safe. When execution starts, failures also set
+sanitized `RunMeta` on the response (`request_id`, `outcome="error"`,
+`error_type` only — never exception text). Pre-execute construction failures
+leave `run=None`.
 
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
@@ -430,19 +433,18 @@ exception text). Pre-execute construction failures leave `run=None`.
 | `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
 
 Technical and vendor detail may remain on `__cause__` (and in logs); it must
-not reach `st.error`. The collapsed Streamlit **Run details** expander reads
-only typed `RunMeta` fields (see README); it never parses logs.
+not reach the UI. Collapsed **Run details** in Next.js chat reads only typed
+`RunMeta` fields (see README); it never parses logs.
 
 ## Architecture tests
 
 Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
-package or when application code references Streamlit `session_state`.
+package.
 
 Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette
 may appear only under `presentation/http/**` (path-prefix exception in
-`test/architecture/test_layer_boundaries.py`); `presentation/http` and
-`presentation/streamlit` must not import each other. The local OpenAPI
+`test/architecture/test_layer_boundaries.py`). The local OpenAPI
 contract-drift check is owned by
 [#127](https://github.com/mahmoudazaid/Kernector/issues/127)
 (`cd web && npm run api:check`); dual-stack PR CI

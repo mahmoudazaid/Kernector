@@ -151,9 +151,8 @@ def problem_from_exception(
     rejections map to 422 with the boundary-authored ``str(error)``. Plain
     ``ApplicationValidationError`` / ``DomainValidationError`` that reach this
     mapper are internal contract violations (usually ``__post_init__`` invariants)
-    and map to 500 with the fixed operational sentence — matching Streamlit's
-    ``DomainValidationError`` handling. Provider/tool/store failures use their
-    fixed category sentences.
+    and map to 500 with the fixed operational sentence. Provider/tool/store
+    failures use their fixed category sentences.
     """
     if isinstance(exc, UploadTooLargeError):
         return _problem(

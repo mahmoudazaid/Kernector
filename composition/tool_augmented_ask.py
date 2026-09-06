@@ -178,7 +178,7 @@ class ToolAugmentedAsk:
         Selection runs only in General mode (``prompt_key is None``). A selected
         task prompt delegates the original ``AskRequest``, history, and
         generation settings unchanged to ``AskKnowledge`` — routing never moves
-        into Streamlit.
+        into the presentation UI.
 
         Delegation to ``AskKnowledge`` logs ``outcome=delegated``; the nested ask
         emits the terminal ``success`` / ``insufficient`` / ``error`` event.

@@ -236,18 +236,11 @@ def test_bad_history_role_returns_validation_422() -> None:
 
 
 def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
-    from composition import (
-        RiskFactorView,
-        RiskScoreView,
-        SoftwareDeliveryRunView,
-        TestCaseView,
-        TestCasesView,
-        ToolCallView,
-    )
+    from composition.tool_runs import ToolCallView
+    from test.software_delivery_views import software_delivery_run_view
 
     secret = "OPAQUE-TOOL-PAYLOAD-SECRET-do-not-leak"
-    view = SoftwareDeliveryRunView(
-        summary="Scored risk and generated cases.",
+    view = software_delivery_run_view(
         calls=(
             ToolCallView(
                 "software_delivery.risk_score",
@@ -255,30 +248,6 @@ def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
                 summary="Scored risk at 62/100",
             ),
         ),
-        risk=RiskScoreView(
-            score=62,
-            level="high",
-            rationale="Missing acceptance criteria.",
-            factors=(
-                RiskFactorView(
-                    factor_id="missing_acceptance_criteria",
-                    weight=30,
-                    references=(SourceReference("SRS-2", "srs"),),
-                ),
-            ),
-        ),
-        test_cases=TestCasesView(
-            output_style="steps",
-            cases=(
-                TestCaseView(
-                    title="Lock after five failures",
-                    steps=("Fail MFA five times.",),
-                    expected="Account locked.",
-                    references=(SourceReference("US-1", "user_story"),),
-                ),
-            ),
-        ),
-        markdown="# Test Cases\n",
     )
     ask = _StubAsk(
         AskResponse(
@@ -309,3 +278,39 @@ def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
     assert body["tool_run"]["risk"]["score"] == 62
     assert body["tool_run"]["test_cases"]["cases"][0]["title"] == "Lock after five failures"
     assert body["tool_run"]["markdown"] == "# Test Cases\n"
+
+
+def test_run_meta_projection_omits_query_and_chunk_markers() -> None:
+    """HTTP ``RunMetaResponse`` never carries query/chunk text — only allowlisted flags."""
+    query_marker = "UNIQUE_QUERY_MARKER_leak_check_http"
+    chunk_marker = "UNIQUE_CHUNK_MARKER_leak_check_http"
+    ask = _StubAsk(
+        AskResponse(
+            answer="safe answer without markers",
+            run=RunMeta(
+                request_id="req-leak",
+                outcome="success",
+                query_rewritten=True,
+                hit_count=1,
+                citation_count=0,
+            ),
+        )
+    )
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": query_marker},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    run = body["run"]
+    assert run["query_rewritten"] is True
+    assert isinstance(run["query_rewritten"], bool)
+    assert query_marker not in response.text
+    assert chunk_marker not in response.text
+    assert "settings" not in run
+    assert "error_type" not in run
+    assert "source_type" not in run
+

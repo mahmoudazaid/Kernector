@@ -455,8 +455,9 @@ def build_manage_uploaded_documents(
 
     The store and the ingest pipeline are passed as factories the use case calls
     only when it needs them. Listing then costs one JSON read — no Chroma client
-    and no embedding credentials — which matters because the Streamlit page
-    lists on every rerun, and because `list` and `delete` never embed anything.
+    and no embedding credentials — which matters because the documents list
+    path should stay cheap on every request, and because `list` and `delete`
+    never embed anything.
     Each operation opens at most one store, and both paths open it through the
     same factory, so ingest and delete cannot drift onto different collections.
 
@@ -780,8 +781,8 @@ def build_tool_augmented_ask(
 
     When ``vector_store`` is omitted and a software-delivery pack is enabled,
     one store is built and shared by grounded ask and pack retrieve so hybrid
-    BM25 hydration runs at most once. Streamlit should inject a
-    ``cache_resource`` store so uploads mutate the same DualWrite index.
+    BM25 hydration runs at most once. FastAPI should inject a
+    process-cached store so uploads mutate the same DualWrite index.
 
     Args:
         settings (Settings): Runtime settings including enabled tool packs.

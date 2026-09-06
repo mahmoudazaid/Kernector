@@ -20,7 +20,6 @@ import pytest
 from test.architecture.import_scan import (
     find_forbidden_imports,
     find_forbidden_module_prefixes,
-    references_attribute,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -46,7 +45,6 @@ LAYER_RULES: dict[str, set[str]] = {
         "presentation",
         "composition",
         "packs",
-        "streamlit",
         *IO_PACKAGES,
         *SERVER_FRAMEWORKS,
     },
@@ -61,11 +59,9 @@ LAYER_RULES: dict[str, set[str]] = {
     # The outermost edge: may wire anything inward, but is not a UI itself.
     "composition": {
         "presentation",
-        "streamlit",
         *SERVER_FRAMEWORKS,
     },
-    # The only layer allowed to import Streamlit, and it must go through
-    # `composition` to reach anything that touches the outside world.
+    # Presentation adapters (HTTP, CLI). Must go through composition for I/O.
     # SERVER_FRAMEWORKS are applied via :func:`_forbidden_for` with an
     # exception for presentation/http/**.
     "presentation": {
@@ -79,7 +75,6 @@ LAYER_RULES: dict[str, set[str]] = {
         "infrastructure",
         "presentation",
         "composition",
-        "streamlit",
         *IO_PACKAGES,
         *SERVER_FRAMEWORKS,
     },
@@ -126,21 +121,10 @@ def test_layer_imports_no_forbidden_packages(layer: str, module_path: Path) -> N
     )
 
 
-def test_application_layer_never_touches_session_state() -> None:
-    """AC: the application layer must not reach for Streamlit session APIs."""
-    offenders = [
-        path.relative_to(REPO_ROOT)
-        for path in _modules("application")
-        if references_attribute(path, "session_state")
-    ]
-    assert not offenders, f"session_state referenced in {offenders}"
-
-
 @pytest.mark.parametrize(
     "source,expected",
     [
         ("import infrastructure\n", {"infrastructure"}),
-        ("from streamlit import session_state\n", {"streamlit"}),
         ("import packs\n", {"packs"}),
         ("from packs.software_delivery import scoring\n", {"packs"}),
         ("import fastapi\n", {"fastapi"}),
@@ -162,7 +146,6 @@ def test_planted_application_forbidden_import_is_detected(
         ("import application\n", {"application"}),
         ("import infrastructure\n", {"infrastructure"}),
         ("from composition.tool_registry import build_tool_registry\n", {"composition"}),
-        ("import streamlit\n", {"streamlit"}),
         ("import fastapi\n", {"fastapi"}),
     ],
 )
@@ -186,12 +169,12 @@ def test_planted_non_http_presentation_server_framework_is_detected(
     tmp_path: Path, source: str, expected: set[str]
 ) -> None:
     """Server frameworks are forbidden outside presentation/http/**."""
-    # Path must sit under presentation/streamlit so _forbidden_for applies
+    # Path must sit under presentation/cli so _forbidden_for applies
     # SERVER_FRAMEWORKS (tmp_path never triggers the production helper).
     module = tmp_path / "bad_presentation.py"
     module.write_text(source, encoding="utf-8")
     denylist = _forbidden_for(
-        "presentation", REPO_ROOT / "presentation" / "streamlit" / "x.py"
+        "presentation", REPO_ROOT / "presentation" / "cli" / "x.py"
     )
     assert find_forbidden_imports(module, denylist) == expected
 
@@ -207,78 +190,79 @@ def test_planted_presentation_http_may_import_fastapi(tmp_path: Path) -> None:
     assert SERVER_FRAMEWORKS.isdisjoint(denylist)
 
 
-def test_presentation_http_and_streamlit_are_mutually_isolated() -> None:
-    """Keep the second UI replaceable: adapters must not import each other."""
-    http_root = REPO_ROOT / "presentation" / "http"
-    streamlit_root = REPO_ROOT / "presentation" / "streamlit"
+# Build tooling whose job *is* to serialize another adapter's schema, so the
+# peer-import rule below cannot apply. Keep this list empty of runtime modules.
+PEER_IMPORT_EXEMPT = {Path("presentation/cli/export_openapi.py")}
 
-    if http_root.is_dir():
-        for path in sorted(http_root.rglob("*.py")):
-            streamlit_pkg = find_forbidden_imports(path, {"streamlit"})
-            streamlit_sub = find_forbidden_module_prefixes(
-                path, {"presentation.streamlit"}
+
+def test_presentation_adapters_are_mutually_isolated() -> None:
+    """Keep each UI replaceable: adapters must not import each other."""
+    for adapter, forbidden in (
+        ("http", "presentation.cli"),
+        ("cli", "presentation.http"),
+    ):
+        root = REPO_ROOT / "presentation" / adapter
+        assert root.is_dir(), f"presentation/{adapter} no longer exists"
+        for path in sorted(root.rglob("*.py")):
+            if path.relative_to(REPO_ROOT) in PEER_IMPORT_EXEMPT:
+                continue
+            hits = find_forbidden_module_prefixes(path, {forbidden})
+            assert not hits, (
+                f"{path.relative_to(REPO_ROOT)} imports {forbidden}"
             )
-            assert not streamlit_pkg and not streamlit_sub, (
-                f"{path.relative_to(REPO_ROOT)} imports Streamlit from the HTTP adapter"
-            )
-
-    for path in sorted(streamlit_root.rglob("*.py")):
-        http_sub = find_forbidden_module_prefixes(path, {"presentation.http"})
-        assert not http_sub, (
-            f"{path.relative_to(REPO_ROOT)} imports presentation.http from Streamlit"
-        )
 
 
-def test_planted_relative_streamlit_import_from_http_is_detected(
-    tmp_path: Path,
-) -> None:
-    """``from ..streamlit import …`` inside presentation/http must be caught.
+def test_peer_import_exemptions_all_exist() -> None:
+    """A stale exemption would silently widen the isolation rule."""
+    for relative in PEER_IMPORT_EXEMPT:
+        assert (REPO_ROOT / relative).is_file(), f"{relative} no longer exists"
 
-    Builds a fake package under ``tmp_path`` so the architecture suite never
-    writes into ``REPO_ROOT`` (``_package_parts_for`` walks ``__init__.py``).
+
+def _plant_presentation_module(tmp_path: Path, adapter: str, source: str) -> Path:
+    """Write *source* into a fake ``presentation/<adapter>`` package.
+
+    ``_package_parts_for`` walks ``__init__.py`` upward, so relative imports
+    only resolve inside a real package. Building it under ``tmp_path`` keeps
+    the architecture suite from writing into ``REPO_ROOT``.
     """
-    presentation = tmp_path / "presentation"
-    http_pkg = presentation / "http"
-    presentation.mkdir()
-    http_pkg.mkdir()
-    (presentation / "__init__.py").write_text("", encoding="utf-8")
-    (http_pkg / "__init__.py").write_text("", encoding="utf-8")
-    module = http_pkg / "leak.py"
-    module.write_text("from ..streamlit import ask_turn\n", encoding="utf-8")
-
-    hits = find_forbidden_module_prefixes(module, {"presentation.streamlit"})
-    assert hits == {"presentation.streamlit"}
+    package = tmp_path / "presentation" / adapter
+    package.mkdir(parents=True)
+    (tmp_path / "presentation" / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    module = package / "leak.py"
+    module.write_text(source, encoding="utf-8")
+    return module
 
 
-def test_planted_from_presentation_import_http_is_detected(tmp_path: Path) -> None:
-    """``from presentation import http`` inside streamlit must be caught."""
-    module = tmp_path / "bad_streamlit.py"
-    module.write_text("from presentation import http\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import presentation.http\n",
+        "from presentation.http import deps\n",
+        "from presentation import http\n",
+        "from .. import http\n",
+        "from ..http import deps\n",
+    ],
+)
+def test_planted_peer_adapter_import_is_detected(tmp_path: Path, source: str) -> None:
+    """Every import form that names ``presentation.http`` must be caught."""
+    module = _plant_presentation_module(tmp_path, "cli", source)
+
     hits = find_forbidden_module_prefixes(module, {"presentation.http"})
+
     assert hits == {"presentation.http"}
 
 
-def test_planted_application_session_state_attribute_is_detected(tmp_path: Path) -> None:
-    module = tmp_path / "bad_session.py"
-    module.write_text("import streamlit as st\nst.session_state['x'] = 1\n", encoding="utf-8")
-    assert references_attribute(module, "session_state")
-
-
-def test_planted_application_session_state_name_is_detected(tmp_path: Path) -> None:
-    module = tmp_path / "bad_from_import.py"
-    module.write_text("from streamlit import session_state\nsession_state['x'] = 1\n", encoding="utf-8")
-    assert references_attribute(module, "session_state")
-
-
-def test_session_state_in_comments_and_strings_is_ignored(tmp_path: Path) -> None:
-    module = tmp_path / "doc_only.py"
-    module.write_text(
-        '"""The application must not use session_state."""\n'
-        "# session_state is forbidden here.\n"
-        'message = "session_state"\n',
-        encoding="utf-8",
+def test_planted_relative_import_above_package_root_is_not_resolved(
+    tmp_path: Path,
+) -> None:
+    """A level that escapes the package resolves to nothing, not a bare name."""
+    module = _plant_presentation_module(
+        tmp_path, "cli", "from ....http import deps\n"
     )
-    assert not references_attribute(module, "session_state")
+
+    assert find_forbidden_module_prefixes(module, {"presentation.http"}) == set()
+    assert find_forbidden_module_prefixes(module, {"http"}) == set()
 
 
 def test_composition_does_not_reexport_raw_load_settings() -> None:

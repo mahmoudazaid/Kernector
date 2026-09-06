@@ -1106,7 +1106,7 @@ def test_existing_non_cosine_collection_is_rejected(tmp_path: Path) -> None:
 
 
 def test_two_sequential_adapters_share_one_collection(tmp_path: Path) -> None:
-    """Sequential Streamlit reruns construct the adapter again on the same path.
+    """Sequential process reuse constructs the adapter again on the same path.
 
     chromadb 1.5.9 caches its client system per path and raises ValueError when
     a second client disagrees on settings, so this passes only while

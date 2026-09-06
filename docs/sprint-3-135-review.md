@@ -1,5 +1,7 @@
 # Sprint 3 (135.md) — Requirements Review
 
+> **⚠️ Superseded by ADR 0004** — This review references Streamlit presentation layer that was retired. Commands below are historical.
+
 **Project:** Kernector  
 **Spec:** [`135.md`](../135.md)  
 **Prior sprint:** [`sprint-2-125-review.md`](sprint-2-125-review.md)  

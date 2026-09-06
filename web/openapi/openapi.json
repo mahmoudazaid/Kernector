@@ -672,7 +672,7 @@
         "type": "object"
       },
       "RunMetaResponse": {
-        "description": "Safe run fields Streamlit ``run_detail_lines`` would render.",
+        "description": "Safe run fields the chat UI may display (allowlisted projection).",
         "properties": {
           "citation_count": {
             "anyOf": [
@@ -807,7 +807,7 @@
         "type": "object"
       },
       "RuntimeSettingsResponse": {
-        "description": "Catalog for provider/model/settings controls (Streamlit sidebar parity).",
+        "description": "Catalog for provider/model/settings controls in the Settings UI.",
         "properties": {
           "default_provider": {
             "title": "Default Provider",

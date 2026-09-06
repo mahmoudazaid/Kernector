@@ -1,5 +1,7 @@
 # Sprint 2 — Project review guide
 
+> **⚠️ Superseded by ADR 0004** — This guide references Streamlit presentation layer that was retired. Commands below are historical.
+
 **Project:** Kernector  
 **Spec:** [`125.md`](../125.md) · status checklist: [`sprint-2-125-review.md`](sprint-2-125-review.md)  
 **Audience:** You + the project reviewer

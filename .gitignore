@@ -46,3 +46,6 @@ learning/
 output/
 data/chroma/
 data/catalog/
+
+# Local scratch output
+.tmp-*
