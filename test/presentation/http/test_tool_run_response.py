@@ -178,8 +178,8 @@ def test_tool_run_projection_fields_are_locked() -> None:
             (name, field.annotation, field.is_required())
             for name, field in model.model_fields.items()
         } == fields
-        for field in model.model_fields.values():
-            assert field.serialization_alias is None
+        for name, field in model.model_fields.items():
+            assert field.serialization_alias is None, (model.__name__, name)
 
 
 def _reachable_response_models(root: type[BaseModel]) -> set[type[BaseModel]]:
