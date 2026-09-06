@@ -18,10 +18,11 @@ logger = logging.getLogger(__name__)
 class QueryRewriteFailure(ProviderError):
     """Query rewrite failed before retrieval could run.
 
-    Raised when the ``QueryRewriter`` port raises ``QueryRewriterError``, or
-    when a nonconforming implementation returns blank content. The adapter is
-    the primary blank detector; the use-case check is a defensive guard because
-    a ``Protocol`` is structural and doubles may skip the adapter's guard.
+    Raised when the ``QueryRewriter`` port raises ``QueryRewriterError``,
+    when a nonconforming implementation returns blank content, or when the
+    rewritten query exceeds ``max_input_length``. The adapter is the primary
+    blank detector; the use-case check is a defensive guard because a
+    ``Protocol`` is structural and doubles may skip the adapter's guard.
 
     Unlike ``RetrieveKnowledge``, which propagates embedding and store errors
     unchanged, this use case wraps rewrite failures so callers see one typed
@@ -72,12 +73,11 @@ class RewriteAndRetrieveKnowledge:
             Hits plus original and rewritten query strings for observability.
 
         Raises:
-            InputRejectedError: Original or rewritten query exceeds
-                ``max_input_length`` (rewritten case: after rewrite, before
-                embed/store), or the original query fails platform
-                input-safety reject rules.
-            QueryRewriteFailure: The rewriter raised ``QueryRewriterError`` or
-                returned blank content. Retrieve is not invoked.
+            InputRejectedError: Original query exceeds ``max_input_length``,
+                or fails platform input-safety reject rules.
+            QueryRewriteFailure: The rewriter raised ``QueryRewriterError``,
+                returned blank content, or produced a rewritten query that
+                exceeds ``max_input_length``. Retrieve is not invoked.
             ProviderError: Propagated from the embedding provider.
             VectorStoreError: Propagated from the vector store.
         """
@@ -111,6 +111,10 @@ class RewriteAndRetrieveKnowledge:
             raise QueryRewriteFailure("Query rewrite returned a blank retrieval query")
 
         rewritten = rewritten.strip()
+        if len(rewritten) > self._max_input_length:
+            raise QueryRewriteFailure(
+                "Rewritten query exceeded the maximum input length"
+            )
         retrieve_response = self._retrieve.execute(
             RetrieveRequest(
                 query=rewritten,

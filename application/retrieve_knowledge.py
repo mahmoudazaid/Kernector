@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from application.contracts import RetrieveRequest, RetrieveResponse
-from application.errors import InputRejectedError
+from application.errors import ApplicationValidationError
 from application.hybrid_fusion import fuse_hybrid_scores, normalize_scores
 from domain.knowledge import ScoredChunk
 from domain.ports import EmbeddingModel, LexicalIndex, VectorStore
@@ -122,12 +122,14 @@ class RetrieveKnowledge:
             Ranked `ScoredChunk` hits with complete provenance and metadata.
 
         Raises:
-            InputRejectedError: ``query`` exceeds ``max_input_length``.
+            ApplicationValidationError: ``query`` exceeds ``max_input_length``.
+                Caller-facing length checks live at ask / rewrite boundaries;
+                this guard is defense-in-depth (including oversized rewrites).
             ProviderError: Propagated from the embedding model.
             VectorStoreError: Propagated from the vector store.
         """
         if len(request.query) > self._max_input_length:
-            raise InputRejectedError(
+            raise ApplicationValidationError(
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )

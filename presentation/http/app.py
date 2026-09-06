@@ -118,11 +118,9 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
                 except ValueError:
                     length = -1
                 if length > max_upload_bytes + _MULTIPART_OVERHEAD_BYTES:
+                    # Content-Length is the whole multipart body, not file bytes.
                     problem = problem_from_exception(
-                        UploadTooLargeError(
-                            limit_bytes=max_upload_bytes,
-                            actual_bytes=length,
-                        ),
+                        UploadTooLargeError(limit_bytes=max_upload_bytes),
                         instance=path,
                     )
                     return _problem_response(problem)

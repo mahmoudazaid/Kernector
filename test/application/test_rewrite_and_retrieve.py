@@ -6,7 +6,7 @@ import pytest
 
 from application import observability
 from application.contracts import RetrieveRequest
-from application.errors import ApplicationValidationError, InputRejectedError
+from application.errors import InputRejectedError
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import (
     QueryRewriteFailure,
@@ -220,13 +220,11 @@ def test_oversized_rewritten_query_allows_rewriter_but_not_embed_or_store() -> N
     )
 
     with pytest.raises(
-        InputRejectedError,
-        match=r"query must be at most 20 characters, got 21",
+        QueryRewriteFailure,
+        match="Rewritten query exceeded the maximum input length",
     ):
         use_case.execute(RetrieveRequest(query="x" * limit, retrieval_limit=1))
 
-    # Subclass still flows through ``except ApplicationValidationError: raise``.
-    assert issubclass(InputRejectedError, ApplicationValidationError)
     assert rewriter.queries == ["x" * limit]
     assert embedder.queries == []
     assert store.searches == []

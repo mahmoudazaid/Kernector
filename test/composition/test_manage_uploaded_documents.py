@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,6 @@ from domain.knowledge import (
 )
 from infrastructure.config import Settings, load_settings
 from presentation.http.errors import problem_from_exception
-from dataclasses import replace as dc_replace
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_oversize_create_passes_upload_too_large_through_to_mapper(
         "build_embedding_model",
         lambda _settings: StubEmbeddingModel(),
     )
-    tight = dc_replace(settings, max_upload_bytes=16)
+    tight = replace(settings, max_upload_bytes=16)
     payload = UploadPayload(file_name="big.md", content=b"x" * 17)
 
     with pytest.raises(UploadTooLargeError) as caught:
@@ -119,7 +119,7 @@ def test_oversize_replace_passes_upload_too_large_through(
         settings,
         UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
     )
-    tight = dc_replace(settings, max_upload_bytes=16)
+    tight = replace(settings, max_upload_bytes=16)
 
     with pytest.raises(UploadTooLargeError) as caught:
         composition_container.replace_uploaded_document(

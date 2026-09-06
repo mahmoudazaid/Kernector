@@ -109,7 +109,7 @@ def test_unsupported_suffix_rejected_before_composition(
         (ApplicationValidationError("bad request"), "bad request"),
         (
             UploadTooLargeError(limit_bytes=16, actual_bytes=17),
-            "upload must be at most 16 bytes, got 17",
+            "Upload must be at most 16 bytes; this file is 17 bytes.",
         ),
         (ConfigurationError("missing key"), "missing key"),
     ],
@@ -136,7 +136,7 @@ def test_oversize_upload_still_uses_application_validation_clause(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """UploadTooLargeError subclass must keep landing on ApplicationValidationError."""
-    message = "upload must be at most 16 bytes, got 17"
+    message = "Upload must be at most 16 bytes; this file is 17 bytes."
 
     def _create(*_a: object, **_k: object) -> CatalogDocument:
         raise UploadTooLargeError(limit_bytes=16, actual_bytes=17)

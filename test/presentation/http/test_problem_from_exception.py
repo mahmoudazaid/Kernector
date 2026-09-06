@@ -105,16 +105,6 @@ def test_input_rejected_maps_to_422_invalid_query_with_boundary_message() -> Non
     assert problem.type == "https://kernector.dev/problems/invalid_query"
 
 
-def test_non_query_input_rejection_still_maps_to_422() -> None:
-    """Widened base covers non-text input (bytes uploads), not only queries."""
-    message = "upload must be at most 16 bytes, got 17"
-    problem = problem_from_exception(InputRejectedError(message))
-
-    assert problem.status == 422
-    assert problem.code == "invalid_query"
-    assert problem.detail == message
-
-
 def test_plain_application_validation_still_maps_to_500() -> None:
     problem = problem_from_exception(ApplicationValidationError("bad field"))
 
@@ -225,8 +215,16 @@ def test_upload_too_large_maps_to_413() -> None:
     assert problem.code == "upload_too_large"
     assert problem.title == "Upload too large"
     assert problem.detail == (
-        "upload must be at most 5242880 bytes, got 5242881"
+        "Upload must be at most 5242880 bytes; this file is 5242881 bytes."
     )
+
+
+def test_upload_too_large_without_actual_bytes_uses_limit_only_sentence() -> None:
+    problem = problem_from_exception(UploadTooLargeError(limit_bytes=100))
+
+    assert problem.status == 413
+    assert problem.code == "upload_too_large"
+    assert problem.detail == "Upload must be at most 100 bytes."
 
 
 def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
@@ -235,10 +233,10 @@ def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
     )
     body = problem.model_dump_json()
 
-    assert "16" in problem.detail
-    assert "17" in problem.detail
+    assert problem.detail == (
+        "Upload must be at most 16 bytes; this file is 17 bytes."
+    )
     assert "UploadPayload(" not in body
-    assert "repr" not in body.lower()
 
 
 def test_problem_responses_413_describes_payload_too_large() -> None:

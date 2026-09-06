@@ -17,14 +17,21 @@ class InputRejectedError(ApplicationValidationError):
 class UploadTooLargeError(InputRejectedError):
     """An upload exceeded the configured byte limit.
 
-    The message is composed by the class from two integers, so no caller
-    string can reach it and presentation may render it directly.
+    The message is composed by the class from integers, so no caller string
+    can reach it and presentation may render it directly. Pass
+    ``actual_bytes`` only when it is a true file size; omit it for
+    whole-request pre-checks (e.g. Content-Length including multipart framing).
     """
 
-    def __init__(self, *, limit_bytes: int, actual_bytes: int) -> None:
-        super().__init__(
-            f"upload must be at most {limit_bytes} bytes, got {actual_bytes}"
-        )
+    def __init__(self, *, limit_bytes: int, actual_bytes: int | None = None) -> None:
+        if actual_bytes is None:
+            message = f"Upload must be at most {limit_bytes} bytes."
+        else:
+            message = (
+                f"Upload must be at most {limit_bytes} bytes; "
+                f"this file is {actual_bytes} bytes."
+            )
+        super().__init__(message)
         self.limit_bytes = limit_bytes
         self.actual_bytes = actual_bytes
 
