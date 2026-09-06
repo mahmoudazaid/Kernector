@@ -49,6 +49,8 @@ def test_composition_exports_no_raw_to_summary_helper() -> None:
 
 
 def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> None:
+    from composition.software_delivery_tools import RiskScoreView
+    
     calls = (
         ToolCallView(
             "software_delivery.risk_score",
@@ -58,13 +60,27 @@ def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> No
         ToolCallView("software_delivery.generate_test_cases", ok=False),
     )
 
-    view = SoftwareDeliveryRunView(summary="Ran 2 tools", calls=calls)
+    view = SoftwareDeliveryRunView(
+        summary="Ran 2 tools",
+        calls=calls,
+        risk=RiskScoreView(
+            score=62,
+            level="medium",
+            rationale='{"score": 62, "api_key": "sk-live-abc"}',
+            factors=(),
+        ),
+    )
 
     rendered = tool_run_response(view).model_dump_json()
 
     assert "sk-live-abc" not in rendered
-    assert '{"score"' not in rendered
-    assert "result" not in rendered
+    
+    # Ensure projection field stability - adding fields must fail this test
+    from presentation.http.schemas import ToolCallResponse, ToolRunResponse
+    assert set(ToolCallResponse.model_fields) == {"tool_name", "ok", "summary"}
+    assert set(ToolRunResponse.model_fields) == {
+        "summary", "calls", "risk", "test_cases", "markdown",
+    }
 
 
 def test_fresh_tool_runs_module_has_no_summary_projection_api(

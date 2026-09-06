@@ -202,8 +202,7 @@ def test_presentation_adapters_are_mutually_isolated() -> None:
         ("cli", "presentation.http"),
     ):
         root = REPO_ROOT / "presentation" / adapter
-        if not root.is_dir():
-            continue
+        assert root.is_dir(), f"presentation/{adapter} no longer exists"
         for path in sorted(root.rglob("*.py")):
             if path.relative_to(REPO_ROOT) in PEER_IMPORT_EXEMPT:
                 continue
