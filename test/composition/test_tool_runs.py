@@ -11,9 +11,9 @@ import pytest
 
 import composition
 import composition.tool_runs as tool_runs_mod
-from composition.software_delivery_tools import SoftwareDeliveryRunView
+from composition.software_delivery_tools import RiskScoreView, SoftwareDeliveryRunView
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
-from presentation.http.schemas import tool_run_response
+from presentation.http.schemas import ToolCallResponse, ToolRunResponse, tool_run_response
 
 
 def test_tool_call_view_fields_are_name_status_and_summary_only() -> None:
@@ -49,8 +49,6 @@ def test_composition_exports_no_raw_to_summary_helper() -> None:
 
 
 def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> None:
-    from composition.software_delivery_tools import RiskScoreView
-    
     calls = (
         ToolCallView(
             "software_delivery.risk_score",
@@ -75,9 +73,10 @@ def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> No
 
     # Verify no raw payload fields leak through projection
     assert "result" not in rendered
-    
-    # Ensure projection field stability - adding fields must fail this test
-    from presentation.http.schemas import ToolCallResponse, ToolRunResponse
+
+
+def test_tool_run_projection_fields_are_locked() -> None:
+    """Projection field stability - adding fields must fail this test."""
     assert set(ToolCallResponse.model_fields) == {"tool_name", "ok", "summary"}
     assert set(ToolRunResponse.model_fields) == {
         "summary", "calls", "risk", "test_cases", "markdown",
