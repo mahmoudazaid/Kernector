@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from application.contracts import IngestRequest, IngestResponse
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, UploadTooLargeError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from domain.knowledge import (
     CatalogDocument,
@@ -109,7 +109,7 @@ class ManageUploadedDocuments:
         original error is re-raised unchanged.
 
         Raises:
-            ApplicationValidationError: ``payload.content`` exceeds
+            UploadTooLargeError: ``payload.content`` exceeds
                 ``max_upload_bytes``.
             PartialCreateFailure: The ingest failed *and* its status could not
                 be written, leaving only the ``pending`` row on disk.
@@ -197,8 +197,9 @@ class ManageUploadedDocuments:
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)
         if size > self._max_upload_bytes:
-            raise ApplicationValidationError(
-                f"upload must be at most {self._max_upload_bytes} bytes, got {size}"
+            raise UploadTooLargeError(
+                limit_bytes=self._max_upload_bytes,
+                actual_bytes=size,
             )
 
     def _pending_row(

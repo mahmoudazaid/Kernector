@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from application.errors import ApplicationValidationError, ConfigurationError
+from application.errors import ApplicationValidationError, ConfigurationError, UploadTooLargeError
 from composition import (
     DocumentOperationError,
     DocumentUploadError,
@@ -107,6 +107,10 @@ def test_unsupported_suffix_rejected_before_composition(
         (DocumentOperationError("partial"), "partial"),
         (DomainValidationError("blank"), "blank"),
         (ApplicationValidationError("bad request"), "bad request"),
+        (
+            UploadTooLargeError(limit_bytes=16, actual_bytes=17),
+            "upload must be at most 16 bytes, got 17",
+        ),
         (ConfigurationError("missing key"), "missing key"),
     ],
 )
@@ -126,6 +130,25 @@ def test_typed_create_failures_map_to_specific_messages(
 
     assert result.ok is False
     assert needle in result.message
+
+
+def test_oversize_upload_still_uses_application_validation_clause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UploadTooLargeError subclass must keep landing on ApplicationValidationError."""
+    message = "upload must be at most 16 bytes, got 17"
+
+    def _create(*_a: object, **_k: object) -> CatalogDocument:
+        raise UploadTooLargeError(limit_bytes=16, actual_bytes=17)
+
+    monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
+
+    result = upload_mod.create_new_document(
+        object(), filename="guide.txt", content=b"hello"
+    )
+
+    assert result.ok is False
+    assert result.message == message
 
 
 def test_create_partial_failure_is_actionable_without_leaking_details(

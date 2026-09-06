@@ -6,7 +6,27 @@ class ApplicationValidationError(ValueError):
 
 
 class InputRejectedError(ApplicationValidationError):
-    """Caller-supplied text was refused at a use-case boundary."""
+    """Caller-supplied input was refused at a use-case boundary.
+
+    The message must be display-safe copy, not diagnostic text: presentation
+    maps this type to a client-facing 4xx and may render ``str(error)``
+    verbatim.
+    """
+
+
+class UploadTooLargeError(InputRejectedError):
+    """An upload exceeded the configured byte limit.
+
+    The message is composed by the class from two integers, so no caller
+    string can reach it and presentation may render it directly.
+    """
+
+    def __init__(self, *, limit_bytes: int, actual_bytes: int) -> None:
+        super().__init__(
+            f"upload must be at most {limit_bytes} bytes, got {actual_bytes}"
+        )
+        self.limit_bytes = limit_bytes
+        self.actual_bytes = actual_bytes
 
 
 class ConfigurationError(RuntimeError):

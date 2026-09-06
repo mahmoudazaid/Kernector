@@ -8,6 +8,7 @@ from application.errors import (
     ConfigurationError,
     InputRejectedError,
     InsufficientEvidenceError,
+    UploadTooLargeError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
 from composition.errors import (
@@ -31,11 +32,10 @@ from presentation.http.errors import (
     DOCUMENT_PARTIAL_DETAILS,
     DOCUMENT_UNREADABLE_DETAIL,
     MISSING_UPLOAD_FILE_DETAIL,
-    UPLOAD_TOO_LARGE_DETAIL,
     MissingUploadFileError,
     UnsupportedDocumentTypeError,
-    UploadTooLargeError,
     problem_from_exception,
+    problem_responses,
 )
 
 
@@ -103,6 +103,16 @@ def test_input_rejected_maps_to_422_invalid_query_with_boundary_message() -> Non
     assert problem.code == "invalid_query"
     assert problem.detail == UNSAFE_QUERY_MESSAGE
     assert problem.type == "https://kernector.dev/problems/invalid_query"
+
+
+def test_non_query_input_rejection_still_maps_to_422() -> None:
+    """Widened base covers non-text input (bytes uploads), not only queries."""
+    message = "upload must be at most 16 bytes, got 17"
+    problem = problem_from_exception(InputRejectedError(message))
+
+    assert problem.status == 422
+    assert problem.code == "invalid_query"
+    assert problem.detail == message
 
 
 def test_plain_application_validation_still_maps_to_500() -> None:
@@ -207,11 +217,34 @@ def test_partial_document_operation_maps_to_409(
 
 
 def test_upload_too_large_maps_to_413() -> None:
-    problem = problem_from_exception(UploadTooLargeError(max_bytes=5_242_880))
+    problem = problem_from_exception(
+        UploadTooLargeError(limit_bytes=5_242_880, actual_bytes=5_242_881)
+    )
 
     assert problem.status == 413
     assert problem.code == "upload_too_large"
-    assert problem.detail == UPLOAD_TOO_LARGE_DETAIL.format(max_bytes=5_242_880)
+    assert problem.title == "Upload too large"
+    assert problem.detail == (
+        "upload must be at most 5242880 bytes, got 5242881"
+    )
+
+
+def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
+    problem = problem_from_exception(
+        UploadTooLargeError(limit_bytes=16, actual_bytes=17)
+    )
+    body = problem.model_dump_json()
+
+    assert "16" in problem.detail
+    assert "17" in problem.detail
+    assert "UploadPayload(" not in body
+    assert "repr" not in body.lower()
+
+
+def test_problem_responses_413_describes_payload_too_large() -> None:
+    responses = problem_responses(413)
+
+    assert responses[413]["description"] == "Payload too large"
 
 
 def test_unsupported_document_type_maps_to_422() -> None:

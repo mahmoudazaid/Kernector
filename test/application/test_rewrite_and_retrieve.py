@@ -6,7 +6,7 @@ import pytest
 
 from application import observability
 from application.contracts import RetrieveRequest
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, InputRejectedError
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import (
     QueryRewriteFailure,
@@ -180,7 +180,7 @@ def test_oversized_query_is_rejected_before_rewriter_embed_or_store() -> None:
     use_case, embedder = _use_case(store, rewriter=rewriter, max_input_length=limit)
 
     with pytest.raises(
-        ApplicationValidationError,
+        InputRejectedError,
         match=r"query must be at most 20 characters, got 21",
     ):
         use_case.execute(RetrieveRequest(query="x" * (limit + 1), retrieval_limit=1))
@@ -197,7 +197,7 @@ def test_injection_query_is_rejected_before_rewriter_embed_or_store() -> None:
     rewriter = _RecordingRewriter()
     use_case, embedder = _use_case(store, rewriter=rewriter)
 
-    with pytest.raises(ApplicationValidationError):
+    with pytest.raises(InputRejectedError):
         use_case.execute(RetrieveRequest(query=injection, retrieval_limit=1))
 
     assert rewriter.queries == []
@@ -220,11 +220,13 @@ def test_oversized_rewritten_query_allows_rewriter_but_not_embed_or_store() -> N
     )
 
     with pytest.raises(
-        ApplicationValidationError,
+        InputRejectedError,
         match=r"query must be at most 20 characters, got 21",
     ):
         use_case.execute(RetrieveRequest(query="x" * limit, retrieval_limit=1))
 
+    # Subclass still flows through ``except ApplicationValidationError: raise``.
+    assert issubclass(InputRejectedError, ApplicationValidationError)
     assert rewriter.queries == ["x" * limit]
     assert embedder.queries == []
     assert store.searches == []

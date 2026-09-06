@@ -3,7 +3,7 @@
 import pytest
 
 from application.contracts import RetrieveRequest
-from application.errors import ApplicationValidationError
+from application.errors import InputRejectedError
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.knowledge import (
     DocumentChunk,
@@ -199,7 +199,7 @@ def test_oversized_query_is_rejected_before_embed_or_store() -> None:
     use_case = _use_case(store, max_input_length=limit, embedding=embedder)
 
     with pytest.raises(
-        ApplicationValidationError,
+        InputRejectedError,
         match=r"query must be at most 20 characters, got 21",
     ):
         use_case.execute(RetrieveRequest(query="x" * (limit + 1), retrieval_limit=1))

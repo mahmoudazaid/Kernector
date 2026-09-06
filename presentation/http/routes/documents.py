@@ -55,7 +55,10 @@ def _read_upload(
 
     advisory = upload.size
     if advisory is not None and advisory > max_upload_bytes:
-        raise UploadTooLargeError(max_bytes=max_upload_bytes)
+        raise UploadTooLargeError(
+            limit_bytes=max_upload_bytes,
+            actual_bytes=advisory,
+        )
 
     chunks: list[bytes] = []
     total = 0
@@ -65,7 +68,10 @@ def _read_upload(
             break
         total += len(chunk)
         if total > max_upload_bytes:
-            raise UploadTooLargeError(max_bytes=max_upload_bytes)
+            raise UploadTooLargeError(
+                limit_bytes=max_upload_bytes,
+                actual_bytes=total,
+            )
         chunks.append(chunk)
     content = b"".join(chunks)
     if len(content) == 0:

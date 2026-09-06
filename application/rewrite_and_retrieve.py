@@ -4,7 +4,7 @@ from collections.abc import Sequence
 import logging
 
 from application.contracts import RetrieveRequest, RewriteRetrieveResponse
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, InputRejectedError
 from application.input_safety import reject_unsafe_query
 from application.observability import log_operation
 from application.retrieve_knowledge import RetrieveKnowledge
@@ -72,7 +72,7 @@ class RewriteAndRetrieveKnowledge:
             Hits plus original and rewritten query strings for observability.
 
         Raises:
-            ApplicationValidationError: Original or rewritten query exceeds
+            InputRejectedError: Original or rewritten query exceeds
                 ``max_input_length`` (rewritten case: after rewrite, before
                 embed/store), or the original query fails platform
                 input-safety reject rules.
@@ -97,7 +97,7 @@ class RewriteAndRetrieveKnowledge:
 
     def _execute(self, request: RetrieveRequest) -> RewriteRetrieveResponse:
         if len(request.query) > self._max_input_length:
-            raise ApplicationValidationError(
+            raise InputRejectedError(
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )
