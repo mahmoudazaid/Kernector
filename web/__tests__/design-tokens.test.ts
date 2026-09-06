@@ -15,6 +15,7 @@ const COLOR_TOKENS = [
   "--kern-accent-soft",
   "--kern-focus",
   "--kern-danger",
+  "--kern-scrim",
   "--kern-control-highlight",
   "--kern-control-shade",
   "--kern-control-sheen",

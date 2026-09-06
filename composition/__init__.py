@@ -3,6 +3,7 @@
 from composition.container import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
+    unsupported_upload_type_detail,
     available_providers,
     build_ask_knowledge,
     build_ask_service,
@@ -51,22 +52,27 @@ from composition.tool_augmented_ask import (
 )
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
+    DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
+    UnknownUploadedDocumentError,
 )
 from infrastructure.config import Settings
 
 __all__ = [
+    "DocumentContentError",
     "DocumentOperationError",
     "DocumentUploadError",
     "KnowledgeLoadError",
     "PartialDocumentOperationError",
+    "UnknownUploadedDocumentError",
     "MAX_TOOL_CALL_SUMMARY_CHARS",
     "SOFTWARE_DELIVERY_TEST_STYLES",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
+    "unsupported_upload_type_detail",
     "GroundedAsk",
     "Settings",
     "RiskFactorView",

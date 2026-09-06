@@ -136,7 +136,8 @@ def test_create_partial_failure_is_actionable_without_leaking_details(
 
     def _create(*_a: object, **_k: object) -> CatalogDocument:
         raise PartialDocumentOperationError(
-            "could not write catalog at /srv/kernector/data/uploads.json"
+            "could not write catalog at /srv/kernector/data/uploads.json",
+            operation="create",
         ) from RuntimeError("openrouter rejected key sk-live-abc123")
 
     monkeypatch.setattr(upload_mod, "create_uploaded_document", _create)
@@ -195,7 +196,8 @@ def test_partial_delete_failure_names_the_action_to_retry(
 ) -> None:
     def _delete(*_a: object, **_k: object) -> None:
         raise PartialDocumentOperationError(
-            "chunks removed but catalog row remains"
+            "chunks removed but catalog row remains",
+            operation="delete",
         )
 
     monkeypatch.setattr(upload_mod, "delete_uploaded_document", _delete)
@@ -231,7 +233,10 @@ def test_partial_replace_failure_names_the_actions_to_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _replace(*_a: object, **_k: object) -> CatalogDocument:
-        raise PartialDocumentOperationError("degraded row written")
+        raise PartialDocumentOperationError(
+            "degraded row written",
+            operation="replace",
+        )
 
     monkeypatch.setattr(upload_mod, "replace_uploaded_document", _replace)
 

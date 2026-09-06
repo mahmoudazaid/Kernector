@@ -54,7 +54,7 @@ npm run dev   # origin must be http://localhost:3000 (matches HTTP_CORS_ORIGINS 
 Placeholder destinations (no invented product behavior):
 
 - `/` — Dashboard
-- `/documents` — Documents
+- `/documents` — Knowledge Hub
 - `/chat` — Chat
 - `/settings` — Settings
 
@@ -62,7 +62,7 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 
 ## Visual direction
 
-**Instrument panel** — a cool, professional AI knowledge workspace identity (not a wireframe, not a marketing landing page).
+**Instrument panel** — a cool, professional AI knowledge workspace identity (not a wireframe, not a marketing landing page). Full decision record: [ADR 0003](../docs/adr/0003-nextjs-instrument-panel-visual-identity.md).
 
 | Token role         | Choice                                                                                              |
 | ------------------ | --------------------------------------------------------------------------------------------------- |
@@ -74,7 +74,7 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 | Controls           | Soft glass emboss (`--kern-control-sheen` / highlight / shade) with a light press-in on hover       |
 | Motion             | `--kern-duration` + `--kern-ease`; emphasis uses `--kern-duration-emphasis` + `--kern-ease-out`     |
 
-Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated.
+Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated. Apply the emboss recipe on every product surface (shell, chat, settings, Knowledge Hub); do not ship native or flat controls that diverge from ADR 0003. Workspace pages (Knowledge Hub, Chat, Dashboard) fill `.kern-main` width; Settings may keep a narrow form column. Product confirms use `ConfirmDialog` — never `window.confirm` / `alert` / `prompt`.
 
 ## Responsive shell
 

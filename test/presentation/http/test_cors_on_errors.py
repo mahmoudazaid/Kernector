@@ -1,5 +1,6 @@
 """CORS headers must survive mapped error responses (ExceptionMiddleware path)."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from application.errors import ConfigurationError
@@ -63,6 +64,25 @@ def test_request_validation_still_returns_problem_with_cors() -> None:
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
     assert response.json()["errors"]
+    assert response.headers.get("access-control-allow-origin") == _ORIGIN
+
+
+def test_oversized_document_upload_413_includes_cors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Size middleware must sit inside CORS so browsers can read the 413."""
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("MAX_UPLOAD_BYTES", "100")
+    client = TestClient(create_app(cors_origins=(_ORIGIN,)))
+
+    response = client.post(
+        "/api/v1/documents",
+        files={"file": ("big.md", b"x" * 65_000, "text/markdown")},
+        headers={"Origin": _ORIGIN},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "upload_too_large"
     assert response.headers.get("access-control-allow-origin") == _ORIGIN
 
 

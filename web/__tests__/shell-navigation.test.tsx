@@ -45,7 +45,7 @@ describe("shell navigation", () => {
     expect(screen.getByText("Multi-source knowledge hub")).toBeInTheDocument();
   });
 
-  it("exposes Dashboard, Documents, Chat, and Settings destinations", () => {
+  it("exposes Dashboard, Knowledge Hub, Chat, and Settings destinations", () => {
     render(
       <AppShell>
         <div>content</div>
@@ -56,7 +56,7 @@ describe("shell navigation", () => {
       "href",
       "/",
     );
-    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Knowledge Hub" })).toHaveAttribute(
       "href",
       "/documents",
     );
@@ -79,7 +79,7 @@ describe("shell navigation", () => {
       </AppShell>,
     );
 
-    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Knowledge Hub" })).toHaveAttribute(
       "aria-current",
       "page",
     );

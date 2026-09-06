@@ -1,5 +1,7 @@
-import { RoutePlaceholder } from "@/components/placeholders/RoutePlaceholder";
+import { loadPublicEnv } from "@/lib/env";
+import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
 
 export default function DocumentsPage() {
-  return <RoutePlaceholder title="Documents" />;
+  const env = loadPublicEnv();
+  return <DocumentsPanel apiBaseUrl={env.NEXT_PUBLIC_API_BASE_URL} />;
 }

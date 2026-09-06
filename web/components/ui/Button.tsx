@@ -1,6 +1,10 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
 
-type ButtonVariant = "default" | "secondary" | "ghost";
+type ButtonVariant = "default" | "secondary" | "ghost" | "danger";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -11,19 +15,17 @@ const variantClass: Record<ButtonVariant, string> = {
   default: "kern-btn",
   secondary: "kern-btn kern-btn-secondary",
   ghost: "kern-btn kern-btn-ghost",
+  danger: "kern-btn kern-btn-danger",
 };
 
-export function Button({
-  variant = "default",
-  className,
-  children,
-  type = "button",
-  ...props
-}: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { variant = "default", className, children, type = "button", ...props },
+  ref,
+) {
   const classes = [variantClass[variant], className].filter(Boolean).join(" ");
   return (
-    <button type={type} className={classes} {...props}>
+    <button ref={ref} type={type} className={classes} {...props}>
       {children}
     </button>
   );
-}
+});

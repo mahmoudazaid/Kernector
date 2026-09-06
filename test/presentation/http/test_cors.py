@@ -103,3 +103,20 @@ def test_cors_preflight_allows_post() -> None:
     assert response.headers.get("access-control-allow-origin") == _ORIGIN
     allow_methods = response.headers.get("access-control-allow-methods", "")
     assert "POST" in allow_methods.upper()
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE"])
+def test_cors_preflight_allows_document_mutating_methods(method: str) -> None:
+    client = TestClient(create_app(cors_origins=(_ORIGIN,)))
+    response = client.options(
+        "/api/v1/documents",
+        headers={
+            "Origin": _ORIGIN,
+            "Access-Control-Request-Method": method,
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.headers.get("access-control-allow-origin") == _ORIGIN
+    allow_methods = response.headers.get("access-control-allow-methods", "")
+    assert method in allow_methods.upper()

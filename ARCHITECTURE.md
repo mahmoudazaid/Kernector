@@ -74,7 +74,8 @@ application services. Presentation is not the composition root.
 ## Next.js / HTTP presentation migration
 
 See [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md) for the full
-decision record. Target flow:
+decision record. Next.js UI chrome follows the Instrument panel identity in
+[ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Target flow:
 
 ```text
 web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)

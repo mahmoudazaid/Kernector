@@ -1,5 +1,7 @@
 """FastAPI dependencies for the HTTP presentation adapter."""
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Annotated, Protocol
 
@@ -7,6 +9,7 @@ from fastapi import Depends
 
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from composition import (
+    SUPPORTED_UPLOAD_SUFFIXES,
     GroundedAsk,
     Settings,
     build_chat_model,
@@ -15,8 +18,13 @@ from composition import (
     build_runtime_settings,
     build_tool_augmented_ask,
     build_vector_store,
+    create_uploaded_document,
+    delete_uploaded_document,
+    list_uploaded_documents,
     load_runtime_settings,
+    replace_uploaded_document,
 )
+from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
 from domain.ports import PromptRepository, VectorStore
 from presentation.http.schemas import ChatRuntimeRequest
 
@@ -90,7 +98,59 @@ def get_ask_factory(
     return factory
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentOperations:
+    """The composition document seam, bound to this process's settings."""
+
+    list: Callable[[], tuple[CatalogDocument, ...]]
+    create: Callable[[UploadPayload], CatalogDocument]
+    replace: Callable[[SourceReference, UploadPayload], CatalogDocument]
+    delete: Callable[[SourceReference], None]
+    supported_suffixes: frozenset[str]
+    max_upload_bytes: int
+
+
+def get_document_operations(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DocumentOperations:
+    """Bind list/create/replace/delete to settings and a lazy vector store.
+
+    The store is not built here — ``list`` must work without embedding
+    credentials. Mutating operations resolve it on first use via the
+    process-wide ``get_vector_store`` cache.
+    """
+
+    def create(payload: UploadPayload) -> CatalogDocument:
+        return create_uploaded_document(
+            settings, payload, vector_store=get_vector_store()
+        )
+
+    def replace(
+        reference: SourceReference, payload: UploadPayload
+    ) -> CatalogDocument:
+        return replace_uploaded_document(
+            settings, reference, payload, vector_store=get_vector_store()
+        )
+
+    def delete(reference: SourceReference) -> None:
+        delete_uploaded_document(
+            settings, reference, vector_store=get_vector_store()
+        )
+
+    return DocumentOperations(
+        list=lambda: list_uploaded_documents(settings),
+        create=create,
+        replace=replace,
+        delete=delete,
+        supported_suffixes=SUPPORTED_UPLOAD_SUFFIXES,
+        max_upload_bytes=settings.max_upload_bytes,
+    )
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
 AskFactoryDep = Annotated[AskFactory, Depends(get_ask_factory)]
+DocumentOperationsDep = Annotated[
+    DocumentOperations, Depends(get_document_operations)
+]
