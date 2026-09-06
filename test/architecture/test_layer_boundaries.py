@@ -17,7 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from test.architecture.import_scan import find_forbidden_imports
+from test.architecture.import_scan import (
+    find_forbidden_imports,
+    find_forbidden_module_prefixes,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -185,6 +188,82 @@ def test_planted_presentation_http_may_import_fastapi(tmp_path: Path) -> None:
     )
     assert find_forbidden_imports(module, denylist) == set()
     assert SERVER_FRAMEWORKS.isdisjoint(denylist)
+
+
+# Build tooling whose job *is* to serialize another adapter's schema, so the
+# peer-import rule below cannot apply. Keep this list empty of runtime modules.
+PEER_IMPORT_EXEMPT = {Path("presentation/cli/export_openapi.py")}
+
+
+def test_presentation_adapters_are_mutually_isolated() -> None:
+    """Keep each UI replaceable: adapters must not import each other."""
+    for adapter, forbidden in (
+        ("http", "presentation.cli"),
+        ("cli", "presentation.http"),
+    ):
+        root = REPO_ROOT / "presentation" / adapter
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.py")):
+            if path.relative_to(REPO_ROOT) in PEER_IMPORT_EXEMPT:
+                continue
+            hits = find_forbidden_module_prefixes(path, {forbidden})
+            assert not hits, (
+                f"{path.relative_to(REPO_ROOT)} imports {forbidden}"
+            )
+
+
+def test_peer_import_exemptions_all_exist() -> None:
+    """A stale exemption would silently widen the isolation rule."""
+    for relative in PEER_IMPORT_EXEMPT:
+        assert (REPO_ROOT / relative).is_file(), f"{relative} no longer exists"
+
+
+def _plant_presentation_module(tmp_path: Path, adapter: str, source: str) -> Path:
+    """Write *source* into a fake ``presentation/<adapter>`` package.
+
+    ``_package_parts_for`` walks ``__init__.py`` upward, so relative imports
+    only resolve inside a real package. Building it under ``tmp_path`` keeps
+    the architecture suite from writing into ``REPO_ROOT``.
+    """
+    package = tmp_path / "presentation" / adapter
+    package.mkdir(parents=True)
+    (tmp_path / "presentation" / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    module = package / "leak.py"
+    module.write_text(source, encoding="utf-8")
+    return module
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import presentation.http\n",
+        "from presentation.http import deps\n",
+        "from presentation import http\n",
+        "from .. import http\n",
+        "from ..http import deps\n",
+    ],
+)
+def test_planted_peer_adapter_import_is_detected(tmp_path: Path, source: str) -> None:
+    """Every import form that names ``presentation.http`` must be caught."""
+    module = _plant_presentation_module(tmp_path, "cli", source)
+
+    hits = find_forbidden_module_prefixes(module, {"presentation.http"})
+
+    assert hits == {"presentation.http"}
+
+
+def test_planted_relative_import_above_package_root_is_not_resolved(
+    tmp_path: Path,
+) -> None:
+    """A level that escapes the package resolves to nothing, not a bare name."""
+    module = _plant_presentation_module(
+        tmp_path, "cli", "from ....http import deps\n"
+    )
+
+    assert find_forbidden_module_prefixes(module, {"presentation.http"}) == set()
+    assert find_forbidden_module_prefixes(module, {"http"}) == set()
 
 
 def test_composition_does_not_reexport_raw_load_settings() -> None:

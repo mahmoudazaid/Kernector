@@ -11,8 +11,9 @@ import pytest
 
 import composition
 import composition.tool_runs as tool_runs_mod
+from composition.software_delivery_tools import SoftwareDeliveryRunView
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
-from presentation.http.schemas import ToolCallResponse
+from presentation.http.schemas import tool_run_response
 
 
 def test_tool_call_view_fields_are_name_status_and_summary_only() -> None:
@@ -57,16 +58,13 @@ def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> No
         ToolCallView("software_delivery.generate_test_cases", ok=False),
     )
 
-    projected = [
-        ToolCallResponse(tool_name=call.tool_name, ok=call.ok, summary=call.summary)
-        for call in calls
-    ]
-    rendered = " ".join(
-        f"{call.tool_name} {call.ok} {call.summary}" for call in projected
-    )
+    view = SoftwareDeliveryRunView(summary="Ran 2 tools", calls=calls)
+
+    rendered = tool_run_response(view).model_dump_json()
 
     assert "sk-live-abc" not in rendered
     assert '{"score"' not in rendered
+    assert "result" not in rendered
 
 
 def test_fresh_tool_runs_module_has_no_summary_projection_api(
