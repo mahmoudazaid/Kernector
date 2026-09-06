@@ -83,7 +83,7 @@ def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> No
 
 
 def test_tool_run_projection_fields_are_locked() -> None:
-    """Projection field stability - adding fields must fail this test."""
+    """Adding a field to either projection must fail this test."""
     assert set(ToolCallResponse.model_fields) == {"tool_name", "ok", "summary"}
     assert set(ToolRunResponse.model_fields) == {
         "summary", "calls", "risk", "test_cases", "markdown",
