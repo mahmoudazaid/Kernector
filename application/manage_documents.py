@@ -197,7 +197,7 @@ class ManageUploadedDocuments:
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)
         if size > self._max_upload_bytes:
-            raise UploadTooLargeError(
+            raise UploadTooLargeError.for_file(
                 limit_bytes=self._max_upload_bytes,
                 actual_bytes=size,
             )

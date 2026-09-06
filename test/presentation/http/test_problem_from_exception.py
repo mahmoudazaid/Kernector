@@ -208,7 +208,9 @@ def test_partial_document_operation_maps_to_409(
 
 def test_upload_too_large_maps_to_413() -> None:
     problem = problem_from_exception(
-        UploadTooLargeError(limit_bytes=5_242_880, actual_bytes=5_242_881)
+        UploadTooLargeError.for_file(
+            limit_bytes=5_242_880, actual_bytes=5_242_881
+        )
     )
 
     assert problem.status == 413
@@ -220,7 +222,9 @@ def test_upload_too_large_maps_to_413() -> None:
 
 
 def test_upload_too_large_without_actual_bytes_uses_limit_only_sentence() -> None:
-    problem = problem_from_exception(UploadTooLargeError(limit_bytes=100))
+    problem = problem_from_exception(
+        UploadTooLargeError.for_request(limit_bytes=100)
+    )
 
     assert problem.status == 413
     assert problem.code == "upload_too_large"
@@ -229,7 +233,7 @@ def test_upload_too_large_without_actual_bytes_uses_limit_only_sentence() -> Non
 
 def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
     problem = problem_from_exception(
-        UploadTooLargeError(limit_bytes=16, actual_bytes=17)
+        UploadTooLargeError.for_file(limit_bytes=16, actual_bytes=17)
     )
     body = problem.model_dump_json()
 

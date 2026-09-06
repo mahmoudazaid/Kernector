@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from application.contracts import RetrieveRequest, RetrieveResponse
-from application.errors import ApplicationValidationError, InputRejectedError
+from application.errors import ApplicationValidationError
 from application.hybrid_fusion import fuse_hybrid_scores, normalize_scores
 from domain.knowledge import ScoredChunk
 from domain.ports import EmbeddingModel, LexicalIndex, VectorStore
@@ -43,8 +43,9 @@ class RetrieveKnowledge:
     typed failure carrying mutation state.
 
     ``execute`` is the only public retrieval entry and always enforces
-    ``max_input_length`` before retrieval work, including for rewritten queries
-    constructed by ``RewriteAndRetrieveKnowledge``.
+    ``max_input_length`` before retrieval work. This is defense-in-depth for
+    direct or future callers; ``RewriteAndRetrieveKnowledge`` rejects oversized
+    rewrites before delegating.
 
     When ``hybrid_enabled`` is true, ``hybrid_alpha`` weights BM25
     (``1`` = BM25 only, ``0`` = vector only). Endpoint alphas invoke only the
@@ -123,13 +124,14 @@ class RetrieveKnowledge:
 
         Raises:
             ApplicationValidationError: ``query`` exceeds ``max_input_length``.
-                Caller-facing length checks live at ask / rewrite boundaries;
-                this guard is defense-in-depth (including oversized rewrites).
+                Defense-in-depth for direct or future callers;
+                ``RewriteAndRetrieveKnowledge`` rejects oversized rewrites
+                before delegating.
             ProviderError: Propagated from the embedding model.
             VectorStoreError: Propagated from the vector store.
         """
         if len(request.query) > self._max_input_length:
-            raise InputRejectedError(
+            raise ApplicationValidationError(
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )

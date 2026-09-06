@@ -55,7 +55,7 @@ def _read_upload(
 
     advisory = upload.size
     if advisory is not None and advisory > max_upload_bytes:
-        raise UploadTooLargeError(
+        raise UploadTooLargeError.for_file(
             limit_bytes=max_upload_bytes,
             actual_bytes=advisory,
         )
@@ -68,7 +68,7 @@ def _read_upload(
             break
         total += len(chunk)
         if total > max_upload_bytes:
-            raise UploadTooLargeError(
+            raise UploadTooLargeError.for_file(
                 limit_bytes=max_upload_bytes,
                 actual_bytes=total,
             )
