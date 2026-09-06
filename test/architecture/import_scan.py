@@ -58,7 +58,7 @@ def _resolve_import_from_module(
     package = _package_parts_for(path)
     # level=1 → stay in package; level=2 → parent package; …
     up = node.level - 1
-    if up > len(package):
+    if up >= len(package):
         return None
     base = package[: len(package) - up]
     return ".".join((*base, *node.module.split("."))) if node.module else ".".join(base)
@@ -93,12 +93,11 @@ def find_forbidden_module_prefixes(
             _match(absolute)
             # ``from presentation import http`` and ``from . import http``
             # both name the submodule presentation.http.
-            if absolute is not None:
-                prefix = f"{absolute}." if absolute else ""
+            if absolute:
                 for alias in node.names:
                     if alias.name == "*":
                         continue
-                    _match(f"{prefix}{alias.name}")
+                    _match(f"{absolute}.{alias.name}")
     return hits
 
 

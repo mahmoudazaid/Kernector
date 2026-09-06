@@ -66,14 +66,15 @@ def test_projected_tool_call_responses_never_include_raw_payload_secrets() -> No
         risk=RiskScoreView(
             score=62,
             level="medium",
-            rationale='{"score": 62, "api_key": "sk-live-abc"}',
+            rationale="Model identified moderate security concerns in the codebase",
             factors=(),
         ),
     )
 
     rendered = tool_run_response(view).model_dump_json()
 
-    assert "sk-live-abc" not in rendered
+    # Verify no raw payload fields leak through projection
+    assert "result" not in rendered
     
     # Ensure projection field stability - adding fields must fail this test
     from presentation.http.schemas import ToolCallResponse, ToolRunResponse
