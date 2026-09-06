@@ -7,7 +7,11 @@ from typing import Any, get_args, get_origin
 from pydantic import BaseModel
 
 from composition.software_delivery_tools import SoftwareDeliveryRunView
-from presentation.http.schemas import ToolCallResponse, ToolRunResponse, tool_run_response
+from presentation.http.schemas import (
+    ToolCallResponse,
+    ToolRunResponse,
+    tool_run_response,
+)
 from test.software_delivery_views import software_delivery_run_view
 
 
@@ -96,8 +100,24 @@ def test_tool_run_response_projects_absent_risk_and_test_cases_as_null() -> None
     }
 
 
+def test_tool_run_response_projects_risk_only_run() -> None:
+    projected = tool_run_response(
+        software_delivery_run_view(test_cases=None)
+    ).model_dump()
+
+    assert projected["risk"]["score"] == 62
+    assert projected["test_cases"] is None
+
+
+def test_tool_run_response_projects_test_cases_only_run() -> None:
+    projected = tool_run_response(software_delivery_run_view(risk=None)).model_dump()
+
+    assert projected["risk"] is None
+    assert projected["test_cases"]["output_style"] == "steps"
+
+
 def test_tool_run_projection_fields_are_locked() -> None:
-    """Adding a field to any reachable wire model must fail this test."""
+    """Field names, annotations, and requiredness must stay pinned on the wire."""
     # Import nested *Response models inside the test so pytest does not try to
     # collect TestCaseResponse / TestCasesResponse as test classes.
     from presentation.http.schemas import (
@@ -109,20 +129,53 @@ def test_tool_run_projection_fields_are_locked() -> None:
     )
 
     expected = {
-        ToolCallResponse: {"tool_name", "ok", "summary"},
-        ToolRunResponse: {"summary", "calls", "risk", "test_cases", "markdown"},
-        RiskScoreResponse: {"score", "level", "rationale", "factors"},
-        RiskFactorResponse: {"factor_id", "weight", "references"},
-        SourceReferenceResponse: {"source_id", "source_type"},
-        TestCasesResponse: {"output_style", "cases"},
-        TestCaseResponse: {"title", "steps", "expected", "references"},
+        ToolCallResponse: {
+            ("tool_name", str, True),
+            ("ok", bool, True),
+            ("summary", str, False),
+        },
+        ToolRunResponse: {
+            ("summary", str, True),
+            ("calls", list[ToolCallResponse], True),
+            ("risk", RiskScoreResponse | None, False),
+            ("test_cases", TestCasesResponse | None, False),
+            ("markdown", str, False),
+        },
+        RiskScoreResponse: {
+            ("score", int, True),
+            ("level", str, True),
+            ("rationale", str, True),
+            ("factors", list[RiskFactorResponse], True),
+        },
+        RiskFactorResponse: {
+            ("factor_id", str, True),
+            ("weight", int, True),
+            ("references", list[SourceReferenceResponse], True),
+        },
+        SourceReferenceResponse: {
+            ("source_id", str, True),
+            ("source_type", str, True),
+        },
+        TestCasesResponse: {
+            ("output_style", str, True),
+            ("cases", list[TestCaseResponse], True),
+        },
+        TestCaseResponse: {
+            ("title", str, True),
+            ("steps", list[str], True),
+            ("expected", str, True),
+            ("references", list[SourceReferenceResponse], True),
+        },
     }
 
     reachable = _reachable_response_models(ToolRunResponse)
     assert reachable == set(expected)
 
     for model, fields in expected.items():
-        assert set(model.model_fields) == fields
+        assert {
+            (name, field.annotation, field.is_required())
+            for name, field in model.model_fields.items()
+        } == fields
 
 
 def _reachable_response_models(root: type[BaseModel]) -> set[type[BaseModel]]:

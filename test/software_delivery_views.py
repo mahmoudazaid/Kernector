@@ -80,4 +80,4 @@ def software_delivery_run_view(**changes: object) -> SoftwareDeliveryRunView:
         ),
         markdown="# Test Cases\n",
     )
-    return replace(view, **changes) if changes else view
+    return replace(view, **changes)
