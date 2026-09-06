@@ -113,7 +113,6 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
         "assert model is not None, 'no chat model built'\n"
         "store = build_vector_store(settings)\n"
         "assert store is not None, 'no vector store built'\n"
-        "assert 'streamlit' not in sys.modules, 'streamlit was imported'\n"
         "leaked = [m for m in sys.modules if m.split('.')[0] == 'presentation']\n"
         "assert not leaked, f'presentation imported: {leaked}'\n"
     )
@@ -1273,8 +1272,8 @@ def test_build_vector_store_is_annotated_with_the_port() -> None:
 def test_build_vector_store_is_a_pure_factory(chroma_settings: Settings) -> None:
     """No memoization: a settings-keyed cache would retain an open SQLite handle
     to a tmp_path pytest has already deleted, and would force an explicit
-    cache_clear fixture here (§10). Holding one instance across Streamlit reruns
-    is presentation's concern and #85's decision.
+    cache_clear fixture here (§10). Holding one instance across process reuse /
+    FastAPI request handling is presentation's concern and #85's decision.
     """
     first = build_vector_store(chroma_settings)
     assert build_vector_store(chroma_settings) is not first

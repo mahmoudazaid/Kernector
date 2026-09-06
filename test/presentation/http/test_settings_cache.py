@@ -1,4 +1,4 @@
-"""Settings dependency resolves once per process (matches Streamlit cache_resource)."""
+"""Settings dependency resolves once per process (``lru_cache`` on ``get_settings``)."""
 
 from types import SimpleNamespace
 

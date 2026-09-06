@@ -58,7 +58,7 @@ export function historyForModel(messages: readonly ChatMessage[]): HistoryTurn[]
 }
 
 /**
- * Classify an API failure the way Streamlit ``run_ask_turn`` classifies errors.
+ * Classify an API failure into rejected / unavailable / operational kinds.
  */
 export function classifyFailure(error: ApiError): TurnFailure {
   if (error.status === 422) {

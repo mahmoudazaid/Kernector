@@ -428,7 +428,7 @@ export interface components {
     };
     /**
      * RunMetaResponse
-     * @description Safe run fields Streamlit ``run_detail_lines`` would render.
+     * @description Safe run fields the chat UI may display (allowlisted projection).
      */
     RunMetaResponse: {
       /** Citation Count */
@@ -458,7 +458,7 @@ export interface components {
     };
     /**
      * RuntimeSettingsResponse
-     * @description Catalog for provider/model/settings controls (Streamlit sidebar parity).
+     * @description Catalog for provider/model/settings controls in the Settings UI.
      */
     RuntimeSettingsResponse: {
       /** Default Provider */

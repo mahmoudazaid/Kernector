@@ -46,28 +46,31 @@ def _package_parts_for(path: Path) -> tuple[str, ...]:
 def _resolve_import_from_module(
     path: Path, node: ast.ImportFrom
 ) -> str | None:
-    """Return the absolute dotted module for an ``ImportFrom`` node."""
+    """Return the absolute dotted module for an ``ImportFrom`` node.
+
+    Returns ``None`` when a relative import cannot be resolved — either
+    *path* has no package around it, or the level climbs past the package
+    root. Falling back to the bare ``node.module`` would report ``http`` for
+    ``from ....http import routes``, silently flipping the match either way.
+    """
     if node.level == 0:
         return node.module
     package = _package_parts_for(path)
-    if not package:
-        return node.module
     # level=1 → stay in package; level=2 → parent package; …
     up = node.level - 1
     if up >= len(package):
-        base: tuple[str, ...] = ()
-    else:
-        base = package[: len(package) - up] if up else package
-    if node.module:
-        return ".".join((*base, *node.module.split("."))) if base else node.module
-    return ".".join(base) if base else None
+        return None
+    base = package[: len(package) - up]
+    return ".".join((*base, *node.module.split("."))) if node.module else ".".join(base)
 
 
-def find_forbidden_module_prefixes(path: Path, forbidden_prefixes: set[str]) -> set[str]:
+def find_forbidden_module_prefixes(
+    path: Path, forbidden_prefixes: set[str]
+) -> set[str]:
     """Return imports that match a forbidden dotted prefix.
 
     Unlike :func:`find_forbidden_imports`, this matches full module paths (for
-    example ``presentation.streamlit``), not only top-level package roots.
+    example ``presentation.http``), not only top-level package roots.
     Relative ``ImportFrom`` nodes are resolved against *path*'s package.
     ``from presentation import http`` is treated as ``presentation.http``.
     """
@@ -88,12 +91,13 @@ def find_forbidden_module_prefixes(path: Path, forbidden_prefixes: set[str]) -> 
         elif isinstance(node, ast.ImportFrom):
             absolute = _resolve_import_from_module(path, node)
             _match(absolute)
-            # ``from presentation import http`` → presentation.http
-            if node.module and node.level == 0:
+            # ``from presentation import http`` and ``from . import http``
+            # both name the submodule presentation.http.
+            if absolute:
                 for alias in node.names:
                     if alias.name == "*":
                         continue
-                    _match(f"{node.module}.{alias.name}")
+                    _match(f"{absolute}.{alias.name}")
     return hits
 
 
@@ -113,17 +117,3 @@ def find_non_allowed_imports(
     return {
         root for root in imported_roots(path) if root in blocked or root not in allowed
     }
-
-
-def references_attribute(path: Path, attribute_name: str) -> bool:
-    """Return True if *attribute_name* appears as a Name or Attribute in the AST.
-
-    Comments, string literals, and docstrings do not count.
-    """
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id == attribute_name:
-            return True
-        if isinstance(node, ast.Attribute) and node.attr == attribute_name:
-            return True
-    return False

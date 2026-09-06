@@ -163,8 +163,9 @@ def _client_settings() -> ChromaClientSettings:
 
     chromadb 1.5.9 caches its client system per path and raises
     `ValueError: An instance of Chroma already exists for <path> with different
-    settings` when a second client on the same path disagrees. Sequential
-    Streamlit reruns depend on this staying deterministic (§4.4), so it must
+    settings` when a second client on the same path disagrees.
+    Repeated client construction on the same path within one long-lived process
+    depends on this staying deterministic (§4.4), so it must
     never be derived from mutable state.
     """
     return ChromaClientSettings(anonymized_telemetry=False)
@@ -588,7 +589,8 @@ class ChromaVectorStore:
 
     One writer at a time; concurrent writes from multiple processes are out of
     scope. Repeated construction on the same path within one process reopens the
-    same collection, which sequential Streamlit reruns rely on.
+    same collection, which sequential process reuse (FastAPI request handling)
+    relies on.
     """
 
     def __init__(self, config: ChromaSettings) -> None:

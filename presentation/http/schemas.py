@@ -55,7 +55,7 @@ class ModelSettingDefResponse(BaseModel):
 
 
 class RuntimeSettingsResponse(BaseModel):
-    """Catalog for provider/model/settings controls (Streamlit sidebar parity)."""
+    """Catalog for provider/model/settings controls in the Settings UI."""
 
     providers: list[str]
     default_provider: str
@@ -112,7 +112,7 @@ class ToolUsedResponse(BaseModel):
 
 
 class RunMetaResponse(BaseModel):
-    """Safe run fields Streamlit ``run_detail_lines`` would render."""
+    """Safe run fields the chat UI may display (allowlisted projection)."""
 
     request_id: str | None = None
     outcome: str | None = None
@@ -217,7 +217,7 @@ def tools_used_response(
 
 
 def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
-    """Project ``RunMeta`` fields that Streamlit run details would show.
+    """Project ``RunMeta`` fields the chat UI may show.
 
     Excludes ``settings``, ``error_type``, and ``source_type``.
     """

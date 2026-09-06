@@ -10,7 +10,8 @@ export type UploadValidationResult =
 /**
  * Client-side pre-flight for document uploads (UX only; server re-validates).
  *
- * Messages are fixed literals matching Streamlit ``_validate_upload`` semantics.
+ * Messages are fixed literals aligned with the 413 / 422 rejections in
+ * `presentation/http` (see `problem_from_exception`).
  */
 export function validateUpload(
   file: File | null | undefined,

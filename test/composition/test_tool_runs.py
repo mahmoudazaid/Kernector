@@ -6,13 +6,18 @@ import dataclasses
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import composition
 import composition.tool_runs as tool_runs_mod
+from application.contracts import InvokeToolResponse
+from composition.software_delivery_chat import (
+    ToolRunFailedError,
+    project_software_delivery_run_view,
+)
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
-from presentation.streamlit.tool_run import tool_call_lines
 
 
 def test_tool_call_view_fields_are_name_status_and_summary_only() -> None:
@@ -47,20 +52,27 @@ def test_composition_exports_no_raw_to_summary_helper() -> None:
     assert "def bounded_" not in source
 
 
-def test_rendered_tool_call_lines_never_include_raw_payload_secrets() -> None:
-    calls = (
-        ToolCallView(
+def test_unrecognised_outcome_keeps_opaque_tool_outputs() -> None:
+    tool_outputs = (
+        InvokeToolResponse(
             "software_delivery.risk_score",
-            ok=True,
-            summary="Scored risk at 62/100",
+            '{"score": 62, "api_key": "sk-live-abc"}',
         ),
-        ToolCallView("software_delivery.generate_test_cases", ok=False),
+        InvokeToolResponse(
+            "software_delivery.generate_test_cases",
+            '{"score": 62, "secret_token": "sk-live-abc"}',
+        ),
+    )
+    response = SimpleNamespace(
+        summary="Ran something new.",
+        outcomes=(object(),),
     )
 
-    rendered = " ".join(tool_call_lines(calls))
+    with pytest.raises(ToolRunFailedError) as excinfo:
+        project_software_delivery_run_view(response, tool_outputs=tool_outputs)
 
-    assert "sk-live-abc" not in rendered
-    assert '{"score"' not in rendered
+    assert str(excinfo.value) == "The tool run produced an unrecognised result."
+    assert excinfo.value.tool_outputs == tool_outputs
 
 
 def test_fresh_tool_runs_module_has_no_summary_projection_api(

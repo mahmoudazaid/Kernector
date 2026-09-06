@@ -14,7 +14,7 @@ describe("validateUpload", () => {
     });
   });
 
-  it("rejects unsupported suffixes with the Streamlit message shape", () => {
+  it("rejects unsupported suffixes with the fixed suffix message", () => {
     const file = new File(["x"], "notes.docx");
     expect(validateUpload(file, constraints)).toEqual({
       ok: false,
