@@ -1,7 +1,7 @@
 import type { RunMeta } from "@/lib/chat/turn";
 
 /**
- * Project safe run fields for UI display (Streamlit ``run_detail_lines`` parity).
+ * Project safe run fields for UI display (Next.js chat run-details parity).
  */
 export function runDetailLines(run: RunMeta | null | undefined): string[] {
   if (!run) {

@@ -261,7 +261,7 @@ def test_unsupported_document_type_maps_to_422() -> None:
     assert problem.detail == detail
 
 
-def test_missing_upload_file_maps_to_422_with_streamlit_copy() -> None:
+def test_missing_upload_file_maps_to_422_with_upload_missing_copy() -> None:
     problem = problem_from_exception(MissingUploadFileError())
 
     assert problem.status == 422

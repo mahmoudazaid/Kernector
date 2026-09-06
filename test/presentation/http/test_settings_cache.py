@@ -1,4 +1,4 @@
-"""Settings dependency resolves once per process (matches Streamlit cache_resource)."""
+"""Settings dependency resolves once per process (process-cached like FastAPI deps)."""
 
 from types import SimpleNamespace
 

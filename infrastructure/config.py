@@ -321,7 +321,7 @@ def _load_http_adapter_settings() -> HttpAdapterSettings:
 
     ``HTTP_CORS_ORIGINS`` must not include ``*`` — that would be a permissive
     production default. Rejection lives here (not only in the HTTP adapter) so
-    Streamlit and the CLI also refuse to start with that misconfiguration:
+    FastAPI and the CLI also refuse to start with that misconfiguration:
     ``*`` in shared Settings is never a safe process-wide default. When
     ``HTTP_DEV_CORS`` is off, origins are ignored at the adapter but the
     ``*`` check still runs at load time.

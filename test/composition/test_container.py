@@ -1272,8 +1272,8 @@ def test_build_vector_store_is_annotated_with_the_port() -> None:
 def test_build_vector_store_is_a_pure_factory(chroma_settings: Settings) -> None:
     """No memoization: a settings-keyed cache would retain an open SQLite handle
     to a tmp_path pytest has already deleted, and would force an explicit
-    cache_clear fixture here (§10). Holding one instance across Streamlit reruns
-    is presentation's concern and #85's decision.
+    cache_clear fixture here (§10). Holding one instance across process reuse /
+    FastAPI request handling is presentation's concern and #85's decision.
     """
     first = build_vector_store(chroma_settings)
     assert build_vector_store(chroma_settings) is not first

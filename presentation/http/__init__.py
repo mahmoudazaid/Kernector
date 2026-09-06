@@ -1,1 +1,1 @@
-"""HTTP presentation adapter — FastAPI peer to Streamlit."""
+"""HTTP presentation adapter — FastAPI for the Next.js UI."""

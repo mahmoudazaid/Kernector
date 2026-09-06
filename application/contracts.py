@@ -1,6 +1,6 @@
 """Typed request/response contracts for core use cases.
 
-UI-agnostic DTOs shared by Streamlit and future API clients. Domain entities
+UI-agnostic DTOs shared by HTTP and other presentation clients. Domain entities
 are reused; prompt bodies and analysis-specific outputs stay out of scope.
 """
 
