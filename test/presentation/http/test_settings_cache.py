@@ -1,4 +1,4 @@
-"""Settings dependency resolves once per process (process-cached like FastAPI deps)."""
+"""Settings dependency resolves once per process (``lru_cache`` on ``get_settings``)."""
 
 from types import SimpleNamespace
 

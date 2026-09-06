@@ -14,7 +14,7 @@ describe("validateUpload", () => {
     });
   });
 
-  it("rejects unsupported suffixes with the message shape owned by upload.ts", () => {
+  it("rejects unsupported suffixes with the fixed suffix message", () => {
     const file = new File(["x"], "notes.docx");
     expect(validateUpload(file, constraints)).toEqual({
       ok: false,

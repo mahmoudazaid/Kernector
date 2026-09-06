@@ -338,7 +338,7 @@ def test_domain_tool_packs_rejects_duplicates(env: pytest.MonkeyPatch) -> None:
 
 
 def test_http_cors_origins_rejects_star(env: pytest.MonkeyPatch) -> None:
-    """``*`` is rejected at Settings load — intentional FastAPI/CLI blast radius.
+    """``*`` is rejected at Settings load — intentional CLI/non-HTTP blast radius.
 
     A wildcard CORS allowlist is never safe in shared process config. Keeping
     the check in ``load_settings`` (not only the HTTP adapter) ensures every

@@ -185,7 +185,9 @@ status, and an explicitly authored summary (≤120 characters) built from typed
 metadata such as score or generated-case count — never from
 ``InvokeToolResponse.result`` or truncated opaque payloads. Raw tool payloads
 are never stored, exposed, or rendered. Shared presentation code stays
-pack-agnostic; Software Delivery renderers live in the Next.js chat UI.
+pack-agnostic; Software Delivery renderers live in `ToolRunBlock`
+(`web/components/chat/ChatPanel.tsx`), which consumes only the typed projection
+and never imports pack-named modules.
 ``AskResponse.tool_outputs`` is never populated by ``AskKnowledge`` itself: the
 application layer may not import ``packs``, so the vocabulary that recognises a
 tool request cannot live there.
