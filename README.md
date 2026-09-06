@@ -4,7 +4,7 @@
 
 Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, plus seed JSON corpora, normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning; the current ingest adapters are file upload and the on-disk seed JSON loader. External provider connectors (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
-Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
+Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
 ## How the platform is structured
 
@@ -70,6 +70,7 @@ uv run uvicorn presentation.http.app:app --reload
 - Versioned prove-out: `GET /api/v1/capabilities`
 - Settings catalog: `GET /api/v1/settings`
 - Grounded chat: `POST /api/v1/chat/ask`
+- Documents: `GET/POST /api/v1/documents`, `PUT/DELETE /api/v1/documents/{source_id}`
 - OpenAPI: `GET /openapi.json` (also `/docs`)
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
@@ -83,7 +84,7 @@ The App Router foundation lives in [`web/`](web/) (Node 22+, npm). See
 [`web/README.md`](web/README.md) for full details.
 
 ```bash
-# API with CORS for the Next.js origin (required for Chat / Settings from the browser)
+# API with CORS for the Next.js origin (required for Chat / Settings / Documents from the browser)
 HTTP_DEV_CORS=true uv run uvicorn presentation.http.app:app --reload
 
 # separate terminal
@@ -160,8 +161,13 @@ current without re-hydrating from Chroma on every rerun.
 
 ## Upload and manage documents
 
-1. Start the app with the command above.
-2. Under **Upload new document**, choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
+Streamlit (`uv run streamlit run main.py`) and Next.js (`/documents` against
+FastAPI) share the same composition document seam. Prefer a **single uvicorn
+worker** until the catalog store is multi-process safe — the JSON catalog lock
+is per process.
+
+1. Start Streamlit, or the FastAPI + Next stack above and open **Documents**.
+2. Under **Upload new**, choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
 3. Submit **Upload new**. The app assigns a system-managed UUID source ID (never derived from the file name). Matching filenames create separate documents.
 4. Under **Uploaded documents**, select a row to inspect status, chunk count, and the diagnostic source ID.
 5. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.

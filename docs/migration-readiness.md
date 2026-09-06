@@ -45,6 +45,16 @@ results, run details, rejected/operational/unavailable states). Transcript
 persistence uses `kernector:chat-messages:v1`. Streamlit chat stays until #228.
 Test-case CSV/JSON/PDF exports remain a follow-up (server-side `fpdf` surface).
 
+### Document upload/ingest (#236)
+
+Satisfied for `GET/POST/PUT/DELETE /api/v1/documents` (composition document seam),
+OpenAPI + typed client, sanitized wire projection (`has_error` /
+`error_summary`), and Next `/documents` (list, upload-new, explicit replace,
+delete-with-confirm, empty catalog, list-load failure banner, unavailable).
+Upload size/suffix validation is enforced in the HTTP route (413/422) with
+client pre-flight for UX. Streamlit upload/ingest stays until #228. Run a
+single uvicorn worker until the catalog store is multi-process safe.
+
 ## Out of scope for readiness alone
 
 - Public deployment or production hardening

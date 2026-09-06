@@ -6,7 +6,13 @@ export type ApiRequestOptions = {
   baseUrl: string;
   path: string;
   method?: string;
-  body?: unknown;
+  /**
+   * Request body. Plain objects are JSON-encoded with
+   * ``Content-Type: application/json``. ``FormData`` / ``Blob`` / ``string``
+   * pass through as ``BodyInit`` — never set ``Content-Type`` for ``FormData``
+   * so the browser can attach the multipart boundary.
+   */
+  body?: BodyInit | Record<string, unknown>;
   signal?: AbortSignal;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -88,11 +94,30 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
       : timeoutSignal;
 
   const requestHeaders = new Headers(headers);
-  let serializedBody: string | undefined;
+  let requestBody: BodyInit | undefined;
   if (body !== undefined) {
-    serializedBody = JSON.stringify(body);
-    if (!requestHeaders.has("Content-Type")) {
-      requestHeaders.set("Content-Type", "application/json");
+    if (
+      typeof body === "string" ||
+      body instanceof FormData ||
+      body instanceof Blob ||
+      body instanceof ArrayBuffer ||
+      ArrayBuffer.isView(body)
+    ) {
+      requestBody = body as BodyInit;
+      // FormData must keep Content-Type unset so the boundary is set by fetch.
+    } else if (body instanceof URLSearchParams) {
+      requestBody = body;
+      if (!requestHeaders.has("Content-Type")) {
+        requestHeaders.set(
+          "Content-Type",
+          "application/x-www-form-urlencoded;charset=UTF-8",
+        );
+      }
+    } else {
+      requestBody = JSON.stringify(body);
+      if (!requestHeaders.has("Content-Type")) {
+        requestHeaders.set("Content-Type", "application/json");
+      }
     }
   }
 
@@ -101,7 +126,7 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
     response = await fetchImpl(joinUrl(baseUrl, path), {
       method,
       headers: requestHeaders,
-      body: serializedBody,
+      body: requestBody,
       signal: combinedSignal,
     });
   } catch (error) {

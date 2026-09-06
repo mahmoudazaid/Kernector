@@ -198,3 +198,4 @@ slice). Supersedes the documentation intent of closed [#100](https://github.com/
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — layers and Next.js / HTTP migration section
 - [ADR 0001](0001-domain-agnostic-knowledge-foundation.md) — domain-agnostic knowledge foundation
+- [ADR 0003](0003-nextjs-instrument-panel-visual-identity.md) — Next.js Instrument panel visual identity

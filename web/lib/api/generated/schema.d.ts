@@ -44,6 +44,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Documents
+     * @description Return uploaded catalog rows plus client upload constraints.
+     */
+    get: operations["list_documents_api_v1_documents_get"];
+    put?: never;
+    /**
+     * Create Document
+     * @description Upload a new document; always allocates a system-managed source ID.
+     */
+    post: operations["create_document_api_v1_documents_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/documents/{source_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Replace Document
+     * @description Replace document content under the same source ID.
+     */
+    put: operations["replace_document_api_v1_documents__source_id__put"];
+    post?: never;
+    /**
+     * Delete Document
+     * @description Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.
+     */
+    delete: operations["delete_document_api_v1_documents__source_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/ollama/status": {
     parameters: {
       query?: never;
@@ -108,6 +156,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** Body_create_document_api_v1_documents_post */
+    Body_create_document_api_v1_documents_post: {
+      /** File */
+      file?: string | null;
+    };
+    /** Body_replace_document_api_v1_documents__source_id__put */
+    Body_replace_document_api_v1_documents__source_id__put: {
+      /** File */
+      file?: string | null;
+    };
     /**
      * CapabilitiesResponse
      * @description Minimal read-only prove-out for the composition boundary.
@@ -119,6 +177,35 @@ export interface components {
       providers: string[];
       /** Software Delivery Tools Enabled */
       software_delivery_tools_enabled: boolean;
+    };
+    /**
+     * CatalogDocumentResponse
+     * @description Wire projection of one uploaded catalog row (sanitized diagnostics).
+     */
+    CatalogDocumentResponse: {
+      /** Chunk Count */
+      chunk_count: number;
+      /** Content Format */
+      content_format?: string | null;
+      /** Error Summary */
+      error_summary?: string | null;
+      /** File Name */
+      file_name: string;
+      /** Has Error */
+      has_error: boolean;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "pending" | "ready" | "failed" | "degraded";
+      /** Title */
+      title?: string | null;
+      /** Uploaded At */
+      uploaded_at: string;
     };
     /**
      * ChatAskRequest
@@ -187,6 +274,25 @@ export interface components {
       source_id: string;
       /** Source Type */
       source_type: string;
+    };
+    /**
+     * DocumentListResponse
+     * @description Uploaded-document catalog plus upload constraints.
+     */
+    DocumentListResponse: {
+      constraints: components["schemas"]["DocumentUploadConstraintsResponse"];
+      /** Documents */
+      documents: components["schemas"]["CatalogDocumentResponse"][];
+    };
+    /**
+     * DocumentUploadConstraintsResponse
+     * @description Client pre-flight limits for the documents UI.
+     */
+    DocumentUploadConstraintsResponse: {
+      /** Max Upload Bytes */
+      max_upload_bytes: number;
+      /** Supported Suffixes */
+      supported_suffixes: string[];
     };
     /**
      * HealthResponse
@@ -538,6 +644,249 @@ export interface operations {
       };
       /** @description Provider error */
       502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_documents_api_v1_documents_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentListResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  create_document_api_v1_documents_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "multipart/form-data": components["schemas"]["Body_create_document_api_v1_documents_post"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogDocumentResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Payload too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  replace_document_api_v1_documents__source_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "multipart/form-data": components["schemas"]["Body_replace_document_api_v1_documents__source_id__put"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogDocumentResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Payload too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  delete_document_api_v1_documents__source_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
         headers: {
           [name: string]: unknown;
         };

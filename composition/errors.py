@@ -1,5 +1,11 @@
 """Composition-facing errors translated from infrastructure adapters."""
 
+from __future__ import annotations
+
+from typing import Literal
+
+DocumentPartialOperation = Literal["create", "replace", "delete"]
+
 
 class KnowledgeLoadError(RuntimeError):
     """The configured knowledge input could not be loaded."""
@@ -16,6 +22,15 @@ class DocumentUploadError(RuntimeError):
     """
 
 
+class DocumentContentError(DocumentUploadError):
+    """The uploaded file has no extractable text layer.
+
+    Distinct from other extraction failures so HTTP can return 422 instead of
+    a generic operational 500 — the caller supplied a file that cannot be
+    ingested as written, not a transient store or provider fault.
+    """
+
+
 class DocumentOperationError(RuntimeError):
     """Uploaded-document list/create/replace/delete failed after translation.
 
@@ -28,6 +43,10 @@ class DocumentOperationError(RuntimeError):
     """
 
 
+class UnknownUploadedDocumentError(DocumentOperationError):
+    """Replace targeted a source ID that is not in the uploaded-document catalog."""
+
+
 class PartialDocumentOperationError(DocumentOperationError):
     """The operation stopped midway and left catalog/vector state to reconcile.
 
@@ -36,3 +55,12 @@ class PartialDocumentOperationError(DocumentOperationError):
     a failure that never opened the store sends them looking for damage that
     does not exist.
     """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        operation: DocumentPartialOperation,
+    ) -> None:
+        super().__init__(message)
+        self.operation = operation

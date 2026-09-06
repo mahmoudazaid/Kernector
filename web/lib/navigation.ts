@@ -7,7 +7,7 @@ export const PRODUCT_LABEL = "Multi-source knowledge hub";
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/" },
-  { label: "Documents", href: "/documents" },
+  { label: "Knowledge Hub", href: "/documents" },
   { label: "Chat", href: "/chat" },
   { label: "Settings", href: "/settings" },
 ] as const;

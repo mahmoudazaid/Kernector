@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from application.contracts import Citation, InvokeToolResponse, RunMeta
 from composition.software_delivery_tools import SoftwareDeliveryRunView
-from domain.knowledge import SourceReference
+from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference
 
 
 class HealthResponse(BaseModel):
@@ -293,5 +293,63 @@ def tool_run_response(view: SoftwareDeliveryRunView) -> ToolRunResponse:
         risk=risk,
         test_cases=test_cases,
         markdown=view.markdown,
+    )
+
+
+_ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
+    CatalogStatus.FAILED: (
+        "Ingestion failed for this document. Delete it and upload again."
+    ),
+    CatalogStatus.DEGRADED: (
+        "Ingestion did not finish cleanly; some chunks may be stored. "
+        "Replace or delete this document."
+    ),
+}
+
+
+class CatalogDocumentResponse(BaseModel):
+    """Wire projection of one uploaded catalog row (sanitized diagnostics)."""
+
+    source_id: str
+    source_type: str
+    file_name: str
+    title: str | None = None
+    content_format: str | None = None
+    status: Literal["pending", "ready", "failed", "degraded"]
+    uploaded_at: str
+    chunk_count: int
+    has_error: bool
+    error_summary: str | None = None
+
+
+class DocumentUploadConstraintsResponse(BaseModel):
+    """Client pre-flight limits for the documents UI."""
+
+    supported_suffixes: list[str]
+    max_upload_bytes: int
+
+
+class DocumentListResponse(BaseModel):
+    """Uploaded-document catalog plus upload constraints."""
+
+    documents: list[CatalogDocumentResponse]
+    constraints: DocumentUploadConstraintsResponse
+
+
+def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
+    """Project a catalog row; never serialize raw adapter ``error`` text."""
+    summary = _ERROR_SUMMARY_BY_STATUS.get(document.status)
+    return CatalogDocumentResponse(
+        source_id=document.reference.source_id,
+        source_type=document.reference.source_type,
+        file_name=document.file_name,
+        title=document.title,
+        content_format=document.content_format,
+        status=document.status.value,
+        uploaded_at=document.uploaded_at.isoformat(),
+        chunk_count=document.chunk_count,
+        has_error=document.status
+        in {CatalogStatus.FAILED, CatalogStatus.DEGRADED},
+        error_summary=summary,
     )
 

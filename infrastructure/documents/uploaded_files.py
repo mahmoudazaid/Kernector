@@ -46,6 +46,15 @@ SUPPORTED_SUFFIXES: frozenset[str] = frozenset(_FORMAT_BY_SUFFIX)
 _PAGE_SEPARATOR = "\n\n"
 
 
+def unsupported_document_type_detail(suffix: str) -> str:
+    """Fixed client-facing sentence for an unsupported upload suffix."""
+    described = repr(suffix) if suffix else "no suffix"
+    return (
+        f"unsupported document type ({described}); supported "
+        f"types are {', '.join(sorted(SUPPORTED_SUFFIXES))}"
+    )
+
+
 class DocumentExtractionError(RuntimeError):
     """The uploaded-file adapter could not produce a SourceDocument."""
 
@@ -88,10 +97,8 @@ def _content_format_for(name: str, *, described_as: object) -> str:
     """
     suffix = Path(name).suffix.lower()
     if suffix not in _FORMAT_BY_SUFFIX:
-        described = repr(suffix) if suffix else "no suffix"
         raise UnsupportedDocumentError(
-            f"{described_as}: unsupported document type ({described}); supported "
-            f"types are {', '.join(sorted(SUPPORTED_SUFFIXES))}"
+            f"{described_as}: {unsupported_document_type_detail(suffix)}"
         )
     return _FORMAT_BY_SUFFIX[suffix]
 
