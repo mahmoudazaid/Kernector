@@ -51,6 +51,7 @@ const CATALOG: RuntimeSettingsResponse = {
       providers: ["openrouter", "ollama"],
     },
   ],
+  max_input_length: 10000,
 };
 
 describe("SettingsPanel", () => {

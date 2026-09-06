@@ -1,9 +1,12 @@
 """Composition root: the only place that constructs infrastructure."""
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
@@ -75,6 +78,9 @@ from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
 from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
+if TYPE_CHECKING:
+    from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
+
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
 # Re-export so presentation adapters share one unsupported-type sentence.
@@ -121,7 +127,7 @@ def available_providers() -> tuple[str, ...]:
     return tuple(_CHAT_MODELS)
 
 
-def build_runtime_settings(settings: Settings) -> "GetRuntimeSettings":
+def build_runtime_settings(settings: Settings) -> GetRuntimeSettings:
     """Wire :class:`GetRuntimeSettings` from env Settings + available providers."""
     from application.runtime_settings import GetRuntimeSettings, RuntimeSettingsDefaults
 
@@ -133,11 +139,12 @@ def build_runtime_settings(settings: Settings) -> "GetRuntimeSettings":
             openrouter_default_model=settings.openrouter.model,
             ollama_default_base_url=settings.ollama.base_url,
             ollama_default_model=settings.ollama.model,
+            max_input_length=settings.max_input_length,
         ),
     )
 
 
-def build_probe_ollama_status(settings: Settings) -> "ProbeOllamaStatus":
+def build_probe_ollama_status(settings: Settings) -> ProbeOllamaStatus:
     """Wire :class:`ProbeOllamaStatus` to the infrastructure Ollama probe."""
     from application.runtime_settings import ProbeOllamaStatus
 

@@ -807,11 +807,15 @@
         "type": "object"
       },
       "RuntimeSettingsResponse": {
-        "description": "Catalog for provider/model/settings controls in the Settings UI.",
+        "description": "Catalog for provider/model/settings controls plus shared input limits.",
         "properties": {
           "default_provider": {
             "title": "Default Provider",
             "type": "string"
+          },
+          "max_input_length": {
+            "title": "Max Input Length",
+            "type": "integer"
           },
           "model_settings": {
             "items": {
@@ -839,7 +843,8 @@
           "default_provider",
           "openrouter",
           "ollama",
-          "model_settings"
+          "model_settings",
+          "max_input_length"
         ],
         "title": "RuntimeSettingsResponse",
         "type": "object"

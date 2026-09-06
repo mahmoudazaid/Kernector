@@ -1434,6 +1434,18 @@ a {
   outline-offset: 2px;
 }
 
+.kern-chat-counter {
+  margin: var(--kern-space-1) 0 0;
+  padding-inline: var(--kern-space-5);
+  color: var(--kern-muted);
+  font-size: var(--kern-text-xs);
+}
+
+.kern-chat-counter[data-exceeded="true"] {
+  color: var(--kern-danger);
+  font-weight: 500;
+}
+
 .kern-chat-input {
   flex: 1;
   min-width: 0;

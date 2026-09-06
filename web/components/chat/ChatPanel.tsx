@@ -16,6 +16,12 @@ import {
   type ChatAskResponse,
 } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/errors";
+import {
+  getRuntimeSettings,
+  type GetRuntimeSettingsOptions,
+  type RuntimeSettingsResponse,
+} from "@/lib/api/settings";
+import { evaluateInputLength } from "@/lib/chat/input-length";
 import { runDetailLines } from "@/lib/chat/run-details";
 import {
   appendUserMessage,
@@ -58,6 +64,9 @@ const SEND_ICON = (
 export type ChatPanelProps = {
   apiBaseUrl: string;
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
+  loadSettings?: (
+    options: GetRuntimeSettingsOptions,
+  ) => Promise<RuntimeSettingsResponse>;
 };
 
 function CitationsBlock({ citations }: { citations: Citation[] }) {
@@ -242,13 +251,18 @@ function fromPersisted(raw: ReturnType<typeof loadChatMessages>): ChatMessage[] 
   }));
 }
 
-export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
+export function ChatPanel({
+  apiBaseUrl,
+  ask = askChat,
+  loadSettings = getRuntimeSettings,
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [maxInputLength, setMaxInputLength] = useState<number | null>(null);
 
   useEffect(() => {
     startTransition(() => {
@@ -264,10 +278,31 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
     saveChatMessages(toPersisted(messages));
   }, [messages, hydrated]);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadSettings({ baseUrl: apiBaseUrl })
+      .then((catalog) => {
+        if (!cancelled) {
+          setMaxInputLength(catalog.max_input_length);
+        }
+      })
+      .catch(() => {
+        // Limit unknown: show no counter rather than invent a local one.
+        // The application boundary still rejects over-limit input.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, loadSettings]);
+
+  const lengthFeedback =
+    maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
+  const overLimit = lengthFeedback?.exceeded ?? false;
+
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = draft.trim();
-    if (!query || sending) {
+    if (!query || sending || overLimit) {
       return;
     }
     setInlineError(null);
@@ -410,6 +445,8 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             placeholder="What's in your mind!"
             value={draft}
             disabled={sending}
+            aria-invalid={overLimit || undefined}
+            aria-describedby={lengthFeedback ? "chat-input-length" : undefined}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
           />
@@ -417,11 +454,22 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             type="submit"
             className="kern-chat-send"
             aria-label="Send"
-            disabled={sending || !draft.trim()}
+            disabled={sending || !draft.trim() || overLimit}
           >
             {SEND_ICON}
           </button>
         </div>
+        {lengthFeedback ? (
+          <p
+            id="chat-input-length"
+            className="kern-chat-counter"
+            data-exceeded={lengthFeedback.exceeded ? "true" : undefined}
+            aria-live="polite"
+          >
+            {lengthFeedback.counterLabel}
+            {lengthFeedback.guidance ? ` — ${lengthFeedback.guidance}` : ""}
+          </p>
+        ) : null}
       </form>
     </section>
   );

@@ -4,11 +4,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ApiError } from "@/lib/api/errors";
 import type { ChatAskResponse } from "@/lib/api/chat";
+import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
   CHAT_MESSAGES_STORAGE_KEY,
   loadChatMessages,
   saveRuntimeSettings,
 } from "@/lib/runtime-settings-storage";
+
+function catalogWithLimit(maxInputLength: number): RuntimeSettingsResponse {
+  return {
+    providers: ["openrouter"],
+    default_provider: "openrouter",
+    openrouter: { models: [], default_model: null },
+    ollama: { default_base_url: null, default_model: null },
+    model_settings: [],
+    max_input_length: maxInputLength,
+  };
+}
 
 const SUCCESS: ChatAskResponse = {
   answer: "Grounded answer from the corpus.",
@@ -233,5 +245,69 @@ describe("ChatPanel", () => {
     });
     expect(loadChatMessages()).toEqual([]);
     expect(localStorage.getItem("kernector:runtime-settings:v1")).toBeTruthy();
+  });
+
+  it("shows a character counter using the limit published by the API", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={async () => catalogWithLimit(20)}
+      />,
+    );
+
+    await user.type(await screen.findByLabelText(/message/i), "hello");
+
+    expect(await screen.findByText("5 / 20 characters")).toBeInTheDocument();
+  });
+
+  it("blocks sending an over-limit draft and states the corrective action", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue(SUCCESS);
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={ask}
+        loadSettings={async () => catalogWithLimit(10)}
+      />,
+    );
+
+    const input = await screen.findByLabelText(/message/i);
+    await user.type(input, "abcdefghijkl");
+
+    expect(
+      await screen.findByText(/remove 2 to send/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
+
+    await user.type(input, "{Enter}");
+
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("omits the counter and still sends when the limit cannot be loaded", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue(SUCCESS);
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={ask}
+        loadSettings={async () => {
+          throw ApiError.generic(0);
+        }}
+      />,
+    );
+
+    await user.type(await screen.findByLabelText(/message/i), "hello");
+
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(await screen.findByText(SUCCESS.answer)).toBeInTheDocument();
   });
 });
