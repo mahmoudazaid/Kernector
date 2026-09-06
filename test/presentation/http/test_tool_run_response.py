@@ -101,23 +101,25 @@ def test_tool_run_response_projects_absent_risk_and_test_cases_as_null() -> None
 
 
 def test_tool_run_response_projects_risk_only_run() -> None:
+    both = tool_run_response(software_delivery_run_view()).model_dump()
+
     projected = tool_run_response(
         software_delivery_run_view(test_cases=None)
     ).model_dump()
 
-    assert projected["risk"]["score"] == 62
-    assert projected["test_cases"] is None
+    assert projected == {**both, "test_cases": None}
 
 
 def test_tool_run_response_projects_test_cases_only_run() -> None:
+    both = tool_run_response(software_delivery_run_view()).model_dump()
+
     projected = tool_run_response(software_delivery_run_view(risk=None)).model_dump()
 
-    assert projected["risk"] is None
-    assert projected["test_cases"]["output_style"] == "steps"
+    assert projected == {**both, "risk": None}
 
 
 def test_tool_run_projection_fields_are_locked() -> None:
-    """Field names, annotations, and requiredness must stay pinned on the wire."""
+    """Field names, annotations, requiredness, and wire aliases must stay pinned."""
     # Import nested *Response models inside the test so pytest does not try to
     # collect TestCaseResponse / TestCasesResponse as test classes.
     from presentation.http.schemas import (
@@ -176,6 +178,8 @@ def test_tool_run_projection_fields_are_locked() -> None:
             (name, field.annotation, field.is_required())
             for name, field in model.model_fields.items()
         } == fields
+        for field in model.model_fields.values():
+            assert field.serialization_alias is None
 
 
 def _reachable_response_models(root: type[BaseModel]) -> set[type[BaseModel]]:
