@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, UploadTooLargeError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.manage_documents import (
     ManageUploadedDocuments,
@@ -256,6 +256,33 @@ def test_replace_records_degraded_when_mutation_may_have_started() -> None:
     assert current.error
 
 
+def test_replace_unknown_document_wins_over_oversize() -> None:
+    """Unknown-document is checked before size; oversize is not the signal."""
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    extractor = RecordingExtractor(document_factory=_document_factory(CONTENT_V2))
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        extractor=extractor,
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("unused"),
+        now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=16,
+    )
+    missing = SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT)
+
+    with pytest.raises(UnknownDocumentError):
+        use_case.replace(
+            missing,
+            UploadPayload(file_name="big.md", content=b"x" * 17),
+        )
+
+    assert extractor.calls == []
+
+
 def test_oversized_replace_is_rejected_before_extract() -> None:
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()
@@ -274,12 +301,14 @@ def test_oversized_replace_is_rejected_before_extract() -> None:
         max_upload_bytes=limit,
     )
 
-    with pytest.raises(ApplicationValidationError, match="at most 16 bytes"):
+    with pytest.raises(UploadTooLargeError, match="at most 16 bytes") as raised:
         use_case.replace(
             original.reference,
             UploadPayload(file_name="big.md", content=b"x" * (limit + 1)),
         )
 
+    assert raised.value.limit_bytes == limit
+    assert raised.value.actual_bytes == limit + 1
     assert extractor.calls == []
     current = catalog.get(original.reference)
     assert current is not None

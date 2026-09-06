@@ -373,6 +373,8 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 
 | Exception type | HTTP status | Problem `code` | Detail source |
 |---|---|---|---|
+| `UploadTooLargeError` | 413 | `upload_too_large` | class-composed sentence naming the byte limit |
+| `InputRejectedError` | 422 | `invalid_query` | boundary-authored message |
 | `ApplicationValidationError` | 500 | `operational_error` | fixed operational sentence |
 | `DomainValidationError` | 500 | `operational_error` | fixed operational sentence |
 | `InsufficientEvidenceError` | 422 | `insufficient_evidence` | fixed sentence |
@@ -384,14 +386,17 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 | other | 500 | `internal_error` | fixed internal sentence |
 
 Client request-shape failures remain **422** via Pydantic /
-`problem_from_validation_errors` (schema-authored field pointers). Domain and
-application validation exceptions that reach `problem_from_exception` are treated
-as internal contract violations (same fixed operational sentence as Streamlit's
-`DomainValidationError` mapping).
+`problem_from_validation_errors` (schema-authored field pointers). Plain
+`ApplicationValidationError` / `DomainValidationError` that reach
+`problem_from_exception` are treated as internal contract violations (same fixed
+operational sentence as Streamlit's `DomainValidationError` mapping). The
+`InputRejectedError` subtree is the carve-out: caller-attributable refusals map
+to 4xx with boundary-authored (or class-composed) detail.
 
 | Category | Type | Layer | Meaning |
 |---|---|---|---|
 | validation | `ApplicationValidationError`, `UnknownPromptError`, `UnknownDocumentError` | application | Contract / input reject |
+| validation | `InputRejectedError`, `UploadTooLargeError` | application | Caller-attributable refusal (4xx) |
 | outcome | `InsufficientEvidenceError` | application | Grounded use case; no retrieval hits cleared the relevance threshold |
 | validation | `DomainValidationError` | domain | Domain invariant violation |
 | config | `ConfigurationError` | application | Missing/invalid environment at composition |

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from application.errors import ApplicationValidationError
+from application.errors import UploadTooLargeError
 from application.ingest_knowledge import IngestKnowledge
 from application.manage_documents import ManageUploadedDocuments
 from domain.knowledge import (
@@ -144,10 +144,12 @@ def test_oversized_create_is_rejected_before_extract_or_catalog() -> None:
         max_upload_bytes=limit,
     )
 
-    with pytest.raises(ApplicationValidationError, match="at most 16 bytes"):
+    with pytest.raises(UploadTooLargeError, match="at most 16 bytes") as raised:
         use_case.create(
             UploadPayload(file_name="big.md", content=b"x" * (limit + 1))
         )
 
+    assert raised.value.limit_bytes == limit
+    assert raised.value.actual_bytes == limit + 1
     assert extractor.calls == []
     assert len(catalog.all()) == 0

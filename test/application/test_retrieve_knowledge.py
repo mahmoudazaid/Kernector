@@ -3,7 +3,7 @@
 import pytest
 
 from application.contracts import RetrieveRequest
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, InputRejectedError
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.knowledge import (
     DocumentChunk,
@@ -192,18 +192,23 @@ class _RecordingStore(InMemoryVectorStore):
 
 
 def test_oversized_query_is_rejected_before_embed_or_store() -> None:
+    """Length guard is operational, not caller-attributable InputRejectedError.
+
+    Caller-facing length checks live on ask / rewrite; RewriteAndRetrieveKnowledge
+    rejects oversized rewrites before delegating (rewrite_and_retrieve.py).
+    """
     limit = 20
     store = _RecordingStore()
     _seed(store, _chunk("doc-1"))
     embedder = RecordingEmbeddingModel()
     use_case = _use_case(store, max_input_length=limit, embedding=embedder)
 
-    with pytest.raises(
-        ApplicationValidationError,
-        match=r"query must be at most 20 characters, got 21",
-    ):
+    with pytest.raises(ApplicationValidationError) as raised:
         use_case.execute(RetrieveRequest(query="x" * (limit + 1), retrieval_limit=1))
 
+    assert type(raised.value) is ApplicationValidationError
+    assert not isinstance(raised.value, InputRejectedError)
+    assert str(raised.value) == "query must be at most 20 characters, got 21"
     assert embedder.queries == []
     assert store.searches == []
 

@@ -10,7 +10,7 @@ from application.ask_knowledge import AskKnowledge, UnknownPromptError
 from application.ask_service import AskService
 from application.citations import build_citations
 from application.contracts import AskRequest, RewriteRetrieveResponse
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, InputRejectedError
 from application.grounded_rag_policy import (
     CONTEXT_CLOSE,
     CONTEXT_OPEN,
@@ -895,14 +895,12 @@ def test_oversized_query_is_rejected_before_any_port_call() -> None:
         max_input_length=limit,
     )
 
-    with pytest.raises(
-        ApplicationValidationError,
-        match=r"query must be at most 20 characters, got 21",
-    ):
+    with pytest.raises(InputRejectedError) as raised:
         use_case.execute(
             AskRequest(prompt_key="task_mode", query="x" * (limit + 1))
         )
 
+    assert str(raised.value) == "query must be at most 20 characters, got 21"
     assert prompts.calls == []
     assert rewriter.queries == []
     assert embedder.queries == []
@@ -947,14 +945,14 @@ def test_oversized_history_content_is_rejected_before_any_port_call() -> None:
         Message(role="assistant", content="y" * (limit + 1)),
     )
 
-    with pytest.raises(
-        ApplicationValidationError,
-        match=r"history\[1\] content must be at most 20 characters, got 21",
-    ):
+    with pytest.raises(InputRejectedError) as raised:
         use_case.execute(
             AskRequest(prompt_key=None, query="How do I restart?", history=history)
         )
 
+    assert str(raised.value) == (
+        "history[1] content must be at most 20 characters, got 21"
+    )
     assert prompts.calls == []
     assert rewriter.queries == []
     assert embedder.queries == []

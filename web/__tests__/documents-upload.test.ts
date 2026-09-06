@@ -40,7 +40,7 @@ describe("validateUpload", () => {
       }),
     ).toEqual({
       ok: false,
-      message: "Upload must be at most 8 bytes.",
+      message: "Upload must be at most 8 bytes; this file is 9 bytes.",
     });
   });
 

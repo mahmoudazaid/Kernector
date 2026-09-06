@@ -83,6 +83,7 @@ def test_oversized_document_upload_413_includes_cors(
 
     assert response.status_code == 413
     assert response.json()["code"] == "upload_too_large"
+    assert response.json()["detail"] == "Upload must be at most 100 bytes."
     assert response.headers.get("access-control-allow-origin") == _ORIGIN
 
 
