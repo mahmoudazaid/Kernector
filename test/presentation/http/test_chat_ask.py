@@ -236,18 +236,11 @@ def test_bad_history_role_returns_validation_422() -> None:
 
 
 def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
-    from composition import (
-        RiskFactorView,
-        RiskScoreView,
-        SoftwareDeliveryRunView,
-        TestCaseView,
-        TestCasesView,
-        ToolCallView,
-    )
+    from composition.tool_runs import ToolCallView
+    from test.software_delivery_views import software_delivery_run_view
 
     secret = "OPAQUE-TOOL-PAYLOAD-SECRET-do-not-leak"
-    view = SoftwareDeliveryRunView(
-        summary="Scored risk and generated cases.",
+    view = software_delivery_run_view(
         calls=(
             ToolCallView(
                 "software_delivery.risk_score",
@@ -255,30 +248,6 @@ def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
                 summary="Scored risk at 62/100",
             ),
         ),
-        risk=RiskScoreView(
-            score=62,
-            level="high",
-            rationale="Missing acceptance criteria.",
-            factors=(
-                RiskFactorView(
-                    factor_id="missing_acceptance_criteria",
-                    weight=30,
-                    references=(SourceReference("SRS-2", "srs"),),
-                ),
-            ),
-        ),
-        test_cases=TestCasesView(
-            output_style="steps",
-            cases=(
-                TestCaseView(
-                    title="Lock after five failures",
-                    steps=("Fail MFA five times.",),
-                    expected="Account locked.",
-                    references=(SourceReference("US-1", "user_story"),),
-                ),
-            ),
-        ),
-        markdown="# Test Cases\n",
     )
     ask = _StubAsk(
         AskResponse(
