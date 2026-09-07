@@ -6,6 +6,12 @@
  */
 
 import type { StoredChatMessage } from "@/lib/settings/runtime-settings-storage";
+import {
+  RUN_BOOLEAN_FIELDS,
+  RUN_NUMBER_FIELDS,
+  RUN_STRING_ARRAY_FIELDS,
+  RUN_STRING_FIELDS,
+} from "@/lib/chat/run-details";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -80,31 +86,26 @@ function sanitizeRun(value: unknown): Record<string, unknown> | undefined {
     return undefined;
   }
   const run: Record<string, unknown> = { ...value };
-  // Repair known rendered fields, preserve the rest.
-  if (run.tools !== undefined && !isStringArray(run.tools)) {
-    delete run.tools;
+  // Repair fields rendered by runDetailLines (see RUN_*_FIELDS in run-details).
+  for (const key of RUN_STRING_ARRAY_FIELDS) {
+    if (run[key] !== undefined && !isStringArray(run[key])) {
+      delete run[key];
+    }
   }
-  const STRINGS = ["request_id", "outcome", "model", "pack"] as const;
-  const NUMBERS = [
-    "latency_ms",
-    "total_tokens",
-    "prompt_tokens",
-    "completion_tokens",
-    "hit_count",
-    "citation_count",
-  ] as const;
-  for (const key of STRINGS) {
+  for (const key of RUN_STRING_FIELDS) {
     if (key in run && typeof run[key] !== "string") {
       delete run[key];
     }
   }
-  for (const key of NUMBERS) {
+  for (const key of RUN_NUMBER_FIELDS) {
     if (key in run && typeof run[key] !== "number") {
       delete run[key];
     }
   }
-  if ("query_rewritten" in run && typeof run.query_rewritten !== "boolean") {
-    delete run.query_rewritten;
+  for (const key of RUN_BOOLEAN_FIELDS) {
+    if (key in run && typeof run[key] !== "boolean") {
+      delete run[key];
+    }
   }
   return run;
 }

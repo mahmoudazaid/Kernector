@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { runDetailLines } from "@/lib/chat/run-details";
+import {
+  RUN_RENDERED_FIELDS,
+  runDetailLines,
+} from "@/lib/chat/run-details";
 import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
 
 describe("sanitizeStoredChatMessage", () => {
@@ -200,11 +203,14 @@ describe("sanitizeStoredChatMessage", () => {
   });
 
   it("never renders an object into a run detail line", () => {
+    const run = Object.fromEntries(
+      RUN_RENDERED_FIELDS.map((key) => [key, { evil: 1 }]),
+    );
     const sanitized = sanitizeStoredChatMessage({
       id: "a-1",
       role: "assistant",
       content: "answer",
-      run: { latency_ms: {}, model: {} },
+      run,
     });
 
     expect(runDetailLines(sanitized?.run as never).join("|")).not.toContain(
