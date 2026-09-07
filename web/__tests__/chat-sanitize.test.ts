@@ -229,7 +229,11 @@ describe("sanitizeStoredChatMessage", () => {
     );
     const body = src.slice(src.indexOf("export function runDetailLines"));
     const read = new Set(
-      [...body.matchAll(/\brun\.([a-z_]+)/g)].map((m) => m[1]),
+      [
+        ...body.matchAll(
+          /\brun(?:\.([a-z_0-9]+)|\[["']([a-z_0-9]+)["']\])/g,
+        ),
+      ].map((m) => m[1] ?? m[2]),
     );
     expect([...read].sort()).toEqual([...RUN_RENDERED_FIELDS].sort());
   });
