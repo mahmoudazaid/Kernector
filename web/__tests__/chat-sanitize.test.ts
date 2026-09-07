@@ -228,13 +228,19 @@ describe("sanitizeStoredChatMessage", () => {
       "utf8",
     );
     const body = src.slice(src.indexOf("export function runDetailLines"));
-    // Detects direct `run.field` / `run["field"]` reads only. A read through an
-    // alias (e.g. `const meta: Record<string, unknown> = run; meta.x`) is not
-    // caught — if that form becomes common, collapse sanitize + projection onto
-    // one shared field table instead of widening this scan again.
+    // Detects direct `run.field` / `run["field"]` reads only. Line comments are
+    // stripped so documenting an omitted field (e.g. `// not rendered: run.x`)
+    // does not count as a read. Alias reads
+    // (e.g. `const meta: Record<string, unknown> = run; meta.x`) are not caught —
+    // if that form becomes common, collapse sanitize + projection onto one
+    // shared field table instead of widening this scan again.
+    const code = body
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
     const read = new Set(
       [
-        ...body.matchAll(
+        ...code.matchAll(
           /\brun(?:\.([a-z_0-9]+)|\[["']([a-z_0-9]+)["']\])/g,
         ),
       ].map((m) => m[1] ?? m[2]),
