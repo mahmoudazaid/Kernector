@@ -19,6 +19,7 @@ def test_get_runtime_settings_assembles_catalog_from_defaults_and_domain() -> No
             openrouter_default_model="openai/gpt-4o-mini",
             ollama_default_base_url="http://127.0.0.1:11434",
             ollama_default_model="llama3.2",
+            max_input_length=10_000,
         ),
     )
 
@@ -52,6 +53,7 @@ def test_get_runtime_settings_allows_null_optional_defaults() -> None:
             openrouter_default_model=None,
             ollama_default_base_url=None,
             ollama_default_model=None,
+            max_input_length=10_000,
         ),
     )
 
@@ -91,3 +93,22 @@ def test_probe_ollama_status_rejects_blank_base_url() -> None:
 
     with pytest.raises(ApplicationValidationError, match="base_url"):
         use_case.execute("   ")
+
+
+def test_get_runtime_settings_exposes_the_shared_max_input_length() -> None:
+    """UI length feedback reads one limit; presentation must not invent one."""
+    use_case = GetRuntimeSettings(
+        providers=("openrouter",),
+        defaults=RuntimeSettingsDefaults(
+            provider="openrouter",
+            openrouter_models=(),
+            openrouter_default_model=None,
+            ollama_default_base_url=None,
+            ollama_default_model=None,
+            max_input_length=4_000,
+        ),
+    )
+
+    catalog = use_case.execute()
+
+    assert catalog.max_input_length == 4_000

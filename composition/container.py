@@ -24,6 +24,11 @@ from application.manage_documents import (
 )
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
+from application.runtime_settings import (
+    GetRuntimeSettings,
+    ProbeOllamaStatus,
+    RuntimeSettingsDefaults,
+)
 from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
@@ -121,10 +126,8 @@ def available_providers() -> tuple[str, ...]:
     return tuple(_CHAT_MODELS)
 
 
-def build_runtime_settings(settings: Settings) -> "GetRuntimeSettings":
+def build_runtime_settings(settings: Settings) -> GetRuntimeSettings:
     """Wire :class:`GetRuntimeSettings` from env Settings + available providers."""
-    from application.runtime_settings import GetRuntimeSettings, RuntimeSettingsDefaults
-
     return GetRuntimeSettings(
         providers=available_providers(),
         defaults=RuntimeSettingsDefaults(
@@ -133,13 +136,13 @@ def build_runtime_settings(settings: Settings) -> "GetRuntimeSettings":
             openrouter_default_model=settings.openrouter.model,
             ollama_default_base_url=settings.ollama.base_url,
             ollama_default_model=settings.ollama.model,
+            max_input_length=settings.max_input_length,
         ),
     )
 
 
-def build_probe_ollama_status(settings: Settings) -> "ProbeOllamaStatus":
+def build_probe_ollama_status(settings: Settings) -> ProbeOllamaStatus:
     """Wire :class:`ProbeOllamaStatus` to the infrastructure Ollama probe."""
-    from application.runtime_settings import ProbeOllamaStatus
 
     def _probe(base_url: str) -> dict:
         return probe_ollama(settings, base_url)

@@ -17,6 +17,7 @@ def test_settings_returns_runtime_catalog() -> None:
             openrouter_default_model="openai/gpt-4o-mini",
             ollama_default_base_url="http://127.0.0.1:11434",
             ollama_default_model="llama3.2",
+            max_input_length=10_000,
         ),
     )
     client = TestClient(app)
@@ -58,4 +59,26 @@ def test_openapi_includes_settings_path() -> None:
         "openrouter",
         "ollama",
         "model_settings",
+        "max_input_length",
     } <= set(props)
+
+
+def test_settings_publishes_max_input_length_for_ui_length_feedback() -> None:
+    """UI length feedback reads the limit here instead of duplicating it."""
+    app = create_app()
+    app.dependency_overrides[get_runtime_settings] = lambda: GetRuntimeSettings(
+        providers=("openrouter",),
+        defaults=RuntimeSettingsDefaults(
+            provider="openrouter",
+            openrouter_models=("openai/gpt-4o-mini",),
+            openrouter_default_model="openai/gpt-4o-mini",
+            ollama_default_base_url=None,
+            ollama_default_model=None,
+            max_input_length=4_000,
+        ),
+    )
+
+    response = TestClient(app).get("/api/v1/settings")
+
+    assert response.status_code == 200
+    assert response.json()["max_input_length"] == 4_000

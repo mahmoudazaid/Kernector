@@ -55,13 +55,14 @@ class ModelSettingDefResponse(BaseModel):
 
 
 class RuntimeSettingsResponse(BaseModel):
-    """Catalog for provider/model/settings controls in the Settings UI."""
+    """Catalog for provider/model/settings controls plus shared input limits."""
 
     providers: list[str]
     default_provider: str
     openrouter: OpenRouterSettingsResponse
     ollama: OllamaSettingsResponse
     model_settings: list[ModelSettingDefResponse]
+    max_input_length: int
 
 
 class OllamaStatusResponse(BaseModel):

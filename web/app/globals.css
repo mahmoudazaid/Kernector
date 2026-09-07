@@ -1434,6 +1434,40 @@ a {
   outline-offset: 2px;
 }
 
+.kern-chat-counter {
+  margin: var(--kern-space-1) 0 0;
+  padding-inline: var(--kern-space-5);
+  color: var(--kern-muted);
+  font-size: var(--kern-text-xs);
+}
+
+.kern-chat-counter[data-exceeded="true"] {
+  color: var(--kern-danger);
+  font-weight: 500;
+}
+
+.kern-chat-counter-block {
+  margin: var(--kern-space-1) 0 0;
+  padding-inline: var(--kern-space-5);
+}
+
+.kern-chat-counter-block .kern-chat-counter {
+  margin: 0;
+  padding-inline: 0;
+}
+
+.kern-chat-length-status {
+  margin: 0;
+  color: var(--kern-muted);
+  font-size: var(--kern-text-xs);
+  min-height: 1.2em;
+}
+
+.kern-chat-length-status[data-exceeded="true"] {
+  color: var(--kern-danger);
+  font-weight: 500;
+}
+
 .kern-chat-input {
   flex: 1;
   min-width: 0;
