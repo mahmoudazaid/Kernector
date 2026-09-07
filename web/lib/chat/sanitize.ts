@@ -80,17 +80,9 @@ function sanitizeRun(value: unknown): Record<string, unknown> | undefined {
     return undefined;
   }
   const run: Record<string, unknown> = { ...value };
+  // Preserve unknown keys (usage, warnings, …); only repair `tools`.
   if (run.tools !== undefined && !isStringArray(run.tools)) {
     delete run.tools;
-  }
-  for (const [key, entry] of Object.entries(run)) {
-    if (key === "tools") {
-      continue;
-    }
-    if (entry !== null && typeof entry === "object") {
-      // Nested objects (other than tools[]) are not rendered as text leaves.
-      delete run[key];
-    }
   }
   return run;
 }

@@ -501,17 +501,28 @@ export function ChatPanel({
     turnGenerationRef.current += 1;
     composerTouchedRef.current = false;
     skipNextPersistRef.current = true;
-    const stamp = saveActiveSession({
+    let stamp = saveActiveSession({
       draft: "",
       messages: [],
       updatedAt: sessionUpdatedAtRef.current,
     });
+    // New chat is deliberate — retry once against the current revision so a
+    // concurrent writer cannot leave someone else's transcript on screen.
+    if (stamp === null) {
+      stamp = saveActiveSession({
+        draft: "",
+        messages: [],
+        updatedAt: loadActiveSession().updatedAt,
+      });
+    }
     if (stamp === null) {
       const session = loadActiveSession();
       seedIds(session.messages);
       sessionUpdatedAtRef.current = session.updatedAt;
       setMessages(fromPersisted(session.messages));
-      setDraft(session.draft);
+      if (!composerTouchedRef.current) {
+        setDraft(session.draft);
+      }
       setInlineError(null);
       setUnavailable(false);
       setSending(false);

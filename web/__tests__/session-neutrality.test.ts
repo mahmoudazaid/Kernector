@@ -6,6 +6,7 @@ const WEB_ROOT = join(__dirname, "..");
 const SCAN_ROOTS = [
   join(WEB_ROOT, "lib", "session"),
   join(WEB_ROOT, "lib", "settings", "runtime-settings-storage.ts"),
+  join(WEB_ROOT, "lib", "chat", "sanitize.ts"),
 ];
 
 /**

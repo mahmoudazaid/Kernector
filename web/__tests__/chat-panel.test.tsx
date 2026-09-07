@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api/errors";
 import type { ChatAskResponse } from "@/lib/api/chat";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
+  ACTIVE_SESSION_STORAGE_KEY,
   loadActiveSession,
   saveActiveSession,
 } from "@/lib/session/active-session";
@@ -383,11 +384,100 @@ describe("ChatPanel", () => {
     vi.useRealTimers();
   });
 
+  it("re-hydrates from storage when a draft save is refused", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({
+      advanceTimers: vi.advanceTimersByTime.bind(vi),
+    });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+    expect(
+      await screen.findByText(/start a conversation/i),
+    ).toBeInTheDocument();
+    const stampAfterMount = loadActiveSession().updatedAt;
+
+    // Newer writer lands without a StorageEvent — the case adoptSessionStamp covers.
+    localStorage.setItem(
+      ACTIVE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        draft: "from other tab",
+        messages: [
+          { id: "1", role: "user", content: "other tab question" },
+          { id: "2", role: "assistant", content: "other tab answer" },
+        ],
+        updatedAt: stampAfterMount + 10,
+      }),
+    );
+    setItem.mockClear();
+
+    await user.type(await screen.findByLabelText(/message/i), "stale");
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(await screen.findByText("other tab question")).toBeInTheDocument();
+    expect(screen.getByText("other tab answer")).toBeInTheDocument();
+    expect(loadActiveSession().messages).toEqual([
+      { id: "1", role: "user", content: "other tab question" },
+      { id: "2", role: "assistant", content: "other tab answer" },
+    ]);
+    // skipNextPersistRef must stop the rehydrate from bouncing a stale write.
+    expect(
+      setItem.mock.calls.filter(
+        ([key]) => key === ACTIVE_SESSION_STORAGE_KEY,
+      ),
+    ).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it("New chat retries against a newer revision so the slate clears", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+    expect(
+      await screen.findByText(/start a conversation/i),
+    ).toBeInTheDocument();
+    const stampAfterMount = loadActiveSession().updatedAt;
+
+    localStorage.setItem(
+      ACTIVE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        draft: "",
+        messages: [
+          { id: "1", role: "user", content: "other tab question" },
+          { id: "2", role: "assistant", content: "other tab answer" },
+        ],
+        updatedAt: stampAfterMount + 10,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /new chat/i }));
+
+    await waitFor(() => {
+      expect(loadActiveSession().messages).toEqual([]);
+    });
+    expect(
+      screen.queryByText("other tab question"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("other tab answer")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
+    ).toBeInTheDocument();
+  });
+
   it("does not clobber a touched composer when another tab updates the draft", async () => {
     const user = userEvent.setup();
-    const { ACTIVE_SESSION_STORAGE_KEY } = await import(
-      "@/lib/session/active-session"
-    );
 
     render(
       <ChatPanel
@@ -422,10 +512,6 @@ describe("ChatPanel", () => {
   });
 
   it("re-syncs transcript when another tab writes the session", async () => {
-    const { ACTIVE_SESSION_STORAGE_KEY } = await import(
-      "@/lib/session/active-session"
-    );
-
     render(
       <ChatPanel
         apiBaseUrl="http://127.0.0.1:8000"
