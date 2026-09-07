@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   RUN_RENDERED_FIELDS,
@@ -213,8 +215,22 @@ describe("sanitizeStoredChatMessage", () => {
       run,
     });
 
+    // Every rendered field was poisoned → all four type classes must be gone.
+    expect(sanitized?.run).toEqual({});
     expect(runDetailLines(sanitized?.run as never).join("|")).not.toContain(
       "[object Object]",
     );
+  });
+
+  it("RUN_RENDERED_FIELDS covers every run key runDetailLines reads", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "lib", "chat", "run-details.ts"),
+      "utf8",
+    );
+    const body = src.slice(src.indexOf("export function runDetailLines"));
+    const read = new Set(
+      [...body.matchAll(/\brun\.([a-z_]+)/g)].map((m) => m[1]),
+    );
+    expect([...read].sort()).toEqual([...RUN_RENDERED_FIELDS].sort());
   });
 });

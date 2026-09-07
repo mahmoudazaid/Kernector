@@ -2,7 +2,8 @@ import type { RunMeta } from "@/lib/chat/turn";
 
 /**
  * Fields that `runDetailLines` interpolates into the UI.
- * `sanitizeRun` repairs these same keys — keep both in lockstep.
+ * `sanitizeRun` repairs these same keys. Lockstep with the projection is
+ * enforced by the source-scan test in `chat-sanitize.test.ts`.
  */
 export const RUN_STRING_FIELDS = [
   "request_id",
