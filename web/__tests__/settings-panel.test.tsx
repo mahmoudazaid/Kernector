@@ -3,7 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
-import { loadRuntimeSettings } from "@/lib/runtime-settings-storage";
+import {
+  CHAT_MESSAGES_STORAGE_KEY,
+  loadRuntimeSettings,
+  RUNTIME_SETTINGS_STORAGE_KEY,
+} from "@/lib/settings/runtime-settings-storage";
+import {
+  ACTIVE_SESSION_STORAGE_KEY,
+  loadActiveSession,
+  saveActiveSession,
+} from "@/lib/session/active-session";
 
 const CATALOG: RuntimeSettingsResponse = {
   providers: ["openrouter", "ollama"],
@@ -75,9 +84,15 @@ describe("SettingsPanel", () => {
     expect(screen.getByLabelText(/OpenRouter model/i)).toHaveTextContent(
       "openai/gpt-4o-mini",
     );
-    expect(screen.getByLabelText(/Temperature/i)).toHaveAttribute("type", "range");
+    expect(screen.getByLabelText(/Temperature/i)).toHaveAttribute(
+      "type",
+      "range",
+    );
     expect(screen.getByLabelText(/Temperature/i)).toHaveValue("0.3");
-    expect(screen.getByLabelText(/Max Tokens/i)).toHaveAttribute("type", "number");
+    expect(screen.getByLabelText(/Max Tokens/i)).toHaveAttribute(
+      "type",
+      "number",
+    );
 
     await waitFor(() => {
       expect(loadRuntimeSettings()?.provider).toBe("openrouter");
@@ -157,7 +172,9 @@ describe("SettingsPanel", () => {
     expect(
       await screen.findByText(/not configured on the server/i),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Retry$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Retry$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the Ollama base URL read-only from the catalog", async () => {
@@ -317,9 +334,7 @@ describe("SettingsPanel", () => {
     const trigger = screen.getByLabelText(/^Ollama model$/i);
     expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
     await user.click(trigger);
-    expect(
-      screen.getByRole("option", { name: "mistral" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "mistral" })).toBeInTheDocument();
   });
 
   it("shows a safe error when the catalog fails", async () => {
@@ -336,5 +351,45 @@ describe("SettingsPanel", () => {
       await screen.findByText(/Settings catalog unavailable/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/boom|Traceback/i)).not.toBeInTheDocument();
+  });
+
+  it("leaves the active session untouched when provider/model change", async () => {
+    const user = userEvent.setup();
+    const session = {
+      draft: "keep this draft",
+      messages: [{ id: "1", role: "user" as const, content: "keep this turn" }],
+      updatedAt: 1,
+    };
+    saveActiveSession(session);
+    const sessionBefore = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    const transcriptBefore = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
+
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={async () => CATALOG}
+        probeOllama={async () => ({ reachable: false, models: [] })}
+      />,
+    );
+
+    await screen.findByRole("radio", { name: /Ollama/i });
+    await user.click(screen.getByRole("radio", { name: /Ollama/i }));
+
+    await waitFor(() => {
+      expect(loadRuntimeSettings()?.provider).toBe("ollama");
+    });
+
+    expect(localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY)).toBe(
+      sessionBefore,
+    );
+    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBe(
+      transcriptBefore,
+    );
+    expect(loadActiveSession()).toEqual({
+      draft: session.draft,
+      messages: session.messages,
+      updatedAt: expect.any(Number),
+    });
+    expect(localStorage.getItem(RUNTIME_SETTINGS_STORAGE_KEY)).toBeTruthy();
   });
 });

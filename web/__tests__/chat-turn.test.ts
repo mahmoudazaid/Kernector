@@ -101,6 +101,27 @@ describe("applyTurnResult", () => {
     expect(next[1].displayOnly).toBeUndefined();
   });
 
+  it("drops malformed response projections instead of crashing render", () => {
+    const messages = [user("q")];
+    const response = {
+      answer: "from api",
+      citations: {},
+      tools_used: "nope",
+      run: null,
+      tool_run: { markdown: { nested: true } },
+    } as unknown as ChatAskResponse;
+
+    const next = applyTurnResult(messages, { kind: "success", response });
+
+    expect(next[1]).toMatchObject({
+      role: "assistant",
+      content: "from api",
+      toolRun: {},
+    });
+    expect(next[1].citations).toBeUndefined();
+    expect(next[1].toolsUsed).toBeUndefined();
+  });
+
   it("drops the user turn on rejection", () => {
     const messages = [user("unsafe")];
     const next = applyTurnResult(messages, {
