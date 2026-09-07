@@ -32,16 +32,22 @@ def _require_text(value: str, field_name: str) -> None:
 
 def _require_index(value: object, field_name: str) -> None:
     """Reject anything that is not a non-negative integer."""
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise DomainValidationError(
-            f"{field_name} must be a non-negative integer, got {value!r}"
+            f"{field_name} must be a non-negative integer, "
+            f"got {type(value).__name__}"
+        )
+    if value < 0:
+        raise DomainValidationError(
+            f"{field_name} must be a non-negative integer, got {value}"
         )
 
 def _require_vector(value: object, field_name: str) -> None:
     """Reject anything that is not a non-empty sequence of numbers."""
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise DomainValidationError(
-            f"{field_name} must be a sequence of floats, got {value!r}"
+            f"{field_name} must be a sequence of floats, "
+            f"got {type(value).__name__}"
         )
     if len(value) == 0:
         raise DomainValidationError(f"{field_name} must be non-empty")
@@ -75,7 +81,8 @@ class SourceMetadata:
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
             raise DomainValidationError(
-                f"reference must be a SourceReference, got {self.reference!r}"
+                f"reference must be a SourceReference, "
+                f"got {type(self.reference).__name__}"
             )
 
     @property
@@ -93,7 +100,8 @@ class SourceDocument:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, SourceMetadata):
             raise DomainValidationError(
-                f"metadata must be a SourceMetadata, got {self.metadata!r}"
+                f"metadata must be a SourceMetadata, "
+                f"got {type(self.metadata).__name__}"
             )
         _require_text(self.content, "content")
 
@@ -118,7 +126,8 @@ class DocumentChunk:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, SourceMetadata):
             raise DomainValidationError(
-                f"metadata must be a SourceMetadata, got {self.metadata!r}"
+                f"metadata must be a SourceMetadata, "
+                f"got {type(self.metadata).__name__}"
             )
         _require_index(self.index, "index")
         _require_text(self.content, "content")
@@ -146,7 +155,8 @@ class EmbeddedChunk:
     def __post_init__(self) -> None:
         if not isinstance(self.chunk, DocumentChunk):
             raise DomainValidationError(
-                f"chunk must be a DocumentChunk, got {self.chunk!r}"
+                f"chunk must be a DocumentChunk, "
+                f"got {type(self.chunk).__name__}"
             )
         _require_vector(self.vector, "vector")
 
@@ -160,15 +170,17 @@ class ScoredChunk:
     def __post_init__(self) -> None:
         if not isinstance(self.chunk, DocumentChunk):
             raise DomainValidationError(
-                f"chunk must be a DocumentChunk, got {self.chunk!r}"
+                f"chunk must be a DocumentChunk, "
+                f"got {type(self.chunk).__name__}"
             )
-        if (
-            not isinstance(self.score, (int, float))
-            or isinstance(self.score, bool)
-            or not isfinite(self.score)
-        ):
+        if not isinstance(self.score, (int, float)) or isinstance(self.score, bool):
             raise DomainValidationError(
-                f"score must be a finite number, got {self.score!r}"
+                f"score must be a finite number, "
+                f"got {type(self.score).__name__}"
+            )
+        if not isfinite(self.score):
+            raise DomainValidationError(
+                f"score must be a finite number, got {self.score}"
             )
 
 
@@ -203,16 +215,19 @@ class CatalogDocument:
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
             raise DomainValidationError(
-                f"reference must be a SourceReference, got {self.reference!r}"
+                f"reference must be a SourceReference, "
+                f"got {type(self.reference).__name__}"
             )
         _require_text(self.file_name, "file_name")
         if not isinstance(self.status, CatalogStatus):
             raise DomainValidationError(
-                f"status must be a CatalogStatus, got {self.status!r}"
+                f"status must be a CatalogStatus, "
+                f"got {type(self.status).__name__}"
             )
         if not isinstance(self.uploaded_at, datetime):
             raise DomainValidationError(
-                f"uploaded_at must be a datetime, got {self.uploaded_at!r}"
+                f"uploaded_at must be a datetime, "
+                f"got {type(self.uploaded_at).__name__}"
             )
         if self.uploaded_at.tzinfo is None:
             raise DomainValidationError(

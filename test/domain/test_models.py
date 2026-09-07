@@ -28,6 +28,17 @@ def test_message_rejects_invalid_role() -> None:
         Message(role="narrator", content="hi")  # type: ignore[arg-type]
 
 
+def test_message_rejects_invalid_role_without_echoing_value() -> None:
+    sentinel = "ROLE-LEAK-SENTINEL-" + ("x" * 40)
+    with pytest.raises(DomainValidationError) as raised:
+        Message(role=sentinel, content="hi")  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert "system" in message
+    assert "user" in message
+    assert "assistant" in message
+
+
 def test_message_rejects_non_string_role() -> None:
     with pytest.raises(DomainValidationError, match="role"):
         Message(role=1, content="hi")  # type: ignore[arg-type]

@@ -17,7 +17,7 @@ class Message:
     def __post_init__(self) -> None:
         if not isinstance(self.role, str) or self.role not in _VALID_ROLES:
             raise DomainValidationError(
-                f"role must be one of {sorted(_VALID_ROLES)}, got {self.role!r}"
+                f"role must be one of {sorted(_VALID_ROLES)}"
             )
         if not isinstance(self.content, str) or not self.content.strip():
             raise DomainValidationError("content must be non-empty")
