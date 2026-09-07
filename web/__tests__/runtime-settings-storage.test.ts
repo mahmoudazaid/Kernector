@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   ACTIVE_SESSION_STORAGE_KEY,
-  clearActiveSession,
   loadActiveSession,
   saveActiveSession,
 } from "@/lib/session/active-session";
@@ -74,7 +73,7 @@ describe("session store owns transcript persistence", () => {
 
   it("round-trips messages and clears independently of runtime settings", () => {
     saveRuntimeSettings(SAMPLE);
-    saveActiveSession({
+    const stamp = saveActiveSession({
       draft: "",
       messages: [{ id: "1", role: "user", content: "hi" }],
       updatedAt: 1,
@@ -83,9 +82,12 @@ describe("session store owns transcript persistence", () => {
     expect(loadActiveSession().messages).toEqual([
       { id: "1", role: "user", content: "hi" },
     ]);
-    clearActiveSession();
+    saveActiveSession({
+      draft: "",
+      messages: [],
+      updatedAt: stamp!,
+    });
     expect(loadActiveSession().messages).toEqual([]);
-    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeNull();
     expect(loadRuntimeSettings()).toEqual(SAMPLE);
   });
 

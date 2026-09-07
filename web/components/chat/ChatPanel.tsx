@@ -362,6 +362,21 @@ export function ChatPanel({
     });
   }, []);
 
+  function adoptSessionStamp(stamp: number | null): void {
+    if (stamp !== null) {
+      sessionUpdatedAtRef.current = stamp;
+      return;
+    }
+    const session = loadActiveSession();
+    seedIds(session.messages);
+    sessionUpdatedAtRef.current = session.updatedAt;
+    skipNextPersistRef.current = true;
+    setMessages(fromPersisted(session.messages));
+    if (!composerTouchedRef.current) {
+      setDraft(session.draft);
+    }
+  }
+
   useEffect(() => {
     if (!hydrated) {
       return;
@@ -370,11 +385,13 @@ export function ChatPanel({
       skipNextPersistRef.current = false;
       return;
     }
-    sessionUpdatedAtRef.current = saveActiveSession({
-      draft: draftRef.current,
-      messages: toPersisted(messages),
-      updatedAt: sessionUpdatedAtRef.current,
-    });
+    adoptSessionStamp(
+      saveActiveSession({
+        draft: draftRef.current,
+        messages: toPersisted(messages),
+        updatedAt: sessionUpdatedAtRef.current,
+      }),
+    );
   }, [messages, hydrated]);
 
   useEffect(() => {
@@ -382,9 +399,8 @@ export function ChatPanel({
       return;
     }
     const handle = window.setTimeout(() => {
-      sessionUpdatedAtRef.current = saveActiveSessionDraft(
-        draft,
-        sessionUpdatedAtRef.current,
+      adoptSessionStamp(
+        saveActiveSessionDraft(draft, sessionUpdatedAtRef.current),
       );
     }, DRAFT_SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
@@ -395,10 +411,13 @@ export function ChatPanel({
       if (!hydrated) {
         return;
       }
-      sessionUpdatedAtRef.current = saveActiveSessionDraft(
+      const stamp = saveActiveSessionDraft(
         draftRef.current,
         sessionUpdatedAtRef.current,
       );
+      if (stamp !== null) {
+        sessionUpdatedAtRef.current = stamp;
+      }
     };
   }, [hydrated]);
 
@@ -482,11 +501,23 @@ export function ChatPanel({
     turnGenerationRef.current += 1;
     composerTouchedRef.current = false;
     skipNextPersistRef.current = true;
-    sessionUpdatedAtRef.current = saveActiveSession({
+    const stamp = saveActiveSession({
       draft: "",
       messages: [],
       updatedAt: sessionUpdatedAtRef.current,
     });
+    if (stamp === null) {
+      const session = loadActiveSession();
+      seedIds(session.messages);
+      sessionUpdatedAtRef.current = session.updatedAt;
+      setMessages(fromPersisted(session.messages));
+      setDraft(session.draft);
+      setInlineError(null);
+      setUnavailable(false);
+      setSending(false);
+      return;
+    }
+    sessionUpdatedAtRef.current = stamp;
     setMessages([]);
     setInlineError(null);
     setUnavailable(false);

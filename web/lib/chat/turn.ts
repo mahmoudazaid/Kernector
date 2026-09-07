@@ -1,7 +1,7 @@
 import type { ChatAskResponse } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/errors";
 import type { components } from "@/lib/api/generated/schema";
-import { sanitizeStoredChatMessage } from "@/lib/session/active-session";
+import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
 
 export type Citation = components["schemas"]["CitationResponse"];
 export type ToolUsed = components["schemas"]["ToolUsedResponse"];
@@ -101,6 +101,7 @@ export function applyTurnResult(
     const id = newId("a");
     const answer =
       typeof response.answer === "string" ? response.answer : "";
+    // Constructed with a fresh id, literal role, and string content — never null.
     const sanitized = sanitizeStoredChatMessage({
       id,
       role: "assistant",
@@ -109,17 +110,17 @@ export function applyTurnResult(
       toolsUsed: response.tools_used,
       run: response.run ?? null,
       toolRun: response.tool_run ?? null,
-    });
+    })!;
     return [
       ...messages,
       {
-        id: sanitized?.id ?? id,
+        id: sanitized.id,
         role: "assistant",
-        content: sanitized?.content ?? answer,
-        citations: sanitized?.citations as Citation[] | undefined,
-        toolsUsed: sanitized?.toolsUsed as ToolUsed[] | undefined,
-        run: (sanitized?.run as RunMeta | null | undefined) ?? null,
-        toolRun: (sanitized?.toolRun as ToolRun | null | undefined) ?? null,
+        content: sanitized.content,
+        citations: sanitized.citations as Citation[] | undefined,
+        toolsUsed: sanitized.toolsUsed as ToolUsed[] | undefined,
+        run: (sanitized.run as RunMeta | null | undefined) ?? null,
+        toolRun: (sanitized.toolRun as ToolRun | null | undefined) ?? null,
       },
     ];
   }

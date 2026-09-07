@@ -17,8 +17,7 @@ export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
  * Legacy chat transcript key from #235. Owned by the #14 session store as a
  * write-through mirror and absent/unusable-session read fallback — do not
  * rename without a migration. Callers must use `loadActiveSession` /
- * `saveActiveSession` / `clearActiveSession`; do not read or write this key
- * directly.
+ * `saveActiveSession`; do not read or write this key directly.
  */
 export const CHAT_MESSAGES_STORAGE_KEY = "kernector:chat-messages:v1";
 

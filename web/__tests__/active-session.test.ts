@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACTIVE_SESSION_STORAGE_KEY,
-  clearActiveSession,
   loadActiveSession,
   saveActiveSession,
   saveActiveSessionDraft,
@@ -107,7 +106,12 @@ describe("active session store", () => {
             content: "hello",
             citations: {},
             toolsUsed: "nope",
-            toolRun: { markdown: { nested: "obj" }, calls: [] },
+            toolRun: {
+              markdown: { nested: "obj" },
+              calls: [],
+              coverage: { covered: 3, total: 5 },
+              confidence: 0.82,
+            },
             run: { tools: "not-an-array", request_id: "r1" },
           },
         ],
@@ -120,26 +124,14 @@ describe("active session store", () => {
         id: "1",
         role: "assistant",
         content: "hello",
-        toolRun: { calls: [] },
+        toolRun: {
+          calls: [],
+          coverage: { covered: 3, total: 5 },
+          confidence: 0.82,
+        },
         run: { request_id: "r1" },
       },
     ]);
-  });
-
-  it("clearActiveSession removes the session and legacy keys", () => {
-    saveActiveSession({
-      draft: "x",
-      messages: [{ id: "1", role: "user", content: "y" }],
-      updatedAt: 1,
-    });
-    clearActiveSession();
-    expect(localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY)).toBeNull();
-    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeNull();
-    expect(loadActiveSession()).toEqual({
-      draft: "",
-      messages: [],
-      updatedAt: 0,
-    });
   });
 
   it("keeps the legacy transcript key name exported for compatibility", () => {
@@ -194,7 +186,7 @@ describe("active session store", () => {
       updatedAt: 0,
     });
 
-    expect(refused).toBe(newer);
+    expect(refused).toBeNull();
     expect(loadActiveSession().messages).toEqual([
       { id: "1", role: "user", content: "newer" },
     ]);
@@ -216,13 +208,13 @@ describe("active session store", () => {
       messages: [{ id: "u-1", role: "user", content: "must persist" }],
       updatedAt: 0,
     });
-    expect(refused).toBe(stored);
+    expect(refused).toBeNull();
     expect(loadActiveSession().messages).toEqual([]);
 
     const written = saveActiveSession({
       draft: "",
       messages: [{ id: "u-1", role: "user", content: "must persist" }],
-      updatedAt: refused,
+      updatedAt: stored,
     });
     expect(written).toBeGreaterThan(stored);
     expect(loadActiveSession().messages).toEqual([
@@ -230,7 +222,7 @@ describe("active session store", () => {
     ]);
   });
 
-  it("derives a monotonic stamp so equal revisions do not silently clobber", () => {
+  it("bumps the stored revision on every accepted write", () => {
     const first = saveActiveSession({
       draft: "",
       messages: [{ id: "1", role: "user", content: "kept" }],
@@ -239,9 +231,9 @@ describe("active session store", () => {
     const second = saveActiveSession({
       draft: "",
       messages: [],
-      updatedAt: first,
+      updatedAt: first!,
     });
-    expect(second).toBeGreaterThan(first);
+    expect(second).toBeGreaterThan(first!);
     expect(loadActiveSession().messages).toEqual([]);
   });
 
@@ -258,6 +250,20 @@ describe("active session store", () => {
       draft: "new draft",
       messages: [{ id: "1", role: "user", content: "kept" }],
       updatedAt: stamp,
+    });
+  });
+
+  it("returns null from draft save when storage is newer", () => {
+    const newer = saveActiveSession({
+      draft: "tab-b",
+      messages: [{ id: "1", role: "user", content: "kept" }],
+      updatedAt: 0,
+    });
+    expect(saveActiveSessionDraft("tab-a", 0)).toBeNull();
+    expect(loadActiveSession()).toEqual({
+      draft: "tab-b",
+      messages: [{ id: "1", role: "user", content: "kept" }],
+      updatedAt: newer,
     });
   });
 
@@ -304,6 +310,5 @@ describe("active session store", () => {
         updatedAt: 1,
       }),
     ).not.toThrow();
-    expect(() => clearActiveSession()).not.toThrow();
   });
 });
