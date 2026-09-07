@@ -641,3 +641,47 @@ def test_hybrid_lexical_match_survives_when_all_vector_candidates_rejected() -> 
 
     assert [hit.chunk.source_id for hit in response.hits] == ["lex"]
     assert response.hits[0].score == pytest.approx(0.5)
+
+
+def test_retrieve_knowledge_rejects_non_numeric_hybrid_alpha_by_type() -> None:
+    from application.errors import ApplicationValidationError
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+            hybrid_alpha="0.5",  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "str" in message
+    assert "0.5" not in message
+
+
+def test_retrieve_knowledge_rejects_out_of_range_hybrid_alpha_keeps_number() -> None:
+    from application.errors import ApplicationValidationError
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+            hybrid_alpha=1.5,
+        )
+    message = str(raised.value)
+    assert "1.5" in message
+
+
+def test_retrieve_knowledge_rejects_bad_vector_score_floor_by_type() -> None:
+    from application.errors import ApplicationValidationError
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+            vector_score_floor="low",  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "str" in message
+    assert "low" not in message

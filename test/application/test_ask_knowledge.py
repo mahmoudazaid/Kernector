@@ -652,6 +652,15 @@ def test_unknown_prompt_key_raises_typed_error() -> None:
         use_case.execute(AskRequest(prompt_key="missing_key", query="Anything?"))
 
 
+def test_unknown_prompt_key_does_not_echo_caller_supplied_key() -> None:
+    sentinel = "PROMPT-KEY-LEAK-SENTINEL"
+    use_case = _use_case((_hit(),), _RecordingChat())
+    with pytest.raises(UnknownPromptError) as raised:
+        use_case.execute(AskRequest(prompt_key=sentinel, query="Anything?"))
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "Unknown prompt key"
+
 def test_unknown_prompt_key_is_rejected_before_retrieval_spends_a_call() -> None:
     rewrite_retrieve = _FakeRewriteRetrieve((_hit(),))
     chat = _RecordingChat()

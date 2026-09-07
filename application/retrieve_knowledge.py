@@ -70,36 +70,37 @@ class RetrieveKnowledge:
         if not isinstance(hybrid_alpha, (int, float)) or isinstance(
             hybrid_alpha, bool
         ):
-            raise ValueError(
-                f"hybrid_alpha must be a number in [0, 1], got {hybrid_alpha!r}"
+            raise ApplicationValidationError(
+                f"hybrid_alpha must be a number in [0, 1], "
+                f"got {type(hybrid_alpha).__name__}"
             )
         if hybrid_alpha < 0 or hybrid_alpha > 1:
-            raise ValueError(
-                f"hybrid_alpha must be in [0, 1], got {hybrid_alpha!r}"
+            raise ApplicationValidationError(
+                f"hybrid_alpha must be in [0, 1], got {hybrid_alpha}"
             )
         if vector_score_floor is not None and (
             not isinstance(vector_score_floor, (int, float))
             or isinstance(vector_score_floor, bool)
         ):
-            raise ValueError(
+            raise ApplicationValidationError(
                 "vector_score_floor must be a number or None, "
-                f"got {vector_score_floor!r}"
+                f"got {type(vector_score_floor).__name__}"
             )
         alpha = float(hybrid_alpha)
         needs_vector = (not hybrid_enabled) or alpha < 1.0
         needs_lexical = hybrid_enabled and alpha > 0.0
         if needs_vector and embedding_model is None:
-            raise ValueError(
+            raise ApplicationValidationError(
                 "embedding_model is required when hybrid is disabled "
                 "or hybrid_alpha is less than 1"
             )
         if needs_vector and vector_store is None:
-            raise ValueError(
+            raise ApplicationValidationError(
                 "vector_store is required when hybrid is disabled "
                 "or hybrid_alpha is less than 1"
             )
         if needs_lexical and lexical_index is None:
-            raise ValueError(
+            raise ApplicationValidationError(
                 "lexical_index is required when hybrid_enabled is true "
                 "and hybrid_alpha is greater than 0"
             )

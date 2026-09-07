@@ -146,6 +146,29 @@ def test_fuse_hybrid_scores_rejects_alpha_outside_unit_interval() -> None:
         fuse_hybrid_scores(bm25_scores=[1.0], vector_scores=[1.0], alpha=1.5)
 
 
+def test_fuse_hybrid_scores_rejects_non_numeric_alpha_by_type_name() -> None:
+    from application.errors import ApplicationValidationError
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        fuse_hybrid_scores(
+            bm25_scores=[1.0],
+            vector_scores=[1.0],
+            alpha="0.5",  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "str" in message
+    assert "0.5" not in message
+
+
+def test_fuse_hybrid_scores_rejects_out_of_range_alpha_keeps_number() -> None:
+    from application.errors import ApplicationValidationError
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        fuse_hybrid_scores(bm25_scores=[1.0], vector_scores=[1.0], alpha=1.5)
+    message = str(raised.value)
+    assert "1.5" in message
+
+
 def test_fuse_requires_at_least_one_score_per_candidate() -> None:
     with pytest.raises(ValueError, match="absent from both"):
         fuse_hybrid_scores(

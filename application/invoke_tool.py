@@ -64,7 +64,7 @@ class InvokeTool:
         tool = self._registry.get(request.tool_name)
         if tool is None:
             raise ApplicationValidationError(
-                f"unknown tool_name: {request.tool_name!r}"
+                "unknown tool_name"
             )
         started = time.perf_counter()
         try:

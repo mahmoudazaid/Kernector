@@ -450,11 +450,28 @@ Technical and vendor detail may remain on `__cause__` (and in logs); it must
 not reach the UI. Collapsed **Run details** in Next.js chat reads only typed
 `RunMeta` fields (see README); it never parses logs.
 
+**Validation messages never carry the rejected value.** A `DomainValidationError`
+or `ApplicationValidationError` message names the field and the expected shape
+only. Where the value's type is the point, name the type
+(`got {type(value).__name__}`). The rejected value itself may be printed in
+exactly one case: a bound was exceeded and a *preceding branch in the same
+function* has already proven the value is an `int` or a `float`. If a single
+`if` fuses the type check and the bounds check, split it — do not print the
+value from a branch that can also fire on a wrong type. Both `{value!r}` and
+plain `{value}` are unsafe on an unproven value: dataclasses generate
+`__repr__` and `__str__` falls back to it, so the two are byte-identical and
+either one puts corpus text, conversation history, and caller filter values on
+`__cause__` chains and into log records, where the presentation mapping cannot
+reach them. `test/architecture/test_safe_validation_messages.py` enforces the
+`{value!r}` half mechanically; the plain-`{value}` half is a review obligation,
+documented in that file's module docstring.
+
 ## Architecture tests
 
 Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
-package.
+package, and when a `domain/` or `application/` validation raise embeds
+`{value!r}` (`test/architecture/test_safe_validation_messages.py`).
 
 Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette
 may appear only under `presentation/http/**` (path-prefix exception in

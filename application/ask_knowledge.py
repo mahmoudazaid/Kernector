@@ -233,7 +233,7 @@ class AskKnowledge:
             return None
         variant = self._prompt_repository.all().get(prompt_key)
         if variant is None:
-            raise UnknownPromptError(f"Unknown prompt key {prompt_key!r}")
+            raise UnknownPromptError("Unknown prompt key")
         return variant
 
 

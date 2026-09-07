@@ -115,3 +115,32 @@ def test_rejects_invalid_settings(
             chunk_size=chunk_size,  # type: ignore[arg-type]
             chunk_overlap=chunk_overlap,  # type: ignore[arg-type]
         )
+
+
+def test_rejects_non_document_without_leaking_content() -> None:
+    sentinel = "CHUNK-DOC-LEAK-SENTINEL"
+
+    class _Impostor:
+        content = sentinel
+
+        def __repr__(self) -> str:
+            return f"Impostor({sentinel!r})"
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        chunk_document(
+            _Impostor(),  # type: ignore[arg-type]
+            chunk_size=10,
+            chunk_overlap=0,
+        )
+    message = str(raised.value)
+    assert sentinel not in message
+    assert "_Impostor" in message
+    assert "SourceDocument" in message
+
+
+def test_rejects_non_int_chunk_size_by_type_name() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        chunk_document(_document("hello"), chunk_size=5.0, chunk_overlap=1)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert "float" in message
+    assert "5.0" not in message

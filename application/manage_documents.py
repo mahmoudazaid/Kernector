@@ -119,7 +119,7 @@ class ManageUploadedDocuments:
         reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
         if self._catalog.get(reference) is not None:
             raise ApplicationValidationError(
-                f"generated source_id {source_id!r} already exists in the catalog"
+                "generated source_id already exists in the catalog"
             )
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)

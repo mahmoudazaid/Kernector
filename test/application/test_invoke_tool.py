@@ -58,6 +58,16 @@ def test_unknown_tool_name_raises_before_any_call() -> None:
     assert tool.calls == []
 
 
+def test_unknown_tool_name_does_not_echo_caller_supplied_name() -> None:
+    sentinel = "TOOL-NAME-LEAK-SENTINEL"
+    use_case = InvokeTool(ToolRegistry([_FakeTool()]))
+    with pytest.raises(ApplicationValidationError) as raised:
+        use_case.execute(InvokeToolRequest(sentinel, {}))
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "unknown tool_name"
+
+
 def test_duplicate_tool_names_fail_at_construction() -> None:
     with pytest.raises(ConfigurationError, match="duplicate"):
         ToolRegistry([_FakeTool("same"), _FakeTool("same")])

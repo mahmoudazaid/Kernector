@@ -98,7 +98,7 @@ def test_ask_request_rejects_non_sequence_grounding_references() -> None:
 def test_ask_request_rejects_non_reference_grounding_item() -> None:
     with pytest.raises(
         ApplicationValidationError,
-        match="grounding_references items must be SourceReference",
+        match=r"grounding_references\[0\] must be a SourceReference",
     ):
         AskRequest(
             prompt_key="default",
@@ -492,7 +492,7 @@ def test_ask_response_rejects_non_sequence_tool_outputs() -> None:
 
 
 def test_ask_response_rejects_non_tool_output_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="tool_outputs items"):
+    with pytest.raises(ApplicationValidationError, match=r"tool_outputs\[0\]"):
         AskResponse("answer", tool_outputs=[_citation()])  # type: ignore[list-item]
 
 
@@ -508,12 +508,12 @@ def test_ask_response_rejects_presentation_view_types_in_tool_outputs() -> None:
     from composition.tool_runs import ToolCallView
     from composition.software_delivery_tools import SoftwareDeliveryRunView
 
-    with pytest.raises(ApplicationValidationError, match="tool_outputs items"):
+    with pytest.raises(ApplicationValidationError, match=r"tool_outputs\[0\]"):
         AskResponse(
             "answer",
             tool_outputs=[ToolCallView("tool", ok=True, summary="ok")],  # type: ignore[list-item]
         )
-    with pytest.raises(ApplicationValidationError, match="tool_outputs items"):
+    with pytest.raises(ApplicationValidationError, match=r"tool_outputs\[0\]"):
         AskResponse(
             "answer",
             tool_outputs=[
@@ -602,7 +602,7 @@ def test_retrieve_response_rejects_non_sequence_hits() -> None:
 
 
 def test_retrieve_response_rejects_non_scored_chunk_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="hits items"):
+    with pytest.raises(ApplicationValidationError, match=r"hits\[0\]"):
         RetrieveResponse(hits=[_reference()])  # type: ignore[list-item]
 
 
@@ -634,7 +634,7 @@ def test_rewrite_retrieve_response_rejects_non_sequence_hits() -> None:
 
 
 def test_rewrite_retrieve_response_rejects_non_scored_chunk_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="hits items"):
+    with pytest.raises(ApplicationValidationError, match=r"hits\[0\]"):
         RewriteRetrieveResponse(
             hits=[_reference()],  # type: ignore[list-item]
             original_query="original",
@@ -649,17 +649,17 @@ def test_invoke_tool_request_rejects_invalid_argument_keys(bad_key: object) -> N
 
 
 def test_ask_request_rejects_non_message_history_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="history items"):
+    with pytest.raises(ApplicationValidationError, match=r"history\[0\]"):
         AskRequest(prompt_key="default", query="query", history=["hi"])  # type: ignore[list-item]
 
 
 def test_ask_response_rejects_non_citation_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="citations items"):
+    with pytest.raises(ApplicationValidationError, match=r"citations\[0\]"):
         AskResponse("answer", citations=[_reference()])  # type: ignore[list-item]
 
 
 def test_ingest_request_rejects_non_document_item() -> None:
-    with pytest.raises(ApplicationValidationError, match="documents items"):
+    with pytest.raises(ApplicationValidationError, match=r"documents\[0\]"):
         IngestRequest(documents=[_reference()])  # type: ignore[list-item]
 
 
@@ -670,7 +670,7 @@ def test_ingest_request_rejects_empty_documents() -> None:
 
 @pytest.mark.parametrize("blank", BLANK)
 def test_ingest_response_rejects_blank_accepted_ids(blank: str) -> None:
-    with pytest.raises(ApplicationValidationError, match="accepted_ids item"):
+    with pytest.raises(ApplicationValidationError, match=r"accepted_ids\[0\]"):
         IngestResponse([blank], 1)
 
 
@@ -866,3 +866,136 @@ def test_application_contracts_exclude_software_delivery_orchestration_types() -
     }
     assert forbidden.isdisjoint(set(dir(contracts)))
 
+
+def test_retrieve_request_rejects_filter_value_without_leaking_payload() -> None:
+    sentinel = "FILTER-LEAK-SENTINEL"
+
+    class _Payload:
+        def __repr__(self) -> str:
+            return sentinel
+
+        def __str__(self) -> str:
+            return sentinel
+
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveRequest(
+            "query",
+            retrieval_limit=3,
+            metadata_filters={"tenant": _Payload()},  # type: ignore[dict-item]
+        )
+    message = str(raised.value)
+    assert sentinel not in message
+    assert "_Payload" in message
+
+
+def test_retrieve_request_rejects_non_mapping_filters_by_type_name() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveRequest(
+            "query",
+            retrieval_limit=3,
+            metadata_filters=["doc_type"],  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "list" in message
+    assert "doc_type" not in message
+
+
+def test_retrieve_request_rejects_blank_filter_key_as_blank_str() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveRequest(
+            "query",
+            retrieval_limit=3,
+            metadata_filters={"": "runbook"},
+        )
+    message = str(raised.value)
+    assert message.endswith("got blank str")
+    assert "''" not in message
+    assert '""' not in message
+
+
+def test_retrieve_request_rejects_zero_limit_keeps_number() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveRequest("query", retrieval_limit=0)
+    message = str(raised.value)
+    assert "0" in message
+    assert "positive" in message
+
+
+def test_retrieve_request_rejects_non_int_limit_by_type_name() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveRequest("query", retrieval_limit=1.5)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert "float" in message
+    assert "1.5" not in message
+
+
+def test_citation_rejects_negative_chunk_index_keeps_number() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        Citation(reference=_reference(), chunk_index=-3)
+    message = str(raised.value)
+    assert "-3" in message
+    assert "non-negative" in message
+
+
+def test_ingest_response_rejects_negative_chunk_count_keeps_number() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        IngestResponse(accepted_ids=("a",), chunk_count=-1)
+    message = str(raised.value)
+    assert "-1" in message
+    assert "non-negative" in message
+
+
+def test_ask_request_rejects_history_item_without_leaking_chunk_content() -> None:
+    sentinel = "HISTORY-LEAK-SENTINEL"
+    impostor = DocumentChunk(
+        SourceMetadata(_reference()),
+        0,
+        sentinel,
+    )
+    with pytest.raises(ApplicationValidationError) as raised:
+        AskRequest(query="q", history=(impostor,))  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert "DocumentChunk" in message
+    assert "Message" in message
+    assert "history[0]" in message
+
+
+def test_ask_request_reports_failing_history_index() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        AskRequest(
+            query="q",
+            history=(
+                Message(role="user", content="ok"),
+                Message(role="assistant", content="ok"),
+                {"role": "user"},  # type: ignore[list-item]
+            ),
+        )
+    assert "history[2]" in str(raised.value)
+
+
+def test_ask_response_rejects_run_without_leaking_message_content() -> None:
+    sentinel = "RUN-LEAK-SENTINEL"
+    impostor = Message(role="user", content=sentinel)
+    with pytest.raises(ApplicationValidationError) as raised:
+        AskResponse(answer="a", run=impostor)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert "Message" in message
+    assert "RunMeta" in message
+
+
+def test_run_meta_rejects_negative_latency_keeps_number() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RunMeta(latency_ms=-7)
+    message = str(raised.value)
+    assert "-7" in message
+    assert "non-negative" in message
+
+
+def test_run_meta_rejects_non_int_latency_by_type_name() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RunMeta(latency_ms=1.5)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert "float" in message
+    assert "1.5" not in message
