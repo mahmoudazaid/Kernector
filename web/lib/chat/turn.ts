@@ -1,6 +1,7 @@
 import type { ChatAskResponse } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/errors";
 import type { components } from "@/lib/api/generated/schema";
+import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
 
 export type Citation = components["schemas"]["CitationResponse"];
 export type ToolUsed = components["schemas"]["ToolUsedResponse"];
@@ -43,6 +44,21 @@ function newId(prefix: string): string {
 }
 
 /**
+ * Advance the id counter past any `u-N` / `a-N` / `err-N` ids already present
+ * so restored transcripts do not collide with freshly minted turns.
+ */
+export function seedIds(messages: readonly { id: string }[]): void {
+  let max = nextId;
+  for (const message of messages) {
+    const match = /^(?:u|a|err)-(\d+)$/.exec(message.id);
+    if (match) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+  nextId = max;
+}
+
+/**
  * Project transcript rows into model history, skipping display-only errors.
  */
 export function historyForModel(messages: readonly ChatMessage[]): HistoryTurn[] {
@@ -82,16 +98,29 @@ export function applyTurnResult(
 ): ChatMessage[] {
   if (result.kind === "success") {
     const { response } = result;
+    const id = newId("a");
+    const answer =
+      typeof response.answer === "string" ? response.answer : "";
+    // Constructed with a fresh id, literal role, and string content — never null.
+    const sanitized = sanitizeStoredChatMessage({
+      id,
+      role: "assistant",
+      content: answer,
+      citations: response.citations,
+      toolsUsed: response.tools_used,
+      run: response.run ?? null,
+      toolRun: response.tool_run ?? null,
+    })!;
     return [
       ...messages,
       {
-        id: newId("a"),
+        id: sanitized.id,
         role: "assistant",
-        content: response.answer,
-        citations: response.citations,
-        toolsUsed: response.tools_used,
-        run: response.run ?? null,
-        toolRun: response.tool_run ?? null,
+        content: sanitized.content,
+        citations: sanitized.citations as Citation[] | undefined,
+        toolsUsed: sanitized.toolsUsed as ToolUsed[] | undefined,
+        run: (sanitized.run as RunMeta | null | undefined) ?? null,
+        toolRun: (sanitized.toolRun as ToolRun | null | undefined) ?? null,
       },
     ];
   }

@@ -1,0 +1,250 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  RUN_RENDERED_FIELDS,
+  runDetailLines,
+} from "@/lib/chat/run-details";
+import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
+
+describe("sanitizeStoredChatMessage", () => {
+  it("returns null only for a bad id/role/content/displayOnly", () => {
+    expect(sanitizeStoredChatMessage(null)).toBeNull();
+    expect(sanitizeStoredChatMessage("x")).toBeNull();
+    expect(
+      sanitizeStoredChatMessage({ role: "user", content: "hi" }),
+    ).toBeNull();
+    expect(
+      sanitizeStoredChatMessage({ id: 1, role: "user", content: "hi" }),
+    ).toBeNull();
+    expect(
+      sanitizeStoredChatMessage({
+        id: "1",
+        role: "system",
+        content: "hi",
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeStoredChatMessage({
+        id: "1",
+        role: "user",
+        content: 3,
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeStoredChatMessage({
+        id: "1",
+        role: "user",
+        content: "hi",
+        displayOnly: "yes",
+      }),
+    ).toBeNull();
+  });
+
+  it("preserves unknown keys on toolRun, risk, and test_cases", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      toolRun: {
+        summary: "s",
+        markdown: "",
+        calls: [],
+        coverage: { covered: 3, total: 5 },
+        confidence: 0.82,
+        risk: {
+          score: 10,
+          level: "low",
+          rationale: "ok",
+          factors: [],
+          model_version: "v2",
+        },
+        test_cases: {
+          output_style: "steps",
+          cases: [],
+          generator: "pack-v3",
+        },
+      },
+    });
+
+    expect(sanitized?.toolRun).toMatchObject({
+      summary: "s",
+      coverage: { covered: 3, total: 5 },
+      confidence: 0.82,
+      risk: { model_version: "v2" },
+      test_cases: { generator: "pack-v3" },
+    });
+  });
+
+  it("preserves unknown keys on run (usage, warnings, …)", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run: {
+        request_id: "r1",
+        outcome: "success",
+        tools: ["t1"],
+        usage: { input: 10, output: 20 },
+        warnings: ["slow retrieval"],
+        retry_count: 2,
+      },
+    });
+
+    expect(sanitized?.run).toEqual({
+      request_id: "r1",
+      outcome: "success",
+      tools: ["t1"],
+      usage: { input: 10, output: 20 },
+      warnings: ["slow retrieval"],
+      retry_count: 2,
+    });
+  });
+
+  it("repairs a poisoned leaf without dropping siblings", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      citations: [
+        { source_id: "ok", source_type: "pdf", page_label: "3" },
+        { source_id: "bad", quote: { nested: true } },
+      ],
+      toolRun: {
+        summary: "s",
+        calls: [
+          { tool_name: "t", ok: true, summary: "fine" },
+          { tool_name: "u", ok: true, summary: { bad: true } },
+          null,
+        ],
+        risk: {
+          score: 40,
+          level: "medium",
+          rationale: "partial",
+          factors: [
+            { factor_id: "a", weight: 1, note: "keep" },
+            null,
+            { factor_id: "b" },
+          ],
+        },
+      },
+    });
+
+    expect(sanitized?.citations).toEqual([
+      { source_id: "ok", source_type: "pdf", page_label: "3" },
+    ]);
+    expect(sanitized?.toolRun).toMatchObject({
+      summary: "s",
+      calls: [
+        { tool_name: "t", ok: true, summary: "fine" },
+        { tool_name: "u", ok: true },
+      ],
+      risk: {
+        score: 40,
+        level: "medium",
+        rationale: "partial",
+        factors: [{ factor_id: "a", weight: 1, note: "keep" }],
+      },
+    });
+  });
+
+  it("drops a malformed projection without taking the message", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "plain answer",
+      citations: {},
+      toolsUsed: "nope",
+      run: "nope",
+      toolRun: "nope",
+    });
+
+    expect(sanitized).toEqual({
+      id: "a-1",
+      role: "assistant",
+      content: "plain answer",
+    });
+  });
+
+  it("drops a non-string tools array on run while keeping other fields", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run: {
+        request_id: "r1",
+        tools: "not-an-array",
+        usage: { input: 1 },
+      },
+    });
+
+    expect(sanitized?.run).toEqual({
+      request_id: "r1",
+      usage: { input: 1 },
+    });
+  });
+
+  it("repairs poisoned known run scalars while preserving unknown keys", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run: {
+        latency_ms: { evil: 1 },
+        model: { evil: 2 },
+        outcome: ["x"],
+        request_id: "r1",
+        usage: { input: 1 },
+      },
+    });
+
+    expect(sanitized?.run).toEqual({
+      request_id: "r1",
+      usage: { input: 1 },
+    });
+  });
+
+  it("never renders an object into a run detail line", () => {
+    const run = Object.fromEntries(
+      RUN_RENDERED_FIELDS.map((key) => [key, { evil: 1 }]),
+    );
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run,
+    });
+
+    // Every rendered field was poisoned → all four type classes must be gone.
+    expect(sanitized?.run).toEqual({});
+    expect(runDetailLines(sanitized?.run as never).join("|")).not.toContain(
+      "[object Object]",
+    );
+  });
+
+  it("RUN_RENDERED_FIELDS covers every run key runDetailLines reads", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "lib", "chat", "run-details.ts"),
+      "utf8",
+    );
+    const body = src.slice(src.indexOf("export function runDetailLines"));
+    // Detects direct `run.field` / `run["field"]` reads only. Line comments are
+    // stripped so documenting an omitted field (e.g. `// not rendered: run.x`)
+    // does not count as a read. Alias reads
+    // (e.g. `const meta: Record<string, unknown> = run; meta.x`) are not caught —
+    // if that form becomes common, collapse sanitize + projection onto one
+    // shared field table instead of widening this scan again.
+    const code = body
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    const read = new Set(
+      [
+        ...code.matchAll(
+          /\brun(?:\.([a-z_0-9]+)|\[["']([a-z_0-9]+)["']\])/g,
+        ),
+      ].map((m) => m[1] ?? m[2]),
+    );
+    expect([...read].sort()).toEqual([...RUN_RENDERED_FIELDS].sort());
+  });
+});

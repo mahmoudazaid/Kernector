@@ -3,19 +3,10 @@ import { z } from "zod";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
 const httpUrl = z
-  .string()
-  .url()
-  .refine(
-    (value) => {
-      try {
-        const protocol = new URL(value).protocol;
-        return protocol === "http:" || protocol === "https:";
-      } catch {
-        return false;
-      }
-    },
-    { message: "API base URL must be an absolute http(s) URL" },
-  )
+  .url({
+    protocol: /^https?$/,
+    error: "API base URL must be an absolute http(s) URL",
+  })
   .transform((value) => value.replace(/\/+$/, ""));
 
 const publicEnvSchema = z.object({

@@ -2,8 +2,8 @@
 
 import {
   useEffect,
+  useRef,
   useState,
-  startTransition,
   type KeyboardEvent,
   type SubmitEvent,
 } from "react";
@@ -30,18 +30,23 @@ import {
   applyTurnResult,
   classifyFailure,
   historyForModel,
+  seedIds,
   type ChatMessage,
   type Citation,
   type ToolRun,
   type ToolUsed,
 } from "@/lib/chat/turn";
 import {
-  clearChatMessages,
-  loadChatMessages,
   loadRuntimeSettings,
-  saveChatMessages,
-} from "@/lib/runtime-settings-storage";
-import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
+  type StoredChatMessage,
+} from "@/lib/settings/runtime-settings-storage";
+import {
+  loadActiveSession,
+  saveActiveSession,
+  saveActiveSessionDraft,
+  subscribeActiveSession,
+} from "@/lib/session/active-session";
+import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
 const SEND_ICON = (
   <svg
@@ -64,6 +69,9 @@ const SEND_ICON = (
     />
   </svg>
 );
+
+const DRAFT_SAVE_DEBOUNCE_MS = 300;
+
 export type ChatPanelProps = {
   apiBaseUrl: string;
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
@@ -73,7 +81,7 @@ export type ChatPanelProps = {
 };
 
 function CitationsBlock({ citations }: { citations: Citation[] }) {
-  if (citations.length === 0) {
+  if (!Array.isArray(citations) || citations.length === 0) {
     return null;
   }
   return (
@@ -83,7 +91,9 @@ function CitationsBlock({ citations }: { citations: Citation[] }) {
         {citations.map((citation, index) => (
           <li key={`${citation.source_id}-${index}`}>
             <code>{citation.source_id}</code> ({citation.source_type})
-            {citation.chunk_index != null ? ` · chunk ${citation.chunk_index}` : ""}
+            {citation.chunk_index != null
+              ? ` · chunk ${citation.chunk_index}`
+              : ""}
             {citation.quote ? (
               <p className="kern-chat-quote">{citation.quote}</p>
             ) : null}
@@ -95,7 +105,7 @@ function CitationsBlock({ citations }: { citations: Citation[] }) {
 }
 
 function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
-  if (tools.length === 0) {
+  if (!Array.isArray(tools) || tools.length === 0) {
     return null;
   }
   return (
@@ -113,31 +123,58 @@ function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
 }
 
 function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
+  const calls = Array.isArray(toolRun.calls) ? toolRun.calls.filter(Boolean) : [];
+  const riskFactors = Array.isArray(toolRun.risk?.factors)
+    ? toolRun.risk.factors.filter(Boolean)
+    : [];
+  const testCases = Array.isArray(toolRun.test_cases?.cases)
+    ? toolRun.test_cases.cases.filter(Boolean)
+    : [];
+  const summary =
+    typeof toolRun.summary === "string" ? toolRun.summary : undefined;
+  const markdown =
+    typeof toolRun.markdown === "string" ? toolRun.markdown : undefined;
+  const riskScore =
+    typeof toolRun.risk?.score === "number" ? toolRun.risk.score : undefined;
+  const riskLevel =
+    typeof toolRun.risk?.level === "string" ? toolRun.risk.level : undefined;
+  const riskRationale =
+    typeof toolRun.risk?.rationale === "string"
+      ? toolRun.risk.rationale
+      : undefined;
+  const outputStyle =
+    typeof toolRun.test_cases?.output_style === "string"
+      ? toolRun.test_cases.output_style
+      : undefined;
+
   return (
     <div className="kern-chat-tool-run">
-      {toolRun.calls.length > 0 ? (
+      {calls.length > 0 ? (
         <>
           <p className="kern-chat-label">Tool calls</p>
           <ul className="kern-chat-list">
-            {toolRun.calls.map((call) => (
+            {calls.map((call) => (
               <li key={call.tool_name}>
-                <code>{call.tool_name}</code> — {call.ok ? "succeeded" : "failed"}
-                {call.ok && call.summary ? ` — ${call.summary}` : ""}
+                <code>{call.tool_name}</code> —{" "}
+                {call.ok ? "succeeded" : "failed"}
+                {call.ok && typeof call.summary === "string"
+                  ? ` — ${call.summary}`
+                  : ""}
               </li>
             ))}
           </ul>
         </>
       ) : null}
-      {toolRun.summary ? <p className="kern-chat-caption">{toolRun.summary}</p> : null}
+      {summary ? <p className="kern-chat-caption">{summary}</p> : null}
       {toolRun.risk ? (
         <div>
           <p className="kern-chat-label">Risk</p>
           <p>
-            Score {toolRun.risk.score}/100 ({toolRun.risk.level})
+            Score {riskScore ?? "—"}/100 ({riskLevel ?? "—"})
           </p>
-          <p>{toolRun.risk.rationale}</p>
+          {riskRationale ? <p>{riskRationale}</p> : null}
           <ul className="kern-chat-list">
-            {toolRun.risk.factors.map((factor) => (
+            {riskFactors.map((factor) => (
               <li key={factor.factor_id}>
                 <code>{factor.factor_id}</code> (weight {factor.weight})
               </li>
@@ -148,32 +185,45 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
       {toolRun.test_cases ? (
         <div>
           <p className="kern-chat-label">
-            Test cases ({toolRun.test_cases.output_style})
+            Test cases{outputStyle ? ` (${outputStyle})` : ""}
           </p>
-          {toolRun.test_cases.cases.map((testCase) => (
-            <details key={testCase.title} className="kern-chat-details">
-              <summary>{testCase.title}</summary>
-              <ol>
-                {testCase.steps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-              <p>
-                <strong>Expected:</strong> {testCase.expected}
-              </p>
-            </details>
-          ))}
+          {testCases.map((testCase) => {
+            const steps = Array.isArray(testCase.steps)
+              ? testCase.steps.filter(
+                  (step): step is string => typeof step === "string",
+                )
+              : [];
+            const title =
+              typeof testCase.title === "string" ? testCase.title : "Case";
+            const expected =
+              typeof testCase.expected === "string" ? testCase.expected : "";
+            return (
+              <details key={title} className="kern-chat-details">
+                <summary>{title}</summary>
+                <ol>
+                  {steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+                {expected ? (
+                  <p>
+                    <strong>Expected:</strong> {expected}
+                  </p>
+                ) : null}
+              </details>
+            );
+          })}
         </div>
       ) : null}
-      {toolRun.markdown ? (
+      {markdown ? (
         <details className="kern-chat-details">
           <summary>Markdown preview</summary>
-          <pre className="kern-chat-pre">{toolRun.markdown}</pre>
+          <pre className="kern-chat-pre">{markdown}</pre>
           <Button
             variant="secondary"
             type="button"
             onClick={() => {
-              void navigator.clipboard?.writeText(toolRun.markdown);
+              void navigator.clipboard?.writeText(markdown);
             }}
           >
             Copy markdown
@@ -204,7 +254,10 @@ function RunDetailsBlock({ run }: { run: ChatMessage["run"] }) {
 function MessageRow({ message }: { message: ChatMessage }) {
   if (message.displayOnly) {
     return (
-      <article className="kern-chat-msg kern-chat-msg--error" data-role="assistant">
+      <article
+        className="kern-chat-msg kern-chat-msg--error"
+        data-role="assistant"
+      >
         <p role="alert">{message.content}</p>
         <RunDetailsBlock run={message.run} />
       </article>
@@ -218,7 +271,10 @@ function MessageRow({ message }: { message: ChatMessage }) {
     );
   }
   return (
-    <article className="kern-chat-msg kern-chat-msg--assistant" data-role="assistant">
+    <article
+      className="kern-chat-msg kern-chat-msg--assistant"
+      data-role="assistant"
+    >
       <div className="kern-chat-answer">{message.content}</div>
       <CitationsBlock citations={message.citations ?? []} />
       <ToolsUsedBlock tools={message.toolsUsed ?? []} />
@@ -228,7 +284,7 @@ function MessageRow({ message }: { message: ChatMessage }) {
   );
 }
 
-function toPersisted(messages: ChatMessage[]) {
+function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
   return messages.map((message) => ({
     id: message.id,
     role: message.role,
@@ -241,16 +297,16 @@ function toPersisted(messages: ChatMessage[]) {
   }));
 }
 
-function fromPersisted(raw: ReturnType<typeof loadChatMessages>): ChatMessage[] {
+function fromPersisted(raw: StoredChatMessage[]): ChatMessage[] {
   return raw.map((message) => ({
     id: message.id,
     role: message.role,
     content: message.content,
     displayOnly: message.displayOnly,
-    citations: (message.citations as ChatMessage["citations"]) ?? undefined,
-    toolsUsed: (message.toolsUsed as ChatMessage["toolsUsed"]) ?? undefined,
-    run: (message.run as ChatMessage["run"]) ?? undefined,
-    toolRun: (message.toolRun as ChatMessage["toolRun"]) ?? undefined,
+    citations: message.citations as ChatMessage["citations"],
+    toolsUsed: message.toolsUsed as ChatMessage["toolsUsed"],
+    run: message.run as ChatMessage["run"],
+    toolRun: message.toolRun as ChatMessage["toolRun"],
   }));
 }
 
@@ -268,19 +324,102 @@ export function ChatPanel({
   const { catalog } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const maxInputLength = catalog?.max_input_length ?? null;
 
+  const composerTouchedRef = useRef(false);
+  const sessionUpdatedAtRef = useRef(0);
+  const turnGenerationRef = useRef(0);
+  const skipNextPersistRef = useRef(false);
+  const draftRef = useRef(draft);
+
   useEffect(() => {
-    startTransition(() => {
-      setMessages(fromPersisted(loadChatMessages()));
-      setHydrated(true);
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    const session = loadActiveSession();
+    seedIds(session.messages);
+    sessionUpdatedAtRef.current = session.updatedAt;
+    setMessages((current) =>
+      current.length ? current : fromPersisted(session.messages),
+    );
+    if (!composerTouchedRef.current) {
+      setDraft(session.draft);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    return subscribeActiveSession(() => {
+      const session = loadActiveSession();
+      if (session.updatedAt <= sessionUpdatedAtRef.current) {
+        return;
+      }
+      seedIds(session.messages);
+      sessionUpdatedAtRef.current = session.updatedAt;
+      setMessages(fromPersisted(session.messages));
+      if (!composerTouchedRef.current) {
+        setDraft(session.draft);
+      }
     });
   }, []);
+
+  function adoptSessionStamp(stamp: number | null): void {
+    if (stamp !== null) {
+      sessionUpdatedAtRef.current = stamp;
+      return;
+    }
+    const session = loadActiveSession();
+    seedIds(session.messages);
+    sessionUpdatedAtRef.current = session.updatedAt;
+    skipNextPersistRef.current = true;
+    setMessages(fromPersisted(session.messages));
+    if (!composerTouchedRef.current) {
+      setDraft(session.draft);
+    }
+  }
 
   useEffect(() => {
     if (!hydrated) {
       return;
     }
-    saveChatMessages(toPersisted(messages));
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+    adoptSessionStamp(
+      saveActiveSession({
+        draft: draftRef.current,
+        messages: toPersisted(messages),
+        updatedAt: sessionUpdatedAtRef.current,
+      }),
+    );
   }, [messages, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      adoptSessionStamp(
+        saveActiveSessionDraft(draft, sessionUpdatedAtRef.current),
+      );
+    }, DRAFT_SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [draft, hydrated]);
+
+  useEffect(() => {
+    return () => {
+      if (!hydrated) {
+        return;
+      }
+      const stamp = saveActiveSessionDraft(
+        draftRef.current,
+        sessionUpdatedAtRef.current,
+      );
+      if (stamp !== null) {
+        sessionUpdatedAtRef.current = stamp;
+      }
+    };
+  }, [hydrated]);
 
   const lengthFeedback =
     maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
@@ -301,6 +440,8 @@ export function ChatPanel({
     if (!query || sending || sendBlocked) {
       return;
     }
+    composerTouchedRef.current = true;
+    const generation = turnGenerationRef.current;
     setUnavailable(false);
     setDraft("");
     const history = historyForModel(messages);
@@ -317,7 +458,8 @@ export function ChatPanel({
           runtime: stored
             ? {
                 provider:
-                  stored.provider === "ollama" || stored.provider === "openrouter"
+                  stored.provider === "ollama" ||
+                  stored.provider === "openrouter"
                     ? stored.provider
                     : null,
                 model: stored.model,
@@ -326,33 +468,72 @@ export function ChatPanel({
             : null,
         },
       });
+      if (generation !== turnGenerationRef.current) {
+        return;
+      }
       setMessages((current) =>
         applyTurnResult(current, { kind: "success", response }),
       );
     } catch (error) {
-      const apiError =
-        error instanceof ApiError ? error : ApiError.generic(0);
+      if (generation !== turnGenerationRef.current) {
+        return;
+      }
+      const apiError = error instanceof ApiError ? error : ApiError.generic(0);
       const failure = classifyFailure(apiError);
       if (failure.kind === "unavailable") {
         setUnavailable(true);
         setMessages((current) => applyTurnResult(current, failure));
       } else if (failure.kind === "rejected") {
         setInlineError(failure.message);
+        setDraft(query);
         setMessages((current) => applyTurnResult(current, failure));
       } else {
         setMessages((current) => applyTurnResult(current, failure));
       }
     } finally {
-      setSending(false);
+      if (generation === turnGenerationRef.current) {
+        setSending(false);
+      }
     }
   }
 
   function handleNewChat() {
-    clearChatMessages();
+    turnGenerationRef.current += 1;
+    composerTouchedRef.current = false;
+    skipNextPersistRef.current = true;
+    let stamp = saveActiveSession({
+      draft: "",
+      messages: [],
+      updatedAt: sessionUpdatedAtRef.current,
+    });
+    // New chat is deliberate — retry once against the current revision so a
+    // concurrent writer cannot leave someone else's transcript on screen.
+    if (stamp === null) {
+      stamp = saveActiveSession({
+        draft: "",
+        messages: [],
+        updatedAt: loadActiveSession().updatedAt,
+      });
+    }
+    if (stamp === null) {
+      // Last-resort path: both clears lost a race. New chat still owns the
+      // composer — clear draft rather than restoring a concurrent writer's.
+      const session = loadActiveSession();
+      seedIds(session.messages);
+      sessionUpdatedAtRef.current = session.updatedAt;
+      setMessages(fromPersisted(session.messages));
+      setDraft("");
+      setInlineError(null);
+      setUnavailable(false);
+      setSending(false);
+      return;
+    }
+    sessionUpdatedAtRef.current = stamp;
     setMessages([]);
     setInlineError(null);
     setUnavailable(false);
     setDraft("");
+    setSending(false);
   }
 
   if (unavailable && messages.length === 0) {
@@ -442,11 +623,12 @@ export function ChatPanel({
             disabled={sending || historyBlocked}
             aria-invalid={sendBlocked || undefined}
             aria-describedby={
-              lengthFeedback || statusGuidance
-                ? "chat-input-length"
-                : undefined
+              lengthFeedback || statusGuidance ? "chat-input-length" : undefined
             }
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              composerTouchedRef.current = true;
+              setDraft(event.target.value);
+            }}
             onKeyDown={handleComposerKeyDown}
           />
           <button

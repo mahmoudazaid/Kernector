@@ -22,8 +22,8 @@ import {
   loadRuntimeSettings,
   saveRuntimeSettings,
   type StoredRuntimeSettings,
-} from "@/lib/runtime-settings-storage";
-import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
+} from "@/lib/settings/runtime-settings-storage";
+import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",

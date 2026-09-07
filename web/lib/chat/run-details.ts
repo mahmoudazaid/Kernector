@@ -1,6 +1,39 @@
 import type { RunMeta } from "@/lib/chat/turn";
 
 /**
+ * Fields that `runDetailLines` interpolates into the UI.
+ * `sanitizeRun` repairs these same keys. Lockstep with the projection is
+ * enforced by the source-scan test in `chat-sanitize.test.ts`.
+ */
+export const RUN_STRING_FIELDS = [
+  "request_id",
+  "outcome",
+  "model",
+  "pack",
+] as const;
+
+export const RUN_NUMBER_FIELDS = [
+  "latency_ms",
+  "total_tokens",
+  "prompt_tokens",
+  "completion_tokens",
+  "hit_count",
+  "citation_count",
+] as const;
+
+export const RUN_BOOLEAN_FIELDS = ["query_rewritten"] as const;
+
+export const RUN_STRING_ARRAY_FIELDS = ["tools"] as const;
+
+/** Every run key that can appear in a rendered detail line. */
+export const RUN_RENDERED_FIELDS = [
+  ...RUN_STRING_FIELDS,
+  ...RUN_NUMBER_FIELDS,
+  ...RUN_BOOLEAN_FIELDS,
+  ...RUN_STRING_ARRAY_FIELDS,
+] as const;
+
+/**
  * Project safe run fields from typed `RunMeta` for UI display.
  */
 export function runDetailLines(run: RunMeta | null | undefined): string[] {
@@ -37,7 +70,7 @@ export function runDetailLines(run: RunMeta | null | undefined): string[] {
   if (run.citation_count != null) {
     lines.push(`Citations: ${run.citation_count}`);
   }
-  if (run.tools && run.tools.length > 0) {
+  if (Array.isArray(run.tools) && run.tools.length > 0) {
     lines.push(`Tools: ${run.tools.join(", ")}`);
   }
   return lines;
