@@ -4,11 +4,19 @@
  * Keys are shared contracts — do not rename without coordinating both UIs.
  * Ollama base URL is server-owned (`GET /api/v1/settings`); Chat should read it
  * from the catalog, not from this store.
+ *
+ * Active chat session (draft + transcript) is owned by #14 under
+ * `kernector:active-session:v1` (`web/lib/session/active-session.ts`). This
+ * module must not clear or rewrite that key (or the legacy transcript key
+ * below) when saving settings.
  */
 
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
-/** Versioned chat transcript key — owned by Chat (#235), not Settings. */
+/**
+ * Legacy chat transcript key from #235. Still dual-written by the #14 session
+ * store for backward compatibility — do not rename without a migration.
+ */
 export const CHAT_MESSAGES_STORAGE_KEY = "kernector:chat-messages:v1";
 
 export type StoredRuntimeSettings = {
@@ -28,7 +36,9 @@ export type StoredChatMessage = {
   toolRun?: unknown;
 };
 
-function isStoredRuntimeSettings(value: unknown): value is StoredRuntimeSettings {
+function isStoredRuntimeSettings(
+  value: unknown,
+): value is StoredRuntimeSettings {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -56,7 +66,8 @@ function isStoredChatMessage(value: unknown): value is StoredChatMessage {
     typeof record.id === "string" &&
     (record.role === "user" || record.role === "assistant") &&
     typeof record.content === "string" &&
-    (record.displayOnly === undefined || typeof record.displayOnly === "boolean")
+    (record.displayOnly === undefined ||
+      typeof record.displayOnly === "boolean")
   );
 }
 

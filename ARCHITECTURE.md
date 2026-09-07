@@ -107,6 +107,20 @@ Dual-stack PR CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml),
 [#128](https://github.com/mahmoudazaid/Kernector/issues/128)) runs that drift
 check alongside Python and Next foundation jobs.
 
+### Client session state (`web/`)
+
+The active chat turn lives in browser storage under
+`kernector:active-session:v1` (`web/lib/session/active-session.ts`, owned by
+[#14](https://github.com/mahmoudazaid/Kernector/issues/14)): composer **draft**
+plus **messages** (citations / tool outcomes carried opaquely). The store is
+**domain-neutral** — shared presentation never interprets pack payloads, the
+same rule as `AskResponse.tool_outputs`. Compare / Story (or any pack) session
+state is **pack-presentation-owned** and must use a separate key prefix
+(`kernector:pack:…`), never a field on the shared session. Legacy
+`kernector:chat-messages:v1` (#235) remains readable and dual-written for
+backward compatibility. Runtime settings stay on
+`kernector:runtime-settings:v1` and must not clear session keys.
+
 ## Knowledge foundation
 
 Kernector’s reusable core is **domain-agnostic**. Business vocabulary lives in

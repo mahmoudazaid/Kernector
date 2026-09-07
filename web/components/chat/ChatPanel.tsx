@@ -36,11 +36,14 @@ import {
   type ToolUsed,
 } from "@/lib/chat/turn";
 import {
-  clearChatMessages,
-  loadChatMessages,
   loadRuntimeSettings,
-  saveChatMessages,
+  type StoredChatMessage,
 } from "@/lib/runtime-settings-storage";
+import {
+  clearActiveSession,
+  loadActiveSession,
+  saveActiveSession,
+} from "@/lib/session/active-session";
 import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
 
 const SEND_ICON = (
@@ -83,7 +86,9 @@ function CitationsBlock({ citations }: { citations: Citation[] }) {
         {citations.map((citation, index) => (
           <li key={`${citation.source_id}-${index}`}>
             <code>{citation.source_id}</code> ({citation.source_type})
-            {citation.chunk_index != null ? ` · chunk ${citation.chunk_index}` : ""}
+            {citation.chunk_index != null
+              ? ` · chunk ${citation.chunk_index}`
+              : ""}
             {citation.quote ? (
               <p className="kern-chat-quote">{citation.quote}</p>
             ) : null}
@@ -113,22 +118,33 @@ function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
 }
 
 function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
+  const calls = Array.isArray(toolRun.calls) ? toolRun.calls : [];
+  const riskFactors = Array.isArray(toolRun.risk?.factors)
+    ? toolRun.risk.factors
+    : [];
+  const testCases = Array.isArray(toolRun.test_cases?.cases)
+    ? toolRun.test_cases.cases
+    : [];
+
   return (
     <div className="kern-chat-tool-run">
-      {toolRun.calls.length > 0 ? (
+      {calls.length > 0 ? (
         <>
           <p className="kern-chat-label">Tool calls</p>
           <ul className="kern-chat-list">
-            {toolRun.calls.map((call) => (
+            {calls.map((call) => (
               <li key={call.tool_name}>
-                <code>{call.tool_name}</code> — {call.ok ? "succeeded" : "failed"}
+                <code>{call.tool_name}</code> —{" "}
+                {call.ok ? "succeeded" : "failed"}
                 {call.ok && call.summary ? ` — ${call.summary}` : ""}
               </li>
             ))}
           </ul>
         </>
       ) : null}
-      {toolRun.summary ? <p className="kern-chat-caption">{toolRun.summary}</p> : null}
+      {toolRun.summary ? (
+        <p className="kern-chat-caption">{toolRun.summary}</p>
+      ) : null}
       {toolRun.risk ? (
         <div>
           <p className="kern-chat-label">Risk</p>
@@ -137,7 +153,7 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
           </p>
           <p>{toolRun.risk.rationale}</p>
           <ul className="kern-chat-list">
-            {toolRun.risk.factors.map((factor) => (
+            {riskFactors.map((factor) => (
               <li key={factor.factor_id}>
                 <code>{factor.factor_id}</code> (weight {factor.weight})
               </li>
@@ -150,19 +166,22 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
           <p className="kern-chat-label">
             Test cases ({toolRun.test_cases.output_style})
           </p>
-          {toolRun.test_cases.cases.map((testCase) => (
-            <details key={testCase.title} className="kern-chat-details">
-              <summary>{testCase.title}</summary>
-              <ol>
-                {testCase.steps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-              <p>
-                <strong>Expected:</strong> {testCase.expected}
-              </p>
-            </details>
-          ))}
+          {testCases.map((testCase) => {
+            const steps = Array.isArray(testCase.steps) ? testCase.steps : [];
+            return (
+              <details key={testCase.title} className="kern-chat-details">
+                <summary>{testCase.title}</summary>
+                <ol>
+                  {steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+                <p>
+                  <strong>Expected:</strong> {testCase.expected}
+                </p>
+              </details>
+            );
+          })}
         </div>
       ) : null}
       {toolRun.markdown ? (
@@ -204,7 +223,10 @@ function RunDetailsBlock({ run }: { run: ChatMessage["run"] }) {
 function MessageRow({ message }: { message: ChatMessage }) {
   if (message.displayOnly) {
     return (
-      <article className="kern-chat-msg kern-chat-msg--error" data-role="assistant">
+      <article
+        className="kern-chat-msg kern-chat-msg--error"
+        data-role="assistant"
+      >
         <p role="alert">{message.content}</p>
         <RunDetailsBlock run={message.run} />
       </article>
@@ -218,7 +240,10 @@ function MessageRow({ message }: { message: ChatMessage }) {
     );
   }
   return (
-    <article className="kern-chat-msg kern-chat-msg--assistant" data-role="assistant">
+    <article
+      className="kern-chat-msg kern-chat-msg--assistant"
+      data-role="assistant"
+    >
       <div className="kern-chat-answer">{message.content}</div>
       <CitationsBlock citations={message.citations ?? []} />
       <ToolsUsedBlock tools={message.toolsUsed ?? []} />
@@ -241,7 +266,7 @@ function toPersisted(messages: ChatMessage[]) {
   }));
 }
 
-function fromPersisted(raw: ReturnType<typeof loadChatMessages>): ChatMessage[] {
+function fromPersisted(raw: StoredChatMessage[]): ChatMessage[] {
   return raw.map((message) => ({
     id: message.id,
     role: message.role,
@@ -270,7 +295,9 @@ export function ChatPanel({
 
   useEffect(() => {
     startTransition(() => {
-      setMessages(fromPersisted(loadChatMessages()));
+      const session = loadActiveSession();
+      setMessages(fromPersisted(session.messages));
+      setDraft(session.draft);
       setHydrated(true);
     });
   }, []);
@@ -279,8 +306,8 @@ export function ChatPanel({
     if (!hydrated) {
       return;
     }
-    saveChatMessages(toPersisted(messages));
-  }, [messages, hydrated]);
+    saveActiveSession({ draft, messages: toPersisted(messages) });
+  }, [messages, draft, hydrated]);
 
   const lengthFeedback =
     maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
@@ -317,7 +344,8 @@ export function ChatPanel({
           runtime: stored
             ? {
                 provider:
-                  stored.provider === "ollama" || stored.provider === "openrouter"
+                  stored.provider === "ollama" ||
+                  stored.provider === "openrouter"
                     ? stored.provider
                     : null,
                 model: stored.model,
@@ -330,14 +358,14 @@ export function ChatPanel({
         applyTurnResult(current, { kind: "success", response }),
       );
     } catch (error) {
-      const apiError =
-        error instanceof ApiError ? error : ApiError.generic(0);
+      const apiError = error instanceof ApiError ? error : ApiError.generic(0);
       const failure = classifyFailure(apiError);
       if (failure.kind === "unavailable") {
         setUnavailable(true);
         setMessages((current) => applyTurnResult(current, failure));
       } else if (failure.kind === "rejected") {
         setInlineError(failure.message);
+        setDraft(query);
         setMessages((current) => applyTurnResult(current, failure));
       } else {
         setMessages((current) => applyTurnResult(current, failure));
@@ -348,7 +376,7 @@ export function ChatPanel({
   }
 
   function handleNewChat() {
-    clearChatMessages();
+    clearActiveSession();
     setMessages([]);
     setInlineError(null);
     setUnavailable(false);
@@ -442,9 +470,7 @@ export function ChatPanel({
             disabled={sending || historyBlocked}
             aria-invalid={sendBlocked || undefined}
             aria-describedby={
-              lengthFeedback || statusGuidance
-                ? "chat-input-length"
-                : undefined
+              lengthFeedback || statusGuidance ? "chat-input-length" : undefined
             }
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}

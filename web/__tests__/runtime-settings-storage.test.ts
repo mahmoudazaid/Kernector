@@ -32,6 +32,23 @@ describe("runtime settings storage", () => {
     expect(loadRuntimeSettings()).toEqual(SAMPLE);
   });
 
+  it("does not clear session or transcript keys when saving settings", () => {
+    localStorage.setItem(
+      CHAT_MESSAGES_STORAGE_KEY,
+      JSON.stringify([{ id: "1", role: "user", content: "hi" }]),
+    );
+    localStorage.setItem(
+      "kernector:active-session:v1",
+      JSON.stringify({ draft: "d", messages: [] }),
+    );
+
+    saveRuntimeSettings(SAMPLE);
+
+    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeTruthy();
+    expect(localStorage.getItem("kernector:active-session:v1")).toBeTruthy();
+    expect(loadRuntimeSettings()).toEqual(SAMPLE);
+  });
+
   it("ignores malformed JSON", () => {
     localStorage.setItem(RUNTIME_SETTINGS_STORAGE_KEY, "{not-json");
     expect(loadRuntimeSettings()).toBeNull();
@@ -55,7 +72,9 @@ describe("chat messages storage", () => {
     saveRuntimeSettings(SAMPLE);
     saveChatMessages([{ id: "1", role: "user", content: "hi" }]);
 
-    expect(loadChatMessages()).toEqual([{ id: "1", role: "user", content: "hi" }]);
+    expect(loadChatMessages()).toEqual([
+      { id: "1", role: "user", content: "hi" },
+    ]);
     clearChatMessages();
     expect(loadChatMessages()).toEqual([]);
     expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeNull();
@@ -65,7 +84,10 @@ describe("chat messages storage", () => {
   it("degrades garbage transcripts to an empty list", () => {
     localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, "{not-json");
     expect(loadChatMessages()).toEqual([]);
-    localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify([{ role: "user" }]));
+    localStorage.setItem(
+      CHAT_MESSAGES_STORAGE_KEY,
+      JSON.stringify([{ role: "user" }]),
+    );
     expect(loadChatMessages()).toEqual([]);
   });
 });
