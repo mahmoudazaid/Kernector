@@ -43,6 +43,21 @@ function newId(prefix: string): string {
 }
 
 /**
+ * Advance the id counter past any `u-N` / `a-N` / `err-N` ids already present
+ * so restored transcripts do not collide with freshly minted turns.
+ */
+export function seedIds(messages: readonly { id: string }[]): void {
+  let max = nextId;
+  for (const message of messages) {
+    const match = /^(?:u|a|err)-(\d+)$/.exec(message.id);
+    if (match) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+  nextId = max;
+}
+
+/**
  * Project transcript rows into model history, skipping display-only errors.
  */
 export function historyForModel(messages: readonly ChatMessage[]): HistoryTurn[] {

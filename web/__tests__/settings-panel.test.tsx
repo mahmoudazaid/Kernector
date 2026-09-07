@@ -7,7 +7,7 @@ import {
   CHAT_MESSAGES_STORAGE_KEY,
   loadRuntimeSettings,
   RUNTIME_SETTINGS_STORAGE_KEY,
-} from "@/lib/runtime-settings-storage";
+} from "@/lib/settings/runtime-settings-storage";
 import {
   ACTIVE_SESSION_STORAGE_KEY,
   loadActiveSession,
@@ -358,12 +358,9 @@ describe("SettingsPanel", () => {
     const session = {
       draft: "keep this draft",
       messages: [{ id: "1", role: "user" as const, content: "keep this turn" }],
+      updatedAt: 1,
     };
     saveActiveSession(session);
-    localStorage.setItem(
-      CHAT_MESSAGES_STORAGE_KEY,
-      JSON.stringify(session.messages),
-    );
     const sessionBefore = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
     const transcriptBefore = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
 
@@ -388,7 +385,11 @@ describe("SettingsPanel", () => {
     expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBe(
       transcriptBefore,
     );
-    expect(loadActiveSession()).toEqual(session);
+    expect(loadActiveSession()).toEqual({
+      draft: session.draft,
+      messages: session.messages,
+      updatedAt: expect.any(Number),
+    });
     expect(localStorage.getItem(RUNTIME_SETTINGS_STORAGE_KEY)).toBeTruthy();
   });
 });

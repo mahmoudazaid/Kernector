@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const WEB_ROOT = join(__dirname, "..");
 const SCAN_ROOTS = [
   join(WEB_ROOT, "lib", "session"),
-  join(WEB_ROOT, "lib", "runtime-settings-storage.ts"),
+  join(WEB_ROOT, "lib", "settings", "runtime-settings-storage.ts"),
 ];
 
 /**
@@ -14,11 +14,22 @@ const SCAN_ROOTS = [
  * (a trailing `\b` after `story` does not fire against the hump).
  */
 const FORBIDDEN = [
-  /story/i,
+  /\bstor(y|ies)\b/i,
   /compare/i,
   /gherkin/i,
   /acceptance_criteria/i,
   /packs?\//,
+];
+
+/** Documentation may name the rule; strip those phrases before scanning. */
+const DOC_WHITELIST = [
+  /Story\/Compare/g,
+  /Pack \/ Story \/ Compare vocabulary/g,
+  /Story vocabulary/g,
+  /pack payloads/g,
+  /pack-presentation-owned/g,
+  /`kernector:pack:…`/g,
+  /kernector:pack:…/g,
 ];
 
 function walk(target: string): string[] {
@@ -41,11 +52,17 @@ function walk(target: string): string[] {
   return files;
 }
 
-/** Strip line/block comments so the file can document its own rule. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+/**
+ * Prepare source for vocabulary scanning without naive comment stripping.
+ * Comment strippers that ignore string literals can swallow real declarations;
+ * whitelist known documentation phrases and scan the remaining raw text.
+ */
+function prepareForScan(source: string): string {
+  let text = source;
+  for (const pattern of DOC_WHITELIST) {
+    text = text.replace(pattern, " ");
+  }
+  return text;
 }
 
 /** Insert spaces at camelCase boundaries: storyComparison → story Comparison. */
@@ -58,7 +75,7 @@ describe("active session pack neutrality", () => {
     const hits: string[] = [];
     for (const root of SCAN_ROOTS) {
       for (const file of walk(root)) {
-        const text = splitCamelCase(stripComments(readFileSync(file, "utf8")));
+        const text = splitCamelCase(prepareForScan(readFileSync(file, "utf8")));
         for (const pattern of FORBIDDEN) {
           if (pattern.test(text)) {
             hits.push(`${relative(WEB_ROOT, file)} matches ${pattern}`);
@@ -67,5 +84,12 @@ describe("active session pack neutrality", () => {
       }
     }
     expect(hits).toEqual([]);
+  });
+
+  it("does not treat history as Story vocabulary", () => {
+    const sample = splitCamelCase(
+      'import { historyForModel } from "@/lib/chat/turn";',
+    );
+    expect(/\bstor(y|ies)\b/i.test(sample)).toBe(false);
   });
 });

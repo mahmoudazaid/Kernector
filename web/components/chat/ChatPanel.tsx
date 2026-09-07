@@ -2,8 +2,8 @@
 
 import {
   useEffect,
+  useRef,
   useState,
-  startTransition,
   type KeyboardEvent,
   type SubmitEvent,
 } from "react";
@@ -30,6 +30,7 @@ import {
   applyTurnResult,
   classifyFailure,
   historyForModel,
+  seedIds,
   type ChatMessage,
   type Citation,
   type ToolRun,
@@ -38,13 +39,15 @@ import {
 import {
   loadRuntimeSettings,
   type StoredChatMessage,
-} from "@/lib/runtime-settings-storage";
+} from "@/lib/settings/runtime-settings-storage";
 import {
   clearActiveSession,
   loadActiveSession,
   saveActiveSession,
+  saveActiveSessionDraft,
+  subscribeActiveSession,
 } from "@/lib/session/active-session";
-import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
+import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
 const SEND_ICON = (
   <svg
@@ -67,6 +70,9 @@ const SEND_ICON = (
     />
   </svg>
 );
+
+const DRAFT_SAVE_DEBOUNCE_MS = 300;
+
 export type ChatPanelProps = {
   apiBaseUrl: string;
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
@@ -118,13 +124,29 @@ function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
 }
 
 function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
-  const calls = Array.isArray(toolRun.calls) ? toolRun.calls : [];
+  const calls = Array.isArray(toolRun.calls) ? toolRun.calls.filter(Boolean) : [];
   const riskFactors = Array.isArray(toolRun.risk?.factors)
-    ? toolRun.risk.factors
+    ? toolRun.risk.factors.filter(Boolean)
     : [];
   const testCases = Array.isArray(toolRun.test_cases?.cases)
-    ? toolRun.test_cases.cases
+    ? toolRun.test_cases.cases.filter(Boolean)
     : [];
+  const summary =
+    typeof toolRun.summary === "string" ? toolRun.summary : undefined;
+  const markdown =
+    typeof toolRun.markdown === "string" ? toolRun.markdown : undefined;
+  const riskScore =
+    typeof toolRun.risk?.score === "number" ? toolRun.risk.score : undefined;
+  const riskLevel =
+    typeof toolRun.risk?.level === "string" ? toolRun.risk.level : undefined;
+  const riskRationale =
+    typeof toolRun.risk?.rationale === "string"
+      ? toolRun.risk.rationale
+      : undefined;
+  const outputStyle =
+    typeof toolRun.test_cases?.output_style === "string"
+      ? toolRun.test_cases.output_style
+      : undefined;
 
   return (
     <div className="kern-chat-tool-run">
@@ -136,22 +158,22 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
               <li key={call.tool_name}>
                 <code>{call.tool_name}</code> —{" "}
                 {call.ok ? "succeeded" : "failed"}
-                {call.ok && call.summary ? ` — ${call.summary}` : ""}
+                {call.ok && typeof call.summary === "string"
+                  ? ` — ${call.summary}`
+                  : ""}
               </li>
             ))}
           </ul>
         </>
       ) : null}
-      {toolRun.summary ? (
-        <p className="kern-chat-caption">{toolRun.summary}</p>
-      ) : null}
+      {summary ? <p className="kern-chat-caption">{summary}</p> : null}
       {toolRun.risk ? (
         <div>
           <p className="kern-chat-label">Risk</p>
           <p>
-            Score {toolRun.risk.score}/100 ({toolRun.risk.level})
+            Score {riskScore ?? "—"}/100 ({riskLevel ?? "—"})
           </p>
-          <p>{toolRun.risk.rationale}</p>
+          {riskRationale ? <p>{riskRationale}</p> : null}
           <ul className="kern-chat-list">
             {riskFactors.map((factor) => (
               <li key={factor.factor_id}>
@@ -164,35 +186,45 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
       {toolRun.test_cases ? (
         <div>
           <p className="kern-chat-label">
-            Test cases ({toolRun.test_cases.output_style})
+            Test cases{outputStyle ? ` (${outputStyle})` : ""}
           </p>
           {testCases.map((testCase) => {
-            const steps = Array.isArray(testCase.steps) ? testCase.steps : [];
+            const steps = Array.isArray(testCase.steps)
+              ? testCase.steps.filter(
+                  (step): step is string => typeof step === "string",
+                )
+              : [];
+            const title =
+              typeof testCase.title === "string" ? testCase.title : "Case";
+            const expected =
+              typeof testCase.expected === "string" ? testCase.expected : "";
             return (
-              <details key={testCase.title} className="kern-chat-details">
-                <summary>{testCase.title}</summary>
+              <details key={title} className="kern-chat-details">
+                <summary>{title}</summary>
                 <ol>
                   {steps.map((step) => (
                     <li key={step}>{step}</li>
                   ))}
                 </ol>
-                <p>
-                  <strong>Expected:</strong> {testCase.expected}
-                </p>
+                {expected ? (
+                  <p>
+                    <strong>Expected:</strong> {expected}
+                  </p>
+                ) : null}
               </details>
             );
           })}
         </div>
       ) : null}
-      {toolRun.markdown ? (
+      {markdown ? (
         <details className="kern-chat-details">
           <summary>Markdown preview</summary>
-          <pre className="kern-chat-pre">{toolRun.markdown}</pre>
+          <pre className="kern-chat-pre">{markdown}</pre>
           <Button
             variant="secondary"
             type="button"
             onClick={() => {
-              void navigator.clipboard?.writeText(toolRun.markdown);
+              void navigator.clipboard?.writeText(markdown);
             }}
           >
             Copy markdown
@@ -253,7 +285,7 @@ function MessageRow({ message }: { message: ChatMessage }) {
   );
 }
 
-function toPersisted(messages: ChatMessage[]) {
+function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
   return messages.map((message) => ({
     id: message.id,
     role: message.role,
@@ -272,10 +304,10 @@ function fromPersisted(raw: StoredChatMessage[]): ChatMessage[] {
     role: message.role,
     content: message.content,
     displayOnly: message.displayOnly,
-    citations: (message.citations as ChatMessage["citations"]) ?? undefined,
-    toolsUsed: (message.toolsUsed as ChatMessage["toolsUsed"]) ?? undefined,
-    run: (message.run as ChatMessage["run"]) ?? undefined,
-    toolRun: (message.toolRun as ChatMessage["toolRun"]) ?? undefined,
+    citations: message.citations as ChatMessage["citations"],
+    toolsUsed: message.toolsUsed as ChatMessage["toolsUsed"],
+    run: message.run as ChatMessage["run"],
+    toolRun: message.toolRun as ChatMessage["toolRun"],
   }));
 }
 
@@ -293,12 +325,38 @@ export function ChatPanel({
   const { catalog } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const maxInputLength = catalog?.max_input_length ?? null;
 
+  const composerTouchedRef = useRef(false);
+  const sessionUpdatedAtRef = useRef(0);
+  const turnGenerationRef = useRef(0);
+  const skipNextPersistRef = useRef(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
   useEffect(() => {
-    startTransition(() => {
-      const session = loadActiveSession();
-      setMessages(fromPersisted(session.messages));
+    const session = loadActiveSession();
+    seedIds(session.messages);
+    sessionUpdatedAtRef.current = session.updatedAt;
+    setMessages((current) =>
+      current.length ? current : fromPersisted(session.messages),
+    );
+    if (!composerTouchedRef.current) {
       setDraft(session.draft);
-      setHydrated(true);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    return subscribeActiveSession(() => {
+      const session = loadActiveSession();
+      if (session.updatedAt <= sessionUpdatedAtRef.current) {
+        return;
+      }
+      seedIds(session.messages);
+      sessionUpdatedAtRef.current = session.updatedAt;
+      setMessages(fromPersisted(session.messages));
+      if (!composerTouchedRef.current) {
+        setDraft(session.draft);
+      }
     });
   }, []);
 
@@ -306,8 +364,43 @@ export function ChatPanel({
     if (!hydrated) {
       return;
     }
-    saveActiveSession({ draft, messages: toPersisted(messages) });
-  }, [messages, draft, hydrated]);
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+    const updatedAt = Date.now();
+    sessionUpdatedAtRef.current = updatedAt;
+    saveActiveSession({
+      draft: draftRef.current,
+      messages: toPersisted(messages),
+      updatedAt,
+    });
+  }, [messages, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      sessionUpdatedAtRef.current = saveActiveSessionDraft(
+        draft,
+        sessionUpdatedAtRef.current,
+      );
+    }, DRAFT_SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [draft, hydrated]);
+
+  useEffect(() => {
+    return () => {
+      if (!hydrated) {
+        return;
+      }
+      sessionUpdatedAtRef.current = saveActiveSessionDraft(
+        draftRef.current,
+        sessionUpdatedAtRef.current,
+      );
+    };
+  }, [hydrated]);
 
   const lengthFeedback =
     maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
@@ -328,6 +421,8 @@ export function ChatPanel({
     if (!query || sending || sendBlocked) {
       return;
     }
+    composerTouchedRef.current = true;
+    const generation = turnGenerationRef.current;
     setUnavailable(false);
     setDraft("");
     const history = historyForModel(messages);
@@ -354,10 +449,16 @@ export function ChatPanel({
             : null,
         },
       });
+      if (generation !== turnGenerationRef.current) {
+        return;
+      }
       setMessages((current) =>
         applyTurnResult(current, { kind: "success", response }),
       );
     } catch (error) {
+      if (generation !== turnGenerationRef.current) {
+        return;
+      }
       const apiError = error instanceof ApiError ? error : ApiError.generic(0);
       const failure = classifyFailure(apiError);
       if (failure.kind === "unavailable") {
@@ -371,16 +472,23 @@ export function ChatPanel({
         setMessages((current) => applyTurnResult(current, failure));
       }
     } finally {
-      setSending(false);
+      if (generation === turnGenerationRef.current) {
+        setSending(false);
+      }
     }
   }
 
   function handleNewChat() {
+    turnGenerationRef.current += 1;
+    composerTouchedRef.current = false;
+    skipNextPersistRef.current = true;
     clearActiveSession();
+    sessionUpdatedAtRef.current = 0;
     setMessages([]);
     setInlineError(null);
     setUnavailable(false);
     setDraft("");
+    setSending(false);
   }
 
   if (unavailable && messages.length === 0) {
@@ -472,7 +580,10 @@ export function ChatPanel({
             aria-describedby={
               lengthFeedback || statusGuidance ? "chat-input-length" : undefined
             }
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              composerTouchedRef.current = true;
+              setDraft(event.target.value);
+            }}
             onKeyDown={handleComposerKeyDown}
           />
           <button

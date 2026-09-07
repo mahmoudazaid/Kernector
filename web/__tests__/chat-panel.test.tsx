@@ -6,10 +6,13 @@ import { ApiError } from "@/lib/api/errors";
 import type { ChatAskResponse } from "@/lib/api/chat";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
+  loadActiveSession,
+  saveActiveSession,
+} from "@/lib/session/active-session";
+import {
   CHAT_MESSAGES_STORAGE_KEY,
-  loadChatMessages,
   saveRuntimeSettings,
-} from "@/lib/runtime-settings-storage";
+} from "@/lib/settings/runtime-settings-storage";
 
 function catalogWithLimit(maxInputLength: number): RuntimeSettingsResponse {
   return {
@@ -151,7 +154,7 @@ describe("ChatPanel", () => {
       }),
     );
     await waitFor(() => {
-      expect(loadChatMessages().length).toBeGreaterThan(0);
+      expect(loadActiveSession().messages.length).toBeGreaterThan(0);
     });
   });
 
@@ -295,7 +298,7 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(screen.queryByText("old")).not.toBeInTheDocument();
     });
-    expect(loadChatMessages()).toEqual([]);
+    expect(loadActiveSession().messages).toEqual([]);
     expect(localStorage.getItem("kernector:runtime-settings:v1")).toBeTruthy();
   });
 
@@ -452,5 +455,141 @@ describe("ChatPanel", () => {
       await screen.findByText("Answer without a usable tool projection."),
     ).toBeInTheDocument();
     expect(screen.getByText("score this story")).toBeInTheDocument();
+    expect(screen.getByText("no calls array here")).toBeInTheDocument();
+  });
+
+  it("keeps valid tool-run parts when risk factors are not an array", async () => {
+    saveActiveSession({
+      draft: "",
+      updatedAt: 1,
+      messages: [
+        { id: "1", role: "user", content: "score" },
+        {
+          id: "2",
+          role: "assistant",
+          content: "Risk answer",
+          toolRun: {
+            summary: "Scored with bad factors",
+            calls: [],
+            risk: {
+              score: 40,
+              level: "medium",
+              rationale: "Partial risk",
+              factors: "nope",
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(await screen.findByText("Risk answer")).toBeInTheDocument();
+    expect(screen.getByText("Scored with bad factors")).toBeInTheDocument();
+    expect(screen.getByText(/Score 40\/100 \(medium\)/)).toBeInTheDocument();
+    expect(screen.getByText("Partial risk")).toBeInTheDocument();
+  });
+
+  it("keeps valid tool-run parts when test_cases.cases is not an array", async () => {
+    saveActiveSession({
+      draft: "",
+      updatedAt: 1,
+      messages: [
+        { id: "1", role: "user", content: "cases" },
+        {
+          id: "2",
+          role: "assistant",
+          content: "Cases answer",
+          toolRun: {
+            summary: "Summary with bad cases",
+            calls: [],
+            test_cases: { output_style: "steps", cases: "nope" },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(await screen.findByText("Cases answer")).toBeInTheDocument();
+    expect(screen.getByText("Summary with bad cases")).toBeInTheDocument();
+    expect(screen.getByText(/Test cases \(steps\)/)).toBeInTheDocument();
+  });
+
+  it("keeps a test case when steps is not an array", async () => {
+    saveActiveSession({
+      draft: "",
+      updatedAt: 1,
+      messages: [
+        { id: "1", role: "user", content: "steps" },
+        {
+          id: "2",
+          role: "assistant",
+          content: "Steps answer",
+          toolRun: {
+            summary: "Summary with bad steps",
+            calls: [],
+            test_cases: {
+              output_style: "steps",
+              cases: [
+                {
+                  title: "Lock after five failures",
+                  steps: "nope",
+                  expected: "Account locked.",
+                  references: [],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(await screen.findByText("Steps answer")).toBeInTheDocument();
+    expect(screen.getByText("Summary with bad steps")).toBeInTheDocument();
+    expect(screen.getByText(/Lock after five failures/)).toBeInTheDocument();
+    expect(screen.getByText(/Account locked/)).toBeInTheDocument();
+  });
+
+  it("still renders the composer when localStorage throws", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("private mode");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    const input = await screen.findByLabelText(/message/i);
+    await user.type(input, "hello");
+    expect(input).toHaveValue("hello");
   });
 });

@@ -14,8 +14,11 @@
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
 /**
- * Legacy chat transcript key from #235. Still dual-written by the #14 session
- * store for backward compatibility — do not rename without a migration.
+ * Legacy chat transcript key from #235. Owned by the #14 session store as a
+ * write-through mirror and absent/unusable-session read fallback — do not
+ * rename without a migration. Callers must use `loadActiveSession` /
+ * `saveActiveSession` / `clearActiveSession`; do not read or write this key
+ * directly.
  */
 export const CHAT_MESSAGES_STORAGE_KEY = "kernector:chat-messages:v1";
 
@@ -57,20 +60,6 @@ function isStoredRuntimeSettings(
   );
 }
 
-function isStoredChatMessage(value: unknown): value is StoredChatMessage {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === "string" &&
-    (record.role === "user" || record.role === "assistant") &&
-    typeof record.content === "string" &&
-    (record.displayOnly === undefined ||
-      typeof record.displayOnly === "boolean")
-  );
-}
-
 /**
  * Load persisted runtime selections, or ``null`` when absent/invalid.
  */
@@ -95,46 +84,5 @@ export function saveRuntimeSettings(value: StoredRuntimeSettings): void {
     localStorage.setItem(RUNTIME_SETTINGS_STORAGE_KEY, JSON.stringify(value));
   } catch {
     // Quota / private mode — ignore; in-memory UI state still works.
-  }
-}
-
-/**
- * Load the chat transcript, or ``[]`` when absent/invalid (never throws).
- */
-export function loadChatMessages(): StoredChatMessage[] {
-  try {
-    const raw = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.every(isStoredChatMessage) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Persist the chat transcript for the next visit.
- */
-export function saveChatMessages(messages: StoredChatMessage[]): void {
-  try {
-    localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
-  } catch {
-    // Quota / private mode — ignore.
-  }
-}
-
-/**
- * Clear the persisted chat transcript (New chat). Leaves runtime settings alone.
- */
-export function clearChatMessages(): void {
-  try {
-    localStorage.removeItem(CHAT_MESSAGES_STORAGE_KEY);
-  } catch {
-    // ignore
   }
 }

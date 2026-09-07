@@ -117,8 +117,8 @@ plus **messages** (citations / tool outcomes carried opaquely). The store is
 same rule as `AskResponse.tool_outputs`. Compare / Story (or any pack) session
 state is **pack-presentation-owned** and must use a separate key prefix
 (`kernector:pack:…`), never a field on the shared session. Legacy
-`kernector:chat-messages:v1` (#235) remains readable and dual-written for
-backward compatibility. Runtime settings stay on
+`kernector:chat-messages:v1` (#235) is a write-through mirror and a read
+fallback when the session key is absent or unusable. Runtime settings stay on
 `kernector:runtime-settings:v1` and must not clear session keys.
 
 ## Knowledge foundation

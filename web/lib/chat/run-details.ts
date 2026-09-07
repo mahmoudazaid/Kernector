@@ -37,7 +37,7 @@ export function runDetailLines(run: RunMeta | null | undefined): string[] {
   if (run.citation_count != null) {
     lines.push(`Citations: ${run.citation_count}`);
   }
-  if (run.tools && run.tools.length > 0) {
+  if (Array.isArray(run.tools) && run.tools.length > 0) {
     lines.push(`Tools: ${run.tools.join(", ")}`);
   }
   return lines;
