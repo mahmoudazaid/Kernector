@@ -228,6 +228,10 @@ describe("sanitizeStoredChatMessage", () => {
       "utf8",
     );
     const body = src.slice(src.indexOf("export function runDetailLines"));
+    // Detects direct `run.field` / `run["field"]` reads only. A read through an
+    // alias (e.g. `const meta: Record<string, unknown> = run; meta.x`) is not
+    // caught — if that form becomes common, collapse sanitize + projection onto
+    // one shared field table instead of widening this scan again.
     const read = new Set(
       [
         ...body.matchAll(
