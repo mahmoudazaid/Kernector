@@ -1,6 +1,13 @@
-"""AST helpers that flag unsafe ``!r`` interpolation in validation raises.
+"""AST helper that flags ``!r`` interpolation in any raise message.
 
-A green scan is not a full proof of safe messages:
+The scan is deliberately name-agnostic: it inspects **every** ``raise`` in a
+module rather than a fixed set of exception names. A name set silently exempts
+each subclass added later (``packs/software_delivery/errors.py`` defines five
+``DomainValidationError`` subclasses under names no fixed set would list) and
+every indirection (``raise error_type(...)`` where ``error_type`` is a
+parameter). Flagging all raises designs both evasions out.
+
+A green scan is still not a full proof of safe messages:
 
 - Plain ``{value}`` on a dataclass is byte-identical to ``{value!r}`` because
   ``object.__str__`` falls back to ``__repr__``. Detecting that statically
@@ -8,11 +15,8 @@ A green scan is not a full proof of safe messages:
   here. Rule B (print the number) is therefore a review obligation: only
   apply it after a preceding branch has proven ``int`` / ``float``.
 - Hoisting the message (``msg = f"...{v!r}"; raise ApplicationValidationError(msg)``)
-  places the ``!r`` outside ``raise``'s exception expression and scans clean.
-  No production site does this today; catch it in review.
-
-Extend :data:`VALIDATION_ERRORS` when a new validation exception type is added
-(see the error-taxonomy table in ``ARCHITECTURE.md``).
+  places the ``!r`` outside the ``raise`` statement and scans clean. No
+  production site does this today; catch it in review.
 """
 
 from __future__ import annotations
@@ -20,34 +24,23 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-# Names of exception types whose raise messages must not embed ``!r``.
-# Keep in sync with the error-taxonomy table in ARCHITECTURE.md.
-VALIDATION_ERRORS = {
-    "DomainValidationError",
-    "ApplicationValidationError",
-    "ToolArgumentValidationError",
-    "InputRejectedError",
-    "UnknownPromptError",
-    "UnknownDocumentError",
-}
 
+def repr_conversions_in_raises(path: Path) -> list[int]:
+    """Return line numbers where a raised exception message uses ``!r``.
 
-def repr_conversions_in_validation_raises(path: Path) -> list[int]:
-    """Return line numbers where a validation raise interpolates with ``!r``.
+    Args:
+        path: Python module to parse.
 
-    Only ``raise <ValidationError>(...)`` call forms are scanned. Subclasses
-    whose names are absent from :data:`VALIDATION_ERRORS` are invisible.
+    Returns:
+        Sorted line numbers of every ``!r`` conversion appearing inside a
+        ``raise`` statement's exception expression.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     offenders: list[int] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
-            continue
-        func = node.exc.func
-        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
-        if name not in VALIDATION_ERRORS:
+        if not isinstance(node, ast.Raise) or node.exc is None:
             continue
         for part in ast.walk(node.exc):
             if isinstance(part, ast.FormattedValue) and part.conversion == ord("r"):
                 offenders.append(part.lineno)
-    return offenders
+    return sorted(offenders)

@@ -999,3 +999,49 @@ def test_run_meta_rejects_non_int_latency_by_type_name() -> None:
     message = str(raised.value)
     assert "float" in message
     assert "1.5" not in message
+
+
+def test_run_meta_rejects_non_int_hit_count_by_type_name() -> None:
+    sentinel = "HIT-COUNT-LEAK-SENTINEL"
+    with pytest.raises(ApplicationValidationError) as raised:
+        RunMeta(hit_count=[sentinel])  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "hit_count must be a non-negative integer, got list"
+
+
+def test_run_meta_rejects_non_int_citation_count_by_type_name() -> None:
+    sentinel = "CITATION-COUNT-LEAK-SENTINEL"
+    with pytest.raises(ApplicationValidationError) as raised:
+        RunMeta(citation_count=[sentinel])  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "citation_count must be a non-negative integer, got list"
+
+
+def test_run_meta_rejects_non_string_tools_item_by_type_name() -> None:
+    sentinel = "TOOLS-ITEM-LEAK-SENTINEL"
+    with pytest.raises(ApplicationValidationError) as raised:
+        RunMeta(tools=["ok", {"name": sentinel}])  # type: ignore[list-item]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "tools[1] must be a non-empty string, got dict"
+
+
+def test_run_meta_rejects_non_string_tools_item_carrying_chunk_content() -> None:
+    sentinel = "TOOLS-CHUNK-LEAK-SENTINEL"
+    impostor = DocumentChunk(SourceMetadata(_reference()), 0, sentinel)
+    with pytest.raises(ApplicationValidationError) as raised:
+        RunMeta(tools=[impostor])  # type: ignore[list-item]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "tools[0] must be a non-empty string, got DocumentChunk"
+
+
+def test_ingest_response_reports_failing_accepted_ids_index_by_type_name() -> None:
+    sentinel = "ACCEPTED-ID-LEAK-SENTINEL"
+    with pytest.raises(ApplicationValidationError) as raised:
+        IngestResponse(accepted_ids=("a", {"id": sentinel}), chunk_count=1)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "accepted_ids[1] must be a non-empty string, got dict"

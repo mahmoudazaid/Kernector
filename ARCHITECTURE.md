@@ -450,9 +450,12 @@ Technical and vendor detail may remain on `__cause__` (and in logs); it must
 not reach the UI. Collapsed **Run details** in Next.js chat reads only typed
 `RunMeta` fields (see README); it never parses logs.
 
-**Validation messages never carry the rejected value.** A `DomainValidationError`
-or `ApplicationValidationError` message names the field and the expected shape
-only. Where the value's type is the point, name the type
+**Raise messages never carry the rejected value.** This holds for every
+exception raised under `domain/`, `application/`, and `packs/` — validation
+types (`DomainValidationError`, `ApplicationValidationError`, and their
+pack-local subclasses), `ToolFailureError`, and bare `ValueError` alike. A
+message names the field and the expected shape only. Where the value's type is
+the point, name the type
 (`got {type(value).__name__}`). The rejected value itself may be printed in
 exactly one case: a bound was exceeded and a *preceding branch in the same
 function* has already proven the value is an `int` or a `float`. If a single
@@ -466,11 +469,17 @@ reach them. `test/architecture/test_safe_validation_messages.py` enforces the
 `{value!r}` half mechanically; the plain-`{value}` half is a review obligation,
 documented in that file's module docstring.
 
+The scan is name-agnostic on purpose: it inspects every `raise` in the scanned
+directories rather than a list of exception names. A name list exempts each
+subclass added later — `packs/software_delivery/errors.py` alone defines five
+`DomainValidationError` subclasses — and every indirection such as
+`raise error_type(...)` where `error_type` is a parameter.
+
 ## Architecture tests
 
 Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
-package, and when a `domain/` or `application/` validation raise embeds
+package, and when a `domain/`, `application/`, or `packs/` raise embeds
 `{value!r}` (`test/architecture/test_safe_validation_messages.py`).
 
 Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette

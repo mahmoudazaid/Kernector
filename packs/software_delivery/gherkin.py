@@ -21,7 +21,7 @@ def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
         ValueError: Structural Gherkin violation (caller maps to ToolFailureError).
     """
     if isinstance(steps, (str, bytes)) or not isinstance(steps, Sequence):
-        raise ValueError(f"steps must be a sequence, got {steps!r}")
+        raise ValueError(f"steps must be a sequence, got {type(steps).__name__}")
     if len(steps) == 0:
         raise ValueError("steps must be non-empty")
 

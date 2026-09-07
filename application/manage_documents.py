@@ -63,7 +63,38 @@ class PartialReplaceFailure(DocumentManagementError):
 
 
 class UnknownDocumentError(ApplicationValidationError):
-    """Replace or delete targeted a source that is not in the catalog."""
+    """Replace or delete targeted a source that is not in the catalog.
+
+    The locator is caller-supplied, so it stays off the message and rides on
+    the exception instead — reachable from a log record or ``__cause__``
+    without being interpolated into text that travels up the chain.
+
+    Attributes:
+        source_type (str): Catalog source type that was searched.
+        source_id (str): Caller-supplied identifier that was not found.
+    """
+
+    def __init__(self, *, reference: SourceReference) -> None:
+        super().__init__("unknown document")
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+
+
+class SourceIdCollisionError(ApplicationValidationError):
+    """A freshly generated ``source_id`` already exists in the catalog.
+
+    Means the injected ``new_source_id`` factory is repeating, so the colliding
+    id is the one thing an operator needs. It is generated rather than
+    caller-supplied, but the message stays uniform with the rest of the layer;
+    the id is carried as an attribute.
+
+    Attributes:
+        source_id (str): The generated identifier that collided.
+    """
+
+    def __init__(self, *, source_id: str) -> None:
+        super().__init__("generated source_id already exists in the catalog")
+        self.source_id = source_id
 
 
 class ManageUploadedDocuments:
@@ -111,6 +142,8 @@ class ManageUploadedDocuments:
         Raises:
             UploadTooLargeError: ``payload.content`` exceeds
                 ``max_upload_bytes``.
+            SourceIdCollisionError: The generated ``source_id`` is already in
+                the catalog, so the injected id factory is repeating.
             PartialCreateFailure: The ingest failed *and* its status could not
                 be written, leaving only the ``pending`` row on disk.
         """
@@ -118,9 +151,7 @@ class ManageUploadedDocuments:
         source_id = self._new_source_id()
         reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
         if self._catalog.get(reference) is not None:
-            raise ApplicationValidationError(
-                "generated source_id already exists in the catalog"
-            )
+            raise SourceIdCollisionError(source_id=source_id)
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)
         self._catalog.upsert(pending)
@@ -143,9 +174,7 @@ class ManageUploadedDocuments:
         """Replace content for an existing catalog source under the same ID."""
         previous = self._catalog.get(reference)
         if previous is None:
-            raise UnknownDocumentError(
-                f"unknown document {reference.source_type}:{reference.source_id}"
-            )
+            raise UnknownDocumentError(reference=reference)
         self._assert_upload_size(payload)
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)

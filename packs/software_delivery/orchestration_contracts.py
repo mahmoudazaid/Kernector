@@ -48,12 +48,14 @@ class OrchestrateSoftwareDeliveryRequest:
     def __post_init__(self) -> None:
         if not isinstance(self.intent, SoftwareDeliveryIntent):
             raise OrchestrationValidationError(
-                f"intent must be a SoftwareDeliveryIntent, got {self.intent!r}"
+                "intent must be a SoftwareDeliveryIntent, "
+                f"got {type(self.intent).__name__}"
             )
         _require_text(self.target, "target")
         if not isinstance(self.evidence, EvidenceBundle):
             raise OrchestrationValidationError(
-                f"evidence must be an EvidenceBundle, got {self.evidence!r}"
+                "evidence must be an EvidenceBundle, "
+                f"got {type(self.evidence).__name__}"
             )
         if (
             not isinstance(self.output_style, str)
@@ -61,7 +63,7 @@ class OrchestrateSoftwareDeliveryRequest:
         ):
             raise OrchestrationValidationError(
                 f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {self.output_style!r}"
+                f"got {type(self.output_style).__name__}"
             )
 
 
@@ -107,7 +109,7 @@ class OrchestrateSoftwareDeliveryResponse:
             self.outcomes, Sequence
         ):
             raise OrchestrationValidationError(
-                f"outcomes must be a sequence, got {self.outcomes!r}"
+                f"outcomes must be a sequence, got {type(self.outcomes).__name__}"
             )
         normalized: list[SoftwareDeliveryOutcome] = []
         for item in self.outcomes:
@@ -115,7 +117,8 @@ class OrchestrateSoftwareDeliveryResponse:
                 item, (RiskScoreOutcome, GenerateTestsOutcome, ExportMarkdownOutcome)
             ):
                 raise OrchestrationValidationError(
-                    f"outcomes items must be typed step outcomes, got {item!r}"
+                    "outcomes items must be typed step outcomes, "
+                    f"got {type(item).__name__}"
                 )
             normalized.append(item)
         object.__setattr__(self, "outcomes", tuple(normalized))

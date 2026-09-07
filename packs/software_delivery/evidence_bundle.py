@@ -28,7 +28,7 @@ def _require_sequence(
     error_type: type[_E] = OrchestrationValidationError,
 ) -> Sequence[object]:
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise error_type(f"{field_name} must be a sequence, got {value!r}")
+        raise error_type(f"{field_name} must be a sequence, got {type(value).__name__}")
     return value
 
 
@@ -43,12 +43,13 @@ class EvidenceBundleItem:
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
             raise OrchestrationValidationError(
-                f"reference must be a SourceReference, got {self.reference!r}"
+                "reference must be a SourceReference, "
+                f"got {type(self.reference).__name__}"
             )
         _require_text(self.text, "text")
         if not isinstance(self.is_complete, bool):
             raise OrchestrationValidationError(
-                f"is_complete must be a bool, got {self.is_complete!r}"
+                f"is_complete must be a bool, got {type(self.is_complete).__name__}"
             )
 
 
@@ -66,7 +67,8 @@ class EvidenceBundle:
         for item in items:
             if not isinstance(item, EvidenceBundleItem):
                 raise OrchestrationValidationError(
-                    f"items entries must be EvidenceBundleItem, got {item!r}"
+                    "items entries must be EvidenceBundleItem, "
+                    f"got {type(item).__name__}"
                 )
             normalized.append(item)
         object.__setattr__(self, "items", tuple(normalized))

@@ -24,7 +24,21 @@ logger = logging.getLogger(__name__)
 
 
 class UnknownPromptError(ApplicationValidationError):
-    """``AskRequest.prompt_key`` does not match any configured task prompt."""
+    """``AskRequest.prompt_key`` does not match any configured task prompt.
+
+    The key is caller-supplied, so it stays off the message. This module
+    already treats ``prompt_key`` as a log-safe structured field, so it is
+    carried as an attribute and logged on the way out — the alternative was
+    losing it entirely, since ``execute`` re-raises validation errors before
+    reaching its ``log_operation`` call.
+
+    Attributes:
+        prompt_key (str): The key that matched no configured prompt.
+    """
+
+    def __init__(self, *, prompt_key: str) -> None:
+        super().__init__("Unknown prompt key")
+        self.prompt_key = prompt_key
 
 
 class AskKnowledge:
@@ -101,6 +115,18 @@ class AskKnowledge:
         """
         try:
             return self._execute(request, settings)
+        except UnknownPromptError as error:
+            # Re-raised below like any other validation error, but logged
+            # first: nothing downstream records the rejected key otherwise.
+            log_operation(
+                logger,
+                operation="ask",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                prompt_key=error.prompt_key,
+            )
+            raise
         except ApplicationValidationError:
             raise
         except Exception as error:
@@ -233,7 +259,7 @@ class AskKnowledge:
             return None
         variant = self._prompt_repository.all().get(prompt_key)
         if variant is None:
-            raise UnknownPromptError("Unknown prompt key")
+            raise UnknownPromptError(prompt_key=prompt_key)
         return variant
 
 

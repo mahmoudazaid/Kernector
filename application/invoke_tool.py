@@ -22,7 +22,7 @@ class ToolRegistry:
             if not isinstance(name, str) or not name.strip():
                 raise ConfigurationError("tool name must be non-blank")
             if name in registered:
-                raise ConfigurationError(f"duplicate tool name: {name!r}")
+                raise ConfigurationError(f"duplicate tool name: {name}")
             registered[name] = tool
         self._tools = registered
 
@@ -63,9 +63,16 @@ class InvokeTool:
         """
         tool = self._registry.get(request.tool_name)
         if tool is None:
-            raise ApplicationValidationError(
-                "unknown tool_name"
+            # Logged here because this raise happens before either outcome
+            # call below, and the name is off the message.
+            log_operation(
+                logger,
+                operation="invoke_tool",
+                outcome="error",
+                level=logging.ERROR,
+                tool=request.tool_name,
             )
+            raise ApplicationValidationError("Unknown tool name")
         started = time.perf_counter()
         try:
             result = tool.run(request.arguments)

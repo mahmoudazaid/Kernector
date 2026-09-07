@@ -246,6 +246,6 @@ def _resolve_evidence_ids(
         if not isinstance(evidence_id, str) or not evidence_id.strip():
             raise ToolFailureError("evidence_ids items must be non-blank strings")
         if evidence_id not in evidence_by_id:
-            raise ToolFailureError(f"unknown evidence_id: {evidence_id!r}")
+            raise ToolFailureError("evidence_ids items must name bundled evidence")
         refs.append(evidence_by_id[evidence_id])
     return tuple(refs)

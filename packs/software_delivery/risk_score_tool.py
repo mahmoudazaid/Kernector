@@ -71,7 +71,7 @@ def _require_nonblank_str(value: object, field_name: str) -> str:
 def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
     if not isinstance(arguments, Mapping):
         raise RiskScoreValidationError(
-            f"arguments must be a mapping, got {arguments!r}"
+            f"arguments must be a mapping, got {type(arguments).__name__}"
         )
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
     if unknown:
@@ -89,7 +89,7 @@ def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
         raw_evidence, Sequence
     ):
         raise RiskScoreValidationError(
-            f"evidence must be a sequence, got {raw_evidence!r}"
+            f"evidence must be a sequence, got {type(raw_evidence).__name__}"
         )
 
     evidence: list[RiskEvidence] = []
@@ -101,12 +101,12 @@ def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
 def _parse_evidence_item(item: object) -> RiskEvidence:
     if not isinstance(item, Mapping):
         raise RiskScoreValidationError(
-            f"evidence items must be mappings, got {item!r}"
+            f"evidence items must be mappings, got {type(item).__name__}"
         )
     for key in item:
         if not isinstance(key, str) or not key.strip():
             raise RiskScoreValidationError(
-                f"evidence keys must be non-blank strings, got {key!r}"
+                f"evidence keys must be non-blank strings, got {type(key).__name__}"
             )
     unknown = set(item) - _ALLOWED_EVIDENCE_KEYS
     if unknown:

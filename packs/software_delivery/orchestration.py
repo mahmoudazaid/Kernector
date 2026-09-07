@@ -102,7 +102,7 @@ class OrchestrateSoftwareDelivery:
                 )
                 outcomes.append(ExportMarkdownOutcome(raw))
                 continue
-            raise ToolFailureError(f"unknown orchestration tool: {tool_name!r}")
+            raise ToolFailureError(f"unknown orchestration tool: {tool_name}")
 
         return OrchestrateSoftwareDeliveryResponse(
             summary=orchestration_summary(request.intent),

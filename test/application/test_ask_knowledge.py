@@ -660,6 +660,26 @@ def test_unknown_prompt_key_does_not_echo_caller_supplied_key() -> None:
     message = str(raised.value)
     assert sentinel not in message
     assert message == "Unknown prompt key"
+    # Dropped from the message, but not lost: the operator-facing copy rides
+    # on the exception and is logged by `execute`.
+    assert raised.value.prompt_key == sentinel
+
+
+def test_unknown_prompt_key_is_logged_with_the_rejected_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sentinel = "PROMPT-KEY-LOG-SENTINEL"
+    use_case = _use_case((_hit(),), _RecordingChat())
+    with caplog.at_level(logging.ERROR, logger="application.ask_knowledge"):
+        with pytest.raises(UnknownPromptError):
+            use_case.execute(AskRequest(prompt_key=sentinel, query="Anything?"))
+    records = operation_records(caplog.records, operation="ask")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "UnknownPromptError"
+    assert payload["prompt_key"] == sentinel
+
 
 def test_unknown_prompt_key_is_rejected_before_retrieval_spends_a_call() -> None:
     rewrite_retrieve = _FakeRewriteRetrieve((_hit(),))

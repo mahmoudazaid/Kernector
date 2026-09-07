@@ -106,7 +106,8 @@ class ChatToolSelection:
     def __post_init__(self) -> None:
         if not isinstance(self.generate_tests, bool):
             raise OrchestrationValidationError(
-                f"generate_tests must be a bool, got {self.generate_tests!r}"
+                "generate_tests must be a bool, "
+                f"got {type(self.generate_tests).__name__}"
             )
         if (
             not isinstance(self.output_style, str)
@@ -114,7 +115,7 @@ class ChatToolSelection:
         ):
             raise OrchestrationValidationError(
                 f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {self.output_style!r}"
+                f"got {type(self.output_style).__name__}"
             )
 
 

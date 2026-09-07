@@ -45,7 +45,8 @@ class AssessmentEvidence:
     def __post_init__(self) -> None:
         if not isinstance(self.reference, _SOURCE_REFERENCE_TYPE):
             raise AssessmentPromptValidationError(
-                f"reference must be a SourceReference, got {self.reference!r}"
+                "reference must be a SourceReference, "
+                f"got {type(self.reference).__name__}"
             )
         try:
             SourceReference(self.reference.source_id, self.reference.source_type)
@@ -70,7 +71,7 @@ def build_assessment_prompt(
     assessment_target = _require_nonblank(target, "target")
     if isinstance(evidence, (str, bytes)) or not isinstance(evidence, Sequence):
         raise AssessmentPromptValidationError(
-            f"evidence must be a sequence, got {evidence!r}"
+            f"evidence must be a sequence, got {type(evidence).__name__}"
         )
     if len(evidence) == 0:
         raise AssessmentPromptValidationError("evidence must be non-empty")
@@ -79,7 +80,7 @@ def build_assessment_prompt(
     for item in evidence:
         if not isinstance(item, AssessmentEvidence):
             raise AssessmentPromptValidationError(
-                f"evidence items must be AssessmentEvidence, got {item!r}"
+                f"evidence items must be AssessmentEvidence, got {type(item).__name__}"
             )
         ref = item.reference
         evidence_payload.append(

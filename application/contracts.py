@@ -15,6 +15,10 @@ from domain.models import AskResult, Message, Usage
 def _require_text(value: object, field_name: str) -> str:
     """Reject anything that is not a non-blank string.
 
+    The type check runs before the blankness check so a wrong type is reported
+    as a wrong type. Fusing the two would report every rejection as "must be
+    non-empty", which is false for an ``int`` and hides what actually arrived.
+
     Args:
         value (object): Candidate field value.
         field_name (str): Name used in the error message.
@@ -25,7 +29,11 @@ def _require_text(value: object, field_name: str) -> str:
     Raises:
         ApplicationValidationError: If ``value`` is blank or not a string.
     """
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise ApplicationValidationError(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise ApplicationValidationError(f"{field_name} must be non-empty")
     return value
 

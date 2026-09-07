@@ -11,6 +11,7 @@ from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.manage_documents import (
     ManageUploadedDocuments,
     PartialCreateFailure,
+    SourceIdCollisionError,
 )
 from domain.knowledge import (
     CatalogDocument,
@@ -318,8 +319,6 @@ def test_partial_create_failure_message_is_fixed_across_causes() -> None:
 
 
 def test_create_rejects_colliding_generated_source_id_without_echoing_it() -> None:
-    from application.errors import ApplicationValidationError
-
     colliding_id = "COLLISION-ID-LEAK-SENTINEL"
     catalog = InMemoryDocumentCatalog()
     reference = SourceReference(colliding_id, "knowledge_document")
@@ -350,9 +349,11 @@ def test_create_rejects_colliding_generated_source_id_without_echoing_it() -> No
         max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
-    with pytest.raises(ApplicationValidationError) as raised:
+    with pytest.raises(SourceIdCollisionError) as raised:
         use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
     message = str(raised.value)
     assert colliding_id not in message
-    assert "already exists" in message
-    assert "generated source_id" in message
+    assert message == "generated source_id already exists in the catalog"
+    # The id an operator needs to debug a repeating factory survives on the
+    # exception rather than being lost with the message.
+    assert raised.value.source_id == colliding_id

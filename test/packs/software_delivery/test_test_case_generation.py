@@ -139,9 +139,14 @@ def test_case_order_preserved() -> None:
 
 
 def test_unknown_evidence_id_is_tool_failure() -> None:
-    chat = _FakeChat(_steps_payload(evidence_ids=["e99"]))
-    with pytest.raises(ToolFailureError, match="unknown evidence_id"):
+    sentinel = "EVIDENCE-ID-LEAK-SENTINEL"
+    chat = _FakeChat(_steps_payload(evidence_ids=[sentinel]))
+    with pytest.raises(ToolFailureError) as raised:
         generate_test_cases(_request(), chat)
+    message = str(raised.value)
+    # The id is model output, so it must not reach the message.
+    assert sentinel not in message
+    assert message == "evidence_ids items must name bundled evidence"
 
 
 def test_model_supplied_output_style_is_tool_failure() -> None:

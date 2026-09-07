@@ -102,7 +102,7 @@ def risk_level(score: object) -> str:
     """
     if not isinstance(score, int) or isinstance(score, bool) or not 0 <= score <= 100:
         raise RiskScoreValidationError(
-            f"score must be an int in 0..100, got {score!r}"
+            f"score must be an int in 0..100, got {type(score).__name__}"
         )
     if score <= 24:
         return "low"
@@ -124,7 +124,7 @@ def score_risk(request: RiskAssessmentRequest) -> RiskAssessmentResult:
     """
     if not isinstance(request, RiskAssessmentRequest):
         raise RiskScoreValidationError(
-            f"request must be a RiskAssessmentRequest, got {request!r}"
+            f"request must be a RiskAssessmentRequest, got {type(request).__name__}"
         )
 
     collected: dict[str, list[SourceReference]] = {

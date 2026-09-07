@@ -82,7 +82,7 @@ def _require_nonblank_str(value: object, field_name: str) -> str:
 def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
     if not isinstance(arguments, Mapping):
         raise TestCaseGenerationValidationError(
-            f"arguments must be a mapping, got {arguments!r}"
+            f"arguments must be a mapping, got {type(arguments).__name__}"
         )
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
     if unknown:
@@ -100,7 +100,7 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
         raw_evidence, Sequence
     ):
         raise TestCaseGenerationValidationError(
-            f"evidence must be a sequence, got {raw_evidence!r}"
+            f"evidence must be a sequence, got {type(raw_evidence).__name__}"
         )
 
     style: TestCaseStyle = "steps"
@@ -109,7 +109,7 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
         if not isinstance(raw_style, str) or raw_style not in TEST_CASE_STYLES:
             raise TestCaseGenerationValidationError(
                 f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {raw_style!r}"
+                f"got {type(raw_style).__name__}"
             )
         style = raw_style  # type: ignore[assignment]
 
@@ -122,12 +122,12 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
 def _parse_evidence_item(item: object) -> TestCaseEvidence:
     if not isinstance(item, Mapping):
         raise TestCaseGenerationValidationError(
-            f"evidence items must be mappings, got {item!r}"
+            f"evidence items must be mappings, got {type(item).__name__}"
         )
     for key in item:
         if not isinstance(key, str) or not key.strip():
             raise TestCaseGenerationValidationError(
-                f"evidence keys must be non-blank strings, got {key!r}"
+                f"evidence keys must be non-blank strings, got {type(key).__name__}"
             )
     unknown = set(item) - _ALLOWED_EVIDENCE_KEYS
     if unknown:

@@ -18,6 +18,26 @@ from domain.ports import EmbeddingModel, VectorStore
 logger = logging.getLogger(__name__)
 
 
+class DuplicateSourceReferenceError(ApplicationValidationError):
+    """Two documents in one ingest request claimed the same source reference.
+
+    The reference is caller-supplied, so it rides on the exception rather than
+    in the message.
+
+    Attributes:
+        source_type (str): Source type of the repeated reference.
+        source_id (str): Caller-supplied identifier of the repeated reference.
+    """
+
+    def __init__(self, *, reference: SourceReference) -> None:
+        super().__init__(
+            "duplicate source reference in one request; each source may "
+            "appear at most once"
+        )
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+
+
 class IngestFailure(RuntimeError):
     """Ingest failed, with an explicit signal about vector-store mutation.
 
@@ -200,15 +220,11 @@ def _reject_duplicate_references(documents: Sequence[SourceDocument]) -> None:
     separate `upsert` batches.
 
     Raises:
-        ApplicationValidationError: If any reference appears more than once.
+        DuplicateSourceReferenceError: If any reference appears more than once.
     """
     seen: set[SourceReference] = set()
     for document in documents:
         reference = document.reference
         if reference in seen:
-            raise ApplicationValidationError(
-                f"duplicate source reference {reference.source_type}:"
-                f"{reference.source_id} in one request; each source may appear "
-                "at most once"
-            )
+            raise DuplicateSourceReferenceError(reference=reference)
         seen.add(reference)

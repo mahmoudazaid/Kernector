@@ -93,14 +93,14 @@ def _validate_mapping_keys(mapping: Mapping[object, object], *, field_name: str)
     for key in mapping:
         if not isinstance(key, str) or not key.strip():
             raise MarkdownExportValidationError(
-                f"{field_name} keys must be non-blank strings, got {key!r}"
+                f"{field_name} keys must be non-blank strings, got {type(key).__name__}"
             )
 
 
 def _parse_request(arguments: Mapping[str, object]) -> TestGenerationResult:
     if not isinstance(arguments, Mapping):
         raise MarkdownExportValidationError(
-            f"arguments must be a mapping, got {arguments!r}"
+            f"arguments must be a mapping, got {type(arguments).__name__}"
         )
     _validate_mapping_keys(arguments, field_name="arguments")
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
@@ -117,14 +117,14 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationResult:
     if not isinstance(raw_style, str) or raw_style not in TEST_CASE_STYLES:
         raise MarkdownExportValidationError(
             f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-            f"got {raw_style!r}"
+            f"got {type(raw_style).__name__}"
         )
     style: TestCaseStyle = raw_style  # type: ignore[assignment]
 
     raw_cases = arguments["test_cases"]
     if isinstance(raw_cases, (str, bytes)) or not isinstance(raw_cases, Sequence):
         raise MarkdownExportValidationError(
-            f"test_cases must be a sequence, got {raw_cases!r}"
+            f"test_cases must be a sequence, got {type(raw_cases).__name__}"
         )
     if len(raw_cases) == 0:
         raise MarkdownExportValidationError("test_cases must be non-empty")
@@ -156,7 +156,7 @@ def _validate_result_budget(result: TestGenerationResult) -> None:
 def _parse_test_case(item: object) -> GeneratedTestCase:
     if not isinstance(item, Mapping):
         raise MarkdownExportValidationError(
-            f"test_cases items must be mappings, got {item!r}"
+            f"test_cases items must be mappings, got {type(item).__name__}"
         )
     _validate_mapping_keys(item, field_name="test_cases")
     unknown = set(item) - _ALLOWED_CASE_KEYS
@@ -174,7 +174,7 @@ def _parse_test_case(item: object) -> GeneratedTestCase:
     raw_steps = item["steps"]
     if isinstance(raw_steps, (str, bytes)) or not isinstance(raw_steps, Sequence):
         raise MarkdownExportValidationError(
-            f"steps must be a sequence, got {raw_steps!r}"
+            f"steps must be a sequence, got {type(raw_steps).__name__}"
         )
     if len(raw_steps) == 0:
         raise MarkdownExportValidationError("steps must be non-empty")
@@ -191,7 +191,7 @@ def _parse_test_case(item: object) -> GeneratedTestCase:
     raw_refs = item["references"]
     if isinstance(raw_refs, (str, bytes)) or not isinstance(raw_refs, Sequence):
         raise MarkdownExportValidationError(
-            f"references must be a sequence, got {raw_refs!r}"
+            f"references must be a sequence, got {type(raw_refs).__name__}"
         )
     if len(raw_refs) == 0:
         raise MarkdownExportValidationError("references must be non-empty")
@@ -214,7 +214,7 @@ def _parse_test_case(item: object) -> GeneratedTestCase:
 def _parse_reference(item: object) -> SourceReference:
     if not isinstance(item, Mapping):
         raise MarkdownExportValidationError(
-            f"references items must be mappings, got {item!r}"
+            f"references items must be mappings, got {type(item).__name__}"
         )
     _validate_mapping_keys(item, field_name="references")
     unknown = set(item) - _ALLOWED_REFERENCE_KEYS
