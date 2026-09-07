@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateInputLength } from "@/lib/chat/input-length";
+import {
+  codePointLength,
+  evaluateHistoryLength,
+  evaluateInputLength,
+} from "@/lib/chat/input-length";
 
 describe("evaluateInputLength", () => {
   it("counts a draft against the server-supplied limit", () => {
@@ -36,5 +40,47 @@ describe("evaluateInputLength", () => {
 
   it("accepts a draft that is exactly at the limit", () => {
     expect(evaluateInputLength("abcdefghij", 10).exceeded).toBe(false);
+  });
+
+  it("counts astral characters as one code point, matching Python len()", () => {
+    expect(codePointLength("😀")).toBe(1);
+    expect(evaluateInputLength("😀", 1)).toEqual({
+      length: 1,
+      maxInputLength: 1,
+      exceeded: false,
+      counterLabel: "1 / 1 characters",
+      guidance: null,
+    });
+    expect(evaluateInputLength("😀😀", 1).exceeded).toBe(true);
+  });
+});
+
+describe("evaluateHistoryLength", () => {
+  it("passes when every history entry is within the limit", () => {
+    expect(
+      evaluateHistoryLength(
+        [
+          { content: "short" },
+          { content: "also fine" },
+        ],
+        20,
+      ),
+    ).toEqual({ exceeded: false, guidance: null });
+  });
+
+  it("flags an over-limit prior answer and points the user at New chat", () => {
+    expect(
+      evaluateHistoryLength(
+        [
+          { content: "ok" },
+          { content: "x".repeat(25) },
+        ],
+        20,
+      ),
+    ).toEqual({
+      exceeded: true,
+      guidance:
+        "A previous message exceeds 20 characters. Start a new chat to continue.",
+    });
   });
 });

@@ -1,12 +1,9 @@
 """Composition root: the only place that constructs infrastructure."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
@@ -27,6 +24,11 @@ from application.manage_documents import (
 )
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
+from application.runtime_settings import (
+    GetRuntimeSettings,
+    ProbeOllamaStatus,
+    RuntimeSettingsDefaults,
+)
 from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
@@ -78,9 +80,6 @@ from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from infrastructure.vectorstore.chroma import ChromaStoreError, ChromaVectorStore
 from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
-if TYPE_CHECKING:
-    from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
-
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
 # Re-export so presentation adapters share one unsupported-type sentence.
@@ -129,8 +128,6 @@ def available_providers() -> tuple[str, ...]:
 
 def build_runtime_settings(settings: Settings) -> GetRuntimeSettings:
     """Wire :class:`GetRuntimeSettings` from env Settings + available providers."""
-    from application.runtime_settings import GetRuntimeSettings, RuntimeSettingsDefaults
-
     return GetRuntimeSettings(
         providers=available_providers(),
         defaults=RuntimeSettingsDefaults(
@@ -146,7 +143,6 @@ def build_runtime_settings(settings: Settings) -> GetRuntimeSettings:
 
 def build_probe_ollama_status(settings: Settings) -> ProbeOllamaStatus:
     """Wire :class:`ProbeOllamaStatus` to the infrastructure Ollama probe."""
-    from application.runtime_settings import ProbeOllamaStatus
 
     def _probe(base_url: str) -> dict:
         return probe_ollama(settings, base_url)

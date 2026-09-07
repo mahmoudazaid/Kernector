@@ -57,6 +57,7 @@ from composition import (
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
+    build_runtime_settings,
     build_tool_augmented_ask,
     build_vector_store,
     load_knowledge_documents,
@@ -299,8 +300,6 @@ def test_build_runtime_settings_exposes_max_input_length_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The catalog the UI reads and the use cases share one env-owned limit."""
-    from composition import build_runtime_settings
-
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")

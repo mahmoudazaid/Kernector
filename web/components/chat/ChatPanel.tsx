@@ -16,12 +16,14 @@ import {
   type ChatAskResponse,
 } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/errors";
-import {
-  getRuntimeSettings,
-  type GetRuntimeSettingsOptions,
-  type RuntimeSettingsResponse,
+import type {
+  GetRuntimeSettingsOptions,
+  RuntimeSettingsResponse,
 } from "@/lib/api/settings";
-import { evaluateInputLength } from "@/lib/chat/input-length";
+import {
+  evaluateHistoryLength,
+  evaluateInputLength,
+} from "@/lib/chat/input-length";
 import { runDetailLines } from "@/lib/chat/run-details";
 import {
   appendUserMessage,
@@ -39,6 +41,7 @@ import {
   loadRuntimeSettings,
   saveChatMessages,
 } from "@/lib/runtime-settings-storage";
+import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
 
 const SEND_ICON = (
   <svg
@@ -254,7 +257,7 @@ function fromPersisted(raw: ReturnType<typeof loadChatMessages>): ChatMessage[] 
 export function ChatPanel({
   apiBaseUrl,
   ask = askChat,
-  loadSettings = getRuntimeSettings,
+  loadSettings,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -262,7 +265,8 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const [maxInputLength, setMaxInputLength] = useState<number | null>(null);
+  const { catalog } = useRuntimeCatalog(apiBaseUrl, loadSettings);
+  const maxInputLength = catalog?.max_input_length ?? null;
 
   useEffect(() => {
     startTransition(() => {
@@ -278,34 +282,25 @@ export function ChatPanel({
     saveChatMessages(toPersisted(messages));
   }, [messages, hydrated]);
 
-  useEffect(() => {
-    let cancelled = false;
-    loadSettings({ baseUrl: apiBaseUrl })
-      .then((catalog) => {
-        if (!cancelled) {
-          setMaxInputLength(catalog.max_input_length);
-        }
-      })
-      .catch(() => {
-        // Limit unknown: show no counter rather than invent a local one.
-        // The application boundary still rejects over-limit input.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBaseUrl, loadSettings]);
-
   const lengthFeedback =
     maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
+  const historyFeedback =
+    maxInputLength === null
+      ? null
+      : evaluateHistoryLength(historyForModel(messages), maxInputLength);
   const overLimit = lengthFeedback?.exceeded ?? false;
+  const historyBlocked = historyFeedback?.exceeded ?? false;
+  const sendBlocked = overLimit || historyBlocked;
+  const statusGuidance =
+    lengthFeedback?.guidance ?? historyFeedback?.guidance ?? null;
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = draft.trim();
-    if (!query || sending || overLimit) {
+    setInlineError(null);
+    if (!query || sending || sendBlocked) {
       return;
     }
-    setInlineError(null);
     setUnavailable(false);
     setDraft("");
     const history = historyForModel(messages);
@@ -444,9 +439,13 @@ export function ChatPanel({
             rows={1}
             placeholder="What's in your mind!"
             value={draft}
-            disabled={sending}
-            aria-invalid={overLimit || undefined}
-            aria-describedby={lengthFeedback ? "chat-input-length" : undefined}
+            disabled={sending || historyBlocked}
+            aria-invalid={sendBlocked || undefined}
+            aria-describedby={
+              lengthFeedback || statusGuidance
+                ? "chat-input-length"
+                : undefined
+            }
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
           />
@@ -454,21 +453,29 @@ export function ChatPanel({
             type="submit"
             className="kern-chat-send"
             aria-label="Send"
-            disabled={sending || !draft.trim() || overLimit}
+            disabled={sending || !draft.trim() || sendBlocked}
           >
             {SEND_ICON}
           </button>
         </div>
-        {lengthFeedback ? (
-          <p
-            id="chat-input-length"
-            className="kern-chat-counter"
-            data-exceeded={lengthFeedback.exceeded ? "true" : undefined}
-            aria-live="polite"
-          >
-            {lengthFeedback.counterLabel}
-            {lengthFeedback.guidance ? ` — ${lengthFeedback.guidance}` : ""}
-          </p>
+        {lengthFeedback || statusGuidance ? (
+          <div id="chat-input-length" className="kern-chat-counter-block">
+            {lengthFeedback ? (
+              <p
+                className="kern-chat-counter"
+                data-exceeded={lengthFeedback.exceeded ? "true" : undefined}
+              >
+                {lengthFeedback.counterLabel}
+              </p>
+            ) : null}
+            <p
+              className="kern-chat-length-status"
+              role="status"
+              data-exceeded={statusGuidance ? "true" : undefined}
+            >
+              {statusGuidance ?? ""}
+            </p>
+          </div>
         ) : null}
       </form>
     </section>
