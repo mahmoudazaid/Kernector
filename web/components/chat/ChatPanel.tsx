@@ -516,13 +516,13 @@ export function ChatPanel({
       });
     }
     if (stamp === null) {
+      // Last-resort path: both clears lost a race. New chat still owns the
+      // composer — clear draft rather than restoring a concurrent writer's.
       const session = loadActiveSession();
       seedIds(session.messages);
       sessionUpdatedAtRef.current = session.updatedAt;
       setMessages(fromPersisted(session.messages));
-      if (!composerTouchedRef.current) {
-        setDraft(session.draft);
-      }
+      setDraft("");
       setInlineError(null);
       setUnavailable(false);
       setSending(false);

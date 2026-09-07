@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { runDetailLines } from "@/lib/chat/run-details";
 import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
 
 describe("sanitizeStoredChatMessage", () => {
@@ -176,5 +177,38 @@ describe("sanitizeStoredChatMessage", () => {
       request_id: "r1",
       usage: { input: 1 },
     });
+  });
+
+  it("repairs poisoned known run scalars while preserving unknown keys", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run: {
+        latency_ms: { evil: 1 },
+        model: { evil: 2 },
+        outcome: ["x"],
+        request_id: "r1",
+        usage: { input: 1 },
+      },
+    });
+
+    expect(sanitized?.run).toEqual({
+      request_id: "r1",
+      usage: { input: 1 },
+    });
+  });
+
+  it("never renders an object into a run detail line", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run: { latency_ms: {}, model: {} },
+    });
+
+    expect(runDetailLines(sanitized?.run as never).join("|")).not.toContain(
+      "[object Object]",
+    );
   });
 });

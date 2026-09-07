@@ -80,9 +80,31 @@ function sanitizeRun(value: unknown): Record<string, unknown> | undefined {
     return undefined;
   }
   const run: Record<string, unknown> = { ...value };
-  // Preserve unknown keys (usage, warnings, …); only repair `tools`.
+  // Repair known rendered fields, preserve the rest.
   if (run.tools !== undefined && !isStringArray(run.tools)) {
     delete run.tools;
+  }
+  const STRINGS = ["request_id", "outcome", "model", "pack"] as const;
+  const NUMBERS = [
+    "latency_ms",
+    "total_tokens",
+    "prompt_tokens",
+    "completion_tokens",
+    "hit_count",
+    "citation_count",
+  ] as const;
+  for (const key of STRINGS) {
+    if (key in run && typeof run[key] !== "string") {
+      delete run[key];
+    }
+  }
+  for (const key of NUMBERS) {
+    if (key in run && typeof run[key] !== "number") {
+      delete run[key];
+    }
+  }
+  if ("query_rewritten" in run && typeof run.query_rewritten !== "boolean") {
+    delete run.query_rewritten;
   }
   return run;
 }
