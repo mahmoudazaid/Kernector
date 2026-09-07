@@ -5,6 +5,7 @@ import {
   loadActiveSession,
   saveActiveSession,
   saveActiveSessionDraft,
+  subscribeActiveSession,
 } from "@/lib/session/active-session";
 import { CHAT_MESSAGES_STORAGE_KEY } from "@/lib/settings/runtime-settings-storage";
 
@@ -18,7 +19,7 @@ describe("active session store", () => {
   });
 
   it("round-trips draft and messages under the versioned session key", () => {
-    saveActiveSession({
+    const stamp = saveActiveSession({
       draft: "half-written question",
       messages: [{ id: "1", role: "user", content: "prior turn" }],
       updatedAt: 1,
@@ -27,7 +28,7 @@ describe("active session store", () => {
     expect(loadActiveSession()).toEqual({
       draft: "half-written question",
       messages: [{ id: "1", role: "user", content: "prior turn" }],
-      updatedAt: expect.any(Number),
+      updatedAt: stamp,
     });
     expect(localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY)).toBeTruthy();
   });
@@ -181,21 +182,67 @@ describe("active session store", () => {
     ).toEqual(messages);
   });
 
-  it("refuses to overwrite storage with a stale revision", () => {
-    saveActiveSession({
+  it("refuses to overwrite storage with a stale observed revision", () => {
+    const newer = saveActiveSession({
       draft: "",
       messages: [{ id: "1", role: "user", content: "newer" }],
-      updatedAt: 100,
+      updatedAt: 0,
     });
-    saveActiveSession({
+    const refused = saveActiveSession({
       draft: "stale",
       messages: [],
-      updatedAt: 50,
+      updatedAt: 0,
     });
 
+    expect(refused).toBe(newer);
     expect(loadActiveSession().messages).toEqual([
       { id: "1", role: "user", content: "newer" },
     ]);
+    expect(loadActiveSession().updatedAt).toBe(newer);
+  });
+
+  it("bumps past a future stamp once the caller adopts the returned revision", () => {
+    localStorage.setItem(
+      ACTIVE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        draft: "",
+        messages: [],
+        updatedAt: Date.now() + 600_000,
+      }),
+    );
+    const stored = loadActiveSession().updatedAt;
+    const refused = saveActiveSession({
+      draft: "",
+      messages: [{ id: "u-1", role: "user", content: "must persist" }],
+      updatedAt: 0,
+    });
+    expect(refused).toBe(stored);
+    expect(loadActiveSession().messages).toEqual([]);
+
+    const written = saveActiveSession({
+      draft: "",
+      messages: [{ id: "u-1", role: "user", content: "must persist" }],
+      updatedAt: refused,
+    });
+    expect(written).toBeGreaterThan(stored);
+    expect(loadActiveSession().messages).toEqual([
+      { id: "u-1", role: "user", content: "must persist" },
+    ]);
+  });
+
+  it("derives a monotonic stamp so equal revisions do not silently clobber", () => {
+    const first = saveActiveSession({
+      draft: "",
+      messages: [{ id: "1", role: "user", content: "kept" }],
+      updatedAt: 10,
+    });
+    const second = saveActiveSession({
+      draft: "",
+      messages: [],
+      updatedAt: first,
+    });
+    expect(second).toBeGreaterThan(first);
+    expect(loadActiveSession().messages).toEqual([]);
   });
 
   it("updates only the draft via read-modify-write", () => {
@@ -206,12 +253,34 @@ describe("active session store", () => {
     });
     const current = loadActiveSession();
     const stamp = saveActiveSessionDraft("new draft", current.updatedAt);
-    expect(stamp).toBeGreaterThanOrEqual(current.updatedAt);
+    expect(stamp).toBeGreaterThan(current.updatedAt);
     expect(loadActiveSession()).toEqual({
       draft: "new draft",
       messages: [{ id: "1", role: "user", content: "kept" }],
       updatedAt: stamp,
     });
+  });
+
+  it("notifies subscribers when another tab writes the session key", () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeActiveSession(onChange);
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: ACTIVE_SESSION_STORAGE_KEY,
+        newValue: "{}",
+        storageArea: localStorage,
+      }),
+    );
+    expect(onChange).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: ACTIVE_SESSION_STORAGE_KEY,
+        newValue: "{}",
+        storageArea: localStorage,
+      }),
+    );
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("stays quiet when getItem or setItem throws", () => {

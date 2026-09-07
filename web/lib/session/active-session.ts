@@ -24,7 +24,7 @@ export const ACTIVE_SESSION_STORAGE_KEY = "kernector:active-session:v1";
 export type ActiveSession = {
   draft: string;
   messages: StoredChatMessage[];
-  /** Monotonic stamp; `saveActiveSession` refuses payloads older than storage. */
+  /** Monotonic revision; store derives the next stamp from storage, not the clock. */
   updatedAt: number;
 };
 
@@ -41,7 +41,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /** Citations: non-null objects with primitive-ish provenance fields. */
-function sanitizeCitations(value: unknown): unknown | undefined {
+function sanitizeCitations(value: unknown): unknown[] | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -77,7 +77,7 @@ function sanitizeCitations(value: unknown): unknown | undefined {
   return rows;
 }
 
-function sanitizeToolsUsed(value: unknown): unknown | undefined {
+function sanitizeToolsUsed(value: unknown): unknown[] | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -97,7 +97,7 @@ function sanitizeToolsUsed(value: unknown): unknown | undefined {
   return rows;
 }
 
-function sanitizeRun(value: unknown): unknown | undefined {
+function sanitizeRun(value: unknown): Record<string, unknown> | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -123,7 +123,9 @@ function sanitizeRun(value: unknown): unknown | undefined {
   return run;
 }
 
-function sanitizeToolRun(value: unknown): unknown | undefined {
+function sanitizeToolRun(
+  value: unknown,
+): Record<string, unknown> | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -207,10 +209,6 @@ function sanitizeToolRun(value: unknown): unknown | undefined {
  * Core message shape plus structurally safe optional projections.
  * Invalid projections are dropped so a poisoned leaf cannot blank the panel.
  */
-export function isStoredChatMessage(value: unknown): value is StoredChatMessage {
-  return sanitizeStoredChatMessage(value) !== null;
-}
-
 export function sanitizeStoredChatMessage(
   value: unknown,
 ): StoredChatMessage | null {
@@ -350,28 +348,35 @@ export function loadActiveSession(): ActiveSession {
 /**
  * Persist draft + transcript for the next visit / remount.
  *
- * Refuses to overwrite storage when the caller's `updatedAt` is older than the
- * stamp already stored (stale multi-mount / multi-tab snapshot). Dual-writes
- * `messages` to `CHAT_MESSAGES_STORAGE_KEY` as a write-through mirror.
+ * Derives a monotonic `updatedAt` from storage so wall-clock skew cannot wedge
+ * writes permanently. Refuses when the caller's stamp is older than storage.
+ * Dual-writes `messages` to `CHAT_MESSAGES_STORAGE_KEY` as a write-through
+ * mirror. Returns the stamp written (or the stored stamp when refused).
  */
-export function saveActiveSession(session: ActiveSession): void {
+export function saveActiveSession(session: ActiveSession): number {
   try {
     const stored = readStoredSession();
     if (stored && stored.updatedAt > session.updatedAt) {
-      return;
+      return stored.updatedAt;
     }
+    const updatedAt = Math.max(
+      session.updatedAt,
+      (stored?.updatedAt ?? 0) + 1,
+    );
     const payload = {
       draft: session.draft,
       messages: session.messages,
-      updatedAt: session.updatedAt,
+      updatedAt,
     };
     localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(payload));
     localStorage.setItem(
       CHAT_MESSAGES_STORAGE_KEY,
       JSON.stringify(session.messages),
     );
+    return updatedAt;
   } catch {
     // Quota / private mode — ignore; in-memory UI state still works.
+    return session.updatedAt;
   }
 }
 
@@ -389,7 +394,7 @@ export function saveActiveSessionDraft(
     if (stored.updatedAt > updatedAt) {
       return stored.updatedAt;
     }
-    const nextUpdatedAt = Math.max(updatedAt, Date.now());
+    const nextUpdatedAt = Math.max(updatedAt, stored.updatedAt + 1);
     const payload = {
       draft,
       messages: stored.messages,

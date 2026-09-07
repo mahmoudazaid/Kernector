@@ -41,7 +41,6 @@ import {
   type StoredChatMessage,
 } from "@/lib/settings/runtime-settings-storage";
 import {
-  clearActiveSession,
   loadActiveSession,
   saveActiveSession,
   saveActiveSessionDraft,
@@ -82,7 +81,7 @@ export type ChatPanelProps = {
 };
 
 function CitationsBlock({ citations }: { citations: Citation[] }) {
-  if (citations.length === 0) {
+  if (!Array.isArray(citations) || citations.length === 0) {
     return null;
   }
   return (
@@ -106,7 +105,7 @@ function CitationsBlock({ citations }: { citations: Citation[] }) {
 }
 
 function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
-  if (tools.length === 0) {
+  if (!Array.isArray(tools) || tools.length === 0) {
     return null;
   }
   return (
@@ -330,7 +329,10 @@ export function ChatPanel({
   const turnGenerationRef = useRef(0);
   const skipNextPersistRef = useRef(false);
   const draftRef = useRef(draft);
-  draftRef.current = draft;
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     const session = loadActiveSession();
@@ -368,12 +370,10 @@ export function ChatPanel({
       skipNextPersistRef.current = false;
       return;
     }
-    const updatedAt = Date.now();
-    sessionUpdatedAtRef.current = updatedAt;
-    saveActiveSession({
+    sessionUpdatedAtRef.current = saveActiveSession({
       draft: draftRef.current,
       messages: toPersisted(messages),
-      updatedAt,
+      updatedAt: sessionUpdatedAtRef.current,
     });
   }, [messages, hydrated]);
 
@@ -482,8 +482,11 @@ export function ChatPanel({
     turnGenerationRef.current += 1;
     composerTouchedRef.current = false;
     skipNextPersistRef.current = true;
-    clearActiveSession();
-    sessionUpdatedAtRef.current = 0;
+    sessionUpdatedAtRef.current = saveActiveSession({
+      draft: "",
+      messages: [],
+      updatedAt: sessionUpdatedAtRef.current,
+    });
     setMessages([]);
     setInlineError(null);
     setUnavailable(false);

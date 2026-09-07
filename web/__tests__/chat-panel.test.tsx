@@ -272,8 +272,11 @@ describe("ChatPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("New chat clears transcript and storage without touching runtime settings", async () => {
-    const user = userEvent.setup();
+  it("New chat clears transcript and leaves an empty session after draft debounce", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({
+      advanceTimers: vi.advanceTimersByTime.bind(vi),
+    });
     saveRuntimeSettings({
       provider: "ollama",
       model: "llama3.2",
@@ -293,13 +296,189 @@ describe("ChatPanel", () => {
     );
     expect(await screen.findByText("old")).toBeInTheDocument();
 
+    await user.type(await screen.findByLabelText(/message/i), "abc");
     await user.click(screen.getByRole("button", { name: /new chat/i }));
 
     await waitFor(() => {
       expect(screen.queryByText("old")).not.toBeInTheDocument();
     });
-    expect(loadActiveSession().messages).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(loadActiveSession()).toEqual({
+      draft: "",
+      messages: [],
+      updatedAt: expect.any(Number),
+    });
     expect(localStorage.getItem("kernector:runtime-settings:v1")).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("ignores an in-flight turn that resolves after New chat", async () => {
+    const user = userEvent.setup();
+    let resolveAsk!: (value: ChatAskResponse) => void;
+    const ask = vi.fn(
+      () =>
+        new Promise<ChatAskResponse>((resolve) => {
+          resolveAsk = resolve;
+        }),
+    );
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={ask}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    await user.type(await screen.findByLabelText(/message/i), "orphan me");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    expect(await screen.findByText("Thinking…")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /new chat/i }));
+    resolveAsk(SUCCESS);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("Grounded answer from the corpus."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("orphan me")).not.toBeInTheDocument();
+    expect(loadActiveSession().messages).toEqual([]);
+  });
+
+  it("debounces draft persistence without republishing messages", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({
+      advanceTimers: vi.advanceTimersByTime.bind(vi),
+    });
+    saveActiveSession({
+      draft: "",
+      messages: [{ id: "1", role: "user", content: "kept" }],
+      updatedAt: 1,
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+    expect(await screen.findByText("kept")).toBeInTheDocument();
+
+    await user.type(await screen.findByLabelText(/message/i), "draft");
+    expect(loadActiveSession().draft).toBe("");
+
+    await vi.advanceTimersByTimeAsync(300);
+
+    await waitFor(() => {
+      expect(loadActiveSession().draft).toBe("draft");
+    });
+    expect(loadActiveSession().messages).toEqual([
+      { id: "1", role: "user", content: "kept" },
+    ]);
+    vi.useRealTimers();
+  });
+
+  it("does not clobber a touched composer when another tab updates the draft", async () => {
+    const user = userEvent.setup();
+    const { ACTIVE_SESSION_STORAGE_KEY } = await import(
+      "@/lib/session/active-session"
+    );
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    const input = await screen.findByLabelText(/message/i);
+    await user.type(input, "typed first");
+
+    localStorage.setItem(
+      ACTIVE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        draft: "from other tab",
+        messages: [],
+        updatedAt: 99,
+      }),
+    );
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: ACTIVE_SESSION_STORAGE_KEY,
+        newValue: localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY),
+        storageArea: localStorage,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(input).toHaveValue("typed first");
+    });
+  });
+
+  it("re-syncs transcript when another tab writes the session", async () => {
+    const { ACTIVE_SESSION_STORAGE_KEY } = await import(
+      "@/lib/session/active-session"
+    );
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+    expect(
+      await screen.findByText(/start a conversation/i),
+    ).toBeInTheDocument();
+
+    localStorage.setItem(
+      ACTIVE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        draft: "",
+        messages: [{ id: "1", role: "user", content: "from other tab" }],
+        updatedAt: 99,
+      }),
+    );
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: ACTIVE_SESSION_STORAGE_KEY,
+        newValue: localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY),
+        storageArea: localStorage,
+      }),
+    );
+
+    expect(await screen.findByText("from other tab")).toBeInTheDocument();
+  });
+
+  it("renders a malformed ask response without crashing the panel", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue({
+      answer: "from api",
+      citations: {},
+      tools_used: [],
+      run: null,
+      tool_run: null,
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={ask}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    await user.type(await screen.findByLabelText(/message/i), "hello");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(await screen.findByText("from api")).toBeInTheDocument();
+    expect(screen.getByText("hello")).toBeInTheDocument();
   });
 
   it("shows a character counter using the limit published by the API", async () => {

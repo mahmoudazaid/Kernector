@@ -1,6 +1,7 @@
 import type { ChatAskResponse } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/errors";
 import type { components } from "@/lib/api/generated/schema";
+import { sanitizeStoredChatMessage } from "@/lib/session/active-session";
 
 export type Citation = components["schemas"]["CitationResponse"];
 export type ToolUsed = components["schemas"]["ToolUsedResponse"];
@@ -97,16 +98,28 @@ export function applyTurnResult(
 ): ChatMessage[] {
   if (result.kind === "success") {
     const { response } = result;
+    const id = newId("a");
+    const answer =
+      typeof response.answer === "string" ? response.answer : "";
+    const sanitized = sanitizeStoredChatMessage({
+      id,
+      role: "assistant",
+      content: answer,
+      citations: response.citations,
+      toolsUsed: response.tools_used,
+      run: response.run ?? null,
+      toolRun: response.tool_run ?? null,
+    });
     return [
       ...messages,
       {
-        id: newId("a"),
+        id: sanitized?.id ?? id,
         role: "assistant",
-        content: response.answer,
-        citations: response.citations,
-        toolsUsed: response.tools_used,
-        run: response.run ?? null,
-        toolRun: response.tool_run ?? null,
+        content: sanitized?.content ?? answer,
+        citations: sanitized?.citations as Citation[] | undefined,
+        toolsUsed: sanitized?.toolsUsed as ToolUsed[] | undefined,
+        run: (sanitized?.run as RunMeta | null | undefined) ?? null,
+        toolRun: (sanitized?.toolRun as ToolRun | null | undefined) ?? null,
       },
     ];
   }
