@@ -458,11 +458,13 @@ export interface components {
     };
     /**
      * RuntimeSettingsResponse
-     * @description Catalog for provider/model/settings controls in the Settings UI.
+     * @description Catalog for provider/model/settings controls plus shared input limits.
      */
     RuntimeSettingsResponse: {
       /** Default Provider */
       default_provider: string;
+      /** Max Input Length */
+      max_input_length: number;
       /** Model Settings */
       model_settings: components["schemas"]["ModelSettingDefResponse"][];
       ollama: components["schemas"]["OllamaSettingsResponse"];

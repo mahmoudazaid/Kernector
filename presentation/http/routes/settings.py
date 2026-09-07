@@ -46,4 +46,5 @@ def runtime_settings(use_case: RuntimeSettingsDep) -> RuntimeSettingsResponse:
             )
             for setting in catalog.model_settings
         ],
+        max_input_length=catalog.max_input_length,
     )

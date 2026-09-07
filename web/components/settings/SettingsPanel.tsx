@@ -14,16 +14,16 @@ import {
   type GetOllamaStatusOptions,
   type OllamaStatusResponse,
 } from "@/lib/api/ollama";
-import {
-  getRuntimeSettings,
-  type GetRuntimeSettingsOptions,
-  type RuntimeSettingsResponse,
+import type {
+  GetRuntimeSettingsOptions,
+  RuntimeSettingsResponse,
 } from "@/lib/api/settings";
 import {
   loadRuntimeSettings,
   saveRuntimeSettings,
   type StoredRuntimeSettings,
 } from "@/lib/runtime-settings-storage";
+import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
@@ -177,49 +177,42 @@ function persist(selection: SelectionState): void {
  */
 export function SettingsPanel({
   apiBaseUrl,
-  loadCatalog = getRuntimeSettings,
+  loadCatalog,
   probeOllama = getOllamaStatus,
 }: SettingsPanelProps) {
-  const [catalogView, setCatalogView] = useState<CatalogView>({
-    kind: "loading",
-  });
+  const {
+    catalog,
+    error: catalogError,
+    loading: catalogLoading,
+  } = useRuntimeCatalog(apiBaseUrl, loadCatalog);
   const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [selectionForCatalog, setSelectionForCatalog] =
+    useState<RuntimeSettingsResponse | null>(null);
   const [probeOutcome, setProbeOutcome] = useState<ProbeOutcome>({
     kind: "idle",
   });
   const [probeLoading, setProbeLoading] = useState(false);
   const [probeNonce, setProbeNonce] = useState(0);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-    setCatalogView({ kind: "loading" });
+  if (catalog !== selectionForCatalog) {
+    if (catalog) {
+      const next = defaultsFromCatalog(catalog, loadRuntimeSettings());
+      setSelection(next);
+      setSelectionForCatalog(catalog);
+      persist(next);
+    } else {
+      setSelection(null);
+      setSelectionForCatalog(null);
+    }
+  }
 
-    void loadCatalog({ baseUrl: apiBaseUrl, signal: controller.signal })
-      .then((catalog) => {
-        if (!active) {
-          return;
-        }
-        const next = defaultsFromCatalog(catalog, loadRuntimeSettings());
-        setSelection(next);
-        persist(next);
-        setCatalogView({ kind: "ready", catalog });
-      })
-      .catch(() => {
-        if (!active) {
-          return;
-        }
-        setCatalogView({
-          kind: "error",
-          message: "Settings catalog unavailable.",
-        });
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [apiBaseUrl, loadCatalog]);
+  const catalogView: CatalogView = catalogLoading
+    ? { kind: "loading" }
+    : catalogError
+      ? { kind: "error", message: catalogError }
+      : catalog
+        ? { kind: "ready", catalog }
+        : { kind: "loading" };
 
   const provider = selection?.provider;
 
@@ -309,7 +302,7 @@ export function SettingsPanel({
     );
   }
 
-  if (catalogView.kind === "error" || !selection) {
+  if (catalogView.kind === "error" || !selection || !catalog) {
     return (
       <div className="kern-settings" role="alert">
         <h1>Settings</h1>
@@ -322,7 +315,6 @@ export function SettingsPanel({
     );
   }
 
-  const { catalog } = catalogView;
   const modelDefs = catalog.model_settings.filter((def) =>
     def.providers.includes(selection.provider),
   );

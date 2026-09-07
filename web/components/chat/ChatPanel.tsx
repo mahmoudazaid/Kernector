@@ -16,6 +16,14 @@ import {
   type ChatAskResponse,
 } from "@/lib/api/chat";
 import { ApiError } from "@/lib/api/errors";
+import type {
+  GetRuntimeSettingsOptions,
+  RuntimeSettingsResponse,
+} from "@/lib/api/settings";
+import {
+  evaluateHistoryLength,
+  evaluateInputLength,
+} from "@/lib/chat/input-length";
 import { runDetailLines } from "@/lib/chat/run-details";
 import {
   appendUserMessage,
@@ -33,6 +41,7 @@ import {
   loadRuntimeSettings,
   saveChatMessages,
 } from "@/lib/runtime-settings-storage";
+import { useRuntimeCatalog } from "@/lib/use-runtime-catalog";
 
 const SEND_ICON = (
   <svg
@@ -58,6 +67,9 @@ const SEND_ICON = (
 export type ChatPanelProps = {
   apiBaseUrl: string;
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
+  loadSettings?: (
+    options: GetRuntimeSettingsOptions,
+  ) => Promise<RuntimeSettingsResponse>;
 };
 
 function CitationsBlock({ citations }: { citations: Citation[] }) {
@@ -242,13 +254,19 @@ function fromPersisted(raw: ReturnType<typeof loadChatMessages>): ChatMessage[] 
   }));
 }
 
-export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
+export function ChatPanel({
+  apiBaseUrl,
+  ask = askChat,
+  loadSettings,
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const { catalog } = useRuntimeCatalog(apiBaseUrl, loadSettings);
+  const maxInputLength = catalog?.max_input_length ?? null;
 
   useEffect(() => {
     startTransition(() => {
@@ -264,13 +282,25 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
     saveChatMessages(toPersisted(messages));
   }, [messages, hydrated]);
 
+  const lengthFeedback =
+    maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
+  const historyFeedback =
+    maxInputLength === null
+      ? null
+      : evaluateHistoryLength(historyForModel(messages), maxInputLength);
+  const overLimit = lengthFeedback?.exceeded ?? false;
+  const historyBlocked = historyFeedback?.exceeded ?? false;
+  const sendBlocked = overLimit || historyBlocked;
+  const statusGuidance =
+    lengthFeedback?.guidance ?? historyFeedback?.guidance ?? null;
+
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = draft.trim();
-    if (!query || sending) {
+    setInlineError(null);
+    if (!query || sending || sendBlocked) {
       return;
     }
-    setInlineError(null);
     setUnavailable(false);
     setDraft("");
     const history = historyForModel(messages);
@@ -409,7 +439,13 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             rows={1}
             placeholder="What's in your mind!"
             value={draft}
-            disabled={sending}
+            disabled={sending || historyBlocked}
+            aria-invalid={sendBlocked || undefined}
+            aria-describedby={
+              lengthFeedback || statusGuidance
+                ? "chat-input-length"
+                : undefined
+            }
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
           />
@@ -417,11 +453,30 @@ export function ChatPanel({ apiBaseUrl, ask = askChat }: ChatPanelProps) {
             type="submit"
             className="kern-chat-send"
             aria-label="Send"
-            disabled={sending || !draft.trim()}
+            disabled={sending || !draft.trim() || sendBlocked}
           >
             {SEND_ICON}
           </button>
         </div>
+        {lengthFeedback || statusGuidance ? (
+          <div id="chat-input-length" className="kern-chat-counter-block">
+            {lengthFeedback ? (
+              <p
+                className="kern-chat-counter"
+                data-exceeded={lengthFeedback.exceeded ? "true" : undefined}
+              >
+                {lengthFeedback.counterLabel}
+              </p>
+            ) : null}
+            <p
+              className="kern-chat-length-status"
+              role="status"
+              data-exceeded={statusGuidance ? "true" : undefined}
+            >
+              {statusGuidance ?? ""}
+            </p>
+          </div>
+        ) : null}
       </form>
     </section>
   );

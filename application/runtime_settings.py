@@ -23,6 +23,7 @@ class RuntimeSettingsDefaults:
     openrouter_default_model: str | None
     ollama_default_base_url: str | None
     ollama_default_model: str | None
+    max_input_length: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,13 +59,14 @@ class ModelSettingDef:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeSettingsCatalog:
-    """Read-only catalog for provider/model/settings controls."""
+    """Read-only catalog for provider/model/settings controls and input limits."""
 
     providers: tuple[str, ...]
     default_provider: str
     openrouter: OpenRouterSettingsView
     ollama: OllamaSettingsView
     model_settings: tuple[ModelSettingDef, ...]
+    max_input_length: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,7 @@ class GetRuntimeSettings:
                 )
                 for setting in SETTINGS
             ),
+            max_input_length=self._defaults.max_input_length,
         )
 
 
