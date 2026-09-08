@@ -513,11 +513,11 @@ describe("GoogleDrivePanel", () => {
       await screen.findByRole("button", { name: /sync now/i }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: /change drive selection/i }),
+      screen.getByRole("button", { name: /Browse/i }),
     ).toBeInTheDocument();
   });
 
-  it("reopens the picker from Change Drive selection", async () => {
+  it("reopens the picker from Browse", async () => {
     const user = userEvent.setup();
     render(
       <GoogleDrivePanel
@@ -532,7 +532,7 @@ describe("GoogleDrivePanel", () => {
     );
 
     await user.click(
-      await screen.findByRole("button", { name: /change drive selection/i }),
+      await screen.findByRole("button", { name: /Browse/i }),
     );
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
@@ -587,7 +587,7 @@ describe("GoogleDrivePanel", () => {
 
     expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /change drive selection/i }),
+      screen.getByRole("button", { name: /Browse/i }),
     ).toBeInTheDocument();
     unmount();
 
@@ -602,7 +602,7 @@ describe("GoogleDrivePanel", () => {
     expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/updated\s*2/i);
     expect(
-      screen.getByRole("button", { name: /change drive selection/i }),
+      screen.getByRole("button", { name: /Browse/i }),
     ).toBeInTheDocument();
     expect(getStatus).toHaveBeenCalledTimes(2);
     expect(loadSelection).toHaveBeenCalledTimes(2);

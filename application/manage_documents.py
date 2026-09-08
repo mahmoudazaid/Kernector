@@ -282,12 +282,26 @@ class ManageUploadedDocuments:
         self._catalog.upsert(ready)
         return ready
 
+    def resolve(self, source_id: str) -> CatalogDocument | None:
+        """Return the hub catalog row for ``source_id``, if one exists."""
+        for row in self._catalog.all():
+            if (
+                row.reference.source_id == source_id
+                and row.reference.source_type in self._HUB_SOURCE_TYPES
+            ):
+                return row
+        return None
+
     def delete(self, reference: SourceReference) -> None:
         """Delete vector chunks first, then the catalog row.
 
         Missing chunks or rows are no-ops so retry converges. Catalog failure
         after a successful vector delete raises ``PartialDeleteFailure``.
+        A ``knowledge_document`` locator still matches a Google Drive row with
+        the same ``source_id``, so the documents API can delete either kind.
         """
+        resolved = self.resolve(reference.source_id)
+        reference = resolved.reference if resolved is not None else reference
         try:
             self._vector_store_factory().delete_source(reference)
         except Exception as error:

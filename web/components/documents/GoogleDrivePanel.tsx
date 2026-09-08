@@ -349,7 +349,7 @@ export function GoogleDrivePanel({
   const syncDisabled = busy || setupRequired || reauth;
   const pickerLabel = setupRequired
     ? "Choose folders or files"
-    : "Change Drive selection";
+    : "Browse";
 
   return (
     <article className="kern-source-card">

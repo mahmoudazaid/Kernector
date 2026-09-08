@@ -1453,15 +1453,20 @@ def delete_uploaded_document(
 ) -> None:
     """Delete vector chunks then the catalog row for ``reference``.
 
+    Google Drive rows are also removed from the saved Drive file selection so
+    the next sync does not bring them back.
+
     Raises:
         PartialDocumentOperationError: The chunks are gone but the catalog row
             remains, so a retry is genuinely required.
         DocumentOperationError: The delete stopped before removing anything.
     """
+    ops = build_manage_uploaded_documents(
+        settings, vector_store=vector_store
+    )
+    row = ops.resolve(reference.source_id)
     try:
-        build_manage_uploaded_documents(
-            settings, vector_store=vector_store
-        ).delete(reference)
+        ops.delete(reference)
     except PartialDeleteFailure as error:
         raise PartialDocumentOperationError(
             str(error), operation="delete"
@@ -1470,6 +1475,25 @@ def delete_uploaded_document(
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
+    if (
+        row is not None
+        and row.reference.source_type == SourceType.GOOGLE_DRIVE
+    ):
+        _deselect_google_drive_file(settings, row.reference.source_id)
+
+
+def _deselect_google_drive_file(settings: Settings, file_id: str) -> None:
+    """Drop ``file_id`` from the saved Drive file roots. Missing grants no-op."""
+    tokens_store = _connection_store(settings)
+    connection = tokens_store.load()
+    if connection is None:
+        return
+    remaining = tuple(
+        item for item in connection.files if item.id != file_id
+    )
+    if remaining == connection.files:
+        return
+    tokens_store.save(replace(connection, files=remaining))
 
 
 def build_prompt_repository(settings: Settings) -> PromptRepository:
