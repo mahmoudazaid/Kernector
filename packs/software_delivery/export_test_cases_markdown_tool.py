@@ -26,6 +26,7 @@ from packs.software_delivery.limits import (
     MAX_TITLE_CHARS,
 )
 from packs.software_delivery.test_case_generation import serialize_test_generation_result
+from packs.software_delivery.validation import require_nonblank_str
 
 TOOL_NAME = "software_delivery.export_test_cases_markdown"
 TOOL_DESCRIPTION = (
@@ -77,15 +78,7 @@ class ExportTestCasesMarkdownTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise MarkdownExportValidationError(
-            f"{field_name} must be a non-blank string, got {type(value).__name__}"
-        )
-    if not value.strip():
-        raise MarkdownExportValidationError(
-            f"{field_name} must be a non-blank string"
-        )
-    return value
+    return require_nonblank_str(value, field_name, MarkdownExportValidationError)
 
 
 def _require_bounded_str(value: object, field_name: str, max_chars: int) -> str:

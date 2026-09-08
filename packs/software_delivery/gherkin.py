@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from itertools import combinations
 
 _PHASE_KEYWORDS = frozenset({"Given", "When", "Then"})
 _CONTINUATION_KEYWORDS = frozenset({"And", "But"})
 _ALL_KEYWORDS = _PHASE_KEYWORDS | _CONTINUATION_KEYWORDS
 _PHASE_ORDER = {"Given": 0, "When": 1, "Then": 2}
 _PHASES_MISSING_DISPLAY = {
-    ("Given",): "Given",
-    ("When",): "When",
-    ("Then",): "Then",
-    ("Given", "When"): "Given, When",
-    ("Given", "Then"): "Given, Then",
-    ("When", "Then"): "When, Then",
-    ("Given", "When", "Then"): "Given, When, Then",
+    combo: ", ".join(combo)
+    for size in range(1, len(_PHASE_ORDER) + 1)
+    for combo in combinations(_PHASE_ORDER, size)
 }
 
 

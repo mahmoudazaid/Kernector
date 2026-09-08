@@ -20,6 +20,7 @@ from packs.software_delivery.test_case_generation import (
     generate_test_cases,
     serialize_test_generation_result,
 )
+from packs.software_delivery.validation import require_nonblank_str
 
 TOOL_NAME = "software_delivery.generate_test_cases"
 TOOL_DESCRIPTION = (
@@ -75,15 +76,9 @@ class GenerateTestCasesTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise TestCaseGenerationValidationError(
-            f"{field_name} must be a non-blank string, got {type(value).__name__}"
-        )
-    if not value.strip():
-        raise TestCaseGenerationValidationError(
-            f"{field_name} must be a non-blank string"
-        )
-    return value
+    return require_nonblank_str(
+        value, field_name, TestCaseGenerationValidationError
+    )
 
 
 def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:

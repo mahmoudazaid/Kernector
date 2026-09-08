@@ -10,6 +10,7 @@ from domain.errors import DomainValidationError
 from domain.knowledge import SourceReference
 from domain.models import Message
 from packs.software_delivery.errors import AssessmentPromptValidationError
+from packs.software_delivery.validation import require_nonblank_str
 
 ASSESSMENT_OPEN = "<<<BEGIN_UNTRUSTED_ASSESSMENT>>>"
 ASSESSMENT_CLOSE = "<<<END_UNTRUSTED_ASSESSMENT>>>"
@@ -30,13 +31,7 @@ def _defang(text: str) -> str:
 
 
 def _require_nonblank(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise AssessmentPromptValidationError(
-            f"{field_name} must be a non-empty string, got {type(value).__name__}"
-        )
-    if not value.strip():
-        raise AssessmentPromptValidationError(f"{field_name} must be non-empty")
-    return value
+    return require_nonblank_str(value, field_name, AssessmentPromptValidationError)
 
 
 @dataclass(frozen=True, slots=True)
