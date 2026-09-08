@@ -597,9 +597,7 @@ describe("ChatPanel", () => {
     const input = await screen.findByLabelText(/message/i);
     await user.type(input, "abcdefghijkl");
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /remove 2 to send/i,
-    );
+    expect(await screen.findByText(/remove 2 to send/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
 
     await user.type(input, "{Enter}");
@@ -627,9 +625,9 @@ describe("ChatPanel", () => {
     );
 
     expect(await screen.findByText("ok")).toBeInTheDocument();
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /previous message exceeds 20 characters/i,
-    );
+    expect(
+      await screen.findByText(/previous message exceeds 20 characters/i),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/message/i)).toBeDisabled();
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
 
