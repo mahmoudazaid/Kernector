@@ -14,6 +14,7 @@ from packs.software_delivery.contracts import (
     TestGenerationResult,
 )
 from packs.software_delivery.errors import MarkdownExportValidationError
+from packs.software_delivery.validation import require_nonblank_str
 from packs.software_delivery.export_test_cases_markdown import export_test_cases_markdown
 from packs.software_delivery.limits import (
     MAX_EVIDENCE_IDS_PER_CASE,
@@ -77,15 +78,7 @@ class ExportTestCasesMarkdownTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise MarkdownExportValidationError(
-            f"{field_name} must be a non-blank string, got {type(value).__name__}"
-        )
-    if not value.strip():
-        raise MarkdownExportValidationError(
-            f"{field_name} must be a non-blank string"
-        )
-    return value
+    return require_nonblank_str(value, field_name, MarkdownExportValidationError)
 
 
 def _require_bounded_str(value: object, field_name: str, max_chars: int) -> str:

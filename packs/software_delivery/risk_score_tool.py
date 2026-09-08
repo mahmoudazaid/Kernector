@@ -15,6 +15,7 @@ from packs.software_delivery.contracts import (
 )
 from packs.software_delivery.errors import RiskScoreValidationError
 from packs.software_delivery.scoring import score_risk
+from packs.software_delivery.validation import require_nonblank_str
 
 TOOL_NAME = "software_delivery.risk_score"
 TOOL_DESCRIPTION = (
@@ -65,13 +66,7 @@ class RiskScoreTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise RiskScoreValidationError(
-            f"{field_name} must be a non-blank string, got {type(value).__name__}"
-        )
-    if not value.strip():
-        raise RiskScoreValidationError(f"{field_name} must be a non-blank string")
-    return value
+    return require_nonblank_str(value, field_name, RiskScoreValidationError)
 
 
 def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:

@@ -35,6 +35,9 @@ _NON_FIRST_PARTY = frozenset(
     }
 )
 _KNOWN_UNSCANNED = frozenset({"infrastructure", "composition"})
+_NOQA_ALLOWLIST: frozenset[str] = frozenset(
+    {"packs/software_delivery/gherkin.py"}
+)
 
 
 def test_every_first_party_package_is_scanned_or_explicitly_deferred() -> None:
@@ -167,11 +170,45 @@ def test_helper_allows_str_join_of_module_constant(tmp_path: Path) -> None:
     module = tmp_path / "join_const.py"
     module.write_text(
         "SAFE_CONSTANT = ('Given', 'When', 'Then')\n"
+        "_PHASE_ORDER = {'Given': 0, 'When': 1, 'Then': 2}\n"
         "raise ValueError(f'missing: {\", \".join(SAFE_CONSTANT)}')\n"
         "raise ValueError(f'missing: {\", \".join(_PHASE_ORDER)}')\n",
         encoding="utf-8",
     )
     assert repr_conversions_in_raises(module) == []
+
+
+def test_helper_flags_join_of_local_uppercase_name(tmp_path: Path) -> None:
+    module = tmp_path / "local_keys.py"
+    module.write_text(
+        "def f(untrusted):\n"
+        "    KEYS = untrusted\n"
+        "    raise ValueError(f'bad: {\", \".join(KEYS)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [3]
+
+
+def test_helper_flags_variable_separator_join(tmp_path: Path) -> None:
+    module = tmp_path / "sep_join.py"
+    module.write_text(
+        "raise ValueError(f'x: {sep.join(x)}')\n"
+        "raise ValueError(f'x: {self._sep.join(x)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1, 2]
+
+
+def test_helper_flags_dict_views_dict_ctor_and_slice(tmp_path: Path) -> None:
+    module = tmp_path / "views.py"
+    module.write_text(
+        "raise ValueError(f'a {unknown.keys()}')\n"
+        "raise ValueError(f'b {unknown.values()}')\n"
+        "raise ValueError(f'c {dict(unknown)}')\n"
+        "raise ValueError(f'd {unknown[:3]}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1, 2, 3, 4]
 
 
 def test_helper_allows_os_path_join(tmp_path: Path) -> None:
@@ -191,6 +228,50 @@ def test_helper_honours_noqa_raise_scan(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert repr_conversions_in_raises(module) == []
+
+
+def test_noqa_suppressions_are_inventoried() -> None:
+    found = {
+        str(module.relative_to(REPO_ROOT))
+        for module in SCANNED_MODULES
+        for line in module.read_text(encoding="utf-8").splitlines()
+        if "noqa: raise-scan" in line
+    }
+    assert found == _NOQA_ALLOWLIST, (
+        "a raise-scan suppression was added or moved; justify it in "
+        "_NOQA_ALLOWLIST or remove it"
+    )
+
+
+def test_helper_flags_repr_in_indirect_exception_subclass(tmp_path: Path) -> None:
+    module = tmp_path / "indirect_base.py"
+    module.write_text(
+        "class Base(ValueError):\n"
+        "    pass\n"
+        "class Leak(Base):\n"
+        "    def __init__(self, v):\n"
+        "        super().__init__(f'got {v!r}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [5]
+
+
+def test_helper_flags_repr_in_str_and_factory_methods(tmp_path: Path) -> None:
+    module = tmp_path / "other_methods.py"
+    module.write_text(
+        "class Leak(ValueError):\n"
+        "    def __str__(self):\n"
+        "        return f'got {self.v!r}'\n"
+        "    def __init__(self, v):\n"
+        "        super().__init__(self._msg(v))\n"
+        "    def _msg(self, v):\n"
+        "        return f'got {v!r}'\n"
+        "    @classmethod\n"
+        "    def of(cls, v):\n"
+        "        return cls(f'got {v!r}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [3, 7, 10]
 
 
 def test_helper_flags_repr_in_exception_init(tmp_path: Path) -> None:

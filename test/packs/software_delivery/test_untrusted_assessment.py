@@ -214,7 +214,7 @@ def test_non_string_target_reports_type_name_not_value() -> None:
         )
     message = str(raised.value)
     assert sentinel not in message
-    assert message == "target must be a non-empty string, got list"
+    assert message == "target must be a non-blank string, got list"
 
 
 def test_wrong_evidence_item_type_raises_assessment_error() -> None:
@@ -235,16 +235,16 @@ def test_wrong_or_blank_evidence_text_raises_assessment_error() -> None:
     ref = SourceReference("S-1", "story")
     with pytest.raises(AssessmentPromptValidationError) as raised:
         AssessmentEvidence(ref, "")
-    assert str(raised.value) == "text must be non-empty"
+    assert str(raised.value) == "text must be a non-blank string"
     with pytest.raises(AssessmentPromptValidationError) as raised:
         AssessmentEvidence(ref, "   ")
-    assert str(raised.value) == "text must be non-empty"
+    assert str(raised.value) == "text must be a non-blank string"
     sentinel = "TEXT-LEAK-SENTINEL"
     with pytest.raises(AssessmentPromptValidationError) as raised:
         AssessmentEvidence(ref, [sentinel])  # type: ignore[arg-type]
     message = str(raised.value)
     assert sentinel not in message
-    assert message == "text must be a non-empty string, got list"
+    assert message == "text must be a non-blank string, got list"
 
 
 def test_source_reference_domain_validation_is_wrapped(
