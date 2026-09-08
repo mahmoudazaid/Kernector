@@ -363,6 +363,12 @@ a {
   line-height: 1.6;
 }
 
+.kern-state > .kern-btn,
+.kern-state > .kern-btn-secondary {
+  margin-top: var(--kern-space-4);
+  width: max-content;
+}
+
 .kern-state-error h2 {
   color: var(--kern-danger);
 }

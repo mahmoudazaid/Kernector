@@ -480,13 +480,16 @@ export function DocumentsPanel({
           <h1>Knowledge Hub</h1>
           <p className="kern-documents-lead">{HUB_LEDE}</p>
         </header>
-        <UnavailableState
-          title="Backend unavailable"
-          description="The documents API could not be reached. Start the FastAPI server and try again."
-        />
-        <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
-          {retryBusy ? "Checking…" : "Retry"}
-        </Button>
+        <div className="kern-content-state">
+          <UnavailableState
+            title="Backend unavailable"
+            description="The documents API could not be reached. Start the FastAPI server and try again."
+          >
+            <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+              {retryBusy ? "Checking…" : "Retry"}
+            </Button>
+          </UnavailableState>
+        </div>
       </section>
     );
   }

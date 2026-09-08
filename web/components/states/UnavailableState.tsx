@@ -1,11 +1,15 @@
+import type { ReactNode } from "react";
+
 type UnavailableStateProps = {
   title?: string;
   description?: string;
+  children?: ReactNode;
 };
 
 export function UnavailableState({
   title = "Feature unavailable",
   description = "This destination is intentionally a placeholder until its implementation ticket is complete.",
+  children,
 }: UnavailableStateProps) {
   return (
     <div className="kern-state">
@@ -30,6 +34,7 @@ export function UnavailableState({
       </div>
       <h2>{title}</h2>
       <p>{description}</p>
+      {children}
     </div>
   );
 }

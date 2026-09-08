@@ -364,6 +364,9 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByRole("heading", { name: /backend unavailable/i }),
     ).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: /^retry$/i });
+    expect(retry.closest(".kern-content-state")).not.toBeNull();
+    expect(retry.closest(".kern-state")).not.toBeNull();
   });
 
   it("keeps two uploads of the same file name as separate rows after refresh", async () => {
