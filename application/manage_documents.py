@@ -76,8 +76,6 @@ class UnknownDocumentError(ApplicationValidationError):
 
     def __init__(self, *, reference: SourceReference) -> None:
         super().__init__("unknown document")
-        self.source_type = reference.source_type
-        self.source_id = reference.source_id
 
 
 class SourceIdCollisionError(ApplicationValidationError):
