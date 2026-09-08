@@ -354,7 +354,7 @@ describe("DocumentsPanel", () => {
     expect(within(table).getByText("id-b")).toBeInTheDocument();
   });
 
-  it("surfaces a settings-fetch failure, disables replace, and retries both fetches", async () => {
+  it("surfaces a settings-fetch failure, disables replace, and recovers on retry", async () => {
     const user = userEvent.setup();
     const list = vi.fn().mockResolvedValue(listResponse([doc()]));
     const failingLoadSettings = vi
@@ -395,7 +395,40 @@ describe("DocumentsPanel", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText(/replacement file/i)).toBeEnabled();
     expect(failingLoadSettings).toHaveBeenCalledTimes(2);
-    expect(list).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries only settings when the document list is healthy", async () => {
+    const user = userEvent.setup();
+    const list = vi.fn().mockResolvedValue(listResponse([doc()]));
+    const failingLoadSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("settings down"))
+      .mockResolvedValueOnce(SETTINGS);
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={failingLoadSettings}
+      />,
+    );
+
+    await screen.findByText("spec.md");
+    expect(
+      await screen.findByText(/settings catalog unavailable/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/settings catalog unavailable/i),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("spec.md")).toBeInTheDocument();
+    expect(failingLoadSettings).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
   });
 
   it("retries only the document list when settings are healthy", async () => {

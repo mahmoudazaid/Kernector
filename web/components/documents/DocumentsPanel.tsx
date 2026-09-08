@@ -109,7 +109,9 @@ export function DocumentsPanel({
     if (settingsError) {
       reloadSettings();
     }
-    void refresh();
+    if (catalog.kind === "error" || catalog.kind === "unavailable") {
+      void refresh();
+    }
   }
 
   async function refresh() {

@@ -64,7 +64,9 @@ export function useRuntimeCatalog(
         if (!active || controller.signal.aborted) {
           return;
         }
-        setCatalog(null);
+        if (resetCatalog) {
+          setCatalog(null);
+        }
         setError(SETTINGS_CATALOG_UNAVAILABLE);
         setLoading(false);
       });
