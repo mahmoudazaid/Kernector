@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-  startTransition,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, startTransition, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import { ApiError } from "@/lib/api/errors";
@@ -74,11 +69,7 @@ function ProbeCallout({
     <div className={`kern-settings-callout kern-settings-callout--${tone}`}>
       <div role="status">{children}</div>
       {onRetry ? (
-        <Button
-          variant="secondary"
-          disabled={retryDisabled}
-          onClick={onRetry}
-        >
+        <Button variant="secondary" disabled={retryDisabled} onClick={onRetry}>
           {retryLabel}
         </Button>
       ) : null}
@@ -184,6 +175,7 @@ export function SettingsPanel({
     catalog,
     error: catalogError,
     loading: catalogLoading,
+    reload,
   } = useRuntimeCatalog(apiBaseUrl, loadCatalog);
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [selectionForCatalog, setSelectionForCatalog] =
@@ -311,6 +303,9 @@ export function SettingsPanel({
             ? catalogView.message
             : "Settings catalog unavailable."}
         </p>
+        <Button variant="secondary" onClick={() => reload()}>
+          Retry
+        </Button>
       </div>
     );
   }
@@ -338,7 +333,11 @@ export function SettingsPanel({
 
       <fieldset className="kern-settings-fieldset">
         <legend>Provider</legend>
-        <div className="kern-settings-radios" role="radiogroup" aria-label="Provider">
+        <div
+          className="kern-settings-radios"
+          role="radiogroup"
+          aria-label="Provider"
+        >
           {catalog.providers.map((provider) => (
             <label key={provider} className="kern-settings-radio">
               <input
@@ -409,7 +408,9 @@ export function SettingsPanel({
               retryDisabled={probeLoading}
               retryLabel={probeLoading ? "Checking…" : "Retry"}
             >
-              <p>Could not check Ollama. Enter a model name manually, or retry.</p>
+              <p>
+                Could not check Ollama. Enter a model name manually, or retry.
+              </p>
             </ProbeCallout>
           ) : null}
 
@@ -432,8 +433,8 @@ export function SettingsPanel({
                 <li>Refresh this page</li>
               </ol>
               <p className="kern-settings-hint">
-                <code>ollama pull</code> only works after Ollama is installed. If
-                you see <code>command not found</code>, finish step 1 first.
+                <code>ollama pull</code> only works after Ollama is installed.
+                If you see <code>command not found</code>, finish step 1 first.
               </p>
             </ProbeCallout>
           ) : null}
@@ -509,7 +510,9 @@ export function SettingsPanel({
                   }
                 />
               </div>
-              <p className="kern-settings-hint">No OpenRouter models available</p>
+              <p className="kern-settings-hint">
+                No OpenRouter models available
+              </p>
             </>
           )}
         </div>

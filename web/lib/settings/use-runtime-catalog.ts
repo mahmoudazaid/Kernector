@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getRuntimeSettings,
   type GetRuntimeSettingsOptions,
@@ -15,6 +15,7 @@ export type RuntimeCatalogState = {
   catalog: RuntimeSettingsResponse | null;
   error: string | null;
   loading: boolean;
+  reload: () => void;
 };
 
 /**
@@ -31,6 +32,7 @@ export function useRuntimeCatalog(
   const [catalog, setCatalog] = useState<RuntimeSettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const loadRef = useRef(loadCatalog ?? getRuntimeSettings);
   loadRef.current = loadCatalog ?? getRuntimeSettings;
 
@@ -64,7 +66,11 @@ export function useRuntimeCatalog(
       active = false;
       controller.abort();
     };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, reloadNonce]);
 
-  return { catalog, error, loading };
+  const reload = useCallback(() => {
+    setReloadNonce((nonce) => nonce + 1);
+  }, []);
+
+  return { catalog, error, loading, reload };
 }
