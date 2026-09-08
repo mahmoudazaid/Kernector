@@ -78,11 +78,28 @@ class OllamaStatusResponse(BaseModel):
     models: list[str]
 
 
+class GoogleDriveLastSyncResponse(BaseModel):
+    """Last user-OAuth sync summary. Counts are honest; no secrets."""
+
+    synced_at: str
+    new_count: int
+    updated_count: int
+    unchanged_count: int
+    failed_count: int
+
+
 class GoogleDriveStatusResponse(BaseModel):
-    """Google Drive connector configuration presence (no secrets)."""
+    """Google Drive connector presence and user OAuth connection (no secrets)."""
 
     configured: bool
     available: bool
+    connected: bool = False
+    oauth_ready: bool = False
+    account_email: str | None = None
+    document_count: int = 0
+    folder_count: int | None = None
+    last_sync: GoogleDriveLastSyncResponse | None = None
+    reauthorization_required: bool = False
 
 
 class ConnectorSyncOutcomeResponse(BaseModel):

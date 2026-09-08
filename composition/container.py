@@ -8,10 +8,17 @@ from pathlib import Path
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
-from application.contracts import ConnectorSyncResponse, IngestRequest, IngestResponse
+from application.contracts import (
+    ConnectorSyncResponse,
+    ConnectorSyncStatus,
+    IngestRequest,
+    IngestResponse,
+)
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GoogleDriveNotConnectedError,
+    GoogleDriveReauthorizationRequiredError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -55,8 +62,20 @@ from composition.tool_registry import (
     enabled_domain_tool_packs,
     build_tool_registry,
 )
-from domain.errors import ConnectorError, DomainValidationError, VectorStoreError
-from domain.knowledge import CatalogDocument, ScoredChunk, SourceDocument, SourceReference, UploadPayload
+from domain.errors import (
+    ConnectorAuthError,
+    ConnectorError,
+    DomainValidationError,
+    VectorStoreError,
+)
+from domain.knowledge import (
+    CatalogDocument,
+    ScoredChunk,
+    SourceDocument,
+    SourceReference,
+    SourceType,
+    UploadPayload,
+)
 from domain.ports import (
     ChatModel,
     DocumentCatalog,
@@ -471,20 +490,87 @@ _DRIVE_CLIENT_MISSING_MESSAGE = (
 
 
 @dataclass(frozen=True, slots=True)
+class GoogleDriveLastSync:
+    """Last HTTP OAuth sync counts persisted with the user grant."""
+
+    synced_at: str
+    new_count: int
+    updated_count: int
+    unchanged_count: int
+    failed_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class GoogleDriveStatus:
-    """Whether Drive env is present and the Google extra is importable.
+    """Drive SA presence, extra availability, and user OAuth connection.
 
     Args:
-        configured (bool): Folder ID and service-account path are both set.
+        configured (bool): Folder ID and service-account path are both set (CLI).
         available (bool): ``googleapiclient`` is importable.
+        connected (bool): A user OAuth refresh token is stored.
+        oauth_ready (bool): OAuth client ID, secret, and redirect URI are set.
+        account_email (str | None): Display email from Drive about.get.
+        document_count (int): Catalog rows with ``source_type=google_drive``.
+        folder_count (int | None): Configured/selected folder count when known.
+        last_sync (GoogleDriveLastSync | None): Last HTTP sync summary.
+        reauthorization_required (bool): Stored refresh token was rejected.
     """
 
     configured: bool
     available: bool
+    connected: bool = False
+    oauth_ready: bool = False
+    account_email: str | None = None
+    document_count: int = 0
+    folder_count: int | None = None
+    last_sync: GoogleDriveLastSync | None = None
+    reauthorization_required: bool = False
+
+
+def _oauth_ready(settings: Settings) -> bool:
+    oauth = settings.google_oauth
+    return bool(oauth.client_id and oauth.client_secret and oauth.redirect_uri)
+
+
+def _connection_store(settings: Settings):
+    from infrastructure.connectors.google_oauth import GoogleOAuthConnectionStore
+
+    return GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+
+
+def _state_store(settings: Settings):
+    from infrastructure.connectors.google_oauth import GoogleOAuthStateStore
+
+    return GoogleOAuthStateStore(
+        settings.google_oauth.state_path,
+        ttl_seconds=settings.google_oauth.state_ttl_seconds,
+    )
+
+
+def _hub_redirect(settings: Settings, *, result: str) -> str:
+    base = settings.google_oauth.frontend_redirect
+    if base is None:
+        origin = (
+            settings.http.cors_origins[0]
+            if settings.http.cors_origins
+            else "http://localhost:3000"
+        )
+        base = f"{origin.rstrip('/')}/documents"
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}drive={result}"
+
+
+def _drive_document_count(settings: Settings) -> int:
+    catalog = build_document_catalog(settings)
+    return sum(
+        1
+        for row in catalog.all()
+        if row.reference.source_type == SourceType.GOOGLE_DRIVE
+    )
 
 
 def google_drive_status(settings: Settings) -> GoogleDriveStatus:
-    """Report Drive configuration presence and extra availability.
+    """Report SA flags plus user OAuth connection metadata.
 
     Does not import the Google client or load the service-account JSON.
 
@@ -492,14 +578,298 @@ def google_drive_status(settings: Settings) -> GoogleDriveStatus:
         settings (Settings): Loaded environment settings.
 
     Returns:
-        GoogleDriveStatus: Presence flags only; no folder IDs or paths.
+        GoogleDriveStatus: Presentation-safe flags and connection metadata.
     """
     drive = settings.google_drive
     configured = (
         drive.folder_id is not None and drive.service_account_file is not None
     )
     available = importlib.util.find_spec("googleapiclient") is not None
-    return GoogleDriveStatus(configured=configured, available=available)
+    connection = _connection_store(settings).load()
+    last_sync = None
+    if (
+        connection is not None
+        and connection.last_synced_at is not None
+        and connection.last_sync_new is not None
+        and connection.last_sync_updated is not None
+        and connection.last_sync_unchanged is not None
+        and connection.last_sync_failed is not None
+    ):
+        last_sync = GoogleDriveLastSync(
+            synced_at=connection.last_synced_at,
+            new_count=connection.last_sync_new,
+            updated_count=connection.last_sync_updated,
+            unchanged_count=connection.last_sync_unchanged,
+            failed_count=connection.last_sync_failed,
+        )
+    return GoogleDriveStatus(
+        configured=configured,
+        available=available,
+        connected=connection is not None,
+        oauth_ready=_oauth_ready(settings),
+        account_email=None if connection is None else connection.account_email,
+        document_count=_drive_document_count(settings),
+        folder_count=None if connection is None else connection.folder_count,
+        last_sync=last_sync,
+        reauthorization_required=(
+            False if connection is None else connection.reauthorization_required
+        ),
+    )
+
+
+def start_google_drive_oauth(
+    settings: Settings,
+    *,
+    state_store=None,
+) -> str:
+    """Issue CSRF state and return Google's authorization URL.
+
+    When the OAuth client is missing, return the Hub URL with ``drive=unconfigured``
+    so a browser GET never lands on a JSON problem page.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        state_store: Injected state store for tests.
+
+    Returns:
+        str: Google authorization URL, or the Knowledge Hub error redirect.
+    """
+    if not _oauth_ready(settings):
+        return _hub_redirect(settings, result="unconfigured")
+    from infrastructure.connectors.google_oauth import authorization_url
+
+    store = state_store if state_store is not None else _state_store(settings)
+    state = store.issue()
+    return authorization_url(settings.google_oauth, state=state)
+
+
+def complete_google_drive_oauth(
+    settings: Settings,
+    *,
+    state: str | None,
+    code: str | None,
+    error: str | None,
+    state_store=None,
+    connection_store=None,
+    gateway=None,
+) -> str:
+    """Validate callback query params, persist the grant, return the Hub URL.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        state (str | None): CSRF token from Google.
+        code (str | None): Authorization code from Google.
+        error (str | None): Provider error such as ``access_denied``.
+        state_store: Injected state store for tests.
+        connection_store: Injected connection store for tests.
+        gateway: Injected Google token gateway for tests.
+
+    Returns:
+        str: Knowledge Hub URL with a non-sensitive ``drive=`` result.
+    """
+    if error == "access_denied":
+        return _hub_redirect(settings, result="denied")
+    store = state_store if state_store is not None else _state_store(settings)
+    if not store.consume(state):
+        return _hub_redirect(settings, result="invalid_state")
+    if error or not code:
+        return _hub_redirect(settings, result="error")
+    if not _oauth_ready(settings):
+        return _hub_redirect(settings, result="error")
+    from infrastructure.connectors.google_oauth import (
+        GoogleOAuthConnection,
+        GoogleOAuthError,
+        HttpGoogleOAuthGateway,
+    )
+
+    oauth_gateway = gateway if gateway is not None else HttpGoogleOAuthGateway(
+        settings.google_oauth
+    )
+    tokens_store = (
+        connection_store if connection_store is not None else _connection_store(settings)
+    )
+    try:
+        grant = oauth_gateway.exchange_code(code)
+        email = oauth_gateway.fetch_account_email(grant.access_token)
+        tokens_store.save(
+            GoogleOAuthConnection(
+                refresh_token=grant.refresh_token,
+                access_token=grant.access_token,
+                account_email=email,
+                folder_count=1,
+                last_synced_at=None,
+                last_sync_new=None,
+                last_sync_updated=None,
+                last_sync_unchanged=None,
+                last_sync_failed=None,
+                reauthorization_required=False,
+            )
+        )
+    except GoogleOAuthError:
+        return _hub_redirect(settings, result="error")
+    return _hub_redirect(settings, result="connected")
+
+
+def disconnect_google_drive_oauth(
+    settings: Settings,
+    *,
+    connection_store=None,
+    gateway=None,
+) -> None:
+    """Revoke the stored refresh token and delete the local grant.
+
+    Indexed Drive catalog rows are left in place.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        connection_store: Injected connection store for tests.
+        gateway: Injected Google token gateway for tests.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+    """
+    tokens_store = (
+        connection_store if connection_store is not None else _connection_store(settings)
+    )
+    connection = tokens_store.load()
+    if connection is None:
+        raise GoogleDriveNotConnectedError("Google Drive is not connected")
+    from infrastructure.connectors.google_oauth import HttpGoogleOAuthGateway
+
+    oauth_gateway = gateway if gateway is not None else HttpGoogleOAuthGateway(
+        settings.google_oauth
+    )
+    oauth_gateway.revoke(connection.refresh_token)
+    tokens_store.clear()
+
+
+def build_google_drive_oauth_connector(settings: Settings, *, refresh_token: str):
+    """Build a Drive connector from a stored user refresh token.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        refresh_token (str): Stored user refresh token.
+
+    Returns:
+        KnowledgeConnector: Drive adapter bound to the configured folder or root.
+
+    Raises:
+        ConfigurationError: Client extra or OAuth client is unusable.
+        GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
+    """
+    from infrastructure.config import GoogleDriveSettings
+    from infrastructure.connectors.google_oauth import (
+        GoogleOAuthError,
+        build_oauth_drive_files,
+    )
+
+    try:
+        from infrastructure.connectors.google_drive import (
+            GoogleDriveConfigError,
+            GoogleDriveConnector,
+        )
+    except ImportError as error:
+        raise ConfigurationError(_DRIVE_CLIENT_MISSING_MESSAGE) from error
+    folder_id = settings.google_drive.folder_id or "root"
+    try:
+        files = build_oauth_drive_files(
+            settings.google_oauth, refresh_token=refresh_token
+        )
+        return GoogleDriveConnector(
+            GoogleDriveSettings(
+                service_account_file=None,
+                folder_id=folder_id,
+                page_size=settings.google_drive.page_size,
+            ),
+            max_upload_bytes=settings.max_upload_bytes,
+            files=files,
+        )
+    except (GoogleDriveConfigError, GoogleOAuthError) as error:
+        raise ConfigurationError(_DRIVE_CONFIG_MESSAGE) from error
+
+
+def sync_google_drive_oauth(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
+    connection_store=None,
+) -> ConnectorSyncResponse:
+    """Synchronize Drive using the stored user OAuth grant.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        vector_store (VectorStore | None): Shared store for the run.
+        connection_store: Injected connection store for tests.
+
+    Returns:
+        ConnectorSyncResponse: Per-document outcomes in listing order.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
+        ConnectorSyncError: Listing, auth, catalog, or store infrastructure failed.
+    """
+    from datetime import datetime, timezone
+
+    tokens_store = (
+        connection_store if connection_store is not None else _connection_store(settings)
+    )
+    connection = tokens_store.load()
+    if connection is None:
+        raise GoogleDriveNotConnectedError("Google Drive is not connected")
+    if connection.reauthorization_required:
+        raise GoogleDriveReauthorizationRequiredError(
+            "Google Drive authorization was revoked"
+        )
+    try:
+        working_catalog = catalog if catalog is not None else build_document_catalog(settings)
+        before = {
+            row.reference.source_id
+            for row in working_catalog.all()
+            if row.reference.source_type == SourceType.GOOGLE_DRIVE
+        }
+        connector = build_google_drive_oauth_connector(
+            settings, refresh_token=connection.refresh_token
+        )
+        result = sync_google_drive(
+            settings,
+            connector=connector,
+            catalog=working_catalog,
+            vector_store=vector_store,
+        )
+    except ConnectorSyncError as error:
+        if isinstance(error.__cause__, ConnectorAuthError):
+            tokens_store.save(replace(connection, reauthorization_required=True))
+            raise GoogleDriveReauthorizationRequiredError(
+                "Google Drive authorization was revoked"
+            ) from error
+        raise
+    new_count = sum(
+        1
+        for outcome in result.outcomes
+        if outcome.status is ConnectorSyncStatus.INGESTED
+        and outcome.source_id not in before
+    )
+    updated_count = sum(
+        1
+        for outcome in result.outcomes
+        if outcome.status is ConnectorSyncStatus.INGESTED
+        and outcome.source_id in before
+    )
+    tokens_store.save(
+        replace(
+            connection,
+            last_synced_at=datetime.now(timezone.utc).isoformat(),
+            last_sync_new=new_count,
+            last_sync_updated=updated_count,
+            last_sync_unchanged=result.skipped_count,
+            last_sync_failed=result.failed_count,
+            reauthorization_required=False,
+        )
+    )
+    return result
 
 
 def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:

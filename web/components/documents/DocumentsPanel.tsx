@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/states/EmptyState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
   listDocuments,
@@ -46,6 +47,7 @@ export type DocumentsPanelProps = {
   loadSettings?: RuntimeCatalogLoader;
   getDriveStatus?: GoogleDrivePanelProps["getStatus"];
   syncDrive?: GoogleDrivePanelProps["syncNow"];
+  disconnectDrive?: GoogleDrivePanelProps["disconnect"];
 };
 
 type CatalogView =
@@ -69,8 +71,20 @@ type ActionFeedback =
 const EMPTY_COPY =
   "No uploaded documents yet. Seed-corpus documents are managed separately and do not appear here.";
 
-const IDENTITY_HELP =
-  "Catalog identity is the source ID, not the file name. Matching file names stay separate documents until you explicitly Replace.";
+const HUB_LEDE =
+  "Connect knowledge sources, control synchronization, and browse every indexed document in one place.";
+
+const PLANNED_CONNECTORS = [
+  { name: "GitHub", kind: "Repository knowledge", icon: "github" },
+  { name: "Jira", kind: "Issues and stories", icon: "jira" },
+  { name: "Confluence", kind: "Team documentation", icon: "book" },
+] as const;
+
+const SOURCE_FILTERS = [
+  "All sources",
+  "File uploads",
+  "Google Drive",
+] as const;
 
 function formatUploadedAt(value: string): string {
   try {
@@ -78,6 +92,83 @@ function formatUploadedAt(value: string): string {
   } catch {
     return value;
   }
+}
+
+function formatRelative(value: string): string {
+  const then = Date.parse(value);
+  if (Number.isNaN(then)) {
+    return value;
+  }
+  const deltaMs = Date.now() - then;
+  const minutes = Math.floor(deltaMs / 60_000);
+  if (minutes < 1) {
+    return "Just now";
+  }
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days === 1) {
+    return "Yesterday";
+  }
+  return `${days} days ago`;
+}
+
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 13.5V4.5M10 4.5 6.5 8M10 4.5 13.5 8M4 13.5v1.2c0 .7.6 1.3 1.3 1.3h9.4c.7 0 1.3-.6 1.3-1.3v-1.2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function PlannedIcon({ name }: { name: (typeof PLANNED_CONNECTORS)[number]["icon"] }) {
+  if (name === "github") {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path
+          d="M10 2.8a7.2 7.2 0 0 0-2.28 14.03c.36.07.5-.16.5-.35v-1.23c-2.03.44-2.46-.87-2.46-.87-.33-.84-.8-1.07-.8-1.07-.66-.45.05-.44.05-.44.73.05 1.11.75 1.11.75.65 1.11 1.7.79 2.12.6.06-.47.25-.79.46-.97-1.62-.18-3.32-.81-3.32-3.6 0-.8.28-1.45.75-1.96-.08-.18-.33-.92.07-1.91 0 0 .61-.2 2 0.75a6.9 6.9 0 0 1 3.64 0c1.39-.95 2-.75 2-.75.4 1 .15 1.73.07 1.91.47.51.75 1.16.75 1.96 0 2.8-1.7 3.42-3.33 3.6.26.22.5.67.5 1.35v2c0 .2.13.42.5.35A7.2 7.2 0 0 0 10 2.8Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  if (name === "jira") {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path
+          d="M4.5 5.5h6.2v2.2H6.7v6.8H4.5V5.5Zm4.8 4.8h6.2v6.2h-2.2v-4H9.3V10.3Zm2.2-4.8h4v4h-4v-4Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M4.5 5.2c1.8-.8 3.6-.8 5.5 0s3.7.8 5.5 0v9.1c-1.8.8-3.6.8-5.5 0s-3.7-.8-5.5 0V5.2Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10 5.4v8.7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 function actionErrorMessage(error: unknown): string {
@@ -96,6 +187,7 @@ export function DocumentsPanel({
   loadSettings,
   getDriveStatus,
   syncDrive,
+  disconnectDrive,
 }: DocumentsPanelProps) {
   const {
     catalog: runtimeCatalog,
@@ -112,6 +204,12 @@ export function DocumentsPanel({
   const [replaceInputKey, setReplaceInputKey] = useState(0);
   const [pendingDelete, setPendingDelete] =
     useState<CatalogDocumentResponse | null>(null);
+  const [hubTab, setHubTab] = useState<"sources" | "documents">("sources");
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] =
+    useState<(typeof SOURCE_FILTERS)[number]>("All sources");
+  const [driveConnected, setDriveConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
@@ -191,7 +289,7 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
-  const dialogOpen = pendingDelete !== null;
+  const dialogOpen = pendingDelete !== null || uploadOpen;
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
@@ -240,6 +338,8 @@ export function DocumentsPanel({
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
       });
       clearUploadInput();
+      setUploadOpen(false);
+      setHubTab("documents");
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
@@ -310,13 +410,36 @@ export function DocumentsPanel({
     (Boolean(settingsError) && settingsLoading) ||
     (documentsRetryable && refreshing);
 
+  const latestUpload = documents.reduce<string | null>((latest, doc) => {
+    if (!latest || Date.parse(doc.uploaded_at) > Date.parse(latest)) {
+      return doc.uploaded_at;
+    }
+    return latest;
+  }, null);
+  const visibleDocuments = documents.filter((doc) => {
+    if (sourceFilter === "Google Drive") {
+      return false;
+    }
+    if (!query.trim()) {
+      return true;
+    }
+    const needle = query.trim().toLowerCase();
+    return (
+      doc.file_name.toLowerCase().includes(needle) ||
+      doc.source_id.toLowerCase().includes(needle)
+    );
+  });
+  const connectedCount = 1 + (driveConnected ? 1 : 0);
+
   if (catalog.kind === "loading") {
     return (
       <section className="kern-documents">
-        <h1>Knowledge Hub</h1>
-        <p className="kern-documents-lead" role="status">
-          Loading uploaded documents…
-        </p>
+        <header className="kern-hub-head">
+          <h1>Knowledge Hub</h1>
+          <p className="kern-documents-lead" role="status">
+            Loading uploaded documents…
+          </p>
+        </header>
       </section>
     );
   }
@@ -324,7 +447,10 @@ export function DocumentsPanel({
   if (catalog.kind === "unavailable") {
     return (
       <section className="kern-documents">
-        <h1>Knowledge Hub</h1>
+        <header className="kern-hub-head">
+          <h1>Knowledge Hub</h1>
+          <p className="kern-documents-lead">{HUB_LEDE}</p>
+        </header>
         <UnavailableState
           title="Backend unavailable"
           description="The documents API could not be reached. Start the FastAPI server and try again."
@@ -338,13 +464,37 @@ export function DocumentsPanel({
 
   return (
     <section className="kern-documents">
-      <h1>Knowledge Hub</h1>
-      <p className="kern-documents-lead">{IDENTITY_HELP}</p>
-      <GoogleDrivePanel
-        apiBaseUrl={apiBaseUrl}
-        getStatus={getDriveStatus}
-        syncNow={syncDrive}
-      />
+      <header className="kern-hub-head">
+        <h1>Knowledge Hub</h1>
+        <p className="kern-documents-lead">{HUB_LEDE}</p>
+      </header>
+
+      <div className="kern-hub-tabs" role="tablist" aria-label="Knowledge Hub sections">
+        <button
+          className="kern-hub-tab"
+          type="button"
+          role="tab"
+          id="hub-sources-tab"
+          aria-selected={hubTab === "sources"}
+          aria-controls="hub-sources-panel"
+          onClick={() => setHubTab("sources")}
+        >
+          Sources
+          <span className="kern-hub-tab-count">{connectedCount} connected</span>
+        </button>
+        <button
+          className="kern-hub-tab"
+          type="button"
+          role="tab"
+          id="hub-documents-tab"
+          aria-selected={hubTab === "documents"}
+          aria-controls="hub-documents-panel"
+          onClick={() => setHubTab("documents")}
+        >
+          Documents
+          <span className="kern-hub-tab-count">{documents.length}</span>
+        </button>
+      </div>
 
       {catalog.kind === "error" || settingsError ? (
         <div
@@ -368,159 +518,337 @@ export function DocumentsPanel({
         </div>
       ) : null}
 
-      {documents.length === 0 && catalog.kind === "ready" ? (
-        <EmptyState title="No uploaded documents" description={EMPTY_COPY} />
-      ) : documents.length > 0 ? (
-        <div className="kern-documents-table-wrap">
-          <table className="kern-documents-table">
-            <thead>
-              <tr>
-                <th scope="col">File</th>
-                <th scope="col">Status</th>
-                <th scope="col">Source ID</th>
-                <th scope="col">Chunks</th>
-                <th scope="col">Uploaded</th>
-                <th scope="col">
-                  <span className="visually-hidden">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((doc) => {
-                const selectedRow = doc.source_id === selectedId;
-                return (
-                  <tr
-                    key={doc.source_id}
-                    className={selectedRow ? "is-selected" : undefined}
-                    onClick={() => {
-                      if (!dialogOpen) {
-                        selectDocument(doc.source_id);
-                      }
-                    }}
-                  >
-                    <td>
-                      <button
-                        type="button"
-                        className="kern-documents-row-button"
-                        aria-pressed={selectedRow}
-                        disabled={dialogOpen}
-                      >
-                        {doc.file_name}
-                      </button>
-                    </td>
-                    <td>{doc.status}</td>
-                    <td>
-                      <code>{doc.source_id}</code>
-                    </td>
-                    <td>{doc.chunk_count}</td>
-                    <td>{formatUploadedAt(doc.uploaded_at)}</td>
-                    <td className="kern-documents-actions">
-                      <button
-                        type="button"
-                        className="kern-documents-delete"
-                        aria-label={`Delete ${doc.file_name}`}
-                        disabled={busy || dialogOpen}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setPendingDelete(doc);
-                        }}
-                      >
-                        <svg
-                          className="kern-documents-delete-icon"
-                          viewBox="0 0 20 20"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M7.5 4.5h5M5 6.5h10M8.25 6.5v7.25M11.75 6.5v7.25M7 6.5l.5 8.25h5l.5-8.25"
-                            stroke="currentColor"
-                            strokeWidth="1.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {selected ? (
-        <div className="kern-documents-detail">
-          <p className="kern-settings-hint">
-            Status: {selected.status} · chunks: {selected.chunk_count} ·
-            uploaded: {formatUploadedAt(selected.uploaded_at)}
+      <section
+        className="kern-hub-panel"
+        id="hub-sources-panel"
+        role="tabpanel"
+        aria-labelledby="hub-sources-tab"
+        hidden={hubTab !== "sources"}
+      >
+        <div className="kern-hub-section-head">
+          <h2>Connected sources</h2>
+          <p className="kern-hub-section-note">
+            Each connector owns its setup and sync actions; documents stay in
+            the shared catalog.
           </p>
-          {selected.error_summary ? (
-            <div
-              className="kern-settings-callout kern-settings-callout--warn"
-              role="status"
-            >
-              <p>{selected.error_summary}</p>
+        </div>
+        <div className="kern-source-grid">
+          <article className="kern-source-card">
+            <div className="kern-source-card-title">
+              <div className="kern-source-name">
+                <span className="kern-source-icon">
+                  <UploadIcon />
+                </span>
+                <div>
+                  <h3>File uploads</h3>
+                  <p className="kern-source-kind">Local files</p>
+                </div>
+              </div>
+              <span className="kern-source-status">Ready</span>
             </div>
+            <div className="kern-source-metrics">
+              <div>
+                <span className="kern-metric-label">Documents</span>
+                <span className="kern-metric-value">{documents.length}</span>
+              </div>
+              <div>
+                <span className="kern-metric-label">Latest upload</span>
+                <span className="kern-metric-value">
+                  {latestUpload ? formatRelative(latestUpload) : "None yet"}
+                </span>
+              </div>
+            </div>
+            <div className="kern-source-actions">
+              <Button
+                type="button"
+                disabled={busy || !constraints}
+                onClick={() => setUploadOpen(true)}
+              >
+                <UploadIcon />
+                Add files
+              </Button>
+            </div>
+          </article>
+          {driveConnected ? (
+            <GoogleDrivePanel
+              apiBaseUrl={apiBaseUrl}
+              getStatus={getDriveStatus}
+              syncNow={syncDrive}
+              disconnect={disconnectDrive}
+              onConnectionChange={setDriveConnected}
+            />
           ) : null}
         </div>
-      ) : null}
-
-      <form className="kern-documents-form" onSubmit={onUpload}>
-        <fieldset
-          className="kern-settings-fieldset"
-          disabled={busy || dialogOpen || !constraints}
-        >
-          <legend>Upload new</legend>
-          <p className="kern-settings-help">
-            A system-managed source ID is assigned automatically.
+        <div className="kern-hub-section-head">
+          <h2>Available connectors</h2>
+          <p className="kern-hub-section-note">
+            The card pattern scales without adding new page sections or forms.
           </p>
-          <label className="kern-settings-field">
-            <span>Document file</span>
+        </div>
+        <div className="kern-available-grid">
+          {!driveConnected ? (
+            <GoogleDrivePanel
+              apiBaseUrl={apiBaseUrl}
+              getStatus={getDriveStatus}
+              syncNow={syncDrive}
+              disconnect={disconnectDrive}
+              onConnectionChange={setDriveConnected}
+            />
+          ) : null}
+          {PLANNED_CONNECTORS.map((connector) => (
+            <article className="kern-available-card" key={connector.name}>
+              <span className="kern-source-icon">
+                <PlannedIcon name={connector.icon} />
+              </span>
+              <div className="kern-available-copy">
+                <h3>{connector.name}</h3>
+                <p className="kern-source-kind">{connector.kind}</p>
+              </div>
+              <span className="kern-planned">Planned</span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section
+        className="kern-hub-panel"
+        id="hub-documents-panel"
+        role="tabpanel"
+        aria-labelledby="hub-documents-tab"
+        hidden={hubTab !== "documents"}
+      >
+        <div className="kern-hub-toolbar">
+          <label className="kern-settings-field kern-hub-search-field">
+            <span>Search</span>
             <input
-              key={uploadInputKey}
-              type="file"
-              accept={accept}
+              type="search"
               className="kern-settings-input"
-              onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                setUploadFile(event.target.files?.[0] ?? null);
-              }}
+              placeholder="Search documents"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <Button type="submit" disabled={busy || !uploadFile}>
-            Upload new
-          </Button>
-        </fieldset>
-      </form>
+          <SoftSelect
+            id="hub-source-filter"
+            label="Source"
+            value={sourceFilter}
+            options={[...SOURCE_FILTERS]}
+            onChange={(value) =>
+              setSourceFilter(value as (typeof SOURCE_FILTERS)[number])
+            }
+          />
+        </div>
 
-      {selected ? (
-        <form className="kern-documents-form" onSubmit={onReplace}>
-          <fieldset
-            className="kern-settings-fieldset"
-            disabled={busy || dialogOpen || !constraints}
-          >
-            <legend>Replace</legend>
-            <p className="kern-settings-help">
-              Keeps source ID {selected.source_id} and replaces stored chunks.
-              File name is ignored for identity.
+        {documents.length === 0 && catalog.kind === "ready" ? (
+          <div className="kern-content-state">
+            <EmptyState title="No uploaded documents" description={EMPTY_COPY} />
+          </div>
+        ) : visibleDocuments.length === 0 ? (
+          <div className="kern-content-state">
+            <EmptyState
+              title="No matching documents"
+              description="Try another search or source filter. Google Drive files are not listed in this catalog."
+            />
+          </div>
+        ) : (
+          <div className="kern-documents-table-wrap">
+            <table className="kern-documents-table">
+              <thead>
+                <tr>
+                  <th scope="col">Document</th>
+                  <th scope="col">Source</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Chunks</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">
+                    <span className="visually-hidden">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleDocuments.map((doc) => {
+                  const selectedRow = doc.source_id === selectedId;
+                  return (
+                    <tr
+                      key={doc.source_id}
+                      className={selectedRow ? "is-selected" : undefined}
+                      onClick={() => {
+                        if (!dialogOpen) {
+                          selectDocument(doc.source_id);
+                        }
+                      }}
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          className="kern-documents-row-button"
+                          aria-pressed={selectedRow}
+                          disabled={dialogOpen}
+                        >
+                          <span className="kern-doc-name">{doc.file_name}</span>
+                          <span className="kern-doc-id">{doc.source_id}</span>
+                        </button>
+                      </td>
+                      <td>
+                        <span className="kern-source-cell">
+                          <span className="kern-mini-icon">
+                            <UploadIcon />
+                          </span>
+                          File upload
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            doc.status === "ready" ? "kern-doc-ready" : undefined
+                          }
+                        >
+                          {doc.status}
+                        </span>
+                      </td>
+                      <td>{doc.chunk_count}</td>
+                      <td>{formatUploadedAt(doc.uploaded_at)}</td>
+                      <td className="kern-documents-actions">
+                        <button
+                          type="button"
+                          className="kern-documents-delete"
+                          aria-label={`Delete ${doc.file_name}`}
+                          disabled={busy || dialogOpen}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPendingDelete(doc);
+                          }}
+                        >
+                          <svg
+                            className="kern-documents-delete-icon"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M7.5 4.5h5M5 6.5h10M8.25 6.5v7.25M11.75 6.5v7.25M7 6.5l.5 8.25h5l.5-8.25"
+                              stroke="currentColor"
+                              strokeWidth="1.4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {selected ? (
+          <div className="kern-documents-detail">
+            <p className="kern-settings-hint">
+              Catalog identity is the source ID, not the file name. Status:{" "}
+              {selected.status} · chunks: {selected.chunk_count} · uploaded:{" "}
+              {formatUploadedAt(selected.uploaded_at)}
             </p>
-            <label className="kern-settings-field">
-              <span>Replacement file</span>
-              <input
-                key={replaceInputKey}
-                type="file"
-                accept={accept}
-                className="kern-settings-input"
-                onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                  setReplaceFile(event.target.files?.[0] ?? null);
-                }}
-              />
-            </label>
-            <Button type="submit" disabled={busy || !replaceFile}>
-              Replace
-            </Button>
-          </fieldset>
-        </form>
+            {selected.error_summary ? (
+              <div
+                className="kern-settings-callout kern-settings-callout--warn"
+                role="status"
+              >
+                <p>{selected.error_summary}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {selected ? (
+          <form className="kern-documents-form" onSubmit={onReplace}>
+            <fieldset
+              className="kern-settings-fieldset"
+              disabled={busy || dialogOpen || !constraints}
+            >
+              <legend>Replace</legend>
+              <p className="kern-settings-help">
+                Keeps source ID {selected.source_id} and replaces stored chunks.
+                File name is ignored for identity.
+              </p>
+              <label className="kern-settings-field">
+                <span>Replacement file</span>
+                <input
+                  key={replaceInputKey}
+                  type="file"
+                  accept={accept}
+                  className="kern-settings-input"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    setReplaceFile(event.target.files?.[0] ?? null);
+                  }}
+                />
+              </label>
+              <Button type="submit" disabled={busy || !replaceFile}>
+                Replace
+              </Button>
+            </fieldset>
+          </form>
+        ) : null}
+      </section>
+
+      {uploadOpen ? (
+        <div className="kern-dialog-root">
+          <button
+            type="button"
+            className="kern-dialog-backdrop"
+            aria-label="Dismiss dialog"
+            onClick={() => {
+              if (!busy) {
+                setUploadOpen(false);
+                clearUploadInput();
+              }
+            }}
+          />
+          <div
+            className="kern-dialog kern-hub-upload-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hub-upload-title"
+          >
+            <h2 id="hub-upload-title" className="kern-dialog-title">
+              Upload files
+            </h2>
+            <p className="kern-dialog-body">
+              Files become part of the shared document catalog. A system-managed
+              source ID is assigned automatically.
+            </p>
+            <form className="kern-documents-form" onSubmit={onUpload}>
+              <label className="kern-settings-field">
+                <span>Document file</span>
+                <input
+                  key={uploadInputKey}
+                  type="file"
+                  accept={accept}
+                  className="kern-settings-input"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    setUploadFile(event.target.files?.[0] ?? null);
+                  }}
+                />
+              </label>
+              <div className="kern-dialog-actions">
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setUploadOpen(false);
+                    clearUploadInput();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={busy || !uploadFile}>
+                  Upload new
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
 
       <ConfirmDialog

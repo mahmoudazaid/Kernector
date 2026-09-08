@@ -185,17 +185,36 @@ rm -rf data/chroma
 
 ## Sync documents from Google Drive
 
-Google Drive sync is available from Knowledge Hub (`POST /api/v1/connectors/google-drive/sync`) and from the CLI. There is no OAuth picker or in-browser credential entry.
+Google Drive has two connection strategies. Knowledge Hub uses **user OAuth**. The CLI (#196) still uses a **service account**. Do not enter Google credentials in Next.js.
+
+### Knowledge Hub (user OAuth)
+
+1. Enable the Google Drive API and create an OAuth **Web application** client.
+2. Set the authorized redirect URI to exactly
+   `http://127.0.0.1:8000/api/v1/connectors/google-drive/oauth/callback`
+   (or your deployed callback URL).
+3. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+   `GOOGLE_OAUTH_REDIRECT_URI`, and optionally `GOOGLE_OAUTH_FRONTEND_REDIRECT`
+   (see [`.env.example`](.env.example)). Never commit those values.
+4. Install the extra: `uv sync --extra google-drive`.
+5. In Knowledge Hub, click **Connect**. Google owns account selection and consent.
+6. After the callback, use **Sync now**. **Disconnect** revokes the stored grant
+   and leaves already indexed documents in place.
+
+Tokens stay on the server (`GOOGLE_OAUTH_TOKEN_PATH`). The browser only sees
+presentation fields (`connected`, account email, counts). Scope is
+`https://www.googleapis.com/auth/drive.readonly` with offline access for
+background sync.
+
+### CLI (service account)
 
 1. Create a Google Cloud service account.
 2. Enable the Google Drive API for that project.
 3. Download the service-account JSON key.
 4. Keep that key **outside the repository**.
 5. Share the target Drive folder with the service-account email (Viewer is enough).
-6. Set the environment variables in `.env` (see [`.env.example`](.env.example)):
-   - `GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE` — path to the JSON key
-   - `GOOGLE_DRIVE_FOLDER_ID` — folder whose **direct children** are synced
-   - `GOOGLE_DRIVE_PAGE_SIZE` — optional list page size (default `100`, max `1000`)
+6. Set `GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE` and `GOOGLE_DRIVE_FOLDER_ID`
+   (see [`.env.example`](.env.example)).
 7. Install the optional extra and run:
 
 ```bash

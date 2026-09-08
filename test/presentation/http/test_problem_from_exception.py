@@ -7,6 +7,9 @@ from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
     GoogleDriveNotConfiguredError,
+    GoogleDriveNotConnectedError,
+    GoogleDriveOAuthNotConfiguredError,
+    GoogleDriveReauthorizationRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
     UploadTooLargeError,
@@ -52,6 +55,21 @@ from presentation.http.errors import (
             GoogleDriveNotConfiguredError("missing folder"),
             409,
             "google_drive_unconfigured",
+        ),
+        (
+            GoogleDriveOAuthNotConfiguredError("missing client"),
+            409,
+            "google_drive_oauth_unconfigured",
+        ),
+        (
+            GoogleDriveNotConnectedError("no grant"),
+            409,
+            "google_drive_not_connected",
+        ),
+        (
+            GoogleDriveReauthorizationRequiredError("revoked"),
+            409,
+            "google_drive_reauthorization_required",
         ),
         (ConnectorSyncError("vendor body"), 502, "connector_sync_failed"),
         (ProviderError("upstream"), 502, "provider_error"),
@@ -266,6 +284,25 @@ def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> 
     assert "GOOGLE_DRIVE_FOLDER_ID" not in unconfigured.detail
     assert generic.status == 500
     assert generic.code == "configuration_error"
+
+
+def test_google_drive_oauth_errors_are_not_swallowed_by_configuration_error() -> None:
+    oauth = problem_from_exception(
+        GoogleDriveOAuthNotConfiguredError("GOOGLE_OAUTH_CLIENT_SECRET missing")
+    )
+    disconnected = problem_from_exception(GoogleDriveNotConnectedError("no grant"))
+    reauth = problem_from_exception(
+        GoogleDriveReauthorizationRequiredError("token 1//revoked")
+    )
+
+    assert oauth.status == 409
+    assert oauth.code == "google_drive_oauth_unconfigured"
+    assert "CLIENT_SECRET" not in oauth.detail
+    assert disconnected.status == 409
+    assert disconnected.code == "google_drive_not_connected"
+    assert reauth.status == 409
+    assert reauth.code == "google_drive_reauthorization_required"
+    assert "1//" not in reauth.detail
 
 
 def test_connector_sync_error_uses_fixed_sanitized_detail() -> None:

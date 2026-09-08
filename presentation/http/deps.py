@@ -22,11 +22,14 @@ from composition import (
     build_vector_store,
     create_uploaded_document,
     delete_uploaded_document,
+    complete_google_drive_oauth,
+    disconnect_google_drive_oauth,
     google_drive_status,
     list_uploaded_documents,
     load_runtime_settings,
     replace_uploaded_document,
-    sync_google_drive,
+    start_google_drive_oauth,
+    sync_google_drive_oauth,
 )
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
 from domain.ports import PromptRepository, VectorStore
@@ -168,9 +171,46 @@ def get_google_drive_sync(
     """
 
     def sync() -> ConnectorSyncResponse:
-        return sync_google_drive(settings, vector_store=get_vector_store())
+        return sync_google_drive_oauth(settings, vector_store=get_vector_store())
 
     return sync
+
+
+def get_google_drive_oauth_start(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], str]:
+    """Return a callable that issues CSRF state and builds Google's auth URL."""
+
+    def start() -> str:
+        return start_google_drive_oauth(settings)
+
+    return start
+
+
+def get_google_drive_oauth_callback(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[str | None, str | None, str | None], str]:
+    """Return a callable that completes the OAuth callback."""
+
+    def complete(
+        state: str | None, code: str | None, error: str | None
+    ) -> str:
+        return complete_google_drive_oauth(
+            settings, state=state, code=code, error=error
+        )
+
+    return complete
+
+
+def get_google_drive_disconnect(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], None]:
+    """Return a callable that revokes and deletes the stored user grant."""
+
+    def disconnect() -> None:
+        disconnect_google_drive_oauth(settings)
+
+    return disconnect
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -185,4 +225,14 @@ GoogleDriveStatusDep = Annotated[
 ]
 GoogleDriveSyncDep = Annotated[
     Callable[[], ConnectorSyncResponse], Depends(get_google_drive_sync)
+]
+GoogleDriveOAuthStartDep = Annotated[
+    Callable[[], str], Depends(get_google_drive_oauth_start)
+]
+GoogleDriveOAuthCallbackDep = Annotated[
+    Callable[[str | None, str | None, str | None], str],
+    Depends(get_google_drive_oauth_callback),
+]
+GoogleDriveDisconnectDep = Annotated[
+    Callable[[], None], Depends(get_google_drive_disconnect)
 ]

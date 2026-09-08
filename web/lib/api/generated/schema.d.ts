@@ -33,9 +33,53 @@ export interface paths {
     };
     /**
      * Google Drive Connector Status
-     * @description Return whether Drive env is present and the Google extra is importable.
+     * @description Return presentation-safe Drive SA flags and user OAuth connection.
      */
     get: operations["google_drive_connector_status_api_v1_connectors_google_drive_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Google Drive Connector Disconnect
+     * @description Revoke and delete the stored user grant. Indexed documents stay.
+     */
+    delete: operations["google_drive_connector_disconnect_api_v1_connectors_google_drive_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Oauth Callback
+     * @description Validate state, exchange the code server-side, and return to the Hub.
+     */
+    get: operations["google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/oauth/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Oauth Start
+     * @description Issue CSRF state and redirect the browser to Google, or back to the Hub.
+     */
+    get: operations["google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -55,7 +99,7 @@ export interface paths {
     put?: never;
     /**
      * Google Drive Connector Sync
-     * @description Synchronize the configured Drive folder into the knowledge base.
+     * @description Synchronize Drive for the stored user OAuth grant.
      */
     post: operations["google_drive_connector_sync_api_v1_connectors_google_drive_sync_post"];
     delete?: never;
@@ -309,14 +353,55 @@ export interface components {
       documents: components["schemas"]["CatalogDocumentResponse"][];
     };
     /**
+     * GoogleDriveLastSyncResponse
+     * @description Last user-OAuth sync summary. Counts are honest; no secrets.
+     */
+    GoogleDriveLastSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** New Count */
+      new_count: number;
+      /** Synced At */
+      synced_at: string;
+      /** Unchanged Count */
+      unchanged_count: number;
+      /** Updated Count */
+      updated_count: number;
+    };
+    /**
      * GoogleDriveStatusResponse
-     * @description Google Drive connector configuration presence (no secrets).
+     * @description Google Drive connector presence and user OAuth connection (no secrets).
      */
     GoogleDriveStatusResponse: {
+      /** Account Email */
+      account_email?: string | null;
       /** Available */
       available: boolean;
       /** Configured */
       configured: boolean;
+      /**
+       * Connected
+       * @default false
+       */
+      connected: boolean;
+      /**
+       * Document Count
+       * @default 0
+       */
+      document_count: number;
+      /** Folder Count */
+      folder_count?: number | null;
+      last_sync?: components["schemas"]["GoogleDriveLastSyncResponse"] | null;
+      /**
+       * Oauth Ready
+       * @default false
+       */
+      oauth_ready: boolean;
+      /**
+       * Reauthorization Required
+       * @default false
+       */
+      reauthorization_required: boolean;
     };
     /**
      * GoogleDriveSyncResponse
@@ -331,6 +416,11 @@ export interface components {
       outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
       /** Skipped Count */
       skipped_count: number;
+    };
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
     };
     /**
      * HealthResponse
@@ -599,6 +689,19 @@ export interface components {
       /** Tool Name */
       tool_name: string;
     };
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
   };
   responses: never;
   parameters: never;
@@ -684,6 +787,140 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["GoogleDriveStatusResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_disconnect_api_v1_connectors_google_drive_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get: {
+    parameters: {
+      query?: {
+        state?: string | null;
+        code?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
         };
       };
       /** @description Method not allowed */

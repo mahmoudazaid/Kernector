@@ -1,143 +1,245 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { GoogleDrivePanel } from "@/components/documents/GoogleDrivePanel";
 import { ApiError } from "@/lib/api/errors";
-import type { GoogleDriveSyncResponse } from "@/lib/api/connectors";
+import {
+  GOOGLE_DRIVE_OAUTH_START_PATH,
+  type GoogleDriveStatusResponse,
+} from "@/lib/api/connectors";
 
-const CONFIGURED = { configured: true, available: true };
-
-function syncResult(
-  overrides: Partial<GoogleDriveSyncResponse> = {},
-): GoogleDriveSyncResponse {
+function status(
+  overrides: Partial<GoogleDriveStatusResponse> = {},
+): GoogleDriveStatusResponse {
   return {
-    ingested_count: 1,
-    skipped_count: 2,
-    failed_count: 0,
-    outcomes: [],
+    configured: false,
+    available: true,
+    connected: false,
+    oauth_ready: true,
+    account_email: null,
+    document_count: 0,
+    folder_count: null,
+    last_sync: null,
+    reauthorization_required: false,
     ...overrides,
   };
 }
 
+const CONNECTED = status({
+  connected: true,
+  account_email: "ada@example.com",
+  document_count: 4,
+  folder_count: 1,
+  last_sync: {
+    synced_at: "2026-09-08T12:00:00+00:00",
+    new_count: 1,
+    updated_count: 2,
+    unchanged_count: 3,
+    failed_count: 0,
+  },
+});
+
 describe("GoogleDrivePanel", () => {
-  it("shows loading status then Sync now when configured", async () => {
-    let resolveStatus: (value: typeof CONFIGURED) => void = () => {};
-    const getStatus = vi.fn(
-      () =>
-        new Promise<typeof CONFIGURED>((resolve) => {
-          resolveStatus = resolve;
-        }),
-    );
-
-    render(
-      <GoogleDrivePanel apiBaseUrl="http://api.test" getStatus={getStatus} />,
-    );
-
-    expect(screen.getByRole("status")).toHaveTextContent(/loading/i);
-    expect(
-      screen.queryByRole("button", { name: /sync now/i }),
-    ).not.toBeInTheDocument();
-
-    resolveStatus(CONFIGURED);
-
-    expect(
-      await screen.findByRole("button", { name: /sync now/i }),
-    ).toBeEnabled();
-  });
-
-  it("explains unconfigured backend env and hides Sync now", async () => {
+  it("shows Connect to the backend OAuth start URL before authorization", async () => {
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
-        getStatus={async () => ({ configured: false, available: true })}
+        getStatus={async () => status()}
       />,
     );
 
-    expect(
-      await screen.findByText(/backend environment variables/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/GOOGLE_DRIVE_FOLDER_ID/)).toBeInTheDocument();
+    const connect = await screen.findByRole("link", { name: /^connect$/i });
+    expect(connect).toHaveAttribute(
+      "href",
+      `http://api.test${GOOGLE_DRIVE_OAUTH_START_PATH}`,
+    );
     expect(
       screen.queryByRole("button", { name: /sync now/i }),
     ).not.toBeInTheDocument();
     expect(document.querySelector("input")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/GOOGLE_DRIVE_SERVICE_ACCOUNT/);
+    expect(screen.getByText(/sign in with your google account/i)).toBeInTheDocument();
+    expect(connect.closest(".kern-available-card")).not.toBeNull();
+    expect(connect.closest(".kern-source-card")).toBeNull();
   });
 
-  it("shows extra unavailable copy and hides Sync now", async () => {
+  it("keeps Connect on the Hub when OAuth is not configured", async () => {
+    const user = userEvent.setup();
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
-        getStatus={async () => ({ configured: true, available: false })}
+        getStatus={async () => status({ oauth_ready: false })}
+      />,
+    );
+
+    const connect = await screen.findByRole("link", { name: /^connect$/i });
+    await user.click(connect);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/oauth is not configured on the server/i);
+    expect(alert.closest(".kern-available-card")).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: /redirecting to google/i }),
+    ).not.toBeInTheDocument();
+    expect(connect).toBeInTheDocument();
+  });
+
+  it("shows an accessible error after unconfigured callback", async () => {
+    window.history.pushState({}, "", "/documents?drive=unconfigured");
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => status({ oauth_ready: false })}
+      />,
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/oauth is not configured on the server/i);
+    expect(alert.closest(".kern-available-card")).toBeNull();
+    expect(screen.getByRole("link", { name: /^connect$/i })).toBeInTheDocument();
+    expect(window.location.search).not.toContain("drive=");
+  });
+
+  it("marks redirecting after Connect is activated", async () => {
+    const user = userEvent.setup();
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => status()}
+      />,
+    );
+
+    const connect = await screen.findByRole("link", { name: /^connect$/i });
+    connect.addEventListener("click", (event) => event.preventDefault());
+    await user.click(connect);
+    expect(
+      screen.getByRole("link", { name: /redirecting to google/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves to Connected sources data after a successful status reload", async () => {
+    const { unmount } = render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => status()}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: /^connect$/i })).toBeTruthy();
+    unmount();
+
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => CONNECTED}
       />,
     );
 
     expect(
-      await screen.findByRole("heading", {
-        name: /google drive extra unavailable/i,
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/uv sync --extra google-drive/)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /sync now/i }),
-    ).not.toBeInTheDocument();
+      await screen.findByRole("button", { name: /sync now/i }),
+    ).toBeEnabled();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^connect$/i })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/ya29\.|1\/\/|client-secret/);
   });
 
-  it("shows ingested skipped failed after a successful sync", async () => {
-    const user = userEvent.setup();
-    const syncNow = vi.fn().mockResolvedValue(syncResult());
+  it("shows an accessible error after denial and stays available", async () => {
+    window.history.pushState({}, "", "/documents?drive=denied");
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
-        getStatus={async () => CONFIGURED}
+        getStatus={async () => status()}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /authorization was cancelled/i,
+    );
+    expect(screen.getByRole("link", { name: /^connect$/i })).toBeInTheDocument();
+    expect(window.location.search).not.toContain("drive=");
+  });
+
+  it("shows an accessible error after invalid_state", async () => {
+    window.history.pushState({}, "", "/documents?drive=invalid_state");
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => status()}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /no longer valid/i,
+    );
+    expect(screen.getByRole("link", { name: /^connect$/i })).toBeInTheDocument();
+  });
+
+  it("shows Never when connected but not yet synced", async () => {
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () =>
+          status({
+            connected: true,
+            account_email: "ada@example.com",
+            last_sync: null,
+          })
+        }
+      />,
+    );
+
+    expect(await screen.findByText(/^never$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^new$/i)).toBeNull();
+  });
+
+  it("updates last-sync counts from a status refetch after Sync now", async () => {
+    const user = userEvent.setup();
+    const getStatus = vi
+      .fn()
+      .mockResolvedValueOnce(
+        status({
+          connected: true,
+          account_email: "ada@example.com",
+          last_sync: null,
+        }),
+      )
+      .mockResolvedValueOnce(CONNECTED);
+    const syncNow = vi.fn().mockResolvedValue({
+      ingested_count: 1,
+      skipped_count: 2,
+      failed_count: 0,
+      outcomes: [],
+    });
+
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={getStatus}
         syncNow={syncNow}
       />,
     );
 
     await user.click(await screen.findByRole("button", { name: /sync now/i }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /ingested 1/i,
-    );
-    expect(screen.getByRole("status")).toHaveTextContent(/skipped 2/i);
-    expect(screen.getByRole("status")).toHaveTextContent(/failed 0/i);
+    expect(await screen.findByText(/^new$/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/new\s*1/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/updated\s*2/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/unchanged\s*3/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/failed\s*0/i);
   });
 
-  it("shows empty state when a sync changes nothing", async () => {
+  it("disables Sync now while a run is in progress", async () => {
     const user = userEvent.setup();
-    render(
-      <GoogleDrivePanel
-        apiBaseUrl="http://api.test"
-        getStatus={async () => CONFIGURED}
-        syncNow={async () =>
-          syncResult({
-            ingested_count: 0,
-            skipped_count: 0,
-            failed_count: 0,
-          })
-        }
-      />,
-    );
-
-    await user.click(await screen.findByRole("button", { name: /sync now/i }));
-
-    expect(
-      await screen.findByRole("heading", { name: /no drive changes/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("ignores overlapping Sync now clicks", async () => {
-    const user = userEvent.setup();
-    let resolveSync: (value: GoogleDriveSyncResponse) => void = () => {};
+    let resolveSync: (value: unknown) => void = () => {};
     const syncNow = vi.fn(
       () =>
-        new Promise<GoogleDriveSyncResponse>((resolve) => {
+        new Promise((resolve) => {
           resolveSync = resolve;
         }),
     );
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
-        getStatus={async () => CONFIGURED}
+        getStatus={async () => CONNECTED}
         syncNow={syncNow}
       />,
     );
@@ -145,12 +247,9 @@ describe("GoogleDrivePanel", () => {
     const button = await screen.findByRole("button", { name: /sync now/i });
     await user.click(button);
     await user.click(button);
-
     expect(syncNow).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /syncing/i })).toBeDisabled();
-
-    resolveSync(syncResult());
-    expect(await screen.findByText(/ingested 1/i)).toBeInTheDocument();
+    resolveSync({});
   });
 
   it("shows ApiError detail on sync failure", async () => {
@@ -158,7 +257,7 @@ describe("GoogleDrivePanel", () => {
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
-        getStatus={async () => CONFIGURED}
+        getStatus={async () => CONNECTED}
         syncNow={async () => {
           throw new ApiError({
             status: 502,
@@ -171,14 +270,14 @@ describe("GoogleDrivePanel", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: /sync now/i }));
-
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("The Google Drive connector sync failed.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The Google Drive connector sync failed.",
+    );
   });
 
   it("says an aborted sync may still be running and re-fetches status", async () => {
     const user = userEvent.setup();
-    const getStatus = vi.fn().mockResolvedValue(CONFIGURED);
+    const getStatus = vi.fn().mockResolvedValue(CONNECTED);
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
@@ -190,12 +289,67 @@ describe("GoogleDrivePanel", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: /sync now/i }));
-
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /may still be in progress on the server/i,
     );
     await waitFor(() => {
       expect(getStatus).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("requires disconnect confirmation and then returns to Connect", async () => {
+    const user = userEvent.setup();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const getStatus = vi
+      .fn()
+      .mockResolvedValueOnce(CONNECTED)
+      .mockResolvedValueOnce(status());
+
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={getStatus}
+        disconnect={disconnect}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /disconnect/i }));
+    expect(disconnect).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(/indexed documents stay/i);
+    await user.click(within(dialog).getByRole("button", { name: /disconnect/i }));
+
+    await waitFor(() => {
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByRole("link", { name: /^connect$/i })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /sync now/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Connect again when reauthorization is required", async () => {
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () =>
+          status({
+            connected: true,
+            oauth_ready: true,
+            reauthorization_required: true,
+            account_email: "ada@example.com",
+          })
+        }
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/revoked/i);
+    expect(screen.getByRole("link", { name: /^connect$/i })).toHaveAttribute(
+      "href",
+      `http://api.test${GOOGLE_DRIVE_OAUTH_START_PATH}`,
+    );
+    expect(
+      screen.queryByRole("button", { name: /sync now/i }),
+    ).not.toBeInTheDocument();
   });
 });

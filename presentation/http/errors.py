@@ -8,6 +8,9 @@ from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
     GoogleDriveNotConfiguredError,
+    GoogleDriveNotConnectedError,
+    GoogleDriveOAuthNotConfiguredError,
+    GoogleDriveReauthorizationRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
@@ -255,6 +258,33 @@ def problem_from_exception(
             title="Google Drive not configured",
             status=409,
             detail="Google Drive is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveOAuthNotConfiguredError):
+        return _problem(
+            code="google_drive_oauth_unconfigured",
+            title="Google Drive OAuth not configured",
+            status=409,
+            detail="Google Drive OAuth is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveNotConnectedError):
+        return _problem(
+            code="google_drive_not_connected",
+            title="Google Drive not connected",
+            status=409,
+            detail="Google Drive is not connected.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveReauthorizationRequiredError):
+        return _problem(
+            code="google_drive_reauthorization_required",
+            title="Google Drive reauthorization required",
+            status=409,
+            detail="Google Drive authorization was revoked. Connect again.",
             instance=instance,
             request_id=request_id,
         )

@@ -14,8 +14,19 @@ vi.mock("@/lib/api/connectors", () => ({
   getGoogleDriveStatus: vi.fn().mockResolvedValue({
     configured: false,
     available: true,
+    connected: false,
+    oauth_ready: true,
+    account_email: null,
+    document_count: 0,
+    folder_count: null,
+    last_sync: null,
+    reauthorization_required: false,
   }),
   syncGoogleDrive: vi.fn(),
+  disconnectGoogleDrive: vi.fn(),
+  googleDriveOAuthStartUrl: (baseUrl: string) =>
+    `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
+  GOOGLE_DRIVE_OAUTH_START_PATH: "/api/v1/connectors/google-drive/oauth/start",
 }));
 
 const SETTINGS: RuntimeSettingsResponse = {
@@ -58,6 +69,20 @@ function listResponse(
   return { documents };
 }
 
+async function openDocumentsTab(
+  user: ReturnType<typeof userEvent.setup>,
+) {
+  await user.click(await screen.findByRole("tab", { name: /documents/i }));
+}
+
+async function openUploadModal(
+  user: ReturnType<typeof userEvent.setup>,
+) {
+  const addFiles = await screen.findByRole("button", { name: /add files/i });
+  await waitFor(() => expect(addFiles).toBeEnabled());
+  await user.click(addFiles);
+}
+
 describe("DocumentsPanel", () => {
   it("lists uploaded documents in a table", async () => {
     const list = vi.fn().mockResolvedValue(
@@ -81,6 +106,8 @@ describe("DocumentsPanel", () => {
       />,
     );
 
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByText("spec.md")).toBeInTheDocument();
     expect(screen.getByText("guide.txt")).toBeInTheDocument();
@@ -129,7 +156,7 @@ describe("DocumentsPanel", () => {
       screen.getByRole("heading", { name: "Knowledge Hub" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /upload new/i }),
+      screen.getByRole("button", { name: /add files/i }),
     ).toBeInTheDocument();
   });
 
@@ -157,6 +184,7 @@ describe("DocumentsPanel", () => {
     );
 
     await screen.findByText("spec.md");
+    await openUploadModal(user);
     const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
     await user.upload(screen.getByLabelText(/document file/i), file);
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
@@ -164,6 +192,8 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByText(/something went wrong while processing/i),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await openUploadModal(user);
     expect(screen.getByLabelText(/document file/i)).toBeEnabled();
   });
 
@@ -184,6 +214,7 @@ describe("DocumentsPanel", () => {
     );
 
     await screen.findByText(/no uploaded documents yet/i);
+    await openUploadModal(user);
     const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
     await user.upload(screen.getByLabelText(/document file/i), file);
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
@@ -210,6 +241,7 @@ describe("DocumentsPanel", () => {
       />,
     );
 
+    await openDocumentsTab(user);
     await screen.findByText("spec.md");
     const file = new File(["# v2"], "v2.md", { type: "text/markdown" });
     await user.upload(screen.getByLabelText(/replacement file/i), file);
@@ -242,6 +274,7 @@ describe("DocumentsPanel", () => {
       />,
     );
 
+    await openDocumentsTab(user);
     await screen.findByText("spec.md");
     expect(
       screen.queryByRole("checkbox", {
@@ -278,6 +311,7 @@ describe("DocumentsPanel", () => {
       />,
     );
 
+    await openDocumentsTab(user);
     await screen.findByText("spec.md");
     await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
 
@@ -353,6 +387,7 @@ describe("DocumentsPanel", () => {
     );
 
     await screen.findByText(/no uploaded documents yet/i);
+    await openUploadModal(user);
     const file = new File(["a"], "dup.md");
     await user.upload(screen.getByLabelText(/document file/i), file);
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
@@ -386,22 +421,22 @@ describe("DocumentsPanel", () => {
       await screen.findByText(/settings catalog unavailable/i),
     ).toBeInTheDocument();
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.getByLabelText(/document file/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /add files/i })).toBeDisabled();
+    await openDocumentsTab(user);
     expect(screen.getByLabelText(/replacement file/i)).toBeDisabled();
     expect(screen.getByRole("button", { name: /^replace$/i })).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /^upload new$/i }),
-    ).toBeDisabled();
     expect(replace).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /^retry$/i }));
 
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
     await waitFor(() => {
-      expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+      expect(screen.getByRole("button", { name: /add files/i })).toBeEnabled();
     });
     expect(
       screen.queryByText(/settings catalog unavailable/i),
     ).not.toBeInTheDocument();
+    await openDocumentsTab(user);
     expect(screen.getByLabelText(/replacement file/i)).toBeEnabled();
     expect(failingLoadSettings).toHaveBeenCalledTimes(2);
     expect(list).toHaveBeenCalledTimes(1);
@@ -467,13 +502,13 @@ describe("DocumentsPanel", () => {
       await screen.findByText(/something went wrong while processing/i),
     ).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+      expect(screen.getByRole("button", { name: /add files/i })).toBeEnabled();
     });
 
     await user.click(screen.getByRole("button", { name: /^retry$/i }));
 
     expect(await screen.findByText("spec.md")).toBeInTheDocument();
-    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    expect(screen.getByRole("button", { name: /add files/i })).toBeEnabled();
     expect(
       screen.queryByText(/settings catalog unavailable/i),
     ).not.toBeInTheDocument();
@@ -522,7 +557,7 @@ describe("DocumentsPanel", () => {
     await waitFor(() => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
-    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    expect(screen.getByRole("button", { name: /add files/i })).toBeEnabled();
   });
 
   it("leaves document retry enabled while settings are still loading", async () => {
@@ -596,6 +631,7 @@ describe("DocumentsPanel", () => {
       await screen.findByRole("button", { name: /^checking/i }),
     ).toBeDisabled();
 
+    await openUploadModal(user);
     const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
     await user.upload(screen.getByLabelText(/document file/i), file);
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
@@ -668,21 +704,122 @@ describe("DocumentsPanel", () => {
     expect(screen.getByRole("button", { name: /^retry$/i })).toBeEnabled();
   });
 
-  it("renders the Google Drive fieldset inside the Knowledge Hub", async () => {
+  it("filters the catalog with SoftSelect instead of a native select", async () => {
+    const user = userEvent.setup();
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    expect(document.querySelector("select")).toBeNull();
+    expect(
+      screen.getByRole("combobox", { name: /^source$/i }),
+    ).toHaveTextContent("All sources");
+    expect(screen.getByRole("searchbox", { name: /^search$/i })).toBeInTheDocument();
+  });
+
+  it("renders File uploads as a full-width connected source", async () => {
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
         list={vi.fn().mockResolvedValue(listResponse([]))}
         loadSettings={loadSettings}
-        getDriveStatus={async () => ({ configured: true, available: true })}
       />,
     );
 
     expect(
-      await screen.findByRole("button", { name: /sync now/i }),
+      await screen.findByRole("heading", { name: "File uploads" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Latest upload")).toBeInTheDocument();
+    expect(screen.getByText("None yet")).toBeInTheDocument();
+    const card = screen.getByRole("heading", { name: "File uploads" }).closest(
+      "article",
+    );
+    expect(card?.parentElement).toHaveClass("kern-source-grid");
+    expect(card?.querySelector(".kern-source-metrics")?.lastElementChild).toHaveTextContent(
+      /latest upload/i,
+    );
+  });
+
+  it("keeps Google Drive under Available connectors before authorization", async () => {
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        loadSettings={loadSettings}
+        getDriveStatus={async () => ({
+          configured: false,
+          available: true,
+          connected: false,
+          oauth_ready: true,
+          account_email: null,
+          document_count: 0,
+          folder_count: null,
+          last_sync: null,
+          reauthorization_required: false,
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: /^connect$/i }),
+    ).toHaveAttribute(
+      "href",
+      "http://api.test/api/v1/connectors/google-drive/oauth/start",
+    );
+    const available = screen.getByRole("heading", {
+      name: "Available connectors",
+    }).parentElement?.nextElementSibling;
+    expect(available?.textContent).toMatch(/google drive/i);
+    expect(
+      screen.queryByRole("button", { name: /sync now/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Knowledge Hub" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /sources/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /documents/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /add files/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves Google Drive to Connected sources after authorization", async () => {
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        loadSettings={loadSettings}
+        getDriveStatus={async () => ({
+          configured: false,
+          available: true,
+          connected: true,
+          oauth_ready: true,
+          account_email: "ada@example.com",
+          document_count: 2,
+          folder_count: 1,
+          last_sync: null,
+          reauthorization_required: false,
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      const connected = screen.getByRole("heading", {
+        name: "Connected sources",
+      }).parentElement?.nextElementSibling;
+      expect(connected?.textContent).toMatch(/google drive/i);
+    });
+    expect(
+      await screen.findByRole("button", { name: /sync now/i }),
+    ).toBeInTheDocument();
+    const available = screen.getByRole("heading", {
+      name: "Available connectors",
+    }).parentElement?.nextElementSibling;
+    expect(available?.textContent).not.toMatch(/google drive/i);
   });
 });
