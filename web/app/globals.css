@@ -1469,6 +1469,13 @@ a.kern-btn {
   display: block;
   width: 72px;
   height: auto;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kern-picker-loader .kn-lid animate {
+    display: none;
+  }
 }
 
 .kern-drive-item {
