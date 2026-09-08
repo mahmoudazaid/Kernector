@@ -46,10 +46,20 @@ def test_risk_level_boundaries(score: int, level: str) -> None:
     assert risk_level(score) == level
 
 
-@pytest.mark.parametrize("bad", [-1, 101, True, 12.5, "10"])
-def test_risk_level_rejects_invalid_score(bad: object) -> None:
-    with pytest.raises(RiskScoreValidationError, match="score"):
+@pytest.mark.parametrize("bad", [True, 12.5, "10"])
+def test_risk_level_rejects_non_int_by_type_name(bad: object) -> None:
+    with pytest.raises(RiskScoreValidationError) as raised:
         risk_level(bad)
+    assert str(raised.value) == (
+        f"score must be an int in 0..100, got {type(bad).__name__}"
+    )
+
+
+@pytest.mark.parametrize("bad", [-1, 101, 150])
+def test_risk_level_rejects_out_of_range_int_by_value(bad: int) -> None:
+    with pytest.raises(RiskScoreValidationError) as raised:
+        risk_level(bad)
+    assert str(raised.value) == f"score must be an int in 0..100, got {bad}"
 
 
 def test_empty_signals_yield_low_zero() -> None:

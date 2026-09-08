@@ -108,6 +108,25 @@ def test_explicit_gherkin_style_round_trip() -> None:
     assert "references" in payload["test_cases"][0]
 
 
+def test_non_string_target_reports_type_name_not_value() -> None:
+    sentinel = "TARGET-LEAK-SENTINEL"
+    chat = _FakeChat()
+    with pytest.raises(TestCaseGenerationValidationError) as raised:
+        GenerateTestCasesTool(chat).run(_valid_arguments(target=[sentinel]))
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "target must be a non-blank string, got list"
+    assert chat.calls == 0
+
+
+def test_blank_target_fails_before_model() -> None:
+    chat = _FakeChat()
+    with pytest.raises(TestCaseGenerationValidationError) as raised:
+        GenerateTestCasesTool(chat).run(_valid_arguments(target="   "))
+    assert str(raised.value) == "target must be a non-blank string"
+    assert chat.calls == 0
+
+
 def test_invalid_style_fails_before_model() -> None:
     chat = _FakeChat()
     with pytest.raises(TestCaseGenerationValidationError, match="output_style"):

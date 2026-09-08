@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 from application.contracts import RetrieveRequest
+from application.errors import ApplicationValidationError
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.knowledge import (
     DocumentChunk,
@@ -228,7 +229,7 @@ def test_hybrid_fetches_twice_the_limit_from_each_side() -> None:
 
 
 def test_hybrid_enabled_without_lexical_index_is_rejected_when_alpha_positive() -> None:
-    with pytest.raises(ValueError, match="lexical_index"):
+    with pytest.raises(ApplicationValidationError, match="lexical_index"):
         RetrieveKnowledge(
             StubEmbeddingModel(),
             InMemoryVectorStore(),
@@ -236,6 +237,24 @@ def test_hybrid_enabled_without_lexical_index_is_rejected_when_alpha_positive() 
             hybrid_enabled=True,
             lexical_index=None,
             hybrid_alpha=0.5,
+        )
+
+
+def test_missing_embedding_model_is_rejected_as_application_validation() -> None:
+    with pytest.raises(ApplicationValidationError, match="embedding_model"):
+        RetrieveKnowledge(
+            None,  # type: ignore[arg-type]
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+        )
+
+
+def test_missing_vector_store_is_rejected_as_application_validation() -> None:
+    with pytest.raises(ApplicationValidationError, match="vector_store"):
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            None,  # type: ignore[arg-type]
+            max_input_length=10_000,
         )
 
 
@@ -641,3 +660,41 @@ def test_hybrid_lexical_match_survives_when_all_vector_candidates_rejected() -> 
 
     assert [hit.chunk.source_id for hit in response.hits] == ["lex"]
     assert response.hits[0].score == pytest.approx(0.5)
+
+
+def test_retrieve_knowledge_rejects_non_numeric_hybrid_alpha_by_type() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+            hybrid_alpha="0.5",  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "str" in message
+    assert "0.5" not in message
+
+
+def test_retrieve_knowledge_rejects_out_of_range_hybrid_alpha_keeps_number() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+            hybrid_alpha=1.5,
+        )
+    message = str(raised.value)
+    assert "1.5" in message
+
+
+def test_retrieve_knowledge_rejects_bad_vector_score_floor_by_type() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        RetrieveKnowledge(
+            StubEmbeddingModel(),
+            InMemoryVectorStore(),
+            max_input_length=10_000,
+            vector_score_floor="low",  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "str" in message
+    assert "low" not in message

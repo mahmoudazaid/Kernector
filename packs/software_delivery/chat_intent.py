@@ -11,7 +11,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from packs.software_delivery.contracts import TEST_CASE_STYLES, TestCaseStyle
+from packs.software_delivery.contracts import (
+    TEST_CASE_STYLES,
+    TEST_CASE_STYLES_DISPLAY,
+    TestCaseStyle,
+)
 from packs.software_delivery.errors import OrchestrationValidationError
 
 _CREATION_VERBS = r"create|generate|write|produce|draft|build"
@@ -106,15 +110,17 @@ class ChatToolSelection:
     def __post_init__(self) -> None:
         if not isinstance(self.generate_tests, bool):
             raise OrchestrationValidationError(
-                f"generate_tests must be a bool, got {self.generate_tests!r}"
+                "generate_tests must be a bool, "
+                f"got {type(self.generate_tests).__name__}"
             )
-        if (
-            not isinstance(self.output_style, str)
-            or self.output_style not in TEST_CASE_STYLES
-        ):
+        if not isinstance(self.output_style, str):
             raise OrchestrationValidationError(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {self.output_style!r}"
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
+                f"got {type(self.output_style).__name__}"
+            )
+        if self.output_style not in TEST_CASE_STYLES:
+            raise OrchestrationValidationError(
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
             )
 
 
