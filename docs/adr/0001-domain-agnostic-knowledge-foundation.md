@@ -35,6 +35,10 @@ data into a shared document contract.
    directly. `DOCUMENT_CATALOG_PATH` sets only that JSON adapter’s file path; it
    does not choose among adapters. Configurable JSON vs SQL adapter selection
    is tracked in [#131](https://github.com/mahmoudazaid/Kernector/issues/131).
+   The future SQL adapter’s scope identity is recorded in
+   [ADR 0006](0006-workspace-scope-identity.md); #131 remains blocked until that
+   ADR is Accepted. This ADR does not introduce adapter selection or
+   `KERNECTOR_WORKSPACE_ID`.
 
 ## Consequences
 
@@ -65,3 +69,5 @@ Parent: [EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68).
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — layers and knowledge-foundation section
 - [data/knowledge/README.md](../../data/knowledge/README.md) — seed format and domain mapping
+- [ADR 0006](0006-workspace-scope-identity.md) — workspace scope identity for a
+  future SQL catalog (`#131`)
