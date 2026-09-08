@@ -24,6 +24,7 @@ from presentation.http.errors import (
 )
 from presentation.http.routes import chat as chat_routes
 from presentation.http.routes import documents as documents_routes
+from presentation.http.routes import google_drive as google_drive_routes
 from presentation.http.routes import health as health_routes
 from presentation.http.routes import ollama_status as ollama_status_routes
 from presentation.http.routes import settings as settings_routes
@@ -217,6 +218,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     app.include_router(ollama_status_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(documents_routes.router)
+    app.include_router(google_drive_routes.router)
 
     def custom_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:

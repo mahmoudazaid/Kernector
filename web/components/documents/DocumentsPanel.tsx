@@ -8,10 +8,14 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
-import { Button } from "@/components/ui/Button";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import {
+  GoogleDrivePanel,
+  type GoogleDrivePanelProps,
+} from "@/components/documents/GoogleDrivePanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { UnavailableState } from "@/components/states/UnavailableState";
+import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
   deleteDocument,
   listDocuments,
@@ -40,6 +44,8 @@ export type DocumentsPanelProps = {
   ) => Promise<CatalogDocumentResponse>;
   remove?: (options: DeleteDocumentOptions) => Promise<void>;
   loadSettings?: RuntimeCatalogLoader;
+  getDriveStatus?: GoogleDrivePanelProps["getStatus"];
+  syncDrive?: GoogleDrivePanelProps["syncNow"];
 };
 
 type CatalogView =
@@ -88,6 +94,8 @@ export function DocumentsPanel({
   replace = replaceDocument,
   remove = deleteDocument,
   loadSettings,
+  getDriveStatus,
+  syncDrive,
 }: DocumentsPanelProps) {
   const {
     catalog: runtimeCatalog,
@@ -332,6 +340,11 @@ export function DocumentsPanel({
     <section className="kern-documents">
       <h1>Knowledge Hub</h1>
       <p className="kern-documents-lead">{IDENTITY_HELP}</p>
+      <GoogleDrivePanel
+        apiBaseUrl={apiBaseUrl}
+        getStatus={getDriveStatus}
+        syncNow={syncDrive}
+      />
 
       {catalog.kind === "error" || settingsError ? (
         <div

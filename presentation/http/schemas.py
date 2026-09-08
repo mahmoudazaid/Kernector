@@ -7,7 +7,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from application.contracts import Citation, InvokeToolResponse, RunMeta
+from application.contracts import (
+    Citation,
+    ConnectorSyncResponse,
+    InvokeToolResponse,
+    RunMeta,
+)
 from composition.software_delivery_tools import SoftwareDeliveryRunView
 from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference
 
@@ -71,6 +76,51 @@ class OllamaStatusResponse(BaseModel):
 
     reachable: bool
     models: list[str]
+
+
+class GoogleDriveStatusResponse(BaseModel):
+    """Google Drive connector configuration presence (no secrets)."""
+
+    configured: bool
+    available: bool
+
+
+class ConnectorSyncOutcomeResponse(BaseModel):
+    """One listed Drive document outcome from a sync run."""
+
+    source_id: str
+    status: Literal["ingested", "skipped", "failed"]
+    chunk_count: int
+    error_type: str | None = None
+
+
+class GoogleDriveSyncResponse(BaseModel):
+    """Projected connector sync counts and per-document outcomes."""
+
+    ingested_count: int
+    skipped_count: int
+    failed_count: int
+    outcomes: list[ConnectorSyncOutcomeResponse]
+
+
+def google_drive_sync_response(
+    response: ConnectorSyncResponse,
+) -> GoogleDriveSyncResponse:
+    """Project application sync counts onto the wire schema."""
+    return GoogleDriveSyncResponse(
+        ingested_count=response.ingested_count,
+        skipped_count=response.skipped_count,
+        failed_count=response.failed_count,
+        outcomes=[
+            ConnectorSyncOutcomeResponse(
+                source_id=outcome.source_id,
+                status=outcome.status.value,
+                chunk_count=outcome.chunk_count,
+                error_type=outcome.error_type,
+            )
+            for outcome in response.outcomes
+        ],
+    )
 
 
 class ChatHistoryMessage(BaseModel):

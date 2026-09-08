@@ -16,6 +16,11 @@ const FORBIDDEN = [
   /from\s+["']ollama["']/,
   /require\(["']ollama["']\)/,
   /chroma\.cloud/,
+  /from\s+["']googleapis["']/,
+  /require\(["']googleapis["']\)/,
+  /google-auth-library/,
+  /www\.googleapis\.com/,
+  /accounts\.google\.com/,
 ];
 
 function walk(dir: string): string[] {

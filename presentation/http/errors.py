@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GoogleDriveNotConfiguredError,
     InputRejectedError,
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
@@ -14,6 +15,7 @@ from application.errors import (
 )
 from application.manage_documents import PartialCreateFailure
 from composition.errors import (
+    ConnectorSyncError,
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
@@ -244,6 +246,24 @@ def problem_from_exception(
             title="Ollama not configured",
             status=409,
             detail="Ollama base URL is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveNotConfiguredError):
+        return _problem(
+            code="google_drive_unconfigured",
+            title="Google Drive not configured",
+            status=409,
+            detail="Google Drive is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorSyncError):
+        return _problem(
+            code="connector_sync_failed",
+            title="Connector sync failed",
+            status=502,
+            detail="The Google Drive connector sync failed.",
             instance=instance,
             request_id=request_id,
         )

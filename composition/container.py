@@ -1,8 +1,9 @@
 """Composition root: the only place that constructs infrastructure."""
 
+import importlib.util
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from application.ask_knowledge import AskKnowledge
@@ -467,6 +468,38 @@ _DRIVE_SYNC_MESSAGE = "The Google Drive connector sync failed."
 _DRIVE_CLIENT_MISSING_MESSAGE = (
     "Google Drive client is not installed; run uv sync --extra google-drive."
 )
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveStatus:
+    """Whether Drive env is present and the Google extra is importable.
+
+    Args:
+        configured (bool): Folder ID and service-account path are both set.
+        available (bool): ``googleapiclient`` is importable.
+    """
+
+    configured: bool
+    available: bool
+
+
+def google_drive_status(settings: Settings) -> GoogleDriveStatus:
+    """Report Drive configuration presence and extra availability.
+
+    Does not import the Google client or load the service-account JSON.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+
+    Returns:
+        GoogleDriveStatus: Presence flags only; no folder IDs or paths.
+    """
+    drive = settings.google_drive
+    configured = (
+        drive.folder_id is not None and drive.service_account_file is not None
+    )
+    available = importlib.util.find_spec("googleapiclient") is not None
+    return GoogleDriveStatus(configured=configured, available=available)
 
 
 def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:

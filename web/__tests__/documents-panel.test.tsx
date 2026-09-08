@@ -10,6 +10,14 @@ import type {
 } from "@/lib/api/documents";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 
+vi.mock("@/lib/api/connectors", () => ({
+  getGoogleDriveStatus: vi.fn().mockResolvedValue({
+    configured: false,
+    available: true,
+  }),
+  syncGoogleDrive: vi.fn(),
+}));
+
 const SETTINGS: RuntimeSettingsResponse = {
   providers: ["openrouter"],
   default_provider: "openrouter",
@@ -658,5 +666,23 @@ describe("DocumentsPanel", () => {
       await screen.findByRole("heading", { name: /backend unavailable/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^retry$/i })).toBeEnabled();
+  });
+
+  it("renders the Google Drive fieldset inside the Knowledge Hub", async () => {
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        loadSettings={loadSettings}
+        getDriveStatus={async () => ({ configured: true, available: true })}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: /sync now/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Knowledge Hub" }),
+    ).toBeInTheDocument();
   });
 });

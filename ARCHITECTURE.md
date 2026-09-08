@@ -151,14 +151,18 @@ rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
 Exception messages are fixed; raw Google bodies stay on `__cause__` only.
 
-Presentation for this connector is **CLI-only**
-(`presentation.cli.sync_google_drive`). There is no FastAPI connector route,
-OpenAPI change, or Next.js management UI in #196. The adapter reuses
+Presentation exposes HTTP status and sync for this connector:
+`GET /api/v1/connectors/google-drive` and
+`POST /api/v1/connectors/google-drive/sync`, plus a Knowledge Hub fieldset
+(`GoogleDrivePanel` inside `DocumentsPanel`). The CLI
+(`presentation.cli.sync_google_drive`) remains. The adapter reuses
 `UploadedFileExtractor` for TXT/Markdown/PDF bytes, then overwrites metadata so
 `provider` is `google_drive` rather than `upload`. Synchronization compares
 Drive `version` (checksum fallback only when version is missing) to
 `CatalogDocument.revision` and skips unchanged `READY` rows. Remote deletion
-reconciliation and HTTP connector management are **not** implemented.
+reconciliation and connector config editing are **not** implemented.
+Concurrent HTTP syncs are unguarded server-side: the client `busy` flag covers
+one tab, but two tabs or a direct `curl` can run at once.
 
 ### Optional domain packs
 

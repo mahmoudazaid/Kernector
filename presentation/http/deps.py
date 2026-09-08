@@ -7,9 +7,11 @@ from typing import Annotated, Protocol
 
 from fastapi import Depends
 
+from application.contracts import ConnectorSyncResponse
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
+    GoogleDriveStatus,
     GroundedAsk,
     Settings,
     build_chat_model,
@@ -20,9 +22,11 @@ from composition import (
     build_vector_store,
     create_uploaded_document,
     delete_uploaded_document,
+    google_drive_status,
     list_uploaded_documents,
     load_runtime_settings,
     replace_uploaded_document,
+    sync_google_drive,
 )
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
 from domain.ports import PromptRepository, VectorStore
@@ -147,10 +151,38 @@ def get_document_operations(
     )
 
 
+def get_google_drive_status(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GoogleDriveStatus:
+    """Report Drive configuration presence and extra availability."""
+    return google_drive_status(settings)
+
+
+def get_google_drive_sync(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], ConnectorSyncResponse]:
+    """Return a Drive sync callable that builds the vector store lazily.
+
+    The store is not built here — unconfigured POST must 409 without embedding
+    credentials.
+    """
+
+    def sync() -> ConnectorSyncResponse:
+        return sync_google_drive(settings, vector_store=get_vector_store())
+
+    return sync
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
 AskFactoryDep = Annotated[AskFactory, Depends(get_ask_factory)]
 DocumentOperationsDep = Annotated[
     DocumentOperations, Depends(get_document_operations)
+]
+GoogleDriveStatusDep = Annotated[
+    GoogleDriveStatus, Depends(get_google_drive_status)
+]
+GoogleDriveSyncDep = Annotated[
+    Callable[[], ConnectorSyncResponse], Depends(get_google_drive_sync)
 ]

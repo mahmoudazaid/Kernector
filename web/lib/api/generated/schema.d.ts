@@ -24,6 +24,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connectors/google-drive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Connector Status
+     * @description Return whether Drive env is present and the Google extra is importable.
+     */
+    get: operations["google_drive_connector_status_api_v1_connectors_google_drive_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Google Drive Connector Sync
+     * @description Synchronize the configured Drive folder into the knowledge base.
+     */
+    post: operations["google_drive_connector_sync_api_v1_connectors_google_drive_sync_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/documents": {
     parameters: {
       query?: never;
@@ -244,12 +284,53 @@ export interface components {
       source_type: string;
     };
     /**
+     * ConnectorSyncOutcomeResponse
+     * @description One listed Drive document outcome from a sync run.
+     */
+    ConnectorSyncOutcomeResponse: {
+      /** Chunk Count */
+      chunk_count: number;
+      /** Error Type */
+      error_type?: string | null;
+      /** Source Id */
+      source_id: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ingested" | "skipped" | "failed";
+    };
+    /**
      * DocumentListResponse
      * @description Uploaded-document catalog for the documents UI.
      */
     DocumentListResponse: {
       /** Documents */
       documents: components["schemas"]["CatalogDocumentResponse"][];
+    };
+    /**
+     * GoogleDriveStatusResponse
+     * @description Google Drive connector configuration presence (no secrets).
+     */
+    GoogleDriveStatusResponse: {
+      /** Available */
+      available: boolean;
+      /** Configured */
+      configured: boolean;
+    };
+    /**
+     * GoogleDriveSyncResponse
+     * @description Projected connector sync counts and per-document outcomes.
+     */
+    GoogleDriveSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** Ingested Count */
+      ingested_count: number;
+      /** Outcomes */
+      outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
+      /** Skipped Count */
+      skipped_count: number;
     };
     /**
      * HealthResponse
@@ -560,6 +641,100 @@ export interface operations {
       };
       /** @description Validation error */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_status_api_v1_connectors_google_drive_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveStatusResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_sync_api_v1_connectors_google_drive_sync_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSyncResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };

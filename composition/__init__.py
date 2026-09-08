@@ -3,6 +3,7 @@
 from composition.container import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
+    GoogleDriveStatus,
     unsupported_upload_type_detail,
     available_providers,
     build_ask_knowledge,
@@ -33,6 +34,7 @@ from composition.container import (
     probe_ollama,
     reindex_filter_metadata,
     replace_uploaded_document,
+    google_drive_status,
     sync_google_drive,
 )
 from composition.software_delivery_tools import (
@@ -66,6 +68,7 @@ from infrastructure.config import Settings
 
 __all__ = [
     "ConnectorSyncError",
+    "GoogleDriveStatus",
     "DocumentContentError",
     "DocumentOperationError",
     "DocumentUploadError",
@@ -118,5 +121,6 @@ __all__ = [
     "probe_ollama",
     "reindex_filter_metadata",
     "replace_uploaded_document",
+    "google_drive_status",
     "sync_google_drive",
 ]

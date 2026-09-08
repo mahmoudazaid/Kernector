@@ -302,6 +302,38 @@
         "title": "CitationResponse",
         "type": "object"
       },
+      "ConnectorSyncOutcomeResponse": {
+        "description": "One listed Drive document outcome from a sync run.",
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["ingested", "skipped", "failed"],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["source_id", "status", "chunk_count"],
+        "title": "ConnectorSyncOutcomeResponse",
+        "type": "object"
+      },
       "DocumentListResponse": {
         "description": "Uploaded-document catalog for the documents UI.",
         "properties": {
@@ -315,6 +347,54 @@
         },
         "required": ["documents"],
         "title": "DocumentListResponse",
+        "type": "object"
+      },
+      "GoogleDriveStatusResponse": {
+        "description": "Google Drive connector configuration presence (no secrets).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          }
+        },
+        "required": ["configured", "available"],
+        "title": "GoogleDriveStatusResponse",
+        "type": "object"
+      },
+      "GoogleDriveSyncResponse": {
+        "description": "Projected connector sync counts and per-document outcomes.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "ingested_count": {
+            "title": "Ingested Count",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorSyncOutcomeResponse"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ingested_count",
+          "skipped_count",
+          "failed_count",
+          "outcomes"
+        ],
+        "title": "GoogleDriveSyncResponse",
         "type": "object"
       },
       "HealthResponse": {
@@ -1057,6 +1137,106 @@
         },
         "summary": "Chat Ask",
         "tags": ["chat"]
+      }
+    },
+    "/api/v1/connectors/google-drive": {
+      "get": {
+        "description": "Return whether Drive env is present and the Google extra is importable.",
+        "operationId": "google_drive_connector_status_api_v1_connectors_google_drive_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Connector Status",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/sync": {
+      "post": {
+        "description": "Synchronize the configured Drive folder into the knowledge base.",
+        "operationId": "google_drive_connector_sync_api_v1_connectors_google_drive_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Google Drive Connector Sync",
+        "tags": ["connectors"]
       }
     },
     "/api/v1/documents": {

@@ -14,7 +14,7 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 `domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` registers `software_delivery.risk_score`, `software_delivery.generate_test_cases`, `software_delivery.export_test_cases_markdown`, and a deterministic chat-intent policy, without importing application or presentation code. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the FastAPI HTTP adapter and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly. The interactive UI is Next.js under `web/`, talking HTTP to FastAPI.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, and the CLI-only Google Drive connector.
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, and the Google Drive connector (HTTP status/sync plus CLI).
 
 ## Knowledge path from source to cited answer
 
@@ -185,7 +185,7 @@ rm -rf data/chroma
 
 ## Sync documents from Google Drive
 
-Ticket #196 adds a **CLI-only** Google Drive sync job. There is no OAuth picker, FastAPI connector route, or Next.js management screen in this ticket.
+Google Drive sync is available from Knowledge Hub (`POST /api/v1/connectors/google-drive/sync`) and from the CLI. There is no OAuth picker or in-browser credential entry.
 
 1. Create a Google Cloud service account.
 2. Enable the Google Drive API for that project.
