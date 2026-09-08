@@ -7,6 +7,8 @@ import {
   type RuntimeSettingsResponse,
 } from "@/lib/api/settings";
 
+export const SETTINGS_CATALOG_UNAVAILABLE = "Settings catalog unavailable.";
+
 export type RuntimeCatalogLoader = (
   options: GetRuntimeSettingsOptions,
 ) => Promise<RuntimeSettingsResponse>;
@@ -34,12 +36,17 @@ export function useRuntimeCatalog(
   const [loading, setLoading] = useState(true);
   const [reloadNonce, setReloadNonce] = useState(0);
   const loadRef = useRef(loadCatalog ?? getRuntimeSettings);
+  const prevUrlRef = useRef(apiBaseUrl);
   loadRef.current = loadCatalog ?? getRuntimeSettings;
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    setCatalog(null);
+    const resetCatalog = prevUrlRef.current !== apiBaseUrl;
+    prevUrlRef.current = apiBaseUrl;
+    if (resetCatalog) {
+      setCatalog(null);
+    }
     setError(null);
     setLoading(true);
 
@@ -58,7 +65,7 @@ export function useRuntimeCatalog(
           return;
         }
         setCatalog(null);
-        setError("Settings catalog unavailable.");
+        setError(SETTINGS_CATALOG_UNAVAILABLE);
         setLoading(false);
       });
 

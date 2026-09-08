@@ -18,7 +18,10 @@ import {
   saveRuntimeSettings,
   type StoredRuntimeSettings,
 } from "@/lib/settings/runtime-settings-storage";
-import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
+import {
+  SETTINGS_CATALOG_UNAVAILABLE,
+  useRuntimeCatalog,
+} from "@/lib/settings/use-runtime-catalog";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
@@ -301,7 +304,7 @@ export function SettingsPanel({
         <p className="kern-settings-lead">
           {catalogView.kind === "error"
             ? catalogView.message
-            : "Settings catalog unavailable."}
+            : SETTINGS_CATALOG_UNAVAILABLE}
         </p>
         <Button variant="secondary" onClick={() => reload()}>
           Retry

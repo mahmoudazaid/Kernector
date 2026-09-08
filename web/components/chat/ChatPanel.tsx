@@ -586,7 +586,7 @@ export function ChatPanel({
         {settingsError ? (
           <div
             className="kern-settings-callout kern-settings-callout--error"
-            role="status"
+            role="alert"
           >
             <p>{settingsError}</p>
             <Button

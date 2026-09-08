@@ -51,21 +51,19 @@ function listResponse(
 
 describe("DocumentsPanel", () => {
   it("lists uploaded documents in a table", async () => {
-    const list = vi
-      .fn()
-      .mockResolvedValue(
-        listResponse([
-          doc(),
-          doc({
-            source_id: "src-2",
-            file_name: "guide.txt",
-            status: "failed",
-            has_error: true,
-            error_summary:
-              "Ingestion failed for this document. Delete it and upload again.",
-          }),
-        ]),
-      );
+    const list = vi.fn().mockResolvedValue(
+      listResponse([
+        doc(),
+        doc({
+          source_id: "src-2",
+          file_name: "guide.txt",
+          status: "failed",
+          has_error: true,
+          error_summary:
+            "Ingestion failed for this document. Delete it and upload again.",
+        }),
+      ]),
+    );
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
@@ -397,6 +395,47 @@ describe("DocumentsPanel", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText(/replacement file/i)).toBeEnabled();
     expect(failingLoadSettings).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries only the document list when settings are healthy", async () => {
+    const user = userEvent.setup();
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 500,
+          title: "Operational error",
+          detail: "Something went wrong while processing your request.",
+          code: "operational_error",
+        }),
+      )
+      .mockResolvedValueOnce(listResponse([doc()]));
+    const healthyLoadSettings = vi.fn().mockResolvedValue(SETTINGS);
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={healthyLoadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    expect(await screen.findByText("spec.md")).toBeInTheDocument();
+    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    expect(
+      screen.queryByText(/settings catalog unavailable/i),
+    ).not.toBeInTheDocument();
+    expect(healthyLoadSettings).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledTimes(2);
   });
 });

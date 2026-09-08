@@ -106,7 +106,9 @@ export function DocumentsPanel({
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
 
   function retryAll() {
-    reloadSettings();
+    if (settingsError) {
+      reloadSettings();
+    }
     void refresh();
   }
 
@@ -182,10 +184,6 @@ export function DocumentsPanel({
   async function onUpload(event: FormEvent) {
     event.preventDefault();
     if (!constraints) {
-      setFeedback({
-        kind: "error",
-        message: "Settings catalog unavailable.",
-      });
       return;
     }
     const validated = validateUpload(uploadFile, constraints);
@@ -216,14 +214,7 @@ export function DocumentsPanel({
 
   async function onReplace(event: FormEvent) {
     event.preventDefault();
-    if (!selected) {
-      return;
-    }
-    if (!constraints) {
-      setFeedback({
-        kind: "error",
-        message: "Settings catalog unavailable.",
-      });
+    if (!constraints || !selected) {
       return;
     }
     const validated = validateUpload(replaceFile, constraints);
