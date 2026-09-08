@@ -35,10 +35,9 @@ data into a shared document contract.
    directly. `DOCUMENT_CATALOG_PATH` sets only that JSON adapter’s file path; it
    does not choose among adapters. Configurable JSON vs SQL adapter selection
    is tracked in [#131](https://github.com/mahmoudazaid/Kernector/issues/131).
-   The future SQL adapter’s scope identity is recorded in
-   [ADR 0006](0006-workspace-scope-identity.md); #131 remains blocked until that
-   ADR is Accepted. This ADR does not introduce adapter selection or
-   `DOCUMENT_CATALOG_WORKSPACE_ID`.
+   The SQL adapter’s scope identity is settled by
+   [ADR 0006](0006-workspace-scope-identity.md). This ADR does not introduce
+   adapter selection or `DOCUMENT_CATALOG_WORKSPACE_ID`.
 
 ## Consequences
 

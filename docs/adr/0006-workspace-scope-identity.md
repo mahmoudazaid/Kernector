@@ -90,8 +90,7 @@ backend switch.
 - `DOCUMENT_CATALOG_WORKSPACE_ID` is not part of the current JSON runtime.
   `load_settings()` must not require it while JSON is the wired catalog, but
   validates it whenever it is present. It becomes required only when SQL is
-  selected or JSON→SQL migration runs — work that remains in #131 after this
-  ADR is Accepted.
+  selected or JSON→SQL migration runs — work that remains in #131.
 
 ## Related docs
 
@@ -103,6 +102,6 @@ backend switch.
 - [#258](https://github.com/mahmoudazaid/Kernector/issues/258) — this ADR’s
   implementing story
 - [#131](https://github.com/mahmoudazaid/Kernector/issues/131) — scoped SQL
-  catalog (unblocked only after this ADR is Accepted)
+  catalog, unblocked by this ADR
 - [#182](https://github.com/mahmoudazaid/Kernector/issues/182) — sign-in and
   personalisation; not this model
