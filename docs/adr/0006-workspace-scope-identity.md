@@ -37,11 +37,13 @@ backend switch.
    accept it from HTTP requests or any user-controlled input. After #131
    introduces catalog selection, `load_settings()` **requires**
    `DOCUMENT_CATALOG_WORKSPACE_ID` only when SQL is selected, but **validates
-   it whenever it is present** — under JSON too. Reject missing (when SQL is
-   selected), whitespace-only, and values that fail the Decision 1 charset or
-   length bound at `load_settings()` time with a `ValueError` naming the
-   variable — never lazily at first catalog access. The current JSON runtime
-   must continue loading when the variable is absent.
+   it whenever it is present** — under JSON too. Reject missing or
+   whitespace-only values (when SQL is selected), and any value that fails
+   the Decision 1 charset or length bound, at `load_settings()` time with a
+   `ValueError` naming the variable — never lazily at first catalog access.
+   An empty or whitespace-only value is treated as absent, matching
+   `_load_google_drive_settings`. The current JSON runtime must continue
+   loading when the variable is absent.
 
 3. **No reserved default** — There is no reserved `"default"` workspace and no
    implicit fallback. JSON is the currently wired catalog and does **not**
@@ -52,8 +54,8 @@ backend switch.
    `(source_type, source_id)`. `workspace_id` is always bound as a query
    parameter and never interpolated into SQL or DDL — table, schema, or index
    names. The `workspace_id` column uses a case-sensitive (binary or
-   deterministic) collation, so the uniqueness constraint preserves Decision
-   1's case-sensitivity.
+   deterministic) collation, so the uniqueness constraint preserves
+   Decision 1’s case-sensitivity.
 
 5. **Port stays unscoped** — `DocumentCatalog` stays unscoped. Composition
    binds each `SqlDocumentCatalog` instance to **exactly one** `workspace_id`
