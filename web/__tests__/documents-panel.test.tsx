@@ -747,9 +747,10 @@ describe("DocumentsPanel", () => {
     );
 
     await openDocumentsTab(user);
-    expect(await screen.findByText("Mieterselbtstauskunft")).toBeInTheDocument();
-    expect(screen.getByText("Google Drive")).toBeInTheDocument();
-    expect(screen.getByText("File upload")).toBeInTheDocument();
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Mieterselbtstauskunft")).toBeInTheDocument();
+    expect(within(table).getByText("Google Drive")).toBeInTheDocument();
+    expect(within(table).getByText("File upload")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /delete mieterselbtstauskunft/i }),
     ).not.toBeInTheDocument();

@@ -317,8 +317,27 @@ export function DocumentsPanel({
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
       : [];
+  const uploadedDocuments = documents.filter((doc) => !isDriveDocument(doc));
+  const visibleDocuments = documents.filter((doc) => {
+    if (sourceFilter === "Google Drive" && !isDriveDocument(doc)) {
+      return false;
+    }
+    if (sourceFilter === "File uploads" && isDriveDocument(doc)) {
+      return false;
+    }
+    if (!query.trim()) {
+      return true;
+    }
+    const needle = query.trim().toLowerCase();
+    return (
+      doc.file_name.toLowerCase().includes(needle) ||
+      doc.source_id.toLowerCase().includes(needle)
+    );
+  });
   const selected =
-    documents.find((doc) => doc.source_id === selectedId) ?? null;
+    visibleDocuments.find((doc) => doc.source_id === selectedId) ??
+    visibleDocuments[0] ??
+    null;
   const accept = constraints?.supported_upload_suffixes.join(",");
 
   function clearUploadInput() {
@@ -433,29 +452,12 @@ export function DocumentsPanel({
     (Boolean(settingsError) && settingsLoading) ||
     (documentsRetryable && refreshing);
 
-  const uploadedDocuments = documents.filter((doc) => !isDriveDocument(doc));
   const latestUpload = uploadedDocuments.reduce<string | null>((latest, doc) => {
     if (!latest || Date.parse(doc.uploaded_at) > Date.parse(latest)) {
       return doc.uploaded_at;
     }
     return latest;
   }, null);
-  const visibleDocuments = documents.filter((doc) => {
-    if (sourceFilter === "Google Drive" && !isDriveDocument(doc)) {
-      return false;
-    }
-    if (sourceFilter === "File uploads" && isDriveDocument(doc)) {
-      return false;
-    }
-    if (!query.trim()) {
-      return true;
-    }
-    const needle = query.trim().toLowerCase();
-    return (
-      doc.file_name.toLowerCase().includes(needle) ||
-      doc.source_id.toLowerCase().includes(needle)
-    );
-  });
   const connectedCount = 1 + (driveConnected ? 1 : 0);
 
   if (catalog.kind === "loading") {
@@ -700,7 +702,7 @@ export function DocumentsPanel({
               </thead>
               <tbody>
                 {visibleDocuments.map((doc) => {
-                  const selectedRow = doc.source_id === selectedId;
+                  const selectedRow = doc.source_id === selected?.source_id;
                   return (
                     <tr
                       key={doc.source_id}
