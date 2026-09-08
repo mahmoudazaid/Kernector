@@ -35,14 +35,13 @@ backend switch.
 2. **Server-side configuration only** — Resolve `workspace_id` only from
    trusted server-side configuration (`DOCUMENT_CATALOG_WORKSPACE_ID`). Never
    accept it from HTTP requests or any user-controlled input. After #131
-   introduces catalog selection, `load_settings()` validates and requires
-   `DOCUMENT_CATALOG_WORKSPACE_ID` **only when SQL is selected**. Reject
-   missing, whitespace-only, and values that fail the Decision 1 charset or
+   introduces catalog selection, `load_settings()` **requires**
+   `DOCUMENT_CATALOG_WORKSPACE_ID` only when SQL is selected, but **validates
+   it whenever it is present** — under JSON too. Reject missing (when SQL is
+   selected), whitespace-only, and values that fail the Decision 1 charset or
    length bound at `load_settings()` time with a `ValueError` naming the
-   variable — never lazily at first catalog access. The JSON→SQL migration
-   entry point validates the same contract before performing database work.
-   The current JSON runtime must continue loading when the variable is
-   absent.
+   variable — never lazily at first catalog access. The current JSON runtime
+   must continue loading when the variable is absent.
 
 3. **No reserved default** — There is no reserved `"default"` workspace and no
    implicit fallback. JSON is the currently wired catalog and does **not**
@@ -52,7 +51,9 @@ backend switch.
 4. **SQL uniqueness** is `(workspace_id, source_type, source_id)`. Never global
    `(source_type, source_id)`. `workspace_id` is always bound as a query
    parameter and never interpolated into SQL or DDL — table, schema, or index
-   names.
+   names. The `workspace_id` column uses a case-sensitive (binary or
+   deterministic) collation, so the uniqueness constraint preserves Decision
+   1's case-sensitivity.
 
 5. **Port stays unscoped** — `DocumentCatalog` stays unscoped. Composition
    binds each `SqlDocumentCatalog` instance to **exactly one** `workspace_id`
@@ -84,9 +85,10 @@ backend switch.
   Chroma/vector/lexical scoping, cross-workspace leakage tests, and safe audit
   events.
 - `DOCUMENT_CATALOG_WORKSPACE_ID` is not part of the current JSON runtime.
-  `load_settings()` must not require it while JSON is the wired catalog. It
-  becomes required only when SQL is selected or JSON→SQL migration runs —
-  work that remains in #131 after this ADR is Accepted.
+  `load_settings()` must not require it while JSON is the wired catalog, but
+  validates it whenever it is present. It becomes required only when SQL is
+  selected or JSON→SQL migration runs — work that remains in #131 after this
+  ADR is Accepted.
 
 ## Related docs
 
