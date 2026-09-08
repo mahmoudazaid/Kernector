@@ -89,6 +89,9 @@ class RecordingStore:
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
     return load_settings()
 
 
@@ -158,7 +161,7 @@ def test_sync_google_drive_wraps_catalog_failure(settings: Settings) -> None:
     listed = _listed()
 
     class FailingCatalog(InMemoryDocumentCatalog):
-        def get(self, reference: SourceReference) -> CatalogDocument | None:
+        def all(self) -> tuple[CatalogDocument, ...]:
             raise CatalogError(SECRET)
 
     with pytest.raises(ConnectorSyncError) as raised:
@@ -268,5 +271,6 @@ def test_load_runtime_settings_still_works_without_drive_config(
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
     loaded = load_runtime_settings()
     assert loaded.google_drive.folder_id is None

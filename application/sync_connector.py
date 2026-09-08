@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -15,7 +16,7 @@ from application.contracts import (
 from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.observability import log_operation
-from domain.errors import ConnectorError
+from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -63,11 +64,16 @@ class SyncConnectorDocuments:
             ConnectorSyncResponse: Per-document outcomes in listing order.
 
         Raises:
-            Exception: Catalog writes and ingest-pipeline construction fail at
-                run level and abort the remaining documents.
+            Exception: Catalog writes, ingest-pipeline construction, connection-
+                wide connector failures, and unknown ingest errors abort the
+                remaining documents.
         """
         documents = self._connector.list_documents()
-        outcomes = [self._sync_one(document) for document in documents]
+        existing = {row.reference: row for row in self._catalog.all()}
+        outcomes = [
+            self._sync_one(document, existing.get(document.reference))
+            for document in documents
+        ]
         return ConnectorSyncResponse(outcomes=outcomes)
 
     def _ingest(self) -> IngestKnowledge:
@@ -75,8 +81,11 @@ class SyncConnectorDocuments:
             self._shared_ingest = self._ingest_factory()
         return self._shared_ingest
 
-    def _sync_one(self, document: ConnectorDocument) -> ConnectorSyncOutcome:
-        previous = self._catalog.get(document.reference)
+    def _sync_one(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument | None,
+    ) -> ConnectorSyncOutcome:
         if _is_unchanged(previous, document):
             assert previous is not None
             return ConnectorSyncOutcome(
@@ -86,6 +95,8 @@ class SyncConnectorDocuments:
             )
         try:
             source = self._connector.fetch_document(document)
+        except (ConnectorAuthError, ConnectorUnavailableError):
+            raise
         except ConnectorError as error:
             _log_document_failure(document, error)
             return ConnectorSyncOutcome(
@@ -94,10 +105,11 @@ class SyncConnectorDocuments:
                 chunk_count=0,
                 error_type=type(error).__name__,
             )
+        ingest = self._ingest()
         pending = _pending_row(document, source, uploaded_at=self._now())
         self._catalog.upsert(pending)
         try:
-            response = self._ingest().execute(IngestRequest(documents=(source,)))
+            response = ingest.execute(IngestRequest(documents=(source,)))
         except IngestFailure as error:
             self._recover_ingest_failure(previous, pending, error)
             _log_document_failure(document, error)
@@ -116,16 +128,14 @@ class SyncConnectorDocuments:
                 chunk_count=0,
                 error_type=type(error).__name__,
             )
-        ready = CatalogDocument(
-            reference=pending.reference,
-            file_name=pending.file_name,
-            title=pending.title,
-            content_format=pending.content_format,
+        except Exception as error:
+            self._write_status(pending, CatalogStatus.DEGRADED, error)
+            _log_document_failure(document, error)
+            raise
+        ready = dataclasses.replace(
+            pending,
             status=CatalogStatus.READY,
-            uploaded_at=pending.uploaded_at,
             chunk_count=response.chunk_count,
-            error=None,
-            revision=pending.revision,
         )
         self._catalog.upsert(ready)
         return ConnectorSyncOutcome(
@@ -163,16 +173,10 @@ class SyncConnectorDocuments:
         error: BaseException,
     ) -> None:
         self._catalog.upsert(
-            CatalogDocument(
-                reference=pending.reference,
-                file_name=pending.file_name,
-                title=pending.title,
-                content_format=pending.content_format,
+            dataclasses.replace(
+                pending,
                 status=status,
-                uploaded_at=pending.uploaded_at,
-                chunk_count=pending.chunk_count,
                 error=type(error).__name__,
-                revision=pending.revision,
             )
         )
 

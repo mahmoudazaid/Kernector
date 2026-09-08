@@ -13,6 +13,8 @@ from application.contracts import ConnectorSyncStatus
 from application.errors import ConfigurationError
 from composition import ConnectorSyncError, load_runtime_settings, sync_google_drive
 
+_SYNC_FAILED = "The Google Drive connector sync failed."
+
 
 def main() -> int:
     """Run a Drive folder sync and print scheduler-safe counts.
@@ -30,6 +32,9 @@ def main() -> int:
         return 2
     except ConnectorSyncError as error:
         print(str(error), file=sys.stderr)
+        return 1
+    except RuntimeError:
+        print(_SYNC_FAILED, file=sys.stderr)
         return 1
 
     print(f"ingested={response.ingested_count}")

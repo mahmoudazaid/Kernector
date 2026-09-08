@@ -35,6 +35,7 @@ IO_PACKAGES = {
     "dotenv",
     "google",
     "googleapiclient",
+    "httplib2",
 }
 
 # FastAPI stack — allowed only under presentation/http/** (path-prefix exception).
@@ -134,6 +135,7 @@ def test_layer_imports_no_forbidden_packages(layer: str, module_path: Path) -> N
         ("import uvicorn\n", {"uvicorn"}),
         ("import google\n", {"google"}),
         ("from googleapiclient.discovery import build\n", {"googleapiclient"}),
+        ("import httplib2\n", {"httplib2"}),
     ],
 )
 def test_planted_application_forbidden_import_is_detected(
@@ -153,6 +155,7 @@ def test_planted_application_forbidden_import_is_detected(
         ("import fastapi\n", {"fastapi"}),
         ("import google\n", {"google"}),
         ("from googleapiclient.discovery import build\n", {"googleapiclient"}),
+        ("import httplib2\n", {"httplib2"}),
     ],
 )
 def test_planted_pack_forbidden_import_is_detected(
@@ -171,6 +174,7 @@ def test_planted_pack_forbidden_import_is_detected(
         ("from starlette.middleware.cors import CORSMiddleware\n", {"starlette"}),
         ("import google\n", {"google"}),
         ("from googleapiclient.http import MediaIoBaseDownload\n", {"googleapiclient"}),
+        ("import httplib2\n", {"httplib2"}),
     ],
 )
 def test_planted_non_http_presentation_server_framework_is_detected(

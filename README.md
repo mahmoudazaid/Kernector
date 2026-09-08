@@ -191,9 +191,10 @@ Ticket #196 adds a **CLI-only** Google Drive sync job. There is no OAuth picker,
    - `GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE` — path to the JSON key
    - `GOOGLE_DRIVE_FOLDER_ID` — folder whose **direct children** are synced
    - `GOOGLE_DRIVE_PAGE_SIZE` — optional list page size (default `100`, max `1000`)
-7. Run:
+7. Install the optional extra and run:
 
 ```bash
+uv sync --extra google-drive
 uv run python -m presentation.cli.sync_google_drive
 ```
 

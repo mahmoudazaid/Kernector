@@ -10,8 +10,9 @@ from types import SimpleNamespace
 from typing import BinaryIO
 
 import pytest
-from google.auth.exceptions import RefreshError
+from google.auth.exceptions import RefreshError, TimeoutError as GoogleAuthTimeoutError, TransportError
 from googleapiclient.errors import HttpError
+from httplib2 import HttpLib2Error
 
 from domain.errors import (
     ConnectorAuthError,
@@ -295,6 +296,11 @@ def test_list_omits_unsupported_types() -> None:
                     _file("slide", "Deck", mime_type="application/vnd.google-apps.presentation"),
                     _file("shortcut", "Link", mime_type="application/vnd.google-apps.shortcut"),
                     _file("png", "pic.png", mime_type="image/png"),
+                    _file(
+                        "sheet-txt",
+                        "budget.txt",
+                        mime_type="application/vnd.google-apps.spreadsheet",
+                    ),
                     _file("ok", "ok.txt"),
                 ]
             }
@@ -304,12 +310,33 @@ def test_list_omits_unsupported_types() -> None:
     assert [document.source_id for document in documents] == ["ok"]
 
 
-def test_list_can_download_false_is_recorded() -> None:
+def test_list_omits_undownloadable_blob_files() -> None:
     files = FakeDriveFiles(
         [{"files": [_file("blocked", "secret.txt", can_download=False)]}]
     )
     documents = _connector(files).list_documents()
-    assert documents[0].extra["can_download"] == "false"
+    assert documents == ()
+
+
+def test_list_keeps_google_docs_when_can_download_is_false() -> None:
+    files = FakeDriveFiles(
+        [
+            {
+                "files": [
+                    _file(
+                        "gdoc",
+                        "Spec",
+                        mime_type=GOOGLE_DOC,
+                        md5=None,
+                        size=None,
+                        can_download=False,
+                    )
+                ]
+            }
+        ]
+    )
+    documents = _connector(files).list_documents()
+    assert [document.source_id for document in documents] == ["gdoc"]
 
 
 def test_revision_prefers_version_over_checksum() -> None:
@@ -469,6 +496,9 @@ def test_extraction_failure_is_safe_connector_error() -> None:
         (_http_error(429), ConnectorUnavailableError),
         (_http_error(503), ConnectorUnavailableError),
         (TimeoutError(SECRET), ConnectorUnavailableError),
+        (HttpLib2Error(SECRET), ConnectorUnavailableError),
+        (TransportError(SECRET), ConnectorUnavailableError),
+        (GoogleAuthTimeoutError(SECRET), ConnectorUnavailableError),
         (RefreshError(SECRET), ConnectorAuthError),
     ],
 )

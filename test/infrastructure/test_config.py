@@ -420,6 +420,14 @@ def test_blank_google_drive_folder_id_is_absent(env: pytest.MonkeyPatch) -> None
     assert load_settings().google_drive.folder_id is None
 
 
+def test_google_drive_folder_id_rejects_query_metacharacters(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_DRIVE_FOLDER_ID", "x' in parents or '' = '")
+    with pytest.raises(ValueError, match="GOOGLE_DRIVE_FOLDER_ID is invalid"):
+        load_settings()
+
+
 def test_load_settings_does_not_read_credential_json(
     env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

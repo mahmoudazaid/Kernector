@@ -113,6 +113,19 @@ def test_partial_failure_returns_one(
     assert SECRET not in captured.err
 
 
+def test_store_failure_returns_one_without_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _patch(monkeypatch, error=RuntimeError(f"chroma path {SECRET}"))
+    code = sync_cli.main()
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "The Google Drive connector sync failed." in captured.err
+    assert "Traceback" not in captured.err
+    assert SECRET not in captured.err
+    assert captured.out == ""
+
+
 def test_run_level_connector_failure_returns_one(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

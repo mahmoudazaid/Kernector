@@ -15,7 +15,7 @@ from application.contracts import (
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.sync_connector import SyncConnectorDocuments
-from domain.errors import ConnectorError
+from domain.errors import ConnectorAuthError, ConnectorError
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -517,14 +517,48 @@ def test_ready_catalog_write_failure_aborts_the_run() -> None:
 
 
 def test_ingest_factory_failure_is_run_level_not_per_document() -> None:
-    listed = _listed()
+    listed = _listed(revision="2")
+    catalog = InMemoryDocumentCatalog()
+    previous = _row(listed, revision="1", chunk_count=7)
+    catalog.upsert(previous)
     connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
 
     def factory() -> RecordingIngest:
         raise RuntimeError("embedding credentials missing")
 
     with pytest.raises(RuntimeError, match="embedding credentials missing"):
-        _use_case(connector, InMemoryDocumentCatalog(), factory=factory).execute()
+        _use_case(connector, catalog, factory=factory).execute()
+    assert catalog.get(listed.reference) == previous
+
+
+def test_unknown_ingest_error_marks_degraded_and_aborts() -> None:
+    listed = _listed(revision="2")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(listed, revision="1"))
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(error=RuntimeError("store exploded"))
+    with pytest.raises(RuntimeError, match="store exploded"):
+        _use_case(connector, catalog, ingest=ingest).execute()
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.status is CatalogStatus.DEGRADED
+    assert stored.revision == "2"
+    assert stored.error == "RuntimeError"
+
+
+def test_auth_failure_aborts_the_run_without_fetching_later_files() -> None:
+    first = _listed("file-1")
+    second = _listed("file-2", file_name="ok.md")
+    connector = RecordingConnector(
+        (first, second),
+        {second.source_id: _source(second)},
+        fetch_errors={first.source_id: ConnectorAuthError("credentials rejected")},
+    )
+    ingest = RecordingIngest()
+    with pytest.raises(ConnectorAuthError):
+        _use_case(connector, InMemoryDocumentCatalog(), ingest=ingest).execute()
+    assert connector.fetched == [first]
+    assert ingest.calls == []
 
 
 def test_outcomes_follow_listing_order() -> None:

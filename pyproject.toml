@@ -16,6 +16,10 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "requests>=2.34.2",
     "uvicorn>=0.40.0",
+]
+
+[project.optional-dependencies]
+google-drive = [
     "google-api-python-client>=2.190.0",
     "google-auth>=2.42.0",
 ]
@@ -25,6 +29,8 @@ dev = [
     "httpx>=0.28.0",
     "jsonschema>=4.26.0",
     "pytest>=9.1.1",
+    "google-api-python-client>=2.190.0",
+    "google-auth>=2.42.0",
 ]
 
 [tool.pytest.ini_options]

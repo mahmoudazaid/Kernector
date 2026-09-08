@@ -8,11 +8,16 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
-from google.auth.exceptions import RefreshError
+from google.auth.exceptions import (
+    RefreshError,
+    TimeoutError as GoogleAuthTimeoutError,
+    TransportError,
+)
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from httplib2 import HttpLib2Error
 
 from domain.errors import (
     ConnectorAuthError,
@@ -30,13 +35,13 @@ from domain.knowledge import (
 from domain.ports import DocumentExtractor
 from infrastructure.config import GoogleDriveSettings
 from infrastructure.documents.uploaded_files import (
-    SUPPORTED_SUFFIXES,
     DocumentExtractionError,
     UploadedFileExtractor,
 )
 
 _SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
 _GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
+_BLOB_MIMES = frozenset({"text/plain", "text/markdown", "application/pdf"})
 _LIST_FIELDS = (
     "nextPageToken,"
     "files(id,name,mimeType,version,md5Checksum,size,capabilities(canDownload))"
@@ -50,8 +55,6 @@ _RATE_LIMIT_REASONS = frozenset(
         "sharingRateLimitExceeded",
     }
 )
-_DOWNLOAD_CHUNK_SIZE = 256 * 1024
-
 _MSG_AUTH = "Google Drive rejected the connector credentials or permissions."
 _MSG_UNAVAILABLE = "Google Drive is temporarily unavailable."
 _MSG_REQUEST_FAILED = "The Google Drive request failed."
@@ -118,7 +121,13 @@ class GoogleDriveConnector:
         self._max_upload_bytes = max_upload_bytes
         self._files = files if files is not None else _build_drive_files(settings)
         self._extractor = extractor or UploadedFileExtractor()
-        self._downloader_factory = downloader_factory or _media_downloader
+        self._downloader_factory = downloader_factory or (
+            lambda buffer, request: MediaIoBaseDownload(
+                buffer,
+                request,
+                chunksize=max_upload_bytes + 1,
+            )
+        )
 
     def list_documents(self) -> Sequence[ConnectorDocument]:
         """Return supported direct children of the configured folder.
@@ -142,16 +151,14 @@ class GoogleDriveConnector:
                     fields=_LIST_FIELDS,
                 )
                 payload = _execute(request)
-                files = payload.get("files") if isinstance(payload, Mapping) else None
-                if files is None:
-                    files = ()
+                files = payload.get("files", ())
                 if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
                     raise ConnectorError(_MSG_REQUEST_FAILED)
                 for entry in files:
                     document = _document_from_file(entry)
                     if document is not None:
                         documents.append(document)
-                next_token = payload.get("nextPageToken") if isinstance(payload, Mapping) else None
+                next_token = payload.get("nextPageToken")
                 if not next_token:
                     break
                 if not isinstance(next_token, str):
@@ -211,14 +218,6 @@ class GoogleDriveConnector:
         return buffer.getvalue()
 
 
-def _media_downloader(buffer: BinaryIO, request: object) -> MediaDownloader:
-    return MediaIoBaseDownload(
-        buffer,
-        request,
-        chunksize=_DOWNLOAD_CHUNK_SIZE,
-    )
-
-
 def _build_drive_files(settings: GoogleDriveSettings) -> DriveFiles:
     path = settings.service_account_file
     if path is None:
@@ -255,17 +254,13 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     if not isinstance(entry, Mapping):
         raise ConnectorError(_MSG_REQUEST_FAILED)
     mime_type = entry.get("mimeType")
-    name = entry.get("name")
-    if not _is_supported(name, mime_type):
+    if not _is_supported(mime_type):
         return None
-    try:
-        file_id = _require_entry_text(entry, "id")
-        file_name = _require_entry_text(entry, "name")
-        revision = _revision_from_file(entry)
-    except ConnectorError:
-        raise
-    except Exception as error:
-        raise ConnectorError(_MSG_REQUEST_FAILED) from error
+    if mime_type != _GOOGLE_DOC_MIME and not _can_download(entry):
+        return None
+    file_id = _require_entry_text(entry, "id")
+    file_name = _require_entry_text(entry, "name")
+    revision = _revision_from_file(entry)
     extra: dict[str, str] = {}
     if isinstance(mime_type, str) and mime_type:
         extra["mime_type"] = mime_type
@@ -286,12 +281,8 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     )
 
 
-def _is_supported(name: object, mime_type: object) -> bool:
-    if mime_type == _GOOGLE_DOC_MIME:
-        return True
-    if not isinstance(name, str):
-        return False
-    return Path(name).suffix.lower() in SUPPORTED_SUFFIXES
+def _is_supported(mime_type: object) -> bool:
+    return mime_type == _GOOGLE_DOC_MIME or mime_type in _BLOB_MIMES
 
 
 def _revision_from_file(entry: Mapping[str, object]) -> str:
@@ -370,13 +361,21 @@ def _normalize_source(
 
 
 def _map_google_error(error: BaseException) -> ConnectorError:
-    if isinstance(error, ConnectorError):
-        return error
     if isinstance(error, RefreshError):
         return ConnectorAuthError(_MSG_AUTH)
     if isinstance(error, HttpError):
         return _map_http_error(error)
-    if isinstance(error, (TimeoutError, ConnectionError, OSError)):
+    if isinstance(
+        error,
+        (
+            TimeoutError,
+            ConnectionError,
+            OSError,
+            HttpLib2Error,
+            TransportError,
+            GoogleAuthTimeoutError,
+        ),
+    ):
         return ConnectorUnavailableError(_MSG_UNAVAILABLE)
     return ConnectorError(_MSG_REQUEST_FAILED)
 

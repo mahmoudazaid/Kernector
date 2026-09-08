@@ -52,7 +52,7 @@ from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     build_tool_registry,
 )
-from domain.errors import ConnectorError, DomainValidationError
+from domain.errors import ConnectorError, DomainValidationError, VectorStoreError
 from domain.knowledge import CatalogDocument, ScoredChunk, SourceDocument, SourceReference, UploadPayload
 from domain.ports import (
     ChatModel,
@@ -64,10 +64,6 @@ from domain.ports import (
 )
 from infrastructure.catalog.json_catalog import CatalogError, JsonDocumentCatalog
 from infrastructure.config import Settings, load_settings
-from infrastructure.connectors.google_drive import (
-    GoogleDriveConfigError,
-    GoogleDriveConnector,
-)
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
@@ -463,18 +459,26 @@ _DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
 _DRIVE_SYNC_MESSAGE = "The Google Drive connector sync failed."
 
 
-def build_google_drive_connector(settings: Settings) -> GoogleDriveConnector:
+def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
     """Build the Google Drive connector from runtime settings.
 
     Args:
         settings (Settings): Loaded environment settings.
 
     Returns:
-        GoogleDriveConnector: Drive adapter bound to the configured folder.
+        KnowledgeConnector: Drive adapter bound to the configured folder.
 
     Raises:
-        ConfigurationError: Drive folder or credentials are missing or unusable.
+        ConfigurationError: Drive folder, credentials, or client extra is missing
+            or unusable.
     """
+    try:
+        from infrastructure.connectors.google_drive import (
+            GoogleDriveConfigError,
+            GoogleDriveConnector,
+        )
+    except ImportError as error:
+        raise ConfigurationError(_DRIVE_CONFIG_MESSAGE) from error
     try:
         return GoogleDriveConnector(
             settings.google_drive,
@@ -507,7 +511,7 @@ def sync_google_drive(
 
     Raises:
         ConfigurationError: Connector or embedding configuration is invalid.
-        ConnectorSyncError: Listing, auth, or catalog infrastructure failed.
+        ConnectorSyncError: Listing, auth, catalog, or store infrastructure failed.
     """
     try:
         if connector is None:
@@ -515,7 +519,6 @@ def sync_google_drive(
         if catalog is None:
             catalog = build_document_catalog(settings)
         shared_store = vector_store
-        shared_ingest = None
 
         def get_store() -> VectorStore:
             nonlocal shared_store
@@ -523,25 +526,19 @@ def sync_google_drive(
                 shared_store = build_vector_store(settings)
             return shared_store
 
-        def get_ingest() -> IngestKnowledge:
-            nonlocal shared_ingest
-            if shared_ingest is None:
-                shared_ingest = build_ingest_knowledge(
-                    settings,
-                    vector_store=get_store(),
-                )
-            return shared_ingest
-
         return SyncConnectorDocuments(
             connector=connector,
             catalog=catalog,
-            ingest_factory=get_ingest,
+            ingest_factory=lambda: build_ingest_knowledge(
+                settings,
+                vector_store=get_store(),
+            ),
         ).execute()
-    except ConfigurationError:
-        raise
     except ConnectorError as error:
         raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
     except CatalogError as error:
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
+    except VectorStoreError as error:
         raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
 
 
