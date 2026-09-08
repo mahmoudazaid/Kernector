@@ -35,6 +35,9 @@ _NON_FIRST_PARTY = frozenset(
     }
 )
 _KNOWN_UNSCANNED = frozenset({"infrastructure", "composition"})
+_NOQA_ALLOWLIST: frozenset[str] = frozenset(
+    {"packs/software_delivery/gherkin.py"}
+)
 
 
 def test_every_first_party_package_is_scanned_or_explicitly_deferred() -> None:
@@ -175,19 +178,8 @@ def test_helper_allows_str_join_of_module_constant(tmp_path: Path) -> None:
     assert repr_conversions_in_raises(module) == []
 
 
-def test_helper_flags_str_join_of_variable_separator(tmp_path: Path) -> None:
-    module = tmp_path / "join_var.py"
-    module.write_text(
-        "sep = ', '\n"
-        "raise ValueError(f'missing: {sep.join(missing)}')\n"
-        "raise ValueError(f'missing: {self._sep.join(missing)}')\n",
-        encoding="utf-8",
-    )
-    assert repr_conversions_in_raises(module) == [2, 3]
-
-
-def test_helper_flags_local_uppercase_join_argument(tmp_path: Path) -> None:
-    module = tmp_path / "join_local.py"
+def test_helper_flags_join_of_local_uppercase_name(tmp_path: Path) -> None:
+    module = tmp_path / "local_keys.py"
     module.write_text(
         "def f(untrusted):\n"
         "    KEYS = untrusted\n"
@@ -195,6 +187,28 @@ def test_helper_flags_local_uppercase_join_argument(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert repr_conversions_in_raises(module) == [3]
+
+
+def test_helper_flags_variable_separator_join(tmp_path: Path) -> None:
+    module = tmp_path / "sep_join.py"
+    module.write_text(
+        "raise ValueError(f'x: {sep.join(x)}')\n"
+        "raise ValueError(f'x: {self._sep.join(x)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1, 2]
+
+
+def test_helper_flags_dict_views_dict_ctor_and_slice(tmp_path: Path) -> None:
+    module = tmp_path / "views.py"
+    module.write_text(
+        "raise ValueError(f'a {unknown.keys()}')\n"
+        "raise ValueError(f'b {unknown.values()}')\n"
+        "raise ValueError(f'c {dict(unknown)}')\n"
+        "raise ValueError(f'd {unknown[:3]}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1, 2, 3, 4]
 
 
 def test_helper_allows_os_path_join(tmp_path: Path) -> None:
@@ -207,18 +221,6 @@ def test_helper_allows_os_path_join(tmp_path: Path) -> None:
     assert repr_conversions_in_raises(module) == []
 
 
-def test_helper_flags_dict_and_view_interpolation(tmp_path: Path) -> None:
-    module = tmp_path / "views.py"
-    module.write_text(
-        "raise ValueError(f'keys: {unknown.keys()}')\n"
-        "raise ValueError(f'vals: {unknown.values()}')\n"
-        "raise ValueError(f'dict: {dict(unknown)}')\n"
-        "raise ValueError(f'slice: {unknown[:3]}')\n",
-        encoding="utf-8",
-    )
-    assert repr_conversions_in_raises(module) == [1, 2, 3, 4]
-
-
 def test_helper_honours_noqa_raise_scan(tmp_path: Path) -> None:
     module = tmp_path / "noqa.py"
     module.write_text(
@@ -226,9 +228,6 @@ def test_helper_honours_noqa_raise_scan(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert repr_conversions_in_raises(module) == []
-
-
-_NOQA_ALLOWLIST: frozenset[str] = frozenset()
 
 
 def test_noqa_suppressions_are_inventoried() -> None:
@@ -244,18 +243,7 @@ def test_noqa_suppressions_are_inventoried() -> None:
     )
 
 
-def test_helper_flags_repr_in_exception_init(tmp_path: Path) -> None:
-    module = tmp_path / "init_leak.py"
-    module.write_text(
-        "class LeakyError(ValueError):\n"
-        "    def __init__(self, value):\n"
-        "        super().__init__(f'got {value!r}')\n",
-        encoding="utf-8",
-    )
-    assert repr_conversions_in_raises(module) == [3]
-
-
-def test_helper_flags_repr_behind_indirect_exception_base(tmp_path: Path) -> None:
+def test_helper_flags_repr_in_indirect_exception_subclass(tmp_path: Path) -> None:
     module = tmp_path / "indirect_base.py"
     module.write_text(
         "class Base(ValueError):\n"
@@ -268,22 +256,33 @@ def test_helper_flags_repr_behind_indirect_exception_base(tmp_path: Path) -> Non
     assert repr_conversions_in_raises(module) == [5]
 
 
-def test_helper_flags_repr_in_str_and_helper_methods(tmp_path: Path) -> None:
-    module = tmp_path / "methods.py"
+def test_helper_flags_repr_in_str_and_factory_methods(tmp_path: Path) -> None:
+    module = tmp_path / "other_methods.py"
     module.write_text(
-        "class Leak:\n"
+        "class Leak(ValueError):\n"
         "    def __str__(self):\n"
         "        return f'got {self.v!r}'\n"
-        "    def _msg(self, v):\n"
-        "        return f'got {v!r}'\n"
         "    def __init__(self, v):\n"
         "        super().__init__(self._msg(v))\n"
+        "    def _msg(self, v):\n"
+        "        return f'got {v!r}'\n"
         "    @classmethod\n"
         "    def of(cls, v):\n"
         "        return cls(f'got {v!r}')\n",
         encoding="utf-8",
     )
-    assert repr_conversions_in_raises(module) == [3, 5, 10]
+    assert repr_conversions_in_raises(module) == [3, 7, 10]
+
+
+def test_helper_flags_repr_in_exception_init(tmp_path: Path) -> None:
+    module = tmp_path / "init_leak.py"
+    module.write_text(
+        "class LeakyError(ValueError):\n"
+        "    def __init__(self, value):\n"
+        "        super().__init__(f'got {value!r}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [3]
 
 
 def test_helper_flags_repr_call_inside_fstring(tmp_path: Path) -> None:

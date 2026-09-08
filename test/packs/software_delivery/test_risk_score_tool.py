@@ -175,8 +175,17 @@ def test_unexpected_scorer_failure_maps_to_tool_failure_error() -> None:
     assert raised.value.__cause__ is not None
 
 
+_LEAK_SENTINEL = "SCALAR-LEAK-SENTINEL"
+_INVALID_SCALARS = [
+    None,
+    1,
+    True,
+    False,
+    3.14,
+    [_LEAK_SENTINEL],
+    {_LEAK_SENTINEL: 1},
+]
 _BLANK_STRINGS = ["", "   ", "\n"]
-_INVALID_SCALARS = [None, 1, True, False, 3.14, ["x"], {"k": "v"}]
 
 
 def _scorer_spy() -> tuple[list[object], object]:
@@ -208,22 +217,11 @@ def test_non_string_target_reports_type_name_not_value(bad: object) -> None:
     args["target"] = bad
     with pytest.raises(RiskScoreValidationError) as raised:
         RiskScoreTool(scorer=boom).run(args)
-    assert str(raised.value) == (
+    message = str(raised.value)
+    assert _LEAK_SENTINEL not in message
+    assert message == (
         f"target must be a non-blank string, got {type(bad).__name__}"
     )
-    assert calls == []
-
-
-def test_non_string_target_sentinel_does_not_leak() -> None:
-    sentinel = "TARGET-LEAK-SENTINEL"
-    calls, boom = _scorer_spy()
-    args = _valid_arguments()
-    args["target"] = {sentinel: 1}
-    with pytest.raises(RiskScoreValidationError) as raised:
-        RiskScoreTool(scorer=boom).run(args)
-    message = str(raised.value)
-    assert sentinel not in message
-    assert message == "target must be a non-blank string, got dict"
     assert calls == []
 
 
@@ -258,27 +256,11 @@ def test_non_string_evidence_scalars_report_type_name_not_value(
     args["evidence"] = [item]
     with pytest.raises(RiskScoreValidationError) as raised:
         RiskScoreTool(scorer=boom).run(args)
-    assert str(raised.value) == (
+    message = str(raised.value)
+    assert _LEAK_SENTINEL not in message
+    assert message == (
         f"{field} must be a non-blank string, got {type(bad).__name__}"
     )
-    assert calls == []
-
-
-@pytest.mark.parametrize("field", ["source_id", "source_type", "text"])
-def test_non_string_evidence_scalar_sentinel_does_not_leak(field: str) -> None:
-    sentinel = "EVIDENCE-LEAK-SENTINEL"
-    calls, boom = _scorer_spy()
-    args = _valid_arguments()
-    evidence_item = args["evidence"][0]
-    assert isinstance(evidence_item, dict)
-    item = dict(evidence_item)
-    item[field] = {sentinel: 1}
-    args["evidence"] = [item]
-    with pytest.raises(RiskScoreValidationError) as raised:
-        RiskScoreTool(scorer=boom).run(args)
-    message = str(raised.value)
-    assert sentinel not in message
-    assert message == f"{field} must be a non-blank string, got dict"
     assert calls == []
 
 

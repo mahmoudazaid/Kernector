@@ -31,7 +31,9 @@ def _defang(text: str) -> str:
 
 
 def _require_nonblank(value: object, field_name: str) -> str:
-    return require_nonblank_str(value, field_name, AssessmentPromptValidationError)
+    return require_nonblank_str(
+        value, field_name, AssessmentPromptValidationError
+    )
 
 
 @dataclass(frozen=True, slots=True)
