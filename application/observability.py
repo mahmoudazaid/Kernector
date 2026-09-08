@@ -27,6 +27,7 @@ _ALLOWED_FIELDS: frozenset[str] = frozenset(
         "chunk_count",
         "source_count",
         "prompt_key",
+        "source_id",
         "error_type",
         "path",
         "prompt_tokens",

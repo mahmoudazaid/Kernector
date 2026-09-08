@@ -20,8 +20,10 @@ from packs.software_delivery.limits import (
 )
 
 _LEVELS = frozenset({"low", "medium", "high", "critical"})
+_LEVELS_DISPLAY = str(sorted(_LEVELS))
 TestCaseStyle = Literal["steps", "gherkin"]
 TEST_CASE_STYLES: frozenset[str] = frozenset({"steps", "gherkin"})
+TEST_CASE_STYLES_DISPLAY = str(sorted(TEST_CASE_STYLES))
 
 _E = TypeVar("_E", bound=Exception)
 
@@ -31,7 +33,11 @@ def _require_text(
     field_name: str,
     error_type: type[_E] = RiskScoreValidationError,
 ) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise error_type(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise error_type(f"{field_name} must be non-empty")
     return value
 
@@ -51,19 +57,25 @@ def _require_positive_int(
     field_name: str,
     error_type: type[_E] = RiskScoreValidationError,
 ) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise error_type(
             f"{field_name} must be a positive integer, "
             f"got {type(value).__name__}"
+        )
+    if value <= 0:
+        raise error_type(
+            f"{field_name} must be a positive integer, got {value}"
         )
     return value
 
 
 def _require_score(value: object) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 100:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise RiskScoreValidationError(
             f"score must be an int in 0..100, got {type(value).__name__}"
         )
+    if not 0 <= value <= 100:
+        raise RiskScoreValidationError(f"score must be an int in 0..100, got {value}")
     return value
 
 
@@ -182,10 +194,14 @@ class RiskAssessmentResult:
 
     def __post_init__(self) -> None:
         _require_score(self.score)
-        if not isinstance(self.level, str) or self.level not in _LEVELS:
+        if not isinstance(self.level, str):
             raise RiskScoreValidationError(
-                f"level must be one of {sorted(_LEVELS)}, "
+                f"level must be one of {_LEVELS_DISPLAY}, "
                 f"got {type(self.level).__name__}"
+            )
+        if self.level not in _LEVELS:
+            raise RiskScoreValidationError(
+                f"level must be one of {_LEVELS_DISPLAY}"
             )
         _require_text(self.rationale, "rationale")
         factors = _require_sequence(self.factors, "factors")
@@ -255,11 +271,13 @@ class TestGenerationRequest:
                 f"evidence must have at most {MAX_EVIDENCE_ITEMS} items, "
                 f"got {len(items)}"
             )
-        if not isinstance(self.output_style, str) or self.output_style not in TEST_CASE_STYLES:
+        if not isinstance(self.output_style, str):
             raise err(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
                 f"got {type(self.output_style).__name__}"
             )
+        if self.output_style not in TEST_CASE_STYLES:
+            raise err(f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}")
         normalized: list[TestCaseEvidence] = []
         for item in items:
             if not isinstance(item, TestCaseEvidence):
@@ -330,8 +348,7 @@ class TestGenerationResult:
     def __post_init__(self) -> None:
         if self.output_style not in TEST_CASE_STYLES:
             raise ValueError(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {type(self.output_style).__name__}"
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
             )
         cases = self.test_cases
         if isinstance(cases, (str, bytes)) or not isinstance(cases, Sequence):

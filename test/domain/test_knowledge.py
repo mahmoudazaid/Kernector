@@ -60,6 +60,15 @@ def test_source_reference_rejects_non_string_source_type(not_a_string: object) -
         SourceReference("doc-1", not_a_string)  # type: ignore[arg-type]
 
 
+def test_source_reference_rejects_non_string_source_id_by_type_name() -> None:
+    sentinel = "SOURCE-ID-LEAK-SENTINEL"
+    with pytest.raises(DomainValidationError) as raised:
+        SourceReference([sentinel], SourceType.KNOWLEDGE_DOCUMENT)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "source_id must be a non-empty string, got list"
+
+
 @pytest.mark.parametrize("blank", BLANK)
 def test_source_document_rejects_blank_identifier(blank: str) -> None:
     with pytest.raises(DomainValidationError, match="source_id"):

@@ -451,7 +451,8 @@ not reach the UI. Collapsed **Run details** in Next.js chat reads only typed
 `RunMeta` fields (see README); it never parses logs.
 
 **Raise messages never carry the rejected value.** This holds for every
-exception raised under `domain/`, `application/`, and `packs/` — validation
+exception raised under `domain/`, `application/`, `packs/`, and
+`presentation/` — validation
 types (`DomainValidationError`, `ApplicationValidationError`, and their
 pack-local subclasses), `ToolFailureError`, and bare `ValueError` alike. A
 message names the field and the expected shape only. Where the value's type is
@@ -479,7 +480,7 @@ subclass added later — `packs/software_delivery/errors.py` alone defines five
 
 Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
-package, and when a `domain/`, `application/`, or `packs/` raise embeds
+package, and when a `domain/`, `application/`, `packs/`, or `presentation/` raise embeds
 `{value!r}` (`test/architecture/test_safe_validation_messages.py`).
 
 Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette

@@ -24,9 +24,18 @@ class CatalogStatus(StrEnum):
     FAILED = "failed"
     DEGRADED = "degraded"
 
-def _require_text(value: str, field_name: str) -> None:
-    """Reject anything that is not a non-blank string."""
-    if not isinstance(value, str) or not value.strip():
+def _require_text(value: object, field_name: str) -> None:
+    """Reject anything that is not a non-blank string.
+
+    The type check runs before the blankness check so a wrong type is reported
+    as a wrong type. Fusing the two would report every rejection as "must be
+    non-empty", which is false for an ``int`` and hides what actually arrived.
+    """
+    if not isinstance(value, str):
+        raise DomainValidationError(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise DomainValidationError(f"{field_name} must be non-empty")
 
 

@@ -8,6 +8,7 @@ from domain.errors import DomainValidationError, ToolFailureError
 from domain.knowledge import SourceReference
 from packs.software_delivery.contracts import (
     TEST_CASE_STYLES,
+    TEST_CASE_STYLES_DISPLAY,
     GeneratedTestCase,
     TestCaseStyle,
     TestGenerationResult,
@@ -32,8 +33,11 @@ TOOL_DESCRIPTION = (
 )
 
 _ALLOWED_ROOT_KEYS = frozenset({"output_style", "test_cases"})
+_ALLOWED_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_ROOT_KEYS))
 _ALLOWED_CASE_KEYS = frozenset({"title", "steps", "expected", "references"})
+_ALLOWED_CASE_KEYS_DISPLAY = str(sorted(_ALLOWED_CASE_KEYS))
 _ALLOWED_REFERENCE_KEYS = frozenset({"source_id", "source_type"})
+_ALLOWED_REFERENCE_KEYS_DISPLAY = str(sorted(_ALLOWED_REFERENCE_KEYS))
 
 Formatter = Callable[[TestGenerationResult], str]
 
@@ -106,7 +110,8 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationResult:
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
     if unknown:
         raise MarkdownExportValidationError(
-            f"unknown argument keys: {sorted(unknown)}"
+            f"unknown argument keys: {len(unknown)} not in "
+            f"{_ALLOWED_ROOT_KEYS_DISPLAY}"
         )
     if "output_style" not in arguments:
         raise MarkdownExportValidationError("output_style is required")
@@ -114,10 +119,14 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationResult:
         raise MarkdownExportValidationError("test_cases is required")
 
     raw_style = arguments["output_style"]
-    if not isinstance(raw_style, str) or raw_style not in TEST_CASE_STYLES:
+    if not isinstance(raw_style, str):
         raise MarkdownExportValidationError(
-            f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
+            f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
             f"got {type(raw_style).__name__}"
+        )
+    if raw_style not in TEST_CASE_STYLES:
+        raise MarkdownExportValidationError(
+            f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
         )
     style: TestCaseStyle = raw_style  # type: ignore[assignment]
 
@@ -162,7 +171,8 @@ def _parse_test_case(item: object) -> GeneratedTestCase:
     unknown = set(item) - _ALLOWED_CASE_KEYS
     if unknown:
         raise MarkdownExportValidationError(
-            f"unknown test_cases keys: {sorted(unknown)}"
+            f"unknown test_cases keys: {len(unknown)} not in "
+            f"{_ALLOWED_CASE_KEYS_DISPLAY}"
         )
     for required in ("title", "steps", "expected", "references"):
         if required not in item:
@@ -220,7 +230,8 @@ def _parse_reference(item: object) -> SourceReference:
     unknown = set(item) - _ALLOWED_REFERENCE_KEYS
     if unknown:
         raise MarkdownExportValidationError(
-            f"unknown references keys: {sorted(unknown)}"
+            f"unknown references keys: {len(unknown)} not in "
+            f"{_ALLOWED_REFERENCE_KEYS_DISPLAY}"
         )
     for required in ("source_id", "source_type"):
         if required not in item:

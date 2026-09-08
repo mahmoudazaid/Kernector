@@ -22,7 +22,7 @@ class ToolRegistry:
             if not isinstance(name, str) or not name.strip():
                 raise ConfigurationError("tool name must be non-blank")
             if name in registered:
-                raise ConfigurationError(f"duplicate tool name: {name}")
+                raise ConfigurationError("duplicate tool name")
             registered[name] = tool
         self._tools = registered
 

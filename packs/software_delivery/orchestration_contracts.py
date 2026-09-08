@@ -9,6 +9,7 @@ from typing import TypeVar
 from packs.software_delivery.contracts import (
     RiskAssessmentResult,
     TEST_CASE_STYLES,
+    TEST_CASE_STYLES_DISPLAY,
     TestCaseStyle,
     TestGenerationResult,
 )
@@ -24,7 +25,11 @@ def _require_text(
     field_name: str,
     error_type: type[_E] = OrchestrationValidationError,
 ) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise error_type(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise error_type(f"{field_name} must be non-empty")
     return value
 
@@ -57,13 +62,14 @@ class OrchestrateSoftwareDeliveryRequest:
                 "evidence must be an EvidenceBundle, "
                 f"got {type(self.evidence).__name__}"
             )
-        if (
-            not isinstance(self.output_style, str)
-            or self.output_style not in TEST_CASE_STYLES
-        ):
+        if not isinstance(self.output_style, str):
             raise OrchestrationValidationError(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
                 f"got {type(self.output_style).__name__}"
+            )
+        if self.output_style not in TEST_CASE_STYLES:
+            raise OrchestrationValidationError(
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
             )
 
 

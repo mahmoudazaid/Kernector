@@ -7,7 +7,11 @@ import pytest
 from application import observability
 from application.contracts import IngestRequest
 from application.errors import ApplicationValidationError
-from application.ingest_knowledge import IngestFailure, IngestKnowledge
+from application.ingest_knowledge import (
+    DuplicateSourceReferenceError,
+    IngestFailure,
+    IngestKnowledge,
+)
 from domain.knowledge import (
     SourceDocument,
     SourceMetadata,
@@ -99,15 +103,34 @@ def test_a_wrong_length_embedding_result_is_rejected_before_any_write(
     assert store.records == {}
 
 
-def test_duplicate_source_references_in_one_request_are_rejected() -> None:
+def test_duplicate_source_references_in_one_request_are_rejected(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     store = InMemoryVectorStore()
+    sentinel = "DUP-SOURCE-LEAK-SENTINEL"
 
-    with pytest.raises(ApplicationValidationError, match="duplicate"):
-        _use_case(store).execute(
-            IngestRequest(documents=[_document(), _document(content="other body")])
-        )
+    with caplog.at_level(logging.ERROR, logger="application.ingest_knowledge"):
+        with pytest.raises(DuplicateSourceReferenceError) as raised:
+            _use_case(store).execute(
+                IngestRequest(
+                    documents=[
+                        _document(sentinel),
+                        _document(sentinel, content="other body"),
+                    ]
+                )
+            )
 
+    message = str(raised.value)
+    assert sentinel not in message
+    assert raised.value.source_id == sentinel
+    assert raised.value.source_type == SourceType.KNOWLEDGE_DOCUMENT
     assert store.records == {}
+    records = operation_records(caplog.records, operation="ingest")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "DuplicateSourceReferenceError"
+    assert payload["source_id"] == sentinel
 
 
 def test_the_same_source_id_under_two_source_types_is_not_a_duplicate() -> None:

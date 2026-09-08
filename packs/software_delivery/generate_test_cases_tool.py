@@ -9,6 +9,7 @@ from domain.knowledge import SourceReference
 from domain.ports import ChatModel
 from packs.software_delivery.contracts import (
     TEST_CASE_STYLES,
+    TEST_CASE_STYLES_DISPLAY,
     TestCaseEvidence,
     TestCaseStyle,
     TestGenerationRequest,
@@ -27,7 +28,9 @@ TOOL_DESCRIPTION = (
 )
 
 _ALLOWED_EVIDENCE_KEYS = frozenset({"source_id", "source_type", "text"})
+_ALLOWED_EVIDENCE_KEYS_DISPLAY = str(sorted(_ALLOWED_EVIDENCE_KEYS))
 _ALLOWED_ROOT_KEYS = frozenset({"target", "evidence", "output_style"})
+_ALLOWED_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_ROOT_KEYS))
 
 Generator = Callable[[TestGenerationRequest, ChatModel], TestGenerationResult]
 
@@ -87,7 +90,8 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
     if unknown:
         raise TestCaseGenerationValidationError(
-            f"unknown argument keys: {sorted(unknown)}"
+            f"unknown argument keys: {len(unknown)} not in "
+            f"{_ALLOWED_ROOT_KEYS_DISPLAY}"
         )
     if "target" not in arguments:
         raise TestCaseGenerationValidationError("target is required")
@@ -106,10 +110,14 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
     style: TestCaseStyle = "steps"
     if "output_style" in arguments:
         raw_style = arguments["output_style"]
-        if not isinstance(raw_style, str) or raw_style not in TEST_CASE_STYLES:
+        if not isinstance(raw_style, str):
             raise TestCaseGenerationValidationError(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
                 f"got {type(raw_style).__name__}"
+            )
+        if raw_style not in TEST_CASE_STYLES:
+            raise TestCaseGenerationValidationError(
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
             )
         style = raw_style  # type: ignore[assignment]
 
@@ -132,7 +140,8 @@ def _parse_evidence_item(item: object) -> TestCaseEvidence:
     unknown = set(item) - _ALLOWED_EVIDENCE_KEYS
     if unknown:
         raise TestCaseGenerationValidationError(
-            f"unknown evidence keys: {sorted(unknown)}"
+            f"unknown evidence keys: {len(unknown)} not in "
+            f"{_ALLOWED_EVIDENCE_KEYS_DISPLAY}"
         )
     for required in ("source_id", "source_type", "text"):
         if required not in item:

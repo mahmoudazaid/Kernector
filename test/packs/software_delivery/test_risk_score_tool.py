@@ -65,9 +65,15 @@ def test_unknown_root_key_fails_before_scoring() -> None:
         raise AssertionError("scorer must not run")
 
     args = _valid_arguments()
-    args["extra"] = "nope"
-    with pytest.raises(RiskScoreValidationError, match="unknown"):
+    sentinel = "PATIENT_SSN_123-45-6789"
+    args[sentinel] = "x"
+    with pytest.raises(RiskScoreValidationError) as raised:
         RiskScoreTool(scorer=boom).run(args)
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == (
+        "unknown argument keys: 1 not in ['evidence', 'target']"
+    )
     assert calls == []
 
 

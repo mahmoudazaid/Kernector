@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from pathlib import Path
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, UploadTooLargeError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
+from application.observability import log_operation
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -20,6 +22,8 @@ from domain.knowledge import (
     UploadPayload,
 )
 from domain.ports import DocumentCatalog, DocumentExtractor, VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentManagementError(RuntimeError):
@@ -76,6 +80,8 @@ class UnknownDocumentError(ApplicationValidationError):
 
     def __init__(self, *, reference: SourceReference) -> None:
         super().__init__("unknown document")
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
 
 
 class SourceIdCollisionError(ApplicationValidationError):
@@ -149,7 +155,16 @@ class ManageUploadedDocuments:
         source_id = self._new_source_id()
         reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
         if self._catalog.get(reference) is not None:
-            raise SourceIdCollisionError(source_id=source_id)
+            collision = SourceIdCollisionError(source_id=source_id)
+            log_operation(
+                logger,
+                operation="create",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(collision).__name__,
+                source_id=collision.source_id,
+            )
+            raise collision
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)
         self._catalog.upsert(pending)
@@ -172,7 +187,17 @@ class ManageUploadedDocuments:
         """Replace content for an existing catalog source under the same ID."""
         previous = self._catalog.get(reference)
         if previous is None:
-            raise UnknownDocumentError(reference=reference)
+            error = UnknownDocumentError(reference=reference)
+            log_operation(
+                logger,
+                operation="replace",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=error.source_id,
+                source_type=error.source_type,
+            )
+            raise error
         self._assert_upload_size(payload)
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)

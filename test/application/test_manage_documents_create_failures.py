@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+import logging
 
 import pytest
 
@@ -34,6 +35,7 @@ from test.doubles import (
     InMemoryVectorStore,
     StubEmbeddingModel,
 )
+from test.log_record import operation_payload, operation_records
 
 CONTENT = "abcdefghijklmnopqrstuvwxyz"
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -318,7 +320,9 @@ def test_partial_create_failure_message_is_fixed_across_causes() -> None:
     assert "/mnt/data" not in str(raised.value)
 
 
-def test_create_rejects_colliding_generated_source_id_without_echoing_it() -> None:
+def test_create_rejects_colliding_generated_source_id_without_echoing_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     colliding_id = "COLLISION-ID-LEAK-SENTINEL"
     catalog = InMemoryDocumentCatalog()
     reference = SourceReference(colliding_id, "knowledge_document")
@@ -349,11 +353,18 @@ def test_create_rejects_colliding_generated_source_id_without_echoing_it() -> No
         max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
 
-    with pytest.raises(SourceIdCollisionError) as raised:
-        use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
+    with caplog.at_level(logging.ERROR, logger="application.manage_documents"):
+        with pytest.raises(SourceIdCollisionError) as raised:
+            use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
     message = str(raised.value)
     assert colliding_id not in message
     assert message == "generated source_id already exists in the catalog"
     # The id an operator needs to debug a repeating factory survives on the
     # exception rather than being lost with the message.
     assert raised.value.source_id == colliding_id
+    records = operation_records(caplog.records, operation="create")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "SourceIdCollisionError"
+    assert payload["source_id"] == colliding_id

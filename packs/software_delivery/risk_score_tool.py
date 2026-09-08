@@ -24,7 +24,9 @@ TOOL_DESCRIPTION = (
 _ALLOWED_EVIDENCE_KEYS = frozenset(
     {"source_id", "source_type", "text", "is_complete"}
 )
+_ALLOWED_EVIDENCE_KEYS_DISPLAY = str(sorted(_ALLOWED_EVIDENCE_KEYS))
 _ALLOWED_ROOT_KEYS = frozenset({"target", "evidence"})
+_ALLOWED_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_ROOT_KEYS))
 
 
 class RiskScoreTool:
@@ -76,7 +78,8 @@ def _parse_request(arguments: Mapping[str, object]) -> RiskAssessmentRequest:
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
     if unknown:
         raise RiskScoreValidationError(
-            f"unknown argument keys: {sorted(unknown)}"
+            f"unknown argument keys: {len(unknown)} not in "
+            f"{_ALLOWED_ROOT_KEYS_DISPLAY}"
         )
     if "target" not in arguments:
         raise RiskScoreValidationError("target is required")
@@ -111,7 +114,8 @@ def _parse_evidence_item(item: object) -> RiskEvidence:
     unknown = set(item) - _ALLOWED_EVIDENCE_KEYS
     if unknown:
         raise RiskScoreValidationError(
-            f"unknown evidence keys: {sorted(unknown)}"
+            f"unknown evidence keys: {len(unknown)} not in "
+            f"{_ALLOWED_EVIDENCE_KEYS_DISPLAY}"
         )
     for required in ("source_id", "source_type", "text"):
         if required not in item:

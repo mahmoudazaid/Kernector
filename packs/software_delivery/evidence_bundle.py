@@ -17,7 +17,11 @@ def _require_text(
     field_name: str,
     error_type: type[_E] = OrchestrationValidationError,
 ) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise error_type(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise error_type(f"{field_name} must be non-empty")
     return value
 

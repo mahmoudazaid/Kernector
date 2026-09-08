@@ -84,8 +84,10 @@ def test_unknown_tool_name_is_logged_with_the_rejected_name(
 
 
 def test_duplicate_tool_names_fail_at_construction() -> None:
-    with pytest.raises(ConfigurationError, match="duplicate"):
+    with pytest.raises(ConfigurationError) as raised:
         ToolRegistry([_FakeTool("same"), _FakeTool("same")])
+    assert str(raised.value) == "duplicate tool name"
+    assert "same" not in str(raised.value)
 
 
 def test_blank_tool_name_fails_at_construction() -> None:

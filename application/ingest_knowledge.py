@@ -104,6 +104,17 @@ class IngestKnowledge:
         """
         try:
             response = self._execute(request)
+        except DuplicateSourceReferenceError as error:
+            log_operation(
+                logger,
+                operation="ingest",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=error.source_id,
+                source_type=error.source_type,
+            )
+            raise
         except ApplicationValidationError:
             raise
         except Exception as error:

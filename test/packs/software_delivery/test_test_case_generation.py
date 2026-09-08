@@ -149,7 +149,15 @@ def test_unknown_evidence_id_is_tool_failure() -> None:
     assert message == "evidence_ids items must name bundled evidence"
 
 
-def test_model_supplied_output_style_is_tool_failure() -> None:
+def test_unknown_model_fields_do_not_echo_caller_keys() -> None:
+    sentinel = "patient_note_SSN_123-45-6789"
+    payload = json.loads(_steps_payload())
+    payload[sentinel] = "corpus text"
+    with pytest.raises(ToolFailureError) as raised:
+        generate_test_cases(_request(), _FakeChat(json.dumps(payload)))
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "unexpected model fields: 1 not in ['test_cases']"
     payload = json.loads(_steps_payload())
     payload["output_style"] = "gherkin"
     with pytest.raises(ToolFailureError, match="output_style"):

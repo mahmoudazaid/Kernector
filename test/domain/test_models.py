@@ -19,8 +19,12 @@ def test_message_rejects_blank_content(blank: str) -> None:
 
 
 def test_message_rejects_non_string_content() -> None:
-    with pytest.raises(DomainValidationError, match="content"):
-        Message(role="user", content=123)  # type: ignore[arg-type]
+    sentinel = "CONTENT-LEAK-SENTINEL"
+    with pytest.raises(DomainValidationError) as raised:
+        Message(role="user", content=[sentinel])  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "content must be a non-empty string, got list"
 
 
 def test_message_rejects_invalid_role() -> None:
