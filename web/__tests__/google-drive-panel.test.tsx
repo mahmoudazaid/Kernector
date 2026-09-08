@@ -454,12 +454,7 @@ describe("GoogleDrivePanel", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
-    expect(
-      within(dialog).getByRole("tab", { name: /folders/i }),
-    ).toHaveAttribute("aria-selected", "true");
-    expect(
-      within(dialog).getByRole("tab", { name: /individual files/i }),
-    ).toHaveAttribute("aria-selected", "false");
+    expect(within(dialog).queryByRole("tab")).not.toBeInTheDocument();
     expect(await within(dialog).findByText("Specs")).toBeInTheDocument();
     expect(window.location.search).not.toContain("drive=");
     expect(document.body.textContent).not.toMatch(/ya29\.|1\/\/|client-secret/);
@@ -500,9 +495,7 @@ describe("GoogleDrivePanel", () => {
       name: /choose from google drive/i,
     });
     await user.click(await within(dialog).findByRole("checkbox"));
-    await user.click(
-      within(dialog).getByRole("button", { name: /add 1 folder & sync/i }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => {
       expect(saveSelection).toHaveBeenCalledTimes(1);

@@ -26,6 +26,19 @@ const FILE: GoogleDriveBrowseItemResponse = {
 
 const EMPTY = { folders: [], files: [] };
 
+async function listByKind(options: { kind?: string; pageToken?: string | null }) {
+  if (options.kind === "files") {
+    return { items: [FILE], next_page_token: null };
+  }
+  if (options.pageToken === "page-2") {
+    return {
+      items: [{ ...FOLDER, id: "folder-2", name: "More" }],
+      next_page_token: null,
+    };
+  }
+  return { items: [FOLDER], next_page_token: null };
+}
+
 function renderPicker(
   overrides: Partial<ComponentProps<typeof GoogleDrivePicker>> = {},
 ) {
@@ -36,7 +49,7 @@ function renderPicker(
       open
       apiBaseUrl="http://api.test"
       initialSelection={EMPTY}
-      listItems={async () => ({ items: [FOLDER], next_page_token: null })}
+      listItems={listByKind}
       onConfirm={onConfirm}
       onCancel={onCancel}
       {...overrides}
@@ -46,30 +59,39 @@ function renderPicker(
 }
 
 describe("GoogleDrivePicker", () => {
-  it("defaults to Folders as the recommended mode", async () => {
+  it("shows folders and files in one Drive view", async () => {
     renderPicker();
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
     expect(
-      within(dialog).getByRole("tab", { name: /folders/i }),
-    ).toHaveAttribute("aria-selected", "true");
-    expect(within(dialog).getByText(/recommended/i)).toBeInTheDocument();
+      within(dialog).queryByRole("tab", { name: /folders/i }),
+    ).not.toBeInTheDocument();
     expect(
-      within(dialog).getByRole("tab", { name: /individual files/i }),
-    ).toHaveAttribute("aria-selected", "false");
+      within(dialog).queryByRole("tab", { name: /individual files/i }),
+    ).not.toBeInTheDocument();
     expect(await within(dialog).findByText("Specs")).toBeInTheDocument();
+    expect(within(dialog).getByText("guide.md")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /^close$/i }),
+    ).toHaveAccessibleName("Close");
+    expect(within(dialog).queryByText(/^close$/i)).not.toBeInTheDocument();
   });
 
-  it("searches through backend DTOs without exposing tokens", async () => {
+  it("searches folders and files through backend DTOs without exposing tokens", async () => {
     const user = userEvent.setup();
-    const listItems = vi
-      .fn()
-      .mockResolvedValueOnce({ items: [FOLDER], next_page_token: null })
-      .mockResolvedValueOnce({
-        items: [{ ...FOLDER, id: "folder-2", name: "Specs v2" }],
-        next_page_token: null,
-      });
+    const listItems = vi.fn(async (options: { kind?: string; query?: string }) => {
+      if (options.query === "Specs") {
+        return {
+          items:
+            options.kind === "files"
+              ? []
+              : [{ ...FOLDER, id: "folder-2", name: "Specs v2" }],
+          next_page_token: null,
+        };
+      }
+      return listByKind(options);
+    });
     renderPicker({ listItems });
 
     const dialog = await screen.findByRole("dialog", {
@@ -79,10 +101,17 @@ describe("GoogleDrivePicker", () => {
     await user.click(within(dialog).getByRole("button", { name: /^search$/i }));
 
     expect(await within(dialog).findByText("Specs v2")).toBeInTheDocument();
-    expect(listItems).toHaveBeenLastCalledWith(
+    expect(listItems).toHaveBeenCalledWith(
       expect.objectContaining({
         parentId: "root",
         kind: "folders",
+        query: "Specs",
+      }),
+    );
+    expect(listItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentId: "root",
+        kind: "files",
         query: "Specs",
       }),
     );
@@ -93,16 +122,18 @@ describe("GoogleDrivePicker", () => {
 
   it("paginates with Load more using the backend page token", async () => {
     const user = userEvent.setup();
-    const listItems = vi
-      .fn()
-      .mockResolvedValueOnce({
-        items: [FOLDER],
-        next_page_token: "page-2",
-      })
-      .mockResolvedValueOnce({
-        items: [{ ...FOLDER, id: "folder-2", name: "More" }],
-        next_page_token: null,
-      });
+    const listItems = vi.fn(async (options: { kind?: string; pageToken?: string | null }) => {
+      if (options.kind === "files") {
+        return { items: [], next_page_token: null };
+      }
+      if (options.pageToken === "page-2") {
+        return {
+          items: [{ ...FOLDER, id: "folder-2", name: "More" }],
+          next_page_token: null,
+        };
+      }
+      return { items: [FOLDER], next_page_token: "page-2" };
+    });
     renderPicker({ listItems });
 
     const dialog = await screen.findByRole("dialog", {
@@ -139,7 +170,7 @@ describe("GoogleDrivePicker", () => {
           code: "google_drive_request_failed",
         }),
       )
-      .mockResolvedValueOnce({ items: [FOLDER], next_page_token: null });
+      .mockImplementation(listByKind);
     renderPicker({ listItems });
 
     const dialog = await screen.findByRole("dialog", {
@@ -167,26 +198,6 @@ describe("GoogleDrivePicker", () => {
     expect(screen.getByRole("button", { name: /^retry$/i })).toBeEnabled();
   });
 
-  it("browses individual files from backend DTOs", async () => {
-    const user = userEvent.setup();
-    const listItems = vi.fn(async (options: { kind?: string }) => ({
-      items: options.kind === "files" ? [FILE] : [FOLDER],
-      next_page_token: null,
-    }));
-    renderPicker({ listItems });
-
-    const dialog = await screen.findByRole("dialog", {
-      name: /choose from google drive/i,
-    });
-    await user.click(
-      within(dialog).getByRole("tab", { name: /individual files/i }),
-    );
-    expect(await within(dialog).findByText("guide.md")).toBeInTheDocument();
-    expect(listItems).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "files" }),
-    );
-  });
-
   it("confirms selected Drive IDs rather than names", async () => {
     const user = userEvent.setup();
     const { onConfirm } = renderPicker({
@@ -198,10 +209,8 @@ describe("GoogleDrivePicker", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
-    expect(await within(dialog).findByRole("checkbox")).toBeChecked();
-    await user.click(
-      within(dialog).getByRole("button", { name: /add 1 folder & sync/i }),
-    );
+    expect(await within(dialog).findByRole("checkbox", { name: /specs/i })).toBeChecked();
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
     expect(onConfirm).toHaveBeenCalledWith({
       folders: [{ id: "folder-1", name: "Old" }],
       files: [],

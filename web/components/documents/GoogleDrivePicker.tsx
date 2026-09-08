@@ -23,8 +23,6 @@ export type GoogleDrivePickerProps = {
   onCancel: () => void;
 };
 
-type PickerMode = "folders" | "files";
-
 type Crumb = { id: string; name: string };
 
 type BrowseView =
@@ -34,7 +32,8 @@ type BrowseView =
       kind: "ready";
       folders: GoogleDriveBrowseItemResponse[];
       files: GoogleDriveBrowseItemResponse[];
-      nextPageToken: string | null;
+      nextFolderToken: string | null;
+      nextFileToken: string | null;
     };
 
 const FOCUSABLE_SELECTOR = [
@@ -89,6 +88,62 @@ function browseErrorMessage(error: unknown): {
   return { message: "The request failed. Please try again later." };
 }
 
+function mixedRows(
+  folders: GoogleDriveBrowseItemResponse[],
+  files: GoogleDriveBrowseItemResponse[],
+): GoogleDriveBrowseItemResponse[] {
+  const seen = new Set(folders.map((item) => item.id));
+  return [
+    ...folders,
+    ...files.filter((item) => !seen.has(item.id)),
+  ];
+}
+
+function FolderGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 6.2c0-.7.6-1.2 1.2-1.2h3.1c.3 0 .6.1.8.4l.7.8h6c.7 0 1.2.6 1.2 1.2v6.6c0 .7-.5 1.2-1.2 1.2H4.7c-.6 0-1.2-.5-1.2-1.2V6.2Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FileGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M6 3.5h5.2L16 8.3V16c0 .8-.6 1.5-1.5 1.5h-8C5.7 17.5 5 16.8 5 16V5c0-.8.7-1.5 1.5-1.5H6Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.2 3.6V8h4.6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CloseGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M5 5l10 10M15 5 5 15"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function GoogleDrivePicker({
   open,
   apiBaseUrl,
@@ -106,7 +161,6 @@ export function GoogleDrivePicker({
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
 
-  const [mode, setMode] = useState<PickerMode>("folders");
   const [crumbs, setCrumbs] = useState<Crumb[]>([ROOT]);
   const [search, setSearch] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
@@ -116,58 +170,70 @@ export function GoogleDrivePicker({
   const parentId = crumbs[crumbs.length - 1]?.id ?? "root";
   const query = submittedQuery.trim();
 
-  async function loadPage(options?: { pageToken?: string | null }) {
+  async function loadPage(options?: {
+    pageToken?: string | null;
+    pageKind?: "folders" | "files";
+  }) {
     const pageToken = options?.pageToken ?? null;
+    const pageKind = options?.pageKind;
     if (!pageToken) {
       setView({ kind: "loading" });
     }
     try {
-      if (mode === "folders") {
+      if (pageToken && pageKind) {
         const page = await listItems({
           baseUrl: apiBaseUrl,
           parentId,
-          kind: "folders",
+          kind: pageKind,
           query: query || undefined,
           pageToken,
         });
         setView((current) => {
-          const existing =
-            pageToken && current.kind === "ready" ? current.folders : [];
+          if (current.kind !== "ready") {
+            return current;
+          }
           return {
             kind: "ready",
-            folders: [...existing, ...page.items],
-            files: [],
-            nextPageToken: page.next_page_token ?? null,
+            folders:
+              pageKind === "folders"
+                ? [...current.folders, ...page.items]
+                : current.folders,
+            files:
+              pageKind === "files"
+                ? [...current.files, ...page.items]
+                : current.files,
+            nextFolderToken:
+              pageKind === "folders"
+                ? (page.next_page_token ?? null)
+                : current.nextFolderToken,
+            nextFileToken:
+              pageKind === "files"
+                ? (page.next_page_token ?? null)
+                : current.nextFileToken,
           };
         });
         return;
       }
-      const filePage = await listItems({
-        baseUrl: apiBaseUrl,
-        parentId,
-        kind: "files",
-        query: query || undefined,
-        pageToken,
-      });
-      const folderPage =
-        query || pageToken
-          ? { items: [] as GoogleDriveBrowseItemResponse[] }
-          : await listItems({
-              baseUrl: apiBaseUrl,
-              parentId,
-              kind: "folders",
-            });
-      setView((current) => {
-        const existingFiles =
-          pageToken && current.kind === "ready" ? current.files : [];
-        const existingFolders =
-          pageToken && current.kind === "ready" ? current.folders : [];
-        return {
-          kind: "ready",
-          folders: pageToken ? existingFolders : folderPage.items,
-          files: [...existingFiles, ...filePage.items],
-          nextPageToken: filePage.next_page_token ?? null,
-        };
+      const [folderPage, filePage] = await Promise.all([
+        listItems({
+          baseUrl: apiBaseUrl,
+          parentId,
+          kind: "folders",
+          query: query || undefined,
+        }),
+        listItems({
+          baseUrl: apiBaseUrl,
+          parentId,
+          kind: "files",
+          query: query || undefined,
+        }),
+      ]);
+      setView({
+        kind: "ready",
+        folders: folderPage.items,
+        files: filePage.items,
+        nextFolderToken: folderPage.next_page_token ?? null,
+        nextFileToken: filePage.next_page_token ?? null,
       });
     } catch (error) {
       setView({ kind: "error", ...browseErrorMessage(error) });
@@ -181,7 +247,6 @@ export function GoogleDrivePicker({
     if (!open) {
       return;
     }
-    setMode("folders");
     setCrumbs([ROOT]);
     setSearch("");
     setSubmittedQuery("");
@@ -194,7 +259,7 @@ export function GoogleDrivePicker({
     }
     void loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on browse identity
-  }, [open, mode, parentId, submittedQuery]);
+  }, [open, parentId, submittedQuery]);
 
   useEffect(() => {
     if (!open) {
@@ -259,28 +324,11 @@ export function GoogleDrivePicker({
     return null;
   }
 
-  const folderCount = [...selected.values()].filter(
-    (item) => item.kind === "folder",
-  ).length;
-  const fileCount = selected.size - folderCount;
-  const confirmLabel =
-    selected.size === 0
-      ? "Add selection & sync"
-      : `Add ${[
-          folderCount
-            ? `${folderCount} folder${folderCount === 1 ? "" : "s"}`
-            : null,
-          fileCount ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : null,
-        ]
-          .filter(Boolean)
-          .join(" + ")} & sync`;
   const countLabel =
     selected.size === 0 ? "No items selected" : `${selected.size} selected`;
 
-  function toggle(
-    item: GoogleDriveBrowseItemResponse,
-    kind: "folder" | "file",
-  ) {
+  function toggle(item: GoogleDriveBrowseItemResponse) {
+    const kind = item.kind === "folder" ? "folder" : "file";
     setSelected((current) => {
       const next = new Map(current);
       if (next.has(item.id)) {
@@ -293,11 +341,17 @@ export function GoogleDrivePicker({
   }
 
   const rows =
+    view.kind === "ready" ? mixedRows(view.folders, view.files) : [];
+  const nextPageKind =
+    view.kind === "ready" && view.nextFolderToken
+      ? "folders"
+      : view.kind === "ready" && view.nextFileToken
+        ? "files"
+        : null;
+  const nextPageToken =
     view.kind === "ready"
-      ? mode === "folders"
-        ? view.folders
-        : [...view.folders, ...view.files.filter((item) => item.supported)]
-      : [];
+      ? (view.nextFolderToken ?? view.nextFileToken)
+      : null;
 
   return (
     <div className="kern-dialog-root">
@@ -327,10 +381,11 @@ export function GoogleDrivePicker({
             </div>
             <Button
               variant="ghost"
-              aria-label="Close Google Drive picker"
+              className="kern-picker-close"
+              aria-label="Close"
               onClick={onCancel}
             >
-              Close
+              <CloseGlyph />
             </Button>
           </div>
           <form
@@ -358,32 +413,6 @@ export function GoogleDrivePicker({
           </form>
         </div>
 
-        <div
-          className="kern-picker-tabs"
-          role="tablist"
-          aria-label="Google Drive selection type"
-        >
-          <button
-            type="button"
-            className="kern-picker-tab"
-            role="tab"
-            aria-selected={mode === "folders"}
-            onClick={() => setMode("folders")}
-          >
-            Folders
-            <span className="kern-hub-tab-count">Recommended</span>
-          </button>
-          <button
-            type="button"
-            className="kern-picker-tab"
-            role="tab"
-            aria-selected={mode === "files"}
-            onClick={() => setMode("files")}
-          >
-            Individual files
-          </button>
-        </div>
-
         {query ? null : (
           <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
             {crumbs.map((crumb, index) => (
@@ -405,7 +434,7 @@ export function GoogleDrivePicker({
           </nav>
         )}
 
-        <div className="kern-picker-list" role="tabpanel">
+        <div className="kern-picker-list">
           {view.kind === "loading" ? (
             <p role="status">Loading Google Drive…</p>
           ) : null}
@@ -433,22 +462,28 @@ export function GoogleDrivePicker({
           ) : null}
           {view.kind === "ready"
             ? rows.map((item) => {
-                const itemKind =
-                  item.kind === "folder" || mode === "folders"
-                    ? "folder"
-                    : "file";
+                const itemKind = item.kind === "folder" ? "folder" : "file";
                 const navigable = itemKind === "folder" && !query;
+                const checked = selected.has(item.id);
                 return (
-                  <div className="kern-drive-item" key={item.id}>
+                  <div
+                    className={
+                      checked ? "kern-drive-item is-checked" : "kern-drive-item"
+                    }
+                    key={item.id}
+                  >
                     <label className="kern-drive-item-select">
                       <input
                         type="checkbox"
-                        checked={selected.has(item.id)}
+                        checked={checked}
                         disabled={
                           itemKind === "file" && item.supported === false
                         }
-                        onChange={() => toggle(item, itemKind)}
+                        onChange={() => toggle(item)}
                       />
+                      <span className="kern-drive-item-icon">
+                        {itemKind === "folder" ? <FolderGlyph /> : <FileGlyph />}
+                      </span>
                       <span className="kern-drive-item-copy">
                         <strong>{item.name}</strong>
                         <span className="kern-drive-item-meta">
@@ -475,10 +510,15 @@ export function GoogleDrivePicker({
                 );
               })
             : null}
-          {view.kind === "ready" && view.nextPageToken ? (
+          {nextPageKind && nextPageToken ? (
             <Button
               variant="secondary"
-              onClick={() => void loadPage({ pageToken: view.nextPageToken })}
+              onClick={() =>
+                void loadPage({
+                  pageToken: nextPageToken,
+                  pageKind: nextPageKind,
+                })
+              }
             >
               Load more
             </Button>
@@ -495,7 +535,7 @@ export function GoogleDrivePicker({
               disabled={busy || selected.size === 0}
               onClick={() => onConfirm(toSelection(selected))}
             >
-              {busy ? "Saving selection…" : confirmLabel}
+              {busy ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
