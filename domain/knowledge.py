@@ -14,10 +14,11 @@ class SourceType:
     """Documented well-known source kinds. Not a closed validation set."""
 
     KNOWLEDGE_DOCUMENT = "knowledge_document"
+    GOOGLE_DRIVE = "google_drive"
 
 
 class CatalogStatus(StrEnum):
-    """Lifecycle status of an uploaded document in the catalog."""
+    """Lifecycle status of a catalogued knowledge document."""
 
     PENDING = "pending"
     READY = "ready"
@@ -194,6 +195,36 @@ class ScoredChunk:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorDocument:
+    """A provider-neutral listing of one remote knowledge file.
+
+    Args:
+        reference (SourceReference): Stable identity used for ingest and catalog rows.
+        file_name (str): Remote file name, including any suffix.
+        revision (str): Provider revision marker used to skip unchanged files.
+        extra (Mapping[str, str]): Opaque connector metadata (MIME type, size, flags).
+    """
+
+    reference: SourceReference
+    file_name: str
+    revision: str
+    extra: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reference, SourceReference):
+            raise DomainValidationError(
+                "reference must be a SourceReference"
+            )
+        _require_text(self.file_name, "file_name")
+        _require_text(self.revision, "revision")
+
+    @property
+    def source_id(self) -> str:
+        """The originating source identifier, preserved for traceability."""
+        return self.reference.source_id
+
+
+@dataclass(frozen=True, slots=True)
 class UploadPayload:
     """Raw upload bytes and the client-supplied file name."""
 
@@ -210,7 +241,7 @@ class UploadPayload:
 
 @dataclass(frozen=True, slots=True)
 class CatalogDocument:
-    """Durable metadata for one uploaded knowledge document."""
+    """Durable metadata for one catalogued knowledge document."""
 
     reference: SourceReference
     file_name: str
@@ -220,6 +251,7 @@ class CatalogDocument:
     uploaded_at: datetime
     chunk_count: int
     error: str | None
+    revision: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
@@ -243,3 +275,8 @@ class CatalogDocument:
                 "uploaded_at must be timezone-aware"
             )
         _require_index(self.chunk_count, "chunk_count")
+        if self.revision is not None and not isinstance(self.revision, str):
+            raise DomainValidationError(
+                f"revision must be a string or None, "
+                f"got {type(self.revision).__name__}"
+            )

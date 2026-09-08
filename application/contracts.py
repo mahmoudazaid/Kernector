@@ -6,6 +6,7 @@ are reused; prompt bodies and analysis-specific outputs stay out of scope.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from application.errors import ApplicationValidationError
 from domain.knowledge import ScoredChunk, SourceDocument, SourceReference
@@ -619,3 +620,90 @@ class RewriteRetrieveResponse:
     def was_rewritten(self) -> bool:
         """Whether rewrite changed the query beyond leading/trailing whitespace."""
         return self.original_query.strip() != self.rewritten_query.strip()
+
+
+class ConnectorSyncStatus(StrEnum):
+    """Per-document result of one connector synchronization run."""
+
+    INGESTED = "ingested"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorSyncOutcome:
+    """Outcome for one listed connector document.
+
+    ``error_type`` is an exception class name only; it must never carry
+    exception messages or provider payload text.
+
+    Args:
+        source_id (str): Connector identity of the listed document.
+        status (ConnectorSyncStatus): Ingested, skipped, or failed.
+        chunk_count (int): Chunks stored for ingested/skipped rows; ``0`` when failed.
+        error_type (str | None): Exception class name when ``status`` is failed.
+    """
+
+    source_id: str
+    status: ConnectorSyncStatus
+    chunk_count: int
+    error_type: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.source_id, "source_id")
+        if not isinstance(self.status, ConnectorSyncStatus):
+            raise ApplicationValidationError(
+                f"status must be a ConnectorSyncStatus, "
+                f"got {type(self.status).__name__}"
+            )
+        _require_chunk_count(self.chunk_count)
+        if self.error_type is not None:
+            _require_text(self.error_type, "error_type")
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorSyncResponse:
+    """Ordered per-document outcomes of a connector sync run.
+
+    Args:
+        outcomes (Sequence[ConnectorSyncOutcome]): Results in listing order.
+    """
+
+    outcomes: Sequence[ConnectorSyncOutcome]
+
+    def __post_init__(self) -> None:
+        outcomes = _require_sequence(self.outcomes, "outcomes")
+        for index, item in enumerate(outcomes):
+            if not isinstance(item, ConnectorSyncOutcome):
+                raise ApplicationValidationError(
+                    f"outcomes[{index}] must be a ConnectorSyncOutcome, "
+                    f"got {type(item).__name__}"
+                )
+        object.__setattr__(self, "outcomes", tuple(outcomes))
+
+    @property
+    def ingested_count(self) -> int:
+        """Number of documents ingested in this run."""
+        return sum(
+            1
+            for outcome in self.outcomes
+            if outcome.status is ConnectorSyncStatus.INGESTED
+        )
+
+    @property
+    def skipped_count(self) -> int:
+        """Number of documents skipped because the revision was unchanged."""
+        return sum(
+            1
+            for outcome in self.outcomes
+            if outcome.status is ConnectorSyncStatus.SKIPPED
+        )
+
+    @property
+    def failed_count(self) -> int:
+        """Number of documents that failed without aborting the run."""
+        return sum(
+            1
+            for outcome in self.outcomes
+            if outcome.status is ConnectorSyncStatus.FAILED
+        )

@@ -10,6 +10,7 @@ from application.errors import UploadTooLargeError
 from application.ingest_knowledge import IngestKnowledge
 from application.manage_documents import ManageUploadedDocuments
 from domain.knowledge import (
+    CatalogDocument,
     CatalogStatus,
     SourceDocument,
     SourceMetadata,
@@ -153,3 +154,24 @@ def test_oversized_create_is_rejected_before_extract_or_catalog() -> None:
     assert raised.value.actual_bytes == limit + 1
     assert extractor.calls == []
     assert len(catalog.all()) == 0
+
+
+def test_list_omits_google_drive_catalog_rows() -> None:
+    catalog = InMemoryDocumentCatalog()
+    uploaded = _use_case(catalog).create(
+        UploadPayload(file_name="guide.md", content=b"# Guide\n")
+    )
+    drive = CatalogDocument(
+        reference=SourceReference("drive-file-1", SourceType.GOOGLE_DRIVE),
+        file_name="notes.md",
+        title="notes",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=2,
+        error=None,
+        revision="1",
+    )
+    catalog.upsert(drive)
+    listed = _use_case(catalog).list()
+    assert listed == (uploaded,)

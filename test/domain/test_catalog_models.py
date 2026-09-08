@@ -148,3 +148,47 @@ def test_catalog_document_rejects_bool_chunk_count() -> None:
             chunk_count=True,  # type: ignore[arg-type]
             error=None,
         )
+
+
+def test_catalog_document_revision_defaults_to_none() -> None:
+    document = CatalogDocument(
+        reference=_reference(),
+        file_name="guide.md",
+        title=None,
+        content_format=None,
+        status=CatalogStatus.READY,
+        uploaded_at=_aware_now(),
+        chunk_count=1,
+        error=None,
+    )
+    assert document.revision is None
+
+
+def test_catalog_document_accepts_explicit_revision() -> None:
+    document = CatalogDocument(
+        reference=_reference(),
+        file_name="guide.md",
+        title=None,
+        content_format=None,
+        status=CatalogStatus.READY,
+        uploaded_at=_aware_now(),
+        chunk_count=1,
+        error=None,
+        revision="42",
+    )
+    assert document.revision == "42"
+
+
+def test_catalog_document_rejects_non_string_revision() -> None:
+    with pytest.raises(DomainValidationError, match="revision"):
+        CatalogDocument(
+            reference=_reference(),
+            file_name="guide.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.READY,
+            uploaded_at=_aware_now(),
+            chunk_count=1,
+            error=None,
+            revision=42,  # type: ignore[arg-type]
+        )

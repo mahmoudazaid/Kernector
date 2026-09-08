@@ -5,6 +5,7 @@ from typing import Protocol
 
 from domain.knowledge import (
     CatalogDocument,
+    ConnectorDocument,
     EmbeddedChunk,
     ScoredChunk,
     SourceDocument,
@@ -189,7 +190,7 @@ class Tool(Protocol):
 
 
 class DocumentCatalog(Protocol):
-    """Durable metadata registry for uploaded knowledge documents."""
+    """Durable metadata registry for catalogued knowledge documents."""
 
     def all(self) -> Sequence[CatalogDocument]:
         """Return every catalog record, reloading durable state if needed."""
@@ -214,3 +215,30 @@ class DocumentExtractor(Protocol):
         reference: SourceReference,
     ) -> SourceDocument:
         """Extract text and metadata for ``payload`` under ``reference``."""
+
+
+class KnowledgeConnector(Protocol):
+    """Lists and fetches remote knowledge files as domain documents."""
+
+    def list_documents(self) -> Sequence[ConnectorDocument]:
+        """Return the currently visible remote documents.
+
+        Raises:
+            ConnectorError: Listing failed without exposing provider details.
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: The provider is unreachable or throttling.
+        """
+        ...
+
+    def fetch_document(
+        self,
+        document: ConnectorDocument,
+    ) -> SourceDocument:
+        """Download or export ``document`` as a normalized source.
+
+        Raises:
+            ConnectorError: The file could not be read without exposing provider details.
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: The provider is unreachable or throttling.
+        """
+        ...

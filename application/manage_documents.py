@@ -179,8 +179,12 @@ class ManageUploadedDocuments:
         self._max_upload_bytes = max_upload_bytes
 
     def list(self) -> Sequence[CatalogDocument]:
-        """Return every uploaded-document catalog row."""
-        return self._catalog.all()
+        """Return uploaded-document catalog rows (not connector-owned rows)."""
+        return tuple(
+            row
+            for row in self._catalog.all()
+            if row.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+        )
 
     def create(self, payload: UploadPayload) -> CatalogDocument:
         """Allocate a UUID, ingest the upload, and persist catalog status.
