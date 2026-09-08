@@ -41,9 +41,10 @@ backend switch.
    whitespace-only values (when SQL is selected), and any value that fails
    the Decision 1 charset or length bound, at `load_settings()` time with a
    `ValueError` naming the variable — never lazily at first catalog access.
-   An empty or whitespace-only value is treated as absent, matching
-   `_load_google_drive_settings`. The current JSON runtime must continue
-   loading when the variable is absent.
+   The value is stripped before validation; an empty or whitespace-only
+   result is treated as absent, matching how the optional
+   `GOOGLE_DRIVE_FOLDER_ID` setting is handled. The current JSON runtime
+   must continue loading when the variable is absent.
 
 3. **No reserved default** — There is no reserved `"default"` workspace and no
    implicit fallback. JSON is the currently wired catalog and does **not**
