@@ -380,7 +380,8 @@ directly. Configurable JSON vs SQL adapter selection will be introduced by
 follow-up [#131](https://github.com/mahmoudazaid/Kernector/issues/131); it is
 not implemented here. The future SQL adapter’s workspace scope identity is
 recorded in [ADR 0006](docs/adr/0006-workspace-scope-identity.md). Neither SQL
-adapter selection nor `KERNECTOR_WORKSPACE_ID` exists in the current runtime.
+adapter selection nor `DOCUMENT_CATALOG_WORKSPACE_ID` exists in the current
+runtime.
 
 ## Error taxonomy
 

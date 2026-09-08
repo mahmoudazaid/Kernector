@@ -29,21 +29,25 @@ backend switch.
 
 ## Decision
 
-1. **Scope identity is `workspace_id`** — an opaque, case-sensitive, non-blank
-   identifier.
+1. **Scope identity is `workspace_id`** — a case-sensitive identifier that
+   `fullmatch`es `[A-Za-z0-9_-]+` and is at most 64 characters.
 
 2. **Server-side configuration only** — Resolve `workspace_id` only from
-   trusted server-side configuration (`KERNECTOR_WORKSPACE_ID`). Reject missing
-   and whitespace-only values. Never accept it from current HTTP or any
-   user-controlled input.
+   trusted server-side configuration (`DOCUMENT_CATALOG_WORKSPACE_ID`). Reject
+   missing, whitespace-only, and values that fail the Decision 1 charset or
+   length bound at `load_settings()` time with a `ValueError` naming the
+   variable — never lazily at first catalog access. Never accept it from HTTP
+   requests or any user-controlled input.
 
 3. **No reserved default** — There is no reserved `"default"` workspace and no
-   implicit fallback. JSON remains the default catalog adapter and does **not**
-   require `KERNECTOR_WORKSPACE_ID`. Selecting SQL, or running JSON→SQL
-   migration, **requires** an explicit `KERNECTOR_WORKSPACE_ID`.
+   implicit fallback. JSON is the currently wired catalog and does **not**
+   require `DOCUMENT_CATALOG_WORKSPACE_ID`. Selecting SQL, or running JSON→SQL
+   migration, **requires** an explicit `DOCUMENT_CATALOG_WORKSPACE_ID`.
 
 4. **SQL uniqueness** is `(workspace_id, source_type, source_id)`. Never global
-   `(source_type, source_id)`.
+   `(source_type, source_id)`. `workspace_id` is always bound as a query
+   parameter and never interpolated into SQL or DDL — table, schema, or index
+   names.
 
 5. **Port stays unscoped** — `DocumentCatalog` stays unscoped. Composition
    binds each `SqlDocumentCatalog` instance to **exactly one** `workspace_id`
@@ -56,7 +60,7 @@ backend switch.
 7. **Minimal authorization rule (SQL only)** — when SQL is selected, the
    current trusted single-user deployment is authorized only for its configured
    workspace. A bound `SqlDocumentCatalog` must not read, update, list, or
-   delete another workspace’s rows. Do not imply the default JSON runtime has
+   delete another workspace’s rows. Do not imply the current JSON runtime has
    a configured workspace.
 
 8. **JSON→SQL importer** — takes an explicit target `workspace_id` (the same
@@ -72,9 +76,9 @@ backend switch.
   authorization-before-retrieval, membership, HTTP workspace selection,
   Chroma/vector/lexical scoping, cross-workspace leakage tests, and safe audit
   events.
-- `KERNECTOR_WORKSPACE_ID` is not part of the current JSON runtime. It becomes
-  required only when SQL is selected or JSON→SQL migration runs — work that
-  remains in #131 after this ADR is Accepted.
+- `DOCUMENT_CATALOG_WORKSPACE_ID` is not part of the current JSON runtime. It
+  becomes required only when SQL is selected or JSON→SQL migration runs — work
+  that remains in #131 after this ADR is Accepted.
 
 ## Related docs
 

@@ -38,7 +38,7 @@ data into a shared document contract.
    The future SQL adapter’s scope identity is recorded in
    [ADR 0006](0006-workspace-scope-identity.md); #131 remains blocked until that
    ADR is Accepted. This ADR does not introduce adapter selection or
-   `KERNECTOR_WORKSPACE_ID`.
+   `DOCUMENT_CATALOG_WORKSPACE_ID`.
 
 ## Consequences
 
