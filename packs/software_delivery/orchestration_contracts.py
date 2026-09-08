@@ -9,6 +9,7 @@ from typing import TypeVar
 from packs.software_delivery.contracts import (
     RiskAssessmentResult,
     TEST_CASE_STYLES,
+    TEST_CASE_STYLES_DISPLAY,
     TestCaseStyle,
     TestGenerationResult,
 )
@@ -24,7 +25,11 @@ def _require_text(
     field_name: str,
     error_type: type[_E] = OrchestrationValidationError,
 ) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise error_type(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise error_type(f"{field_name} must be non-empty")
     return value
 
@@ -48,20 +53,23 @@ class OrchestrateSoftwareDeliveryRequest:
     def __post_init__(self) -> None:
         if not isinstance(self.intent, SoftwareDeliveryIntent):
             raise OrchestrationValidationError(
-                f"intent must be a SoftwareDeliveryIntent, got {self.intent!r}"
+                "intent must be a SoftwareDeliveryIntent, "
+                f"got {type(self.intent).__name__}"
             )
         _require_text(self.target, "target")
         if not isinstance(self.evidence, EvidenceBundle):
             raise OrchestrationValidationError(
-                f"evidence must be an EvidenceBundle, got {self.evidence!r}"
+                "evidence must be an EvidenceBundle, "
+                f"got {type(self.evidence).__name__}"
             )
-        if (
-            not isinstance(self.output_style, str)
-            or self.output_style not in TEST_CASE_STYLES
-        ):
+        if not isinstance(self.output_style, str):
             raise OrchestrationValidationError(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {self.output_style!r}"
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
+                f"got {type(self.output_style).__name__}"
+            )
+        if self.output_style not in TEST_CASE_STYLES:
+            raise OrchestrationValidationError(
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
             )
 
 
@@ -107,7 +115,7 @@ class OrchestrateSoftwareDeliveryResponse:
             self.outcomes, Sequence
         ):
             raise OrchestrationValidationError(
-                f"outcomes must be a sequence, got {self.outcomes!r}"
+                f"outcomes must be a sequence, got {type(self.outcomes).__name__}"
             )
         normalized: list[SoftwareDeliveryOutcome] = []
         for item in self.outcomes:
@@ -115,7 +123,8 @@ class OrchestrateSoftwareDeliveryResponse:
                 item, (RiskScoreOutcome, GenerateTestsOutcome, ExportMarkdownOutcome)
             ):
                 raise OrchestrationValidationError(
-                    f"outcomes items must be typed step outcomes, got {item!r}"
+                    "outcomes items must be typed step outcomes, "
+                    f"got {type(item).__name__}"
                 )
             normalized.append(item)
         object.__setattr__(self, "outcomes", tuple(normalized))

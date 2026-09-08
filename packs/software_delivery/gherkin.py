@@ -21,7 +21,7 @@ def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
         ValueError: Structural Gherkin violation (caller maps to ToolFailureError).
     """
     if isinstance(steps, (str, bytes)) or not isinstance(steps, Sequence):
-        raise ValueError(f"steps must be a sequence, got {steps!r}")
+        raise ValueError(f"steps must be a sequence, got {type(steps).__name__}")
     if len(steps) == 0:
         raise ValueError("steps must be non-empty")
 
@@ -54,7 +54,9 @@ def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
                     for name, order in _PHASE_ORDER.items()
                     if prior < order < _PHASE_ORDER[phase]
                 ]
-                raise ValueError(f"missing phase(s): {', '.join(missing)}")
+                raise ValueError(
+                    f"missing phase(s): {', '.join(missing)}"  # noqa: raise-scan -- closed literal set
+                )
             if current_phase is None and phase != "Given":
                 raise ValueError("scenario must start with Given")
             current_phase = phase
@@ -68,7 +70,9 @@ def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
 
     missing = [name for name in ("Given", "When", "Then") if name not in seen_phases]
     if missing:
-        raise ValueError(f"missing phase(s): {', '.join(missing)}")
+        raise ValueError(
+            f"missing phase(s): {', '.join(missing)}"  # noqa: raise-scan -- closed literal set
+        )
     if not terminal_bodies:
         raise ValueError("missing Then phase")
     expected = "\n".join(terminal_bodies)

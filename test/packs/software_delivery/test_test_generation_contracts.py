@@ -78,8 +78,18 @@ def test_request_rejects_non_string_output_style(bad_style: object) -> None:
 
 @pytest.mark.parametrize("bad_style", ["cucumber", "Cucumber", "STEPS", ""])
 def test_request_rejects_unsupported_string_output_style(bad_style: str) -> None:
-    with pytest.raises(TestCaseGenerationValidationError, match="output_style"):
+    with pytest.raises(TestCaseGenerationValidationError) as raised:
         TestGenerationRequest("t", [_evidence()], bad_style)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert message == "output_style must be one of ['gherkin', 'steps']"
+    assert "got str" not in message
+
+
+def test_result_rejects_unknown_output_style_without_type_suffix() -> None:
+    cases = [GeneratedTestCase("A", ("s",), "e", [_ref("1")])]
+    with pytest.raises(ValueError) as raised:
+        TestGenerationResult("cucumber", cases)  # type: ignore[arg-type]
+    assert str(raised.value) == "output_style must be one of ['gherkin', 'steps']"
 
 
 def test_request_rejects_blank_target() -> None:

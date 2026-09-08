@@ -169,6 +169,7 @@ def _as_number(value: object) -> float | int:
     """Coerce domain setting numerics for the catalog view."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ApplicationValidationError(
-            f"model setting numeric must be int or float, got {value!r}"
+            f"model setting numeric must be int or float, "
+            f"got {type(value).__name__}"
         )
     return value

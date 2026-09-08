@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from pathlib import Path
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, UploadTooLargeError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
+from application.observability import log_operation
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -20,6 +22,8 @@ from domain.knowledge import (
     UploadPayload,
 )
 from domain.ports import DocumentCatalog, DocumentExtractor, VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentManagementError(RuntimeError):
@@ -54,8 +58,56 @@ class PartialCreateFailure(DocumentManagementError):
         self.ingest_error = ingest_error
 
 
+class VectorDeleteFailure(DocumentManagementError):
+    """Vector-store delete failed before the catalog row was touched.
+
+    The message is fixed by the class rather than passed in, because this
+    exception crosses into presentation: a caller cannot leak an adapter path,
+    a credential, a vendor string, or the caller-supplied document id through
+    text it has no way to supply. The detail is for the server log; the
+    message is for the reader.
+
+    Attributes:
+        source_type (str): Catalog source type that was targeted.
+        source_id (str): Caller-supplied identifier that was targeted.
+        delete_error (BaseException): The adapter failure that stopped the delete.
+    """
+
+    MESSAGE = "Could not delete vector chunks; the catalog row is unchanged."
+
+    def __init__(
+        self, *, reference: SourceReference, delete_error: BaseException
+    ) -> None:
+        super().__init__(self.MESSAGE)
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+        self.delete_error = delete_error
+
+
 class PartialDeleteFailure(DocumentManagementError):
-    """Vector chunks were removed but the catalog row could not be deleted."""
+    """Vector chunks were removed but the catalog row could not be deleted.
+
+    Same rationale as :class:`PartialCreateFailure`: this exception crosses
+    into presentation, so the message is fixed and the locator plus vendor
+    error ride as attributes.
+
+    Attributes:
+        source_type (str): Catalog source type that was targeted.
+        source_id (str): Caller-supplied identifier whose chunks were removed.
+        delete_error (BaseException): The catalog failure that left the row.
+    """
+
+    MESSAGE = (
+        "Chunks were removed but the catalog row remains; retry the delete."
+    )
+
+    def __init__(
+        self, *, reference: SourceReference, delete_error: BaseException
+    ) -> None:
+        super().__init__(self.MESSAGE)
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+        self.delete_error = delete_error
 
 
 class PartialReplaceFailure(DocumentManagementError):
@@ -63,7 +115,38 @@ class PartialReplaceFailure(DocumentManagementError):
 
 
 class UnknownDocumentError(ApplicationValidationError):
-    """Replace or delete targeted a source that is not in the catalog."""
+    """Replace or delete targeted a source that is not in the catalog.
+
+    The locator is caller-supplied, so it stays off the message and rides on
+    the exception instead — reachable from a log record or ``__cause__``
+    without being interpolated into text that travels up the chain.
+
+    Attributes:
+        source_type (str): Catalog source type that was searched.
+        source_id (str): Caller-supplied identifier that was not found.
+    """
+
+    def __init__(self, *, reference: SourceReference) -> None:
+        super().__init__("unknown document")
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+
+
+class SourceIdCollisionError(ApplicationValidationError):
+    """A freshly generated ``source_id`` already exists in the catalog.
+
+    Means the injected ``new_source_id`` factory is repeating, so the colliding
+    id is the one thing an operator needs. It is generated rather than
+    caller-supplied, but the message stays uniform with the rest of the layer;
+    the id is carried as an attribute.
+
+    Attributes:
+        source_id (str): The generated identifier that collided.
+    """
+
+    def __init__(self, *, source_id: str) -> None:
+        super().__init__("generated source_id already exists in the catalog")
+        self.source_id = source_id
 
 
 class ManageUploadedDocuments:
@@ -111,6 +194,8 @@ class ManageUploadedDocuments:
         Raises:
             UploadTooLargeError: ``payload.content`` exceeds
                 ``max_upload_bytes``.
+            SourceIdCollisionError: The generated ``source_id`` is already in
+                the catalog, so the injected id factory is repeating.
             PartialCreateFailure: The ingest failed *and* its status could not
                 be written, leaving only the ``pending`` row on disk.
         """
@@ -118,9 +203,16 @@ class ManageUploadedDocuments:
         source_id = self._new_source_id()
         reference = SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
         if self._catalog.get(reference) is not None:
-            raise ApplicationValidationError(
-                f"generated source_id {source_id!r} already exists in the catalog"
+            collision = SourceIdCollisionError(source_id=source_id)
+            log_operation(
+                logger,
+                operation="create",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(collision).__name__,
+                source_id=collision.source_id,
             )
+            raise collision
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)
         self._catalog.upsert(pending)
@@ -143,9 +235,17 @@ class ManageUploadedDocuments:
         """Replace content for an existing catalog source under the same ID."""
         previous = self._catalog.get(reference)
         if previous is None:
-            raise UnknownDocumentError(
-                f"unknown document {reference.source_type}:{reference.source_id}"
+            error = UnknownDocumentError(reference=reference)
+            log_operation(
+                logger,
+                operation="replace",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=error.source_id,
+                source_type=error.source_type,
             )
+            raise error
         self._assert_upload_size(payload)
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)
@@ -183,16 +283,35 @@ class ManageUploadedDocuments:
         try:
             self._vector_store_factory().delete_source(reference)
         except Exception as error:
-            raise DocumentManagementError(
-                f"could not delete vector chunks for {reference.source_id}: {error}"
-            ) from error
+            failure = VectorDeleteFailure(
+                reference=reference, delete_error=error
+            )
+            log_operation(
+                logger,
+                operation="delete",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(failure).__name__,
+                source_id=failure.source_id,
+                source_type=failure.source_type,
+            )
+            raise failure from error
         try:
             self._catalog.delete(reference)
         except Exception as error:
-            raise PartialDeleteFailure(
-                f"chunks removed for {reference.source_id} but catalog row remains: "
-                f"{error}"
-            ) from error
+            failure = PartialDeleteFailure(
+                reference=reference, delete_error=error
+            )
+            log_operation(
+                logger,
+                operation="delete",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(failure).__name__,
+                source_id=failure.source_id,
+                source_type=failure.source_type,
+            )
+            raise failure from error
 
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)

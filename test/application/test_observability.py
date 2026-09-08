@@ -192,6 +192,7 @@ def test_log_operation_multiline_and_forged_values_cannot_split_or_forge_events(
             tool="tool\noperation=evil",
             pack="pack\noperation=evil",
             source_type="knowledge\noperation=evil",
+            source_id="doc-1\noperation=evil",
         )
 
     assert len(caplog.records) == 1
@@ -201,6 +202,7 @@ def test_log_operation_multiline_and_forged_values_cannot_split_or_forge_events(
     payload = json.loads(message)
     assert payload["operation"] == "ask"
     assert payload["outcome"] == "success"
+    assert payload["source_id"] == "doc-1?operation=evil"
     assert isinstance(payload["model"], str)
     assert "\n" not in payload["model"]
     assert "\r" not in payload["model"]
