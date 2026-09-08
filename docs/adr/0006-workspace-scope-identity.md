@@ -33,11 +33,16 @@ backend switch.
    `fullmatch`es `[A-Za-z0-9_-]+` and is at most 64 characters.
 
 2. **Server-side configuration only** — Resolve `workspace_id` only from
-   trusted server-side configuration (`DOCUMENT_CATALOG_WORKSPACE_ID`). Reject
+   trusted server-side configuration (`DOCUMENT_CATALOG_WORKSPACE_ID`). Never
+   accept it from HTTP requests or any user-controlled input. After #131
+   introduces catalog selection, `load_settings()` validates and requires
+   `DOCUMENT_CATALOG_WORKSPACE_ID` **only when SQL is selected**. Reject
    missing, whitespace-only, and values that fail the Decision 1 charset or
    length bound at `load_settings()` time with a `ValueError` naming the
-   variable — never lazily at first catalog access. Never accept it from HTTP
-   requests or any user-controlled input.
+   variable — never lazily at first catalog access. The JSON→SQL migration
+   entry point validates the same contract before performing database work.
+   The current JSON runtime must continue loading when the variable is
+   absent.
 
 3. **No reserved default** — There is no reserved `"default"` workspace and no
    implicit fallback. JSON is the currently wired catalog and does **not**
@@ -64,7 +69,9 @@ backend switch.
    a configured workspace.
 
 8. **JSON→SQL importer** — takes an explicit target `workspace_id` (the same
-   trusted configured value). It does not invent a workspace.
+   trusted configured value). It does not invent a workspace. The migration
+   entry point validates `DOCUMENT_CATALOG_WORKSPACE_ID` against Decision 1
+   before performing database work.
 
 ## Consequences
 
@@ -76,9 +83,10 @@ backend switch.
   authorization-before-retrieval, membership, HTTP workspace selection,
   Chroma/vector/lexical scoping, cross-workspace leakage tests, and safe audit
   events.
-- `DOCUMENT_CATALOG_WORKSPACE_ID` is not part of the current JSON runtime. It
-  becomes required only when SQL is selected or JSON→SQL migration runs — work
-  that remains in #131 after this ADR is Accepted.
+- `DOCUMENT_CATALOG_WORKSPACE_ID` is not part of the current JSON runtime.
+  `load_settings()` must not require it while JSON is the wired catalog. It
+  becomes required only when SQL is selected or JSON→SQL migration runs —
+  work that remains in #131 after this ADR is Accepted.
 
 ## Related docs
 
