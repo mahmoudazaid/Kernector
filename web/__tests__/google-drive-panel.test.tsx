@@ -325,7 +325,13 @@ describe("GoogleDrivePanel", () => {
     await user.click(button);
     await user.click(button);
     expect(syncNow).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: /syncing/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^sync$/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /syncing/i })).not.toBeInTheDocument();
+    const overlay = screen.getByText(/syncing google drive/i).closest(
+      ".kern-drive-sync-overlay",
+    );
+    expect(overlay).toBeInTheDocument();
+    expect(overlay?.querySelector(".kern-drive-sync-loader")).toBeInTheDocument();
     resolveSync({});
   });
 

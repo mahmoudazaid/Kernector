@@ -1,11 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.13 -0.13 164.95 155.22" role="img" aria-label="Loading">
   <title>Loading</title>
   <style>
-    .kn-lid { animation: kn-blink 1.8s cubic-bezier(.4,0,.2,1) infinite; }
+    .kn-lid { animation: kn-blink 2.8s cubic-bezier(.4,0,.2,1) infinite; }
     @keyframes kn-blink {
-      0%, 78%   { transform: translateY(0); }
-      84%, 86%  { transform: translateY(24.83px); }
-      93%, 100% { transform: translateY(0); }
+      0%, 50%   { transform: translateY(0); }
+      54%, 58%  { transform: translateY(24.83px); }
+      62%, 68%  { transform: translateY(0); }
+      72%, 76%  { transform: translateY(24.83px); }
+      82%, 100% { transform: translateY(0); }
     }
     @media (prefers-reduced-motion: reduce) {
       .kn-lid { animation: none; }

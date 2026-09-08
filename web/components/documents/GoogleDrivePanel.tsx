@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
+import { KernectorLoaderMark } from "@/components/shell/KernectorLoaderMark";
 import {
   disconnectGoogleDrive,
   getGoogleDriveSelection,
@@ -362,12 +363,22 @@ export function GoogleDrivePanel({
   }
 
   const syncDisabled = busy || setupRequired || reauth;
+  const cardBusy = busy && !pickerOpen;
   const pickerLabel = setupRequired
     ? "Choose folders or files"
     : "Browse";
 
   return (
-    <article className="kern-source-card">
+    <article
+      className="kern-source-card"
+      aria-busy={cardBusy}
+    >
+      {cardBusy ? (
+        <div className="kern-drive-sync-overlay" role="status">
+          <KernectorLoaderMark className="kern-drive-sync-loader" />
+          <span className="visually-hidden">Syncing Google Drive…</span>
+        </div>
+      ) : null}
       <div className="kern-source-card-title">
         <div className="kern-source-name">
           <span className="kern-source-icon">
@@ -473,7 +484,7 @@ export function GoogleDrivePanel({
                 disabled={syncDisabled}
                 onClick={() => void onSync()}
               >
-                {busy && !pickerOpen ? "Syncing…" : "Sync"}
+                Sync
               </Button>
             </>
           )}

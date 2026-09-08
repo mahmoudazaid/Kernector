@@ -1174,10 +1174,28 @@ a {
 }
 
 .kern-source-card {
+  position: relative;
   padding: var(--kern-space-5);
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.kern-drive-sync-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--kern-surface-2) 82%, transparent);
+}
+
+.kern-drive-sync-loader {
+  display: block;
+  width: 56px;
+  height: auto;
+  overflow: visible;
 }
 
 .kern-source-card-title {
@@ -1473,7 +1491,8 @@ a.kern-btn {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kern-picker-loader .kn-lid animate {
+  .kern-picker-loader .kn-lid animate,
+  .kern-drive-sync-loader .kn-lid animate {
     display: none;
   }
 }

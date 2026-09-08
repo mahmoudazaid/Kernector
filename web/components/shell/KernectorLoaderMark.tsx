@@ -3,9 +3,10 @@ type KernectorLoaderMarkProps = {
 };
 
 const BLINK = {
-  dur: "1.8s",
-  keyTimes: "0;0.78;0.84;0.86;0.93;1",
-  keySplines: "0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1",
+  dur: "2.2s",
+  keyTimes: "0;0.50;0.54;0.58;0.62;0.68;0.72;0.76;0.82;1",
+  keySplines:
+    "0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1;0.4 0 0.2 1",
 } as const;
 
 export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
@@ -51,7 +52,7 @@ export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
           >
             <animate
               attributeName="y"
-              values="-33.75;-33.75;-8.92;-8.92;-33.75;-33.75"
+              values="-33.75;-33.75;-8.92;-8.92;-33.75;-33.75;-8.92;-8.92;-33.75;-33.75"
               keyTimes={BLINK.keyTimes}
               keySplines={BLINK.keySplines}
               calcMode="spline"
@@ -72,7 +73,7 @@ export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
           >
             <animate
               attributeName="y"
-              values="43.37;43.37;68.2;68.2;43.37;43.37"
+              values="43.37;43.37;68.2;68.2;43.37;43.37;68.2;68.2;43.37;43.37"
               keyTimes={BLINK.keyTimes}
               keySplines={BLINK.keySplines}
               calcMode="spline"
