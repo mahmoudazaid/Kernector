@@ -179,15 +179,13 @@ describe("ChatPanel", () => {
     await user.type(await screen.findByLabelText(/message/i), "hello");
     await user.click(screen.getByRole("button", { name: /send/i }));
 
-    const thinking = await screen.findByText("Thinking…", { hidden: true });
-    expect(thinking.closest(".kern-chat-thinking")).toHaveAttribute(
-      "role",
-      "status",
-    );
+    const thinking = await screen.findByRole("status", {
+      name: (_name, element) =>
+        Boolean(element?.classList.contains("kern-chat-thinking")),
+    });
+    expect(thinking).toHaveTextContent("Thinking…");
     expect(
-      thinking
-        .closest(".kern-chat-thinking")
-        ?.querySelector(".kern-chat-thinking-mark"),
+      thinking.querySelector(".kern-chat-thinking-mark"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/message/i)).toBeDisabled();
 
@@ -342,15 +340,21 @@ describe("ChatPanel", () => {
     await user.type(await screen.findByLabelText(/message/i), "orphan me");
     await user.click(screen.getByRole("button", { name: /send/i }));
     expect(
-      await screen.findByText("Thinking…", { hidden: true }),
-    ).toBeInTheDocument();
+      await screen.findByRole("status", {
+        name: (_name, element) =>
+          Boolean(element?.classList.contains("kern-chat-thinking")),
+      }),
+    ).toHaveTextContent("Thinking…");
 
     await user.click(screen.getByRole("button", { name: /new chat/i }));
     resolveAsk(SUCCESS);
 
     await waitFor(() => {
       expect(
-        screen.queryByText("Thinking…", { hidden: true }),
+        screen.queryByRole("status", {
+          name: (_name, element) =>
+            Boolean(element?.classList.contains("kern-chat-thinking")),
+        }),
       ).not.toBeInTheDocument();
     });
     expect(
@@ -438,9 +442,7 @@ describe("ChatPanel", () => {
     ]);
     // skipNextPersistRef must stop the rehydrate from bouncing a stale write.
     expect(
-      setItem.mock.calls.filter(
-        ([key]) => key === ACTIVE_SESSION_STORAGE_KEY,
-      ),
+      setItem.mock.calls.filter(([key]) => key === ACTIVE_SESSION_STORAGE_KEY),
     ).toHaveLength(0);
     vi.useRealTimers();
   });
@@ -477,9 +479,7 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(loadActiveSession().messages).toEqual([]);
     });
-    expect(
-      screen.queryByText("other tab question"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("other tab question")).not.toBeInTheDocument();
     expect(screen.queryByText("other tab answer")).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
