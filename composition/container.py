@@ -494,7 +494,6 @@ _DRIVE_CLIENT_MISSING_MESSAGE = (
 )
 _DRIVE_ITEM_ID = re.compile(r"^(root|[A-Za-z0-9_-]{1,128})$")
 _DRIVE_QUERY_MAX = 200
-_SELECTION_EMPTY_DETAIL = "Select at least one Google Drive folder or file."
 _SELECTION_INACCESSIBLE_DETAIL = "A selected Drive item is not accessible."
 _SELECTION_KIND_DETAIL = "A selected Drive item does not match the requested type."
 
@@ -989,13 +988,11 @@ def put_google_drive_selection(
     Raises:
         GoogleDriveNotConnectedError: No stored grant.
         GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
-        InputRejectedError: Empty, duplicate, inaccessible, or mistyped items.
+        InputRejectedError: Duplicate, inaccessible, or mistyped items.
         GoogleDriveConnectorError: Validation failed at the Google boundary.
     """
     folder_items = _dedupe_selected(folders)
     file_items = _dedupe_selected(files)
-    if not folder_items and not file_items:
-        raise InputRejectedError(_SELECTION_EMPTY_DETAIL)
     folder_ids = {item.id for item in folder_items}
     if folder_ids & {item.id for item in file_items}:
         raise InputRejectedError(_SELECTION_KIND_DETAIL)

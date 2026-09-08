@@ -16,7 +16,6 @@ from application.contracts import (
 from application.errors import (
     GoogleDriveNotConnectedError,
     GoogleDriveSelectionRequiredError,
-    InputRejectedError,
 )
 from composition import (
     browse_google_drive_items,
@@ -386,26 +385,34 @@ def test_browse_and_put_selection_use_ids_and_skip_tokens(settings) -> None:
     assert status.sync_scope == "1 folder"
 
 
-def test_put_selection_rejects_empty(settings) -> None:
+def test_put_selection_allows_empty(settings) -> None:
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
     tokens.save(
         GoogleOAuthConnection(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=0,
+            folder_count=1,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
             last_sync_unchanged=None,
             last_sync_failed=None,
             reauthorization_required=False,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
         )
     )
-    with pytest.raises(InputRejectedError, match="at least one"):
-        put_google_drive_selection(
-            settings, folders=(), files=(), connection_store=tokens
-        )
+    saved = put_google_drive_selection(
+        settings, folders=(), files=(), connection_store=tokens
+    )
+    assert saved.folders == ()
+    assert saved.files == ()
+    loaded = get_google_drive_selection(settings, connection_store=tokens)
+    assert loaded.folders == ()
+    assert loaded.files == ()
+    status = google_drive_status(settings)
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
 
 
 def test_delete_drive_document_drops_file_from_selection(

@@ -236,7 +236,7 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByText(/setup required/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Sync/i })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: /choose folders or files/i }),
+      screen.getByRole("button", { name: /Browse/i }),
     ).toBeEnabled();
     expect(screen.queryByText(/^new$/i)).toBeNull();
   });
@@ -495,7 +495,7 @@ describe("GoogleDrivePanel", () => {
     );
 
     await user.click(
-      await screen.findByRole("button", { name: /choose folders or files/i }),
+      await screen.findByRole("button", { name: /Browse/i }),
     );
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
@@ -521,6 +521,45 @@ describe("GoogleDrivePanel", () => {
     expect(
       screen.getByRole("button", { name: /Browse/i }),
     ).toBeInTheDocument();
+  });
+
+  it("saves an empty Drive selection without starting a sync", async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn().mockResolvedValue({
+      folders: [],
+      files: [],
+    });
+    const syncNow = vi.fn();
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => CONNECTED}
+        loadSelection={async () => ({
+          folders: [{ id: "folder-1", name: "Specs" }],
+          files: [],
+        })}
+        listItems={folderPage}
+        saveSelection={saveSelection}
+        syncNow={syncNow}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    await user.click(await within(dialog).findByRole("checkbox", { name: /specs/i }));
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(saveSelection).toHaveBeenCalledTimes(1);
+    });
+    expect(saveSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selection: { folders: [], files: [] },
+      }),
+    );
+    expect(syncNow).not.toHaveBeenCalled();
   });
 
   it("reopens the picker from Browse", async () => {

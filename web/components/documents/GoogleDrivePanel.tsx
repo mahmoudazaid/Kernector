@@ -241,7 +241,11 @@ export function GoogleDrivePanel({
         selection: next,
       });
       setSelection(saved);
-      await syncNow({ baseUrl: apiBaseUrl });
+      const hasScope =
+        (saved.folders?.length ?? 0) > 0 || (saved.files?.length ?? 0) > 0;
+      if (hasScope) {
+        await syncNow({ baseUrl: apiBaseUrl });
+      }
       setPickerOpen(false);
       await loadStatus();
       onCatalogChangeRef.current?.();
@@ -364,10 +368,6 @@ export function GoogleDrivePanel({
 
   const syncDisabled = busy || setupRequired || reauth;
   const cardBusy = busy && !pickerOpen;
-  const pickerLabel = setupRequired
-    ? "Choose folders or files"
-    : "Browse";
-
   return (
     <article
       className="kern-source-card"
@@ -476,7 +476,7 @@ export function GoogleDrivePanel({
                 disabled={busy}
                 onClick={() => void openPicker()}
               >
-                {pickerLabel}
+                Browse
               </Button>
               <Button
                 type="button"
