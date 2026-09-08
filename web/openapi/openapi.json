@@ -37,33 +37,6 @@
         "title": "Body_replace_document_api_v1_documents__source_id__put",
         "type": "object"
       },
-      "CapabilitiesResponse": {
-        "description": "Minimal read-only prove-out for the composition boundary.",
-        "properties": {
-          "default_provider": {
-            "title": "Default Provider",
-            "type": "string"
-          },
-          "providers": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Providers",
-            "type": "array"
-          },
-          "software_delivery_tools_enabled": {
-            "title": "Software Delivery Tools Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "providers",
-          "default_provider",
-          "software_delivery_tools_enabled"
-        ],
-        "title": "CapabilitiesResponse",
-        "type": "object"
-      },
       "CatalogDocumentResponse": {
         "description": "Wire projection of one uploaded catalog row (sanitized diagnostics).",
         "properties": {
@@ -330,11 +303,8 @@
         "type": "object"
       },
       "DocumentListResponse": {
-        "description": "Uploaded-document catalog plus upload constraints.",
+        "description": "Uploaded-document catalog for the documents UI.",
         "properties": {
-          "constraints": {
-            "$ref": "#/components/schemas/DocumentUploadConstraintsResponse"
-          },
           "documents": {
             "items": {
               "$ref": "#/components/schemas/CatalogDocumentResponse"
@@ -343,27 +313,8 @@
             "type": "array"
           }
         },
-        "required": ["documents", "constraints"],
+        "required": ["documents"],
         "title": "DocumentListResponse",
-        "type": "object"
-      },
-      "DocumentUploadConstraintsResponse": {
-        "description": "Client pre-flight limits for the documents UI.",
-        "properties": {
-          "max_upload_bytes": {
-            "title": "Max Upload Bytes",
-            "type": "integer"
-          },
-          "supported_suffixes": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Supported Suffixes",
-            "type": "array"
-          }
-        },
-        "required": ["supported_suffixes", "max_upload_bytes"],
-        "title": "DocumentUploadConstraintsResponse",
         "type": "object"
       },
       "HealthResponse": {
@@ -806,16 +757,49 @@
         "title": "RunMetaResponse",
         "type": "object"
       },
-      "RuntimeSettingsResponse": {
-        "description": "Catalog for provider/model/settings controls plus shared input limits.",
+      "RuntimeConstraintsResponse": {
+        "description": "Global server-enforced constraints for client preflight validation.",
         "properties": {
+          "max_input_length": {
+            "title": "Max Input Length",
+            "type": "integer"
+          },
+          "max_upload_bytes": {
+            "title": "Max Upload Bytes",
+            "type": "integer"
+          },
+          "supported_upload_suffixes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Upload Suffixes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "max_input_length",
+          "max_upload_bytes",
+          "supported_upload_suffixes"
+        ],
+        "title": "RuntimeConstraintsResponse",
+        "type": "object"
+      },
+      "RuntimeSettingsResponse": {
+        "description": "Client-facing runtime contract: providers, packs, and constraints.",
+        "properties": {
+          "constraints": {
+            "$ref": "#/components/schemas/RuntimeConstraintsResponse"
+          },
           "default_provider": {
             "title": "Default Provider",
             "type": "string"
           },
-          "max_input_length": {
-            "title": "Max Input Length",
-            "type": "integer"
+          "enabled_packs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enabled Packs",
+            "type": "array"
           },
           "model_settings": {
             "items": {
@@ -844,7 +828,8 @@
           "openrouter",
           "ollama",
           "model_settings",
-          "max_input_length"
+          "enabled_packs",
+          "constraints"
         ],
         "title": "RuntimeSettingsResponse",
         "type": "object"
@@ -1004,46 +989,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/capabilities": {
-      "get": {
-        "description": "Expose buildable providers and tool-pack enablement via composition.",
-        "operationId": "capabilities_api_v1_capabilities_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CapabilitiesResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "405": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Method not allowed"
-          },
-          "500": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Server error"
-          }
-        },
-        "summary": "Capabilities",
-        "tags": ["capabilities"]
-      }
-    },
     "/api/v1/chat/ask": {
       "post": {
         "description": "Run one grounded ask turn through composition.",
@@ -1116,7 +1061,7 @@
     },
     "/api/v1/documents": {
       "get": {
-        "description": "Return uploaded catalog rows plus client upload constraints.",
+        "description": "Return uploaded catalog rows for the documents UI.",
         "operationId": "list_documents_api_v1_documents_get",
         "responses": {
           "200": {
@@ -1445,7 +1390,7 @@
     },
     "/api/v1/settings": {
       "get": {
-        "description": "Expose providers, env defaults, and model-settings catalog for Settings UI.",
+        "description": "Expose the client-facing runtime contract for Settings / Chat / Documents.",
         "operationId": "runtime_settings_api_v1_settings_get",
         "responses": {
           "200": {

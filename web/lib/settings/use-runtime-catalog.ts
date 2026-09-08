@@ -18,7 +18,8 @@ export type RuntimeCatalogState = {
 };
 
 /**
- * Shared GET /api/v1/settings loader for ChatPanel and SettingsPanel.
+ * Shared GET /api/v1/settings loader for ChatPanel, SettingsPanel, and
+ * DocumentsPanel.
  *
  * Owns AbortController cleanup, resets state when `apiBaseUrl` changes, and
  * reads the latest loader via a ref so inline prop functions do not refetch.

@@ -4,26 +4,6 @@
  */
 
 export interface paths {
-  "/api/v1/capabilities": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Capabilities
-     * @description Expose buildable providers and tool-pack enablement via composition.
-     */
-    get: operations["capabilities_api_v1_capabilities_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/chat/ask": {
     parameters: {
       query?: never;
@@ -53,7 +33,7 @@ export interface paths {
     };
     /**
      * List Documents
-     * @description Return uploaded catalog rows plus client upload constraints.
+     * @description Return uploaded catalog rows for the documents UI.
      */
     get: operations["list_documents_api_v1_documents_get"];
     put?: never;
@@ -121,7 +101,7 @@ export interface paths {
     };
     /**
      * Runtime Settings
-     * @description Expose providers, env defaults, and model-settings catalog for Settings UI.
+     * @description Expose the client-facing runtime contract for Settings / Chat / Documents.
      */
     get: operations["runtime_settings_api_v1_settings_get"];
     put?: never;
@@ -165,18 +145,6 @@ export interface components {
     Body_replace_document_api_v1_documents__source_id__put: {
       /** File */
       file?: string | null;
-    };
-    /**
-     * CapabilitiesResponse
-     * @description Minimal read-only prove-out for the composition boundary.
-     */
-    CapabilitiesResponse: {
-      /** Default Provider */
-      default_provider: string;
-      /** Providers */
-      providers: string[];
-      /** Software Delivery Tools Enabled */
-      software_delivery_tools_enabled: boolean;
     };
     /**
      * CatalogDocumentResponse
@@ -277,22 +245,11 @@ export interface components {
     };
     /**
      * DocumentListResponse
-     * @description Uploaded-document catalog plus upload constraints.
+     * @description Uploaded-document catalog for the documents UI.
      */
     DocumentListResponse: {
-      constraints: components["schemas"]["DocumentUploadConstraintsResponse"];
       /** Documents */
       documents: components["schemas"]["CatalogDocumentResponse"][];
-    };
-    /**
-     * DocumentUploadConstraintsResponse
-     * @description Client pre-flight limits for the documents UI.
-     */
-    DocumentUploadConstraintsResponse: {
-      /** Max Upload Bytes */
-      max_upload_bytes: number;
-      /** Supported Suffixes */
-      supported_suffixes: string[];
     };
     /**
      * HealthResponse
@@ -457,14 +414,27 @@ export interface components {
       total_tokens?: number | null;
     };
     /**
-     * RuntimeSettingsResponse
-     * @description Catalog for provider/model/settings controls plus shared input limits.
+     * RuntimeConstraintsResponse
+     * @description Global server-enforced constraints for client preflight validation.
      */
-    RuntimeSettingsResponse: {
-      /** Default Provider */
-      default_provider: string;
+    RuntimeConstraintsResponse: {
       /** Max Input Length */
       max_input_length: number;
+      /** Max Upload Bytes */
+      max_upload_bytes: number;
+      /** Supported Upload Suffixes */
+      supported_upload_suffixes: string[];
+    };
+    /**
+     * RuntimeSettingsResponse
+     * @description Client-facing runtime contract: providers, packs, and constraints.
+     */
+    RuntimeSettingsResponse: {
+      constraints: components["schemas"]["RuntimeConstraintsResponse"];
+      /** Default Provider */
+      default_provider: string;
+      /** Enabled Packs */
+      enabled_packs: string[];
       /** Model Settings */
       model_settings: components["schemas"]["ModelSettingDefResponse"][];
       ollama: components["schemas"]["OllamaSettingsResponse"];
@@ -557,44 +527,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  capabilities_api_v1_capabilities_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CapabilitiesResponse"];
-        };
-      };
-      /** @description Method not allowed */
-      405: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
-        };
-      };
-      /** @description Server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
-        };
-      };
-    };
-  };
   chat_ask_api_v1_chat_ask_post: {
     parameters: {
       query?: never;

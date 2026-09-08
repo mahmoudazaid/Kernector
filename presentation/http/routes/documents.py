@@ -20,7 +20,6 @@ from presentation.http.errors import (
 from presentation.http.schemas import (
     CatalogDocumentResponse,
     DocumentListResponse,
-    DocumentUploadConstraintsResponse,
     catalog_document_response,
 )
 
@@ -90,14 +89,10 @@ def _read_upload(
     responses=problem_responses(405, 500),
 )
 def list_documents(ops: DocumentOperationsDep) -> DocumentListResponse:
-    """Return uploaded catalog rows plus client upload constraints."""
+    """Return uploaded catalog rows for the documents UI."""
     documents = ops.list()
     return DocumentListResponse(
         documents=[catalog_document_response(doc) for doc in documents],
-        constraints=DocumentUploadConstraintsResponse(
-            supported_suffixes=sorted(ops.supported_suffixes),
-            max_upload_bytes=ops.max_upload_bytes,
-        ),
     )
 
 

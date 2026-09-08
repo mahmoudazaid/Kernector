@@ -7,11 +7,23 @@ import type {
   CatalogDocumentResponse,
   DocumentListResponse,
 } from "@/lib/api/documents";
+import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 
-const constraints = {
-  supported_suffixes: [".md", ".txt", ".pdf", ".markdown"],
-  max_upload_bytes: 5_242_880,
+const SETTINGS: RuntimeSettingsResponse = {
+  providers: ["openrouter"],
+  default_provider: "openrouter",
+  openrouter: { models: [], default_model: null },
+  ollama: { default_base_url: null, default_model: null },
+  model_settings: [],
+  enabled_packs: [],
+  constraints: {
+    max_input_length: 10_000,
+    max_upload_bytes: 5_242_880,
+    supported_upload_suffixes: [".md", ".txt", ".pdf", ".markdown"],
+  },
 };
+
+const loadSettings = async () => SETTINGS;
 
 function doc(
   overrides: Partial<CatalogDocumentResponse> = {},
@@ -34,7 +46,7 @@ function doc(
 function listResponse(
   documents: CatalogDocumentResponse[] = [doc()],
 ): DocumentListResponse {
-  return { documents, constraints };
+  return { documents };
 }
 
 describe("DocumentsPanel", () => {
@@ -45,7 +57,13 @@ describe("DocumentsPanel", () => {
         doc({ source_id: "src-2", file_name: "guide.txt", status: "failed", has_error: true, error_summary: "Ingestion failed for this document. Delete it and upload again." }),
       ]),
     );
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByText("spec.md")).toBeInTheDocument();
@@ -57,7 +75,13 @@ describe("DocumentsPanel", () => {
 
   it("shows empty catalog copy including seed-corpus note", async () => {
     const list = vi.fn().mockResolvedValue(listResponse([]));
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByText(/no uploaded documents yet/i),
@@ -76,7 +100,13 @@ describe("DocumentsPanel", () => {
           code: "operational_error",
         }),
       );
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByText(/something went wrong while processing/i),
@@ -85,7 +115,7 @@ describe("DocumentsPanel", () => {
     expect(screen.getByRole("button", { name: /upload new/i })).toBeInTheDocument();
   });
 
-  it("keeps upload enabled after a transient list failure once constraints were loaded", async () => {
+  it("keeps upload enabled after a transient list failure once settings constraints were loaded", async () => {
     const user = userEvent.setup();
     const list = vi
       .fn()
@@ -104,6 +134,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         upload={upload}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -130,6 +161,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         upload={upload}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -158,6 +190,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         replace={replace}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -189,6 +222,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         remove={remove}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -226,6 +260,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         remove={remove}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -254,7 +289,13 @@ describe("DocumentsPanel", () => {
         }),
       ]),
     );
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByText(/ingestion failed for this document/i),
@@ -263,7 +304,13 @@ describe("DocumentsPanel", () => {
 
   it("shows unavailable state when the backend cannot be reached", async () => {
     const list = vi.fn().mockRejectedValue(ApiError.generic(0));
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByRole("heading", { name: /backend unavailable/i }),
@@ -287,6 +334,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         upload={upload}
+        loadSettings={loadSettings}
       />,
     );
 

@@ -8,7 +8,6 @@ _PROBLEM = "application/problem+json"
 # path -> (http_method, expected error status codes as strings)
 _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/health": ("get", ("405",)),
-    "/api/v1/capabilities": ("get", ("405", "500")),
     "/api/v1/settings": ("get", ("405", "500")),
     "/api/v1/ollama/status": ("get", ("405", "409", "500")),
     "/api/v1/chat/ask": ("post", ("405", "422", "500", "502")),
@@ -30,29 +29,37 @@ _DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
 }
 
 
-def test_openapi_includes_health_and_capabilities_schemas() -> None:
+def test_openapi_includes_health_and_settings_schemas() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
 
     assert "/health" in schema["paths"]
-    assert "/api/v1/capabilities" in schema["paths"]
+    assert "/api/v1/settings" in schema["paths"]
+    assert "/api/v1/capabilities" not in schema["paths"]
+    assert "CapabilitiesResponse" not in schema["components"]["schemas"]
+    assert "DocumentUploadConstraintsResponse" not in schema["components"]["schemas"]
 
     health = schema["paths"]["/health"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]
-    caps = schema["paths"]["/api/v1/capabilities"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
+    settings = schema["paths"]["/api/v1/settings"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
 
     components = schema["components"]["schemas"]
     health_name = health.get("$ref", "").rsplit("/", 1)[-1] or "HealthResponse"
-    caps_name = caps.get("$ref", "").rsplit("/", 1)[-1] or "CapabilitiesResponse"
+    settings_name = (
+        settings.get("$ref", "").rsplit("/", 1)[-1] or "RuntimeSettingsResponse"
+    )
 
     assert "status" in components[health_name]["properties"]
-    assert set(components[caps_name]["properties"]) >= {
+    assert set(components[settings_name]["properties"]) >= {
         "providers",
         "default_provider",
-        "software_delivery_tools_enabled",
+        "enabled_packs",
+        "constraints",
     }
+    document_list = components["DocumentListResponse"]["properties"]
+    assert set(document_list) == {"documents"}
 
 
 def test_openapi_includes_problem_schema() -> None:
@@ -100,11 +107,11 @@ def test_openapi_documents_delete_does_not_declare_404() -> None:
 def test_openapi_does_not_declare_unreachable_error_statuses() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
     health = schema["paths"]["/health"]["get"]["responses"]
-    caps = schema["paths"]["/api/v1/capabilities"]["get"]["responses"]
+    settings = schema["paths"]["/api/v1/settings"]["get"]["responses"]
 
     assert "404" not in health
     assert "422" not in health
     assert "500" not in health
-    assert "404" not in caps
-    assert "422" not in caps
-    assert "502" not in caps
+    assert "404" not in settings
+    assert "422" not in settings
+    assert "502" not in settings

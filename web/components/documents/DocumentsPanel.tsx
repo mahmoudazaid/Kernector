@@ -25,6 +25,10 @@ import {
 } from "@/lib/api/documents";
 import { ApiError } from "@/lib/api/errors";
 import { validateUpload } from "@/lib/documents/upload";
+import {
+  useRuntimeCatalog,
+  type RuntimeCatalogLoader,
+} from "@/lib/settings/use-runtime-catalog";
 
 export type DocumentsPanelProps = {
   apiBaseUrl: string;
@@ -36,6 +40,7 @@ export type DocumentsPanelProps = {
     options: ReplaceDocumentOptions,
   ) => Promise<CatalogDocumentResponse>;
   remove?: (options: DeleteDocumentOptions) => Promise<void>;
+  loadSettings?: RuntimeCatalogLoader;
 };
 
 type CatalogView =
@@ -45,12 +50,10 @@ type CatalogView =
       kind: "error";
       message: string;
       documents: CatalogDocumentResponse[];
-      constraints: DocumentListResponse["constraints"] | null;
     }
   | {
       kind: "ready";
       documents: CatalogDocumentResponse[];
-      constraints: DocumentListResponse["constraints"];
     };
 
 type ActionFeedback =
@@ -85,7 +88,13 @@ export function DocumentsPanel({
   upload = uploadDocument,
   replace = replaceDocument,
   remove = deleteDocument,
+  loadSettings,
 }: DocumentsPanelProps) {
+  const { catalog: runtimeCatalog } = useRuntimeCatalog(
+    apiBaseUrl,
+    loadSettings,
+  );
+  const constraints = runtimeCatalog?.constraints ?? null;
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -104,7 +113,6 @@ export function DocumentsPanel({
         setCatalog({
           kind: "ready",
           documents: response.documents,
-          constraints: response.constraints,
         });
         setSelectedId((current) => {
           if (
@@ -129,10 +137,6 @@ export function DocumentsPanel({
             prev.kind === "ready" || prev.kind === "error"
               ? prev.documents
               : [],
-          constraints:
-            prev.kind === "ready" || prev.kind === "error"
-              ? prev.constraints
-              : null,
         })),
       );
     }
@@ -149,16 +153,10 @@ export function DocumentsPanel({
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
       : [];
-  const constraints =
-    catalog.kind === "ready"
-      ? catalog.constraints
-      : catalog.kind === "error"
-        ? catalog.constraints
-        : null;
   const selected =
     documents.find((doc) => doc.source_id === selectedId) ?? null;
   const accept = constraints
-    ? constraints.supported_suffixes.join(",")
+    ? constraints.supported_upload_suffixes.join(",")
     : ".md,.markdown,.txt,.pdf";
 
   function clearUploadInput() {
