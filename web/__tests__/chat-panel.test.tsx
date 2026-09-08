@@ -22,7 +22,12 @@ function catalogWithLimit(maxInputLength: number): RuntimeSettingsResponse {
     openrouter: { models: [], default_model: null },
     ollama: { default_base_url: null, default_model: null },
     model_settings: [],
-    max_input_length: maxInputLength,
+    enabled_packs: [],
+    constraints: {
+      max_input_length: maxInputLength,
+      max_upload_bytes: 5_242_880,
+      supported_upload_suffixes: [".md", ".pdf", ".txt", ".markdown"],
+    },
   };
 }
 
@@ -428,9 +433,7 @@ describe("ChatPanel", () => {
     ]);
     // skipNextPersistRef must stop the rehydrate from bouncing a stale write.
     expect(
-      setItem.mock.calls.filter(
-        ([key]) => key === ACTIVE_SESSION_STORAGE_KEY,
-      ),
+      setItem.mock.calls.filter(([key]) => key === ACTIVE_SESSION_STORAGE_KEY),
     ).toHaveLength(0);
     vi.useRealTimers();
   });
@@ -467,9 +470,7 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(loadActiveSession().messages).toEqual([]);
     });
-    expect(
-      screen.queryByText("other tab question"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("other tab question")).not.toBeInTheDocument();
     expect(screen.queryByText("other tab answer")).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
@@ -663,6 +664,34 @@ describe("ChatPanel", () => {
     await user.click(screen.getByRole("button", { name: /send/i }));
 
     expect(await screen.findByText(SUCCESS.answer)).toBeInTheDocument();
+  });
+
+  it("surfaces a settings failure and recovers the counter on retry", async () => {
+    const user = userEvent.setup();
+    const loadSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("settings down"))
+      .mockResolvedValueOnce(catalogWithLimit(10_000));
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /settings catalog unavailable/i,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("0 / 10000 characters")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("restores a persisted draft after unmount and remount", async () => {

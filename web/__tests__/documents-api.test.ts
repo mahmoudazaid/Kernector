@@ -12,7 +12,6 @@ describe("documents api wrappers", () => {
   it("lists documents via GET /api/v1/documents", async () => {
     const request = vi.fn().mockResolvedValue({
       documents: [],
-      constraints: { supported_suffixes: [".md"], max_upload_bytes: 10 },
     });
 
     await listDocuments({ baseUrl: "http://api.test", request });

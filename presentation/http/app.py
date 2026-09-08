@@ -22,7 +22,6 @@ from presentation.http.errors import (
     problem_from_validation_errors,
     register_problem_schemas,
 )
-from presentation.http.routes import capabilities as capabilities_routes
 from presentation.http.routes import chat as chat_routes
 from presentation.http.routes import documents as documents_routes
 from presentation.http.routes import health as health_routes
@@ -214,7 +213,6 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
         return Response(status_code=204)
 
     app.include_router(health_routes.router)
-    app.include_router(capabilities_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(ollama_status_routes.router)
     app.include_router(chat_routes.router)

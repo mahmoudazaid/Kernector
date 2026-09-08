@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getRuntimeSettings,
   type GetRuntimeSettingsOptions,
   type RuntimeSettingsResponse,
 } from "@/lib/api/settings";
+
+export const SETTINGS_CATALOG_UNAVAILABLE = "Settings catalog unavailable.";
 
 export type RuntimeCatalogLoader = (
   options: GetRuntimeSettingsOptions,
@@ -15,10 +17,12 @@ export type RuntimeCatalogState = {
   catalog: RuntimeSettingsResponse | null;
   error: string | null;
   loading: boolean;
+  reload: () => void;
 };
 
 /**
- * Shared GET /api/v1/settings loader for ChatPanel and SettingsPanel.
+ * Shared GET /api/v1/settings loader for ChatPanel, SettingsPanel, and
+ * DocumentsPanel.
  *
  * Owns AbortController cleanup, resets state when `apiBaseUrl` changes, and
  * reads the latest loader via a ref so inline prop functions do not refetch.
@@ -30,14 +34,22 @@ export function useRuntimeCatalog(
   const [catalog, setCatalog] = useState<RuntimeSettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const loadRef = useRef(loadCatalog ?? getRuntimeSettings);
+  const prevUrlRef = useRef(apiBaseUrl);
   loadRef.current = loadCatalog ?? getRuntimeSettings;
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    setCatalog(null);
-    setError(null);
+    const resetCatalog = prevUrlRef.current !== apiBaseUrl;
+    prevUrlRef.current = apiBaseUrl;
+    // Keep a prior error until the refetch settles so Retry stays mounted.
+    // A base-URL switch still clears both catalog and error.
+    if (resetCatalog) {
+      setCatalog(null);
+      setError(null);
+    }
     setLoading(true);
 
     void loadRef
@@ -54,8 +66,13 @@ export function useRuntimeCatalog(
         if (!active || controller.signal.aborted) {
           return;
         }
-        setCatalog(null);
-        setError("Settings catalog unavailable.");
+        // Same-URL reload keeps the last catalog so a caller that retries a
+        // healthy catalog (none do yet) can keep stale-but-valid constraints.
+        // A base-URL switch still clears it: the old catalog belongs to another server.
+        if (resetCatalog) {
+          setCatalog(null);
+        }
+        setError(SETTINGS_CATALOG_UNAVAILABLE);
         setLoading(false);
       });
 
@@ -63,7 +80,11 @@ export function useRuntimeCatalog(
       active = false;
       controller.abort();
     };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, reloadNonce]);
 
-  return { catalog, error, loading };
+  const reload = useCallback(() => {
+    setReloadNonce((nonce) => nonce + 1);
+  }, []);
+
+  return { catalog, error, loading, reload };
 }

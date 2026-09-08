@@ -46,6 +46,7 @@ from composition import (
     KnowledgeLoadError,
     Settings,
     SoftwareDeliveryRunView,
+    SUPPORTED_UPLOAD_SUFFIXES,
     ToolAugmentedAsk,
     ToolCallView,
     available_providers,
@@ -296,20 +297,27 @@ def test_build_retrieve_knowledge_wires_max_input_length_from_settings(
     assert use_case._max_input_length == 1234
 
 
-def test_build_runtime_settings_exposes_max_input_length_from_settings(
+def test_build_runtime_settings_exposes_constraints_and_enabled_packs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The catalog the UI reads and the use cases share one env-owned limit."""
+    """The catalog the UI reads shares env-owned constraints and pack filtering."""
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
     monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
     monkeypatch.setenv("MAX_INPUT_LENGTH", "1234")
+    monkeypatch.setenv("MAX_UPLOAD_BYTES", "2048")
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery,no-such-pack")
 
     catalog = build_runtime_settings(load_settings()).execute()
 
-    assert catalog.max_input_length == 1234
+    assert catalog.constraints.max_input_length == 1234
+    assert catalog.constraints.max_upload_bytes == 2048
+    assert catalog.constraints.supported_upload_suffixes == tuple(
+        sorted(SUPPORTED_UPLOAD_SUFFIXES)
+    )
+    assert catalog.enabled_packs == ("software-delivery",)
 
 
 def test_build_ask_knowledge_routes_generation_through_ask_service(

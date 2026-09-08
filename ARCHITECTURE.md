@@ -76,7 +76,9 @@ See [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md) for the full
 decision record. Streamlit retirement is recorded in
 [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). Next.js UI chrome
 follows the Instrument panel identity in
-[ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Target flow:
+[ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). The
+client-facing runtime contract (`GET /api/v1/settings`) is recorded in
+[ADR 0005](docs/adr/0005-consolidate-runtime-contract-on-settings.md). Target flow:
 
 ```text
 web/ (Next.js) ──HTTP──> presentation/http/ (FastAPI)
@@ -93,6 +95,9 @@ source of truth. Within `/api/v1`, only backward-compatible additive changes are
 allowed; removals, renames, required-field additions, type or semantic
 changes, and incompatible Problem Details changes require `/api/v2`
 (deprecated operations stay marked in OpenAPI until a future major version).
+[ADR 0005](docs/adr/0005-consolidate-runtime-contract-on-settings.md) records
+an intentional exception that consolidates runtime bootstrap onto
+`/api/v1/settings` and retires `/api/v1/capabilities`.
 `web/` uses **`npm`** (`package-lock.json`, `npm ci`, and Node-version pinning
 land in [#126](https://github.com/mahmoudazaid/Kernector/issues/126)). HTTP
 failures use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) Problem

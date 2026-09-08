@@ -112,7 +112,7 @@ def client_factory():
     return _make
 
 
-def test_list_documents_returns_envelope_and_constraints(client_factory) -> None:
+def test_list_documents_returns_envelope_without_constraints(client_factory) -> None:
     ops, _ledger = _stub_ops(
         documents=(
             _document(source_id="a", file_name="a.md"),
@@ -125,11 +125,8 @@ def test_list_documents_returns_envelope_and_constraints(client_factory) -> None
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"documents", "constraints"}
-    assert body["constraints"] == {
-        "supported_suffixes": [".markdown", ".md", ".pdf", ".txt"],
-        "max_upload_bytes": _MAX_BYTES,
-    }
+    assert set(body) == {"documents"}
+    assert "constraints" not in body
     assert len(body["documents"]) == 2
     assert body["documents"][0]["source_id"] == "a"
     assert body["documents"][1]["has_error"] is True

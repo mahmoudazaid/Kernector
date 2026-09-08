@@ -1,5 +1,5 @@
 export type UploadConstraints = {
-  supported_suffixes: readonly string[];
+  supported_upload_suffixes: readonly string[];
   max_upload_bytes: number;
 };
 
@@ -11,7 +11,9 @@ export type UploadValidationResult =
  * Client-side pre-flight for document uploads (UX only; server re-validates).
  *
  * Messages are fixed literals aligned with the 413 / 422 rejections in
- * `presentation/http` (see `problem_from_exception`).
+ * `presentation/http` (see `problem_from_exception`). Constraints come from
+ * `GET /api/v1/settings` (`constraints.max_upload_bytes` /
+ * `constraints.supported_upload_suffixes`).
  */
 export function validateUpload(
   file: File | null | undefined,
@@ -27,8 +29,8 @@ export function validateUpload(
   const name = file.name;
   const dot = name.lastIndexOf(".");
   const suffix = dot >= 0 ? name.slice(dot).toLowerCase() : "";
-  if (!constraints.supported_suffixes.includes(suffix)) {
-    const listed = [...constraints.supported_suffixes].sort().join(", ");
+  if (!constraints.supported_upload_suffixes.includes(suffix)) {
+    const listed = [...constraints.supported_upload_suffixes].sort().join(", ");
     return {
       ok: false,
       message: `unsupported document type ('${suffix}'); supported types are ${listed}`,

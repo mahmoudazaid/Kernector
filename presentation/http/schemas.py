@@ -18,14 +18,6 @@ class HealthResponse(BaseModel):
     status: str = Field(examples=["ok"])
 
 
-class CapabilitiesResponse(BaseModel):
-    """Minimal read-only prove-out for the composition boundary."""
-
-    providers: list[str]
-    default_provider: str
-    software_delivery_tools_enabled: bool
-
-
 class OpenRouterSettingsResponse(BaseModel):
     """OpenRouter models and default from runtime config."""
 
@@ -54,15 +46,24 @@ class ModelSettingDefResponse(BaseModel):
     providers: list[str]
 
 
+class RuntimeConstraintsResponse(BaseModel):
+    """Global server-enforced constraints for client preflight validation."""
+
+    max_input_length: int
+    max_upload_bytes: int
+    supported_upload_suffixes: list[str]
+
+
 class RuntimeSettingsResponse(BaseModel):
-    """Catalog for provider/model/settings controls plus shared input limits."""
+    """Client-facing runtime contract: providers, packs, and constraints."""
 
     providers: list[str]
     default_provider: str
     openrouter: OpenRouterSettingsResponse
     ollama: OllamaSettingsResponse
     model_settings: list[ModelSettingDefResponse]
-    max_input_length: int
+    enabled_packs: list[str]
+    constraints: RuntimeConstraintsResponse
 
 
 class OllamaStatusResponse(BaseModel):
@@ -323,18 +324,10 @@ class CatalogDocumentResponse(BaseModel):
     error_summary: str | None = None
 
 
-class DocumentUploadConstraintsResponse(BaseModel):
-    """Client pre-flight limits for the documents UI."""
-
-    supported_suffixes: list[str]
-    max_upload_bytes: int
-
-
 class DocumentListResponse(BaseModel):
-    """Uploaded-document catalog plus upload constraints."""
+    """Uploaded-document catalog for the documents UI."""
 
     documents: list[CatalogDocumentResponse]
-    constraints: DocumentUploadConstraintsResponse
 
 
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:

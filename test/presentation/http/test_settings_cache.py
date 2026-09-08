@@ -4,6 +4,11 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from application.runtime_settings import (
+    GetRuntimeSettings,
+    RuntimeConstraints,
+    RuntimeSettingsDefaults,
+)
 from composition import Settings
 from presentation.http import deps
 from presentation.http.app import create_app
@@ -31,7 +36,7 @@ def test_get_settings_calls_load_runtime_settings_once(monkeypatch) -> None:
     assert len(calls) == 1
 
 
-def test_capabilities_uses_cached_settings_across_requests(monkeypatch) -> None:
+def test_settings_uses_cached_settings_across_requests(monkeypatch) -> None:
     calls: list[int] = []
     sentinel = SimpleNamespace(
         provider="ollama",
@@ -42,11 +47,31 @@ def test_capabilities_uses_cached_settings_across_requests(monkeypatch) -> None:
         calls.append(1)
         return sentinel
 
+    def _build(settings: SimpleNamespace) -> GetRuntimeSettings:
+        assert settings is sentinel
+        return GetRuntimeSettings(
+            providers=("ollama",),
+            defaults=RuntimeSettingsDefaults(
+                provider="ollama",
+                openrouter_models=(),
+                openrouter_default_model=None,
+                ollama_default_base_url=None,
+                ollama_default_model=None,
+                enabled_packs=(),
+                constraints=RuntimeConstraints(
+                    max_input_length=10_000,
+                    max_upload_bytes=5_242_880,
+                    supported_upload_suffixes=(".md",),
+                ),
+            ),
+        )
+
     monkeypatch.setattr(deps, "load_runtime_settings", _load)
+    monkeypatch.setattr(deps, "build_runtime_settings", _build)
     client = TestClient(create_app())
 
-    assert client.get("/api/v1/capabilities").status_code == 200
-    assert client.get("/api/v1/capabilities").status_code == 200
+    assert client.get("/api/v1/settings").status_code == 200
+    assert client.get("/api/v1/settings").status_code == 200
     assert len(calls) == 1
 
 

@@ -61,11 +61,14 @@ uv run uvicorn presentation.http.app:app --reload
 ```
 
 - Unversioned ops: `GET /health`
-- Versioned prove-out: `GET /api/v1/capabilities`
-- Settings catalog: `GET /api/v1/settings`
+- Runtime contract: `GET /api/v1/settings` (providers, enabled packs, shared constraints)
 - Grounded chat: `POST /api/v1/chat/ask`
 - Documents: `GET/POST /api/v1/documents`, `PUT/DELETE /api/v1/documents/{source_id}`
 - OpenAPI: `GET /openapi.json` (also `/docs`)
+
+See [ADR 0005](docs/adr/0005-consolidate-runtime-contract-on-settings.md) for
+why `/api/v1/settings` owns client bootstrap state and why `/capabilities` was
+retired.
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
 unless you intentionally set an explicit `HTTP_CORS_ORIGINS` allowlist. Never

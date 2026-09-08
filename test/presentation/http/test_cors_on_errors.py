@@ -37,7 +37,7 @@ def test_configuration_error_from_settings_dep_includes_cors_allow_origin() -> N
     app.dependency_overrides[get_settings] = _boom_settings
     client = TestClient(app, raise_server_exceptions=False)
     response = client.get(
-        "/api/v1/capabilities",
+        "/api/v1/settings",
         headers={"Origin": _ORIGIN},
     )
 

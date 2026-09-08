@@ -8,6 +8,7 @@ from presentation.http.schemas import (
     ModelSettingDefResponse,
     OllamaSettingsResponse,
     OpenRouterSettingsResponse,
+    RuntimeConstraintsResponse,
     RuntimeSettingsResponse,
 )
 
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api/v1", tags=["settings"])
     responses=problem_responses(405, 500),
 )
 def runtime_settings(use_case: RuntimeSettingsDep) -> RuntimeSettingsResponse:
-    """Expose providers, env defaults, and model-settings catalog for Settings UI."""
+    """Expose the client-facing runtime contract for Settings / Chat / Documents."""
     catalog = use_case.execute()
     return RuntimeSettingsResponse(
         providers=list(catalog.providers),
@@ -46,5 +47,12 @@ def runtime_settings(use_case: RuntimeSettingsDep) -> RuntimeSettingsResponse:
             )
             for setting in catalog.model_settings
         ],
-        max_input_length=catalog.max_input_length,
+        enabled_packs=list(catalog.enabled_packs),
+        constraints=RuntimeConstraintsResponse(
+            max_input_length=catalog.constraints.max_input_length,
+            max_upload_bytes=catalog.constraints.max_upload_bytes,
+            supported_upload_suffixes=list(
+                catalog.constraints.supported_upload_suffixes
+            ),
+        ),
     )
