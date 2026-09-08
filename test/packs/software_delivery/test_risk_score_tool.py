@@ -225,6 +225,19 @@ def test_non_string_target_reports_type_name_not_value(bad: object) -> None:
     assert calls == []
 
 
+def test_non_string_target_sentinel_does_not_leak() -> None:
+    sentinel = "TARGET-LEAK-SENTINEL"
+    calls, boom = _scorer_spy()
+    args = _valid_arguments()
+    args["target"] = {sentinel: 1}
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(args)
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "target must be a non-blank string, got dict"
+    assert calls == []
+
+
 @pytest.mark.parametrize("field", ["source_id", "source_type", "text"])
 @pytest.mark.parametrize("bad", _BLANK_STRINGS)
 def test_blank_evidence_scalars_fail_before_scoring(field: str, bad: str) -> None:
@@ -261,6 +274,24 @@ def test_non_string_evidence_scalars_report_type_name_not_value(
     assert message == (
         f"{field} must be a non-blank string, got {type(bad).__name__}"
     )
+    assert calls == []
+
+
+@pytest.mark.parametrize("field", ["source_id", "source_type", "text"])
+def test_non_string_evidence_scalar_sentinel_does_not_leak(field: str) -> None:
+    sentinel = "EVIDENCE-LEAK-SENTINEL"
+    calls, boom = _scorer_spy()
+    args = _valid_arguments()
+    evidence_item = args["evidence"][0]
+    assert isinstance(evidence_item, dict)
+    item = dict(evidence_item)
+    item[field] = {sentinel: 1}
+    args["evidence"] = [item]
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(args)
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == f"{field} must be a non-blank string, got dict"
     assert calls == []
 
 

@@ -14,7 +14,6 @@ from packs.software_delivery.contracts import (
     TestGenerationResult,
 )
 from packs.software_delivery.errors import MarkdownExportValidationError
-from packs.software_delivery.validation import require_nonblank_str
 from packs.software_delivery.export_test_cases_markdown import export_test_cases_markdown
 from packs.software_delivery.limits import (
     MAX_EVIDENCE_IDS_PER_CASE,
@@ -27,6 +26,7 @@ from packs.software_delivery.limits import (
     MAX_TITLE_CHARS,
 )
 from packs.software_delivery.test_case_generation import serialize_test_generation_result
+from packs.software_delivery.validation import require_nonblank_str
 
 TOOL_NAME = "software_delivery.export_test_cases_markdown"
 TOOL_DESCRIPTION = (

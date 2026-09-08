@@ -16,11 +16,11 @@ from packs.software_delivery.contracts import (
     TestGenerationResult,
 )
 from packs.software_delivery.errors import TestCaseGenerationValidationError
-from packs.software_delivery.validation import require_nonblank_str
 from packs.software_delivery.test_case_generation import (
     generate_test_cases,
     serialize_test_generation_result,
 )
+from packs.software_delivery.validation import require_nonblank_str
 
 TOOL_NAME = "software_delivery.generate_test_cases"
 TOOL_DESCRIPTION = (

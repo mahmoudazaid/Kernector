@@ -495,6 +495,11 @@ hoisted messages (`msg = f"...{v!r}"; raise Error(msg)`); and
 class-composed messages that interpolate caller text into
 `super().__init__` without a repr form the scan can see.
 
+A line may opt out with a trailing `# noqa: raise-scan` comment, but only after
+adding the module path to `_NOQA_ALLOWLIST` in
+`test/architecture/test_safe_validation_messages.py` — suppressions outside that
+inventory fail CI.
+
 The scan is name-agnostic on purpose: it inspects every `raise` in the scanned
 directories rather than a list of exception names. A name list exempts each
 subclass added later — `packs/software_delivery/errors.py` alone defines five
