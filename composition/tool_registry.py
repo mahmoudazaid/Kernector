@@ -16,6 +16,26 @@ SUPPORTED_DOMAIN_TOOL_PACKS: Mapping[str, str] = {
 }
 
 
+def enabled_domain_tool_packs(settings: Settings) -> tuple[str, ...]:
+    """Return configured pack IDs that this build supports.
+
+    Filters unknown IDs as a response-projection rule so clients only see
+    packs the current build can advertise. Preserves configured order.
+    Unknown packs still fail at tool-registry construction time.
+
+    Args:
+        settings: Runtime settings including ``domain_tools.enabled_packs``.
+
+    Returns:
+        Supported pack IDs in configured order; empty when none are enabled.
+    """
+    return tuple(
+        pack_id
+        for pack_id in settings.domain_tools.enabled_packs
+        if pack_id in SUPPORTED_DOMAIN_TOOL_PACKS
+    )
+
+
 def build_tool_registry(
     settings: Settings,
     *,

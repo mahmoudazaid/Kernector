@@ -2,7 +2,8 @@
  * Chat composer length feedback (#17).
  *
  * The limit is server-owned: it arrives from `GET /api/v1/settings`
- * (`max_input_length`), which composition seeds from `MAX_INPUT_LENGTH`. This
+ * (`constraints.max_input_length`), which composition seeds from
+ * `MAX_INPUT_LENGTH`. This
  * module deliberately holds no limit of its own — presentation must not carry
  * a parallel validation rule (#96 owns validation).
  *

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
@@ -6,12 +6,25 @@ import { ApiError } from "@/lib/api/errors";
 import type {
   CatalogDocumentResponse,
   DocumentListResponse,
+  ListDocumentsOptions,
 } from "@/lib/api/documents";
+import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 
-const constraints = {
-  supported_suffixes: [".md", ".txt", ".pdf", ".markdown"],
-  max_upload_bytes: 5_242_880,
+const SETTINGS: RuntimeSettingsResponse = {
+  providers: ["openrouter"],
+  default_provider: "openrouter",
+  openrouter: { models: [], default_model: null },
+  ollama: { default_base_url: null, default_model: null },
+  model_settings: [],
+  enabled_packs: [],
+  constraints: {
+    max_input_length: 10_000,
+    max_upload_bytes: 5_242_880,
+    supported_upload_suffixes: [".md", ".txt", ".pdf", ".markdown"],
+  },
 };
+
+const loadSettings = async () => SETTINGS;
 
 function doc(
   overrides: Partial<CatalogDocumentResponse> = {},
@@ -34,7 +47,7 @@ function doc(
 function listResponse(
   documents: CatalogDocumentResponse[] = [doc()],
 ): DocumentListResponse {
-  return { documents, constraints };
+  return { documents };
 }
 
 describe("DocumentsPanel", () => {
@@ -42,10 +55,23 @@ describe("DocumentsPanel", () => {
     const list = vi.fn().mockResolvedValue(
       listResponse([
         doc(),
-        doc({ source_id: "src-2", file_name: "guide.txt", status: "failed", has_error: true, error_summary: "Ingestion failed for this document. Delete it and upload again." }),
+        doc({
+          source_id: "src-2",
+          file_name: "guide.txt",
+          status: "failed",
+          has_error: true,
+          error_summary:
+            "Ingestion failed for this document. Delete it and upload again.",
+        }),
       ]),
     );
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByText("spec.md")).toBeInTheDocument();
@@ -57,7 +83,13 @@ describe("DocumentsPanel", () => {
 
   it("shows empty catalog copy including seed-corpus note", async () => {
     const list = vi.fn().mockResolvedValue(listResponse([]));
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByText(/no uploaded documents yet/i),
@@ -66,26 +98,34 @@ describe("DocumentsPanel", () => {
   });
 
   it("keeps the panel when listing fails", async () => {
-    const list = vi
-      .fn()
-      .mockRejectedValue(
-        new ApiError({
-          status: 500,
-          title: "Operational error",
-          detail: "Something went wrong while processing your request.",
-          code: "operational_error",
-        }),
-      );
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    const list = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Operational error",
+        detail: "Something went wrong while processing your request.",
+        code: "operational_error",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByText(/something went wrong while processing/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Knowledge Hub" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /upload new/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Knowledge Hub" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /upload new/i }),
+    ).toBeInTheDocument();
   });
 
-  it("keeps upload enabled after a transient list failure once constraints were loaded", async () => {
+  it("keeps upload enabled after a transient list failure once settings constraints were loaded", async () => {
     const user = userEvent.setup();
     const list = vi
       .fn()
@@ -104,6 +144,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         upload={upload}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -130,6 +171,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         upload={upload}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -144,9 +186,7 @@ describe("DocumentsPanel", () => {
         file,
       }),
     );
-    expect(
-      await screen.findByText(/source id: new-id/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
   });
 
   it("replaces only the selected document's source id", async () => {
@@ -158,6 +198,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         replace={replace}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -189,6 +230,7 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         remove={remove}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -199,9 +241,7 @@ describe("DocumentsPanel", () => {
       }),
     ).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: /delete spec\.md/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
 
     const dialog = await screen.findByRole("dialog", {
       name: /delete document/i,
@@ -226,13 +266,12 @@ describe("DocumentsPanel", () => {
         apiBaseUrl="http://api.test"
         list={list}
         remove={remove}
+        loadSettings={loadSettings}
       />,
     );
 
     await screen.findByText("spec.md");
-    await user.click(
-      screen.getByRole("button", { name: /delete spec\.md/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
 
     const dialog = await screen.findByRole("dialog", {
       name: /delete document/i,
@@ -254,7 +293,13 @@ describe("DocumentsPanel", () => {
         }),
       ]),
     );
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByText(/ingestion failed for this document/i),
@@ -263,7 +308,13 @@ describe("DocumentsPanel", () => {
 
   it("shows unavailable state when the backend cannot be reached", async () => {
     const list = vi.fn().mockRejectedValue(ApiError.generic(0));
-    render(<DocumentsPanel apiBaseUrl="http://api.test" list={list} />);
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
 
     expect(
       await screen.findByRole("heading", { name: /backend unavailable/i }),
@@ -281,12 +332,15 @@ describe("DocumentsPanel", () => {
           doc({ source_id: "id-b", file_name: "dup.md" }),
         ]),
       );
-    const upload = vi.fn().mockResolvedValue(doc({ source_id: "id-a", file_name: "dup.md" }));
+    const upload = vi
+      .fn()
+      .mockResolvedValue(doc({ source_id: "id-a", file_name: "dup.md" }));
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
         list={list}
         upload={upload}
+        loadSettings={loadSettings}
       />,
     );
 
@@ -299,5 +353,310 @@ describe("DocumentsPanel", () => {
     expect(within(table).getAllByText("dup.md")).toHaveLength(2);
     expect(within(table).getByText("id-a")).toBeInTheDocument();
     expect(within(table).getByText("id-b")).toBeInTheDocument();
+  });
+
+  it("surfaces a settings-fetch failure, disables replace, and recovers on retry", async () => {
+    const user = userEvent.setup();
+    const list = vi.fn().mockResolvedValue(listResponse([doc()]));
+    const failingLoadSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("settings down"))
+      .mockResolvedValueOnce(SETTINGS);
+    const replace = vi.fn();
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        replace={replace}
+        loadSettings={failingLoadSettings}
+      />,
+    );
+
+    await screen.findByText("spec.md");
+    expect(
+      await screen.findByText(/settings catalog unavailable/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText(/document file/i)).toBeDisabled();
+    expect(screen.getByLabelText(/replacement file/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^replace$/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /^upload new$/i }),
+    ).toBeDisabled();
+    expect(replace).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    });
+    expect(
+      screen.queryByText(/settings catalog unavailable/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/replacement file/i)).toBeEnabled();
+    expect(failingLoadSettings).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries only settings when the document list is healthy", async () => {
+    const user = userEvent.setup();
+    const list = vi.fn().mockResolvedValue(listResponse([doc()]));
+    const failingLoadSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("settings down"))
+      .mockResolvedValueOnce(SETTINGS);
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={failingLoadSettings}
+      />,
+    );
+
+    await screen.findByText("spec.md");
+    expect(
+      await screen.findByText(/settings catalog unavailable/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/settings catalog unavailable/i),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("spec.md")).toBeInTheDocument();
+    expect(failingLoadSettings).toHaveBeenCalledTimes(2);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries only the document list when settings are healthy", async () => {
+    const user = userEvent.setup();
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 500,
+          title: "Operational error",
+          detail: "Something went wrong while processing your request.",
+          code: "operational_error",
+        }),
+      )
+      .mockResolvedValueOnce(listResponse([doc()]));
+    const healthyLoadSettings = vi.fn().mockResolvedValue(SETTINGS);
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={healthyLoadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    expect(await screen.findByText("spec.md")).toBeInTheDocument();
+    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+    expect(
+      screen.queryByText(/settings catalog unavailable/i),
+    ).not.toBeInTheDocument();
+    expect(healthyLoadSettings).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the retry callout visible while settings reload", async () => {
+    const user = userEvent.setup();
+    let finishReload: (value: RuntimeSettingsResponse) => void = () => {
+      throw new Error("reload was not started");
+    };
+    const loadSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("settings down"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<RuntimeSettingsResponse>((resolve) => {
+            finishReload = resolve;
+          }),
+      );
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/settings catalog unavailable/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    expect(
+      await screen.findByRole("button", { name: /^checking/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /settings catalog unavailable/i,
+    );
+
+    finishReload(SETTINGS);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+  });
+
+  it("leaves document retry enabled while settings are still loading", async () => {
+    const list = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Operational error",
+        detail: "Something went wrong while processing your request.",
+        code: "operational_error",
+      }),
+    );
+    const pendingSettings = vi.fn(
+      () => new Promise<RuntimeSettingsResponse>(() => {}),
+    );
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={pendingSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: /^retry$/i });
+    expect(retry).toBeEnabled();
+    expect(retry).toHaveTextContent(/^Retry$/);
+  });
+
+  it("ignores a stale document list response after a newer refresh", async () => {
+    const user = userEvent.setup();
+    let rejectRetry: (error: unknown) => void = () => {
+      throw new Error("retry was not started");
+    };
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 500,
+          title: "Operational error",
+          detail: "Something went wrong while processing your request.",
+          code: "operational_error",
+        }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<DocumentListResponse>((_resolve, reject) => {
+            rejectRetry = reject;
+          }),
+      )
+      .mockResolvedValueOnce(listResponse([doc()]));
+    const upload = vi.fn().mockResolvedValue(doc());
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+    expect(
+      await screen.findByRole("button", { name: /^checking/i }),
+    ).toBeDisabled();
+
+    const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
+    await user.upload(screen.getByLabelText(/document file/i), file);
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(await screen.findByText("spec.md")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/something went wrong while processing/i),
+    ).not.toBeInTheDocument();
+
+    rejectRetry(
+      new ApiError({
+        status: 500,
+        title: "Operational error",
+        detail: "Something went wrong while processing your request.",
+        code: "operational_error",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(3);
+    });
+    expect(list.mock.calls[1][0].signal?.aborted).toBe(true);
+    expect(screen.getByText("spec.md")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/something went wrong while processing/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("cancels an in-flight document list on unmount", async () => {
+    const list = vi.fn(
+      (_options: ListDocumentsOptions) =>
+        new Promise<DocumentListResponse>(() => {}),
+    );
+
+    const { unmount } = render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(1);
+    });
+    const signal = list.mock.calls[0][0].signal;
+    expect(signal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("leaves unavailable retry enabled while settings are still loading", async () => {
+    const pendingSettings = vi.fn(
+      () => new Promise<RuntimeSettingsResponse>(() => {}),
+    );
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockRejectedValue(ApiError.generic(0))}
+        loadSettings={pendingSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /backend unavailable/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^retry$/i })).toBeEnabled();
   });
 });

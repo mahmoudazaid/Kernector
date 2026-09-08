@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
   startTransition,
   type ChangeEvent,
@@ -25,17 +26,20 @@ import {
 } from "@/lib/api/documents";
 import { ApiError } from "@/lib/api/errors";
 import { validateUpload } from "@/lib/documents/upload";
+import {
+  useRuntimeCatalog,
+  type RuntimeCatalogLoader,
+} from "@/lib/settings/use-runtime-catalog";
 
 export type DocumentsPanelProps = {
   apiBaseUrl: string;
   list?: (options: ListDocumentsOptions) => Promise<DocumentListResponse>;
-  upload?: (
-    options: UploadDocumentOptions,
-  ) => Promise<CatalogDocumentResponse>;
+  upload?: (options: UploadDocumentOptions) => Promise<CatalogDocumentResponse>;
   replace?: (
     options: ReplaceDocumentOptions,
   ) => Promise<CatalogDocumentResponse>;
   remove?: (options: DeleteDocumentOptions) => Promise<void>;
+  loadSettings?: RuntimeCatalogLoader;
 };
 
 type CatalogView =
@@ -45,12 +49,10 @@ type CatalogView =
       kind: "error";
       message: string;
       documents: CatalogDocumentResponse[];
-      constraints: DocumentListResponse["constraints"] | null;
     }
   | {
       kind: "ready";
       documents: CatalogDocumentResponse[];
-      constraints: DocumentListResponse["constraints"];
     };
 
 type ActionFeedback =
@@ -85,7 +87,15 @@ export function DocumentsPanel({
   upload = uploadDocument,
   replace = replaceDocument,
   remove = deleteDocument,
+  loadSettings,
 }: DocumentsPanelProps) {
+  const {
+    catalog: runtimeCatalog,
+    error: settingsError,
+    loading: settingsLoading,
+    reload: reloadSettings,
+  } = useRuntimeCatalog(apiBaseUrl, loadSettings);
+  const constraints = runtimeCatalog?.constraints ?? null;
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -96,15 +106,37 @@ export function DocumentsPanel({
     useState<CatalogDocumentResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshSeqRef = useRef(0);
+  const refreshAbortRef = useRef<AbortController | null>(null);
+
+  function retryAll() {
+    if (settingsError) {
+      reloadSettings();
+    }
+    if (catalog.kind === "error" || catalog.kind === "unavailable") {
+      void refresh();
+    }
+  }
 
   async function refresh() {
+    refreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
+    const seq = ++refreshSeqRef.current;
+    setRefreshing(true);
     try {
-      const response = await list({ baseUrl: apiBaseUrl });
+      const response = await list({
+        baseUrl: apiBaseUrl,
+        signal: controller.signal,
+      });
+      if (seq !== refreshSeqRef.current || controller.signal.aborted) {
+        return;
+      }
       startTransition(() => {
         setCatalog({
           kind: "ready",
           documents: response.documents,
-          constraints: response.constraints,
         });
         setSelectedId((current) => {
           if (
@@ -117,6 +149,9 @@ export function DocumentsPanel({
         });
       });
     } catch (error) {
+      if (seq !== refreshSeqRef.current || controller.signal.aborted) {
+        return;
+      }
       if (error instanceof ApiError && error.status === 0) {
         startTransition(() => setCatalog({ kind: "unavailable" }));
         return;
@@ -129,18 +164,22 @@ export function DocumentsPanel({
             prev.kind === "ready" || prev.kind === "error"
               ? prev.documents
               : [],
-          constraints:
-            prev.kind === "ready" || prev.kind === "error"
-              ? prev.constraints
-              : null,
         })),
       );
+    } finally {
+      if (seq === refreshSeqRef.current && !controller.signal.aborted) {
+        setRefreshing(false);
+      }
     }
   }
 
+  // Initial load only — actions call refresh explicitly; the cleanup aborts an
+  // in-flight list() so an unmount writes no state.
   useEffect(() => {
     void refresh();
-    // Initial load only — actions call refresh explicitly.
+    return () => {
+      refreshAbortRef.current?.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
@@ -149,17 +188,9 @@ export function DocumentsPanel({
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
       : [];
-  const constraints =
-    catalog.kind === "ready"
-      ? catalog.constraints
-      : catalog.kind === "error"
-        ? catalog.constraints
-        : null;
   const selected =
     documents.find((doc) => doc.source_id === selectedId) ?? null;
-  const accept = constraints
-    ? constraints.supported_suffixes.join(",")
-    : ".md,.markdown,.txt,.pdf";
+  const accept = constraints?.supported_upload_suffixes.join(",");
 
   function clearUploadInput() {
     setUploadFile(null);
@@ -265,6 +296,12 @@ export function DocumentsPanel({
     }
   }
 
+  const documentsRetryable =
+    catalog.kind === "error" || catalog.kind === "unavailable";
+  const retryBusy =
+    (Boolean(settingsError) && settingsLoading) ||
+    (documentsRetryable && refreshing);
+
   if (catalog.kind === "loading") {
     return (
       <section className="kern-documents">
@@ -284,8 +321,8 @@ export function DocumentsPanel({
           title="Backend unavailable"
           description="The documents API could not be reached. Start the FastAPI server and try again."
         />
-        <Button variant="secondary" onClick={() => void refresh()}>
-          Retry
+        <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+          {retryBusy ? "Checking…" : "Retry"}
         </Button>
       </section>
     );
@@ -296,11 +333,15 @@ export function DocumentsPanel({
       <h1>Knowledge Hub</h1>
       <p className="kern-documents-lead">{IDENTITY_HELP}</p>
 
-      {catalog.kind === "error" ? (
-        <div className="kern-settings-callout kern-settings-callout--error" role="alert">
-          <p>{catalog.message}</p>
-          <Button variant="secondary" onClick={() => void refresh()}>
-            Retry
+      {catalog.kind === "error" || settingsError ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
+          {settingsError ? <p>{settingsError}</p> : null}
+          <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+            {retryBusy ? "Checking…" : "Retry"}
           </Button>
         </div>
       ) : null}
@@ -443,7 +484,7 @@ export function DocumentsPanel({
         <form className="kern-documents-form" onSubmit={onReplace}>
           <fieldset
             className="kern-settings-fieldset"
-            disabled={busy || dialogOpen}
+            disabled={busy || dialogOpen || !constraints}
           >
             <legend>Replace</legend>
             <p className="kern-settings-help">
