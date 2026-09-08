@@ -57,12 +57,19 @@ class FakeDriveFiles:
         *,
         list_error: BaseException | None = None,
         media_error: BaseException | None = None,
+        get_error: BaseException | None = None,
+        children_by_parent: dict[str, list[dict[str, object]]] | None = None,
+        files_by_id: dict[str, dict[str, object]] | None = None,
     ) -> None:
         self._pages = list(pages or ())
         self._index = 0
         self.list_error = list_error
         self.media_error = media_error
+        self.get_error = get_error
+        self.children_by_parent = children_by_parent
+        self.files_by_id = files_by_id
         self.list_calls: list[dict[str, object]] = []
+        self.get_calls: list[str] = []
         self.get_media_ids: list[str] = []
         self.export_calls: list[tuple[str, str]] = []
 
@@ -70,11 +77,31 @@ class FakeDriveFiles:
         self.list_calls.append(dict(kwargs))
         if self.list_error is not None:
             return FakeListRequest(error=self.list_error)
+        if self.children_by_parent is not None:
+            query = str(kwargs.get("q") or "")
+            parent = "root"
+            marker = "' in parents"
+            if marker in query:
+                prefix = query[: query.index(marker)]
+                parent = prefix.rsplit("'", 1)[-1]
+            return FakeListRequest({"files": list(self.children_by_parent.get(parent, []))})
         if self._index >= len(self._pages):
             return FakeListRequest({"files": []})
         page = self._pages[self._index]
         self._index += 1
         return FakeListRequest(page)
+
+    def get(self, **kwargs: object) -> FakeListRequest:
+        file_id = str(kwargs.get("fileId") or "")
+        self.get_calls.append(file_id)
+        if self.get_error is not None:
+            return FakeListRequest(error=self.get_error)
+        if self.files_by_id is not None:
+            entry = self.files_by_id.get(file_id)
+            if entry is None:
+                return FakeListRequest(error=_http_error(404))
+            return FakeListRequest(entry)
+        return FakeListRequest(error=_http_error(404))
 
     def get_media(self, *, fileId: str) -> object:
         self.get_media_ids.append(fileId)
@@ -164,6 +191,9 @@ def _connector(
     max_upload_bytes: int = 1024,
     settings: GoogleDriveSettings | None = None,
     downloaders: list[FakeDownloader] | None = None,
+    folder_ids: Sequence[str] | None = None,
+    file_ids: Sequence[str] = (),
+    recursive: bool = False,
 ) -> GoogleDriveConnector:
     caught = downloaders if downloaders is not None else []
 
@@ -178,6 +208,9 @@ def _connector(
         files=files,
         extractor=extractor or RecordingExtractor(),
         downloader_factory=factory,
+        folder_ids=folder_ids,
+        file_ids=file_ids,
+        recursive=recursive,
     )
 
 
@@ -480,7 +513,6 @@ def test_extraction_failure_is_safe_connector_error() -> None:
     ("error", "expected"),
     [
         (_http_error(401), ConnectorAuthError),
-        (_http_error(403, {"error": {"errors": [{"reason": "insufficientFilePermissions"}], "message": SECRET}}), ConnectorAuthError),
         (_http_error(403, {"error": {"errors": [{"reason": "rateLimitExceeded"}], "message": SECRET}}), ConnectorUnavailableError),
         (_http_error(429), ConnectorUnavailableError),
         (_http_error(503), ConnectorUnavailableError),
@@ -513,3 +545,119 @@ def test_secret_marker_never_reaches_logs(
     log_text = "\n".join(flatten_log_record(record) for record in caplog.records)
     assert SECRET not in log_text
     assert SECRET not in caplog.text
+
+
+def test_inaccessible_folder_is_skipped_without_deleting_or_aborting() -> None:
+    files = FakeDriveFiles(
+        list_error=_http_error(
+            403,
+            {
+                "error": {
+                    "errors": [{"reason": "insufficientFilePermissions"}],
+                    "message": SECRET,
+                }
+            },
+        )
+    )
+    documents = _connector(files).list_documents()
+    assert documents == ()
+
+
+def test_recursive_folder_discovers_nested_supported_files() -> None:
+    files = FakeDriveFiles(
+        children_by_parent={
+            FOLDER: [
+                _file("nested", "Nested", mime_type="application/vnd.google-apps.folder"),
+                _file("root-file", "root.md"),
+            ],
+            "nested": [_file("child", "child.txt")],
+        }
+    )
+    documents = _connector(files, recursive=True).list_documents()
+    assert [document.source_id for document in documents] == ["root-file", "child"]
+
+
+def test_non_recursive_listing_ignores_nested_folder_contents() -> None:
+    files = FakeDriveFiles(
+        children_by_parent={
+            FOLDER: [
+                _file("nested", "Nested", mime_type="application/vnd.google-apps.folder"),
+                _file("root-file", "root.md"),
+            ],
+            "nested": [_file("child", "child.txt")],
+        }
+    )
+    documents = _connector(files, recursive=False).list_documents()
+    assert [document.source_id for document in documents] == ["root-file"]
+
+
+def test_exact_file_ids_are_fetched_once_and_ignore_unselected_siblings() -> None:
+    files = FakeDriveFiles(
+        children_by_parent={FOLDER: [_file("inside", "inside.md")]},
+        files_by_id={
+            "exact": _file("exact", "picked.md"),
+            "other": _file("other", "other.md"),
+        },
+    )
+    documents = _connector(
+        files, folder_ids=(), file_ids=("exact",)
+    ).list_documents()
+    assert [document.source_id for document in documents] == ["exact"]
+    assert files.get_calls == ["exact"]
+
+
+def test_duplicate_file_id_in_folder_and_exact_selection_is_listed_once() -> None:
+    listed = _file("shared", "shared.md")
+    files = FakeDriveFiles(
+        children_by_parent={FOLDER: [listed]},
+        files_by_id={"shared": listed},
+    )
+    documents = _connector(
+        files, file_ids=("shared",), recursive=True
+    ).list_documents()
+    assert [document.source_id for document in documents] == ["shared"]
+    assert files.get_calls == []
+
+
+def test_revision_falls_back_to_modified_time() -> None:
+    files = FakeDriveFiles(
+        [
+            {
+                "files": [
+                    _file("a", "a.md", version=None, md5=None)
+                    | {"modifiedTime": "2026-09-08T12:00:00.000Z"}
+                ]
+            }
+        ]
+    )
+    documents = _connector(files).list_documents()
+    assert documents[0].revision == "2026-09-08T12:00:00.000Z"
+
+
+def test_browse_folders_filters_query_and_omits_tokens() -> None:
+    files = FakeDriveFiles(
+        [{"files": [_file("f1", "Specs", mime_type="application/vnd.google-apps.folder")]}]
+    )
+    page = _connector(files).list_items(parent_id="root", kind="folders")
+    assert page.items[0].id == "f1"
+    assert page.items[0].kind == "folder"
+    assert page.items[0].supported is True
+    query = str(files.list_calls[0]["q"])
+    assert "mimeType = 'application/vnd.google-apps.folder'" in query
+    assert "ya29." not in query
+    assert files.list_calls[0].get("pageToken") is None
+
+
+def test_browse_search_does_not_constrain_parent() -> None:
+    files = FakeDriveFiles([{"files": [_file("hit", "guide.md")]}])
+    _connector(files).list_items(kind="files", query="guide")
+    query = str(files.list_calls[0]["q"])
+    assert "name contains 'guide'" in query
+    assert "in parents" not in query
+
+
+def test_get_item_uses_id_not_name() -> None:
+    files = FakeDriveFiles(files_by_id={"drive-id-1": _file("drive-id-1", "Renamed.md")})
+    item = _connector(files).get_item("drive-id-1")
+    assert item.id == "drive-id-1"
+    assert item.name == "Renamed.md"

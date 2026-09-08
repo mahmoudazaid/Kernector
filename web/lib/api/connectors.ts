@@ -5,6 +5,14 @@ export type GoogleDriveStatusResponse =
   components["schemas"]["GoogleDriveStatusResponse"];
 export type GoogleDriveSyncResponse =
   components["schemas"]["GoogleDriveSyncResponse"];
+export type GoogleDriveBrowsePageResponse =
+  components["schemas"]["GoogleDriveBrowsePageResponse"];
+export type GoogleDriveBrowseItemResponse =
+  components["schemas"]["GoogleDriveBrowseItemResponse"];
+export type GoogleDriveSelectionResponse =
+  components["schemas"]["GoogleDriveSelectionResponse"];
+export type GoogleDriveSelectedItemResponse =
+  components["schemas"]["GoogleDriveSelectedItemResponse"];
 
 /** A first whole-folder sync fetches, extracts, and embeds every file. */
 export const CONNECTOR_SYNC_TIMEOUT_MS = 300_000;
@@ -25,6 +33,36 @@ export type GetGoogleDriveStatusOptions = {
 
 export type SyncGoogleDriveOptions = GetGoogleDriveStatusOptions;
 export type DisconnectGoogleDriveOptions = GetGoogleDriveStatusOptions;
+export type GetGoogleDriveSelectionOptions = GetGoogleDriveStatusOptions;
+
+export type ListGoogleDriveItemsOptions = GetGoogleDriveStatusOptions & {
+  parentId?: string;
+  kind?: "folders" | "files";
+  query?: string;
+  pageToken?: string | null;
+};
+
+export type PutGoogleDriveSelectionOptions = GetGoogleDriveStatusOptions & {
+  selection: GoogleDriveSelectionResponse;
+};
+
+function itemsPath(options: ListGoogleDriveItemsOptions): string {
+  const params = new URLSearchParams();
+  if (options.parentId) {
+    params.set("parent_id", options.parentId);
+  }
+  if (options.kind) {
+    params.set("kind", options.kind);
+  }
+  if (options.query) {
+    params.set("query", options.query);
+  }
+  if (options.pageToken) {
+    params.set("page_token", options.pageToken);
+  }
+  const query = params.toString();
+  return `/api/v1/connectors/google-drive/items${query ? `?${query}` : ""}`;
+}
 
 /**
  * Load Drive SA flags and user OAuth connection from
@@ -38,6 +76,61 @@ export async function getGoogleDriveStatus(
     baseUrl: options.baseUrl,
     path: "/api/v1/connectors/google-drive",
     method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Browse Drive folders or files via
+ * ``GET /api/v1/connectors/google-drive/items``.
+ */
+export async function listGoogleDriveItems(
+  options: ListGoogleDriveItemsOptions,
+): Promise<GoogleDriveBrowsePageResponse> {
+  const request = options.request ?? apiRequest;
+  return request<GoogleDriveBrowsePageResponse>({
+    baseUrl: options.baseUrl,
+    path: itemsPath(options),
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Load saved Drive roots via
+ * ``GET /api/v1/connectors/google-drive/selection``.
+ */
+export async function getGoogleDriveSelection(
+  options: GetGoogleDriveSelectionOptions,
+): Promise<GoogleDriveSelectionResponse> {
+  const request = options.request ?? apiRequest;
+  return request<GoogleDriveSelectionResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/google-drive/selection",
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Replace saved Drive roots via
+ * ``PUT /api/v1/connectors/google-drive/selection``.
+ */
+export async function putGoogleDriveSelection(
+  options: PutGoogleDriveSelectionOptions,
+): Promise<GoogleDriveSelectionResponse> {
+  const request = options.request ?? apiRequest;
+  return request<GoogleDriveSelectionResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/google-drive/selection",
+    method: "PUT",
+    body: {
+      folders: options.selection.folders ?? [],
+      files: options.selection.files ?? [],
+    },
     signal: options.signal,
     timeoutMs: options.timeoutMs,
   } satisfies ApiRequestOptions);

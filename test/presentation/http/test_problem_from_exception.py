@@ -10,6 +10,7 @@ from application.errors import (
     GoogleDriveNotConnectedError,
     GoogleDriveOAuthNotConfiguredError,
     GoogleDriveReauthorizationRequiredError,
+    GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
     UploadTooLargeError,
@@ -303,6 +304,11 @@ def test_google_drive_oauth_errors_are_not_swallowed_by_configuration_error() ->
     assert reauth.status == 409
     assert reauth.code == "google_drive_reauthorization_required"
     assert "1//" not in reauth.detail
+    selection = problem_from_exception(
+        GoogleDriveSelectionRequiredError("Google Drive sync scope is not selected")
+    )
+    assert selection.status == 409
+    assert selection.code == "google_drive_selection_required"
 
 
 def test_connector_sync_error_uses_fixed_sanitized_detail() -> None:

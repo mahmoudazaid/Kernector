@@ -32,6 +32,14 @@ class GoogleOAuthError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class GoogleDriveSelectedItem:
+    """Stable Drive identity plus a display name. Name is never an identifier."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
 class GoogleOAuthGrant:
     """Tokens returned by a successful authorization-code exchange."""
 
@@ -53,12 +61,15 @@ class GoogleOAuthConnection:
     last_sync_unchanged: int | None
     last_sync_failed: int | None
     reauthorization_required: bool
+    folders: tuple[GoogleDriveSelectedItem, ...] = ()
+    files: tuple[GoogleDriveSelectedItem, ...] = ()
 
     def __repr__(self) -> str:
         return (
             "GoogleOAuthConnection("
             f"refresh_token={_REDACTED!r}, access_token={_REDACTED!r}, "
             f"account_email={self.account_email!r}, folder_count={self.folder_count}, "
+            f"folders={len(self.folders)}, files={len(self.files)}, "
             f"last_synced_at={self.last_synced_at!r}, "
             f"reauthorization_required={self.reauthorization_required})"
         )
@@ -136,13 +147,15 @@ class GoogleOAuthConnectionStore:
             refresh_token=refresh,
             access_token=_optional_str(raw.get("access_token")),
             account_email=_optional_str(raw.get("account_email")),
-            folder_count=_optional_int(raw.get("folder_count")) or 1,
+            folder_count=_optional_int(raw.get("folder_count")) or 0,
             last_synced_at=_optional_str(raw.get("last_synced_at")),
             last_sync_new=_optional_int(raw.get("last_sync_new")),
             last_sync_updated=_optional_int(raw.get("last_sync_updated")),
             last_sync_unchanged=_optional_int(raw.get("last_sync_unchanged")),
             last_sync_failed=_optional_int(raw.get("last_sync_failed")),
             reauthorization_required=bool(raw.get("reauthorization_required")),
+            folders=_parse_selected_items(raw.get("folders")),
+            files=_parse_selected_items(raw.get("files")),
         )
 
     def save(self, connection: GoogleOAuthConnection) -> None:
@@ -153,6 +166,8 @@ class GoogleOAuthConnectionStore:
             "access_token": connection.access_token,
             "account_email": connection.account_email,
             "folder_count": connection.folder_count,
+            "folders": [{"id": item.id, "name": item.name} for item in connection.folders],
+            "files": [{"id": item.id, "name": item.name} for item in connection.files],
             "last_synced_at": connection.last_synced_at,
             "last_sync_new": connection.last_sync_new,
             "last_sync_updated": connection.last_sync_updated,
@@ -318,3 +333,24 @@ def _optional_str(value: object) -> str | None:
 
 def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _parse_selected_items(raw: object) -> tuple[GoogleDriveSelectedItem, ...]:
+    if not isinstance(raw, list):
+        return ()
+    items: list[GoogleDriveSelectedItem] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        item_id = entry.get("id")
+        name = entry.get("name")
+        if not isinstance(item_id, str) or not item_id.strip():
+            continue
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        items.append(GoogleDriveSelectedItem(id=item_id, name=name))
+    return tuple(items)

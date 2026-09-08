@@ -11,13 +11,23 @@ from application.contracts import (
     ConnectorSyncResponse,
     ConnectorSyncStatus,
 )
-from composition import ConnectorSyncError, GoogleDriveLastSync, GoogleDriveStatus
+from composition import (
+    ConnectorSyncError,
+    GoogleDriveBrowsePage,
+    GoogleDriveLastSync,
+    GoogleDriveSelection,
+    GoogleDriveSelectedItem,
+    GoogleDriveStatus,
+)
 from presentation.http import deps as http_deps
 from presentation.http.app import create_app
 from presentation.http.deps import (
     get_google_drive_disconnect,
     get_google_drive_oauth_callback,
     get_google_drive_oauth_start,
+    get_google_drive_selection_read,
+    get_google_drive_selection_write,
+    get_google_drive_browse,
     get_google_drive_status,
     get_google_drive_sync,
     get_settings,
@@ -42,6 +52,9 @@ def _status(**overrides: object) -> GoogleDriveStatus:
         folder_count=None,
         last_sync=None,
         reauthorization_required=False,
+        setup_required=False,
+        connection_state="disconnected",
+        sync_scope=None,
     )
     values.update(overrides)
     return GoogleDriveStatus(**values)  # type: ignore[arg-type]
@@ -58,6 +71,9 @@ def _status_json(**overrides: object) -> dict[str, object]:
         "folder_count": None,
         "last_sync": None,
         "reauthorization_required": False,
+        "setup_required": False,
+        "connection_state": "disconnected",
+        "sync_scope": None,
     }
     payload.update(overrides)
     return payload
@@ -94,6 +110,9 @@ def test_google_drive_status_returns_connected_metadata() -> None:
             unchanged_count=3,
             failed_count=0,
         ),
+        setup_required=False,
+        connection_state="ready",
+        sync_scope="1 folder",
     )
     client = TestClient(app)
 
@@ -113,6 +132,9 @@ def test_google_drive_status_returns_connected_metadata() -> None:
             "unchanged_count": 3,
             "failed_count": 0,
         },
+        setup_required=False,
+        connection_state="ready",
+        sync_scope="1 folder",
     )
 
 
@@ -205,7 +227,10 @@ def test_openapi_includes_google_drive_oauth_paths() -> None:
     assert "/api/v1/connectors/google-drive/sync" in paths
     assert "/api/v1/connectors/google-drive/oauth/start" in paths
     assert "/api/v1/connectors/google-drive/oauth/callback" in paths
+    assert "/api/v1/connectors/google-drive/items" in paths
+    assert "/api/v1/connectors/google-drive/selection" in paths
     assert "delete" in paths["/api/v1/connectors/google-drive"]
+    assert "put" in paths["/api/v1/connectors/google-drive/selection"]
     props = schema["components"]["schemas"]["GoogleDriveStatusResponse"]["properties"]
     assert {
         "configured",
@@ -217,6 +242,9 @@ def test_openapi_includes_google_drive_oauth_paths() -> None:
         "folder_count",
         "last_sync",
         "reauthorization_required",
+        "setup_required",
+        "connection_state",
+        "sync_scope",
     } <= set(props)
     for key in _SECRET_KEYS:
         assert key not in props
@@ -401,3 +429,111 @@ def test_disconnect_returns_204() -> None:
     assert response.status_code == 204
     assert response.content == b""
     assert called == ["disconnect"]
+
+
+def test_sync_conflicts_when_setup_required_without_calling_sync() -> None:
+    sync_calls: list[str] = []
+    app = create_app()
+    app.dependency_overrides[get_google_drive_status] = lambda: _status(
+        connected=True,
+        oauth_ready=True,
+        setup_required=True,
+        connection_state="setup_required",
+    )
+    app.dependency_overrides[get_google_drive_sync] = lambda: (
+        lambda: sync_calls.append("sync") or ConnectorSyncResponse(outcomes=())
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/v1/connectors/google-drive/sync")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "google_drive_selection_required"
+    assert sync_calls == []
+
+
+def test_items_return_presentation_rows_without_tokens() -> None:
+    app = create_app()
+    app.dependency_overrides[get_google_drive_browse] = lambda: (
+        lambda **_kwargs: SimpleNamespace(
+            items=(
+                SimpleNamespace(
+                    id="folder-1",
+                    name="Specs",
+                    kind="folder",
+                    mime_type="application/vnd.google-apps.folder",
+                    supported=True,
+                    modified_at="2026-09-08T12:00:00.000Z",
+                ),
+            ),
+            next_page_token="page-2",
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/connectors/google-drive/items?parent_id=root&kind=folders"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "items": [
+            {
+                "id": "folder-1",
+                "name": "Specs",
+                "kind": "folder",
+                "mime_type": "application/vnd.google-apps.folder",
+                "supported": True,
+                "modified_at": "2026-09-08T12:00:00.000Z",
+            }
+        ],
+        "next_page_token": "page-2",
+    }
+    for key in _SECRET_KEYS:
+        assert key not in body
+        assert key not in str(body)
+
+
+def test_get_selection_returns_saved_ids_not_names_as_identity() -> None:
+    app = create_app()
+    app.dependency_overrides[get_google_drive_selection_read] = lambda: (
+        lambda: GoogleDriveSelection(
+            folders=(GoogleDriveSelectedItem(id="folder-1", name="Specs"),),
+            files=(GoogleDriveSelectedItem(id="file-9", name="guide.md"),),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/v1/connectors/google-drive/selection")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "folders": [{"id": "folder-1", "name": "Specs"}],
+        "files": [{"id": "file-9", "name": "guide.md"}],
+    }
+
+
+def test_put_selection_replaces_by_id() -> None:
+    saved: list[object] = []
+    app = create_app()
+    app.dependency_overrides[get_google_drive_selection_write] = lambda: (
+        lambda **kwargs: saved.append(kwargs)
+        or GoogleDriveSelection(
+            folders=kwargs["folders"],
+            files=kwargs["files"],
+        )
+    )
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/v1/connectors/google-drive/selection",
+        json={
+            "folders": [{"id": "folder-1", "name": "Specs"}],
+            "files": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert saved[0]["folders"][0].id == "folder-1"
+    assert response.json()["folders"][0]["id"] == "folder-1"

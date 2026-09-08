@@ -376,6 +376,23 @@ def test_revision_change_is_not_hidden_by_unchanged_checksum_extra() -> None:
     assert connector.fetched == [listed]
 
 
+def test_documents_leaving_the_listing_are_not_deleted() -> None:
+    kept = _listed("kept", file_name="kept.md", revision="1")
+    left = _listed("left-scope", file_name="old.md", revision="1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(kept, revision="1"))
+    catalog.upsert(_row(left, revision="1"))
+    connector = RecordingConnector((kept,), {})
+    ingest = RecordingIngest()
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert [outcome.source_id for outcome in response.outcomes] == ["kept"]
+    assert response.outcomes[0].status is ConnectorSyncStatus.SKIPPED
+    assert catalog.get(left.reference) == _row(left, revision="1")
+    assert ingest.calls == []
+    assert connector.fetched == []
+
+
 def test_fetch_failure_preserves_ready_row_and_continues(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -4,8 +4,11 @@ import {
   CONNECTOR_SYNC_TIMEOUT_MS,
   GOOGLE_DRIVE_OAUTH_START_PATH,
   disconnectGoogleDrive,
+  getGoogleDriveSelection,
   getGoogleDriveStatus,
   googleDriveOAuthStartUrl,
+  listGoogleDriveItems,
+  putGoogleDriveSelection,
   syncGoogleDrive,
 } from "@/lib/api/connectors";
 
@@ -63,6 +66,73 @@ describe("google drive connector wrappers", () => {
       }),
     );
     expect(CONNECTOR_SYNC_TIMEOUT_MS).toBe(300_000);
+  });
+
+  it("browses items without putting tokens in the path", async () => {
+    const request = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "folder-1",
+          name: "Specs",
+          kind: "folder",
+          mime_type: "application/vnd.google-apps.folder",
+          supported: true,
+          modified_at: null,
+        },
+      ],
+      next_page_token: null,
+    });
+
+    await listGoogleDriveItems({
+      baseUrl: "http://api.test",
+      parentId: "root",
+      kind: "folders",
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/api/v1/connectors/google-drive/items?parent_id=root&kind=folders",
+        method: "GET",
+      }),
+    );
+    expect(String(request.mock.calls[0][0].path)).not.toMatch(/ya29|1\/\//);
+  });
+
+  it("loads and replaces selection by Drive ID", async () => {
+    const request = vi.fn().mockResolvedValue({
+      folders: [{ id: "folder-1", name: "Specs" }],
+      files: [],
+    });
+
+    await getGoogleDriveSelection({
+      baseUrl: "http://api.test",
+      request,
+    });
+    await putGoogleDriveSelection({
+      baseUrl: "http://api.test",
+      selection: { folders: [{ id: "folder-1", name: "Specs" }], files: [] },
+      request,
+    });
+
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        path: "/api/v1/connectors/google-drive/selection",
+        method: "GET",
+      }),
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        path: "/api/v1/connectors/google-drive/selection",
+        method: "PUT",
+        body: {
+          folders: [{ id: "folder-1", name: "Specs" }],
+          files: [],
+        },
+      }),
+    );
   });
 
   it("disconnects via DELETE /api/v1/connectors/google-drive", async () => {

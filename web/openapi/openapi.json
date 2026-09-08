@@ -349,6 +349,78 @@
         "title": "DocumentListResponse",
         "type": "object"
       },
+      "GoogleDriveBrowseItemResponse": {
+        "description": "One Drive picker row. ``id`` is the only identity field.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "name", "kind", "supported"],
+        "title": "GoogleDriveBrowseItemResponse",
+        "type": "object"
+      },
+      "GoogleDriveBrowsePageResponse": {
+        "description": "One page of Drive picker results. Tokens stay off this payload.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveBrowseItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_page_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Page Token"
+          }
+        },
+        "required": ["items"],
+        "title": "GoogleDriveBrowsePageResponse",
+        "type": "object"
+      },
       "GoogleDriveLastSyncResponse": {
         "description": "Last user-OAuth sync summary. Counts are honest; no secrets.",
         "properties": {
@@ -383,6 +455,48 @@
         "title": "GoogleDriveLastSyncResponse",
         "type": "object"
       },
+      "GoogleDriveSelectedItemResponse": {
+        "description": "Saved sync root: Drive ID plus a presentation name.",
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^(root|[A-Za-z0-9_-]+)$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["id", "name"],
+        "title": "GoogleDriveSelectedItemResponse",
+        "type": "object"
+      },
+      "GoogleDriveSelectionResponse": {
+        "description": "Saved folder and exact-file roots for the connected grant.",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
+            },
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "title": "GoogleDriveSelectionResponse",
+        "type": "object"
+      },
       "GoogleDriveStatusResponse": {
         "description": "Google Drive connector presence and user OAuth connection (no secrets).",
         "properties": {
@@ -409,6 +523,11 @@
             "default": false,
             "title": "Connected",
             "type": "boolean"
+          },
+          "connection_state": {
+            "default": "disconnected",
+            "title": "Connection State",
+            "type": "string"
           },
           "document_count": {
             "default": 0,
@@ -445,6 +564,22 @@
             "default": false,
             "title": "Reauthorization Required",
             "type": "boolean"
+          },
+          "setup_required": {
+            "default": false,
+            "title": "Setup Required",
+            "type": "boolean"
+          },
+          "sync_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Scope"
           }
         },
         "required": ["configured", "available"],
@@ -1355,6 +1490,136 @@
         "tags": ["connectors"]
       }
     },
+    "/api/v1/connectors/google-drive/items": {
+      "get": {
+        "description": "List Drive folders or files for the content picker. No tokens on the wire.",
+        "operationId": "google_drive_connector_items_api_v1_connectors_google_drive_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "folders",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveBrowsePageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Google Drive Connector Items",
+        "tags": ["connectors"]
+      }
+    },
     "/api/v1/connectors/google-drive/oauth/callback": {
       "get": {
         "description": "Validate state, exchange the code server-side, and return to the Hub.",
@@ -1488,6 +1753,134 @@
           }
         },
         "summary": "Google Drive Oauth Start",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/selection": {
+      "get": {
+        "description": "Return saved folder and file roots (Drive IDs and names only).",
+        "operationId": "google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Connector Get Selection",
+        "tags": ["connectors"]
+      },
+      "put": {
+        "description": "Validate access and atomically replace the saved Drive selection.",
+        "operationId": "google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleDriveSelectionResponse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Google Drive Connector Put Selection",
         "tags": ["connectors"]
       }
     },

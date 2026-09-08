@@ -24,6 +24,13 @@ vi.mock("@/lib/api/connectors", () => ({
   }),
   syncGoogleDrive: vi.fn(),
   disconnectGoogleDrive: vi.fn(),
+  getGoogleDriveSelection: vi
+    .fn()
+    .mockResolvedValue({ folders: [], files: [] }),
+  putGoogleDriveSelection: vi.fn(),
+  listGoogleDriveItems: vi
+    .fn()
+    .mockResolvedValue({ items: [], next_page_token: null }),
   googleDriveOAuthStartUrl: (baseUrl: string) =>
     `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
   GOOGLE_DRIVE_OAUTH_START_PATH: "/api/v1/connectors/google-drive/oauth/start",
@@ -69,15 +76,11 @@ function listResponse(
   return { documents };
 }
 
-async function openDocumentsTab(
-  user: ReturnType<typeof userEvent.setup>,
-) {
+async function openDocumentsTab(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("tab", { name: /documents/i }));
 }
 
-async function openUploadModal(
-  user: ReturnType<typeof userEvent.setup>,
-) {
+async function openUploadModal(user: ReturnType<typeof userEvent.setup>) {
   const addFiles = await screen.findByRole("button", { name: /add files/i });
   await waitFor(() => expect(addFiles).toBeEnabled());
   await user.click(addFiles);
@@ -719,7 +722,9 @@ describe("DocumentsPanel", () => {
     expect(
       screen.getByRole("combobox", { name: /^source$/i }),
     ).toHaveTextContent("All sources");
-    expect(screen.getByRole("searchbox", { name: /^search$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: /^search$/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders File uploads as a full-width connected source", async () => {
@@ -736,13 +741,13 @@ describe("DocumentsPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Latest upload")).toBeInTheDocument();
     expect(screen.getByText("None yet")).toBeInTheDocument();
-    const card = screen.getByRole("heading", { name: "File uploads" }).closest(
-      "article",
-    );
+    const card = screen
+      .getByRole("heading", { name: "File uploads" })
+      .closest("article");
     expect(card?.parentElement).toHaveClass("kern-source-grid");
-    expect(card?.querySelector(".kern-source-metrics")?.lastElementChild).toHaveTextContent(
-      /latest upload/i,
-    );
+    expect(
+      card?.querySelector(".kern-source-metrics")?.lastElementChild,
+    ).toHaveTextContent(/latest upload/i);
   });
 
   it("keeps Google Drive under Available connectors before authorization", async () => {
@@ -761,6 +766,9 @@ describe("DocumentsPanel", () => {
           folder_count: null,
           last_sync: null,
           reauthorization_required: false,
+          setup_required: false,
+          connection_state: "disconnected",
+          sync_scope: null,
         })}
       />,
     );
@@ -804,6 +812,9 @@ describe("DocumentsPanel", () => {
           folder_count: 1,
           last_sync: null,
           reauthorization_required: false,
+          setup_required: false,
+          connection_state: "ready",
+          sync_scope: "1 folder",
         })}
       />,
     );

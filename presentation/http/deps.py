@@ -11,9 +11,13 @@ from application.contracts import ConnectorSyncResponse
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
+    GoogleDriveBrowsePage,
+    GoogleDriveSelection,
+    GoogleDriveSelectedItem,
     GoogleDriveStatus,
     GroundedAsk,
     Settings,
+    browse_google_drive_items,
     build_chat_model,
     build_prompt_repository,
     build_probe_ollama_status,
@@ -24,9 +28,11 @@ from composition import (
     delete_uploaded_document,
     complete_google_drive_oauth,
     disconnect_google_drive_oauth,
+    get_google_drive_selection,
     google_drive_status,
     list_uploaded_documents,
     load_runtime_settings,
+    put_google_drive_selection,
     replace_uploaded_document,
     start_google_drive_oauth,
     sync_google_drive_oauth,
@@ -213,6 +219,57 @@ def get_google_drive_disconnect(
     return disconnect
 
 
+def get_google_drive_browse(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GoogleDriveBrowsePage]:
+    """Return a Drive picker listing callable bound to this process."""
+
+    def browse(
+        *,
+        parent_id: str | None = None,
+        kind: str = "folders",
+        query: str | None = None,
+        page_token: str | None = None,
+    ) -> GoogleDriveBrowsePage:
+        return browse_google_drive_items(
+            settings,
+            parent_id=parent_id,
+            kind=kind,
+            query=query,
+            page_token=page_token,
+        )
+
+    return browse
+
+
+def get_google_drive_selection_read(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], GoogleDriveSelection]:
+    """Return a callable that loads the saved Drive selection."""
+
+    def load() -> GoogleDriveSelection:
+        return get_google_drive_selection(settings)
+
+    return load
+
+
+def get_google_drive_selection_write(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GoogleDriveSelection]:
+    """Return a callable that validates and replaces the saved Drive selection."""
+
+    def save(
+        *,
+        folders: tuple[GoogleDriveSelectedItem, ...],
+        files: tuple[GoogleDriveSelectedItem, ...],
+    ) -> GoogleDriveSelection:
+        return put_google_drive_selection(
+            settings, folders=folders, files=files
+        )
+
+    return save
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
@@ -235,4 +292,13 @@ GoogleDriveOAuthCallbackDep = Annotated[
 ]
 GoogleDriveDisconnectDep = Annotated[
     Callable[[], None], Depends(get_google_drive_disconnect)
+]
+GoogleDriveBrowseDep = Annotated[
+    Callable[..., GoogleDriveBrowsePage], Depends(get_google_drive_browse)
+]
+GoogleDriveSelectionReadDep = Annotated[
+    Callable[[], GoogleDriveSelection], Depends(get_google_drive_selection_read)
+]
+GoogleDriveSelectionWriteDep = Annotated[
+    Callable[..., GoogleDriveSelection], Depends(get_google_drive_selection_write)
 ]

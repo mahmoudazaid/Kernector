@@ -11,6 +11,7 @@ from application.errors import (
     GoogleDriveNotConnectedError,
     GoogleDriveOAuthNotConfiguredError,
     GoogleDriveReauthorizationRequiredError,
+    GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
@@ -22,6 +23,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GoogleDriveConnectorError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
@@ -285,6 +287,24 @@ def problem_from_exception(
             title="Google Drive reauthorization required",
             status=409,
             detail="Google Drive authorization was revoked. Connect again.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveSelectionRequiredError):
+        return _problem(
+            code="google_drive_selection_required",
+            title="Google Drive selection required",
+            status=409,
+            detail="Select Google Drive folders or files before syncing.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveConnectorError):
+        return _problem(
+            code="google_drive_request_failed",
+            title="Google Drive request failed",
+            status=502,
+            detail="The Google Drive request failed.",
             instance=instance,
             request_id=request_id,
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Protocol
@@ -42,11 +43,13 @@ from infrastructure.documents.uploaded_files import (
 
 _SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
 _GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
+_FOLDER_MIME = "application/vnd.google-apps.folder"
 _GOOGLE_APPS_PREFIX = "application/vnd.google-apps."
-_LIST_FIELDS = (
-    "nextPageToken,"
-    "files(id,name,mimeType,version,md5Checksum,size,capabilities(canDownload))"
+_FILE_FIELDS = (
+    "id,name,mimeType,version,md5Checksum,size,modifiedTime,trashed,"
+    "capabilities(canDownload)"
 )
+_LIST_FIELDS = f"nextPageToken,files({_FILE_FIELDS})"
 _RATE_LIMIT_REASONS = frozenset(
     {
         "rateLimitExceeded",
@@ -69,10 +72,32 @@ class GoogleDriveConfigError(RuntimeError):
     """Drive connector settings are missing or the credential file is unusable."""
 
 
+@dataclass(frozen=True, slots=True)
+class DriveBrowseItem:
+    """Presentation-safe Drive row. Identity is ``id``, never ``name``."""
+
+    id: str
+    name: str
+    kind: str
+    mime_type: str | None
+    supported: bool
+    modified_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DriveBrowsePage:
+    """One page of browse results plus an opaque continuation token."""
+
+    items: tuple[DriveBrowseItem, ...]
+    next_page_token: str | None
+
+
 class DriveFiles(Protocol):
     """Subset of the Drive ``files`` resource used by this adapter."""
 
     def list(self, **kwargs: object) -> object: ...
+
+    def get(self, **kwargs: object) -> object: ...
 
     def get_media(self, *, fileId: str) -> object: ...
 
@@ -89,10 +114,17 @@ DownloaderFactory = Callable[[BinaryIO, object], MediaDownloader]
 
 
 class GoogleDriveConnector:
-    """List and fetch supported files from one configured Drive folder.
+    """List and fetch supported Drive files from folder roots and exact IDs.
+
+    CLI service-account sync uses one configured folder and **direct children
+    only**. Knowledge Hub OAuth sync passes saved folder IDs with
+    ``recursive=True`` plus exact file IDs. Folder roots stay durable: later
+    syncs rediscover supported descendants. Missing, trashed, moved-out, or
+    inaccessible items are omitted from the listing and are not deleted from
+    the catalog.
 
     Args:
-        settings (GoogleDriveSettings): Folder, page size, and optional credential path.
+        settings (GoogleDriveSettings): Page size and optional SA folder/credentials.
         max_upload_bytes (int): Maximum downloaded or exported payload size.
         files (DriveFiles | None): Injected Drive files resource. When omitted,
             a readonly Drive client is built from the service-account file.
@@ -100,9 +132,14 @@ class GoogleDriveConnector:
             shared upload extractor.
         downloader_factory (DownloaderFactory | None): Builds a streaming
             downloader. Production uses ``MediaIoBaseDownload``.
+        folder_ids (Sequence[str] | None): Sync roots. ``None`` uses
+            ``settings.folder_id`` when set.
+        file_ids (Sequence[str]): Exact Drive file IDs to include once.
+        recursive (bool): Walk folder descendants. Defaults to False (CLI).
 
     Raises:
-        GoogleDriveConfigError: Folder ID is missing, or credentials cannot be used.
+        GoogleDriveConfigError: Folder ID is missing for the SA path, or
+            credentials cannot be used.
     """
 
     def __init__(
@@ -113,11 +150,21 @@ class GoogleDriveConnector:
         files: DriveFiles | None = None,
         extractor: DocumentExtractor | None = None,
         downloader_factory: DownloaderFactory | None = None,
+        folder_ids: Sequence[str] | None = None,
+        file_ids: Sequence[str] = (),
+        recursive: bool = False,
     ) -> None:
-        folder_id = settings.folder_id
-        if folder_id is None or not folder_id.strip():
+        resolved_folders = _normalized_ids(folder_ids)
+        if folder_ids is None:
+            configured = settings.folder_id
+            if configured is not None and configured.strip():
+                resolved_folders = (configured.strip(),)
+        resolved_files = _normalized_ids(file_ids)
+        if folder_ids is None and not resolved_folders and not resolved_files:
             raise GoogleDriveConfigError(_MSG_CONFIG)
-        self._folder_id = folder_id.strip()
+        self._folder_ids = resolved_folders
+        self._file_ids = resolved_files
+        self._recursive = recursive
         self._page_size = settings.page_size
         self._max_upload_bytes = max_upload_bytes
         self._files = files if files is not None else _build_drive_files(settings)
@@ -131,45 +178,183 @@ class GoogleDriveConnector:
         )
 
     def list_documents(self) -> Sequence[ConnectorDocument]:
-        """Return supported direct children of the configured folder.
+        """Return supported documents under saved folder roots and exact files.
+
+        Folder listing is direct-child-only unless ``recursive`` is true.
+        Duplicate Drive IDs (a file selected directly and also found under a
+        folder) appear once. Trashed, inaccessible, and unsupported items are
+        skipped; catalog rows are never deleted here.
 
         Raises:
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
             ConnectorError: Listing failed or a supported entry was unusable.
         """
-        documents: list[ConnectorDocument] = []
+        documents: dict[str, ConnectorDocument] = {}
+        visited_folders: set[str] = set()
+        try:
+            for folder_id in self._folder_ids:
+                self._collect_folder(folder_id, documents, visited_folders)
+            for file_id in self._file_ids:
+                if file_id in documents:
+                    continue
+                document = self._document_from_id(file_id)
+                if document is not None:
+                    documents[document.source_id] = document
+        except ConnectorError:
+            raise
+        except Exception as error:
+            raise _map_google_error(error) from error
+        return tuple(documents.values())
+
+    def list_items(
+        self,
+        *,
+        parent_id: str = "root",
+        kind: str = "folders",
+        query: str | None = None,
+        page_token: str | None = None,
+    ) -> DriveBrowsePage:
+        """Return one page of folders or files for the content picker.
+
+        Args:
+            parent_id (str): Drive folder ID to list. Ignored when ``query`` is set.
+            kind (str): ``folders`` or ``files``.
+            query (str | None): Case-insensitive name search across Drive.
+            page_token (str | None): Opaque continuation token from a prior page.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: The provider is unreachable or throttling.
+            ConnectorError: The listing response was unusable.
+        """
+        try:
+            request = self._files.list(
+                q=_browse_query(parent_id=parent_id, kind=kind, query=query),
+                spaces="drive",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                pageSize=self._page_size,
+                pageToken=page_token,
+                fields=_LIST_FIELDS,
+                orderBy="folder,name",
+            )
+            payload = _execute(request)
+        except ConnectorError:
+            raise
+        except Exception as error:
+            raise _map_google_error(error) from error
+        files = payload.get("files", ())
+        if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        items = tuple(_browse_item_from_file(entry) for entry in files)
+        next_token = payload.get("nextPageToken")
+        if next_token is None or next_token == "":
+            return DriveBrowsePage(items=items, next_page_token=None)
+        if not isinstance(next_token, str):
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        return DriveBrowsePage(items=items, next_page_token=next_token)
+
+    def get_item(self, item_id: str) -> DriveBrowseItem:
+        """Load one Drive item by ID for selection validation.
+
+        Raises:
+            ConnectorAuthError: The user grant was rejected (typically 401).
+            ConnectorUnavailableError: The provider is unreachable or throttling.
+            ConnectorError: The item is missing, trashed, or unreadable.
+        """
+        try:
+            entry = self._get_file(item_id)
+        except ConnectorError:
+            raise
+        except Exception as error:
+            raise _map_google_error(error) from error
+        if entry.get("trashed") is True:
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        return _browse_item_from_file(entry)
+
+    def _collect_folder(
+        self,
+        folder_id: str,
+        documents: dict[str, ConnectorDocument],
+        visited: set[str],
+    ) -> None:
+        if folder_id in visited:
+            return
+        visited.add(folder_id)
+        child_folders: list[str] = []
         page_token: str | None = None
         try:
             while True:
-                request = self._files.list(
-                    q=f"'{self._folder_id}' in parents and trashed = false",
-                    spaces="drive",
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True,
-                    pageSize=self._page_size,
-                    pageToken=page_token,
-                    fields=_LIST_FIELDS,
-                )
-                payload = _execute(request)
+                payload = self._list_children(folder_id, page_token)
                 files = payload.get("files", ())
                 if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
                     raise ConnectorError(_MSG_REQUEST_FAILED)
                 for entry in files:
+                    child_id = _optional_entry_text(entry, "id")
+                    mime_type = entry.get("mimeType") if isinstance(entry, Mapping) else None
+                    if mime_type == _FOLDER_MIME:
+                        if self._recursive and child_id:
+                            child_folders.append(child_id)
+                        continue
                     document = _document_from_file(entry)
-                    if document is not None:
-                        documents.append(document)
+                    if document is not None and document.source_id not in documents:
+                        documents[document.source_id] = document
                 next_token = payload.get("nextPageToken")
                 if not next_token:
                     break
                 if not isinstance(next_token, str):
                     raise ConnectorError(_MSG_REQUEST_FAILED)
                 page_token = next_token
-        except ConnectorError:
-            raise
-        except Exception as error:
-            raise _map_google_error(error) from error
-        return tuple(documents)
+            if self._recursive:
+                for child_id in child_folders:
+                    self._collect_folder(child_id, documents, visited)
+        except HttpError as error:
+            mapped = _map_google_error(error)
+            status = _http_status(error)
+            if status == 401 or isinstance(mapped, ConnectorUnavailableError):
+                raise mapped from error
+            if status in {403, 404}:
+                return
+            raise mapped from error
+
+    def _list_children(self, folder_id: str, page_token: str | None) -> Mapping[str, object]:
+        escaped = _escape_drive_query_value(folder_id)
+        request = self._files.list(
+            q=f"'{escaped}' in parents and trashed = false",
+            spaces="drive",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            pageSize=self._page_size,
+            pageToken=page_token,
+            fields=_LIST_FIELDS,
+        )
+        return _execute(request)
+
+    def _document_from_id(self, file_id: str) -> ConnectorDocument | None:
+        try:
+            entry = self._get_file(file_id)
+        except HttpError as error:
+            mapped = _map_google_error(error)
+            status = _http_status(error)
+            if status == 401 or isinstance(mapped, ConnectorUnavailableError):
+                raise mapped from error
+            if status in {403, 404}:
+                return None
+            raise mapped from error
+        if entry.get("trashed") is True:
+            return None
+        if entry.get("mimeType") == _FOLDER_MIME:
+            return None
+        return _document_from_file(entry)
+
+    def _get_file(self, file_id: str) -> Mapping[str, object]:
+        request = self._files.get(
+            fileId=file_id,
+            supportsAllDrives=True,
+            fields=_FILE_FIELDS,
+        )
+        return _execute(request)
 
     def fetch_document(self, document: ConnectorDocument) -> SourceDocument:
         """Download or export ``document`` and normalize extractor metadata.
@@ -249,9 +434,53 @@ def _execute(request: object) -> Mapping[str, object]:
     return payload
 
 
+def _normalized_ids(values: Sequence[str] | None) -> tuple[str, ...]:
+    if not values:
+        return ()
+    return tuple(item.strip() for item in values if item.strip())
+
+
+def _escape_drive_query_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _browse_query(*, parent_id: str, kind: str, query: str | None) -> str:
+    parts = ["trashed = false"]
+    if kind == "folders":
+        parts.append(f"mimeType = '{_FOLDER_MIME}'")
+    else:
+        parts.append(f"mimeType != '{_FOLDER_MIME}'")
+    stripped = query.strip() if isinstance(query, str) else ""
+    if stripped:
+        parts.append(f"name contains '{_escape_drive_query_value(stripped)}'")
+    else:
+        parts.append(f"'{_escape_drive_query_value(parent_id)}' in parents")
+    return " and ".join(parts)
+
+
+def _browse_item_from_file(entry: object) -> DriveBrowseItem:
+    if not isinstance(entry, Mapping):
+        raise ConnectorError(_MSG_REQUEST_FAILED)
+    mime_type = entry.get("mimeType")
+    mime_str = mime_type if isinstance(mime_type, str) and mime_type else None
+    name = _require_entry_text(entry, "name")
+    kind = "folder" if mime_str == _FOLDER_MIME else "file"
+    modified = entry.get("modifiedTime")
+    return DriveBrowseItem(
+        id=_require_entry_text(entry, "id"),
+        name=name,
+        kind=kind,
+        mime_type=mime_str,
+        supported=kind == "folder" or _is_supported(name, mime_str),
+        modified_at=modified if isinstance(modified, str) and modified else None,
+    )
+
+
 def _document_from_file(entry: object) -> ConnectorDocument | None:
     if not isinstance(entry, Mapping):
         raise ConnectorError(_MSG_REQUEST_FAILED)
+    if entry.get("trashed") is True:
+        return None
     mime_type = entry.get("mimeType")
     name = entry.get("name")
     if not _is_supported(name, mime_type):
@@ -298,6 +527,9 @@ def _revision_from_file(entry: Mapping[str, object]) -> str:
     checksum = entry.get("md5Checksum")
     if isinstance(checksum, str) and checksum.strip():
         return checksum
+    modified = entry.get("modifiedTime")
+    if isinstance(modified, str) and modified.strip():
+        return modified
     raise ConnectorError(_MSG_REQUEST_FAILED)
 
 
@@ -315,6 +547,15 @@ def _require_entry_text(entry: Mapping[str, object], field: str) -> str:
     value = entry.get(field)
     if not isinstance(value, str) or not value.strip():
         raise ConnectorError(_MSG_REQUEST_FAILED)
+    return value
+
+
+def _optional_entry_text(entry: object, field: str) -> str | None:
+    if not isinstance(entry, Mapping):
+        return None
+    value = entry.get(field)
+    if not isinstance(value, str) or not value.strip():
+        return None
     return value
 
 

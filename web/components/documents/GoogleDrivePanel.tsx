@@ -3,14 +3,23 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import {
   disconnectGoogleDrive,
+  getGoogleDriveSelection,
   getGoogleDriveStatus,
   googleDriveOAuthStartUrl,
+  listGoogleDriveItems,
+  putGoogleDriveSelection,
   syncGoogleDrive,
   type DisconnectGoogleDriveOptions,
+  type GetGoogleDriveSelectionOptions,
   type GetGoogleDriveStatusOptions,
+  type GoogleDriveBrowseItemResponse,
+  type GoogleDriveSelectionResponse,
   type GoogleDriveStatusResponse,
+  type ListGoogleDriveItemsOptions,
+  type PutGoogleDriveSelectionOptions,
   type SyncGoogleDriveOptions,
 } from "@/lib/api/connectors";
 import { ApiError } from "@/lib/api/errors";
@@ -20,12 +29,18 @@ export type GoogleDrivePanelProps = {
   getStatus?: (
     options: GetGoogleDriveStatusOptions,
   ) => Promise<GoogleDriveStatusResponse>;
-  syncNow?: (
-    options: SyncGoogleDriveOptions,
-  ) => Promise<unknown>;
-  disconnect?: (
-    options: DisconnectGoogleDriveOptions,
-  ) => Promise<void>;
+  listItems?: (options: ListGoogleDriveItemsOptions) => Promise<{
+    items: GoogleDriveBrowseItemResponse[];
+    next_page_token?: string | null;
+  }>;
+  loadSelection?: (
+    options: GetGoogleDriveSelectionOptions,
+  ) => Promise<GoogleDriveSelectionResponse>;
+  saveSelection?: (
+    options: PutGoogleDriveSelectionOptions,
+  ) => Promise<GoogleDriveSelectionResponse>;
+  syncNow?: (options: SyncGoogleDriveOptions) => Promise<unknown>;
+  disconnect?: (options: DisconnectGoogleDriveOptions) => Promise<void>;
   onConnectionChange?: (connected: boolean) => void;
 };
 
@@ -43,8 +58,12 @@ const CALLBACK_ERRORS: Record<string, string> = {
   error: "Google Drive authorization failed. Start Connect again.",
   invalid_state:
     "This Google Drive authorization link is no longer valid. Start Connect again.",
-  unconfigured:
-    "Google Drive OAuth is not configured on the server.",
+  unconfigured: "Google Drive OAuth is not configured on the server.",
+};
+
+const EMPTY_SELECTION: GoogleDriveSelectionResponse = {
+  folders: [],
+  files: [],
 };
 
 function actionErrorMessage(error: unknown): string {
@@ -97,6 +116,9 @@ function CloudIcon() {
 export function GoogleDrivePanel({
   apiBaseUrl,
   getStatus = getGoogleDriveStatus,
+  listItems = listGoogleDriveItems,
+  loadSelection = getGoogleDriveSelection,
+  saveSelection = putGoogleDriveSelection,
   syncNow = syncGoogleDrive,
   disconnect = disconnectGoogleDrive,
   onConnectionChange,
@@ -107,6 +129,9 @@ export function GoogleDrivePanel({
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selection, setSelection] =
+    useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
   const busyRef = useRef(false);
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
@@ -115,17 +140,37 @@ export function GoogleDrivePanel({
     try {
       const status = await getStatus({ baseUrl: apiBaseUrl });
       setView({ kind: "ready", status });
+      return status;
     } catch (error) {
       setView({ kind: "error", message: actionErrorMessage(error) });
+      return null;
+    }
+  }
+
+  async function refreshSelection() {
+    try {
+      const current = await loadSelection({ baseUrl: apiBaseUrl });
+      setSelection(current);
+      return current;
+    } catch {
+      setSelection(EMPTY_SELECTION);
+      return EMPTY_SELECTION;
     }
   }
 
   useEffect(() => {
     const drive = readDriveCallback();
-    if (drive && drive !== "connected") {
+    if (drive === "connected") {
+      setPickerOpen(true);
+    } else if (drive) {
       setCallbackError(CALLBACK_ERRORS[drive] ?? CALLBACK_ERRORS.error);
     }
-    void loadStatus();
+    void (async () => {
+      const status = await loadStatus();
+      if (status?.connected) {
+        await refreshSelection();
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
@@ -161,6 +206,35 @@ export function GoogleDrivePanel({
     }
   }
 
+  async function onAddSelection(next: GoogleDriveSelectionResponse) {
+    if (busyRef.current) {
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const saved = await saveSelection({
+        baseUrl: apiBaseUrl,
+        selection: next,
+      });
+      setSelection(saved);
+      await syncNow({ baseUrl: apiBaseUrl });
+      setPickerOpen(false);
+      await loadStatus();
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "aborted") {
+        setActionError(ABORT_COPY);
+        void loadStatus();
+      } else {
+        setActionError(actionErrorMessage(error));
+      }
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
   async function onDisconnect() {
     if (busyRef.current) {
       return;
@@ -171,6 +245,8 @@ export function GoogleDrivePanel({
     try {
       await disconnect({ baseUrl: apiBaseUrl });
       setConfirmOpen(false);
+      setPickerOpen(false);
+      setSelection(EMPTY_SELECTION);
       await loadStatus();
     } catch (error) {
       setActionError(actionErrorMessage(error));
@@ -180,8 +256,19 @@ export function GoogleDrivePanel({
     }
   }
 
+  async function openPicker() {
+    setActionError(null);
+    if (connected) {
+      await refreshSelection();
+    }
+    setPickerOpen(true);
+  }
+
   const status = view.kind === "ready" ? view.status : null;
   const reauth = Boolean(status?.reauthorization_required);
+  const setupRequired =
+    Boolean(status?.setup_required) ||
+    status?.connection_state === "setup_required";
   const oauthStartHref = googleDriveOAuthStartUrl(apiBaseUrl);
   const statusLabel =
     view.kind === "loading"
@@ -190,19 +277,21 @@ export function GoogleDrivePanel({
         ? "Unavailable"
         : reauth
           ? "Reconnect required"
-          : status?.connected
-            ? "Connected"
-            : "Available";
+          : setupRequired
+            ? "Setup required"
+            : status?.connected
+              ? "Connected"
+              : "Available";
 
   const lastSync = status?.last_sync ?? null;
   const alertMessage =
     view.kind === "error"
       ? view.message
-      : callbackError ??
+      : (callbackError ??
         actionError ??
         (reauth
           ? "Google Drive authorization was revoked. Connect again."
-          : null);
+          : null));
   function onConnectClick(event: MouseEvent<HTMLAnchorElement>) {
     if (status !== null && !status.oauth_ready) {
       event.preventDefault();
@@ -248,6 +337,11 @@ export function GoogleDrivePanel({
     );
   }
 
+  const syncDisabled = busy || setupRequired || reauth;
+  const pickerLabel = setupRequired
+    ? "Choose folders or files"
+    : "Change Drive selection";
+
   return (
     <article className="kern-source-card">
       <div className="kern-source-card-title">
@@ -260,7 +354,9 @@ export function GoogleDrivePanel({
             <p className="kern-source-kind">Cloud connector</p>
           </div>
         </div>
-        <span className={`kern-source-status${reauth ? " is-muted" : ""}`}>
+        <span
+          className={`kern-source-status${reauth || setupRequired ? " is-muted" : ""}${setupRequired ? " is-setup" : ""}`}
+        >
           {statusLabel}
         </span>
       </div>
@@ -274,7 +370,7 @@ export function GoogleDrivePanel({
         </div>
       ) : null}
 
-      <div className="kern-source-metrics">
+      <div className="kern-source-metrics kern-source-metrics--three">
         <div>
           <span className="kern-metric-label">Account</span>
           <span className="kern-metric-value">
@@ -283,19 +379,21 @@ export function GoogleDrivePanel({
         </div>
         <div>
           <span className="kern-metric-label">Documents</span>
-          <span className="kern-metric-value">{status?.document_count ?? 0}</span>
+          <span className="kern-metric-value">
+            {status?.document_count ?? 0}
+          </span>
         </div>
-        {status?.folder_count != null ? (
-          <div>
-            <span className="kern-metric-label">Folders</span>
-            <span className="kern-metric-value">{status.folder_count}</span>
-          </div>
-        ) : null}
+        <div>
+          <span className="kern-metric-label">Sync scope</span>
+          <span className="kern-metric-value">
+            {status?.sync_scope ?? "Not selected"}
+          </span>
+        </div>
       </div>
       <div className="kern-sync-section" role="status">
         <div className="kern-sync-heading">
           <h3>Last sync</h3>
-          <time className="kern-sync-time">
+          <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
             {lastSync ? formatLastSync(lastSync.synced_at) : "Never"}
           </time>
         </div>
@@ -310,7 +408,9 @@ export function GoogleDrivePanel({
             </div>
             <div>
               <span className="kern-metric-label">Updated</span>
-              <span className="kern-metric-value">{lastSync.updated_count}</span>
+              <span className="kern-metric-value">
+                {lastSync.updated_count}
+              </span>
             </div>
             <div>
               <span className="kern-metric-label">Unchanged</span>
@@ -331,13 +431,29 @@ export function GoogleDrivePanel({
       </div>
 
       <div className="kern-source-actions is-split">
-        {reauth ? (
-          connectControl
-        ) : (
-          <Button type="button" disabled={busy} onClick={() => void onSync()}>
-            {busy ? "Syncing…" : "Sync now"}
-          </Button>
-        )}
+        <div className="kern-action-group">
+          {reauth ? (
+            connectControl
+          ) : (
+            <>
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => void openPicker()}
+              >
+                {pickerLabel}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={syncDisabled}
+                onClick={() => void onSync()}
+              >
+                {busy && !pickerOpen ? "Syncing…" : "Sync now"}
+              </Button>
+            </>
+          )}
+        </div>
         <Button
           type="button"
           variant="danger"
@@ -347,6 +463,16 @@ export function GoogleDrivePanel({
           Disconnect
         </Button>
       </div>
+
+      <GoogleDrivePicker
+        open={pickerOpen}
+        apiBaseUrl={apiBaseUrl}
+        initialSelection={selection}
+        busy={busy}
+        listItems={listItems}
+        onConfirm={(next) => void onAddSelection(next)}
+        onCancel={() => setPickerOpen(false)}
+      />
 
       <ConfirmDialog
         open={confirmOpen}

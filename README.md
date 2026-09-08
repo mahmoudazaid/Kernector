@@ -198,13 +198,28 @@ Google Drive has two connection strategies. Knowledge Hub uses **user OAuth**. T
    (see [`.env.example`](.env.example)). Never commit those values.
 4. Install the extra: `uv sync --extra google-drive`.
 5. In Knowledge Hub, click **Connect**. Google owns account selection and consent.
-6. After the callback, use **Sync now**. **Disconnect** revokes the stored grant
+6. After the callback, choose folders (recommended) or individual files, then
+   **Add selection & sync**. That saves the scope and runs the first import.
+   Later **Sync now** refreshes only new or changed documents. **Change Drive
+   selection** reopens the picker. **Disconnect** revokes the stored grant
    and leaves already indexed documents in place.
 
 Tokens stay on the server (`GOOGLE_OAUTH_TOKEN_PATH`). The browser only sees
-presentation fields (`connected`, account email, counts). Scope is
-`https://www.googleapis.com/auth/drive.readonly` with offline access for
-background sync.
+presentation fields (`connected`, account email, counts, selection names).
+Scope is `https://www.googleapis.com/auth/drive.readonly` with offline access.
+That **restricted** scope is required so a selected folder remains a durable
+sync root: Kernector must list current descendants and files added later.
+Google may require app verification and, when restricted-scope data is stored
+or transmitted by the server, a security assessment. `drive.file` cannot
+truthfully support recursive folder sync.
+
+A selected **folder** is a durable root (recursive, add/update-only). A selected
+**file** tracks that exact Drive ID. Duplicate IDs are ingested once. Identity is
+the Drive file ID; renames do not create a second catalog document. Moved,
+trashed, deleted, inaccessible, and unsupported items are omitted from the next
+listing and are **not** deleted from the catalog. Unchanged Drive `version`
+(or `md5Checksum` / `modifiedTime` fallback) values skip download, chunking,
+and embedding.
 
 ### CLI (service account)
 

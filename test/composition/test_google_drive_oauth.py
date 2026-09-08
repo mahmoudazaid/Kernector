@@ -12,17 +12,26 @@ from application.contracts import (
     ConnectorSyncResponse,
     ConnectorSyncStatus,
 )
-from application.errors import GoogleDriveNotConnectedError
+from application.errors import (
+    GoogleDriveNotConnectedError,
+    GoogleDriveSelectionRequiredError,
+    InputRejectedError,
+)
 from composition import (
+    browse_google_drive_items,
     complete_google_drive_oauth,
     disconnect_google_drive_oauth,
+    get_google_drive_selection,
     google_drive_status,
+    put_google_drive_selection,
     start_google_drive_oauth,
     sync_google_drive_oauth,
 )
 from composition import container as composition_container
+from composition.container import GoogleDriveSelectedItem
 from infrastructure.config import GoogleOAuthSettings, load_settings
 from infrastructure.connectors.google_oauth import (
+    GoogleDriveSelectedItem as StoredItem,
     GoogleOAuthConnection,
     GoogleOAuthConnectionStore,
     GoogleOAuthGrant,
@@ -141,6 +150,16 @@ def test_callback_rejects_replayed_state(settings) -> None:
     assert gateway.exchanged == ["4/auth-code"]
     assert "4/auth-code" not in first
     assert "1//refresh-secret" not in first
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.folders == ()
+    assert stored.files == ()
+    assert stored.folder_count == 0
+    status = google_drive_status(settings)
+    assert status.connected is True
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
+    assert status.sync_scope is None
 
 
 def test_status_reads_store_not_memory(settings) -> None:
@@ -206,6 +225,7 @@ def test_oauth_sync_persists_last_sync_counts(
             access_token=None,
             account_email="ada@example.com",
             folder_count=1,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -253,3 +273,128 @@ def test_oauth_sync_persists_last_sync_counts(
     assert stored.last_sync_failed == 0
     assert stored.last_synced_at is not None
     assert result.ingested_count == 1
+
+
+def test_sync_without_selection_is_rejected(settings) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=0,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    with pytest.raises(GoogleDriveSelectionRequiredError):
+        sync_google_drive_oauth(settings, connection_store=tokens)
+
+
+class FakeBrowseFiles:
+    def __init__(self) -> None:
+        self.list_calls: list[dict[str, object]] = []
+        self.get_calls: list[str] = []
+
+    def list(self, **kwargs: object) -> object:
+        self.list_calls.append(dict(kwargs))
+
+        class Request:
+            def execute(self) -> dict[str, object]:
+                return {
+                    "files": [
+                        {
+                            "id": "folder-1",
+                            "name": "Specs",
+                            "mimeType": "application/vnd.google-apps.folder",
+                            "modifiedTime": "2026-09-08T12:00:00.000Z",
+                        }
+                    ]
+                }
+
+        return Request()
+
+    def get(self, **kwargs: object) -> object:
+        file_id = str(kwargs.get("fileId") or "")
+        self.get_calls.append(file_id)
+
+        class Request:
+            def execute(self) -> dict[str, object]:
+                return {
+                    "id": file_id,
+                    "name": "Specs",
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "trashed": False,
+                }
+
+        return Request()
+
+
+def test_browse_and_put_selection_use_ids_and_skip_tokens(settings) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token="ya29.access-secret",
+            account_email="ada@example.com",
+            folder_count=0,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    files = FakeBrowseFiles()
+    page = browse_google_drive_items(
+        settings,
+        kind="folders",
+        connection_store=tokens,
+        files=files,
+    )
+    assert [item.id for item in page.items] == ["folder-1"]
+    assert "ya29.access-secret" not in repr(page)
+    assert "1//refresh-secret" not in repr(page)
+
+    saved = put_google_drive_selection(
+        settings,
+        folders=(GoogleDriveSelectedItem(id="folder-1", name="Old name"),),
+        files=(),
+        connection_store=tokens,
+        files_resource=files,
+    )
+    assert saved.folders[0].id == "folder-1"
+    assert saved.folders[0].name == "Specs"
+    loaded = get_google_drive_selection(settings, connection_store=tokens)
+    assert loaded.folders[0].id == "folder-1"
+    status = google_drive_status(settings)
+    assert status.setup_required is False
+    assert status.connection_state == "ready"
+    assert status.sync_scope == "1 folder"
+
+
+def test_put_selection_rejects_empty(settings) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=0,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    with pytest.raises(InputRejectedError, match="at least one"):
+        put_google_drive_selection(
+            settings, folders=(), files=(), connection_store=tokens
+        )

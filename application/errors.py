@@ -76,6 +76,10 @@ class GoogleDriveReauthorizationRequiredError(ConfigurationError):
     """The stored refresh token was revoked or is no longer valid."""
 
 
+class GoogleDriveSelectionRequiredError(ConfigurationError):
+    """A user grant exists but no Drive folder or file roots are saved."""
+
+
 class InsufficientEvidenceError(RuntimeError):
     """A grounded use case found no retrieval hits above the relevance threshold.
 

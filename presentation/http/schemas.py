@@ -100,6 +100,41 @@ class GoogleDriveStatusResponse(BaseModel):
     folder_count: int | None = None
     last_sync: GoogleDriveLastSyncResponse | None = None
     reauthorization_required: bool = False
+    setup_required: bool = False
+    connection_state: str = "disconnected"
+    sync_scope: str | None = None
+
+
+class GoogleDriveBrowseItemResponse(BaseModel):
+    """One Drive picker row. ``id`` is the only identity field."""
+
+    id: str
+    name: str
+    kind: str
+    mime_type: str | None = None
+    supported: bool
+    modified_at: str | None = None
+
+
+class GoogleDriveBrowsePageResponse(BaseModel):
+    """One page of Drive picker results. Tokens stay off this payload."""
+
+    items: list[GoogleDriveBrowseItemResponse]
+    next_page_token: str | None = None
+
+
+class GoogleDriveSelectedItemResponse(BaseModel):
+    """Saved sync root: Drive ID plus a presentation name."""
+
+    id: str = Field(min_length=1, max_length=128, pattern=r"^(root|[A-Za-z0-9_-]+)$")
+    name: str = Field(min_length=1, max_length=256)
+
+
+class GoogleDriveSelectionResponse(BaseModel):
+    """Saved folder and exact-file roots for the connected grant."""
+
+    folders: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
+    files: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
 
 
 class ConnectorSyncOutcomeResponse(BaseModel):

@@ -11,6 +11,7 @@ import pytest
 from infrastructure.config import GoogleOAuthSettings
 from infrastructure.connectors import google_oauth as oauth_mod
 from infrastructure.connectors.google_oauth import (
+    GoogleDriveSelectedItem,
     GoogleOAuthConnection,
     GoogleOAuthConnectionStore,
     GoogleOAuthError,
@@ -68,12 +69,14 @@ def test_connection_repr_redacts_tokens() -> None:
 def test_connection_store_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "conn.json"
     store = GoogleOAuthConnectionStore(path)
-    store.save(_connection())
+    store.save(_connection(folders=(GoogleDriveSelectedItem(id="f1", name="Specs"),)))
 
     loaded = store.load()
     assert loaded is not None
     assert loaded.account_email == "ada@example.com"
     assert loaded.refresh_token == "1//refresh-secret"
+    assert loaded.folders[0].id == "f1"
+    assert loaded.folders[0].name == "Specs"
     assert path.stat().st_mode & 0o777 == 0o600
 
     store.clear()
