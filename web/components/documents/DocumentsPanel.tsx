@@ -233,6 +233,7 @@ export function DocumentsPanel({
   const [sourceFilter, setSourceFilter] =
     useState<(typeof SOURCE_FILTERS)[number]>("All sources");
   const [driveConnected, setDriveConnected] = useState(false);
+  const [driveReloadToken, setDriveReloadToken] = useState(0);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
@@ -437,6 +438,9 @@ export function DocumentsPanel({
       setSelectedId((current) =>
         current === document.source_id ? null : current,
       );
+      if (isDriveDocument(document)) {
+        setDriveReloadToken((token) => token + 1);
+      }
       await refresh();
     } catch (error) {
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
@@ -611,6 +615,7 @@ export function DocumentsPanel({
               onCatalogChange={() => {
                 void refresh();
               }}
+              reloadToken={driveReloadToken}
             />
           ) : null}
         </div>
@@ -631,6 +636,7 @@ export function DocumentsPanel({
               onCatalogChange={() => {
                 void refresh();
               }}
+              reloadToken={driveReloadToken}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
@@ -747,7 +753,6 @@ export function DocumentsPanel({
                       <td>{doc.chunk_count}</td>
                       <td>{formatUploadedAt(doc.uploaded_at)}</td>
                       <td className="kern-documents-actions">
-                        {isDriveDocument(doc) ? null : (
                         <button
                           type="button"
                           className="kern-documents-delete"
@@ -773,7 +778,6 @@ export function DocumentsPanel({
                             />
                           </svg>
                         </button>
-                        )}
                       </td>
                     </tr>
                   );

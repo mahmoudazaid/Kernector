@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from application.errors import (
 from composition import (
     browse_google_drive_items,
     complete_google_drive_oauth,
+    delete_uploaded_document,
     disconnect_google_drive_oauth,
     get_google_drive_selection,
     google_drive_status,
@@ -29,6 +31,12 @@ from composition import (
 )
 from composition import container as composition_container
 from composition.container import GoogleDriveSelectedItem
+from domain.knowledge import (
+    CatalogDocument,
+    CatalogStatus,
+    SourceReference,
+    SourceType,
+)
 from infrastructure.config import GoogleOAuthSettings, load_settings
 from infrastructure.connectors.google_oauth import (
     GoogleDriveSelectedItem as StoredItem,
@@ -398,3 +406,62 @@ def test_put_selection_rejects_empty(settings) -> None:
         put_google_drive_selection(
             settings, folders=(), files=(), connection_store=tokens
         )
+
+
+def test_delete_drive_document_drops_file_from_selection(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test.doubles import InMemoryVectorStore
+
+    catalog = InMemoryDocumentCatalog()
+    drive_ref = SourceReference("file-9", SourceType.GOOGLE_DRIVE)
+    catalog.upsert(
+        CatalogDocument(
+            reference=drive_ref,
+            file_name="guide.md",
+            title="guide",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+            revision="1",
+        )
+    )
+    monkeypatch.setattr(
+        composition_container, "build_document_catalog", lambda _settings: catalog
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_vector_store",
+        lambda _settings: InMemoryVectorStore(),
+    )
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=0,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+            files=(
+                StoredItem(id="file-9", name="guide.md"),
+                StoredItem(id="keep", name="keep.md"),
+            ),
+        )
+    )
+
+    delete_uploaded_document(
+        settings,
+        SourceReference("file-9", SourceType.KNOWLEDGE_DOCUMENT),
+    )
+
+    assert catalog.get(drive_ref) is None
+    loaded = tokens.load()
+    assert loaded is not None
+    assert [item.id for item in loaded.files] == ["keep"]

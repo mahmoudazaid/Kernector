@@ -15,6 +15,7 @@ from application.manage_documents import (
     VectorDeleteFailure,
 )
 from domain.knowledge import (
+    CatalogDocument,
     CatalogStatus,
     SourceDocument,
     SourceMetadata,
@@ -203,6 +204,31 @@ def test_partial_delete_failure_message_leaks_neither_locator_nor_vendor(
     assert payload["outcome"] == "error"
     assert payload["error_type"] == "PartialDeleteFailure"
     assert payload["source_id"] == sentinel
+
+
+def test_delete_resolves_google_drive_row_from_knowledge_document_locator() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    drive_ref = SourceReference("drive-file-1", SourceType.GOOGLE_DRIVE)
+    catalog.upsert(
+        CatalogDocument(
+            reference=drive_ref,
+            file_name="notes.md",
+            title="notes",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+            revision="1",
+        )
+    )
+
+    _use_case(catalog, store).delete(
+        SourceReference("drive-file-1", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert catalog.get(drive_ref) is None
 
 
 def test_delete_missing_data_is_idempotent_and_retry_converges() -> None:

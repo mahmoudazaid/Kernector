@@ -43,6 +43,7 @@ export type GoogleDrivePanelProps = {
   disconnect?: (options: DisconnectGoogleDriveOptions) => Promise<void>;
   onConnectionChange?: (connected: boolean) => void;
   onCatalogChange?: () => void;
+  reloadToken?: number;
 };
 
 type StatusView =
@@ -124,6 +125,7 @@ export function GoogleDrivePanel({
   disconnect = disconnectGoogleDrive,
   onConnectionChange,
   onCatalogChange,
+  reloadToken = 0,
 }: GoogleDrivePanelProps) {
   const [view, setView] = useState<StatusView>({ kind: "loading" });
   const [callbackError, setCallbackError] = useState<string | null>(null);
@@ -177,6 +179,19 @@ export function GoogleDrivePanel({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
+
+  useEffect(() => {
+    if (reloadToken === 0) {
+      return;
+    }
+    void (async () => {
+      const status = await loadStatus();
+      if (status?.connected) {
+        await refreshSelection();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parent nonce
+  }, [reloadToken]);
 
   const connected = view.kind === "ready" && view.status.connected;
 

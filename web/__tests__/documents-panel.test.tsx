@@ -755,8 +755,8 @@ describe("DocumentsPanel", () => {
     expect(within(table).getByText("Google Drive")).toBeInTheDocument();
     expect(within(table).getByText("File upload")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /delete mieterselbtstauskunft/i }),
-    ).not.toBeInTheDocument();
+      within(table).getByRole("button", { name: /delete mieterselbtstauskunft/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: /^source$/i }));
     await user.click(screen.getByRole("option", { name: "Google Drive" }));
@@ -764,6 +764,63 @@ describe("DocumentsPanel", () => {
     expect(screen.queryByText("spec.md")).not.toBeInTheDocument();
     expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^replace$/i })).not.toBeInTheDocument();
+  });
+
+  it("deletes a Google Drive document from the catalog", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(
+        listResponse([
+          doc({
+            source_id: "drive-1",
+            source_type: "google_drive",
+            file_name: "notes.md",
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(listResponse([]));
+    const getDriveStatus = vi.fn().mockResolvedValue({
+      configured: false,
+      available: true,
+      connected: true,
+      oauth_ready: true,
+      account_email: "ada@example.com",
+      document_count: 1,
+      folder_count: 0,
+      last_sync: null,
+      reauthorization_required: false,
+      setup_required: false,
+      connection_state: "ready",
+      sync_scope: "1 file",
+    });
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        remove={remove}
+        loadSettings={loadSettings}
+        getDriveStatus={getDriveStatus}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await user.click(
+      await screen.findByRole("button", { name: /delete notes\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    expect(remove).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceId: "drive-1" }),
+    );
+    await waitFor(() => {
+      expect(getDriveStatus.mock.calls.length).toBeGreaterThan(1);
+    });
   });
 
   it("counts only file uploads on the File uploads card", async () => {
