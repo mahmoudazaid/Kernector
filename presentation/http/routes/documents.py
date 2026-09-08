@@ -89,7 +89,7 @@ def _read_upload(
     responses=problem_responses(405, 500),
 )
 def list_documents(ops: DocumentOperationsDep) -> DocumentListResponse:
-    """Return uploaded catalog rows for the documents UI."""
+    """Return upload and Google Drive catalog rows for the documents UI."""
     documents = ops.list()
     return DocumentListResponse(
         documents=[catalog_document_response(doc) for doc in documents],

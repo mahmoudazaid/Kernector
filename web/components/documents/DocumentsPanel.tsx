@@ -50,6 +50,8 @@ export type DocumentsPanelProps = {
   disconnectDrive?: GoogleDrivePanelProps["disconnect"];
 };
 
+const GOOGLE_DRIVE_SOURCE = "google_drive";
+
 type CatalogView =
   | { kind: "loading" }
   | { kind: "unavailable" }
@@ -118,6 +120,14 @@ function formatRelative(value: string): string {
   return `${days} days ago`;
 }
 
+function isDriveDocument(doc: CatalogDocumentResponse): boolean {
+  return doc.source_type === GOOGLE_DRIVE_SOURCE;
+}
+
+function sourceLabel(sourceType: string): string {
+  return sourceType === GOOGLE_DRIVE_SOURCE ? "Google Drive" : "File upload";
+}
+
 function UploadIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -126,6 +136,19 @@ function UploadIcon() {
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DriveIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M5.5 14.5h8.2c1.6 0 2.8-1.3 2.8-2.8 0-1.4-1-2.5-2.3-2.7A4 4 0 0 0 6.2 8.2 2.8 2.8 0 0 0 5.5 14.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
         strokeLinejoin="round"
       />
     </svg>
@@ -410,14 +433,18 @@ export function DocumentsPanel({
     (Boolean(settingsError) && settingsLoading) ||
     (documentsRetryable && refreshing);
 
-  const latestUpload = documents.reduce<string | null>((latest, doc) => {
+  const uploadedDocuments = documents.filter((doc) => !isDriveDocument(doc));
+  const latestUpload = uploadedDocuments.reduce<string | null>((latest, doc) => {
     if (!latest || Date.parse(doc.uploaded_at) > Date.parse(latest)) {
       return doc.uploaded_at;
     }
     return latest;
   }, null);
   const visibleDocuments = documents.filter((doc) => {
-    if (sourceFilter === "Google Drive") {
+    if (sourceFilter === "Google Drive" && !isDriveDocument(doc)) {
+      return false;
+    }
+    if (sourceFilter === "File uploads" && isDriveDocument(doc)) {
       return false;
     }
     if (!query.trim()) {
@@ -549,7 +576,7 @@ export function DocumentsPanel({
             <div className="kern-source-metrics">
               <div>
                 <span className="kern-metric-label">Documents</span>
-                <span className="kern-metric-value">{documents.length}</span>
+                <span className="kern-metric-value">{uploadedDocuments.length}</span>
               </div>
               <div>
                 <span className="kern-metric-label">Latest upload</span>
@@ -576,6 +603,9 @@ export function DocumentsPanel({
               syncNow={syncDrive}
               disconnect={disconnectDrive}
               onConnectionChange={setDriveConnected}
+              onCatalogChange={() => {
+                void refresh();
+              }}
             />
           ) : null}
         </div>
@@ -593,6 +623,9 @@ export function DocumentsPanel({
               syncNow={syncDrive}
               disconnect={disconnectDrive}
               onConnectionChange={setDriveConnected}
+              onCatalogChange={() => {
+                void refresh();
+              }}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
@@ -647,7 +680,7 @@ export function DocumentsPanel({
           <div className="kern-content-state">
             <EmptyState
               title="No matching documents"
-              description="Try another search or source filter. Google Drive files are not listed in this catalog."
+              description="Try another search or source filter."
             />
           </div>
         ) : (
@@ -692,9 +725,9 @@ export function DocumentsPanel({
                       <td>
                         <span className="kern-source-cell">
                           <span className="kern-mini-icon">
-                            <UploadIcon />
+                            {isDriveDocument(doc) ? <DriveIcon /> : <UploadIcon />}
                           </span>
-                          File upload
+                          {sourceLabel(doc.source_type)}
                         </span>
                       </td>
                       <td>
@@ -709,6 +742,7 @@ export function DocumentsPanel({
                       <td>{doc.chunk_count}</td>
                       <td>{formatUploadedAt(doc.uploaded_at)}</td>
                       <td className="kern-documents-actions">
+                        {isDriveDocument(doc) ? null : (
                         <button
                           type="button"
                           className="kern-documents-delete"
@@ -734,6 +768,7 @@ export function DocumentsPanel({
                             />
                           </svg>
                         </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -746,9 +781,9 @@ export function DocumentsPanel({
         {selected ? (
           <div className="kern-documents-detail">
             <p className="kern-settings-hint">
-              Catalog identity is the source ID, not the file name. Status:{" "}
-              {selected.status} · chunks: {selected.chunk_count} · uploaded:{" "}
-              {formatUploadedAt(selected.uploaded_at)}
+              {isDriveDocument(selected)
+                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatUploadedAt(selected.uploaded_at)}`
+                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatUploadedAt(selected.uploaded_at)}`}
             </p>
             {selected.error_summary ? (
               <div
@@ -761,7 +796,7 @@ export function DocumentsPanel({
           </div>
         ) : null}
 
-        {selected ? (
+        {selected && !isDriveDocument(selected) ? (
           <form className="kern-documents-form" onSubmit={onReplace}>
             <fieldset
               className="kern-settings-fieldset"

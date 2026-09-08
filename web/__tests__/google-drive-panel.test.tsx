@@ -281,6 +281,28 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/failed\s*0/i);
   });
 
+  it("notifies the catalog after Sync now succeeds", async () => {
+    const user = userEvent.setup();
+    const onCatalogChange = vi.fn();
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => CONNECTED}
+        loadSelection={emptySelection}
+        syncNow={async () => ({
+          ingested_count: 1,
+          skipped_count: 0,
+          failed_count: 0,
+          outcomes: [],
+        })}
+        onCatalogChange={onCatalogChange}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /sync now/i }));
+    await waitFor(() => expect(onCatalogChange).toHaveBeenCalledTimes(1));
+  });
+
   it("disables Sync now while a run is in progress", async () => {
     const user = userEvent.setup();
     let resolveSync: (value: unknown) => void = () => {};

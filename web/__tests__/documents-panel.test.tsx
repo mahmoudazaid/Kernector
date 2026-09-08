@@ -727,6 +727,67 @@ describe("DocumentsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("lists Google Drive documents in the shared catalog", async () => {
+    const user = userEvent.setup();
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc(),
+            doc({
+              source_id: "drive-1",
+              source_type: "google_drive",
+              file_name: "Mieterselbtstauskunft",
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    expect(await screen.findByText("Mieterselbtstauskunft")).toBeInTheDocument();
+    expect(screen.getByText("Google Drive")).toBeInTheDocument();
+    expect(screen.getByText("File upload")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /delete mieterselbtstauskunft/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /^source$/i }));
+    await user.click(screen.getByRole("option", { name: "Google Drive" }));
+    expect(screen.getByText("Mieterselbtstauskunft")).toBeInTheDocument();
+    expect(screen.queryByText("spec.md")).not.toBeInTheDocument();
+    expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^replace$/i })).not.toBeInTheDocument();
+  });
+
+  it("counts only file uploads on the File uploads card", async () => {
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc(),
+            doc({
+              source_id: "drive-1",
+              source_type: "google_drive",
+              file_name: "notes.md",
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    const card = (await screen.findByRole("heading", { name: "File uploads" }))
+      .closest("article");
+    expect(card?.querySelector(".kern-source-metrics")).toHaveTextContent(
+      /documents\s*1/i,
+    );
+    expect(screen.getByRole("tab", { name: /documents/i })).toHaveTextContent("2");
+  });
+
   it("renders File uploads as a full-width connected source", async () => {
     render(
       <DocumentsPanel

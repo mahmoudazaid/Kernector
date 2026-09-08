@@ -42,6 +42,7 @@ export type GoogleDrivePanelProps = {
   syncNow?: (options: SyncGoogleDriveOptions) => Promise<unknown>;
   disconnect?: (options: DisconnectGoogleDriveOptions) => Promise<void>;
   onConnectionChange?: (connected: boolean) => void;
+  onCatalogChange?: () => void;
 };
 
 type StatusView =
@@ -122,6 +123,7 @@ export function GoogleDrivePanel({
   syncNow = syncGoogleDrive,
   disconnect = disconnectGoogleDrive,
   onConnectionChange,
+  onCatalogChange,
 }: GoogleDrivePanelProps) {
   const [view, setView] = useState<StatusView>({ kind: "loading" });
   const [callbackError, setCallbackError] = useState<string | null>(null);
@@ -135,6 +137,8 @@ export function GoogleDrivePanel({
   const busyRef = useRef(false);
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
+  const onCatalogChangeRef = useRef(onCatalogChange);
+  onCatalogChangeRef.current = onCatalogChange;
 
   async function loadStatus() {
     try {
@@ -193,10 +197,12 @@ export function GoogleDrivePanel({
     try {
       await syncNow({ baseUrl: apiBaseUrl });
       await loadStatus();
+      onCatalogChangeRef.current?.();
     } catch (error) {
       if (error instanceof ApiError && error.code === "aborted") {
         setActionError(ABORT_COPY);
         void loadStatus();
+        onCatalogChangeRef.current?.();
       } else {
         setActionError(actionErrorMessage(error));
       }
@@ -222,10 +228,12 @@ export function GoogleDrivePanel({
       await syncNow({ baseUrl: apiBaseUrl });
       setPickerOpen(false);
       await loadStatus();
+      onCatalogChangeRef.current?.();
     } catch (error) {
       if (error instanceof ApiError && error.code === "aborted") {
         setActionError(ABORT_COPY);
         void loadStatus();
+        onCatalogChangeRef.current?.();
       } else {
         setActionError(actionErrorMessage(error));
       }
@@ -248,6 +256,7 @@ export function GoogleDrivePanel({
       setPickerOpen(false);
       setSelection(EMPTY_SELECTION);
       await loadStatus();
+      onCatalogChangeRef.current?.();
     } catch (error) {
       setActionError(actionErrorMessage(error));
     } finally {

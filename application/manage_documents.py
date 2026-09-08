@@ -159,6 +159,10 @@ class ManageUploadedDocuments:
     operations that never read one.
     """
 
+    _HUB_SOURCE_TYPES = frozenset(
+        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+    )
+
     def __init__(
         self,
         *,
@@ -179,11 +183,11 @@ class ManageUploadedDocuments:
         self._max_upload_bytes = max_upload_bytes
 
     def list(self) -> Sequence[CatalogDocument]:
-        """Return uploaded-document catalog rows (not connector-owned rows)."""
+        """Return catalog rows shown in the shared documents hub."""
         return tuple(
             row
             for row in self._catalog.all()
-            if row.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+            if row.reference.source_type in self._HUB_SOURCE_TYPES
         )
 
     def create(self, payload: UploadPayload) -> CatalogDocument:
