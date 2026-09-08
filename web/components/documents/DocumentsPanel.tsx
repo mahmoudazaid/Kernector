@@ -173,12 +173,13 @@ export function DocumentsPanel({
     }
   }
 
+  // Initial load only — actions call refresh explicitly; the cleanup aborts an
+  // in-flight list() so an unmount writes no state.
   useEffect(() => {
     void refresh();
     return () => {
       refreshAbortRef.current?.abort();
     };
-    // Initial load only — actions call refresh explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
