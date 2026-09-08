@@ -81,7 +81,7 @@ Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css
 | File | Use |
 | --- | --- |
 | `kernector-mark.png` (+ `.webp`) | Raster mark for icons / OG; the shell uses a token-colored SVG |
-| `kernector-thinking.svg` | Chat thinking animation (no “Thinking…” label) |
+| `kernector-thinking.svg` | Standalone thinking mark (chat uses the inline component + “Thinking…” label) |
 | `kernector-tab.png` | Browser tab / shortcut icon (light slate) |
 | `favicon.ico` | `/favicon.ico` (rewritten from this file) |
 | `apple-touch-icon.png` | Home-screen / Apple icon |

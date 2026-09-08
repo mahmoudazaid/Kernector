@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/states/EmptyState";
 import { UnavailableState } from "@/components/states/UnavailableState";
+import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
   askChat,
   type AskChatOptions,
@@ -123,7 +124,9 @@ function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
 }
 
 function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
-  const calls = Array.isArray(toolRun.calls) ? toolRun.calls.filter(Boolean) : [];
+  const calls = Array.isArray(toolRun.calls)
+    ? toolRun.calls.filter(Boolean)
+    : [];
   const riskFactors = Array.isArray(toolRun.risk?.factors)
     ? toolRun.risk.factors.filter(Boolean)
     : [];
@@ -595,19 +598,9 @@ export function ChatPanel({
               <MessageRow key={message.id} message={message} />
             ))}
             {sending ? (
-              <p
-                className="kern-chat-thinking"
-                aria-busy="true"
-                aria-label="Thinking"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className="kern-chat-thinking-mark"
-                  src="/brand/kernector-thinking.svg"
-                  alt=""
-                  width={32}
-                  height={32}
-                />
+              <p className="kern-chat-thinking" role="status">
+                <KernectorThinkingMark className="kern-chat-thinking-mark" />
+                <span className="visually-hidden">Thinking…</span>
               </p>
             ) : null}
           </div>

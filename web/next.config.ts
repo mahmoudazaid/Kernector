@@ -17,8 +17,23 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source:
+          "/:file(favicon.ico|apple-touch-icon.png|apple-touch-icon-precomposed.png)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+        ],
+      },
+      {
         source: "/brand/:path*",
-        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, stale-while-revalidate=86400",
+          },
+        ],
       },
     ];
   },

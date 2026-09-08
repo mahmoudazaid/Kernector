@@ -179,12 +179,16 @@ describe("ChatPanel", () => {
     await user.type(await screen.findByLabelText(/message/i), "hello");
     await user.click(screen.getByRole("button", { name: /send/i }));
 
-    const thinking = await screen.findByLabelText("Thinking");
-    expect(thinking).toHaveAttribute("aria-busy", "true");
-    expect(thinking.querySelector(".kern-chat-thinking-mark")).toHaveAttribute(
-      "src",
-      "/brand/kernector-thinking.svg",
+    const thinking = await screen.findByText("Thinking…", { hidden: true });
+    expect(thinking.closest(".kern-chat-thinking")).toHaveAttribute(
+      "role",
+      "status",
     );
+    expect(
+      thinking
+        .closest(".kern-chat-thinking")
+        ?.querySelector(".kern-chat-thinking-mark"),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/message/i)).toBeDisabled();
 
     resolveAsk(SUCCESS);
@@ -337,13 +341,17 @@ describe("ChatPanel", () => {
 
     await user.type(await screen.findByLabelText(/message/i), "orphan me");
     await user.click(screen.getByRole("button", { name: /send/i }));
-    expect(await screen.findByLabelText("Thinking")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Thinking…", { hidden: true }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /new chat/i }));
     resolveAsk(SUCCESS);
 
     await waitFor(() => {
-      expect(screen.queryByLabelText("Thinking")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Thinking…", { hidden: true }),
+      ).not.toBeInTheDocument();
     });
     expect(
       screen.queryByText("Grounded answer from the corpus."),

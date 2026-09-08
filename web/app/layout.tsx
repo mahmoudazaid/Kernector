@@ -20,6 +20,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(publicEnv.NEXT_PUBLIC_SITE_URL),
   title: publicEnv.NEXT_PUBLIC_APP_NAME,
   description: "Multi-source knowledge hub",
   icons: {
