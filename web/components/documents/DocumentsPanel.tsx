@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
   startTransition,
   type ChangeEvent,
@@ -106,6 +107,7 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
+  const refreshSeqRef = useRef(0);
 
   function retryAll() {
     if (settingsError) {
@@ -117,9 +119,13 @@ export function DocumentsPanel({
   }
 
   async function refresh() {
+    const seq = ++refreshSeqRef.current;
     setRefreshing(true);
     try {
       const response = await list({ baseUrl: apiBaseUrl });
+      if (seq !== refreshSeqRef.current) {
+        return;
+      }
       startTransition(() => {
         setCatalog({
           kind: "ready",
@@ -136,6 +142,9 @@ export function DocumentsPanel({
         });
       });
     } catch (error) {
+      if (seq !== refreshSeqRef.current) {
+        return;
+      }
       if (error instanceof ApiError && error.status === 0) {
         startTransition(() => setCatalog({ kind: "unavailable" }));
         return;
@@ -151,7 +160,9 @@ export function DocumentsPanel({
         })),
       );
     } finally {
-      setRefreshing(false);
+      if (seq === refreshSeqRef.current) {
+        setRefreshing(false);
+      }
     }
   }
 

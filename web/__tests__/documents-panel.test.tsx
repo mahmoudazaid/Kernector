@@ -545,6 +545,75 @@ describe("DocumentsPanel", () => {
     expect(retry).toHaveTextContent(/^Retry$/);
   });
 
+  it("ignores a stale document list response after a newer refresh", async () => {
+    const user = userEvent.setup();
+    let rejectRetry: (error: unknown) => void = () => {
+      throw new Error("retry was not started");
+    };
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 500,
+          title: "Operational error",
+          detail: "Something went wrong while processing your request.",
+          code: "operational_error",
+        }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<DocumentListResponse>((_resolve, reject) => {
+            rejectRetry = reject;
+          }),
+      )
+      .mockResolvedValueOnce(listResponse([doc()]));
+    const upload = vi.fn().mockResolvedValue(doc());
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+    expect(
+      await screen.findByRole("button", { name: /^checking/i }),
+    ).toBeDisabled();
+
+    const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
+    await user.upload(screen.getByLabelText(/document file/i), file);
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(await screen.findByText("spec.md")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/something went wrong while processing/i),
+    ).not.toBeInTheDocument();
+
+    rejectRetry(
+      new ApiError({
+        status: 500,
+        title: "Operational error",
+        detail: "Something went wrong while processing your request.",
+        code: "operational_error",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(3);
+    });
+    expect(screen.getByText("spec.md")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/something went wrong while processing/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("leaves unavailable retry enabled while settings are still loading", async () => {
     const pendingSettings = vi.fn(
       () => new Promise<RuntimeSettingsResponse>(() => {}),
