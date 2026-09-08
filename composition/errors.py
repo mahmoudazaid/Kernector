@@ -64,3 +64,7 @@ class PartialDocumentOperationError(DocumentOperationError):
     ) -> None:
         super().__init__(message)
         self.operation = operation
+
+
+class ConnectorSyncError(RuntimeError):
+    """A connector sync failed at the run level."""

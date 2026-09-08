@@ -1,7 +1,7 @@
 """Configuration loaded at the edge. Only the composition root calls load_settings()."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -97,6 +97,24 @@ class HttpAdapterSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class GoogleDriveSettings:
+    """Optional Google Drive connector configuration.
+
+    Credential JSON is never loaded into Settings; only the path is stored.
+    Presence of the path and folder ID is validated when the connector is built.
+
+    Args:
+        service_account_file (Path | None): Path to a service-account JSON key.
+        folder_id (str | None): Drive folder whose direct children are synced.
+        page_size (int): Drive list page size, from 1 to 1000 inclusive.
+    """
+
+    service_account_file: Path | None = None
+    folder_id: str | None = None
+    page_size: int = 100
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -111,6 +129,7 @@ class Settings:
     retrieval: RetrievalSettings
     domain_tools: DomainToolSettings
     http: HttpAdapterSettings
+    google_drive: GoogleDriveSettings = field(default_factory=GoogleDriveSettings)
 
 
 def load_settings() -> Settings:
@@ -151,6 +170,7 @@ def load_settings() -> Settings:
         retrieval=_load_retrieval_settings(),
         domain_tools=_load_domain_tool_settings(),
         http=_load_http_adapter_settings(),
+        google_drive=_load_google_drive_settings(),
     )
 
 
@@ -335,4 +355,31 @@ def _load_http_adapter_settings() -> HttpAdapterSettings:
     return HttpAdapterSettings(
         dev_cors=_env_truthy("HTTP_DEV_CORS"),
         cors_origins=origins,
+    )
+
+
+def _load_google_drive_settings() -> GoogleDriveSettings:
+    """Parse optional Drive connector env vars without reading credential JSON."""
+    raw_file = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
+    service_account_file: Path | None
+    if raw_file is None or not raw_file.strip():
+        service_account_file = None
+    else:
+        service_account_file = _resolve_under_project_root(raw_file.strip())
+    raw_folder = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+    folder_id: str | None
+    if raw_folder is None or not raw_folder.strip():
+        folder_id = None
+    else:
+        folder_id = raw_folder.strip()
+    page_size = _env_int("GOOGLE_DRIVE_PAGE_SIZE", "100")
+    if not 1 <= page_size <= 1000:
+        raise ValueError(
+            f"GOOGLE_DRIVE_PAGE_SIZE must satisfy 1 <= page_size <= 1000, "
+            f"got {page_size}"
+        )
+    return GoogleDriveSettings(
+        service_account_file=service_account_file,
+        folder_id=folder_id,
+        page_size=page_size,
     )

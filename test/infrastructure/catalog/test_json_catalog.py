@@ -140,6 +140,7 @@ def _write_entry_with(tmp_path: Path, field: str, value: object) -> Path:
         ("title", 123),
         ("content_format", 123),
         ("error", 123),
+        ("revision", 42),
     ],
 )
 def test_wrong_field_type_is_rejected_not_coerced(
@@ -161,7 +162,7 @@ def test_wrong_field_type_is_rejected_not_coerced(
     assert field in message
 
 
-@pytest.mark.parametrize("field", ["title", "content_format", "error"])
+@pytest.mark.parametrize("field", ["title", "content_format", "error", "revision"])
 def test_optional_fields_accept_null_and_absent(tmp_path: Path, field: str) -> None:
     path = tmp_path / "uploads.json"
     JsonDocumentCatalog(path).upsert(_document())
@@ -279,3 +280,30 @@ def test_same_process_lost_update_is_prevented(tmp_path: Path) -> None:
     final = JsonDocumentCatalog(path)
     ids = {doc.reference.source_id for doc in final.all()}
     assert ids == {"id-a", "id-b"}
+
+
+def test_revision_round_trips_through_json(tmp_path: Path) -> None:
+    path = tmp_path / "uploads.json"
+    document = CatalogDocument(
+        reference=_reference("id-revision"),
+        file_name="guide.md",
+        title="Guide",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=2,
+        error=None,
+        revision="42",
+    )
+    JsonDocumentCatalog(path).upsert(document)
+    assert JsonDocumentCatalog(path).get(document.reference) == document
+
+
+def test_legacy_json_entry_without_revision_loads(tmp_path: Path) -> None:
+    path = tmp_path / "uploads.json"
+    JsonDocumentCatalog(path).upsert(_document())
+    entry = json.loads(path.read_text(encoding="utf-8"))[0]
+    entry.pop("revision", None)
+    path.write_text(json.dumps([entry]), encoding="utf-8")
+    loaded = JsonDocumentCatalog(path).all()[0]
+    assert loaded.revision is None

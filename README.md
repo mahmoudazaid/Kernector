@@ -2,7 +2,7 @@
 
 ![Kernector overview](docs/images/kernector-overview.png)
 
-Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, plus seed JSON corpora, normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning; the current ingest adapters are file upload and the on-disk seed JSON loader. External provider connectors (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
+Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, and the Google Drive CLI connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. External provider connectors beyond Google Drive (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
 Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
@@ -14,11 +14,11 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 `domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` registers `software_delivery.risk_score`, `software_delivery.generate_test_cases`, `software_delivery.export_test_cases_markdown`, and a deterministic chat-intent policy, without importing application or presentation code. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the FastAPI HTTP adapter and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly. The interactive UI is Next.js under `web/`, talking HTTP to FastAPI.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds would arrive as additional adapters that emit `SourceDocument`; only upload and seed JSON are implemented today.
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, and the CLI-only Google Drive connector.
 
 ## Knowledge path from source to cited answer
 
-Normalized documents follow one pipeline whether they arrived as an upload or a seed JSON row. Additional connector payloads are planned behind the same `SourceDocument` boundary.
+Normalized documents follow one pipeline whether they arrived as an upload, a seed JSON row, or a Google Drive file. Additional connector payloads are planned behind the same `SourceDocument` boundary.
 
 ![Knowledge pipeline](docs/images/kernector-knowledge-pipeline.png)
 
@@ -177,6 +177,35 @@ If ingest fails because the store expects a different embedding size, remove the
 ```bash
 rm -rf data/chroma
 ```
+
+## Sync documents from Google Drive
+
+Ticket #196 adds a **CLI-only** Google Drive sync job. There is no OAuth picker, FastAPI connector route, or Next.js management screen in this ticket.
+
+1. Create a Google Cloud service account.
+2. Enable the Google Drive API for that project.
+3. Download the service-account JSON key.
+4. Keep that key **outside the repository**.
+5. Share the target Drive folder with the service-account email (Viewer is enough).
+6. Set the environment variables in `.env` (see [`.env.example`](.env.example)):
+   - `GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE` — path to the JSON key
+   - `GOOGLE_DRIVE_FOLDER_ID` — folder whose **direct children** are synced
+   - `GOOGLE_DRIVE_PAGE_SIZE` — optional list page size (default `100`, max `1000`)
+7. Run:
+
+```bash
+uv run python -m presentation.cli.sync_google_drive
+```
+
+Exit codes:
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | Every listed document was ingested or skipped |
+| `1` | At least one document failed, or the run aborted operationally |
+| `2` | Connector or embedding configuration is invalid |
+
+Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped; a changed version replaces stored chunks.
 
 ## Logging and monitoring
 

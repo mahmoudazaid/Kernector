@@ -134,6 +134,27 @@ chunk → embed → vector store → retrieve (with provenance). Domain and
 application layers stay origin-agnostic; they do not model tickets, Jira, or
 other provider types as permanent core entities.
 
+### Knowledge connectors
+
+`KnowledgeConnector` (`domain/ports.py`) is the replaceable adapter port:
+`list_documents()` returns provider-neutral `ConnectorDocument` values, and
+`fetch_document()` returns a `SourceDocument`. Google Drive is the first
+implemented connector (`infrastructure/connectors/google_drive.py`).
+
+Drive failures map to a small domain taxonomy: `ConnectorAuthError` for
+rejected credentials or permissions, `ConnectorUnavailableError` for throttling
+and transport outages, and `ConnectorError` for other adapter failures.
+Exception messages are fixed; raw Google bodies stay on `__cause__` only.
+
+Presentation for this connector is **CLI-only**
+(`presentation.cli.sync_google_drive`). There is no FastAPI connector route,
+OpenAPI change, or Next.js management UI in #196. The adapter reuses
+`UploadedFileExtractor` for TXT/Markdown/PDF bytes, then overwrites metadata so
+`provider` is `google_drive` rather than `upload`. Synchronization compares
+Drive `version` (checksum fallback only when version is missing) to
+`CatalogDocument.revision` and skips unchanged `READY` rows. Remote deletion
+reconciliation and HTTP connector management are **not** implemented.
+
 ### Optional domain packs
 
 Kernector distinguishes **source kinds** from **domain packs**:

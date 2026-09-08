@@ -8,6 +8,9 @@ from application.contracts import (
     AskRequest,
     AskResponse,
     Citation,
+    ConnectorSyncOutcome,
+    ConnectorSyncResponse,
+    ConnectorSyncStatus,
     IngestRequest,
     IngestResponse,
     InvokeToolRequest,
@@ -1045,3 +1048,32 @@ def test_ingest_response_reports_failing_accepted_ids_index_by_type_name() -> No
     message = str(raised.value)
     assert sentinel not in message
     assert message == "accepted_ids[1] must be a non-empty string, got dict"
+
+
+def test_connector_sync_response_counts_outcomes_by_status() -> None:
+    response = ConnectorSyncResponse(
+        outcomes=(
+            ConnectorSyncOutcome("a", ConnectorSyncStatus.INGESTED, 3),
+            ConnectorSyncOutcome("b", ConnectorSyncStatus.SKIPPED, 2),
+            ConnectorSyncOutcome(
+                "c", ConnectorSyncStatus.FAILED, 0, error_type="ConnectorError"
+            ),
+            ConnectorSyncOutcome("d", ConnectorSyncStatus.INGESTED, 1),
+        )
+    )
+    assert response.ingested_count == 2
+    assert response.skipped_count == 1
+    assert response.failed_count == 1
+    assert tuple(outcome.source_id for outcome in response.outcomes) == (
+        "a",
+        "b",
+        "c",
+        "d",
+    )
+
+
+def test_connector_sync_response_empty_folder_has_zero_counts() -> None:
+    response = ConnectorSyncResponse(outcomes=())
+    assert response.ingested_count == 0
+    assert response.skipped_count == 0
+    assert response.failed_count == 0
