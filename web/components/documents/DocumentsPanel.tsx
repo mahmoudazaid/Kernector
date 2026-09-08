@@ -108,6 +108,7 @@ export function DocumentsPanel({
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
+  const refreshAbortRef = useRef<AbortController | null>(null);
 
   function retryAll() {
     if (settingsError) {
@@ -119,11 +120,17 @@ export function DocumentsPanel({
   }
 
   async function refresh() {
+    refreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
     const seq = ++refreshSeqRef.current;
     setRefreshing(true);
     try {
-      const response = await list({ baseUrl: apiBaseUrl });
-      if (seq !== refreshSeqRef.current) {
+      const response = await list({
+        baseUrl: apiBaseUrl,
+        signal: controller.signal,
+      });
+      if (seq !== refreshSeqRef.current || controller.signal.aborted) {
         return;
       }
       startTransition(() => {
@@ -142,7 +149,7 @@ export function DocumentsPanel({
         });
       });
     } catch (error) {
-      if (seq !== refreshSeqRef.current) {
+      if (seq !== refreshSeqRef.current || controller.signal.aborted) {
         return;
       }
       if (error instanceof ApiError && error.status === 0) {
@@ -160,7 +167,7 @@ export function DocumentsPanel({
         })),
       );
     } finally {
-      if (seq === refreshSeqRef.current) {
+      if (seq === refreshSeqRef.current && !controller.signal.aborted) {
         setRefreshing(false);
       }
     }
@@ -168,6 +175,9 @@ export function DocumentsPanel({
 
   useEffect(() => {
     void refresh();
+    return () => {
+      refreshAbortRef.current?.abort();
+    };
     // Initial load only — actions call refresh explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);

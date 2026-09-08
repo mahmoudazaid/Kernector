@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api/errors";
 import type {
   CatalogDocumentResponse,
   DocumentListResponse,
+  ListDocumentsOptions,
 } from "@/lib/api/documents";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 
@@ -608,10 +609,36 @@ describe("DocumentsPanel", () => {
     await waitFor(() => {
       expect(list).toHaveBeenCalledTimes(3);
     });
+    expect(list.mock.calls[1][0].signal?.aborted).toBe(true);
     expect(screen.getByText("spec.md")).toBeInTheDocument();
     expect(
       screen.queryByText(/something went wrong while processing/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("cancels an in-flight document list on unmount", async () => {
+    const list = vi.fn(
+      (_options: ListDocumentsOptions) =>
+        new Promise<DocumentListResponse>(() => {}),
+    );
+
+    const { unmount } = render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(list).toHaveBeenCalledTimes(1);
+    });
+    const signal = list.mock.calls[0][0].signal;
+    expect(signal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(signal?.aborted).toBe(true);
   });
 
   it("leaves unavailable retry enabled while settings are still loading", async () => {
