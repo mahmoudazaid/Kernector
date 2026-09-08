@@ -563,7 +563,7 @@ export function GoogleDrivePicker({
               disabled={busy || selectionUnchanged}
               onClick={() => onConfirm(toSelection(selected))}
             >
-              {busy ? "Saving…" : "Save"}
+              Save
             </Button>
           </div>
         </div>

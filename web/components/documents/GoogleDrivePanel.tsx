@@ -233,6 +233,7 @@ export function GoogleDrivePanel({
       return;
     }
     busyRef.current = true;
+    setPickerOpen(false);
     setBusy(true);
     setActionError(null);
     try {
@@ -246,7 +247,6 @@ export function GoogleDrivePanel({
       if (hasScope) {
         await syncNow({ baseUrl: apiBaseUrl });
       }
-      setPickerOpen(false);
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {

@@ -468,10 +468,19 @@ describe("GoogleDrivePanel", () => {
 
   it("saves the selection by Drive ID and starts one initial sync", async () => {
     const user = userEvent.setup();
-    const saveSelection = vi.fn().mockResolvedValue({
-      folders: [{ id: "folder-1", name: "Specs" }],
-      files: [],
-    });
+    let resolveSave: (value: {
+      folders: { id: string; name: string }[];
+      files: { id: string; name: string }[];
+    }) => void = () => {};
+    const saveSelection = vi.fn(
+      () =>
+        new Promise<{
+          folders: { id: string; name: string }[];
+          files: { id: string; name: string }[];
+        }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     const syncNow = vi.fn().mockResolvedValue({
       ingested_count: 1,
       skipped_count: 0,
@@ -502,6 +511,17 @@ describe("GoogleDrivePanel", () => {
     });
     await user.click(await within(dialog).findByRole("checkbox"));
     await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+    expect(
+      screen.queryByRole("dialog", { name: /choose from google drive/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/syncing google drive/i).closest(".kern-drive-sync-overlay"),
+    ).toBeInTheDocument();
+
+    resolveSave({
+      folders: [{ id: "folder-1", name: "Specs" }],
+      files: [],
+    });
 
     await waitFor(() => {
       expect(saveSelection).toHaveBeenCalledTimes(1);
