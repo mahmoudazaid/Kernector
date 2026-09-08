@@ -322,7 +322,7 @@ export function ChatPanel({
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const { catalog } = useRuntimeCatalog(apiBaseUrl, loadSettings);
-  const maxInputLength = catalog?.max_input_length ?? null;
+  const maxInputLength = catalog?.constraints.max_input_length ?? null;
 
   const composerTouchedRef = useRef(false);
   const sessionUpdatedAtRef = useRef(0);

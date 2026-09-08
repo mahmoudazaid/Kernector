@@ -48,7 +48,7 @@ function filePart(
 }
 
 /**
- * List uploaded documents and upload constraints from ``GET /api/v1/documents``.
+ * List uploaded documents from ``GET /api/v1/documents``.
  */
 export async function listDocuments(
   options: ListDocumentsOptions,

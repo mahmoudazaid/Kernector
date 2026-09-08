@@ -27,6 +27,7 @@ from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from application.runtime_settings import (
     GetRuntimeSettings,
     ProbeOllamaStatus,
+    RuntimeConstraints,
     RuntimeSettingsDefaults,
 )
 from composition.errors import (
@@ -48,6 +49,7 @@ from composition.software_delivery_tools import software_delivery_tools_enabled
 from composition.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk
 from composition.tool_registry import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
+    enabled_domain_tool_packs,
     build_tool_registry,
 )
 from domain.errors import DomainValidationError
@@ -136,7 +138,12 @@ def build_runtime_settings(settings: Settings) -> GetRuntimeSettings:
             openrouter_default_model=settings.openrouter.model,
             ollama_default_base_url=settings.ollama.base_url,
             ollama_default_model=settings.ollama.model,
-            max_input_length=settings.max_input_length,
+            enabled_packs=enabled_domain_tool_packs(settings),
+            constraints=RuntimeConstraints(
+                max_input_length=settings.max_input_length,
+                max_upload_bytes=settings.max_upload_bytes,
+                supported_upload_suffixes=tuple(sorted(SUPPORTED_UPLOAD_SUFFIXES)),
+            ),
         ),
     )
 

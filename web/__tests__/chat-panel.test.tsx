@@ -22,7 +22,12 @@ function catalogWithLimit(maxInputLength: number): RuntimeSettingsResponse {
     openrouter: { models: [], default_model: null },
     ollama: { default_base_url: null, default_model: null },
     model_settings: [],
-    max_input_length: maxInputLength,
+    enabled_packs: [],
+    constraints: {
+      max_input_length: maxInputLength,
+      max_upload_bytes: 5_242_880,
+      supported_upload_suffixes: [".md", ".pdf", ".txt", ".markdown"],
+    },
   };
 }
 

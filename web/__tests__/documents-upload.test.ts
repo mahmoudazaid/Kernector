@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateUpload } from "@/lib/documents/upload";
 
 const constraints = {
-  supported_suffixes: [".markdown", ".md", ".pdf", ".txt"],
+  supported_upload_suffixes: [".markdown", ".md", ".pdf", ".txt"],
   max_upload_bytes: 5_242_880,
 };
 
@@ -35,7 +35,7 @@ describe("validateUpload", () => {
     const file = new File([new Uint8Array(9)], "big.md");
     expect(
       validateUpload(file, {
-        supported_suffixes: [".md"],
+        supported_upload_suffixes: [".md"],
         max_upload_bytes: 8,
       }),
     ).toEqual({

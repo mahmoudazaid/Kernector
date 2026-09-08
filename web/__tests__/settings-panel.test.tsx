@@ -60,7 +60,12 @@ const CATALOG: RuntimeSettingsResponse = {
       providers: ["openrouter", "ollama"],
     },
   ],
-  max_input_length: 10000,
+  enabled_packs: ["software-delivery"],
+  constraints: {
+    max_input_length: 10000,
+    max_upload_bytes: 5242880,
+    supported_upload_suffixes: [".markdown", ".md", ".pdf", ".txt"],
+  },
 };
 
 describe("SettingsPanel", () => {

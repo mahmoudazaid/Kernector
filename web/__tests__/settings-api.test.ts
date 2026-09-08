@@ -27,6 +27,12 @@ const CATALOG = {
       providers: ["openrouter", "ollama"],
     },
   ],
+  enabled_packs: [],
+  constraints: {
+    max_input_length: 10000,
+    max_upload_bytes: 5242880,
+    supported_upload_suffixes: [".markdown", ".md", ".pdf", ".txt"],
+  },
 };
 
 describe("getRuntimeSettings", () => {

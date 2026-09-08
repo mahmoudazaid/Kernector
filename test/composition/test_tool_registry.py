@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from application.errors import ConfigurationError
-from composition.tool_registry import build_tool_registry
+from composition.tool_registry import build_tool_registry, enabled_domain_tool_packs
 from domain.models import AskResult, Message
 from infrastructure.config import DomainToolSettings, load_settings
 
@@ -73,6 +73,39 @@ def test_unknown_pack_id_is_configuration_error(env: pytest.MonkeyPatch) -> None
     )
     with pytest.raises(ConfigurationError, match="unknown domain tool pack"):
         build_tool_registry(bad)
+
+
+def test_enabled_domain_tool_packs_preserves_supported_order(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    settings = load_settings()
+    assert enabled_domain_tool_packs(settings) == ("software-delivery",)
+
+
+def test_enabled_domain_tool_packs_filters_unknown_ids(
+    env: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings()
+    mixed = replace(
+        settings,
+        domain_tools=DomainToolSettings(
+            enabled_packs=("no-such-pack", "software-delivery", "also-missing"),
+        ),
+    )
+    assert enabled_domain_tool_packs(mixed) == ("software-delivery",)
+
+
+def test_enabled_domain_tool_packs_empty_when_none_supported(
+    env: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings()
+    unknown_only = replace(
+        settings,
+        domain_tools=DomainToolSettings(enabled_packs=("no-such-pack",)),
+    )
+    assert enabled_domain_tool_packs(unknown_only) == ()
+    assert enabled_domain_tool_packs(settings) == ()
 
 
 def test_disabled_registry_does_not_import_software_delivery_pack() -> None:

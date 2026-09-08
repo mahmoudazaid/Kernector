@@ -1,8 +1,9 @@
 """Runtime settings catalog for presentation adapters (Next.js / HTTP).
 
-Assembles provider lists, env defaults, and the domain model-settings
-allowlist into a UI-agnostic view. No I/O — composition injects defaults;
-Ollama reachability lives in :class:`ProbeOllamaStatus`.
+Assembles provider lists, env defaults, enabled domain packs, shared
+server constraints, and the domain model-settings allowlist into a
+UI-agnostic view. No I/O — composition injects defaults; Ollama
+reachability lives in :class:`ProbeOllamaStatus`.
 """
 
 from __future__ import annotations
@@ -15,6 +16,15 @@ from domain.model_settings import SETTINGS
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeConstraints:
+    """Global server-enforced constraints for client preflight validation."""
+
+    max_input_length: int
+    max_upload_bytes: int
+    supported_upload_suffixes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeSettingsDefaults:
     """Env/config snapshot used to seed the settings catalog."""
 
@@ -23,7 +33,8 @@ class RuntimeSettingsDefaults:
     openrouter_default_model: str | None
     ollama_default_base_url: str | None
     ollama_default_model: str | None
-    max_input_length: int
+    enabled_packs: tuple[str, ...]
+    constraints: RuntimeConstraints
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,14 +70,15 @@ class ModelSettingDef:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeSettingsCatalog:
-    """Read-only catalog for provider/model/settings controls and input limits."""
+    """Read-only runtime contract for providers, packs, and constraints."""
 
     providers: tuple[str, ...]
     default_provider: str
     openrouter: OpenRouterSettingsView
     ollama: OllamaSettingsView
     model_settings: tuple[ModelSettingDef, ...]
-    max_input_length: int
+    enabled_packs: tuple[str, ...]
+    constraints: RuntimeConstraints
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +127,8 @@ class GetRuntimeSettings:
                 )
                 for setting in SETTINGS
             ),
-            max_input_length=self._defaults.max_input_length,
+            enabled_packs=self._defaults.enabled_packs,
+            constraints=self._defaults.constraints,
         )
 
 
