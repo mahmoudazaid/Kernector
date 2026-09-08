@@ -2,6 +2,7 @@
 
 import pytest
 
+from application.errors import ApplicationValidationError
 from application.hybrid_fusion import fuse_hybrid_scores, normalize_scores
 
 
@@ -137,17 +138,36 @@ def test_fuse_missing_channel_entries_remain_zero() -> None:
 
 
 def test_fuse_hybrid_scores_rejects_mismatched_lengths() -> None:
-    with pytest.raises(ValueError, match="same length"):
+    with pytest.raises(ApplicationValidationError, match="same length"):
         fuse_hybrid_scores(bm25_scores=[1.0], vector_scores=[1.0, 2.0], alpha=0.5)
 
 
 def test_fuse_hybrid_scores_rejects_alpha_outside_unit_interval() -> None:
-    with pytest.raises(ValueError, match="alpha"):
+    with pytest.raises(ApplicationValidationError, match="alpha"):
         fuse_hybrid_scores(bm25_scores=[1.0], vector_scores=[1.0], alpha=1.5)
 
 
+def test_fuse_hybrid_scores_rejects_non_numeric_alpha_by_type_name() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        fuse_hybrid_scores(
+            bm25_scores=[1.0],
+            vector_scores=[1.0],
+            alpha="0.5",  # type: ignore[arg-type]
+        )
+    message = str(raised.value)
+    assert "str" in message
+    assert "0.5" not in message
+
+
+def test_fuse_hybrid_scores_rejects_out_of_range_alpha_keeps_number() -> None:
+    with pytest.raises(ApplicationValidationError) as raised:
+        fuse_hybrid_scores(bm25_scores=[1.0], vector_scores=[1.0], alpha=1.5)
+    message = str(raised.value)
+    assert "1.5" in message
+
+
 def test_fuse_requires_at_least_one_score_per_candidate() -> None:
-    with pytest.raises(ValueError, match="absent from both"):
+    with pytest.raises(ApplicationValidationError, match="absent from both"):
         fuse_hybrid_scores(
             bm25_scores=[None, 1.0],
             vector_scores=[None, 1.0],

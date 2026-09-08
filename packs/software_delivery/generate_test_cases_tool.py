@@ -9,6 +9,7 @@ from domain.knowledge import SourceReference
 from domain.ports import ChatModel
 from packs.software_delivery.contracts import (
     TEST_CASE_STYLES,
+    TEST_CASE_STYLES_DISPLAY,
     TestCaseEvidence,
     TestCaseStyle,
     TestGenerationRequest,
@@ -19,6 +20,7 @@ from packs.software_delivery.test_case_generation import (
     generate_test_cases,
     serialize_test_generation_result,
 )
+from packs.software_delivery.validation import require_nonblank_str
 
 TOOL_NAME = "software_delivery.generate_test_cases"
 TOOL_DESCRIPTION = (
@@ -27,7 +29,9 @@ TOOL_DESCRIPTION = (
 )
 
 _ALLOWED_EVIDENCE_KEYS = frozenset({"source_id", "source_type", "text"})
+_ALLOWED_EVIDENCE_KEYS_DISPLAY = str(sorted(_ALLOWED_EVIDENCE_KEYS))
 _ALLOWED_ROOT_KEYS = frozenset({"target", "evidence", "output_style"})
+_ALLOWED_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_ROOT_KEYS))
 
 Generator = Callable[[TestGenerationRequest, ChatModel], TestGenerationResult]
 
@@ -72,22 +76,21 @@ class GenerateTestCasesTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise TestCaseGenerationValidationError(
-            f"{field_name} must be a non-blank string"
-        )
-    return value
+    return require_nonblank_str(
+        value, field_name, TestCaseGenerationValidationError
+    )
 
 
 def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
     if not isinstance(arguments, Mapping):
         raise TestCaseGenerationValidationError(
-            f"arguments must be a mapping, got {arguments!r}"
+            f"arguments must be a mapping, got {type(arguments).__name__}"
         )
     unknown = set(arguments) - _ALLOWED_ROOT_KEYS
     if unknown:
         raise TestCaseGenerationValidationError(
-            f"unknown argument keys: {sorted(unknown)}"
+            f"unknown argument keys: {len(unknown)} not in "
+            f"{_ALLOWED_ROOT_KEYS_DISPLAY}"
         )
     if "target" not in arguments:
         raise TestCaseGenerationValidationError("target is required")
@@ -100,16 +103,20 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
         raw_evidence, Sequence
     ):
         raise TestCaseGenerationValidationError(
-            f"evidence must be a sequence, got {raw_evidence!r}"
+            f"evidence must be a sequence, got {type(raw_evidence).__name__}"
         )
 
     style: TestCaseStyle = "steps"
     if "output_style" in arguments:
         raw_style = arguments["output_style"]
-        if not isinstance(raw_style, str) or raw_style not in TEST_CASE_STYLES:
+        if not isinstance(raw_style, str):
             raise TestCaseGenerationValidationError(
-                f"output_style must be one of {sorted(TEST_CASE_STYLES)}, "
-                f"got {raw_style!r}"
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}, "
+                f"got {type(raw_style).__name__}"
+            )
+        if raw_style not in TEST_CASE_STYLES:
+            raise TestCaseGenerationValidationError(
+                f"output_style must be one of {TEST_CASE_STYLES_DISPLAY}"
             )
         style = raw_style  # type: ignore[assignment]
 
@@ -122,17 +129,18 @@ def _parse_request(arguments: Mapping[str, object]) -> TestGenerationRequest:
 def _parse_evidence_item(item: object) -> TestCaseEvidence:
     if not isinstance(item, Mapping):
         raise TestCaseGenerationValidationError(
-            f"evidence items must be mappings, got {item!r}"
+            f"evidence items must be mappings, got {type(item).__name__}"
         )
     for key in item:
         if not isinstance(key, str) or not key.strip():
             raise TestCaseGenerationValidationError(
-                f"evidence keys must be non-blank strings, got {key!r}"
+                f"evidence keys must be non-blank strings, got {type(key).__name__}"
             )
     unknown = set(item) - _ALLOWED_EVIDENCE_KEYS
     if unknown:
         raise TestCaseGenerationValidationError(
-            f"unknown evidence keys: {sorted(unknown)}"
+            f"unknown evidence keys: {len(unknown)} not in "
+            f"{_ALLOWED_EVIDENCE_KEYS_DISPLAY}"
         )
     for required in ("source_id", "source_type", "text"):
         if required not in item:

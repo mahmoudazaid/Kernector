@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+import logging
 
 import pytest
 
@@ -36,6 +37,7 @@ from test.doubles import (
     StubEmbeddingModel,
     WrongLengthEmbeddingModel,
 )
+from test.log_record import operation_payload, operation_records
 
 CONTENT_V1 = "abcdefghijklmnopqrstuvwxyz"
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -95,7 +97,8 @@ def _seed_ready(
     return use_case.create(UploadPayload(file_name=file_name, content=b"v1"))
 
 
-def test_replace_rejects_unknown_id() -> None:
+def test_replace_rejects_unknown_id(caplog: pytest.LogCaptureFixture) -> None:
+    sentinel = "MISSING-DOC-LEAK-SENTINEL"
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()
     use_case = ManageUploadedDocuments(
@@ -109,11 +112,23 @@ def test_replace_rejects_unknown_id() -> None:
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
     )
-    with pytest.raises(UnknownDocumentError):
-        use_case.replace(
-            _reference("missing"),
-            UploadPayload(file_name="other.md", content=b"x"),
-        )
+    with caplog.at_level(logging.ERROR, logger="application.manage_documents"):
+        with pytest.raises(UnknownDocumentError) as raised:
+            use_case.replace(
+                _reference(sentinel),
+                UploadPayload(file_name="other.md", content=b"x"),
+            )
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "unknown document"
+    assert raised.value.source_id == sentinel
+    assert raised.value.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    records = operation_records(caplog.records, operation="replace")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["error_type"] == "UnknownDocumentError"
+    assert payload["source_id"] == sentinel
 
 
 def test_replace_preserves_source_id_and_updates_metadata() -> None:

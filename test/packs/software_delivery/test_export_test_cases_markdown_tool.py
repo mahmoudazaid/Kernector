@@ -57,6 +57,33 @@ def test_tool_name_and_description() -> None:
     assert tool.description.strip()
 
 
+def test_non_string_title_reports_type_name_not_value() -> None:
+    sentinel = "TITLE-LEAK-SENTINEL"
+    calls, boom = _spy_formatter()
+    args = _valid_arguments()
+    case = dict(args["test_cases"][0])  # type: ignore[index]
+    case["title"] = {sentinel: 1}
+    args["test_cases"] = [case]
+    with pytest.raises(MarkdownExportValidationError) as raised:
+        ExportTestCasesMarkdownTool(formatter=boom).run(args)
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "title must be a non-blank string, got dict"
+    assert calls == []
+
+
+def test_blank_title_fails_before_formatter() -> None:
+    calls, boom = _spy_formatter()
+    args = _valid_arguments()
+    case = dict(args["test_cases"][0])  # type: ignore[index]
+    case["title"] = "   "
+    args["test_cases"] = [case]
+    with pytest.raises(MarkdownExportValidationError) as raised:
+        ExportTestCasesMarkdownTool(formatter=boom).run(args)
+    assert str(raised.value) == "title must be a non-blank string"
+    assert calls == []
+
+
 def test_empty_test_cases_fails_before_formatter() -> None:
     calls, boom = _spy_formatter()
     with pytest.raises(MarkdownExportValidationError, match="test_cases"):

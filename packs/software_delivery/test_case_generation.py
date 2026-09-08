@@ -31,7 +31,11 @@ from packs.software_delivery.limits import (
 from packs.software_delivery.test_case_prompt import build_test_case_prompt
 
 _CASE_KEYS_STEPS = frozenset({"title", "steps", "expected", "evidence_ids"})
+_CASE_KEYS_STEPS_DISPLAY = str(sorted(_CASE_KEYS_STEPS))
 _CASE_KEYS_GHERKIN = frozenset({"title", "steps", "evidence_ids"})
+_CASE_KEYS_GHERKIN_DISPLAY = str(sorted(_CASE_KEYS_GHERKIN))
+_ALLOWED_MODEL_ROOT_KEYS = frozenset({"test_cases"})
+_ALLOWED_MODEL_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_MODEL_ROOT_KEYS))
 
 
 def generate_test_cases(
@@ -131,10 +135,11 @@ def _parse_cases(
         raise ToolFailureError("model JSON must be an object")
     if "output_style" in payload:
         raise ToolFailureError("model must not supply output_style")
-    unknown_root = set(payload) - {"test_cases"}
+    unknown_root = set(payload) - _ALLOWED_MODEL_ROOT_KEYS
     if unknown_root:
         raise ToolFailureError(
-            f"unexpected model fields: {sorted(unknown_root)}"
+            f"unexpected model fields: {len(unknown_root)} not in "
+            f"{_ALLOWED_MODEL_ROOT_KEYS_DISPLAY}"
         )
     if "test_cases" not in payload:
         raise ToolFailureError("test_cases is required")
@@ -165,9 +170,14 @@ def _parse_case(
         if not isinstance(key, str):
             raise ToolFailureError("test case keys must be strings")
     allowed = _CASE_KEYS_STEPS if style == "steps" else _CASE_KEYS_GHERKIN
+    allowed_display = (
+        _CASE_KEYS_STEPS_DISPLAY if style == "steps" else _CASE_KEYS_GHERKIN_DISPLAY
+    )
     unknown = set(item) - allowed
     if unknown:
-        raise ToolFailureError(f"unexpected test case fields: {sorted(unknown)}")
+        raise ToolFailureError(
+            f"unexpected test case fields: {len(unknown)} not in {allowed_display}"
+        )
     if "expected" in item and style == "gherkin":
         raise ToolFailureError("gherkin model output must not include expected")
     for required in ("title", "steps", "evidence_ids"):
@@ -246,6 +256,6 @@ def _resolve_evidence_ids(
         if not isinstance(evidence_id, str) or not evidence_id.strip():
             raise ToolFailureError("evidence_ids items must be non-blank strings")
         if evidence_id not in evidence_by_id:
-            raise ToolFailureError(f"unknown evidence_id: {evidence_id!r}")
+            raise ToolFailureError("evidence_ids items must name bundled evidence")
         refs.append(evidence_by_id[evidence_id])
     return tuple(refs)

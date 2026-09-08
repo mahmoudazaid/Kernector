@@ -38,7 +38,8 @@ def chunk_document(
     """
     if not isinstance(document, SourceDocument):
         raise ApplicationValidationError(
-            f"document must be a SourceDocument, got {document!r}"
+            f"document must be a SourceDocument, "
+            f"got {type(document).__name__}"
         )
     _require_chunk_setting(chunk_size, "chunk_size")
     _require_chunk_setting(chunk_overlap, "chunk_overlap", allow_zero=True)
@@ -298,7 +299,7 @@ def _require_chunk_setting(
 ) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ApplicationValidationError(
-            f"{name} must be an integer, got {value!r}"
+            f"{name} must be an integer, got {type(value).__name__}"
         )
     if allow_zero:
         if value < 0:

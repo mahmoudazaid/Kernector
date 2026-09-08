@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+from application.errors import ApplicationValidationError
+
 
 def normalize_scores(scores: Sequence[float]) -> tuple[float, ...]:
     """Min-max normalize ``scores`` into ``[0, 1]``.
@@ -49,11 +51,15 @@ def fuse_hybrid_scores(
     Flat or single-score channels normalize to ``1.0`` so evidence is kept.
     """
     if not isinstance(alpha, (int, float)) or isinstance(alpha, bool):
-        raise ValueError(f"alpha must be a number in [0, 1], got {alpha!r}")
+        raise ApplicationValidationError(
+            f"alpha must be a number in [0, 1], got {type(alpha).__name__}"
+        )
     if alpha < 0 or alpha > 1:
-        raise ValueError(f"alpha must be in [0, 1], got {alpha!r}")
+        raise ApplicationValidationError(
+            f"alpha must be in [0, 1], got {alpha}"
+        )
     if len(bm25_scores) != len(vector_scores):
-        raise ValueError(
+        raise ApplicationValidationError(
             "bm25_scores and vector_scores must have the same length, "
             f"got {len(bm25_scores)} and {len(vector_scores)}"
         )
@@ -61,7 +67,7 @@ def fuse_hybrid_scores(
         zip(bm25_scores, vector_scores, strict=True)
     ):
         if bm25 is None and vector is None:
-            raise ValueError(
+            raise ApplicationValidationError(
                 f"candidate at index {index} is absent from both channels"
             )
     bm25_norm = _normalize_sparse(bm25_scores)

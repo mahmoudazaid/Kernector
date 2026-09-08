@@ -60,6 +60,15 @@ def test_source_reference_rejects_non_string_source_type(not_a_string: object) -
         SourceReference("doc-1", not_a_string)  # type: ignore[arg-type]
 
 
+def test_source_reference_rejects_non_string_source_id_by_type_name() -> None:
+    sentinel = "SOURCE-ID-LEAK-SENTINEL"
+    with pytest.raises(DomainValidationError) as raised:
+        SourceReference([sentinel], SourceType.KNOWLEDGE_DOCUMENT)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "source_id must be a non-empty string, got list"
+
+
 @pytest.mark.parametrize("blank", BLANK)
 def test_source_document_rejects_blank_identifier(blank: str) -> None:
     with pytest.raises(DomainValidationError, match="source_id"):
@@ -185,3 +194,32 @@ def test_retrieval_entities_are_immutable() -> None:
         embedded.vector = [0.2]  # type: ignore[misc]
     with pytest.raises(AttributeError):
         scored.score = 0.9  # type: ignore[misc]
+
+
+def test_embedded_chunk_rejects_wrong_chunk_type_without_leaking_content() -> None:
+    """Validation messages name the type; corpus text must not appear in str(exc)."""
+    sentinel = "CORPUS-LEAK-SENTINEL"
+    nested = DocumentChunk(metadata(), 0, sentinel)
+    impostor = ScoredChunk(nested, 0.5)
+    with pytest.raises(DomainValidationError) as raised:
+        EmbeddedChunk(impostor, [0.1])  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert "ScoredChunk" in message
+    assert "DocumentChunk" in message
+
+
+def test_scored_chunk_rejects_non_finite_score_without_repr() -> None:
+    with pytest.raises(DomainValidationError) as raised:
+        ScoredChunk(chunk(), float("nan"))
+    message = str(raised.value)
+    assert "nan" in message.lower()
+    assert "finite" in message
+
+
+def test_chunk_rejects_negative_index_keeps_number() -> None:
+    with pytest.raises(DomainValidationError) as raised:
+        DocumentChunk(metadata(), -5, "chunk text")
+    message = str(raised.value)
+    assert "-5" in message
+    assert "non-negative" in message

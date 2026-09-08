@@ -52,7 +52,7 @@ def test_blank_then_body_fails() -> None:
 
 
 def test_missing_then_fails() -> None:
-    with pytest.raises(ValueError, match="missing"):
+    with pytest.raises(ValueError, match=r"missing phase\(s\): Then"):
         parse_gherkin_steps(["Given a", "When b"])
 
 
@@ -71,5 +71,10 @@ def test_phase_regression_then_to_when_fails() -> None:
 
 
 def test_given_to_then_skips_when_fails() -> None:
-    with pytest.raises(ValueError, match="missing"):
+    with pytest.raises(ValueError, match=r"missing phase\(s\): When"):
         parse_gherkin_steps(["Given a", "Then c"])
+
+
+def test_only_given_reports_both_missing_phases() -> None:
+    with pytest.raises(ValueError, match=r"missing phase\(s\): When, Then"):
+        parse_gherkin_steps(["Given a"])

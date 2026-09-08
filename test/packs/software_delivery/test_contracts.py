@@ -108,8 +108,24 @@ def test_risk_factor_rejects_blank_id() -> None:
 
 
 def test_risk_factor_rejects_non_positive_weight() -> None:
-    with pytest.raises(RiskScoreValidationError, match="weight"):
+    with pytest.raises(RiskScoreValidationError) as raised:
         RiskFactor("ambiguous_language", 0, [_ref()])
+    assert str(raised.value) == "weight must be a positive integer, got 0"
+
+
+def test_risk_factor_rejects_negative_weight_by_value() -> None:
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskFactor("ambiguous_language", -5, [_ref()])
+    assert str(raised.value) == "weight must be a positive integer, got -5"
+
+
+def test_risk_factor_rejects_non_int_weight_by_type_name() -> None:
+    sentinel = "WEIGHT-LEAK-SENTINEL"
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskFactor("ambiguous_language", [sentinel], [_ref()])  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "weight must be a positive integer, got list"
 
 
 def test_risk_factor_rejects_bool_weight() -> None:

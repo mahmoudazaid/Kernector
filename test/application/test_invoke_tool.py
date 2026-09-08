@@ -53,14 +53,41 @@ def test_invoke_registered_tool_returns_opaque_result() -> None:
 def test_unknown_tool_name_raises_before_any_call() -> None:
     tool = _FakeTool()
     use_case = InvokeTool(ToolRegistry([tool]))
-    with pytest.raises(ApplicationValidationError, match="unknown tool_name"):
+    with pytest.raises(ApplicationValidationError, match="Unknown tool name"):
         use_case.execute(InvokeToolRequest("missing.tool", {}))
     assert tool.calls == []
 
 
+def test_unknown_tool_name_does_not_echo_caller_supplied_name() -> None:
+    sentinel = "TOOL-NAME-LEAK-SENTINEL"
+    use_case = InvokeTool(ToolRegistry([_FakeTool()]))
+    with pytest.raises(ApplicationValidationError) as raised:
+        use_case.execute(InvokeToolRequest(sentinel, {}))
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "Unknown tool name"
+
+
+def test_unknown_tool_name_is_logged_with_the_rejected_name(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sentinel = "TOOL-NAME-LOG-SENTINEL"
+    use_case = InvokeTool(ToolRegistry([_FakeTool()]))
+    with caplog.at_level(logging.ERROR, logger="application.invoke_tool"):
+        with pytest.raises(ApplicationValidationError):
+            use_case.execute(InvokeToolRequest(sentinel, {}))
+    records = operation_records(caplog.records, operation="invoke_tool")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["outcome"] == "error"
+    assert payload["tool"] == sentinel
+
+
 def test_duplicate_tool_names_fail_at_construction() -> None:
-    with pytest.raises(ConfigurationError, match="duplicate"):
+    with pytest.raises(ConfigurationError) as raised:
         ToolRegistry([_FakeTool("same"), _FakeTool("same")])
+    assert str(raised.value) == "duplicate tool name"
+    assert "same" not in str(raised.value)
 
 
 def test_blank_tool_name_fails_at_construction() -> None:

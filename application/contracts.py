@@ -15,6 +15,10 @@ from domain.models import AskResult, Message, Usage
 def _require_text(value: object, field_name: str) -> str:
     """Reject anything that is not a non-blank string.
 
+    The type check runs before the blankness check so a wrong type is reported
+    as a wrong type. Fusing the two would report every rejection as "must be
+    non-empty", which is false for an ``int`` and hides what actually arrived.
+
     Args:
         value (object): Candidate field value.
         field_name (str): Name used in the error message.
@@ -25,7 +29,11 @@ def _require_text(value: object, field_name: str) -> str:
     Raises:
         ApplicationValidationError: If ``value`` is blank or not a string.
     """
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise ApplicationValidationError(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise ApplicationValidationError(f"{field_name} must be non-empty")
     return value
 
@@ -45,7 +53,7 @@ def _require_sequence(value: object, field_name: str) -> Sequence[object]:
     """
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise ApplicationValidationError(
-            f"{field_name} must be a sequence, got {value!r}"
+            f"{field_name} must be a sequence, got {type(value).__name__}"
         )
     return value
 
@@ -61,9 +69,14 @@ def _require_chunk_index(value: object) -> None:
     """
     if value is None:
         return
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ApplicationValidationError(
-            f"chunk_index must be a non-negative integer, got {value!r}"
+            f"chunk_index must be a non-negative integer, "
+            f"got {type(value).__name__}"
+        )
+    if value < 0:
+        raise ApplicationValidationError(
+            f"chunk_index must be a non-negative integer, got {value}"
         )
 
 
@@ -78,9 +91,14 @@ def _require_retrieval_limit(value: object) -> None:
     """
     if value is None:
         return
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ApplicationValidationError(
-            f"retrieval_limit must be a positive integer, got {value!r}"
+            f"retrieval_limit must be a positive integer, "
+            f"got {type(value).__name__}"
+        )
+    if value <= 0:
+        raise ApplicationValidationError(
+            f"retrieval_limit must be a positive integer, got {value}"
         )
 
 
@@ -99,7 +117,8 @@ def _require_positive_retrieval_limit(value: object) -> int:
     _require_retrieval_limit(value)
     if value is None:
         raise ApplicationValidationError(
-            f"retrieval_limit must be a positive integer, got {value!r}"
+            f"retrieval_limit must be a positive integer, "
+            f"got {type(value).__name__}"
         )
     return value
 
@@ -122,16 +141,23 @@ def _require_metadata_filters(
         return None
     if not isinstance(value, Mapping):
         raise ApplicationValidationError(
-            f"metadata_filters must be a mapping, got {value!r}"
+            f"metadata_filters must be a mapping, "
+            f"got {type(value).__name__}"
         )
     for key, filter_value in value.items():
-        if not isinstance(key, str) or not key.strip():
+        if not isinstance(key, str):
             raise ApplicationValidationError(
-                f"metadata_filters keys must be non-blank strings, got {key!r}"
+                f"metadata_filters keys must be non-blank strings, "
+                f"got {type(key).__name__}"
+            )
+        if not key.strip():
+            raise ApplicationValidationError(
+                "metadata_filters keys must be non-blank strings, got blank str"
             )
         if not isinstance(filter_value, str):
             raise ApplicationValidationError(
-                f"metadata_filters values must be strings, got {filter_value!r}"
+                f"metadata_filters values must be strings, "
+                f"got {type(filter_value).__name__}"
             )
     return dict(value)
 
@@ -145,9 +171,14 @@ def _require_chunk_count(value: object) -> None:
     Raises:
         ApplicationValidationError: If not a non-negative ``int``.
     """
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ApplicationValidationError(
-            f"chunk_count must be a non-negative integer, got {value!r}"
+            f"chunk_count must be a non-negative integer, "
+            f"got {type(value).__name__}"
+        )
+    if value < 0:
+        raise ApplicationValidationError(
+            f"chunk_count must be a non-negative integer, got {value}"
         )
 
 
@@ -168,7 +199,8 @@ class Citation:
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
             raise ApplicationValidationError(
-                f"reference must be a SourceReference, got {self.reference!r}"
+                f"reference must be a SourceReference, "
+                f"got {type(self.reference).__name__}"
             )
         if self.quote is not None:
             _require_text(self.quote, "quote")
@@ -210,17 +242,19 @@ class AskRequest:
         grounding_references = _require_sequence(
             self.grounding_references, "grounding_references"
         )
-        for item in grounding_references:
+        for index, item in enumerate(grounding_references):
             if not isinstance(item, SourceReference):
                 raise ApplicationValidationError(
-                    f"grounding_references items must be SourceReference, got {item!r}"
+                    f"grounding_references[{index}] must be a SourceReference, "
+                    f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "grounding_references", tuple(grounding_references))
         history = _require_sequence(self.history, "history")
-        for item in history:
+        for index, item in enumerate(history):
             if not isinstance(item, Message):
                 raise ApplicationValidationError(
-                    f"history items must be Message, got {item!r}"
+                    f"history[{index}] must be a Message, "
+                    f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "history", tuple(history))
         _require_retrieval_limit(self.retrieval_limit)
@@ -274,21 +308,27 @@ class RunMeta:
     def __post_init__(self) -> None:
         if self.model is not None:
             _require_text(self.model, "model")
-        if self.latency_ms is not None and (
-            not isinstance(self.latency_ms, int)
-            or isinstance(self.latency_ms, bool)
-            or self.latency_ms < 0
-        ):
-            raise ApplicationValidationError(
-                f"latency_ms must be a non-negative integer, got {self.latency_ms!r}"
-            )
+        if self.latency_ms is not None:
+            if not isinstance(self.latency_ms, int) or isinstance(
+                self.latency_ms, bool
+            ):
+                raise ApplicationValidationError(
+                    f"latency_ms must be a non-negative integer, "
+                    f"got {type(self.latency_ms).__name__}"
+                )
+            if self.latency_ms < 0:
+                raise ApplicationValidationError(
+                    f"latency_ms must be a non-negative integer, "
+                    f"got {self.latency_ms}"
+                )
         if self.usage is not None and not isinstance(self.usage, Usage):
             raise ApplicationValidationError(
-                f"usage must be a Usage, got {self.usage!r}"
+                f"usage must be a Usage, got {type(self.usage).__name__}"
             )
         if not isinstance(self.settings, Mapping):
             raise ApplicationValidationError(
-                f"settings must be a mapping, got {self.settings!r}"
+                f"settings must be a mapping, "
+                f"got {type(self.settings).__name__}"
             )
         object.__setattr__(self, "settings", dict(self.settings))
         for name in (
@@ -303,34 +343,49 @@ class RunMeta:
             value = getattr(self, name)
             if value is not None:
                 _require_text(value, name)
-        if self.hit_count is not None and (
-            not isinstance(self.hit_count, int)
-            or isinstance(self.hit_count, bool)
-            or self.hit_count < 0
-        ):
-            raise ApplicationValidationError(
-                f"hit_count must be a non-negative integer, got {self.hit_count!r}"
-            )
+        if self.hit_count is not None:
+            if not isinstance(self.hit_count, int) or isinstance(
+                self.hit_count, bool
+            ):
+                raise ApplicationValidationError(
+                    f"hit_count must be a non-negative integer, "
+                    f"got {type(self.hit_count).__name__}"
+                )
+            if self.hit_count < 0:
+                raise ApplicationValidationError(
+                    f"hit_count must be a non-negative integer, "
+                    f"got {self.hit_count}"
+                )
         if self.query_rewritten is not None and not isinstance(
             self.query_rewritten, bool
         ):
             raise ApplicationValidationError(
-                f"query_rewritten must be a bool, got {self.query_rewritten!r}"
+                f"query_rewritten must be a bool, "
+                f"got {type(self.query_rewritten).__name__}"
             )
-        if self.citation_count is not None and (
-            not isinstance(self.citation_count, int)
-            or isinstance(self.citation_count, bool)
-            or self.citation_count < 0
-        ):
-            raise ApplicationValidationError(
-                "citation_count must be a non-negative integer, "
-                f"got {self.citation_count!r}"
-            )
-        tools = _require_sequence(self.tools, "tools")
-        for item in tools:
-            if not isinstance(item, str) or not item.strip():
+        if self.citation_count is not None:
+            if not isinstance(self.citation_count, int) or isinstance(
+                self.citation_count, bool
+            ):
                 raise ApplicationValidationError(
-                    f"tools items must be non-empty strings, got {item!r}"
+                    "citation_count must be a non-negative integer, "
+                    f"got {type(self.citation_count).__name__}"
+                )
+            if self.citation_count < 0:
+                raise ApplicationValidationError(
+                    "citation_count must be a non-negative integer, "
+                    f"got {self.citation_count}"
+                )
+        tools = _require_sequence(self.tools, "tools")
+        for index, item in enumerate(tools):
+            if not isinstance(item, str):
+                raise ApplicationValidationError(
+                    f"tools[{index}] must be a non-empty string, "
+                    f"got {type(item).__name__}"
+                )
+            if not item.strip():
+                raise ApplicationValidationError(
+                    f"tools[{index}] must be a non-empty string, got blank str"
                 )
         object.__setattr__(self, "tools", tuple(tools))
 
@@ -367,20 +422,22 @@ class AskResponse:
         _require_text(self.answer, "answer")
         if self.run is not None and not isinstance(self.run, RunMeta):
             raise ApplicationValidationError(
-                f"run must be a RunMeta, got {self.run!r}"
+                f"run must be a RunMeta, got {type(self.run).__name__}"
             )
         citations = _require_sequence(self.citations, "citations")
-        for item in citations:
+        for index, item in enumerate(citations):
             if not isinstance(item, Citation):
                 raise ApplicationValidationError(
-                    f"citations items must be Citation, got {item!r}"
+                    f"citations[{index}] must be a Citation, "
+                    f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "citations", tuple(citations))
         tool_outputs = _require_sequence(self.tool_outputs, "tool_outputs")
-        for item in tool_outputs:
+        for index, item in enumerate(tool_outputs):
             if not isinstance(item, InvokeToolResponse):
                 raise ApplicationValidationError(
-                    f"tool_outputs items must be InvokeToolResponse, got {item!r}"
+                    f"tool_outputs[{index}] must be an InvokeToolResponse, "
+                    f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "tool_outputs", tuple(tool_outputs))
 
@@ -397,10 +454,11 @@ class IngestRequest:
 
     def __post_init__(self) -> None:
         documents = _require_sequence(self.documents, "documents")
-        for item in documents:
+        for index, item in enumerate(documents):
             if not isinstance(item, SourceDocument):
                 raise ApplicationValidationError(
-                    f"documents items must be SourceDocument, got {item!r}"
+                    f"documents[{index}] must be a SourceDocument, "
+                    f"got {type(item).__name__}"
                 )
         if not documents:
             raise ApplicationValidationError(
@@ -424,8 +482,8 @@ class IngestResponse:
 
     def __post_init__(self) -> None:
         accepted_ids = _require_sequence(self.accepted_ids, "accepted_ids")
-        for item in accepted_ids:
-            _require_text(item, "accepted_ids item")
+        for index, item in enumerate(accepted_ids):
+            _require_text(item, f"accepted_ids[{index}]")
         object.__setattr__(self, "accepted_ids", tuple(accepted_ids))
         _require_chunk_count(self.chunk_count)
 
@@ -447,12 +505,18 @@ class InvokeToolRequest:
         _require_text(self.tool_name, "tool_name")
         if not isinstance(self.arguments, Mapping):
             raise ApplicationValidationError(
-                f"arguments must be a mapping, got {self.arguments!r}"
+                f"arguments must be a mapping, "
+                f"got {type(self.arguments).__name__}"
             )
         for key in self.arguments:
-            if not isinstance(key, str) or not key.strip():
+            if not isinstance(key, str):
                 raise ApplicationValidationError(
-                    f"arguments keys must be non-blank strings, got {key!r}"
+                    f"arguments keys must be non-blank strings, "
+                    f"got {type(key).__name__}"
+                )
+            if not key.strip():
+                raise ApplicationValidationError(
+                    "arguments keys must be non-blank strings, got blank str"
                 )
         object.__setattr__(self, "arguments", dict(self.arguments))
 
@@ -516,10 +580,11 @@ class RetrieveResponse:
 
     def __post_init__(self) -> None:
         hits = _require_sequence(self.hits, "hits")
-        for item in hits:
+        for index, item in enumerate(hits):
             if not isinstance(item, ScoredChunk):
                 raise ApplicationValidationError(
-                    f"hits items must be ScoredChunk, got {item!r}"
+                    f"hits[{index}] must be a ScoredChunk, "
+                    f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "hits", tuple(hits))
 
@@ -542,10 +607,11 @@ class RewriteRetrieveResponse:
         _require_text(self.original_query, "original_query")
         _require_text(self.rewritten_query, "rewritten_query")
         hits = _require_sequence(self.hits, "hits")
-        for item in hits:
+        for index, item in enumerate(hits):
             if not isinstance(item, ScoredChunk):
                 raise ApplicationValidationError(
-                    f"hits items must be ScoredChunk, got {item!r}"
+                    f"hits[{index}] must be a ScoredChunk, "
+                    f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "hits", tuple(hits))
 
