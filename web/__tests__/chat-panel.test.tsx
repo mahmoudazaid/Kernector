@@ -164,7 +164,7 @@ describe("ChatPanel", () => {
     });
   });
 
-  it("shows Thinking… and disables the composer while sending", async () => {
+  it("shows the thinking mark and disables the composer while sending", async () => {
     const user = userEvent.setup();
     let resolveAsk: (value: ChatAskResponse) => void = () => undefined;
     const ask = vi.fn(
@@ -184,10 +184,13 @@ describe("ChatPanel", () => {
     await user.type(await screen.findByLabelText(/message/i), "hello");
     await user.click(screen.getByRole("button", { name: /send/i }));
 
-    expect(await screen.findByText(/Thinking/i)).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
+    const thinking = (await screen.findByText("Thinking…")).closest(
+      ".kern-chat-thinking",
+    ) as HTMLElement;
+    expect(thinking).toHaveAttribute("role", "status");
+    expect(
+      thinking.querySelector(".kern-chat-thinking-mark"),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/message/i)).toBeDisabled();
 
     resolveAsk(SUCCESS);
@@ -599,9 +602,8 @@ describe("ChatPanel", () => {
     const input = await screen.findByLabelText(/message/i);
     await user.type(input, "abcdefghijkl");
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /remove 2 to send/i,
-    );
+    const draftGuidance = await screen.findByText(/remove 2 to send/i);
+    expect(draftGuidance).toHaveAttribute("role", "status");
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
 
     await user.type(input, "{Enter}");
@@ -629,9 +631,10 @@ describe("ChatPanel", () => {
     );
 
     expect(await screen.findByText("ok")).toBeInTheDocument();
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    const historyGuidance = await screen.findByText(
       /previous message exceeds 20 characters/i,
     );
+    expect(historyGuidance).toHaveAttribute("role", "status");
     expect(screen.getByLabelText(/message/i)).toBeDisabled();
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
 

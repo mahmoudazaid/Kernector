@@ -91,7 +91,9 @@ npm run dev   # http://localhost:3000
 ```
 
 Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`,
-`NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
+`NEXT_PUBLIC_API_BASE_URL` (defaults to `http://127.0.0.1:8000`),
+`NEXT_PUBLIC_SITE_URL` (defaults to `http://localhost:3000`; used as
+`metadataBase` for Open Graph URLs).
 
 With both processes up, open `/settings` for provider/model controls and `/chat`
 for grounded ask (history, citations, tools-used, projected tool results). Chat

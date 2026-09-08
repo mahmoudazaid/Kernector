@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/states/EmptyState";
 import { UnavailableState } from "@/components/states/UnavailableState";
+import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
   askChat,
   type AskChatOptions,
@@ -619,8 +620,9 @@ export function ChatPanel({
               <MessageRow key={message.id} message={message} />
             ))}
             {sending ? (
-              <p className="kern-chat-thinking" aria-busy="true">
-                Thinking…
+              <p className="kern-chat-thinking" role="status">
+                <KernectorThinkingMark className="kern-chat-thinking-mark" />
+                <span className="visually-hidden">Thinking…</span>
               </p>
             ) : null}
           </div>

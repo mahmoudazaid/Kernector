@@ -41,7 +41,8 @@ describe("shell navigation", () => {
     expect(
       screen.getByRole("link", { name: /kernector home/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Kernector")).toBeInTheDocument();
+    expect(screen.getByText("ERNECTOR")).toBeInTheDocument();
+    expect(document.querySelector("svg.kern-brand-mark")).toBeInTheDocument();
     expect(screen.getByText("Multi-source knowledge hub")).toBeInTheDocument();
   });
 

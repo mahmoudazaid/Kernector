@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { PRODUCT_LABEL } from "@/lib/navigation";
+import { KernectorMark } from "@/components/shell/KernectorMark";
 import { SidebarNav } from "@/components/shell/SidebarNav";
 import { ThemeToggle } from "@/components/shell/ThemeToggle";
 
@@ -47,10 +48,8 @@ export function AppShell({ children }: AppShellProps) {
           </svg>
         </button>
         <Link className="kern-brand" href="/" aria-label="Kernector home">
-          <span className="kern-brand-mark" aria-hidden="true">
-            K
-          </span>
-          <span className="kern-brand-text">Kernector</span>
+          <KernectorMark className="kern-brand-mark" />
+          <span className="kern-brand-text">ERNECTOR</span>
         </Link>
         <span className="kern-product-label">{PRODUCT_LABEL}</span>
         <ThemeToggle />

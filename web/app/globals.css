@@ -80,7 +80,7 @@ a {
 .kern-brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--kern-space-2);
+  gap: 0;
   color: var(--kern-ink);
   font-weight: 500;
   border-radius: var(--kern-radius-sm);
@@ -99,24 +99,27 @@ a {
 }
 
 .kern-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid color-mix(in srgb, var(--kern-accent) 45%, transparent);
-  border-radius: 10px;
-  background:
-    var(--kern-control-sheen),
-    var(--kern-accent-soft);
-  color: var(--kern-accent);
-  font-family: var(--kern-font-mono);
-  font-size: var(--kern-text-sm);
-  font-weight: 500;
-  box-shadow: var(--kern-control-emboss);
+  display: block;
+  width: 36px;
+  height: 32px;
+  margin-right: -4px;
+  flex-shrink: 0;
+}
+
+.kern-brand-mark-body {
+  fill: var(--kern-accent);
+}
+
+.kern-brand-mark-accent {
+  fill: color-mix(in srgb, var(--kern-accent) 40%, var(--kern-focus));
 }
 
 .kern-brand-text {
-  letter-spacing: -0.01em;
+  color: var(--kern-ink);
+  font-family: var(--kern-font-sans);
+  font-size: var(--kern-text-lg);
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .kern-product-label {
@@ -1396,8 +1399,200 @@ a {
 }
 
 .kern-chat-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kern-space-2);
   margin: 0;
   color: var(--kern-muted);
+}
+
+.kern-chat-thinking-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.kern-thinking-body {
+  fill: var(--kern-accent);
+}
+
+.kern-thinking-accent {
+  fill: color-mix(in srgb, var(--kern-accent) 40%, var(--kern-focus));
+}
+
+.kern-thinking-stroke {
+  fill: none;
+  stroke: var(--kern-accent);
+}
+
+.kern-chat-thinking-mark .kn-sweep {
+  animation: kn-sweep 3.2s ease-in-out infinite;
+}
+
+.kern-chat-thinking-mark .kn-cloud {
+  animation: kn-cloud 3.2s ease-in-out infinite;
+  transform-origin: 0 0;
+}
+
+.kern-chat-thinking-mark .kn-trail {
+  animation: kn-trail 3.2s ease-in-out infinite;
+}
+
+.kern-chat-thinking-mark .kn-dot {
+  transform-origin: 0 0;
+}
+
+.kern-chat-thinking-mark .kn-d1 {
+  animation: kn-d1 3.2s ease-out infinite;
+}
+
+.kern-chat-thinking-mark .kn-d2 {
+  animation: kn-d2 3.2s ease-out infinite;
+}
+
+.kern-chat-thinking-mark .kn-d3 {
+  animation: kn-d3 3.2s ease-out infinite;
+}
+
+.kern-chat-thinking-mark .kn-rest {
+  display: none;
+}
+
+@keyframes kn-sweep {
+  0% {
+    transform: translate(0px, 0px);
+  }
+  10% {
+    transform: translate(0px, 0px);
+  }
+  42% {
+    transform: translate(24.83px, -24.83px);
+  }
+  70% {
+    transform: translate(24.83px, -24.83px);
+  }
+  92% {
+    transform: translate(0px, 0px);
+  }
+  100% {
+    transform: translate(0px, 0px);
+  }
+}
+
+@keyframes kn-cloud {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  14% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  34% {
+    transform: scale(0.92);
+    opacity: 1;
+  }
+  38% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  44% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  72% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  74% {
+    transform: scale(0.92);
+    opacity: 1;
+  }
+  90% {
+    transform: scale(0.28);
+    opacity: 0;
+  }
+  92% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+
+@keyframes kn-trail {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes kn-d1 {
+  0%,
+  44% {
+    transform: scale(0);
+  }
+  52%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes kn-d2 {
+  0%,
+  51% {
+    transform: scale(0);
+  }
+  59%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes kn-d3 {
+  0%,
+  58% {
+    transform: scale(0);
+  }
+  66%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kern-chat-thinking-mark .kn-sweep,
+  .kern-chat-thinking-mark .kn-cloud,
+  .kern-chat-thinking-mark .kn-trail,
+  .kern-chat-thinking-mark .kn-dot {
+    animation: none;
+  }
+
+  .kern-chat-thinking-mark .kn-sweep {
+    display: none;
+  }
+
+  .kern-chat-thinking-mark .kn-rest {
+    display: inline;
+  }
 }
 
 .kern-chat-inline-error {
