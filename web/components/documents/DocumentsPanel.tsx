@@ -91,6 +91,7 @@ export function DocumentsPanel({
   const {
     catalog: runtimeCatalog,
     error: settingsError,
+    loading: settingsLoading,
     reload: reloadSettings,
   } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const constraints = runtimeCatalog?.constraints ?? null;
@@ -288,8 +289,12 @@ export function DocumentsPanel({
           title="Backend unavailable"
           description="The documents API could not be reached. Start the FastAPI server and try again."
         />
-        <Button variant="secondary" onClick={retryAll}>
-          Retry
+        <Button
+          variant="secondary"
+          disabled={settingsLoading}
+          onClick={retryAll}
+        >
+          {settingsLoading ? "Checking…" : "Retry"}
         </Button>
       </section>
     );
@@ -307,8 +312,12 @@ export function DocumentsPanel({
         >
           {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
           {settingsError ? <p>{settingsError}</p> : null}
-          <Button variant="secondary" onClick={retryAll}>
-            Retry
+          <Button
+            variant="secondary"
+            disabled={settingsLoading}
+            onClick={retryAll}
+          >
+            {settingsLoading ? "Checking…" : "Retry"}
           </Button>
         </div>
       ) : null}

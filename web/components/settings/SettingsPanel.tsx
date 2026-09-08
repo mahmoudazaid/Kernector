@@ -201,10 +201,10 @@ export function SettingsPanel({
     }
   }
 
-  const catalogView: CatalogView = catalogLoading
-    ? { kind: "loading" }
-    : catalogError
-      ? { kind: "error", message: catalogError }
+  const catalogView: CatalogView = catalogError
+    ? { kind: "error", message: catalogError }
+    : catalogLoading
+      ? { kind: "loading" }
       : catalog
         ? { kind: "ready", catalog }
         : { kind: "loading" };
@@ -306,8 +306,12 @@ export function SettingsPanel({
             ? catalogView.message
             : SETTINGS_CATALOG_UNAVAILABLE}
         </p>
-        <Button variant="secondary" onClick={() => reload()}>
-          Retry
+        <Button
+          variant="secondary"
+          disabled={catalogLoading}
+          onClick={() => reload()}
+        >
+          {catalogLoading ? "Checking…" : "Retry"}
         </Button>
       </div>
     );

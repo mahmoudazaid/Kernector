@@ -471,4 +471,48 @@ describe("DocumentsPanel", () => {
     expect(healthyLoadSettings).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the retry callout visible while settings reload", async () => {
+    const user = userEvent.setup();
+    let finishReload: (value: RuntimeSettingsResponse) => void = () => {
+      throw new Error("reload was not started");
+    };
+    const loadSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("settings down"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<RuntimeSettingsResponse>((resolve) => {
+            finishReload = resolve;
+          }),
+      );
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/settings catalog unavailable/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^retry$/i }));
+
+    expect(
+      await screen.findByRole("button", { name: /^checking/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /settings catalog unavailable/i,
+    );
+
+    finishReload(SETTINGS);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/document file/i)).toBeEnabled();
+  });
 });

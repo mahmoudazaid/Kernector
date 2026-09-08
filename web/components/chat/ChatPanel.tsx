@@ -326,6 +326,7 @@ export function ChatPanel({
   const {
     catalog,
     error: settingsError,
+    loading: settingsLoading,
     reload: reloadSettings,
   } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const maxInputLength = catalog?.constraints.max_input_length ?? null;
@@ -592,9 +593,10 @@ export function ChatPanel({
             <Button
               variant="secondary"
               type="button"
+              disabled={settingsLoading}
               onClick={() => reloadSettings()}
             >
-              Retry
+              {settingsLoading ? "Checking…" : "Retry"}
             </Button>
           </div>
         ) : null}

@@ -44,10 +44,12 @@ export function useRuntimeCatalog(
     let active = true;
     const resetCatalog = prevUrlRef.current !== apiBaseUrl;
     prevUrlRef.current = apiBaseUrl;
+    // Keep a prior error until the refetch settles so Retry stays mounted.
+    // A base-URL switch still clears both catalog and error.
     if (resetCatalog) {
       setCatalog(null);
+      setError(null);
     }
-    setError(null);
     setLoading(true);
 
     void loadRef
@@ -64,6 +66,9 @@ export function useRuntimeCatalog(
         if (!active || controller.signal.aborted) {
           return;
         }
+        // Same-URL reload keeps the last catalog so a caller that retries a
+        // healthy catalog (none do yet) can keep stale-but-valid constraints.
+        // A base-URL switch still clears it: the old catalog belongs to another server.
         if (resetCatalog) {
           setCatalog(null);
         }
