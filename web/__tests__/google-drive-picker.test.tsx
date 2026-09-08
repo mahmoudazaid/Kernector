@@ -244,10 +244,34 @@ describe("GoogleDrivePicker", () => {
       name: /choose from google drive/i,
     });
     expect(await within(dialog).findByRole("checkbox", { name: /specs/i })).toBeChecked();
+    await user.click(within(dialog).getByRole("checkbox", { name: /guide.md/i }));
     await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
     expect(onConfirm).toHaveBeenCalledWith({
       folders: [{ id: "folder-1", name: "Old" }],
-      files: [],
+      files: [{ id: "file-9", name: "guide.md" }],
     });
+  });
+
+  it("enables Save after deselecting the last item and keeps it dimmed when unchanged", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderPicker({
+      initialSelection: {
+        folders: [{ id: "folder-1", name: "Specs" }],
+        files: [],
+      },
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    const save = within(dialog).getByRole("button", { name: /^save$/i });
+    expect(await within(dialog).findByRole("checkbox", { name: /specs/i })).toBeChecked();
+    expect(save).toBeDisabled();
+
+    await user.click(within(dialog).getByRole("checkbox", { name: /specs/i }));
+    expect(save).toBeEnabled();
+    expect(within(dialog).getByText(/no items selected/i)).toBeInTheDocument();
+
+    await user.click(save);
+    expect(onConfirm).toHaveBeenCalledWith({ folders: [], files: [] });
   });
 });

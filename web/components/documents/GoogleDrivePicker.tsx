@@ -79,6 +79,23 @@ function toSelection(
   return { folders, files };
 }
 
+function sameSelection(
+  map: Map<string, { id: string; name: string; kind: "folder" | "file" }>,
+  selection: GoogleDriveSelectionResponse,
+): boolean {
+  const baseline = selectedMap(selection);
+  if (map.size !== baseline.size) {
+    return false;
+  }
+  for (const [id, item] of map) {
+    const other = baseline.get(id);
+    if (!other || other.kind !== item.kind) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function browseErrorMessage(error: unknown): {
   message: string;
   code?: string;
@@ -327,6 +344,7 @@ export function GoogleDrivePicker({
 
   const countLabel =
     selected.size === 0 ? "No items selected" : `${selected.size} selected`;
+  const selectionUnchanged = sameSelection(selected, initialSelection);
 
   function toggle(item: GoogleDriveBrowseItemResponse) {
     const kind = item.kind === "folder" ? "folder" : "file";
@@ -542,7 +560,7 @@ export function GoogleDrivePicker({
               Cancel
             </Button>
             <Button
-              disabled={busy || selected.size === 0}
+              disabled={busy || selectionUnchanged}
               onClick={() => onConfirm(toSelection(selected))}
             >
               {busy ? "Saving…" : "Save"}
