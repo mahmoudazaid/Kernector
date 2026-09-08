@@ -906,7 +906,7 @@ describe("DocumentsPanel", () => {
     }).parentElement?.nextElementSibling;
     expect(available?.textContent).toMatch(/google drive/i);
     expect(
-      screen.queryByRole("button", { name: /sync now/i }),
+      screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Knowledge Hub" }),
@@ -948,7 +948,7 @@ describe("DocumentsPanel", () => {
       expect(connected?.textContent).toMatch(/google drive/i);
     });
     expect(
-      await screen.findByRole("button", { name: /sync now/i }),
+      await screen.findByRole("button", { name: /Sync/i }),
     ).toBeInTheDocument();
     const available = screen.getByRole("heading", {
       name: "Available connectors",

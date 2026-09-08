@@ -473,7 +473,7 @@ export function GoogleDrivePanel({
                 disabled={syncDisabled}
                 onClick={() => void onSync()}
               >
-                {busy && !pickerOpen ? "Syncing…" : "Sync now"}
+                {busy && !pickerOpen ? "Syncing…" : "Sync"}
               </Button>
             </>
           )}

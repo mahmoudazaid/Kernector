@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { KernectorLoaderMark } from "@/components/shell/KernectorLoaderMark";
 import { ApiError } from "@/lib/api/errors";
 import {
   listGoogleDriveItems,
@@ -413,7 +414,7 @@ export function GoogleDrivePicker({
           </form>
         </div>
 
-        {query ? null : (
+        {query || view.kind === "loading" ? null : (
           <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
             {crumbs.map((crumb, index) => (
               <span key={crumb.id}>
@@ -434,9 +435,18 @@ export function GoogleDrivePicker({
           </nav>
         )}
 
-        <div className="kern-picker-list">
+        <div
+          className={
+            view.kind === "loading"
+              ? "kern-picker-list is-loading"
+              : "kern-picker-list"
+          }
+        >
           {view.kind === "loading" ? (
-            <p role="status">Loading Google Drive…</p>
+            <div className="kern-picker-loading" role="status">
+              <KernectorLoaderMark className="kern-picker-loader" />
+              <span className="visually-hidden">Loading Google Drive…</span>
+            </div>
           ) : null}
           {view.kind === "error" ? (
             <div

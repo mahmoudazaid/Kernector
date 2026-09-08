@@ -200,7 +200,7 @@ Google Drive has two connection strategies. Knowledge Hub uses **user OAuth**. T
 5. In Knowledge Hub, click **Connect**. Google owns account selection and consent.
 6. After the callback, choose folders (recommended) or individual files, then
    **Add selection & sync**. That saves the scope and runs the first import.
-   Later **Sync now** refreshes only new or changed documents. **Change Drive
+   Later **Sync** refreshes only new or changed documents. **Change Drive
    selection** reopens the picker. **Disconnect** revokes the stored grant
    and leaves already indexed documents in place.
 

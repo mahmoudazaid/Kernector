@@ -59,6 +59,43 @@ function renderPicker(
 }
 
 describe("GoogleDrivePicker", () => {
+  it("shows the brand loader while Drive items are loading", async () => {
+    let resolveFolders: (value: {
+      items: GoogleDriveBrowseItemResponse[];
+      next_page_token: null;
+    }) => void = () => undefined;
+    const folders = new Promise<{
+      items: GoogleDriveBrowseItemResponse[];
+      next_page_token: null;
+    }>((resolve) => {
+      resolveFolders = resolve;
+    });
+    renderPicker({
+      listItems: async (options) => {
+        if (options.kind === "files") {
+          return { items: [], next_page_token: null };
+        }
+        return folders;
+      },
+    });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    const status = within(dialog).getByRole("status");
+    expect(status).toHaveTextContent(/loading google drive/i);
+    expect(status.querySelector("img.kern-picker-loader")).toHaveAttribute(
+      "src",
+      "/brand/kernector-loader.svg",
+    );
+    expect(
+      status.querySelector(".kern-chat-thinking-mark"),
+    ).not.toBeInTheDocument();
+
+    resolveFolders({ items: [FOLDER], next_page_token: null });
+    expect(await within(dialog).findByText("Specs")).toBeInTheDocument();
+  });
+
   it("shows folders and files in one Drive view", async () => {
     renderPicker();
     const dialog = await screen.findByRole("dialog", {

@@ -1454,6 +1454,23 @@ a.kern-btn {
   background: var(--kern-surface-2);
 }
 
+.kern-picker-list.is-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kern-picker-loading {
+  display: grid;
+  place-items: center;
+}
+
+.kern-picker-loader {
+  display: block;
+  width: 72px;
+  height: auto;
+}
+
 .kern-drive-item {
   display: flex;
   align-items: center;

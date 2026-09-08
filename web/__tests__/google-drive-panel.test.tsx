@@ -90,7 +90,7 @@ describe("GoogleDrivePanel", () => {
       `http://api.test${GOOGLE_DRIVE_OAUTH_START_PATH}`,
     );
     expect(
-      screen.queryByRole("button", { name: /sync now/i }),
+      screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
     expect(document.querySelector("input")).toBeNull();
     expect(document.body.textContent).not.toMatch(
@@ -180,7 +180,7 @@ describe("GoogleDrivePanel", () => {
     );
 
     expect(
-      await screen.findByRole("button", { name: /sync now/i }),
+      await screen.findByRole("button", { name: /Sync/i }),
     ).toBeEnabled();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^connect$/i })).toBeNull();
@@ -222,7 +222,7 @@ describe("GoogleDrivePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Never and disables Sync now when setup is required", async () => {
+  it("shows Never and disables Sync when setup is required", async () => {
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
@@ -234,14 +234,14 @@ describe("GoogleDrivePanel", () => {
     expect(await screen.findByText(/^never$/i)).toBeInTheDocument();
     expect(screen.getByText(/not selected/i)).toBeInTheDocument();
     expect(screen.getByText(/setup required/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /sync now/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Sync/i })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: /choose folders or files/i }),
     ).toBeEnabled();
     expect(screen.queryByText(/^new$/i)).toBeNull();
   });
 
-  it("updates last-sync counts from a status refetch after Sync now", async () => {
+  it("updates last-sync counts from a status refetch after Sync", async () => {
     const user = userEvent.setup();
     const getStatus = vi
       .fn()
@@ -272,7 +272,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: /sync now/i }));
+    await user.click(await screen.findByRole("button", { name: /Sync/i }));
 
     expect(await screen.findByText(/^new$/i)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/new\s*1/i);
@@ -281,7 +281,7 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/failed\s*0/i);
   });
 
-  it("notifies the catalog after Sync now succeeds", async () => {
+  it("notifies the catalog after Sync succeeds", async () => {
     const user = userEvent.setup();
     const onCatalogChange = vi.fn();
     render(
@@ -299,11 +299,11 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: /sync now/i }));
+    await user.click(await screen.findByRole("button", { name: /Sync/i }));
     await waitFor(() => expect(onCatalogChange).toHaveBeenCalledTimes(1));
   });
 
-  it("disables Sync now while a run is in progress", async () => {
+  it("disables Sync while a run is in progress", async () => {
     const user = userEvent.setup();
     let resolveSync: (value: unknown) => void = () => {};
     const syncNow = vi.fn(
@@ -321,7 +321,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    const button = await screen.findByRole("button", { name: /sync now/i });
+    const button = await screen.findByRole("button", { name: /Sync/i });
     await user.click(button);
     await user.click(button);
     expect(syncNow).toHaveBeenCalledTimes(1);
@@ -347,7 +347,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: /sync now/i }));
+    await user.click(await screen.findByRole("button", { name: /Sync/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Google Drive connector sync failed.",
     );
@@ -367,7 +367,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: /sync now/i }));
+    await user.click(await screen.findByRole("button", { name: /Sync/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /may still be in progress on the server/i,
     );
@@ -410,7 +410,7 @@ describe("GoogleDrivePanel", () => {
       await screen.findByRole("link", { name: /^connect$/i }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: /sync now/i }),
+      screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -436,7 +436,7 @@ describe("GoogleDrivePanel", () => {
       `http://api.test${GOOGLE_DRIVE_OAUTH_START_PATH}`,
     );
     expect(
-      screen.queryByRole("button", { name: /sync now/i }),
+      screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -510,7 +510,7 @@ describe("GoogleDrivePanel", () => {
     );
     expect(syncNow).toHaveBeenCalledTimes(1);
     expect(
-      await screen.findByRole("button", { name: /sync now/i }),
+      await screen.findByRole("button", { name: /Sync/i }),
     ).toBeEnabled();
     expect(
       screen.getByRole("button", { name: /Browse/i }),
