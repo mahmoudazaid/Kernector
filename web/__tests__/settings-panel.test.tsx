@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
@@ -343,12 +343,16 @@ describe("SettingsPanel", () => {
   });
 
   it("shows a safe error when the catalog fails", async () => {
+    const user = userEvent.setup();
+    const loadCatalog = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(CATALOG);
+
     render(
       <SettingsPanel
         apiBaseUrl="http://127.0.0.1:8000"
-        loadCatalog={async () => {
-          throw new Error("boom");
-        }}
+        loadCatalog={loadCatalog}
       />,
     );
 
@@ -356,6 +360,13 @@ describe("SettingsPanel", () => {
       await screen.findByText(/Settings catalog unavailable/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/boom|Traceback/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Retry$/i }));
+
+    expect(
+      await screen.findByRole("radio", { name: /OpenRouter/i }),
+    ).toBeInTheDocument();
+    expect(loadCatalog).toHaveBeenCalledTimes(2);
   });
 
   it("leaves the active session untouched when provider/model change", async () => {

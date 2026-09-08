@@ -33,9 +33,7 @@ import {
 export type DocumentsPanelProps = {
   apiBaseUrl: string;
   list?: (options: ListDocumentsOptions) => Promise<DocumentListResponse>;
-  upload?: (
-    options: UploadDocumentOptions,
-  ) => Promise<CatalogDocumentResponse>;
+  upload?: (options: UploadDocumentOptions) => Promise<CatalogDocumentResponse>;
   replace?: (
     options: ReplaceDocumentOptions,
   ) => Promise<CatalogDocumentResponse>;
@@ -90,10 +88,11 @@ export function DocumentsPanel({
   remove = deleteDocument,
   loadSettings,
 }: DocumentsPanelProps) {
-  const { catalog: runtimeCatalog } = useRuntimeCatalog(
-    apiBaseUrl,
-    loadSettings,
-  );
+  const {
+    catalog: runtimeCatalog,
+    error: settingsError,
+    reload: reloadSettings,
+  } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const constraints = runtimeCatalog?.constraints ?? null;
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -105,6 +104,13 @@ export function DocumentsPanel({
     useState<CatalogDocumentResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+
+  function retryAll() {
+    if (settingsError) {
+      reloadSettings();
+    }
+    void refresh();
+  }
 
   async function refresh() {
     try {
@@ -155,9 +161,7 @@ export function DocumentsPanel({
       : [];
   const selected =
     documents.find((doc) => doc.source_id === selectedId) ?? null;
-  const accept = constraints
-    ? constraints.supported_upload_suffixes.join(",")
-    : ".md,.markdown,.txt,.pdf";
+  const accept = constraints?.supported_upload_suffixes.join(",");
 
   function clearUploadInput() {
     setUploadFile(null);
@@ -282,7 +286,7 @@ export function DocumentsPanel({
           title="Backend unavailable"
           description="The documents API could not be reached. Start the FastAPI server and try again."
         />
-        <Button variant="secondary" onClick={() => void refresh()}>
+        <Button variant="secondary" onClick={retryAll}>
           Retry
         </Button>
       </section>
@@ -294,10 +298,14 @@ export function DocumentsPanel({
       <h1>Knowledge Hub</h1>
       <p className="kern-documents-lead">{IDENTITY_HELP}</p>
 
-      {catalog.kind === "error" ? (
-        <div className="kern-settings-callout kern-settings-callout--error" role="alert">
-          <p>{catalog.message}</p>
-          <Button variant="secondary" onClick={() => void refresh()}>
+      {catalog.kind === "error" || settingsError ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
+          {settingsError ? <p>{settingsError}</p> : null}
+          <Button variant="secondary" onClick={retryAll}>
             Retry
           </Button>
         </div>
@@ -441,7 +449,7 @@ export function DocumentsPanel({
         <form className="kern-documents-form" onSubmit={onReplace}>
           <fieldset
             className="kern-settings-fieldset"
-            disabled={busy || dialogOpen}
+            disabled={busy || dialogOpen || !constraints}
           >
             <legend>Replace</legend>
             <p className="kern-settings-help">

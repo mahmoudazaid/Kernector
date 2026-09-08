@@ -123,7 +123,9 @@ function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
 }
 
 function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
-  const calls = Array.isArray(toolRun.calls) ? toolRun.calls.filter(Boolean) : [];
+  const calls = Array.isArray(toolRun.calls)
+    ? toolRun.calls.filter(Boolean)
+    : [];
   const riskFactors = Array.isArray(toolRun.risk?.factors)
     ? toolRun.risk.factors.filter(Boolean)
     : [];
@@ -321,7 +323,11 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const { catalog } = useRuntimeCatalog(apiBaseUrl, loadSettings);
+  const {
+    catalog,
+    error: settingsError,
+    reload: reloadSettings,
+  } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const maxInputLength = catalog?.constraints.max_input_length ?? null;
 
   const composerTouchedRef = useRef(false);
@@ -577,6 +583,22 @@ export function ChatPanel({
       </header>
 
       <div className="kern-chat-body">
+        {settingsError ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+          >
+            <p>{settingsError}</p>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => reloadSettings()}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : null}
+
         {unavailable ? (
           <UnavailableState
             title="Backend unavailable"

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getRuntimeSettings,
   type GetRuntimeSettingsOptions,
   type RuntimeSettingsResponse,
 } from "@/lib/api/settings";
+
+export const SETTINGS_CATALOG_UNAVAILABLE = "Settings catalog unavailable.";
 
 export type RuntimeCatalogLoader = (
   options: GetRuntimeSettingsOptions,
@@ -15,6 +17,7 @@ export type RuntimeCatalogState = {
   catalog: RuntimeSettingsResponse | null;
   error: string | null;
   loading: boolean;
+  reload: () => void;
 };
 
 /**
@@ -31,13 +34,19 @@ export function useRuntimeCatalog(
   const [catalog, setCatalog] = useState<RuntimeSettingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const loadRef = useRef(loadCatalog ?? getRuntimeSettings);
+  const prevUrlRef = useRef(apiBaseUrl);
   loadRef.current = loadCatalog ?? getRuntimeSettings;
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    setCatalog(null);
+    const resetCatalog = prevUrlRef.current !== apiBaseUrl;
+    prevUrlRef.current = apiBaseUrl;
+    if (resetCatalog) {
+      setCatalog(null);
+    }
     setError(null);
     setLoading(true);
 
@@ -56,7 +65,7 @@ export function useRuntimeCatalog(
           return;
         }
         setCatalog(null);
-        setError("Settings catalog unavailable.");
+        setError(SETTINGS_CATALOG_UNAVAILABLE);
         setLoading(false);
       });
 
@@ -64,7 +73,11 @@ export function useRuntimeCatalog(
       active = false;
       controller.abort();
     };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, reloadNonce]);
 
-  return { catalog, error, loading };
+  const reload = useCallback(() => {
+    setReloadNonce((nonce) => nonce + 1);
+  }, []);
+
+  return { catalog, error, loading, reload };
 }
