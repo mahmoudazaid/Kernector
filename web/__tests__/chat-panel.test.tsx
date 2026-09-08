@@ -159,7 +159,7 @@ describe("ChatPanel", () => {
     });
   });
 
-  it("shows Thinking… and disables the composer while sending", async () => {
+  it("shows the thinking mark and disables the composer while sending", async () => {
     const user = userEvent.setup();
     let resolveAsk: (value: ChatAskResponse) => void = () => undefined;
     const ask = vi.fn(
@@ -179,9 +179,11 @@ describe("ChatPanel", () => {
     await user.type(await screen.findByLabelText(/message/i), "hello");
     await user.click(screen.getByRole("button", { name: /send/i }));
 
-    expect(await screen.findByText(/Thinking/i)).toHaveAttribute(
-      "aria-busy",
-      "true",
+    const thinking = await screen.findByLabelText("Thinking");
+    expect(thinking).toHaveAttribute("aria-busy", "true");
+    expect(thinking.querySelector(".kern-chat-thinking-mark")).toHaveAttribute(
+      "src",
+      "/brand/kernector-thinking.svg",
     );
     expect(screen.getByLabelText(/message/i)).toBeDisabled();
 
@@ -335,13 +337,13 @@ describe("ChatPanel", () => {
 
     await user.type(await screen.findByLabelText(/message/i), "orphan me");
     await user.click(screen.getByRole("button", { name: /send/i }));
-    expect(await screen.findByText("Thinking…")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Thinking")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /new chat/i }));
     resolveAsk(SUCCESS);
 
     await waitFor(() => {
-      expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Thinking")).not.toBeInTheDocument();
     });
     expect(
       screen.queryByText("Grounded answer from the corpus."),

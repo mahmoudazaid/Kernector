@@ -76,6 +76,19 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 
 Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated. Apply the emboss recipe on every product surface (shell, chat, settings, Knowledge Hub); do not ship native or flat controls that diverge from ADR 0003. Workspace pages (Knowledge Hub, Chat, Dashboard) fill `.kern-main` width; Settings may keep a narrow form column. Product confirms use `ConfirmDialog` — never `window.confirm` / `alert` / `prompt`.
 
+**Logo and app icons** — all brand files live in `public/brand/` (not under `app/`). Colors follow Instrument panel tokens (`--kern-accent` `#0f766e`, `--kern-accent` dark `#2dd4bf`, `--kern-bg` / `--kern-surface` / `--kern-ink`). Replace files there to rebrand.
+
+| File | Use |
+| --- | --- |
+| `kernector-mark.png` (+ `.webp`) | Raster mark for icons / OG; the shell uses a token-colored SVG |
+| `kernector-thinking.svg` | Chat thinking animation (no “Thinking…” label) |
+| `kernector-tab.png` | Browser tab / shortcut icon (light slate) |
+| `favicon.ico` | `/favicon.ico` (rewritten from this file) |
+| `apple-touch-icon.png` | Home-screen / Apple icon |
+| `opengraph.png` | Open Graph / social image |
+
+`app/layout.tsx` `metadata.icons` and `openGraph.images` point at these URLs. Do not add `app/favicon.ico` / `app/icon.png` — those Next file conventions split assets and reintroduced the default triangle. Hard-refresh the tab if a cached icon remains.
+
 ## Responsive shell
 
 The compact-shell breakpoint is **680px** (`max-width` in `app/globals.css`). Below that width the sidebar collapses behind the header menu button. The value is kept as a literal media-query threshold (CSS custom properties are not portable across `@media` queries here).

@@ -595,8 +595,19 @@ export function ChatPanel({
               <MessageRow key={message.id} message={message} />
             ))}
             {sending ? (
-              <p className="kern-chat-thinking" aria-busy="true">
-                Thinking…
+              <p
+                className="kern-chat-thinking"
+                aria-busy="true"
+                aria-label="Thinking"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  className="kern-chat-thinking-mark"
+                  src="/brand/kernector-thinking.svg"
+                  alt=""
+                  width={32}
+                  height={32}
+                />
               </p>
             ) : null}
           </div>

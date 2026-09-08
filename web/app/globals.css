@@ -80,7 +80,7 @@ a {
 .kern-brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--kern-space-2);
+  gap: 0;
   color: var(--kern-ink);
   font-weight: 500;
   border-radius: var(--kern-radius-sm);
@@ -99,24 +99,27 @@ a {
 }
 
 .kern-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid color-mix(in srgb, var(--kern-accent) 45%, transparent);
-  border-radius: 10px;
-  background:
-    var(--kern-control-sheen),
-    var(--kern-accent-soft);
-  color: var(--kern-accent);
-  font-family: var(--kern-font-mono);
-  font-size: var(--kern-text-sm);
-  font-weight: 500;
-  box-shadow: var(--kern-control-emboss);
+  display: block;
+  width: 36px;
+  height: 32px;
+  margin-right: -4px;
+  flex-shrink: 0;
+}
+
+.kern-brand-mark-body {
+  fill: var(--kern-accent);
+}
+
+.kern-brand-mark-accent {
+  fill: color-mix(in srgb, var(--kern-accent) 40%, #5eead4);
 }
 
 .kern-brand-text {
-  letter-spacing: -0.01em;
+  color: var(--kern-ink);
+  font-family: var(--kern-font-sans);
+  font-size: var(--kern-text-lg);
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .kern-product-label {
@@ -1396,8 +1399,19 @@ a {
 }
 
 .kern-chat-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kern-space-2);
   margin: 0;
   color: var(--kern-muted);
+}
+
+.kern-chat-thinking-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .kern-chat-inline-error {
