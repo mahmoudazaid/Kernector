@@ -10,6 +10,7 @@ from composition.container import (
     build_chat_model,
     build_document_catalog,
     build_embedding_model,
+    build_google_drive_connector,
     build_ingest_knowledge,
     build_invoke_tool,
     build_manage_uploaded_documents,
@@ -32,6 +33,7 @@ from composition.container import (
     probe_ollama,
     reindex_filter_metadata,
     replace_uploaded_document,
+    sync_google_drive,
 )
 from composition.software_delivery_tools import (
     RiskFactorView,
@@ -52,6 +54,7 @@ from composition.tool_augmented_ask import (
 )
 from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
+    ConnectorSyncError,
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
@@ -62,6 +65,7 @@ from composition.errors import (
 from infrastructure.config import Settings
 
 __all__ = [
+    "ConnectorSyncError",
     "DocumentContentError",
     "DocumentOperationError",
     "DocumentUploadError",
@@ -91,6 +95,7 @@ __all__ = [
     "build_chat_model",
     "build_document_catalog",
     "build_embedding_model",
+    "build_google_drive_connector",
     "build_ingest_knowledge",
     "build_invoke_tool",
     "build_manage_uploaded_documents",
@@ -113,4 +118,5 @@ __all__ = [
     "probe_ollama",
     "reindex_filter_metadata",
     "replace_uploaded_document",
+    "sync_google_drive",
 ]

@@ -1,4 +1,4 @@
-"""JSON-file adapter for the uploaded-document catalog."""
+"""JSON-file adapter for the document catalog."""
 
 from __future__ import annotations
 
@@ -148,6 +148,7 @@ def _entry_from_document(document: CatalogDocument) -> dict[str, object]:
         "uploaded_at": document.uploaded_at.isoformat(),
         "chunk_count": document.chunk_count,
         "error": document.error,
+        "revision": document.revision,
     }
 
 
@@ -210,6 +211,7 @@ def _document_from_entry(entry: object, *, index: int) -> CatalogDocument:
             uploaded_at=uploaded_at,
             chunk_count=_require_int(entry, "chunk_count", index=index),
             error=_optional_str(entry, "error", index=index),
+            revision=_optional_str(entry, "revision", index=index),
         )
     except DomainValidationError as error:
         # Domain invariants the JSON types cannot express: blank text, a

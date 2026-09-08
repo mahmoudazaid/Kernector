@@ -31,6 +31,9 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("RELEVANCE_THRESHOLD", raising=False)
     monkeypatch.delenv("HTTP_DEV_CORS", raising=False)
     monkeypatch.delenv("HTTP_CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
     return monkeypatch
 
 
@@ -360,3 +363,87 @@ def test_http_cors_star_rejection_blocks_composition_load(
     env.setenv("HTTP_CORS_ORIGINS", "*")
     with pytest.raises(ConfigurationError, match="must not include"):
         load_runtime_settings()
+
+
+def test_google_drive_settings_default_to_absent(env: pytest.MonkeyPatch) -> None:
+    drive = load_settings().google_drive
+    assert drive.service_account_file is None
+    assert drive.folder_id is None
+    assert drive.page_size == 100
+
+
+def test_google_drive_relative_credential_path_resolves_against_repo_root(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    env.chdir(tmp_path)
+    env.setenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "secrets/drive.json")
+    env.setenv("GOOGLE_DRIVE_FOLDER_ID", "folder-123")
+    drive = load_settings().google_drive
+    assert drive.service_account_file == PROJECT_ROOT / "secrets" / "drive.json"
+    assert drive.folder_id == "folder-123"
+    assert drive.page_size == 100
+
+
+def test_google_drive_absolute_credential_path_is_preserved(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "sa.json"
+    env.setenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", str(target))
+    env.setenv("GOOGLE_DRIVE_FOLDER_ID", "folder-123")
+    assert load_settings().google_drive.service_account_file == target
+
+
+def test_google_drive_page_size_is_read_from_env(env: pytest.MonkeyPatch) -> None:
+    env.setenv("GOOGLE_DRIVE_PAGE_SIZE", "250")
+    assert load_settings().google_drive.page_size == 250
+
+
+@pytest.mark.parametrize("raw", ["0", "1001", "-1"])
+def test_google_drive_page_size_out_of_range_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("GOOGLE_DRIVE_PAGE_SIZE", raw)
+    with pytest.raises(ValueError, match="GOOGLE_DRIVE_PAGE_SIZE"):
+        load_settings()
+
+
+def test_google_drive_page_size_non_integer_is_rejected(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_DRIVE_PAGE_SIZE", "many")
+    with pytest.raises(ValueError, match="GOOGLE_DRIVE_PAGE_SIZE"):
+        load_settings()
+
+
+def test_blank_google_drive_folder_id_is_absent(env: pytest.MonkeyPatch) -> None:
+    env.setenv("GOOGLE_DRIVE_FOLDER_ID", "   ")
+    assert load_settings().google_drive.folder_id is None
+
+
+def test_google_drive_folder_id_rejects_query_metacharacters(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_DRIVE_FOLDER_ID", "x' in parents or '' = '")
+    with pytest.raises(ValueError, match="Drive folder ID"):
+        load_settings()
+
+
+def test_google_drive_folder_id_rejects_drive_url(env: pytest.MonkeyPatch) -> None:
+    env.setenv(
+        "GOOGLE_DRIVE_FOLDER_ID",
+        "https://drive.google.com/drive/folders/abc123",
+    )
+    with pytest.raises(ValueError, match="Drive folder ID"):
+        load_settings()
+
+
+def test_load_settings_does_not_read_credential_json(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "sa.json"
+    secret.write_text('{"private_key": "DRIVE-SECRET-TOKEN-LEAK"}', encoding="utf-8")
+    env.setenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", str(secret))
+    settings = load_settings()
+    dumped = str(settings)
+    assert "DRIVE-SECRET-TOKEN-LEAK" not in dumped
+    assert settings.google_drive.service_account_file == secret

@@ -64,3 +64,15 @@ class PartialDocumentOperationError(DocumentOperationError):
     ) -> None:
         super().__init__(message)
         self.operation = operation
+
+
+class ConnectorSyncError(RuntimeError):
+    """A connector sync failed at the run level.
+
+    Args:
+        message (str): Human-readable failure. Defaults to a provider-neutral
+            description. Connector-specific wording belongs at the call site.
+    """
+
+    def __init__(self, message: str = "The connector sync failed.") -> None:
+        super().__init__(message)

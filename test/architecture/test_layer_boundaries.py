@@ -33,6 +33,9 @@ IO_PACKAGES = {
     "fpdf",
     "numpy", "pandas",
     "dotenv",
+    "google",
+    "googleapiclient",
+    "httplib2",
 }
 
 # FastAPI stack — allowed only under presentation/http/** (path-prefix exception).
@@ -130,6 +133,9 @@ def test_layer_imports_no_forbidden_packages(layer: str, module_path: Path) -> N
         ("import fastapi\n", {"fastapi"}),
         ("from starlette.responses import JSONResponse\n", {"starlette"}),
         ("import uvicorn\n", {"uvicorn"}),
+        ("import google\n", {"google"}),
+        ("from googleapiclient.discovery import build\n", {"googleapiclient"}),
+        ("import httplib2\n", {"httplib2"}),
     ],
 )
 def test_planted_application_forbidden_import_is_detected(
@@ -147,6 +153,9 @@ def test_planted_application_forbidden_import_is_detected(
         ("import infrastructure\n", {"infrastructure"}),
         ("from composition.tool_registry import build_tool_registry\n", {"composition"}),
         ("import fastapi\n", {"fastapi"}),
+        ("import google\n", {"google"}),
+        ("from googleapiclient.discovery import build\n", {"googleapiclient"}),
+        ("import httplib2\n", {"httplib2"}),
     ],
 )
 def test_planted_pack_forbidden_import_is_detected(
@@ -163,6 +172,9 @@ def test_planted_pack_forbidden_import_is_detected(
         ("import fastapi\n", {"fastapi"}),
         ("import uvicorn\n", {"uvicorn"}),
         ("from starlette.middleware.cors import CORSMiddleware\n", {"starlette"}),
+        ("import google\n", {"google"}),
+        ("from googleapiclient.http import MediaIoBaseDownload\n", {"googleapiclient"}),
+        ("import httplib2\n", {"httplib2"}),
     ],
 )
 def test_planted_non_http_presentation_server_framework_is_detected(
@@ -283,3 +295,27 @@ def test_chat_intent_imports_only_domain_and_stdlib() -> None:
         f"{module_path.relative_to(REPO_ROOT)} imports {sorted(forbidden)}, "
         "which packs/ may not depend on"
     )
+
+
+def test_only_infrastructure_imports_google_drive_client() -> None:
+    """Google client packages stay behind the infrastructure connector adapter."""
+    google_roots = {"google", "googleapiclient"}
+    for layer in ("domain", "application", "presentation", "packs"):
+        for module_path in _modules(layer):
+            hits = find_forbidden_imports(module_path, google_roots)
+            assert not hits, (
+                f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
+            )
+    drive = REPO_ROOT / "infrastructure" / "connectors" / "google_drive.py"
+    imported = find_forbidden_imports(drive, google_roots)
+    assert imported == google_roots
+
+
+def test_drive_sync_cli_reaches_the_connector_only_through_composition() -> None:
+    cli = REPO_ROOT / "presentation" / "cli" / "sync_google_drive.py"
+    assert not find_forbidden_imports(
+        cli, {"infrastructure", "google", "googleapiclient"}
+    )
+    source = cli.read_text(encoding="utf-8")
+    assert "from composition import" in source
+    assert "sync_google_drive" in source

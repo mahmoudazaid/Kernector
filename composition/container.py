@@ -7,7 +7,7 @@ from pathlib import Path
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
-from application.contracts import IngestRequest, IngestResponse
+from application.contracts import ConnectorSyncResponse, IngestRequest, IngestResponse
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
@@ -30,7 +30,9 @@ from application.runtime_settings import (
     RuntimeConstraints,
     RuntimeSettingsDefaults,
 )
+from application.sync_connector import SyncConnectorDocuments
 from composition.errors import (
+    ConnectorSyncError,
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
@@ -52,9 +54,16 @@ from composition.tool_registry import (
     enabled_domain_tool_packs,
     build_tool_registry,
 )
-from domain.errors import DomainValidationError
+from domain.errors import ConnectorError, DomainValidationError, VectorStoreError
 from domain.knowledge import CatalogDocument, ScoredChunk, SourceDocument, SourceReference, UploadPayload
-from domain.ports import ChatModel, DocumentCatalog, EmbeddingModel, PromptRepository, VectorStore
+from domain.ports import (
+    ChatModel,
+    DocumentCatalog,
+    EmbeddingModel,
+    KnowledgeConnector,
+    PromptRepository,
+    VectorStore,
+)
 from infrastructure.catalog.json_catalog import CatalogError, JsonDocumentCatalog
 from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
@@ -451,6 +460,96 @@ def ingest_uploaded_document(
 def build_document_catalog(settings: Settings) -> DocumentCatalog:
     """Build a fresh JSON catalog adapter for the configured path."""
     return JsonDocumentCatalog(settings.document_catalog.path)
+
+
+_DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
+_DRIVE_SYNC_MESSAGE = "The Google Drive connector sync failed."
+_DRIVE_CLIENT_MISSING_MESSAGE = (
+    "Google Drive client is not installed; run uv sync --extra google-drive."
+)
+
+
+def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
+    """Build the Google Drive connector from runtime settings.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+
+    Returns:
+        KnowledgeConnector: Drive adapter bound to the configured folder.
+
+    Raises:
+        ConfigurationError: Drive folder, credentials, or client extra is missing
+            or unusable.
+    """
+    try:
+        from infrastructure.connectors.google_drive import (
+            GoogleDriveConfigError,
+            GoogleDriveConnector,
+        )
+    except ImportError as error:
+        raise ConfigurationError(_DRIVE_CLIENT_MISSING_MESSAGE) from error
+    try:
+        return GoogleDriveConnector(
+            settings.google_drive,
+            max_upload_bytes=settings.max_upload_bytes,
+        )
+    except GoogleDriveConfigError as error:
+        raise ConfigurationError(_DRIVE_CONFIG_MESSAGE) from error
+
+
+def sync_google_drive(
+    settings: Settings,
+    *,
+    connector: KnowledgeConnector | None = None,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
+) -> ConnectorSyncResponse:
+    """Synchronize the configured Drive folder into the knowledge base.
+
+    One vector store is cached for the run. The ingest pipeline is constructed
+    only when a listed document needs ingestion.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        connector (KnowledgeConnector | None): Injected connector for tests.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        vector_store (VectorStore | None): Shared store for the run, if already built.
+
+    Returns:
+        ConnectorSyncResponse: Per-document outcomes in listing order.
+
+    Raises:
+        ConfigurationError: Connector or embedding configuration is invalid.
+        ConnectorSyncError: Listing, auth, catalog, or store infrastructure failed.
+    """
+    try:
+        if connector is None:
+            connector = build_google_drive_connector(settings)
+        if catalog is None:
+            catalog = build_document_catalog(settings)
+        shared_store = vector_store
+
+        def get_store() -> VectorStore:
+            nonlocal shared_store
+            if shared_store is None:
+                shared_store = build_vector_store(settings)
+            return shared_store
+
+        return SyncConnectorDocuments(
+            connector=connector,
+            catalog=catalog,
+            ingest_factory=lambda: build_ingest_knowledge(
+                settings,
+                vector_store=get_store(),
+            ),
+        ).execute()
+    except ConnectorError as error:
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
+    except CatalogError as error:
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
+    except VectorStoreError as error:
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
 
 
 def build_document_extractor() -> UploadedFileExtractor:

@@ -18,11 +18,18 @@ dependencies = [
     "uvicorn>=0.40.0",
 ]
 
+[project.optional-dependencies]
+google-drive = [
+    "google-api-python-client>=2.190.0",
+    "google-auth>=2.42.0",
+]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.0",
     "jsonschema>=4.26.0",
     "pytest>=9.1.1",
+    "kernector[google-drive]",
 ]
 
 [tool.pytest.ini_options]

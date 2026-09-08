@@ -44,3 +44,15 @@ class ToolFailureError(RuntimeError):
     ``Tool.run`` documents this type so callers have one known operational
     failure to catch, distinct from ``ToolArgumentValidationError``.
     """
+
+
+class ConnectorError(RuntimeError):
+    """A connector adapter failed without exposing provider details."""
+
+
+class ConnectorAuthError(ConnectorError):
+    """Credentials or permissions were rejected."""
+
+
+class ConnectorUnavailableError(ConnectorError):
+    """The provider is temporarily unreachable or throttling requests."""
