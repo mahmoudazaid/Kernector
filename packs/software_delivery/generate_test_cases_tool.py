@@ -75,7 +75,11 @@ class GenerateTestCasesTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise TestCaseGenerationValidationError(
+            f"{field_name} must be a non-blank string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise TestCaseGenerationValidationError(
             f"{field_name} must be a non-blank string"
         )

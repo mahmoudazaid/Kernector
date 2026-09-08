@@ -452,23 +452,48 @@ not reach the UI. Collapsed **Run details** in Next.js chat reads only typed
 
 **Raise messages never carry the rejected value.** This holds for every
 exception raised under `domain/`, `application/`, `packs/`, and
-`presentation/` — validation
-types (`DomainValidationError`, `ApplicationValidationError`, and their
-pack-local subclasses), `ToolFailureError`, and bare `ValueError` alike. A
-message names the field and the expected shape only. Where the value's type is
-the point, name the type
-(`got {type(value).__name__}`). The rejected value itself may be printed in
-exactly one case: a bound was exceeded and a *preceding branch in the same
-function* has already proven the value is an `int` or a `float`. If a single
-`if` fuses the type check and the bounds check, split it — do not print the
-value from a branch that can also fire on a wrong type. Both `{value!r}` and
-plain `{value}` are unsafe on an unproven value: dataclasses generate
-`__repr__` and `__str__` falls back to it, so the two are byte-identical and
-either one puts corpus text, conversation history, and caller filter values on
-`__cause__` chains and into log records, where the presentation mapping cannot
-reach them. `test/architecture/test_safe_validation_messages.py` enforces the
-`{value!r}` half mechanically; the plain-`{value}` half is a review obligation,
-documented in that file's module docstring.
+`presentation/` — validation types (`DomainValidationError`,
+`ApplicationValidationError`, and their pack-local subclasses),
+`ToolFailureError`, and bare `ValueError` alike. A message names the field
+and the expected shape only. Where the value's type is the point, name the
+type (`got {type(value).__name__}`).
+
+The rejected value itself may be printed in two cases:
+
+1. A bound was exceeded and a *preceding branch in the same function* has
+   already proven the value is an `int` or a `float`. If a single `if` fuses
+   the type check and the bounds check, split it — do not print the value
+   from a branch that can also fire on a wrong type.
+2. A *count* of rejected items (`{len(unknown)}`) together with a display of
+   the *allowed* set. A count is not the value.
+
+Container interpolation is the same leak as `{value!r}`: a list's `__str__`
+*is* its `__repr__`, so `f"{sorted(unknown)}"` is byte-identical to
+`f"{sorted(unknown)!r}"` and prints every untrusted key. Name the allowed
+set from a module-level `*_DISPLAY` constant instead:
+
+```python
+_ALLOWED_KEYS = frozenset({"target", "evidence"})
+_ALLOWED_KEYS_DISPLAY = str(sorted(_ALLOWED_KEYS))  # hoist: source is a constant
+
+raise Error(
+    f"unknown argument keys: {len(unknown)} not in {_ALLOWED_KEYS_DISPLAY}"
+)
+```
+
+The hoist is safe because the source is a frozen module constant, not caller
+or model input. Do not pre-stringify an untrusted collection to satisfy the
+scan.
+
+`test/architecture/test_safe_validation_messages.py` (via `raise_scan.py`)
+catches repr-equivalent forms mechanically — `{v!r}`, `{v!a}`, `{repr(v)}`,
+`{sorted(x)}`, `{str(sorted(x))}`, `"%r" % v`, `"{}".format(sorted(x))`,
+`str.join` of a non-constant, and the same forms on a `from` cause or
+inside an exception `__init__`. Forms that still need review: plain
+`{value}` / `str(v)` / `"%s" % v` / `"{}".format(v)` on a dataclass;
+hoisted messages (`msg = f"...{v!r}"; raise Error(msg)`); and
+class-composed messages that interpolate caller text into
+`super().__init__` without a repr form the scan can see.
 
 The scan is name-agnostic on purpose: it inspects every `raise` in the scanned
 directories rather than a list of exception names. A name list exempts each
@@ -480,8 +505,9 @@ subclass added later — `packs/software_delivery/errors.py` alone defines five
 
 Automated AST checks under `test/architecture/` and
 `test/domain/test_domain_boundaries.py` fail when a layer imports a forbidden
-package, and when a `domain/`, `application/`, `packs/`, or `presentation/` raise embeds
-`{value!r}` (`test/architecture/test_safe_validation_messages.py`).
+package, and when a `domain/`, `application/`, `packs/`, or `presentation/`
+raise embeds a repr-equivalent form
+(`test/architecture/test_safe_validation_messages.py`).
 
 Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette
 may appear only under `presentation/http/**` (path-prefix exception in

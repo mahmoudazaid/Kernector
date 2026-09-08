@@ -8,7 +8,15 @@ _PHASE_KEYWORDS = frozenset({"Given", "When", "Then"})
 _CONTINUATION_KEYWORDS = frozenset({"And", "But"})
 _ALL_KEYWORDS = _PHASE_KEYWORDS | _CONTINUATION_KEYWORDS
 _PHASE_ORDER = {"Given": 0, "When": 1, "Then": 2}
-_REQUIRED_PHASES_DISPLAY = "Given, When, Then"
+_PHASES_MISSING_DISPLAY = {
+    ("Given",): "Given",
+    ("When",): "When",
+    ("Then",): "Then",
+    ("Given", "When"): "Given, When",
+    ("Given", "Then"): "Given, Then",
+    ("When", "Then"): "When, Then",
+    ("Given", "When", "Then"): "Given, When, Then",
+}
 
 
 def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
@@ -56,7 +64,8 @@ def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
                     if prior < order < _PHASE_ORDER[phase]
                 ]
                 raise ValueError(
-                    f"missing required phase(s) of {_REQUIRED_PHASES_DISPLAY}"
+                    "missing phase(s): "
+                    f"{_PHASES_MISSING_DISPLAY[tuple(missing)]}"
                 )
             if current_phase is None and phase != "Given":
                 raise ValueError("scenario must start with Given")
@@ -72,7 +81,7 @@ def parse_gherkin_steps(steps: Sequence[str]) -> tuple[tuple[str, ...], str]:
     missing = [name for name in ("Given", "When", "Then") if name not in seen_phases]
     if missing:
         raise ValueError(
-            f"missing required phase(s) of {_REQUIRED_PHASES_DISPLAY}"
+            f"missing phase(s): {_PHASES_MISSING_DISPLAY[tuple(missing)]}"
         )
     if not terminal_bodies:
         raise ValueError("missing Then phase")

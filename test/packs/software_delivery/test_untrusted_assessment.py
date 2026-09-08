@@ -204,6 +204,19 @@ def test_blank_or_wrong_typed_top_level_inputs_raise_assessment_error(
         )
 
 
+def test_non_string_target_reports_type_name_not_value() -> None:
+    sentinel = "TARGET-LEAK-SENTINEL"
+    with pytest.raises(AssessmentPromptValidationError) as raised:
+        build_assessment_prompt(
+            system=TRUSTED,
+            target=[sentinel],  # type: ignore[arg-type]
+            evidence=(_evidence(),),
+        )
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "target must be a non-empty string, got list"
+
+
 def test_wrong_evidence_item_type_raises_assessment_error() -> None:
     with pytest.raises(AssessmentPromptValidationError):
         build_assessment_prompt(
@@ -220,12 +233,18 @@ def test_wrong_reference_type_raises_assessment_error() -> None:
 
 def test_wrong_or_blank_evidence_text_raises_assessment_error() -> None:
     ref = SourceReference("S-1", "story")
-    with pytest.raises(AssessmentPromptValidationError):
+    with pytest.raises(AssessmentPromptValidationError) as raised:
         AssessmentEvidence(ref, "")
-    with pytest.raises(AssessmentPromptValidationError):
+    assert str(raised.value) == "text must be non-empty"
+    with pytest.raises(AssessmentPromptValidationError) as raised:
         AssessmentEvidence(ref, "   ")
-    with pytest.raises(AssessmentPromptValidationError):
-        AssessmentEvidence(ref, 123)  # type: ignore[arg-type]
+    assert str(raised.value) == "text must be non-empty"
+    sentinel = "TEXT-LEAK-SENTINEL"
+    with pytest.raises(AssessmentPromptValidationError) as raised:
+        AssessmentEvidence(ref, [sentinel])  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "text must be a non-empty string, got list"
 
 
 def test_source_reference_domain_validation_is_wrapped(

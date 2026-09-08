@@ -30,7 +30,11 @@ def _defang(text: str) -> str:
 
 
 def _require_nonblank(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise AssessmentPromptValidationError(
+            f"{field_name} must be a non-empty string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise AssessmentPromptValidationError(f"{field_name} must be non-empty")
     return value
 

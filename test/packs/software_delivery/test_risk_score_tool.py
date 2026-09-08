@@ -175,7 +175,6 @@ def test_unexpected_scorer_failure_maps_to_tool_failure_error() -> None:
     assert raised.value.__cause__ is not None
 
 
-_INVALID_SCALARS = [None, 1, True, False, 3.14, ["x"], {"k": "v"}]
 _BLANK_STRINGS = ["", "   ", "\n"]
 
 
@@ -189,22 +188,34 @@ def _scorer_spy() -> tuple[list[object], object]:
     return calls, boom
 
 
-@pytest.mark.parametrize("bad", _INVALID_SCALARS + _BLANK_STRINGS)
-def test_non_string_or_blank_target_fails_before_scoring(bad: object) -> None:
+@pytest.mark.parametrize("bad", _BLANK_STRINGS)
+def test_blank_target_fails_before_scoring(bad: str) -> None:
     calls, boom = _scorer_spy()
     args = _valid_arguments()
     args["target"] = bad
     with pytest.raises(RiskScoreValidationError) as raised:
         RiskScoreTool(scorer=boom).run(args)
+    assert str(raised.value) == "target must be a non-blank string"
     assert isinstance(raised.value, ToolArgumentValidationError)
     assert calls == []
 
 
+def test_non_string_target_reports_type_name_not_value() -> None:
+    sentinel = "TARGET-LEAK-SENTINEL"
+    calls, boom = _scorer_spy()
+    args = _valid_arguments()
+    args["target"] = [sentinel]
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(args)
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == "target must be a non-blank string, got list"
+    assert calls == []
+
+
 @pytest.mark.parametrize("field", ["source_id", "source_type", "text"])
-@pytest.mark.parametrize("bad", _INVALID_SCALARS + _BLANK_STRINGS)
-def test_non_string_or_blank_evidence_scalars_fail_before_scoring(
-    field: str, bad: object
-) -> None:
+@pytest.mark.parametrize("bad", _BLANK_STRINGS)
+def test_blank_evidence_scalars_fail_before_scoring(field: str, bad: str) -> None:
     calls, boom = _scorer_spy()
     args = _valid_arguments()
     evidence_item = args["evidence"][0]
@@ -214,7 +225,26 @@ def test_non_string_or_blank_evidence_scalars_fail_before_scoring(
     args["evidence"] = [item]
     with pytest.raises(RiskScoreValidationError) as raised:
         RiskScoreTool(scorer=boom).run(args)
+    assert str(raised.value) == f"{field} must be a non-blank string"
     assert isinstance(raised.value, ToolArgumentValidationError)
+    assert calls == []
+
+
+@pytest.mark.parametrize("field", ["source_id", "source_type", "text"])
+def test_non_string_evidence_scalars_report_type_name_not_value(field: str) -> None:
+    sentinel = "EVIDENCE-LEAK-SENTINEL"
+    calls, boom = _scorer_spy()
+    args = _valid_arguments()
+    evidence_item = args["evidence"][0]
+    assert isinstance(evidence_item, dict)
+    item = dict(evidence_item)
+    item[field] = {sentinel: 1}
+    args["evidence"] = [item]
+    with pytest.raises(RiskScoreValidationError) as raised:
+        RiskScoreTool(scorer=boom).run(args)
+    message = str(raised.value)
+    assert sentinel not in message
+    assert message == f"{field} must be a non-blank string, got dict"
     assert calls == []
 
 

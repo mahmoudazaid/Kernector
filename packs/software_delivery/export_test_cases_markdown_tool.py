@@ -77,7 +77,11 @@ class ExportTestCasesMarkdownTool:
 
 
 def _require_nonblank_str(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
+        raise MarkdownExportValidationError(
+            f"{field_name} must be a non-blank string, got {type(value).__name__}"
+        )
+    if not value.strip():
         raise MarkdownExportValidationError(
             f"{field_name} must be a non-blank string"
         )

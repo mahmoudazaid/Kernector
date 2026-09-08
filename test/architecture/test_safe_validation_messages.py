@@ -1,7 +1,9 @@
 """Guard: raises under scanned first-party packages must not embed repr.
 
 See :mod:`test.architecture.raise_scan` for forms caught mechanically and the
-review obligations (plain ``{value}``, hoisted messages) that remain.
+review obligations (plain ``{value}`` / ``str(v)`` / ``"%s" % v`` /
+``"{}".format(v)`` on a dataclass, hoisted messages, class-composed plain
+values) that remain.
 """
 
 from __future__ import annotations
@@ -19,17 +21,34 @@ SCANNED_MODULES = [
     for directory in SCANNED_DIRS
     for module in sorted((REPO_ROOT / directory).rglob("*.py"))
 ]
+_NON_FIRST_PARTY = frozenset(
+    {
+        "test",
+        "web",
+        "node_modules",
+        "data",
+        "output",
+        "docs",
+        "prompts",
+        "curriculum",
+        "learning",
+    }
+)
+_KNOWN_UNSCANNED = frozenset({"infrastructure", "composition"})
 
 
-def test_scanned_dirs_cover_every_first_party_package() -> None:
-    assert set(SCANNED_DIRS) == {
-        "domain",
-        "application",
-        "packs",
-        "presentation",
-    }, (
-        "a first-party package is unscanned; add it to SCANNED_DIRS and fix "
-        "any !r sites it reports"
+def test_every_first_party_package_is_scanned_or_explicitly_deferred() -> None:
+    discovered = {
+        directory.name
+        for directory in REPO_ROOT.iterdir()
+        if directory.is_dir()
+        and not directory.name.startswith((".", "_"))
+        and directory.name not in _NON_FIRST_PARTY
+        and any(directory.rglob("*.py"))
+    }
+    assert discovered == set(SCANNED_DIRS) | _KNOWN_UNSCANNED, (
+        "a first-party package is neither scanned nor explicitly deferred; "
+        "add it to SCANNED_DIRS and fix any repr sites it reports"
     )
 
 
@@ -89,10 +108,100 @@ def test_helper_allows_type_name_and_plain_number(tmp_path: Path) -> None:
 def test_helper_flags_container_interpolation(tmp_path: Path) -> None:
     module = tmp_path / "container.py"
     module.write_text(
-        "raise ValueError(f'keys: {sorted(unknown)}')\n",
+        "raise ValueError(f'keys: {sorted(unknown)}')\n"
+        "raise ValueError(f'keys: {list(unknown)}')\n"
+        "raise ValueError(f'keys: {tuple(unknown)}')\n"
+        "raise ValueError(f'keys: {set(unknown)}')\n"
+        "raise ValueError(f'keys: {frozenset(unknown)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1, 2, 3, 4, 5]
+
+
+def test_helper_flags_str_wrapped_container_interpolation(tmp_path: Path) -> None:
+    module = tmp_path / "str_wrap.py"
+    module.write_text(
+        "raise ValueError(f'keys: {str(sorted(unknown))}')\n",
         encoding="utf-8",
     )
     assert repr_conversions_in_raises(module) == [1]
+
+
+def test_helper_flags_percent_s_of_container(tmp_path: Path) -> None:
+    module = tmp_path / "percent_s.py"
+    module.write_text(
+        "raise ValueError('keys: %s' % sorted(unknown))\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1]
+
+
+def test_helper_flags_empty_format_of_container(tmp_path: Path) -> None:
+    module = tmp_path / "empty_format.py"
+    module.write_text(
+        "raise ValueError('keys: {}'.format(sorted(unknown)))\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1]
+
+
+def test_helper_flags_ascii_conversion(tmp_path: Path) -> None:
+    module = tmp_path / "ascii_conv.py"
+    module.write_text(
+        "raise ValueError(f'got {v!a}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1]
+
+
+def test_helper_flags_str_join_of_non_constant(tmp_path: Path) -> None:
+    module = tmp_path / "join.py"
+    module.write_text(
+        "raise ValueError(f'missing: {\", \".join(missing)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [1]
+
+
+def test_helper_allows_str_join_of_module_constant(tmp_path: Path) -> None:
+    module = tmp_path / "join_const.py"
+    module.write_text(
+        "SAFE_CONSTANT = ('Given', 'When', 'Then')\n"
+        "raise ValueError(f'missing: {\", \".join(SAFE_CONSTANT)}')\n"
+        "raise ValueError(f'missing: {\", \".join(_PHASE_ORDER)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == []
+
+
+def test_helper_allows_os_path_join(tmp_path: Path) -> None:
+    module = tmp_path / "path_join.py"
+    module.write_text(
+        "import os\n"
+        "raise ValueError(f'path: {os.path.join(base, name)}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == []
+
+
+def test_helper_honours_noqa_raise_scan(tmp_path: Path) -> None:
+    module = tmp_path / "noqa.py"
+    module.write_text(
+        "raise ValueError(f'keys: {sorted(unknown)}')  # noqa: raise-scan\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == []
+
+
+def test_helper_flags_repr_in_exception_init(tmp_path: Path) -> None:
+    module = tmp_path / "init_leak.py"
+    module.write_text(
+        "class LeakyError(ValueError):\n"
+        "    def __init__(self, value):\n"
+        "        super().__init__(f'got {value!r}')\n",
+        encoding="utf-8",
+    )
+    assert repr_conversions_in_raises(module) == [3]
 
 
 def test_helper_flags_repr_call_inside_fstring(tmp_path: Path) -> None:
@@ -148,6 +257,6 @@ def test_helper_flags_repr_on_raise_cause(tmp_path: Path) -> None:
 def test_raises_do_not_embed_repr(module_path: Path) -> None:
     offenders = repr_conversions_in_raises(module_path)
     assert not offenders, (
-        f"{module_path.relative_to(REPO_ROOT)} embeds !r in raise messages "
-        f"at lines {offenders}"
+        f"{module_path.relative_to(REPO_ROOT)} embeds a repr-equivalent form "
+        f"in a raise (or exception __init__) at lines {offenders}"
     )

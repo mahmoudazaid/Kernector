@@ -58,8 +58,56 @@ class PartialCreateFailure(DocumentManagementError):
         self.ingest_error = ingest_error
 
 
+class VectorDeleteFailure(DocumentManagementError):
+    """Vector-store delete failed before the catalog row was touched.
+
+    The message is fixed by the class rather than passed in, because this
+    exception crosses into presentation: a caller cannot leak an adapter path,
+    a credential, a vendor string, or the caller-supplied document id through
+    text it has no way to supply. The detail is for the server log; the
+    message is for the reader.
+
+    Attributes:
+        source_type (str): Catalog source type that was targeted.
+        source_id (str): Caller-supplied identifier that was targeted.
+        delete_error (BaseException): The adapter failure that stopped the delete.
+    """
+
+    MESSAGE = "Could not delete vector chunks; the catalog row is unchanged."
+
+    def __init__(
+        self, *, reference: SourceReference, delete_error: BaseException
+    ) -> None:
+        super().__init__(self.MESSAGE)
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+        self.delete_error = delete_error
+
+
 class PartialDeleteFailure(DocumentManagementError):
-    """Vector chunks were removed but the catalog row could not be deleted."""
+    """Vector chunks were removed but the catalog row could not be deleted.
+
+    Same rationale as :class:`PartialCreateFailure`: this exception crosses
+    into presentation, so the message is fixed and the locator plus vendor
+    error ride as attributes.
+
+    Attributes:
+        source_type (str): Catalog source type that was targeted.
+        source_id (str): Caller-supplied identifier whose chunks were removed.
+        delete_error (BaseException): The catalog failure that left the row.
+    """
+
+    MESSAGE = (
+        "Chunks were removed but the catalog row remains; retry the delete."
+    )
+
+    def __init__(
+        self, *, reference: SourceReference, delete_error: BaseException
+    ) -> None:
+        super().__init__(self.MESSAGE)
+        self.source_type = reference.source_type
+        self.source_id = reference.source_id
+        self.delete_error = delete_error
 
 
 class PartialReplaceFailure(DocumentManagementError):
@@ -235,16 +283,35 @@ class ManageUploadedDocuments:
         try:
             self._vector_store_factory().delete_source(reference)
         except Exception as error:
-            raise DocumentManagementError(
-                f"could not delete vector chunks for {reference.source_id}: {error}"
-            ) from error
+            failure = VectorDeleteFailure(
+                reference=reference, delete_error=error
+            )
+            log_operation(
+                logger,
+                operation="delete",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(failure).__name__,
+                source_id=failure.source_id,
+                source_type=failure.source_type,
+            )
+            raise failure from error
         try:
             self._catalog.delete(reference)
         except Exception as error:
-            raise PartialDeleteFailure(
-                f"chunks removed for {reference.source_id} but catalog row remains: "
-                f"{error}"
-            ) from error
+            failure = PartialDeleteFailure(
+                reference=reference, delete_error=error
+            )
+            log_operation(
+                logger,
+                operation="delete",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(failure).__name__,
+                source_id=failure.source_id,
+                source_type=failure.source_type,
+            )
+            raise failure from error
 
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)
