@@ -29,8 +29,7 @@ dev = [
     "httpx>=0.28.0",
     "jsonschema>=4.26.0",
     "pytest>=9.1.1",
-    "google-api-python-client>=2.190.0",
-    "google-auth>=2.42.0",
+    "kernector[google-drive]",
 ]
 
 [tool.pytest.ini_options]

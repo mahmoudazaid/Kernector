@@ -424,7 +424,16 @@ def test_google_drive_folder_id_rejects_query_metacharacters(
     env: pytest.MonkeyPatch,
 ) -> None:
     env.setenv("GOOGLE_DRIVE_FOLDER_ID", "x' in parents or '' = '")
-    with pytest.raises(ValueError, match="GOOGLE_DRIVE_FOLDER_ID is invalid"):
+    with pytest.raises(ValueError, match="folder ID, not a Drive URL"):
+        load_settings()
+
+
+def test_google_drive_folder_id_rejects_drive_url(env: pytest.MonkeyPatch) -> None:
+    env.setenv(
+        "GOOGLE_DRIVE_FOLDER_ID",
+        "https://drive.google.com/drive/folders/abc123",
+    )
+    with pytest.raises(ValueError, match="folder ID, not a Drive URL"):
         load_settings()
 
 

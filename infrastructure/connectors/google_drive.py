@@ -35,13 +35,14 @@ from domain.knowledge import (
 from domain.ports import DocumentExtractor
 from infrastructure.config import GoogleDriveSettings
 from infrastructure.documents.uploaded_files import (
+    SUPPORTED_SUFFIXES,
     DocumentExtractionError,
     UploadedFileExtractor,
 )
 
 _SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
 _GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
-_BLOB_MIMES = frozenset({"text/plain", "text/markdown", "application/pdf"})
+_GOOGLE_APPS_PREFIX = "application/vnd.google-apps."
 _LIST_FIELDS = (
     "nextPageToken,"
     "files(id,name,mimeType,version,md5Checksum,size,capabilities(canDownload))"
@@ -59,6 +60,7 @@ _MSG_AUTH = "Google Drive rejected the connector credentials or permissions."
 _MSG_UNAVAILABLE = "Google Drive is temporarily unavailable."
 _MSG_REQUEST_FAILED = "The Google Drive request failed."
 _MSG_UNREADABLE = "A Google Drive file could not be read as text."
+_MSG_NOT_DOWNLOADABLE = "A Google Drive file could not be downloaded."
 _MSG_TOO_LARGE = "A Google Drive file exceeded the configured size limit."
 _MSG_CONFIG = "Google Drive connector configuration is invalid."
 _MSG_CREDENTIALS = "Google Drive connector credentials could not be read."
@@ -174,13 +176,13 @@ class GoogleDriveConnector:
         """Download or export ``document`` and normalize extractor metadata.
 
         Raises:
-            ConnectorAuthError: Download was refused or credentials were rejected.
+            ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
-            ConnectorError: Size, extraction, or other Drive failures.
+            ConnectorError: Size, extraction, download refusal, or other Drive failures.
         """
         mime_type = document.extra.get("mime_type", "")
         if document.extra.get("can_download") == "false":
-            raise ConnectorAuthError(_MSG_AUTH)
+            raise ConnectorError(_MSG_NOT_DOWNLOADABLE)
         reported_size = _optional_size(document.extra.get("size"))
         if reported_size is not None and reported_size > self._max_upload_bytes:
             raise ConnectorError(_MSG_TOO_LARGE)
@@ -254,9 +256,11 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     if not isinstance(entry, Mapping):
         raise ConnectorError(_MSG_REQUEST_FAILED)
     mime_type = entry.get("mimeType")
-    if not _is_supported(mime_type):
+    name = entry.get("name")
+    if not _is_supported(name, mime_type):
         return None
-    if mime_type != _GOOGLE_DOC_MIME and not _can_download(entry):
+    can_download = _can_download(entry)
+    if not can_download:
         return None
     file_id = _require_entry_text(entry, "id")
     file_name = _require_entry_text(entry, "name")
@@ -267,9 +271,7 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     size = entry.get("size")
     if size is not None:
         extra["size"] = str(size)
-    extra["can_download"] = (
-        "true" if _can_download(entry) else "false"
-    )
+    extra["can_download"] = "true" if can_download else "false"
     checksum = entry.get("md5Checksum")
     if isinstance(checksum, str) and checksum:
         extra["md5_checksum"] = checksum
@@ -281,8 +283,14 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     )
 
 
-def _is_supported(mime_type: object) -> bool:
-    return mime_type == _GOOGLE_DOC_MIME or mime_type in _BLOB_MIMES
+def _is_supported(name: object, mime_type: object) -> bool:
+    if mime_type == _GOOGLE_DOC_MIME:
+        return True
+    if isinstance(mime_type, str) and mime_type.startswith(_GOOGLE_APPS_PREFIX):
+        return False
+    if not isinstance(name, str):
+        return False
+    return Path(name).suffix.lower() in SUPPORTED_SUFFIXES
 
 
 def _revision_from_file(entry: Mapping[str, object]) -> str:

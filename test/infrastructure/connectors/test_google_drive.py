@@ -310,19 +310,12 @@ def test_list_omits_unsupported_types() -> None:
     assert [document.source_id for document in documents] == ["ok"]
 
 
-def test_list_omits_undownloadable_blob_files() -> None:
-    files = FakeDriveFiles(
-        [{"files": [_file("blocked", "secret.txt", can_download=False)]}]
-    )
-    documents = _connector(files).list_documents()
-    assert documents == ()
-
-
-def test_list_keeps_google_docs_when_can_download_is_false() -> None:
+def test_list_omits_undownloadable_files() -> None:
     files = FakeDriveFiles(
         [
             {
                 "files": [
+                    _file("blocked", "secret.txt", can_download=False),
                     _file(
                         "gdoc",
                         "Spec",
@@ -330,13 +323,22 @@ def test_list_keeps_google_docs_when_can_download_is_false() -> None:
                         md5=None,
                         size=None,
                         can_download=False,
-                    )
+                    ),
+                    _file("ok", "ok.txt"),
                 ]
             }
         ]
     )
     documents = _connector(files).list_documents()
-    assert [document.source_id for document in documents] == ["gdoc"]
+    assert [document.source_id for document in documents] == ["ok"]
+
+
+def test_list_omits_extensionless_text_plain() -> None:
+    files = FakeDriveFiles(
+        [{"files": [_file("readme", "README", mime_type="text/plain")]}]
+    )
+    documents = _connector(files).list_documents()
+    assert documents == ()
 
 
 def test_revision_prefers_version_over_checksum() -> None:
@@ -458,7 +460,7 @@ def test_streaming_aborts_as_soon_as_limit_is_exceeded() -> None:
     assert files.get_media_ids == ["stream"]
 
 
-def test_download_permission_refusal_is_auth_error() -> None:
+def test_download_permission_refusal_is_connector_error() -> None:
     listed = ConnectorDocument(
         reference=SourceReference("blocked", SourceType.GOOGLE_DRIVE),
         file_name="a.txt",
@@ -466,7 +468,7 @@ def test_download_permission_refusal_is_auth_error() -> None:
         extra={"mime_type": "text/plain", "can_download": "false"},
     )
     files = FakeDriveFiles()
-    with pytest.raises(ConnectorAuthError, match="credentials or permissions"):
+    with pytest.raises(ConnectorError, match="could not be downloaded"):
         _connector(files).fetch_document(listed)
     assert files.get_media_ids == []
 

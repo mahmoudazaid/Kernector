@@ -17,7 +17,7 @@ from composition import (
     sync_google_drive,
 )
 from composition import container as composition_container
-from domain.errors import ConnectorAuthError, ConnectorError
+from domain.errors import ConnectorAuthError, ConnectorError, VectorStoreError
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -145,6 +145,31 @@ def test_build_google_drive_connector_maps_config_error_without_path(
     assert isinstance(raised.value.__cause__, GoogleDriveConfigError)
 
 
+def test_build_google_drive_connector_maps_missing_client_extra(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _import(
+        name: str,
+        globals: object = None,
+        locals: object = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        if name == "infrastructure.connectors.google_drive":
+            raise ImportError("No module named 'googleapiclient'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+    with pytest.raises(ConfigurationError, match="uv sync --extra google-drive") as raised:
+        build_google_drive_connector(settings)
+    assert "configuration is invalid" not in str(raised.value)
+    assert isinstance(raised.value.__cause__, ImportError)
+
+
 def test_sync_google_drive_wraps_listing_failure(settings: Settings) -> None:
     error = ConnectorAuthError(SECRET)
     with pytest.raises(ConnectorSyncError, match="sync failed") as raised:
@@ -174,6 +199,27 @@ def test_sync_google_drive_wraps_catalog_failure(settings: Settings) -> None:
         )
     assert SECRET not in str(raised.value)
     assert isinstance(raised.value.__cause__, CatalogError)
+
+
+def test_sync_google_drive_wraps_store_failure(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listed = _listed()
+
+    def _store(_settings: Settings) -> RecordingStore:
+        raise VectorStoreError(SECRET)
+
+    monkeypatch.setattr(composition_container, "build_vector_store", _store)
+    with pytest.raises(ConnectorSyncError, match=ConnectorSyncError.MESSAGE) as raised:
+        sync_google_drive(
+            settings,
+            connector=RecordingConnector(
+                (listed,), sources={listed.source_id: _source(listed)}
+            ),
+            catalog=InMemoryDocumentCatalog(),
+        )
+    assert SECRET not in str(raised.value)
+    assert isinstance(raised.value.__cause__, VectorStoreError)
 
 
 def test_skip_only_sync_does_not_build_ingest_or_store(

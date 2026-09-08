@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_GOOGLE_DRIVE_FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+_GOOGLE_DRIVE_FOLDER_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,7 +375,9 @@ def _load_google_drive_settings() -> GoogleDriveSettings:
     else:
         folder_id = raw_folder.strip()
         if not _GOOGLE_DRIVE_FOLDER_ID.fullmatch(folder_id):
-            raise ValueError("GOOGLE_DRIVE_FOLDER_ID is invalid")
+            raise ValueError(
+                "GOOGLE_DRIVE_FOLDER_ID must be the folder ID, not a Drive URL"
+            )
     page_size = _env_int("GOOGLE_DRIVE_PAGE_SIZE", "100")
     if not 1 <= page_size <= 1000:
         raise ValueError(

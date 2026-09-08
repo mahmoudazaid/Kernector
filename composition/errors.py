@@ -68,3 +68,5 @@ class PartialDocumentOperationError(DocumentOperationError):
 
 class ConnectorSyncError(RuntimeError):
     """A connector sync failed at the run level."""
+
+    MESSAGE = "The Google Drive connector sync failed."

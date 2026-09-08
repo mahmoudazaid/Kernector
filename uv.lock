@@ -1020,10 +1020,9 @@ google-drive = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "google-api-python-client" },
-    { name = "google-auth" },
     { name = "httpx" },
     { name = "jsonschema" },
+    { name = "kernector", extra = ["google-drive"] },
     { name = "pytest" },
 ]
 
@@ -1047,10 +1046,9 @@ provides-extras = ["google-drive"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "google-api-python-client", specifier = ">=2.190.0" },
-    { name = "google-auth", specifier = ">=2.42.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "kernector", extras = ["google-drive"] },
     { name = "pytest", specifier = ">=9.1.1" },
 ]
 
