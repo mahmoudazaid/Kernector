@@ -379,7 +379,7 @@ def test_fetch_blob_downloads_and_normalizes_metadata() -> None:
         reference=SourceReference("file-1", SourceType.GOOGLE_DRIVE),
         file_name="guide.md",
         revision="4",
-        extra={"mime_type": "text/markdown", "size": "5", "can_download": "true"},
+        extra={"mime_type": "text/markdown", "size": "5"},
     )
     files = FakeDriveFiles()
     extractor = RecordingExtractor(content="# Guide")
@@ -409,7 +409,7 @@ def test_fetch_google_doc_exports_markdown() -> None:
         reference=SourceReference("gdoc-1", SourceType.GOOGLE_DRIVE),
         file_name="Spec",
         revision="2",
-        extra={"mime_type": GOOGLE_DOC, "can_download": "true"},
+        extra={"mime_type": GOOGLE_DOC},
     )
     files = FakeDriveFiles()
     extractor = RecordingExtractor(content="exported")
@@ -428,7 +428,7 @@ def test_size_preflight_skips_media_and_extractor() -> None:
         reference=SourceReference("big", SourceType.GOOGLE_DRIVE),
         file_name="big.txt",
         revision="1",
-        extra={"mime_type": "text/plain", "size": "200", "can_download": "true"},
+        extra={"mime_type": "text/plain", "size": "200"},
     )
     files = FakeDriveFiles()
     extractor = RecordingExtractor()
@@ -445,7 +445,7 @@ def test_streaming_aborts_as_soon_as_limit_is_exceeded() -> None:
         reference=SourceReference("stream", SourceType.GOOGLE_DRIVE),
         file_name="a.txt",
         revision="1",
-        extra={"mime_type": "text/plain", "can_download": "true"},
+        extra={"mime_type": "text/plain"},
     )
     files = FakeDriveFiles()
     downloaders: list[FakeDownloader] = []
@@ -460,19 +460,6 @@ def test_streaming_aborts_as_soon_as_limit_is_exceeded() -> None:
     assert files.get_media_ids == ["stream"]
 
 
-def test_download_permission_refusal_is_connector_error() -> None:
-    listed = ConnectorDocument(
-        reference=SourceReference("blocked", SourceType.GOOGLE_DRIVE),
-        file_name="a.txt",
-        revision="1",
-        extra={"mime_type": "text/plain", "can_download": "false"},
-    )
-    files = FakeDriveFiles()
-    with pytest.raises(ConnectorError, match="could not be downloaded"):
-        _connector(files).fetch_document(listed)
-    assert files.get_media_ids == []
-
-
 def test_extraction_failure_is_safe_connector_error() -> None:
     from infrastructure.documents.uploaded_files import UnreadableDocumentError
 
@@ -480,7 +467,7 @@ def test_extraction_failure_is_safe_connector_error() -> None:
         reference=SourceReference("bad", SourceType.GOOGLE_DRIVE),
         file_name="a.txt",
         revision="1",
-        extra={"mime_type": "text/plain", "can_download": "true"},
+        extra={"mime_type": "text/plain"},
     )
     extractor = RecordingExtractor(error=UnreadableDocumentError(SECRET))
     with pytest.raises(ConnectorError, match="could not be read as text") as raised:

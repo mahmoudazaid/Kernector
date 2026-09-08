@@ -456,6 +456,7 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
 
 
 _DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
+_DRIVE_SYNC_MESSAGE = "The Google Drive connector sync failed."
 _DRIVE_CLIENT_MISSING_MESSAGE = (
     "Google Drive client is not installed; run uv sync --extra google-drive."
 )
@@ -537,11 +538,11 @@ def sync_google_drive(
             ),
         ).execute()
     except ConnectorError as error:
-        raise ConnectorSyncError(ConnectorSyncError.MESSAGE) from error
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
     except CatalogError as error:
-        raise ConnectorSyncError(ConnectorSyncError.MESSAGE) from error
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
     except VectorStoreError as error:
-        raise ConnectorSyncError(ConnectorSyncError.MESSAGE) from error
+        raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
 
 
 def build_document_extractor() -> UploadedFileExtractor:

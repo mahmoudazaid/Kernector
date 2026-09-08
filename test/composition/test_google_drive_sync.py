@@ -210,7 +210,9 @@ def test_sync_google_drive_wraps_store_failure(
         raise VectorStoreError(SECRET)
 
     monkeypatch.setattr(composition_container, "build_vector_store", _store)
-    with pytest.raises(ConnectorSyncError, match=ConnectorSyncError.MESSAGE) as raised:
+    with pytest.raises(
+        ConnectorSyncError, match="The Google Drive connector sync failed."
+    ) as raised:
         sync_google_drive(
             settings,
             connector=RecordingConnector(

@@ -60,7 +60,6 @@ _MSG_AUTH = "Google Drive rejected the connector credentials or permissions."
 _MSG_UNAVAILABLE = "Google Drive is temporarily unavailable."
 _MSG_REQUEST_FAILED = "The Google Drive request failed."
 _MSG_UNREADABLE = "A Google Drive file could not be read as text."
-_MSG_NOT_DOWNLOADABLE = "A Google Drive file could not be downloaded."
 _MSG_TOO_LARGE = "A Google Drive file exceeded the configured size limit."
 _MSG_CONFIG = "Google Drive connector configuration is invalid."
 _MSG_CREDENTIALS = "Google Drive connector credentials could not be read."
@@ -178,11 +177,9 @@ class GoogleDriveConnector:
         Raises:
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
-            ConnectorError: Size, extraction, download refusal, or other Drive failures.
+            ConnectorError: Size, extraction, or other Drive failures.
         """
         mime_type = document.extra.get("mime_type", "")
-        if document.extra.get("can_download") == "false":
-            raise ConnectorError(_MSG_NOT_DOWNLOADABLE)
         reported_size = _optional_size(document.extra.get("size"))
         if reported_size is not None and reported_size > self._max_upload_bytes:
             raise ConnectorError(_MSG_TOO_LARGE)
@@ -271,7 +268,6 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     size = entry.get("size")
     if size is not None:
         extra["size"] = str(size)
-    extra["can_download"] = "true" if can_download else "false"
     checksum = entry.get("md5Checksum")
     if isinstance(checksum, str) and checksum:
         extra["md5_checksum"] = checksum
