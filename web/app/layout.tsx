@@ -20,8 +20,28 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(publicEnv.NEXT_PUBLIC_SITE_URL),
   title: publicEnv.NEXT_PUBLIC_APP_NAME,
   description: "Multi-source knowledge hub",
+  icons: {
+    icon: [
+      { url: "/brand/kernector-tab.png", type: "image/png", sizes: "48x48" },
+      { url: "/brand/favicon.ico", type: "image/x-icon" },
+    ],
+    shortcut: "/brand/kernector-tab.png",
+    apple: [
+      {
+        url: "/brand/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
+  openGraph: {
+    title: publicEnv.NEXT_PUBLIC_APP_NAME,
+    description: "Multi-source knowledge hub",
+    images: [{ url: "/brand/opengraph.png", alt: "Kernector" }],
+  },
 };
 
 export default function RootLayout({

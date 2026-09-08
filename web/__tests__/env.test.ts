@@ -9,6 +9,7 @@ describe("public env safety", () => {
 
     expect(env.NEXT_PUBLIC_APP_NAME).toBe("Kernector");
     expect(env.NEXT_PUBLIC_API_BASE_URL).toBe("http://127.0.0.1:8000");
+    expect(env.NEXT_PUBLIC_SITE_URL).toBe("http://localhost:3000");
   });
 
   it("defaults API base URL when unset", () => {
@@ -35,6 +36,15 @@ describe("public env safety", () => {
     });
 
     expect(env.NEXT_PUBLIC_API_BASE_URL).toBe("https://api.example.com");
+  });
+
+  it("accepts an absolute site URL and strips a trailing slash", () => {
+    const env = loadPublicEnv({
+      NEXT_PUBLIC_APP_NAME: "Kernector",
+      NEXT_PUBLIC_SITE_URL: "https://kernector.example.com/",
+    });
+
+    expect(env.NEXT_PUBLIC_SITE_URL).toBe("https://kernector.example.com");
   });
 
   it("rejects relative, non-http, and invalid API base URLs", () => {

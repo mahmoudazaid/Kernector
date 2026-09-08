@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+const DEFAULT_SITE_URL = "http://localhost:3000";
 
 const httpUrl = z
   .url({
@@ -12,6 +13,7 @@ const httpUrl = z
 const publicEnvSchema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default("Kernector"),
   NEXT_PUBLIC_API_BASE_URL: httpUrl.default(DEFAULT_API_BASE_URL),
+  NEXT_PUBLIC_SITE_URL: httpUrl.default(DEFAULT_SITE_URL),
 });
 
 const FORBIDDEN_PUBLIC_PATTERN =
@@ -51,6 +53,7 @@ export function loadPublicEnv(
     NEXT_PUBLIC_APP_NAME: source.NEXT_PUBLIC_APP_NAME ?? "Kernector",
     NEXT_PUBLIC_API_BASE_URL:
       source.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL,
+    NEXT_PUBLIC_SITE_URL: source.NEXT_PUBLIC_SITE_URL ?? DEFAULT_SITE_URL,
   });
 
   if (!parsed.success) {
