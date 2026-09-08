@@ -515,4 +515,52 @@ describe("DocumentsPanel", () => {
     });
     expect(screen.getByLabelText(/document file/i)).toBeEnabled();
   });
+
+  it("leaves document retry enabled while settings are still loading", async () => {
+    const list = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Operational error",
+        detail: "Something went wrong while processing your request.",
+        code: "operational_error",
+      }),
+    );
+    const pendingSettings = vi.fn(
+      () => new Promise<RuntimeSettingsResponse>(() => {}),
+    );
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={pendingSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/something went wrong while processing/i),
+    ).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: /^retry$/i });
+    expect(retry).toBeEnabled();
+    expect(retry).toHaveTextContent(/^Retry$/);
+  });
+
+  it("leaves unavailable retry enabled while settings are still loading", async () => {
+    const pendingSettings = vi.fn(
+      () => new Promise<RuntimeSettingsResponse>(() => {}),
+    );
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockRejectedValue(ApiError.generic(0))}
+        loadSettings={pendingSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /backend unavailable/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^retry$/i })).toBeEnabled();
+  });
 });

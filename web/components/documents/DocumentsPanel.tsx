@@ -105,6 +105,7 @@ export function DocumentsPanel({
     useState<CatalogDocumentResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+  const [refreshing, setRefreshing] = useState(false);
 
   function retryAll() {
     if (settingsError) {
@@ -116,6 +117,7 @@ export function DocumentsPanel({
   }
 
   async function refresh() {
+    setRefreshing(true);
     try {
       const response = await list({ baseUrl: apiBaseUrl });
       startTransition(() => {
@@ -148,6 +150,8 @@ export function DocumentsPanel({
               : [],
         })),
       );
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -270,6 +274,12 @@ export function DocumentsPanel({
     }
   }
 
+  const documentsRetryable =
+    catalog.kind === "error" || catalog.kind === "unavailable";
+  const retryBusy =
+    (Boolean(settingsError) && settingsLoading) ||
+    (documentsRetryable && refreshing);
+
   if (catalog.kind === "loading") {
     return (
       <section className="kern-documents">
@@ -289,12 +299,8 @@ export function DocumentsPanel({
           title="Backend unavailable"
           description="The documents API could not be reached. Start the FastAPI server and try again."
         />
-        <Button
-          variant="secondary"
-          disabled={settingsLoading}
-          onClick={retryAll}
-        >
-          {settingsLoading ? "Checking…" : "Retry"}
+        <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+          {retryBusy ? "Checking…" : "Retry"}
         </Button>
       </section>
     );
@@ -312,12 +318,8 @@ export function DocumentsPanel({
         >
           {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
           {settingsError ? <p>{settingsError}</p> : null}
-          <Button
-            variant="secondary"
-            disabled={settingsLoading}
-            onClick={retryAll}
-          >
-            {settingsLoading ? "Checking…" : "Retry"}
+          <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+            {retryBusy ? "Checking…" : "Retry"}
           </Button>
         </div>
       ) : null}
