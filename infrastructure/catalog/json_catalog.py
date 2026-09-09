@@ -17,10 +17,14 @@ from domain.knowledge import (
     CatalogStatus,
     SourceReference,
 )
+from infrastructure.catalog.errors import CatalogError
 
-
-class CatalogError(RuntimeError):
-    """Base error raised by the JSON document catalog adapter."""
+__all__ = [
+    "CatalogError",
+    "CatalogParseError",
+    "CatalogValidationError",
+    "JsonDocumentCatalog",
+]
 
 
 class CatalogParseError(CatalogError):

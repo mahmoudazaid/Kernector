@@ -31,13 +31,12 @@ data into a shared document contract.
    into `SourceDocument` before calling the shared pipeline. Connector
    implementation is out of scope for this ADR.
 4. **Catalog persistence** — Uploaded-document catalog uses a port
-   (`DocumentCatalog`). Composition currently wires `JsonDocumentCatalog`
-   directly. `DOCUMENT_CATALOG_PATH` sets only that JSON adapter’s file path; it
-   does not choose among adapters. Configurable JSON vs SQL adapter selection
-   is tracked in [#131](https://github.com/mahmoudazaid/Kernector/issues/131).
-   The SQL adapter’s scope identity is settled by
-   [ADR 0006](0006-workspace-scope-identity.md). This ADR does not introduce
-   adapter selection or `DOCUMENT_CATALOG_WORKSPACE_ID`.
+   (`DocumentCatalog`). Composition selects `JsonDocumentCatalog` or
+   `SqlDocumentCatalog` from `DOCUMENT_CATALOG_BACKEND` ([#131](https://github.com/mahmoudazaid/Kernector/issues/131)).
+   JSON remains the unscoped single-process default; `DOCUMENT_CATALOG_PATH`
+   sets that adapter’s file path. SQL uses `DOCUMENT_CATALOG_SQL_PATH` and a
+   required `DOCUMENT_CATALOG_WORKSPACE_ID`. Scope identity is settled by
+   [ADR 0006](0006-workspace-scope-identity.md).
 
 ## Consequences
 
@@ -68,5 +67,5 @@ Parent: [EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68).
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — layers and knowledge-foundation section
 - [data/knowledge/README.md](../../data/knowledge/README.md) — seed format and domain mapping
-- [ADR 0006](0006-workspace-scope-identity.md) — workspace scope identity for a
-  future SQL catalog (`#131`)
+- [ADR 0006](0006-workspace-scope-identity.md) — workspace scope identity for the
+  SQL catalog (`#131`)

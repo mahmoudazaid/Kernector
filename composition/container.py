@@ -64,7 +64,12 @@ from domain.ports import (
     PromptRepository,
     VectorStore,
 )
-from infrastructure.catalog.json_catalog import CatalogError, JsonDocumentCatalog
+from infrastructure.catalog.errors import CatalogError
+from infrastructure.catalog.json_catalog import JsonDocumentCatalog
+from infrastructure.catalog.migrate_json import (
+    migrate_json_catalog_to_sql as _migrate_json_catalog_to_sql,
+)
+from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
@@ -458,8 +463,60 @@ def ingest_uploaded_document(
 
 
 def build_document_catalog(settings: Settings) -> DocumentCatalog:
-    """Build a fresh JSON catalog adapter for the configured path."""
-    return JsonDocumentCatalog(settings.document_catalog.path)
+    """Build the configured catalog adapter.
+
+    JSON stays the unscoped single-process default. SQL is bound to the
+    configured workspace and SQLite path.
+
+    Args:
+        settings (Settings): Runtime catalog configuration.
+
+    Returns:
+        DocumentCatalog: JSON or SQL adapter selected by ``backend``.
+
+    Raises:
+        ConfigurationError: SQL is selected without a workspace id.
+    """
+    catalog = settings.document_catalog
+    if catalog.backend == "sql":
+        if catalog.workspace_id is None:
+            raise ConfigurationError(
+                "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
+                "DOCUMENT_CATALOG_BACKEND=sql"
+            )
+        return SqlDocumentCatalog(catalog.sql_path, catalog.workspace_id)
+    return JsonDocumentCatalog(catalog.path)
+
+
+def migrate_document_catalog(settings: Settings) -> None:
+    """Import the JSON catalog into the configured SQL workspace.
+
+    Requires ``backend=sql`` and a valid ``workspace_id`` before opening
+    SQLite.
+
+    Args:
+        settings (Settings): Runtime catalog configuration.
+
+    Raises:
+        ConfigurationError: Backend is not SQL or workspace id is missing.
+        DocumentOperationError: Migration or import failed.
+    """
+    catalog = settings.document_catalog
+    if catalog.backend != "sql":
+        raise ConfigurationError(
+            "DOCUMENT_CATALOG_BACKEND must be 'sql' to migrate the catalog"
+        )
+    if catalog.workspace_id is None:
+        raise ConfigurationError(
+            "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
+            "DOCUMENT_CATALOG_BACKEND=sql"
+        )
+    try:
+        _migrate_json_catalog_to_sql(
+            catalog.path, catalog.sql_path, catalog.workspace_id
+        )
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
 
 
 _DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
