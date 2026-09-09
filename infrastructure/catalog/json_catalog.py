@@ -97,7 +97,7 @@ class JsonDocumentCatalog:
                     and document.reference.source_type != source_type
                 ):
                     continue
-                if status is not None and document.status is not status:
+                if status is not None and document.status != status:
                     continue
                 total += 1
             return total

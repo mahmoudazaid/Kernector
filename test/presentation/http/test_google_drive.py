@@ -81,6 +81,23 @@ def _status_json(**overrides: object) -> dict[str, object]:
     return payload
 
 
+def test_status_dep_passes_the_process_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = object()
+    seen: list[object] = []
+
+    monkeypatch.setattr(http_deps, "get_document_catalog", lambda: catalog)
+
+    def fake_status(_settings, *, catalog=None):
+        seen.append(catalog)
+        return _status()
+
+    monkeypatch.setattr(http_deps, "google_drive_status", fake_status)
+    http_deps.get_google_drive_status(SimpleNamespace())
+    assert seen == [catalog]
+
+
 def test_google_drive_status_returns_presentation_fields() -> None:
     app = create_app()
     app.dependency_overrides[get_google_drive_status] = lambda: _status(

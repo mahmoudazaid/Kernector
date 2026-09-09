@@ -49,7 +49,7 @@ class InMemoryDocumentCatalog:
         for row in self._records.values():
             if source_type is not None and row.reference.source_type != source_type:
                 continue
-            if status is not None and row.status is not status:
+            if status is not None and row.status != status:
                 continue
             total += 1
         return total

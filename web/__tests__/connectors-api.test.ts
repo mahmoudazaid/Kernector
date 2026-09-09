@@ -50,8 +50,9 @@ describe("google drive connector wrappers", () => {
   it("keeps file and folder selection caps aligned", async () => {
     const spec = await import("../openapi/openapi.json");
     const request = spec.components.schemas.GoogleDriveSelectionRequest.properties;
-    expect(GOOGLE_DRIVE_SELECTION_ITEM_MAX).toBe(100);
-    expect(request.files.maxItems).toBe(request.folders.maxItems);
+    expect(request.folders.maxItems).toBe(100);
+    expect(request.files.maxItems).toBe(100);
+    expect(GOOGLE_DRIVE_SELECTION_ITEM_MAX).toBe(request.folders.maxItems);
   });
 
   it("syncs with POST and a whole-folder timeout", async () => {

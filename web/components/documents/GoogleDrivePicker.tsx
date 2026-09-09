@@ -307,13 +307,6 @@ export function GoogleDrivePicker({
   }, [open]);
 
   useEffect(() => {
-    if (!open || dirtyRef.current) {
-      return;
-    }
-    setSelected(selectedMap(initialSelectionRef.current));
-  }, [open, baselineKey]);
-
-  useEffect(() => {
     if (!open) {
       return;
     }

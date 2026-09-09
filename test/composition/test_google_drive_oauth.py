@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +18,7 @@ from application.contracts import (
 from application.errors import (
     GoogleDriveNotConnectedError,
     GoogleDriveSelectionRequiredError,
+    InputRejectedError,
 )
 from composition import (
     browse_google_drive_items,
@@ -87,7 +90,12 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             state_path=tmp_path / "state.json",
             state_ttl_seconds=600,
         ),
-        document_catalog=replace(loaded.document_catalog, path=tmp_path / "catalog.json"),
+        document_catalog=replace(
+            loaded.document_catalog,
+            path=tmp_path / "catalog.json",
+            backend="json",
+            sql_path=tmp_path / "catalog.sqlite",
+        ),
     )
 
 
@@ -251,6 +259,45 @@ def test_callback_reconnect_as_other_account_resets_scope(settings) -> None:
     assert stored.last_synced_at is None
 
 
+def test_callback_reconnect_with_unknown_stored_email_resets_scope(
+    settings,
+) -> None:
+    states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//old-refresh",
+            access_token=None,
+            account_email=None,
+            last_synced_at="2026-09-08T12:00:00+00:00",
+            last_sync_new=1,
+            last_sync_updated=0,
+            last_sync_unchanged=2,
+            last_sync_failed=0,
+            reauthorization_required=True,
+            folders=(StoredItem(id="ada-folder", name="Ada Specs"),),
+            files=(),
+        )
+    )
+    state = states.issue()
+    url = complete_google_drive_oauth(
+        settings,
+        state=state,
+        code="4/auth-code",
+        error=None,
+        state_store=states,
+        connection_store=tokens,
+        gateway=OtherAccountGateway(),
+    )
+
+    assert url.endswith("drive=connected")
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.account_email == "other@example.com"
+    assert stored.folders == ()
+    assert stored.last_synced_at is None
+
+
 class UnknownEmailGateway(FakeGateway):
     def fetch_account_email(self, _access_token: str) -> str | None:
         return None
@@ -288,7 +335,7 @@ def test_callback_reconnect_with_unknown_email_clears_scope(settings) -> None:
     assert url.endswith("drive=connected")
     stored = tokens.load()
     assert stored is not None
-    assert stored.account_email == "ada@example.com"
+    assert stored.account_email is None
     assert stored.folders == ()
     assert stored.last_synced_at is None
 
@@ -374,6 +421,30 @@ def test_status_catalog_error_degrades_document_count(settings) -> None:
     class BrokenCatalog:
         def count(self, **_kwargs):
             raise CatalogError("could not read catalog")
+
+    GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    status = google_drive_status(settings, catalog=BrokenCatalog())
+    assert status.connected is True
+    assert status.document_count == 0
+
+
+def test_status_catalog_oserror_degrades_document_count(settings) -> None:
+    class BrokenCatalog:
+        def count(self, **_kwargs):
+            raise OSError("read-only catalog")
 
     GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
         GoogleOAuthConnection(
@@ -822,6 +893,101 @@ def test_put_selection_allows_empty(settings) -> None:
     status = google_drive_status(settings)
     assert status.setup_required is False
     assert status.connection_state == "ready"
+
+
+class _FakeRemote:
+    def __init__(self, item_id: str, kind: str) -> None:
+        self.id = item_id
+        self.name = item_id
+        self.kind = kind
+        self.supported = True
+
+
+def test_put_selection_reuses_one_connector_per_worker(settings) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    builds: list[int] = []
+    lock = threading.Lock()
+
+    class Connector:
+        def get_item(self, item_id: str):
+            return _FakeRemote(item_id, "folder")
+
+    def factory():
+        with lock:
+            builds.append(threading.get_ident())
+        return Connector()
+
+    items = tuple(
+        GoogleDriveSelectedItem(id=f"folder-{index}", name=f"Folder {index}")
+        for index in range(20)
+    )
+    saved = put_google_drive_selection(
+        settings,
+        folders=items,
+        files=(),
+        connection_store=tokens,
+        connector_factory=factory,
+    )
+    assert [item.id for item in saved.folders] == [f"folder-{index}" for index in range(20)]
+    assert 1 <= len(builds) <= 16
+
+
+def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    started: list[str] = []
+    lock = threading.Lock()
+
+    class Connector:
+        def get_item(self, item_id: str):
+            with lock:
+                started.append(item_id)
+            if item_id == "folder-0":
+                raise InputRejectedError(_SELECTION_KIND)
+            time.sleep(0.2)
+            return _FakeRemote(item_id, "folder")
+
+    items = tuple(
+        GoogleDriveSelectedItem(id=f"folder-{index}", name=f"Folder {index}")
+        for index in range(40)
+    )
+    with pytest.raises(InputRejectedError):
+        put_google_drive_selection(
+            settings,
+            folders=items,
+            files=(),
+            connection_store=tokens,
+            connector_factory=lambda: Connector(),
+        )
+    assert len(started) < 40
+
+
+_SELECTION_KIND = "A selected Drive item does not match the requested type."
 
 
 def test_delete_drive_document_drops_file_from_selection(

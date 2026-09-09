@@ -539,6 +539,54 @@ describe("GoogleDrivePanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("closes an open picker when a later selection refresh fails", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    const loadSelection = async () => {
+      calls += 1;
+      if (calls <= 2) {
+        return EMPTY_SELECTION;
+      }
+      throw new ApiError({
+        status: 502,
+        title: "Google Drive request failed",
+        detail: "The Google Drive request failed.",
+        code: "google_drive_request_failed",
+      });
+    };
+    const { rerender } = render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        reloadToken={0}
+        getStatus={async () => SETUP_REQUIRED}
+        loadSelection={loadSelection}
+        listItems={folderPage}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
+    expect(
+      await screen.findByRole("dialog", { name: /choose from google drive/i }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        reloadToken={1}
+        getStatus={async () => SETUP_REQUIRED}
+        loadSelection={loadSelection}
+        listItems={folderPage}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The Google Drive request failed.",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: /choose from google drive/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("saves the selection by Drive ID and starts one initial sync", async () => {
     const user = userEvent.setup();
     let resolveSave: (value: {

@@ -19,6 +19,7 @@ from composition import (
     Settings,
     browse_google_drive_items,
     build_chat_model,
+    build_document_catalog,
     build_prompt_repository,
     build_probe_ollama_status,
     build_runtime_settings,
@@ -38,7 +39,7 @@ from composition import (
     sync_google_drive_oauth,
 )
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
-from domain.ports import PromptRepository, VectorStore
+from domain.ports import DocumentCatalog, PromptRepository, VectorStore
 from presentation.http.schemas import ChatRuntimeRequest
 
 
@@ -56,6 +57,12 @@ def get_settings() -> Settings:
 def get_vector_store() -> VectorStore:
     """Process-cached vector store (hybrid BM25 hydrate once per process)."""
     return build_vector_store(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_document_catalog() -> DocumentCatalog:
+    """Process-cached document catalog (one SQLite/JSON adapter per process)."""
+    return build_document_catalog(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -164,7 +171,7 @@ def get_google_drive_status(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GoogleDriveStatus:
     """Report Drive configuration presence and extra availability."""
-    return google_drive_status(settings)
+    return google_drive_status(settings, catalog=get_document_catalog())
 
 
 def get_google_drive_sync(

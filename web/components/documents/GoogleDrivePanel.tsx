@@ -193,7 +193,7 @@ export function GoogleDrivePanel({
       ) {
         return null;
       }
-      if (forPicker) {
+      if (forPicker || pickerOpenRef.current) {
         setActionError(actionErrorMessage(error));
         setPickerOpen(false);
       }

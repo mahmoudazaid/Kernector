@@ -3,6 +3,7 @@
 import importlib.util
 import logging
 import re
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -754,7 +755,7 @@ def _drive_document_count(
             source_type=SourceType.GOOGLE_DRIVE,
             status=CatalogStatus.READY,
         )
-    except (CatalogError, ConfigurationError):
+    except (CatalogError, ConfigurationError, OSError, ValueError):
         return 0
 
 
@@ -847,22 +848,15 @@ def complete_google_drive_oauth(
         email = oauth_gateway.fetch_account_email(grant.access_token)
 
         def _next(existing):
-            if (
+            keep_scope = (
                 existing is not None
                 and email is not None
-                and existing.account_email is not None
-                and existing.account_email != email
-            ):
-                existing = None
-            keep_scope = existing is not None and email is not None
+                and existing.account_email == email
+            )
             return GoogleOAuthConnection(
                 refresh_token=grant.refresh_token,
                 access_token=grant.access_token,
-                account_email=(
-                    email
-                    if email is not None
-                    else None if existing is None else existing.account_email
-                ),
+                account_email=email,
                 last_synced_at=None if not keep_scope else existing.last_synced_at,
                 last_sync_new=None if not keep_scope else existing.last_sync_new,
                 last_sync_updated=None if not keep_scope else existing.last_sync_updated,
@@ -1057,6 +1051,7 @@ def put_google_drive_selection(
     files: Sequence[GoogleDriveSelectedItem],
     connection_store=None,
     files_resource=None,
+    connector_factory=None,
 ) -> GoogleDriveSelection:
     """Validate access and atomically replace the saved Drive selection.
 
@@ -1066,6 +1061,7 @@ def put_google_drive_selection(
         files (Sequence[GoogleDriveSelectedItem]): Exact file IDs.
         connection_store: Injected grant store for tests.
         files_resource: Injected Drive files resource for tests.
+        connector_factory: Injected ``get_item`` factory for tests.
 
     Returns:
         GoogleDriveSelection: The persisted roots.
@@ -1091,6 +1087,7 @@ def put_google_drive_selection(
             folder_items=folder_items,
             file_items=file_items,
             files_resource=files_resource,
+            connector_factory=connector_factory,
         )
     except ConnectorAuthError as error:
         _mark_reauth(tokens_store, error)
@@ -1150,31 +1147,36 @@ def _validate_selection_items(
     folder_items: Sequence[GoogleDriveSelectedItem],
     file_items: Sequence[GoogleDriveSelectedItem],
     files_resource=None,
+    connector_factory=None,
 ) -> tuple[tuple[GoogleDriveSelectedItem, ...], tuple[GoogleDriveSelectedItem, ...]]:
     jobs = [(item, "folder") for item in folder_items] + [
         (item, "file") for item in file_items
     ]
     if not jobs:
         return (), ()
-    if files_resource is not None:
-        connector = build_google_drive_oauth_connector(
+
+    def default_factory():
+        return build_google_drive_oauth_connector(
             settings, refresh_token=refresh_token, files=files_resource
         )
-        resolved = [
-            _validate_selected_item(connector, item, expected_kind=kind)
-            for item, kind in jobs
-        ]
-    else:
-        def _run(item: GoogleDriveSelectedItem, kind: str) -> GoogleDriveSelectedItem:
-            connector = build_google_drive_oauth_connector(
-                settings, refresh_token=refresh_token
-            )
-            return _validate_selected_item(connector, item, expected_kind=kind)
 
-        workers = min(_DRIVE_SELECTION_VALIDATE_WORKERS, len(jobs))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_run, item, kind) for item, kind in jobs]
-            resolved = [future.result() for future in futures]
+    factory = default_factory if connector_factory is None else connector_factory
+    local = threading.local()
+
+    def _run(item: GoogleDriveSelectedItem, kind: str) -> GoogleDriveSelectedItem:
+        connector = getattr(local, "connector", None)
+        if connector is None:
+            connector = factory()
+            local.connector = connector
+        return _validate_selected_item(connector, item, expected_kind=kind)
+
+    workers = min(_DRIVE_SELECTION_VALIDATE_WORKERS, len(jobs))
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        futures = [pool.submit(_run, item, kind) for item, kind in jobs]
+        resolved = [future.result() for future in futures]
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     folder_count = len(folder_items)
     return tuple(resolved[:folder_count]), tuple(resolved[folder_count:])
 

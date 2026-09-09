@@ -318,4 +318,29 @@ describe("GoogleDrivePicker", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("keeps the loader and disables Save while selection is loading", async () => {
+    renderPicker({
+      selectionLoading: true,
+      initialSelection: { folders: [{ id: "folder-1", name: "Specs" }], files: [] },
+      listItems: async () => {
+        throw new ApiError({
+          status: 502,
+          title: "Google Drive request failed",
+          detail: "The Google Drive request failed.",
+          code: "google_drive_request_failed",
+        });
+      },
+    });
+    const dialog = screen.getByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      /loading google drive/i,
+    );
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Specs")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /^save$/i })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: /^close$/i })).toBeEnabled();
+  });
 });
