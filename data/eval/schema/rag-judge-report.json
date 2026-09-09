@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernector.local/schemas/rag-judge-report.json",
+  "title": "KernectorRagJudgeReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "execution_mode",
+    "quality_gate_eligible",
+    "quality_gate_passed",
+    "gate_status",
+    "baseline_comparison",
+    "answer_model",
+    "judge",
+    "fingerprints",
+    "aggregates",
+    "limitations",
+    "results"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "kernector.rag-judge.v1"
+    },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["live", "fake"]
+    },
+    "quality_gate_eligible": { "type": "boolean" },
+    "quality_gate_passed": { "type": "boolean" },
+    "gate_status": {
+      "type": "string",
+      "enum": ["passed", "failed", "ineligible", "refused_baseline"]
+    },
+    "baseline_comparison": {
+      "type": ["string", "null"],
+      "enum": ["compared", "unaccepted", "incompatible", "not_compared", null]
+    },
+    "answer_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model",
+        "prompt_version",
+        "temperature",
+        "seed_configured",
+        "seed_applied"
+      ],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "prompt_version": {
+          "type": "string",
+          "const": "kernector.rag-judge.prompts.v1"
+        },
+        "temperature": { "type": "number", "const": 0 },
+        "seed_configured": { "type": ["integer", "null"] },
+        "seed_applied": { "type": ["integer", "null"] }
+      }
+    },
+    "fingerprints": {
+      "$ref": "https://kernector.local/schemas/rag-judge-fingerprints.json"
+    },
+    "aggregates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_relevance",
+        "faithfulness",
+        "answer_correctness",
+        "citation_accuracy",
+        "citation_completeness"
+      ],
+      "properties": {
+        "context_relevance": { "$ref": "#/$defs/metricAggregate" },
+        "faithfulness": { "$ref": "#/$defs/metricAggregate" },
+        "answer_correctness": { "$ref": "#/$defs/metricAggregate" },
+        "citation_accuracy": { "$ref": "#/$defs/metricAggregate" },
+        "citation_completeness": { "$ref": "#/$defs/metricAggregate" }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/caseResult" }
+    }
+  },
+  "$defs": {
+    "metricAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mean", "pass_rate", "scored_count", "eligible_count"],
+      "properties": {
+        "mean": { "type": ["number", "null"] },
+        "pass_rate": { "type": "number" },
+        "scored_count": { "type": "integer", "minimum": 0 },
+        "eligible_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "metricResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "score", "explanation", "error_type"],
+      "properties": {
+        "status": { "type": "string", "enum": ["scored", "judge_failure"] },
+        "score": { "type": ["number", "null"] },
+        "explanation": { "type": ["string", "null"] },
+        "error_type": { "type": ["string", "null"] }
+      }
+    },
+    "caseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "slice",
+        "case_class",
+        "metrics",
+        "retrieved_source_misses",
+        "citation_source_misses",
+        "unknown_source_types",
+        "failure_categories",
+        "error_type"
+      ],
+      "properties": {
+        "case_id": { "type": "string", "minLength": 1 },
+        "slice": { "type": "string", "enum": ["core", "software_delivery"] },
+        "case_class": { "type": "string", "minLength": 1 },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "context_relevance",
+            "faithfulness",
+            "answer_correctness",
+            "citation_accuracy",
+            "citation_completeness"
+          ],
+          "properties": {
+            "context_relevance": { "$ref": "#/$defs/metricResult" },
+            "faithfulness": { "$ref": "#/$defs/metricResult" },
+            "answer_correctness": { "$ref": "#/$defs/metricResult" },
+            "citation_accuracy": { "$ref": "#/$defs/metricResult" },
+            "citation_completeness": { "$ref": "#/$defs/metricResult" }
+          }
+        },
+        "retrieved_source_misses": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "citation_source_misses": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unknown_source_types": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "failure_categories": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "error_type": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

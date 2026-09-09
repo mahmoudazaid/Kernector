@@ -473,3 +473,135 @@ def test_cli_offline_dataset_writes_reports_to_tmp_path(
     assert "Traceback" not in captured.err
     assert str(json_path) in captured.out
     assert code == 0
+    assert not (output / "rag-judge-report.json").exists()
+    assert not (output / "rag-judge-report.csv").exists()
+
+
+def _judge_report(*, eligible: bool, passed: bool, mode: str = "live"):
+    from application.evaluate_rag import EvaluateRag
+    from application.rag_judge_contracts import (
+        AnswerRunMetadata,
+        JudgeMetadata,
+        RagJudgeFingerprints,
+        RagJudgeThresholds,
+    )
+    from application.rag_judge_policy import METRIC_IDS, PROMPT_VERSION
+
+    fingerprints = RagJudgeFingerprints(
+        dataset_hash="d" * 64,
+        corpus_hash="c" * 64,
+        metric_set=METRIC_IDS,
+        judge_provider="openrouter",
+        judge_model="judge",
+        prompt_version=PROMPT_VERSION,
+        answer_provider="openrouter",
+        answer_model="answer",
+        embedding_model="embed",
+        retrieval_limit=5,
+        relevance_threshold=0.0,
+        hybrid_enabled=True,
+        hybrid_alpha=0.5,
+        rewriter="openrouter:rewrite",
+    )
+    report = EvaluateRag().execute(
+        (),
+        {},
+        object(),  # unused in fake
+        RagJudgeThresholds(),
+        None,
+        JudgeMetadata(
+            provider="openrouter",
+            model="judge",
+            prompt_version=PROMPT_VERSION,
+            temperature=0,
+        ),
+        AnswerRunMetadata(provider="openrouter", model="answer"),
+        fingerprints,
+        execution_mode="fake" if not eligible else mode,
+    )
+    if eligible:
+        object.__setattr__(report, "quality_gate_eligible", True)
+        object.__setattr__(report, "quality_gate_passed", passed)
+        object.__setattr__(report, "gate_status", "passed" if passed else "failed")
+        object.__setattr__(report, "execution_mode", "live")
+        object.__setattr__(report, "baseline_comparison", "compared")
+    return report
+
+
+def test_cli_fake_writes_additive_judge_reports_and_exits_two(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli, "run_rag_judge", lambda mode, cases: _judge_report(eligible=False, passed=False)
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "fake"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert (tmp_path / "eval-report.json").is_file()
+    assert (tmp_path / "eval-report.md").is_file()
+    assert (tmp_path / "rag-judge-report.json").is_file()
+    assert (tmp_path / "rag-judge-report.csv").is_file()
+    assert "Traceback" not in captured.err
+
+
+def test_cli_auto_skip_exits_two_without_judge_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from composition.evaluate import JudgeSkipped
+
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: (_ for _ in ()).throw(
+            JudgeSkipped("auto Judge skipped: refusing to substitute fake scores")
+        ),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "auto"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "refusing to substitute fake scores" in captured.err
+    assert (tmp_path / "eval-report.json").is_file()
+    assert not (tmp_path / "rag-judge-report.json").exists()
+
+
+def test_cli_live_pass_exits_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: _judge_report(eligible=True, passed=True),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
+
+    assert code == 0
+    assert (tmp_path / "rag-judge-report.json").is_file()
+
+
+def test_cli_live_quality_failure_exits_one(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: _judge_report(eligible=True, passed=False),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
+
+    assert code == 1
