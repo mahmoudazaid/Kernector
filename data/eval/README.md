@@ -26,8 +26,10 @@ The irrelevant case uses a query with no lexical overlap so BM25 returns no evid
 Coverage marks a class `skipped` only when:
 
 - `no_case_configured` — the suite has no case of that class
-- `tool_unavailable` — invoke_tool cases existed but `InvokeTool` could not be wired after a pack-on Settings copy
+- `tool_unavailable` — the injected `invoke` seam is absent. Composition always
+  wires `InvokeTool`, so this cannot occur through the CLI; it exists for callers
+  that construct `EvaluateKnowledge` with `invoke=None`.
 
-The CLI exits `1` when any required class is skipped with `no_case_configured`. `tool_unavailable` remains a tolerated skip.
+The CLI exits `1` when any required class is skipped with `no_case_configured`.
 
 Missing live credentials never skip a case and never change `mode`.

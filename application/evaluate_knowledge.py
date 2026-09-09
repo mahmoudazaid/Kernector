@@ -32,22 +32,37 @@ from domain.knowledge import ScoredChunk
 
 
 class _RetrieveSeam(Protocol):
+    """In-layer retrieve collaborator; not a domain port.
+
+    Ask scoring assumes this is the same retrieve instance the ask seam uses.
+    """
+
     def execute(self, request: RetrieveRequest) -> RetrieveResponse:
         """Return ranked hits for ``request``."""
+        ...
 
 
 class _AskSeam(Protocol):
+    """In-layer ask collaborator; not a domain port.
+
+    Must retrieve through the same ``_RetrieveSeam`` with an identity rewriter.
+    """
+
     def execute(
         self,
         request: AskRequest,
         settings: Mapping[str, object] | None = None,
     ) -> AskResponse:
         """Answer ``request`` after retrieving through the shared retrieve seam."""
+        ...
 
 
 class _InvokeSeam(Protocol):
+    """In-layer invoke collaborator; not a domain port."""
+
     def execute(self, request: InvokeToolRequest) -> InvokeToolResponse:
         """Invoke ``request.tool_name`` with ``request.arguments``."""
+        ...
 
 
 class EvaluateKnowledge:

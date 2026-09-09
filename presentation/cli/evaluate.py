@@ -29,7 +29,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     Returns:
         int: ``0`` when the suite completed with no failures and every required
-        class was configured (``tool_unavailable`` skips allowed),
+        class was configured,
         ``1`` when the suite completed with failures, required classes were
         missing, or report write failed,
         ``2`` for invalid argv, missing/malformed dataset, or configuration
