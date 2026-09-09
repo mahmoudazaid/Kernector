@@ -309,7 +309,7 @@ def test_irrelevant_ask_requires_sentinel_empty_citations_and_insufficient_outco
     ask = AskResponse(
         answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
         citations=(),
-        run=RunMeta(outcome="insufficient"),
+        run=RunMeta(outcome="insufficient", hit_count=0),
     )
     report = _evaluate(
         retrieve=_FakeRetrieve(()),
@@ -332,6 +332,7 @@ def test_irrelevant_ask_requires_sentinel_empty_citations_and_insufficient_outco
     assert result.checks["answer_insufficient"] is True
     assert result.checks["empty_citations"] is True
     assert result.checks["outcome_insufficient"] is True
+    assert result.checks["shared_retrieve_hits"] is True
     assert report.aggregates["hit_at_k"].denominator == 0
 
 
@@ -342,7 +343,7 @@ def test_grounded_ask_requires_citation_precision_and_recall() -> None:
     ask = AskResponse(
         answer="Use exponential backoff.",
         citations=(_citation("doc-a"),),
-        run=RunMeta(outcome="success"),
+        run=RunMeta(outcome="success", hit_count=1),
     )
     report = _evaluate(
         retrieve=_FakeRetrieve(hits),
@@ -363,7 +364,35 @@ def test_grounded_ask_requires_citation_precision_and_recall() -> None:
     assert result.checks["citation_hit_precision"] is True
     assert result.checks["citation_gold_recall"] is True
     assert result.checks["citation_gold_precision"] is True
+    assert result.checks["shared_retrieve_hits"] is True
     assert result.metrics["hit_at_k"] == 1.0
+
+
+def test_ask_fails_when_run_hit_count_does_not_match_retrieve_hits() -> None:
+    gold = EvalCitationLabel("doc-a", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
+    ask = AskResponse(
+        answer="Use exponential backoff.",
+        citations=(_citation("doc-a"),),
+        run=RunMeta(outcome="success", hit_count=99),
+    )
+    report = _evaluate(
+        retrieve=_FakeRetrieve((_hit("doc-a"),)),
+        ask=_FakeAsk(ask),
+    ).execute(
+        (
+            _ask_case(
+                "cite-mismatch",
+                case_class="citation_provenance",
+                query="checkout retry",
+                expected_citations=(gold,),
+            ),
+        )
+    )
+
+    result = report.results[0]
+    assert result.status == "fail"
+    assert result.checks["shared_retrieve_hits"] is False
+    assert "shared_retrieve_hits" in result.failed_checks
 
 
 def test_unexpected_citation_versus_gold_fails_gold_precision() -> None:
@@ -371,7 +400,7 @@ def test_unexpected_citation_versus_gold_fails_gold_precision() -> None:
     ask = AskResponse(
         answer="An answer.",
         citations=(_citation("doc-a"), _citation("doc-extra")),
-        run=RunMeta(outcome="success"),
+        run=RunMeta(outcome="success", hit_count=2),
     )
     report = _evaluate(
         retrieve=_FakeRetrieve((_hit("doc-a"), _hit("doc-extra"))),
@@ -398,7 +427,7 @@ def test_unexpected_citation_versus_retrieve_hits_fails_hit_precision() -> None:
     ask = AskResponse(
         answer="An answer.",
         citations=(_citation("ghost"),),
-        run=RunMeta(outcome="success"),
+        run=RunMeta(outcome="success", hit_count=1),
     )
     report = _evaluate(
         retrieve=_FakeRetrieve((_hit("doc-a"),)),
@@ -430,7 +459,7 @@ def test_conflicting_ask_requires_both_labeled_sources_retrieved_and_cited() -> 
     ask = AskResponse(
         answer="Sources disagree.",
         citations=(_citation("sla-fast", chunk_index=None), _citation("sla-slow", chunk_index=None)),
-        run=RunMeta(outcome="success"),
+        run=RunMeta(outcome="success", hit_count=2),
     )
     report = _evaluate(
         retrieve=_FakeRetrieve((_hit("sla-fast"), _hit("sla-slow"))),
@@ -459,7 +488,7 @@ def test_unknown_source_kind_requires_labeled_type_retrieved_and_cited() -> None
     ask = AskResponse(
         answer="Handshake uses nonce tokens.",
         citations=(_citation("widget-sync", source_type="future-connector"),),
-        run=RunMeta(outcome="success"),
+        run=RunMeta(outcome="success", hit_count=1),
     )
     report = _evaluate(
         retrieve=_FakeRetrieve(
@@ -604,7 +633,7 @@ def test_case_exception_fails_with_execution_error_and_remaining_cases_run() -> 
         ask=_FakeAsk(
             AskResponse(
                 answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
-                run=RunMeta(outcome="insufficient"),
+                run=RunMeta(outcome="insufficient", hit_count=0),
             )
         ),
     ).execute(
@@ -623,6 +652,7 @@ def test_case_exception_fails_with_execution_error_and_remaining_cases_run() -> 
     assert report.results[0].status == "fail"
     assert report.results[0].failed_checks == ("execution_error",)
     assert report.results[0].checks["execution_error"] is False
+    assert report.results[0].error_type == "RuntimeError"
     assert report.results[1].status == "pass"
     assert report.fail_count == 1
     assert report.pass_count == 1

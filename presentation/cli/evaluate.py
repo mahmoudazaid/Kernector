@@ -28,8 +28,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             Defaults to ``sys.argv[1:]``.
 
     Returns:
-        int: ``0`` when the suite completed with no failures (skips allowed),
-        ``1`` when the suite completed with failures or report write failed,
+        int: ``0`` when the suite completed with no failures and every required
+        class was configured (``tool_unavailable`` skips allowed),
+        ``1`` when the suite completed with failures, required classes were
+        missing, or report write failed,
         ``2`` for invalid argv, missing/malformed dataset, or configuration
         errors before execute.
     """
@@ -71,6 +73,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(json_path)
     print(md_path)
     if report.fail_count >= 1:
+        return 1
+    unmet = sorted(
+        name
+        for name, entry in report.coverage.items()
+        if entry.state == "skipped" and entry.reason == "no_case_configured"
+    )
+    if unmet:
+        print(
+            f"required eval classes not configured: {', '.join(unmet)}",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

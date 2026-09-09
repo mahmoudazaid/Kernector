@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 import json
+from typing import Protocol
 
 from application.contracts import (
     AskRequest,
@@ -17,6 +18,7 @@ from application.contracts import (
 from application.evaluation_contracts import (
     EVAL_MODE_OFFLINE,
     EVAL_SCHEMA_VERSION,
+    REQUIRED_AGGREGATES,
     REQUIRED_CASE_CLASSES,
     EvalAggregate,
     EvalCase,
@@ -29,6 +31,25 @@ from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from domain.knowledge import ScoredChunk
 
 
+class _RetrieveSeam(Protocol):
+    def execute(self, request: RetrieveRequest) -> RetrieveResponse:
+        """Return ranked hits for ``request``."""
+
+
+class _AskSeam(Protocol):
+    def execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None = None,
+    ) -> AskResponse:
+        """Answer ``request`` after retrieving through the shared retrieve seam."""
+
+
+class _InvokeSeam(Protocol):
+    def execute(self, request: InvokeToolRequest) -> InvokeToolResponse:
+        """Invoke ``request.tool_name`` with ``request.arguments``."""
+
+
 class EvaluateKnowledge:
     """Score a curated eval suite against retrieve, ask, pack-off, and invoke seams.
 
@@ -36,19 +57,25 @@ class EvaluateKnowledge:
     identity-rewritten ask, a pack-disabled ToolAugmentedAsk, and optional
     InvokeTool.
 
+    ``ask`` must retrieve through the same ``retrieve`` seam with an identity
+    rewriter, or ``citation_hit_precision`` is meaningless. Ask cases record
+    ``shared_retrieve_hits`` when ``run.hit_count`` matches the retrieve seam's
+    hit count.
+
     Args:
-        retrieve: Seam returning ``RetrieveResponse`` for a ``RetrieveRequest``.
-        ask: Grounded ask seam (packs irrelevant).
-        ask_pack_off: Ask seam that must fall through with ``path=rag``.
-        invoke: Optional tool invoke seam; ``None`` skips invoke_tool cases.
+        retrieve (_RetrieveSeam): Seam returning ``RetrieveResponse``.
+        ask (_AskSeam): Grounded ask seam (packs irrelevant).
+        ask_pack_off (_AskSeam): Ask seam that must fall through with ``path=rag``.
+        invoke (_InvokeSeam | None): Optional tool invoke seam; ``None`` skips
+            invoke_tool cases.
     """
 
     def __init__(
         self,
-        retrieve: object,
-        ask: object,
-        ask_pack_off: object,
-        invoke: object | None = None,
+        retrieve: _RetrieveSeam,
+        ask: _AskSeam,
+        ask_pack_off: _AskSeam,
+        invoke: _InvokeSeam | None = None,
     ) -> None:
         self._retrieve = retrieve
         self._ask = ask
@@ -68,7 +95,7 @@ class EvaluateKnowledge:
         for case in cases:
             try:
                 results.append(self._run_case(case))
-            except Exception:
+            except Exception as error:
                 results.append(
                     EvalCaseResult(
                         case_id=case.id,
@@ -78,6 +105,7 @@ class EvaluateKnowledge:
                         metrics={},
                         checks={"execution_error": False},
                         failed_checks=("execution_error",),
+                        error_type=type(error).__name__,
                     )
                 )
         return _build_report(tuple(results))
@@ -110,7 +138,12 @@ class EvaluateKnowledge:
             AskRequest(query=case.query, retrieval_limit=case.k)
         )
         metrics: dict[str, int | float | bool] = {}
-        checks: dict[str, bool] = {}
+        checks: dict[str, bool] = {
+            "shared_retrieve_hits": (
+                ask_response.run is not None
+                and ask_response.run.hit_count == len(retrieve_response.hits)
+            )
+        }
         if case.expected_source_ids:
             retrieval_metrics, _ = _retrieval_scores(
                 retrieve_response.hits, case
@@ -357,18 +390,14 @@ def _build_report(results: tuple[EvalCaseResult, ...]) -> EvalReport:
     retrieval = [item for item in results if _is_retrieval_bearing(item)]
     denom = len(retrieval)
     if denom == 0:
-        aggregates = {
-            "hit_at_k": EvalAggregate(0.0, 0),
-            "mrr": EvalAggregate(0.0, 0),
-            "source_recall_at_k": EvalAggregate(0.0, 0),
-        }
+        aggregates = {name: EvalAggregate(0.0, 0) for name in REQUIRED_AGGREGATES}
     else:
         aggregates = {
             name: EvalAggregate(
                 sum(float(item.metrics[name]) for item in retrieval) / denom,
                 denom,
             )
-            for name in ("hit_at_k", "mrr", "source_recall_at_k")
+            for name in REQUIRED_AGGREGATES
         }
     exercised: set[str] = set()
     skipped_tool = False
@@ -382,7 +411,7 @@ def _build_report(results: tuple[EvalCaseResult, ...]) -> EvalReport:
     for name in REQUIRED_CASE_CLASSES:
         if name in exercised:
             coverage[name] = EvalCoverageEntry("exercised")
-        elif name == "tool" and skipped_tool and "tool" not in exercised:
+        elif name == "tool" and skipped_tool:
             coverage[name] = EvalCoverageEntry("skipped", "tool_unavailable")
         else:
             coverage[name] = EvalCoverageEntry("skipped", "no_case_configured")

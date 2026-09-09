@@ -10,7 +10,7 @@ from pathlib import Path
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
 from application.chunking import chunk_document
-from application.errors import ApplicationValidationError, ConfigurationError
+from application.errors import ApplicationValidationError
 from application.evaluate_knowledge import EvaluateKnowledge
 from application.evaluation_contracts import (
     EVAL_SCHEMA_VERSION,
@@ -23,7 +23,7 @@ from composition.container import build_invoke_tool, load_runtime_settings
 from composition.correlated_ask import CorrelatedAsk
 from composition.errors import KnowledgeLoadError
 from composition.tool_augmented_ask import ToolAugmentedAsk
-from domain.knowledge import EmbeddedChunk
+from domain.knowledge import EmbeddedChunk, SourceDocument
 from domain.models import PromptVariant
 from infrastructure.config import DomainToolSettings, Settings
 from infrastructure.eval.constant_vector import ConstantVectorAdapter
@@ -99,6 +99,8 @@ def load_eval_cases(path: Path | None = None) -> tuple[EvalCase, ...]:
         text = cases_path.read_text(encoding="utf-8")
     except FileNotFoundError as error:
         raise KnowledgeLoadError(f"eval cases not found: {cases_path}") from error
+    except UnicodeDecodeError as error:
+        raise ApplicationValidationError("eval cases are not valid UTF-8") from error
     except OSError as error:
         raise KnowledgeLoadError(f"eval cases unreadable: {cases_path}") from error
     try:
@@ -143,8 +145,7 @@ def build_evaluate_knowledge(
 
     Raises:
         KnowledgeLoadError: Corpus file cannot be loaded.
-        ConfigurationError: Settings cannot be loaded, or invoke wiring fails
-            in a way that is not treated as tool unavailability.
+        ConfigurationError: Settings cannot be loaded, or invoke wiring fails.
         ApplicationValidationError: Chunking the corpus fails.
     """
     if settings is None:
@@ -198,10 +199,7 @@ def build_evaluate_knowledge(
         settings,
         domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
     )
-    try:
-        invoke = build_invoke_tool(pack_on, chat_model=chat)
-    except ConfigurationError:
-        invoke = None
+    invoke = build_invoke_tool(pack_on, chat_model=chat)
     return EvaluateKnowledge(
         retrieve=retrieve,
         ask=ask,
@@ -210,7 +208,7 @@ def build_evaluate_knowledge(
     )
 
 
-def _load_corpus(path: Path) -> tuple[object, ...]:
+def _load_corpus(path: Path) -> tuple[SourceDocument, ...]:
     try:
         return load_eval_corpus(path)
     except EvalCorpusError as error:

@@ -34,6 +34,14 @@ def _empty_coverage() -> dict[str, EvalCoverageEntry]:
     }
 
 
+def _exercised_coverage(
+    **overrides: EvalCoverageEntry,
+) -> dict[str, EvalCoverageEntry]:
+    coverage = {name: EvalCoverageEntry("exercised") for name in REQUIRED_CASE_CLASSES}
+    coverage.update(overrides)
+    return coverage
+
+
 def _report(*, fail_count: int = 0, skip_count: int = 0) -> EvalReport:
     results: tuple[EvalCaseResult, ...] = ()
     if fail_count:
@@ -48,8 +56,7 @@ def _report(*, fail_count: int = 0, skip_count: int = 0) -> EvalReport:
                 failed_checks=("hit_at_k",),
             ),
         )
-        coverage = dict(_empty_coverage())
-        coverage["single_source"] = EvalCoverageEntry("exercised")
+        coverage = _exercised_coverage()
     elif skip_count:
         results = (
             EvalCaseResult(
@@ -63,10 +70,11 @@ def _report(*, fail_count: int = 0, skip_count: int = 0) -> EvalReport:
                 skip_reason="tool_unavailable",
             ),
         )
-        coverage = dict(_empty_coverage())
-        coverage["tool"] = EvalCoverageEntry("skipped", "tool_unavailable")
+        coverage = _exercised_coverage(
+            tool=EvalCoverageEntry("skipped", "tool_unavailable")
+        )
     else:
-        coverage = _empty_coverage()
+        coverage = _exercised_coverage()
     return EvalReport(
         schema_version=EVAL_SCHEMA_VERSION,
         mode="offline",
@@ -127,6 +135,7 @@ def test_cli_writes_json_and_markdown_to_tmp_path_and_prints_both(
     assert "schema_version: kernector.eval.v1" in markdown
     assert "mode: offline" in markdown
     assert "- pass: 0" in markdown
+    assert "- hit_at_k: 0.0000 (n=0)" in markdown
     assert str(json_path) in captured.out
     assert str(md_path) in captured.out
     assert captured.err == ""
@@ -163,6 +172,40 @@ def test_cli_exit_one_when_failures_and_still_writes_reports(
     assert (tmp_path / "eval-report.json").is_file()
     assert (tmp_path / "eval-report.md").is_file()
     assert "Traceback" not in captured.err
+    markdown = (tmp_path / "eval-report.md").read_text(encoding="utf-8")
+    assert "- failed_checks: hit_at_k" in markdown
+    assert "- skip_reason: none" in markdown
+    assert "- error_type: none" in markdown
+
+
+def test_cli_exit_one_when_required_classes_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report = EvalReport(
+        schema_version=EVAL_SCHEMA_VERSION,
+        mode="offline",
+        results=(),
+        pass_count=0,
+        fail_count=0,
+        skip_count=0,
+        aggregates={
+            "hit_at_k": EvalAggregate(0.0, 0),
+            "mrr": EvalAggregate(0.0, 0),
+            "source_recall_at_k": EvalAggregate(0.0, 0),
+        },
+        coverage=_empty_coverage(),
+    )
+    _patch_success(monkeypatch, report)
+
+    code = evaluate_cli.main(["--output", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "required eval classes not configured" in captured.err
+    assert "Traceback" not in captured.err
+    assert (tmp_path / "eval-report.json").is_file()
 
 
 def test_cli_invalid_argv_returns_two(
@@ -360,6 +403,53 @@ def test_cli_missing_cases_file_through_composition_returns_two(
     captured = capsys.readouterr()
     assert code == 2
     assert "eval cases not found" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_non_utf8_corpus_returns_two(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import composition.evaluate as eval_comp
+
+    corpus = tmp_path / "corpus.json"
+    cases = tmp_path / "cases.json"
+    corpus.write_bytes(b"\xff\xfe\x00\x01")
+    cases.write_text(
+        json.dumps({"schema_version": EVAL_SCHEMA_VERSION, "cases": []}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(eval_comp, "EVAL_CORPUS_PATH", corpus)
+    monkeypatch.setattr(eval_comp, "EVAL_CASES_PATH", cases)
+
+    code = evaluate_cli.main(["--output", str(tmp_path / "out")])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "UTF-8" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_non_utf8_cases_returns_two(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import composition.evaluate as eval_comp
+
+    corpus = tmp_path / "corpus.json"
+    cases = tmp_path / "cases.json"
+    corpus.write_text("[]", encoding="utf-8")
+    cases.write_bytes(b"\xff\xfe\x00\x01")
+    monkeypatch.setattr(eval_comp, "EVAL_CORPUS_PATH", corpus)
+    monkeypatch.setattr(eval_comp, "EVAL_CASES_PATH", cases)
+
+    code = evaluate_cli.main(["--output", str(tmp_path / "out")])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "UTF-8" in captured.err
     assert "Traceback" not in captured.err
 
 

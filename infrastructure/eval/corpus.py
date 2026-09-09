@@ -35,6 +35,8 @@ def load_eval_corpus(path: Path) -> tuple[SourceDocument, ...]:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError as error:
         raise EvalCorpusError(f"eval corpus not found: {path}") from error
+    except UnicodeDecodeError as error:
+        raise EvalCorpusError(f"eval corpus is not valid UTF-8: {path}") from error
     except OSError as error:
         raise EvalCorpusError(f"eval corpus unreadable: {path}") from error
     try:

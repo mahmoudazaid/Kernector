@@ -28,4 +28,6 @@ Coverage marks a class `skipped` only when:
 - `no_case_configured` — the suite has no case of that class
 - `tool_unavailable` — invoke_tool cases existed but `InvokeTool` could not be wired after a pack-on Settings copy
 
+The CLI exits `1` when any required class is skipped with `no_case_configured`. `tool_unavailable` remains a tolerated skip.
+
 Missing live credentials never skip a case and never change `mode`.

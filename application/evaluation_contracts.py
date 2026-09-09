@@ -22,6 +22,12 @@ REQUIRED_CASE_CLASSES: tuple[str, ...] = (
     "tool",
 )
 
+REQUIRED_AGGREGATES: tuple[str, ...] = (
+    "hit_at_k",
+    "mrr",
+    "source_recall_at_k",
+)
+
 _KINDS = frozenset({"retrieve", "ask", "invoke_tool", "pack_off"})
 _ANSWER_MODES = frozenset({"grounded", "insufficient"})
 _RESULT_STATUSES = frozenset({"pass", "fail", "skip"})
@@ -352,6 +358,7 @@ class EvalCaseResult:
         checks (Mapping[str, bool]): Copied named checks.
         failed_checks (Sequence[str]): Check names that were false.
         skip_reason (str | None): ``tool_unavailable`` when skipped, else ``None``.
+        error_type (str | None): Exception type name on an execution failure.
     """
 
     case_id: str
@@ -362,6 +369,7 @@ class EvalCaseResult:
     checks: Mapping[str, bool]
     failed_checks: Sequence[str]
     skip_reason: str | None = None
+    error_type: str | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.case_id, "case_id")
@@ -422,6 +430,12 @@ class EvalCaseResult:
             raise ApplicationValidationError(
                 "skip_reason is required when status is skip"
             )
+        if self.error_type is not None:
+            _require_text(self.error_type, "error_type")
+            if self.status != "fail":
+                raise ApplicationValidationError(
+                    "error_type is only allowed when status is fail"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,7 +477,7 @@ class EvalCoverageEntry:
                 "state must be exercised or skipped"
             )
         if self.state == "skipped":
-            if self.reason not in {"no_case_configured", "tool_unavailable"}:
+            if self.reason not in _SKIP_REASONS:
                 raise ApplicationValidationError(
                     "skipped coverage requires no_case_configured or tool_unavailable"
                 )
@@ -517,6 +531,17 @@ class EvalReport:
         _require_non_negative_int(self.pass_count, "pass_count")
         _require_non_negative_int(self.fail_count, "fail_count")
         _require_non_negative_int(self.skip_count, "skip_count")
+        for name, status in (
+            ("pass_count", "pass"),
+            ("fail_count", "fail"),
+            ("skip_count", "skip"),
+        ):
+            actual = sum(1 for item in copied_results if item.status == status)
+            if getattr(self, name) != actual:
+                raise ApplicationValidationError(
+                    f"{name} must equal {actual} results with status {status}, "
+                    f"got {getattr(self, name)}"
+                )
         if not isinstance(self.aggregates, Mapping):
             raise ApplicationValidationError(
                 f"aggregates must be a mapping, got {type(self.aggregates).__name__}"
@@ -530,6 +555,11 @@ class EvalReport:
                     f"got {type(value).__name__}"
                 )
             aggregates[key] = value
+        for required in REQUIRED_AGGREGATES:
+            if required not in aggregates:
+                raise ApplicationValidationError(
+                    f"aggregates missing required metric {required}"
+                )
         object.__setattr__(self, "aggregates", aggregates)
         if not isinstance(self.coverage, Mapping):
             raise ApplicationValidationError(
@@ -585,6 +615,7 @@ def eval_report_to_dict(report: EvalReport) -> dict[str, object]:
                 "checks": dict(item.checks),
                 "failed_checks": list(item.failed_checks),
                 "skip_reason": item.skip_reason,
+                "error_type": item.error_type,
             }
             for item in report.results
         ],
@@ -627,9 +658,9 @@ def eval_report_to_markdown(report: EvalReport) -> str:
         "## Aggregates",
         "",
     ]
-    for name in ("hit_at_k", "mrr", "source_recall_at_k"):
+    for name in REQUIRED_AGGREGATES:
         item = report.aggregates[name]
-        lines.append(f"- {name}: {item.value} (n={item.denominator})")
+        lines.append(f"- {name}: {item.value:.4f} (n={item.denominator})")
     lines.extend(["", "## Coverage", ""])
     for name in REQUIRED_CASE_CLASSES:
         entry = report.coverage[name]
@@ -650,8 +681,9 @@ def eval_report_to_markdown(report: EvalReport) -> str:
                 f"- status: {item.status}",
                 f"- metrics: {json.dumps(dict(item.metrics), sort_keys=True)}",
                 f"- checks: {json.dumps(dict(item.checks), sort_keys=True)}",
-                f"- failed_checks: {list(item.failed_checks)}",
-                f"- skip_reason: {item.skip_reason}",
+                f"- failed_checks: {', '.join(item.failed_checks) or 'none'}",
+                f"- skip_reason: {item.skip_reason or 'none'}",
+                f"- error_type: {item.error_type or 'none'}",
                 "",
             ]
         )
