@@ -277,6 +277,16 @@ def test_planted_relative_import_above_package_root_is_not_resolved(
     assert find_forbidden_module_prefixes(module, {"http"}) == set()
 
 
+def test_composition_and_presentation_do_not_import_test() -> None:
+    """Eval and other production wiring must not import test doubles."""
+    for layer in ("composition", "presentation"):
+        for module_path in _modules(layer):
+            hits = find_forbidden_imports(module_path, {"test"})
+            assert not hits, (
+                f"{module_path.relative_to(REPO_ROOT)} imports test/"
+            )
+
+
 def test_composition_does_not_reexport_raw_load_settings() -> None:
     """Presentation obtains settings only through ``load_runtime_settings``."""
     import composition

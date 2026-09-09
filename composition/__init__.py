@@ -63,6 +63,7 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
+from composition.evaluate import build_evaluate_knowledge, load_eval_cases
 from infrastructure.config import Settings
 
 __all__ = [
@@ -92,6 +93,7 @@ __all__ = [
     "software_delivery_tools_enabled",
     "available_providers",
     "build_ask_knowledge",
+    "build_evaluate_knowledge",
     "build_ask_service",
     "build_chat_model",
     "build_document_catalog",
@@ -114,6 +116,7 @@ __all__ = [
     "delete_uploaded_document",
     "ingest_uploaded_document",
     "list_uploaded_documents",
+    "load_eval_cases",
     "load_knowledge_documents",
     "load_runtime_settings",
     "migrate_document_catalog",

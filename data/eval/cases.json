@@ -1,0 +1,115 @@
+{
+  "schema_version": "kernector.eval.v1",
+  "cases": [
+    {
+      "id": "single-source-retrieve",
+      "case_class": "single_source",
+      "kind": "retrieve",
+      "query": "exponential backoff jitter payment capture",
+      "k": 5,
+      "expected_source_ids": ["checkout-retry"]
+    },
+    {
+      "id": "cross-source-retrieve",
+      "case_class": "cross_source",
+      "kind": "retrieve",
+      "query": "payment timeout",
+      "k": 5,
+      "expected_source_ids": ["payment-timeout-a", "payment-timeout-b"]
+    },
+    {
+      "id": "irrelevant-ask",
+      "case_class": "irrelevant",
+      "kind": "ask",
+      "query": "xylophone nebula flamingo quantum",
+      "k": 5,
+      "expected_answer_mode": "insufficient",
+      "expected_citations": []
+    },
+    {
+      "id": "conflicting-ask",
+      "case_class": "conflicting",
+      "kind": "ask",
+      "query": "inventory SLA stock reservation",
+      "k": 5,
+      "expected_answer_mode": "grounded",
+      "expected_source_ids": ["inventory-sla-fast", "inventory-sla-slow"],
+      "expected_citations": [
+        {
+          "source_id": "inventory-sla-fast",
+          "source_type": "knowledge_document"
+        },
+        {
+          "source_id": "inventory-sla-slow",
+          "source_type": "knowledge_document"
+        }
+      ]
+    },
+    {
+      "id": "unknown-source-kind-ask",
+      "case_class": "unknown_source_kind",
+      "kind": "ask",
+      "query": "widget synchronizer handshake nonce",
+      "k": 5,
+      "expected_answer_mode": "grounded",
+      "expected_source_ids": ["widget-sync"],
+      "expected_citations": [
+        {
+          "source_id": "widget-sync",
+          "source_type": "future-connector",
+          "chunk_index": 0
+        }
+      ]
+    },
+    {
+      "id": "citation-provenance-ask",
+      "case_class": "citation_provenance",
+      "kind": "ask",
+      "query": "exponential backoff jitter",
+      "k": 5,
+      "expected_answer_mode": "grounded",
+      "expected_source_ids": ["checkout-retry"],
+      "expected_citations": [
+        {
+          "source_id": "checkout-retry",
+          "source_type": "knowledge_document",
+          "chunk_index": 0
+        }
+      ]
+    },
+    {
+      "id": "pack-off-risk",
+      "case_class": "pack_off",
+      "kind": "pack_off",
+      "query": "assess the risk of checkout",
+      "k": 5
+    },
+    {
+      "id": "tool-risk-score",
+      "case_class": "tool",
+      "kind": "invoke_tool",
+      "tool_name": "software_delivery.risk_score",
+      "arguments": {
+        "target": "Assess authentication release risk",
+        "evidence": [
+          {
+            "source_id": "SRS-12",
+            "source_type": "srs",
+            "text": "Authentication requirements remain TBD.",
+            "is_complete": true
+          },
+          {
+            "source_id": "tests/auth-login",
+            "source_type": "test",
+            "text": "Critical login regression is failing.",
+            "is_complete": false
+          }
+        ]
+      },
+      "expected_tool_result": {
+        "level": "high",
+        "score": 60
+      }
+    }
+  ]
+}
