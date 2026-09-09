@@ -225,7 +225,7 @@ describe("GoogleDrivePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Never and disables Sync when setup is required", async () => {
+  it("shows Connected and enables Sync when no files are selected", async () => {
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
@@ -235,8 +235,9 @@ describe("GoogleDrivePanel", () => {
     );
 
     expect(await screen.findByText(/^never$/i)).toBeInTheDocument();
-    expect(screen.getByText(/setup required/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Sync/i })).toBeDisabled();
+    expect(screen.getByText(/^connected$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/setup required/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /Sync/i })).toBeEnabled();
     expect(
       screen.getByRole("button", { name: /Browse/i }),
     ).toBeEnabled();

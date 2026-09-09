@@ -431,14 +431,15 @@ def test_disconnect_returns_204() -> None:
     assert called == ["disconnect"]
 
 
-def test_sync_conflicts_when_setup_required_without_calling_sync() -> None:
+def test_sync_runs_when_connected_without_selection() -> None:
     sync_calls: list[str] = []
     app = create_app()
     app.dependency_overrides[get_google_drive_status] = lambda: _status(
         connected=True,
         oauth_ready=True,
-        setup_required=True,
-        connection_state="setup_required",
+        setup_required=False,
+        connection_state="ready",
+        sync_scope=None,
     )
     app.dependency_overrides[get_google_drive_sync] = lambda: (
         lambda: sync_calls.append("sync") or ConnectorSyncResponse(outcomes=())
@@ -447,9 +448,8 @@ def test_sync_conflicts_when_setup_required_without_calling_sync() -> None:
 
     response = client.post("/api/v1/connectors/google-drive/sync")
 
-    assert response.status_code == 409
-    assert response.json()["code"] == "google_drive_selection_required"
-    assert sync_calls == []
+    assert response.status_code == 200
+    assert sync_calls == ["sync"]
 
 
 def test_items_return_presentation_rows_without_tokens() -> None:

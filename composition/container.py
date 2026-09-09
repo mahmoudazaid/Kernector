@@ -20,7 +20,6 @@ from application.errors import (
     ConfigurationError,
     GoogleDriveNotConnectedError,
     GoogleDriveReauthorizationRequiredError,
-    GoogleDriveSelectionRequiredError,
     InputRejectedError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -560,8 +559,8 @@ class GoogleDriveStatus:
         folder_count (int | None): Selected folder count when connected.
         last_sync (GoogleDriveLastSync | None): Last HTTP sync summary.
         reauthorization_required (bool): Stored refresh token was rejected.
-        setup_required (bool): Connected with no saved folder or file roots.
-        connection_state (str): disconnected, setup_required, ready, or
+        setup_required (bool): Unused; empty selection is still connected.
+        connection_state (str): disconnected, ready, or
             reauthorization_required.
         sync_scope (str | None): Presentation summary such as ``2 folders + 1 file``.
     """
@@ -656,18 +655,10 @@ def google_drive_status(settings: Settings) -> GoogleDriveStatus:
             unchanged_count=connection.last_sync_unchanged,
             failed_count=connection.last_sync_failed,
         )
-    has_selection = _has_selection(connection)
-    setup_required = (
-        connection is not None
-        and not connection.reauthorization_required
-        and not has_selection
-    )
     if connection is None:
         connection_state = "disconnected"
     elif connection.reauthorization_required:
         connection_state = "reauthorization_required"
-    elif not has_selection:
-        connection_state = "setup_required"
     else:
         connection_state = "ready"
     return GoogleDriveStatus(
@@ -682,16 +673,10 @@ def google_drive_status(settings: Settings) -> GoogleDriveStatus:
         reauthorization_required=(
             False if connection is None else connection.reauthorization_required
         ),
-        setup_required=setup_required,
+        setup_required=False,
         connection_state=connection_state,
         sync_scope=None if connection is None else _sync_scope_label(connection),
     )
-
-
-def _has_selection(connection) -> bool:
-    if connection is None:
-        return False
-    return bool(connection.folders or connection.files)
 
 
 def _sync_scope_label(connection) -> str | None:
@@ -1161,10 +1146,6 @@ def sync_google_drive_oauth(
     if connection.reauthorization_required:
         raise GoogleDriveReauthorizationRequiredError(
             "Google Drive authorization was revoked"
-        )
-    if not _has_selection(connection):
-        raise GoogleDriveSelectionRequiredError(
-            "Google Drive sync scope is not selected"
         )
     try:
         working_catalog = catalog if catalog is not None else build_document_catalog(settings)

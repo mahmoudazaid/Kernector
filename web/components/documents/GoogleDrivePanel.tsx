@@ -295,9 +295,6 @@ export function GoogleDrivePanel({
 
   const status = view.kind === "ready" ? view.status : null;
   const reauth = Boolean(status?.reauthorization_required);
-  const setupRequired =
-    Boolean(status?.setup_required) ||
-    status?.connection_state === "setup_required";
   const oauthStartHref = googleDriveOAuthStartUrl(apiBaseUrl);
   const statusLabel =
     view.kind === "loading"
@@ -306,11 +303,9 @@ export function GoogleDrivePanel({
         ? "Unavailable"
         : reauth
           ? "Reconnect required"
-          : setupRequired
-            ? "Setup required"
-            : status?.connected
-              ? "Connected"
-              : "Available";
+          : status?.connected
+            ? "Connected"
+            : "Available";
 
   const lastSync = status?.last_sync ?? null;
   const failedCount = lastSync?.failed_count ?? 0;
@@ -367,7 +362,7 @@ export function GoogleDrivePanel({
     );
   }
 
-  const syncDisabled = busy || setupRequired || reauth;
+  const syncDisabled = busy || reauth;
   const cardBusy = busy && !pickerOpen;
   return (
     <article
@@ -391,7 +386,7 @@ export function GoogleDrivePanel({
           </div>
         </div>
         <span
-          className={`kern-source-status${reauth || setupRequired ? " is-muted" : ""}${setupRequired ? " is-setup" : ""}`}
+          className={`kern-source-status${reauth ? " is-muted" : ""}`}
         >
           {statusLabel}
         </span>

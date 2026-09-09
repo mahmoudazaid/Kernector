@@ -15,7 +15,6 @@ from application.contracts import (
 )
 from application.errors import (
     GoogleDriveNotConnectedError,
-    GoogleDriveSelectionRequiredError,
 )
 from composition import (
     browse_google_drive_items,
@@ -164,8 +163,8 @@ def test_callback_rejects_replayed_state(settings) -> None:
     assert stored.folder_count == 0
     status = google_drive_status(settings)
     assert status.connected is True
-    assert status.setup_required is True
-    assert status.connection_state == "setup_required"
+    assert status.setup_required is False
+    assert status.connection_state == "ready"
     assert status.sync_scope is None
 
 
@@ -346,7 +345,9 @@ def test_oauth_sync_persists_last_sync_counts(
     assert result.ingested_count == 1
 
 
-def test_sync_without_selection_is_rejected(settings) -> None:
+def test_sync_without_selection_runs(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
     tokens.save(
         GoogleOAuthConnection(
@@ -362,8 +363,32 @@ def test_sync_without_selection_is_rejected(settings) -> None:
             reauthorization_required=False,
         )
     )
-    with pytest.raises(GoogleDriveSelectionRequiredError):
-        sync_google_drive_oauth(settings, connection_store=tokens)
+    monkeypatch.setattr(
+        composition_container,
+        "build_google_drive_oauth_connector",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "sync_google_drive",
+        lambda *_args, **_kwargs: ConnectorSyncResponse(outcomes=()),
+    )
+
+    result = sync_google_drive_oauth(
+        settings,
+        catalog=InMemoryDocumentCatalog(),
+        vector_store=object(),  # type: ignore[arg-type]
+        connection_store=tokens,
+    )
+
+    assert result.outcomes == ()
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.last_sync_new == 0
+    assert stored.last_sync_updated == 0
+    assert stored.last_sync_unchanged == 0
+    assert stored.last_sync_failed == 0
+    assert stored.last_synced_at is not None
 
 
 class FakeBrowseFiles:
@@ -475,8 +500,8 @@ def test_put_selection_allows_empty(settings) -> None:
     assert loaded.folders == ()
     assert loaded.files == ()
     status = google_drive_status(settings)
-    assert status.setup_required is True
-    assert status.connection_state == "setup_required"
+    assert status.setup_required is False
+    assert status.connection_state == "ready"
 
 
 def test_delete_drive_document_drops_file_from_selection(

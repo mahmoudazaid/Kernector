@@ -3,7 +3,6 @@
 from application.errors import (
     GoogleDriveNotConnectedError,
     GoogleDriveReauthorizationRequiredError,
-    GoogleDriveSelectionRequiredError,
 )
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
@@ -115,10 +114,6 @@ def google_drive_connector_sync(
     if status.reauthorization_required:
         raise GoogleDriveReauthorizationRequiredError(
             "Google Drive authorization was revoked"
-        )
-    if status.setup_required:
-        raise GoogleDriveSelectionRequiredError(
-            "Google Drive sync scope is not selected"
         )
     return google_drive_sync_response(sync())
 
