@@ -14,11 +14,6 @@ from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_schema import apply_migrations
 from infrastructure.catalog.workspace import require_workspace_id
 
-_SELECT_COLUMNS = (
-    "source_id, source_type, file_name, title, content_format, status, "
-    "uploaded_at, chunk_count, error, revision"
-)
-
 
 class SqlDocumentCatalog:
     """Persist catalog rows in SQLite, isolated to one workspace.
@@ -47,7 +42,7 @@ class SqlDocumentCatalog:
         with self._connect() as connection:
             try:
                 rows = connection.execute(
-                    f"SELECT {_SELECT_COLUMNS} FROM catalog_documents "
+                    f"SELECT {_connection.SELECT_COLUMNS} FROM catalog_documents "
                     "WHERE workspace_id = ?",
                     (self._workspace_id,),
                 ).fetchall()
@@ -62,7 +57,7 @@ class SqlDocumentCatalog:
         with self._connect() as connection:
             try:
                 row = connection.execute(
-                    f"SELECT {_SELECT_COLUMNS} FROM catalog_documents "
+                    f"SELECT {_connection.SELECT_COLUMNS} FROM catalog_documents "
                     "WHERE workspace_id = ? AND source_type = ? AND source_id = ?",
                     (self._workspace_id, reference.source_type, reference.source_id),
                 ).fetchone()
@@ -122,35 +117,23 @@ class SqlDocumentCatalog:
             ) from error
         try:
             yield connection
-        except sqlite3.Error as error:
-            raise CatalogError(
-                f"could not configure catalog database at {self._path}"
-            ) from error
         finally:
             connection.close()
 
 
-def _document_from_row(row: tuple[object, ...]) -> CatalogDocument:
-    (
-        source_id,
-        source_type,
-        file_name,
-        title,
-        content_format,
-        status,
-        uploaded_at,
-        chunk_count,
-        error,
-        revision,
-    ) = row
+def _document_from_row(row: sqlite3.Row) -> CatalogDocument:
+    title = row["title"]
+    content_format = row["content_format"]
+    error = row["error"]
+    revision = row["revision"]
     return CatalogDocument(
-        reference=SourceReference(str(source_id), str(source_type)),
-        file_name=str(file_name),
+        reference=SourceReference(str(row["source_id"]), str(row["source_type"])),
+        file_name=str(row["file_name"]),
         title=None if title is None else str(title),
         content_format=None if content_format is None else str(content_format),
-        status=CatalogStatus(str(status)),
-        uploaded_at=datetime.fromisoformat(str(uploaded_at)),
-        chunk_count=int(chunk_count),  # type: ignore[arg-type]
+        status=CatalogStatus(str(row["status"])),
+        uploaded_at=datetime.fromisoformat(str(row["uploaded_at"])),
+        chunk_count=int(row["chunk_count"]),
         error=None if error is None else str(error),
         revision=None if revision is None else str(revision),
     )

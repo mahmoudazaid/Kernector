@@ -8,13 +8,13 @@ from pathlib import Path
 from domain.knowledge import CatalogDocument
 
 BUSY_TIMEOUT_MS = 5000
-_SELECT_COLUMNS = (
+SELECT_COLUMNS = (
     "source_id, source_type, file_name, title, content_format, status, "
     "uploaded_at, chunk_count, error, revision"
 )
 _UPSERT_SQL = f"""
 INSERT INTO catalog_documents (
-    workspace_id, {_SELECT_COLUMNS}
+    workspace_id, {SELECT_COLUMNS}
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (workspace_id, source_type, source_id) DO UPDATE SET
     file_name = excluded.file_name,
@@ -39,6 +39,7 @@ def connect(path: Path) -> sqlite3.Connection:
     """
     connection = sqlite3.connect(path, isolation_level=None)
     try:
+        connection.row_factory = sqlite3.Row
         connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
         connection.execute(f"PRAGMA journal_mode = {journal_mode()}")
     except Exception:

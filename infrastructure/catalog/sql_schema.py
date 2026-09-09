@@ -7,7 +7,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from infrastructure.catalog._connection import BUSY_TIMEOUT_MS
+from infrastructure.catalog._connection import BUSY_TIMEOUT_MS, journal_mode
 from infrastructure.catalog.errors import CatalogError
 
 _MIGRATION_NAME = re.compile(r"^(\d+)_.+\.sql$")
@@ -67,11 +67,15 @@ def apply_migrations(
     latest = migrations[-1][0]
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        # Default isolation_level (not `_connection.connect()`): executescript()
+        # COMMITs first, then the script's BEGIN IMMEDIATE owns the transaction.
+        # Autocommit (`isolation_level=None`) would change that contract.
         connection = sqlite3.connect(path)
     except sqlite3.Error as error:
         raise CatalogError(f"could not open catalog database at {path}") from error
     try:
         connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+        connection.execute(f"PRAGMA journal_mode = {journal_mode()}")
         recorded = _read_version(connection)
         if recorded > latest:
             raise CatalogError(
