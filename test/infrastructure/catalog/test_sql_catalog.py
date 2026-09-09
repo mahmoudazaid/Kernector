@@ -16,7 +16,7 @@ from domain.knowledge import (
     SourceType,
 )
 from infrastructure.catalog.errors import CatalogError
-from infrastructure.catalog import sql_catalog as sql_catalog_module
+from infrastructure.catalog import _connection as connection_module
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 
 WAL_SAFE_VERSION = (3, 51, 3)
@@ -215,7 +215,7 @@ def test_failed_write_preserves_prior_readable_state(
     document = _document()
     catalog.upsert(document)
     fail_writes = True
-    real_connect = sql_catalog_module.sqlite3.connect
+    real_connect = connection_module.connect
 
     class _FailingConnection:
         def __init__(self, inner: sqlite3.Connection) -> None:
@@ -232,7 +232,7 @@ def test_failed_write_preserves_prior_readable_state(
     def connect_and_fail(*args: object, **kwargs: object) -> object:
         return _FailingConnection(real_connect(*args, **kwargs))
 
-    monkeypatch.setattr(sql_catalog_module.sqlite3, "connect", connect_and_fail)
+    monkeypatch.setattr(connection_module, "connect", connect_and_fail)
     with pytest.raises(CatalogError) as raised:
         catalog.upsert(_document(file_name="other.md", chunk_count=9))
     assert isinstance(raised.value.__cause__, sqlite3.Error)

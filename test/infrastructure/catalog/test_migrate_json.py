@@ -17,7 +17,7 @@ from domain.knowledge import (
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.json_catalog import JsonDocumentCatalog
 from infrastructure.catalog.migrate_json import migrate_json_catalog_to_sql
-from infrastructure.catalog import migrate_json as migrate_module
+from infrastructure.catalog import _connection as connection_module
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.sql_schema import current_schema_version
 
@@ -123,7 +123,7 @@ def test_import_failure_rolls_back_rows_and_leaves_json_bytes_unchanged(
     original = json_path.read_bytes()
 
     fail_writes = True
-    real_connect = migrate_module.sqlite3.connect
+    real_connect = connection_module.connect
 
     class _FailingConnection:
         def __init__(self, inner: sqlite3.Connection) -> None:
@@ -138,7 +138,7 @@ def test_import_failure_rolls_back_rows_and_leaves_json_bytes_unchanged(
             return getattr(self._inner, name)
 
     monkeypatch.setattr(
-        migrate_module.sqlite3,
+        connection_module,
         "connect",
         lambda *args, **kwargs: _FailingConnection(real_connect(*args, **kwargs)),
     )

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -110,3 +112,35 @@ def test_failing_second_migration_rolls_back_and_keeps_v1_catalog(
     catalog.upsert(document)
     assert catalog.get(document.reference) == document
     assert catalog.all() == (document,)
+
+
+def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
+    path = tmp_path / "catalog.sqlite"
+    workers = 6
+    barrier = threading.Barrier(workers)
+
+    def migrate() -> None:
+        barrier.wait(timeout=5)
+        apply_migrations(path)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(migrate) for _ in range(workers)]
+        for future in futures:
+            future.result(timeout=15)
+
+    assert current_schema_version(path) == 1
+    from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
+
+    catalog = SqlDocumentCatalog(path, "ws-a")
+    assert catalog.all() == ()
+
+
+def test_non_sqlite_file_reports_catalog_error_not_version_zero(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "uploads.json"
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(CatalogError):
+        current_schema_version(path)
+    with pytest.raises(CatalogError):
+        apply_migrations(path)

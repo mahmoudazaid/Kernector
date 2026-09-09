@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from pathlib import Path
 
+from infrastructure.catalog.workspace import parse_workspace_id
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
 _GOOGLE_DRIVE_FOLDER_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -255,8 +257,6 @@ def _load_knowledge_settings() -> KnowledgeSettings:
 
 
 def _load_document_catalog_settings() -> DocumentCatalogSettings:
-    from infrastructure.catalog.workspace import parse_workspace_id
-
     catalog_path = os.getenv(
         "DOCUMENT_CATALOG_PATH", "data/catalog/uploads.json"
     )

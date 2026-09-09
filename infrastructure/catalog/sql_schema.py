@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import functools
 import re
 import sqlite3
 from pathlib import Path
 
+from infrastructure.catalog._connection import BUSY_TIMEOUT_MS
 from infrastructure.catalog.errors import CatalogError
 
 _MIGRATION_NAME = re.compile(r"^(\d+)_.+\.sql$")
 _SHIPPED_MIGRATIONS = Path(__file__).resolve().parent / "migrations"
-_BUSY_TIMEOUT_MS = 5000
 
 
 def current_schema_version(path: Path) -> int:
@@ -31,18 +32,11 @@ def current_schema_version(path: Path) -> int:
     try:
         connection = sqlite3.connect(path)
         try:
-            row = connection.execute(
-                "SELECT version FROM schema_version LIMIT 1"
-            ).fetchone()
-        except sqlite3.Error:
-            return 0
+            return _read_version(connection)
         finally:
             connection.close()
     except sqlite3.Error as error:
         raise CatalogError(f"could not read schema version at {path}") from error
-    if row is None:
-        return 0
-    return int(row[0])
 
 
 def apply_migrations(
@@ -51,7 +45,8 @@ def apply_migrations(
     """Apply numbered SQL migration files in order.
 
     Each file and its ``schema_version`` update share one transaction. A
-    failing file rolls back that schema version only.
+    failing file rolls back that schema version only. Shipped migration SQL is
+    loaded once per process.
 
     Args:
         path (Path): SQLite database path. Parent directories are created.
@@ -62,33 +57,61 @@ def apply_migrations(
         CatalogError: The database is at an unsupported future version, a
             migration file is invalid, or SQLite fails.
     """
-    directory = migrations_dir or _SHIPPED_MIGRATIONS
-    migrations = _load_migrations(directory)
+    migrations = (
+        list(_load_shipped_migrations())
+        if migrations_dir is None
+        else _load_migrations(migrations_dir)
+    )
     if not migrations:
         return
     latest = migrations[-1][0]
-    recorded = current_schema_version(path)
-    if recorded > latest:
-        raise CatalogError(
-            f"unsupported schema version {recorded}; latest shipped is {latest}"
-        )
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         connection = sqlite3.connect(path)
     except sqlite3.Error as error:
         raise CatalogError(f"could not open catalog database at {path}") from error
     try:
-        connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+        connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+        recorded = _read_version(connection)
+        if recorded > latest:
+            raise CatalogError(
+                f"unsupported schema version {recorded}; latest shipped is {latest}"
+            )
         for version, sql in migrations:
             if version <= recorded:
                 continue
-            _apply_one(connection, version, sql)
+            try:
+                _apply_one(connection, version, sql)
+            except sqlite3.Error:
+                recorded = _read_version(connection)
+                if recorded >= version:
+                    continue
+                raise
     except CatalogError:
         raise
     except sqlite3.Error as error:
         raise CatalogError(f"could not apply catalog migrations at {path}") from error
     finally:
         connection.close()
+
+
+def _read_version(connection: sqlite3.Connection) -> int:
+    try:
+        row = connection.execute(
+            "SELECT version FROM schema_version LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError as error:
+        if "no such table" not in str(error).lower():
+            raise
+        return 0
+    if row is None:
+        return 0
+    return int(row[0])
+
+
+@functools.lru_cache(maxsize=1)
+def _load_shipped_migrations() -> tuple[tuple[int, str], ...]:
+    return tuple(_load_migrations(_SHIPPED_MIGRATIONS))
 
 
 def _load_migrations(directory: Path) -> list[tuple[int, str]]:

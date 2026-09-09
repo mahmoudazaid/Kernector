@@ -8,7 +8,7 @@ import re
 _WORKSPACE_ID = re.compile(r"[A-Za-z0-9_-]+")
 _MAX_WORKSPACE_ID_LENGTH = 64
 _WORKSPACE_ID_CONTRACT = (
-    "workspace_id must fullmatch [A-Za-z0-9_-]+ and be at most 64 characters"
+    "must fullmatch [A-Za-z0-9_-]+ and be at most 64 characters"
 )
 
 
@@ -26,7 +26,6 @@ def parse_workspace_id(raw: str | None) -> str | None:
 
     Raises:
         ValueError: The stripped value fails the charset or length contract.
-            The message names ``workspace_id``.
     """
     if raw is None:
         return None
@@ -36,3 +35,25 @@ def parse_workspace_id(raw: str | None) -> str | None:
     if len(value) > _MAX_WORKSPACE_ID_LENGTH or not _WORKSPACE_ID.fullmatch(value):
         raise ValueError(_WORKSPACE_ID_CONTRACT)
     return value
+
+
+def require_workspace_id(raw: str | None) -> str:
+    """Return a validated workspace id, rejecting absent values.
+
+    Args:
+        raw (str | None): Candidate identifier.
+
+    Returns:
+        str: The stripped identifier.
+
+    Raises:
+        ValueError: The value is absent or fails the charset or length contract.
+            The message names ``workspace_id``.
+    """
+    try:
+        parsed = parse_workspace_id(raw)
+    except ValueError as error:
+        raise ValueError(f"workspace_id {error}") from error
+    if parsed is None:
+        raise ValueError(f"workspace_id {_WORKSPACE_ID_CONTRACT}")
+    return parsed
