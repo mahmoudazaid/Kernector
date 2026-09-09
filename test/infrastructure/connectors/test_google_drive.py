@@ -635,6 +635,34 @@ def test_inaccessible_nested_folder_does_not_look_like_a_complete_listing() -> N
         _connector(NestedForbidden(), recursive=True).list_documents()
 
 
+def test_nested_mid_pagination_404_does_not_look_like_a_complete_listing() -> None:
+    class NestedMidPageMissing(FakeDriveFiles):
+        def list(self, **kwargs: object) -> FakeListRequest:
+            self.list_calls.append(dict(kwargs))
+            query = str(kwargs.get("q") or "")
+            if "nested" in query:
+                if sum("nested" in str(call.get("q") or "") for call in self.list_calls) == 1:
+                    return FakeListRequest(
+                        {"files": [_file("child", "child.txt")], "nextPageToken": "page-2"}
+                    )
+                return FakeListRequest(error=_http_error(404))
+            return FakeListRequest(
+                {
+                    "files": [
+                        _file(
+                            "nested",
+                            "Nested",
+                            mime_type="application/vnd.google-apps.folder",
+                        ),
+                        _file("root-file", "root.md"),
+                    ]
+                }
+            )
+
+    with pytest.raises(ConnectorError):
+        _connector(NestedMidPageMissing(), recursive=True).list_documents()
+
+
 def test_inaccessible_nested_folder_404_is_skipped() -> None:
     class NestedMissing(FakeDriveFiles):
         def list(self, **kwargs: object) -> FakeListRequest:

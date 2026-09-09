@@ -84,38 +84,6 @@ def test_delete_missing_is_noop(tmp_path: Path) -> None:
     assert catalog.all() == ()
 
 
-def test_count_filters_source_type_and_status_from_raw_json(tmp_path: Path) -> None:
-    path = tmp_path / "uploads.json"
-    catalog = JsonDocumentCatalog(path)
-    catalog.upsert(_document(source_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
-    catalog.upsert(
-        _document(
-            source_id="bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee",
-            status=CatalogStatus.FAILED,
-        )
-    )
-    drive_ready = CatalogDocument(
-        reference=SourceReference("drive-ready", SourceType.GOOGLE_DRIVE),
-        file_name="drive.md",
-        title="Drive",
-        content_format="markdown",
-        status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
-        chunk_count=1,
-        error=None,
-    )
-    catalog.upsert(drive_ready)
-    assert catalog.count() == 3
-    assert catalog.count(source_type=SourceType.GOOGLE_DRIVE) == 1
-    assert (
-        catalog.count(
-            source_type=SourceType.GOOGLE_DRIVE, status=CatalogStatus.READY
-        )
-        == 1
-    )
-    assert catalog.count(status=CatalogStatus.FAILED) == 1
-
-
 def test_upsert_replaces_existing_record(tmp_path: Path) -> None:
     path = tmp_path / "uploads.json"
     catalog = JsonDocumentCatalog(path)

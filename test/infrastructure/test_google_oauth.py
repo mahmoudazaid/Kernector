@@ -27,7 +27,6 @@ def _connection(**overrides: object) -> GoogleOAuthConnection:
         refresh_token="1//refresh-secret",
         access_token="ya29.access-secret",
         account_email="ada@example.com",
-        folder_count=1,
         last_synced_at=None,
         last_sync_new=None,
         last_sync_updated=None,

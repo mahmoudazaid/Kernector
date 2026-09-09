@@ -36,7 +36,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from infrastructure.config import DocumentCatalogSettings, GoogleOAuthSettings, load_settings
+from infrastructure.config import GoogleOAuthSettings, load_settings
 from infrastructure.connectors.google_oauth import (
     GoogleDriveSelectedItem as StoredItem,
     GoogleOAuthConnection,
@@ -44,6 +44,7 @@ from infrastructure.connectors.google_oauth import (
     GoogleOAuthGrant,
     GoogleOAuthStateStore,
 )
+from infrastructure.catalog.errors import CatalogError
 from test.document_doubles import InMemoryDocumentCatalog
 
 
@@ -86,7 +87,7 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             state_path=tmp_path / "state.json",
             state_ttl_seconds=600,
         ),
-        document_catalog=DocumentCatalogSettings(path=tmp_path / "catalog.json"),
+        document_catalog=replace(loaded.document_catalog, path=tmp_path / "catalog.json"),
     )
 
 
@@ -162,7 +163,6 @@ def test_callback_rejects_replayed_state(settings) -> None:
     assert stored is not None
     assert stored.folders == ()
     assert stored.files == ()
-    assert stored.folder_count == 0
     status = google_drive_status(settings)
     assert status.connected is True
     assert status.setup_required is False
@@ -178,7 +178,6 @@ def test_callback_reconnect_keeps_saved_scope(settings) -> None:
             refresh_token="1//old-refresh",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at="2026-09-08T12:00:00+00:00",
             last_sync_new=1,
             last_sync_updated=0,
@@ -223,7 +222,6 @@ def test_callback_reconnect_as_other_account_resets_scope(settings) -> None:
             refresh_token="1//old-refresh",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at="2026-09-08T12:00:00+00:00",
             last_sync_new=1,
             last_sync_updated=0,
@@ -251,7 +249,6 @@ def test_callback_reconnect_as_other_account_resets_scope(settings) -> None:
     assert stored.account_email == "other@example.com"
     assert stored.folders == ()
     assert stored.last_synced_at is None
-    assert stored.folder_count == 0
 
 
 class UnknownEmailGateway(FakeGateway):
@@ -259,7 +256,7 @@ class UnknownEmailGateway(FakeGateway):
         return None
 
 
-def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
+def test_callback_reconnect_with_unknown_email_clears_scope(settings) -> None:
     states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
     tokens.save(
@@ -267,7 +264,6 @@ def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
             refresh_token="1//old-refresh",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at="2026-09-08T12:00:00+00:00",
             last_sync_new=1,
             last_sync_updated=0,
@@ -293,9 +289,8 @@ def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
     stored = tokens.load()
     assert stored is not None
     assert stored.account_email == "ada@example.com"
-    assert stored.folders == (StoredItem(id="folder-1", name="Specs"),)
-    assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
-    assert stored.folder_count == 1
+    assert stored.folders == ()
+    assert stored.last_synced_at is None
 
 
 def test_status_reads_store_not_memory(settings) -> None:
@@ -305,7 +300,6 @@ def test_status_reads_store_not_memory(settings) -> None:
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -321,9 +315,7 @@ def test_status_reads_store_not_memory(settings) -> None:
     assert status.last_sync is None
 
 
-def test_status_counts_ready_drive_catalog_rows(
-    settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_status_counts_ready_drive_catalog_rows(settings) -> None:
     catalog = InMemoryDocumentCatalog()
     catalog.upsert(
         CatalogDocument(
@@ -361,26 +353,45 @@ def test_status_counts_ready_drive_catalog_rows(
             error=None,
         )
     )
-    monkeypatch.setattr(
-        composition_container, "build_document_catalog", lambda _settings: catalog
-    )
     GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
         GoogleOAuthConnection(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
             last_sync_unchanged=None,
             last_sync_failed=None,
             reauthorization_required=False,
-            document_count=4,
         )
     )
 
-    assert google_drive_status(settings).document_count == 1
+    assert google_drive_status(settings, catalog=catalog).document_count == 1
+
+
+def test_status_catalog_error_degrades_document_count(settings) -> None:
+    class BrokenCatalog:
+        def count(self, **_kwargs):
+            raise CatalogError("could not read catalog")
+
+    GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    status = google_drive_status(settings, catalog=BrokenCatalog())
+    assert status.connected is True
+    assert status.document_count == 0
 
 
 def test_disconnect_revokes_and_clears(settings) -> None:
@@ -390,7 +401,6 @@ def test_disconnect_revokes_and_clears(settings) -> None:
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -422,7 +432,6 @@ def test_oauth_sync_persists_last_sync_counts(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             folders=(StoredItem(id="folder-1", name="Specs"),),
             last_synced_at=None,
             last_sync_new=None,
@@ -509,7 +518,6 @@ def test_sync_without_selection_conflicts(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=0,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -546,7 +554,6 @@ def test_oauth_sync_does_not_revert_selection_changed_during_run(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             folders=(StoredItem(id="folder-1", name="Specs"),),
             last_synced_at=None,
             last_sync_new=None,
@@ -567,7 +574,6 @@ def test_oauth_sync_does_not_revert_selection_changed_during_run(
             replace(
                 tokens.load(),
                 folders=(StoredItem(id="folder-2", name="New"),),
-                folder_count=1,
             )
         )
         return ConnectorSyncResponse(outcomes=())
@@ -596,7 +602,6 @@ def test_oauth_sync_does_not_recreate_grant_cleared_during_run(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             folders=(StoredItem(id="folder-1", name="Specs"),),
             last_synced_at=None,
             last_sync_new=None,
@@ -637,7 +642,6 @@ def test_oauth_sync_uses_vector_store_factory_only_after_guards(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=0,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -672,7 +676,6 @@ def test_oauth_sync_passes_factory_store_into_sync(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             folders=(StoredItem(id="folder-1", name="Specs"),),
             last_synced_at=None,
             last_sync_new=None,
@@ -756,7 +759,6 @@ def test_browse_and_put_selection_use_ids_and_skip_tokens(settings) -> None:
             refresh_token="1//refresh-secret",
             access_token="ya29.access-secret",
             account_email="ada@example.com",
-            folder_count=0,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -800,7 +802,6 @@ def test_put_selection_allows_empty(settings) -> None:
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=1,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,
@@ -857,7 +858,6 @@ def test_delete_drive_document_drops_file_from_selection(
             refresh_token="1//refresh-secret",
             access_token=None,
             account_email="ada@example.com",
-            folder_count=0,
             last_synced_at=None,
             last_sync_new=None,
             last_sync_updated=None,

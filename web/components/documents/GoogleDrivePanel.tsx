@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { DialogFrame } from "@/components/ui/DialogFrame";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { Loader } from "@/components/ui/Loader";
 import {
@@ -125,11 +124,12 @@ export function GoogleDrivePanel({
   const [selection, setSelection] =
     useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
   const [selectionReady, setSelectionReady] = useState(false);
-  const pickerTitleId = useId();
   const busyRef = useRef(false);
   const aliveRef = useRef(true);
   const selectionSeqRef = useRef(0);
   const selectionAbortRef = useRef<AbortController | null>(null);
+  const pickerOpenRef = useRef(pickerOpen);
+  pickerOpenRef.current = pickerOpen;
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
   const onCatalogChangeRef = useRef(onCatalogChange);
@@ -162,10 +162,12 @@ export function GoogleDrivePanel({
     }
   }
 
-  async function refreshSelection() {
+  async function refreshSelection(options?: { forPicker?: boolean }) {
+    selectionAbortRef.current?.abort();
     const controller = new AbortController();
     selectionAbortRef.current = controller;
-    const seq = selectionSeqRef.current;
+    const seq = ++selectionSeqRef.current;
+    const forPicker = options?.forPicker === true;
     try {
       const current = await loadSelection({
         baseUrl: apiBaseUrl,
@@ -179,6 +181,9 @@ export function GoogleDrivePanel({
         return null;
       }
       setSelection(current);
+      if (pickerOpenRef.current) {
+        setSelectionReady(true);
+      }
       return current;
     } catch (error) {
       if (
@@ -188,8 +193,10 @@ export function GoogleDrivePanel({
       ) {
         return null;
       }
-      setActionError(actionErrorMessage(error));
-      setPickerOpen(false);
+      if (forPicker) {
+        setActionError(actionErrorMessage(error));
+        setPickerOpen(false);
+      }
       return null;
     }
   }
@@ -230,16 +237,7 @@ export function GoogleDrivePanel({
       setSelectionReady(false);
       return;
     }
-    let ignore = false;
-    void (async () => {
-      const current = await refreshSelection();
-      if (!ignore && aliveRef.current && current != null) {
-        setSelectionReady(true);
-      }
-    })();
-    return () => {
-      ignore = true;
-    };
+    void refreshSelection({ forPicker: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- picker open
   }, [pickerOpen]);
 
@@ -526,27 +524,12 @@ export function GoogleDrivePanel({
         </Button>
       </div>
 
-      {pickerOpen && !selectionReady ? (
-        <DialogFrame
-          open
-          titleId={pickerTitleId}
-          panelClassName="kern-picker-dialog"
-          onDismiss={() => setPickerOpen(false)}
-        >
-          <div className="kern-picker-head">
-            <h2 id={pickerTitleId} className="kern-dialog-title">
-              Loading Google Drive
-            </h2>
-          </div>
-          <Loader label="Loading saved Google Drive selection" />
-        </DialogFrame>
-      ) : null}
-
-      {pickerOpen && selectionReady ? (
+      {pickerOpen ? (
         <GoogleDrivePicker
           open
           apiBaseUrl={apiBaseUrl}
           initialSelection={selection}
+          selectionLoading={!selectionReady}
           busy={busy}
           listItems={listItems}
           onConfirm={(next) => void onAddSelection(next)}

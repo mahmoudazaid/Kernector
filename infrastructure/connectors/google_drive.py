@@ -321,7 +321,7 @@ class GoogleDriveConnector:
             if status == 401 or isinstance(mapped, ConnectorUnavailableError):
                 raise mapped from error
             if status == 404:
-                if not is_root or pages_ok == 0:
+                if pages_ok == 0:
                     return
                 raise mapped from error
             if status == 403:

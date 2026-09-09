@@ -498,22 +498,19 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    expect(
-      screen.queryByRole("dialog", { name: /choose from google drive/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      await screen.findByRole("dialog", { name: /loading google drive/i }),
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    expect(within(dialog).queryByText("Specs")).not.toBeInTheDocument();
     resolveSelection({
       folders: [{ id: "folder-1", name: "Specs" }],
       files: [],
     });
-    const dialog = await screen.findByRole("dialog", {
-      name: /choose from google drive/i,
+    await waitFor(() => {
+      expect(
+        within(dialog).getByRole("checkbox", { name: /specs/i }),
+      ).toBeChecked();
     });
-    expect(
-      await within(dialog).findByRole("checkbox", { name: /specs/i }),
-    ).toBeChecked();
   });
 
   it("does not open the picker when saved selection cannot be loaded", async () => {
@@ -539,9 +536,6 @@ describe("GoogleDrivePanel", () => {
     );
     expect(
       screen.queryByRole("dialog", { name: /choose from google drive/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("dialog", { name: /loading google drive/i }),
     ).not.toBeInTheDocument();
   });
 

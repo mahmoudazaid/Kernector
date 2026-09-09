@@ -4,8 +4,10 @@ import importlib.util
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NoReturn
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
@@ -554,6 +556,7 @@ _DRIVE_ITEM_ID = re.compile(r"^(root|[A-Za-z0-9_-]{1,128})$")
 _DRIVE_SELECTION_ID = re.compile(r"^(?!root$)[A-Za-z0-9_-]{1,128}$")
 _DRIVE_ITEM_NAME_MAX = 256
 _DRIVE_QUERY_MAX = 200
+_DRIVE_SELECTION_VALIDATE_WORKERS = 16
 _SELECTION_INACCESSIBLE_DETAIL = "A selected Drive item is not accessible."
 _SELECTION_KIND_DETAIL = "A selected Drive item does not match the requested type."
 
@@ -672,13 +675,19 @@ def _hub_redirect(settings: Settings, *, result: str) -> str:
     return f"{base}{separator}drive={result}"
 
 
-def google_drive_status(settings: Settings) -> GoogleDriveStatus:
+def google_drive_status(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+) -> GoogleDriveStatus:
     """Report SA flags plus user OAuth connection metadata.
 
     Does not import the Google client or load the service-account JSON.
+    Catalog I/O failures degrade ``document_count`` to ``0``.
 
     Args:
         settings (Settings): Loaded environment settings.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
 
     Returns:
         GoogleDriveStatus: Presentation-safe flags and connection metadata.
@@ -717,13 +726,8 @@ def google_drive_status(settings: Settings) -> GoogleDriveStatus:
         connected=connection is not None,
         oauth_ready=_oauth_ready(settings),
         account_email=None if connection is None else connection.account_email,
-        document_count=(
-            0
-            if connection is None
-            else build_document_catalog(settings).count(
-                source_type=SourceType.GOOGLE_DRIVE,
-                status=CatalogStatus.READY,
-            )
+        document_count=_drive_document_count(
+            settings, connection=connection, catalog=catalog
         ),
         folder_count=None if connection is None else len(connection.folders),
         last_sync=last_sync,
@@ -734,6 +738,24 @@ def google_drive_status(settings: Settings) -> GoogleDriveStatus:
         connection_state=connection_state,
         sync_scope=None if connection is None else _sync_scope_label(connection),
     )
+
+
+def _drive_document_count(
+    settings: Settings,
+    *,
+    connection,
+    catalog: DocumentCatalog | None,
+) -> int:
+    if connection is None:
+        return 0
+    try:
+        working = catalog if catalog is not None else build_document_catalog(settings)
+        return working.count(
+            source_type=SourceType.GOOGLE_DRIVE,
+            status=CatalogStatus.READY,
+        )
+    except (CatalogError, ConfigurationError):
+        return 0
 
 
 def _sync_scope_label(connection) -> str | None:
@@ -832,6 +854,7 @@ def complete_google_drive_oauth(
                 and existing.account_email != email
             ):
                 existing = None
+            keep_scope = existing is not None and email is not None
             return GoogleOAuthConnection(
                 refresh_token=grant.refresh_token,
                 access_token=grant.access_token,
@@ -840,15 +863,14 @@ def complete_google_drive_oauth(
                     if email is not None
                     else None if existing is None else existing.account_email
                 ),
-                folder_count=existing.folder_count if existing is not None else 0,
-                last_synced_at=None if existing is None else existing.last_synced_at,
-                last_sync_new=None if existing is None else existing.last_sync_new,
-                last_sync_updated=None if existing is None else existing.last_sync_updated,
-                last_sync_unchanged=None if existing is None else existing.last_sync_unchanged,
-                last_sync_failed=None if existing is None else existing.last_sync_failed,
+                last_synced_at=None if not keep_scope else existing.last_synced_at,
+                last_sync_new=None if not keep_scope else existing.last_sync_new,
+                last_sync_updated=None if not keep_scope else existing.last_sync_updated,
+                last_sync_unchanged=None if not keep_scope else existing.last_sync_unchanged,
+                last_sync_failed=None if not keep_scope else existing.last_sync_failed,
                 reauthorization_required=False,
-                folders=() if existing is None else existing.folders,
-                files=() if existing is None else existing.files,
+                folders=() if not keep_scope else existing.folders,
+                files=() if not keep_scope else existing.files,
             )
 
         tokens_store.mutate(_next)
@@ -904,7 +926,7 @@ def _require_drive_grant(settings: Settings, *, connection_store=None):
     return tokens_store, connection
 
 
-def _mark_reauth(tokens_store, _connection, error: BaseException):
+def _mark_reauth(tokens_store, error: BaseException) -> NoReturn:
     tokens_store.mutate(
         lambda current: None
         if current is None
@@ -974,7 +996,7 @@ def browse_google_drive_items(
             page_token=None if page_token is None else page_token.strip(),
         )
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, connection, error)
+        _mark_reauth(tokens_store, error)
     except ConnectorError as error:
         raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
     return GoogleDriveBrowsePage(
@@ -1063,16 +1085,15 @@ def put_google_drive_selection(
         settings, connection_store=connection_store
     )
     try:
-        connector = build_google_drive_oauth_connector(
+        resolved_folders, resolved_files = _validate_selection_items(
             settings,
             refresh_token=connection.refresh_token,
-            files=files_resource,
-        )
-        resolved_folders, resolved_files = _validate_selection_items(
-            connector, folder_items, file_items
+            folder_items=folder_items,
+            file_items=file_items,
+            files_resource=files_resource,
         )
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, connection, error)
+        _mark_reauth(tokens_store, error)
     except ConnectorError as error:
         raise InputRejectedError(_SELECTION_INACCESSIBLE_DETAIL) from error
     from infrastructure.connectors.google_oauth import GoogleDriveSelectedItem as StoredItem
@@ -1086,7 +1107,6 @@ def put_google_drive_selection(
             )
         return replace(
             current,
-            folder_count=len(resolved_folders),
             folders=tuple(
                 StoredItem(id=item.id, name=item.name) for item in resolved_folders
             ),
@@ -1124,19 +1144,39 @@ def _clamped_drive_name(name: str) -> str:
 
 
 def _validate_selection_items(
-    connector,
+    settings: Settings,
+    *,
+    refresh_token: str,
     folder_items: Sequence[GoogleDriveSelectedItem],
     file_items: Sequence[GoogleDriveSelectedItem],
+    files_resource=None,
 ) -> tuple[tuple[GoogleDriveSelectedItem, ...], tuple[GoogleDriveSelectedItem, ...]]:
-    folders = tuple(
-        _validate_selected_item(connector, item, expected_kind="folder")
-        for item in folder_items
-    )
-    files = tuple(
-        _validate_selected_item(connector, item, expected_kind="file")
-        for item in file_items
-    )
-    return folders, files
+    jobs = [(item, "folder") for item in folder_items] + [
+        (item, "file") for item in file_items
+    ]
+    if not jobs:
+        return (), ()
+    if files_resource is not None:
+        connector = build_google_drive_oauth_connector(
+            settings, refresh_token=refresh_token, files=files_resource
+        )
+        resolved = [
+            _validate_selected_item(connector, item, expected_kind=kind)
+            for item, kind in jobs
+        ]
+    else:
+        def _run(item: GoogleDriveSelectedItem, kind: str) -> GoogleDriveSelectedItem:
+            connector = build_google_drive_oauth_connector(
+                settings, refresh_token=refresh_token
+            )
+            return _validate_selected_item(connector, item, expected_kind=kind)
+
+        workers = min(_DRIVE_SELECTION_VALIDATE_WORKERS, len(jobs))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_run, item, kind) for item, kind in jobs]
+            resolved = [future.result() for future in futures]
+    folder_count = len(folder_items)
+    return tuple(resolved[:folder_count]), tuple(resolved[folder_count:])
 
 
 def _validate_selected_item(
@@ -1283,7 +1323,7 @@ def sync_google_drive_oauth(
         )
     except ConnectorSyncError as error:
         if isinstance(error.__cause__, ConnectorAuthError):
-            _mark_reauth(tokens_store, connection, error)
+            _mark_reauth(tokens_store, error)
         raise
     new_count = sum(
         1

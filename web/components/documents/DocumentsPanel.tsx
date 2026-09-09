@@ -230,7 +230,7 @@ export function DocumentsPanel({
   const refreshAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    setOauthCallback(captureDriveCallback());
+    captureDriveCallback();
   }, []);
 
   function retryAll() {

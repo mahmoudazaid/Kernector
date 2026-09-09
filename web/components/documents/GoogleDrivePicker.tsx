@@ -17,6 +17,7 @@ export type GoogleDrivePickerProps = {
   open: boolean;
   apiBaseUrl: string;
   initialSelection: GoogleDriveSelectionResponse;
+  selectionLoading?: boolean;
   busy?: boolean;
   listItems?: (options: ListGoogleDriveItemsOptions) => Promise<{
     items: GoogleDriveBrowseItemResponse[];
@@ -169,6 +170,7 @@ export function GoogleDrivePicker({
   open,
   apiBaseUrl,
   initialSelection,
+  selectionLoading = false,
   busy = false,
   listItems = listGoogleDriveItems,
   onConfirm,
@@ -184,6 +186,7 @@ export function GoogleDrivePicker({
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [view, setView] = useState<BrowseView>({ kind: "loading" });
   const [selected, setSelected] = useState(() => selectedMap(initialSelection));
+  const [appliedKey, setAppliedKey] = useState("");
   const dirtyRef = useRef(false);
   const loadSeqRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -286,6 +289,10 @@ export function GoogleDrivePicker({
     ...(initialSelection.folders ?? []).map((item) => `folder:${item.id}`),
     ...(initialSelection.files ?? []).map((item) => `file:${item.id}`),
   ].join("|");
+  if (open && !dirtyRef.current && appliedKey !== baselineKey) {
+    setSelected(selectedMap(initialSelection));
+    setAppliedKey(baselineKey);
+  }
 
   useEffect(() => {
     if (!open) {
@@ -340,6 +347,7 @@ export function GoogleDrivePicker({
     });
   }
 
+  const listLoading = selectionLoading || view.kind === "loading";
   const rows = view.kind === "ready" ? mixedRows(view.folders, view.files) : [];
   const nextPageKind =
     view.kind === "ready" && view.nextFolderToken
@@ -403,7 +411,7 @@ export function GoogleDrivePicker({
         </form>
       </div>
 
-      {query || view.kind === "loading" ? null : (
+      {query || listLoading ? null : (
         <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
           {crumbs.map((crumb, index) => (
             <span key={crumb.id}>
@@ -426,17 +434,15 @@ export function GoogleDrivePicker({
 
       <div
         className={
-          view.kind === "loading"
-            ? "kern-picker-list is-loading"
-            : "kern-picker-list"
+          listLoading ? "kern-picker-list is-loading" : "kern-picker-list"
         }
       >
-        {view.kind === "loading" ? (
+        {listLoading ? (
           <div className="kern-picker-loading">
             <Loader label="Loading Google Drive" />
           </div>
         ) : null}
-        {view.kind === "error" ? (
+        {view.kind === "error" && !selectionLoading ? (
           <div
             className="kern-settings-callout kern-settings-callout--error"
             role="alert"
@@ -451,14 +457,14 @@ export function GoogleDrivePicker({
             </Button>
           </div>
         ) : null}
-        {view.kind === "ready" && rows.length === 0 ? (
+        {view.kind === "ready" && !selectionLoading && rows.length === 0 ? (
           <p role="status">
             {query
               ? "No matching Drive items."
               : "This folder has no items you can select."}
           </p>
         ) : null}
-        {view.kind === "ready"
+        {view.kind === "ready" && !selectionLoading
           ? rows.map((item) => {
               const itemKind = item.kind === "folder" ? "folder" : "file";
               const navigable = itemKind === "folder" && !query;
@@ -506,7 +512,7 @@ export function GoogleDrivePicker({
               );
             })
           : null}
-        {nextPageKind && nextPageToken ? (
+        {nextPageKind && nextPageToken && !selectionLoading ? (
           <Button
             variant="secondary"
             onClick={() =>
@@ -533,7 +539,7 @@ export function GoogleDrivePicker({
             Cancel
           </Button>
           <Button
-            disabled={busy || selectionUnchanged}
+            disabled={busy || selectionLoading || selectionUnchanged}
             onClick={() => onConfirm(toSelection(selected))}
           >
             Save

@@ -8,7 +8,7 @@ function driveParam(): string | null {
 }
 
 export function peekDriveCallback(): string | null {
-  return driveParam() ?? capturedDriveCallback ?? null;
+  return driveParam() || capturedDriveCallback || null;
 }
 
 export function captureDriveCallback(): string | null {
@@ -17,15 +17,17 @@ export function captureDriveCallback(): string | null {
   }
   const params = new URLSearchParams(window.location.search);
   const drive = params.get("drive");
-  if (drive) {
+  if (drive !== null) {
     params.delete("drive");
     const query = params.toString();
     const next = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", next);
-    capturedDriveCallback = drive;
-    return drive;
+    if (drive) {
+      capturedDriveCallback = drive;
+      return drive;
+    }
   }
-  return capturedDriveCallback ?? null;
+  return capturedDriveCallback || null;
 }
 
 export function consumeDriveCallback(): void {

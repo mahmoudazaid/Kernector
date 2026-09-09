@@ -1,6 +1,5 @@
 import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
 import type { components } from "@/lib/api/generated/schema";
-import openApiSpec from "../../openapi/openapi.json";
 
 export type GoogleDriveStatusResponse =
   components["schemas"]["GoogleDriveStatusResponse"];
@@ -18,12 +17,10 @@ export type GoogleDriveSelectedItemResponse =
 /** A first whole-folder sync fetches, extracts, and embeds every file. */
 export const CONNECTOR_SYNC_TIMEOUT_MS = 300_000;
 
-/** PUT selection validates each Drive ID; 100 items can exceed the default 10s. */
+/** PUT selection validates each Drive ID; 200 items can exceed the default 10s. */
 export const GOOGLE_DRIVE_SELECTION_TIMEOUT_MS = 120_000;
 
-export const GOOGLE_DRIVE_SELECTION_ITEM_MAX =
-  openApiSpec.components.schemas.GoogleDriveSelectionRequest.properties.folders
-    .maxItems;
+export const GOOGLE_DRIVE_SELECTION_ITEM_MAX = 100;
 
 export const GOOGLE_DRIVE_OAUTH_START_PATH =
   "/api/v1/connectors/google-drive/oauth/start";

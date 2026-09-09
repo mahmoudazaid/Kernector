@@ -90,12 +90,14 @@ class JsonDocumentCatalog:
     ) -> int:
         """Return how many records match the optional filters."""
         with self._lock():
-            wanted_status = None if status is None else status.value
             total = 0
-            for entry in self._raw_entries_unlocked():
-                if source_type is not None and entry.get("source_type") != source_type:
+            for document in self._load_unlocked().values():
+                if (
+                    source_type is not None
+                    and document.reference.source_type != source_type
+                ):
                     continue
-                if wanted_status is not None and entry.get("status") != wanted_status:
+                if status is not None and document.status is not status:
                     continue
                 total += 1
             return total
@@ -125,28 +127,6 @@ class JsonDocumentCatalog:
                 )
             records[document.reference] = document
         return records
-
-    def _raw_entries_unlocked(self) -> list[dict[str, object]]:
-        payload = self._read_payload_unlocked()
-        entries: list[dict[str, object]] = []
-        seen: set[tuple[str, str]] = set()
-        for index, entry in enumerate(payload):
-            document = _document_from_entry(entry, index=index)
-            key = (document.reference.source_type, document.reference.source_id)
-            if key in seen:
-                reference = document.reference
-                raise CatalogValidationError(
-                    f"catalog entry {index} duplicates source "
-                    f"{reference.source_type}:{reference.source_id}; "
-                    "each source may appear at most once"
-                )
-            seen.add(key)
-            if not isinstance(entry, dict):
-                raise CatalogValidationError(
-                    f"catalog entry {index} must be an object, got {type(entry).__name__}"
-                )
-            entries.append(entry)
-        return entries
 
     def _read_payload_unlocked(self) -> list[object]:
         if not self._path.exists():

@@ -65,7 +65,6 @@ class GoogleOAuthConnection:
     refresh_token: str
     access_token: str | None
     account_email: str | None
-    folder_count: int
     last_synced_at: str | None
     last_sync_new: int | None
     last_sync_updated: int | None
@@ -74,13 +73,12 @@ class GoogleOAuthConnection:
     reauthorization_required: bool
     folders: tuple[GoogleDriveSelectedItem, ...] = ()
     files: tuple[GoogleDriveSelectedItem, ...] = ()
-    document_count: int = 0
 
     def __repr__(self) -> str:
         return (
             "GoogleOAuthConnection("
             f"refresh_token={_REDACTED!r}, access_token={_REDACTED!r}, "
-            f"account_email={self.account_email!r}, folder_count={self.folder_count}, "
+            f"account_email={self.account_email!r}, "
             f"folders={len(self.folders)}, files={len(self.files)}, "
             f"last_synced_at={self.last_synced_at!r}, "
             f"reauthorization_required={self.reauthorization_required})"
@@ -201,7 +199,6 @@ class GoogleOAuthConnectionStore:
             refresh_token=refresh,
             access_token=_optional_str(raw.get("access_token")),
             account_email=_optional_str(raw.get("account_email")),
-            folder_count=_optional_int(raw.get("folder_count")) or 0,
             last_synced_at=_optional_str(raw.get("last_synced_at")),
             last_sync_new=_optional_int(raw.get("last_sync_new")),
             last_sync_updated=_optional_int(raw.get("last_sync_updated")),
@@ -210,7 +207,6 @@ class GoogleOAuthConnectionStore:
             reauthorization_required=bool(raw.get("reauthorization_required")),
             folders=_parse_selected_items(raw.get("folders")),
             files=_parse_selected_items(raw.get("files")),
-            document_count=_optional_int(raw.get("document_count")) or 0,
         )
 
 
@@ -368,7 +364,6 @@ def _connection_payload(connection: GoogleOAuthConnection) -> dict[str, object]:
         "refresh_token": connection.refresh_token,
         "access_token": connection.access_token,
         "account_email": connection.account_email,
-        "folder_count": connection.folder_count,
         "folders": [{"id": item.id, "name": item.name} for item in connection.folders],
         "files": [{"id": item.id, "name": item.name} for item in connection.files],
         "last_synced_at": connection.last_synced_at,
@@ -377,7 +372,6 @@ def _connection_payload(connection: GoogleOAuthConnection) -> dict[str, object]:
         "last_sync_unchanged": connection.last_sync_unchanged,
         "last_sync_failed": connection.last_sync_failed,
         "reauthorization_required": connection.reauthorization_required,
-        "document_count": connection.document_count,
     }
 
 
