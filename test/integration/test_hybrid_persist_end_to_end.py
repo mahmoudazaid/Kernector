@@ -159,7 +159,6 @@ def test_vector_only_build_does_not_hydrate_lexical(
     from composition.container import build_vector_store
     from infrastructure.config import load_settings
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", COLLECTION)
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "false")

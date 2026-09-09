@@ -24,6 +24,134 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connectors/google-drive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Connector Status
+     * @description Return presentation-safe Drive SA flags and user OAuth connection.
+     */
+    get: operations["google_drive_connector_status_api_v1_connectors_google_drive_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Google Drive Connector Disconnect
+     * @description Revoke and delete the stored user grant. Indexed documents stay.
+     */
+    delete: operations["google_drive_connector_disconnect_api_v1_connectors_google_drive_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/items": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Connector Items
+     * @description List Drive folders or files for the content picker. No tokens on the wire.
+     */
+    get: operations["google_drive_connector_items_api_v1_connectors_google_drive_items_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Oauth Callback
+     * @description Validate state, exchange the code server-side, and return to the Hub.
+     */
+    get: operations["google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/oauth/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Oauth Start
+     * @description Issue CSRF state and redirect the browser to Google, or back to the Hub.
+     */
+    get: operations["google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/selection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Google Drive Connector Get Selection
+     * @description Return saved folder and file roots (Drive IDs and names only).
+     */
+    get: operations["google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get"];
+    /**
+     * Google Drive Connector Put Selection
+     * @description Validate access and atomically replace the saved Drive selection.
+     */
+    put: operations["google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Google Drive Connector Sync
+     * @description Synchronize Drive for the stored user OAuth grant.
+     */
+    post: operations["google_drive_connector_sync_api_v1_connectors_google_drive_sync_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/documents": {
     parameters: {
       query?: never;
@@ -33,7 +161,7 @@ export interface paths {
     };
     /**
      * List Documents
-     * @description Return uploaded catalog rows for the documents UI.
+     * @description Return upload and Google Drive catalog rows for the documents UI.
      */
     get: operations["list_documents_api_v1_documents_get"];
     put?: never;
@@ -244,12 +372,179 @@ export interface components {
       source_type: string;
     };
     /**
+     * ConnectorSyncOutcomeResponse
+     * @description One listed Drive document outcome from a sync run.
+     */
+    ConnectorSyncOutcomeResponse: {
+      /** Chunk Count */
+      chunk_count: number;
+      /** Error Type */
+      error_type?: string | null;
+      /** Source Id */
+      source_id: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ingested" | "skipped" | "failed";
+    };
+    /**
      * DocumentListResponse
      * @description Uploaded-document catalog for the documents UI.
      */
     DocumentListResponse: {
       /** Documents */
       documents: components["schemas"]["CatalogDocumentResponse"][];
+    };
+    /**
+     * GoogleDriveBrowseItemResponse
+     * @description One Drive picker row. ``id`` is the only identity field.
+     */
+    GoogleDriveBrowseItemResponse: {
+      /** Id */
+      id: string;
+      /** Kind */
+      kind: string;
+      /** Mime Type */
+      mime_type?: string | null;
+      /** Modified At */
+      modified_at?: string | null;
+      /** Name */
+      name: string;
+      /** Supported */
+      supported: boolean;
+    };
+    /**
+     * GoogleDriveBrowsePageResponse
+     * @description One page of Drive picker results. Tokens stay off this payload.
+     */
+    GoogleDriveBrowsePageResponse: {
+      /** Items */
+      items: components["schemas"]["GoogleDriveBrowseItemResponse"][];
+      /** Next Page Token */
+      next_page_token?: string | null;
+    };
+    /**
+     * GoogleDriveLastSyncResponse
+     * @description Last user-OAuth sync summary. Counts are honest; no secrets.
+     */
+    GoogleDriveLastSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** New Count */
+      new_count: number;
+      /** Synced At */
+      synced_at: string;
+      /** Unchanged Count */
+      unchanged_count: number;
+      /** Updated Count */
+      updated_count: number;
+    };
+    /**
+     * GoogleDriveSelectedItemRequest
+     * @description PUT selection item. ``root`` is rejected so sync cannot cover all Drive.
+     */
+    GoogleDriveSelectedItemRequest: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /**
+     * GoogleDriveSelectedItemResponse
+     * @description Saved sync root: Drive ID plus a presentation name.
+     */
+    GoogleDriveSelectedItemResponse: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /**
+     * GoogleDriveSelectionRequest
+     * @description PUT body: bounded so one request can finish inside the client timeout.
+     */
+    GoogleDriveSelectionRequest: {
+      /** Files */
+      files?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
+      /** Folders */
+      folders?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
+    };
+    /**
+     * GoogleDriveSelectionResponse
+     * @description Saved folder and exact-file roots. Unbounded so existing grants still load.
+     */
+    GoogleDriveSelectionResponse: {
+      /** Files */
+      files?: components["schemas"]["GoogleDriveSelectedItemResponse"][];
+      /** Folders */
+      folders?: components["schemas"]["GoogleDriveSelectedItemResponse"][];
+    };
+    /**
+     * GoogleDriveStatusResponse
+     * @description Google Drive connector presence and user OAuth connection (no secrets).
+     */
+    GoogleDriveStatusResponse: {
+      /** Account Email */
+      account_email?: string | null;
+      /** Available */
+      available: boolean;
+      /** Configured */
+      configured: boolean;
+      /**
+       * Connected
+       * @default false
+       */
+      connected: boolean;
+      /**
+       * Connection State
+       * @default disconnected
+       */
+      connection_state: string;
+      /**
+       * Document Count
+       * @default 0
+       */
+      document_count: number;
+      /** Folder Count */
+      folder_count?: number | null;
+      last_sync?: components["schemas"]["GoogleDriveLastSyncResponse"] | null;
+      /**
+       * Oauth Ready
+       * @default false
+       */
+      oauth_ready: boolean;
+      /**
+       * Reauthorization Required
+       * @default false
+       */
+      reauthorization_required: boolean;
+      /**
+       * Setup Required
+       * @default false
+       */
+      setup_required: boolean;
+      /** Sync Scope */
+      sync_scope?: string | null;
+    };
+    /**
+     * GoogleDriveSyncResponse
+     * @description Projected connector sync counts and per-document outcomes.
+     */
+    GoogleDriveSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** Ingested Count */
+      ingested_count: number;
+      /** Outcomes */
+      outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
+      /** Skipped Count */
+      skipped_count: number;
+    };
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
     };
     /**
      * HealthResponse
@@ -518,6 +813,19 @@ export interface components {
       /** Tool Name */
       tool_name: string;
     };
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
   };
   responses: never;
   parameters: never;
@@ -560,6 +868,420 @@ export interface operations {
       };
       /** @description Validation error */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_status_api_v1_connectors_google_drive_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveStatusResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_disconnect_api_v1_connectors_google_drive_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_items_api_v1_connectors_google_drive_items_get: {
+    parameters: {
+      query?: {
+        parent_id?: string | null;
+        kind?: string;
+        query?: string | null;
+        page_token?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveBrowsePageResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get: {
+    parameters: {
+      query?: {
+        state?: string | null;
+        code?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GoogleDriveSelectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_sync_api_v1_connectors_google_drive_sync_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSyncResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };

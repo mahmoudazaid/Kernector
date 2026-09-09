@@ -79,7 +79,6 @@ def test_get_settings_returns_real_settings_after_mocked_tests(
     monkeypatch,
 ) -> None:
     """Cache must not leak SimpleNamespace sentinels into later tests."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("HTTP_DEV_CORS", raising=False)
     settings = get_settings()
     assert isinstance(settings, Settings)

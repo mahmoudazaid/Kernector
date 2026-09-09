@@ -89,7 +89,7 @@ def _read_upload(
     responses=problem_responses(405, 500),
 )
 def list_documents(ops: DocumentOperationsDep) -> DocumentListResponse:
-    """Return uploaded catalog rows for the documents UI."""
+    """Return upload and Google Drive catalog rows for the documents UI."""
     documents = ops.list()
     return DocumentListResponse(
         documents=[catalog_document_response(doc) for doc in documents],
@@ -131,11 +131,10 @@ def replace_document(
         max_upload_bytes=ops.max_upload_bytes,
         supported_suffixes=ops.supported_suffixes,
     )
-    reference = SourceReference(
-        source_id=source_id,
-        source_type=SourceType.KNOWLEDGE_DOCUMENT,
+    document = ops.replace(
+        SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT),
+        payload,
     )
-    document = ops.replace(reference, payload)
     return catalog_document_response(document)
 
 
@@ -147,9 +146,5 @@ def replace_document(
 def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     """Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op."""
     source_id = _require_source_id(source_id)
-    reference = SourceReference(
-        source_id=source_id,
-        source_type=SourceType.KNOWLEDGE_DOCUMENT,
-    )
-    ops.delete(reference)
+    ops.delete(SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT))
     return Response(status_code=204)

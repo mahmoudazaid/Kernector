@@ -99,6 +99,10 @@ class SyncConnectorDocuments:
             raise
         except ConnectorError as error:
             _log_document_failure(document, error)
+            if previous is None:
+                self._catalog.upsert(
+                    _failed_row(document, uploaded_at=self._now(), error=error)
+                )
             return ConnectorSyncOutcome(
                 source_id=document.source_id,
                 status=ConnectorSyncStatus.FAILED,
@@ -188,6 +192,25 @@ def _is_unchanged(
         existing is not None
         and existing.status is CatalogStatus.READY
         and existing.revision == document.revision
+    )
+
+
+def _failed_row(
+    document: ConnectorDocument,
+    *,
+    uploaded_at: datetime,
+    error: BaseException,
+) -> CatalogDocument:
+    return CatalogDocument(
+        reference=document.reference,
+        file_name=document.file_name,
+        title=None,
+        content_format=None,
+        status=CatalogStatus.FAILED,
+        uploaded_at=uploaded_at,
+        chunk_count=0,
+        error=type(error).__name__,
+        revision=document.revision,
     )
 
 

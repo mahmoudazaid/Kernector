@@ -11,12 +11,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    """Neutralize `.env`, which `load_settings()` loads with `override=True`.
+    """Clear settings env so defaults are testable.
 
-    Without this, a local `.env` silently beats `monkeypatch.setenv` and these
-    tests would pass while reading a developer's real configuration (§3.1).
+    ``load_dotenv`` is stubbed in ``test/conftest.py``. This fixture only
+    removes pinned catalog/chroma keys so ``load_settings`` sees defaults.
     """
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("CHROMA_PERSIST_PATH", raising=False)
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
@@ -37,6 +36,13 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_FRONTEND_REDIRECT", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_TOKEN_PATH", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_STATE_PATH", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_STATE_TTL_SECONDS", raising=False)
     return monkeypatch
 
 
@@ -550,3 +556,74 @@ def test_load_settings_does_not_read_credential_json(
     dumped = str(settings)
     assert "DRIVE-SECRET-TOKEN-LEAK" not in dumped
     assert settings.google_drive.service_account_file == secret
+
+
+def test_google_oauth_defaults_are_absent(env: pytest.MonkeyPatch) -> None:
+    oauth = load_settings().google_oauth
+    assert oauth.client_id is None
+    assert oauth.client_secret is None
+    assert oauth.redirect_uri is None
+    assert oauth.token_path == PROJECT_ROOT / "data" / "google-oauth-connection.json"
+
+
+def test_google_oauth_absolute_token_path_is_preserved(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "drive-token.json"
+    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", str(secret))
+    oauth = load_settings().google_oauth
+    assert oauth.token_path == secret
+
+
+def test_google_oauth_in_repo_token_path_must_match_gitignore(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", "data/drive-token.json")
+    with pytest.raises(ValueError, match="google-oauth-\\*\\.json"):
+        load_settings()
+
+
+def test_google_oauth_relative_parent_token_path_is_allowed(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", "../outside-token.json")
+    oauth = load_settings().google_oauth
+    assert oauth.token_path == PROJECT_ROOT / "../outside-token.json"
+
+
+def test_google_oauth_token_path_that_resolves_into_repo_must_match_gitignore(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv(
+        "GOOGLE_OAUTH_TOKEN_PATH",
+        str(PROJECT_ROOT / ".." / PROJECT_ROOT.name / "data" / "drive-token.json"),
+    )
+    with pytest.raises(ValueError, match="google-oauth-\\*\\.json"):
+        load_settings()
+
+
+def test_google_oauth_redirect_must_be_absolute_http(env: pytest.MonkeyPatch) -> None:
+    env.setenv("GOOGLE_OAUTH_REDIRECT_URI", "/oauth/callback")
+    with pytest.raises(ValueError, match="GOOGLE_OAUTH_REDIRECT_URI"):
+        load_settings()
+
+
+def test_google_oauth_state_ttl_minimum(env: pytest.MonkeyPatch) -> None:
+    env.setenv("GOOGLE_OAUTH_STATE_TTL_SECONDS", "10")
+    with pytest.raises(ValueError, match="GOOGLE_OAUTH_STATE_TTL_SECONDS"):
+        load_settings()
+
+
+def test_load_settings_does_not_include_oauth_secret_in_repr(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_OAUTH_CLIENT_ID", "client.apps.googleusercontent.com")
+    env.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "oauth-client-secret-leak")
+    env.setenv(
+        "GOOGLE_OAUTH_REDIRECT_URI",
+        "http://127.0.0.1:8000/api/v1/connectors/google-drive/oauth/callback",
+    )
+    settings = load_settings()
+    dumped = str(settings)
+    assert settings.google_oauth.client_secret == "oauth-client-secret-leak"
+    assert "oauth-client-secret-leak" not in dumped

@@ -69,6 +69,26 @@ class OllamaNotConfiguredError(ConfigurationError):
     """``OLLAMA_BASE_URL`` is absent from runtime settings."""
 
 
+class GoogleDriveNotConfiguredError(ConfigurationError):
+    """Drive folder ID or service-account path is absent from runtime settings."""
+
+
+class GoogleDriveOAuthNotConfiguredError(ConfigurationError):
+    """User OAuth client ID, secret, or redirect URI is absent."""
+
+
+class GoogleDriveNotConnectedError(ConfigurationError):
+    """No user OAuth grant is stored for Google Drive."""
+
+
+class GoogleDriveReauthorizationRequiredError(ConfigurationError):
+    """The stored refresh token was revoked or is no longer valid."""
+
+
+class GoogleDriveSelectionRequiredError(ConfigurationError):
+    """A user grant exists but no Drive folder or file roots are saved."""
+
+
 class InsufficientEvidenceError(RuntimeError):
     """A grounded use case found no retrieval hits above the relevance threshold.
 

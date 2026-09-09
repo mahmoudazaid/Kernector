@@ -302,6 +302,38 @@
         "title": "CitationResponse",
         "type": "object"
       },
+      "ConnectorSyncOutcomeResponse": {
+        "description": "One listed Drive document outcome from a sync run.",
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "error_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Type"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["ingested", "skipped", "failed"],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": ["source_id", "status", "chunk_count"],
+        "title": "ConnectorSyncOutcomeResponse",
+        "type": "object"
+      },
       "DocumentListResponse": {
         "description": "Uploaded-document catalog for the documents UI.",
         "properties": {
@@ -315,6 +347,330 @@
         },
         "required": ["documents"],
         "title": "DocumentListResponse",
+        "type": "object"
+      },
+      "GoogleDriveBrowseItemResponse": {
+        "description": "One Drive picker row. ``id`` is the only identity field.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "name", "kind", "supported"],
+        "title": "GoogleDriveBrowseItemResponse",
+        "type": "object"
+      },
+      "GoogleDriveBrowsePageResponse": {
+        "description": "One page of Drive picker results. Tokens stay off this payload.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveBrowseItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_page_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Page Token"
+          }
+        },
+        "required": ["items"],
+        "title": "GoogleDriveBrowsePageResponse",
+        "type": "object"
+      },
+      "GoogleDriveLastSyncResponse": {
+        "description": "Last user-OAuth sync summary. Counts are honest; no secrets.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "new_count": {
+            "title": "New Count",
+            "type": "integer"
+          },
+          "synced_at": {
+            "title": "Synced At",
+            "type": "string"
+          },
+          "unchanged_count": {
+            "title": "Unchanged Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "synced_at",
+          "new_count",
+          "updated_count",
+          "unchanged_count",
+          "failed_count"
+        ],
+        "title": "GoogleDriveLastSyncResponse",
+        "type": "object"
+      },
+      "GoogleDriveSelectedItemRequest": {
+        "description": "PUT selection item. ``root`` is rejected so sync cannot cover all Drive.",
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["id", "name"],
+        "title": "GoogleDriveSelectedItemRequest",
+        "type": "object"
+      },
+      "GoogleDriveSelectedItemResponse": {
+        "description": "Saved sync root: Drive ID plus a presentation name.",
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["id", "name"],
+        "title": "GoogleDriveSelectedItemResponse",
+        "type": "object"
+      },
+      "GoogleDriveSelectionRequest": {
+        "description": "PUT body: bounded so one request can finish inside the client timeout.",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemRequest"
+            },
+            "maxItems": 100,
+            "title": "Files",
+            "type": "array"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemRequest"
+            },
+            "maxItems": 100,
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "title": "GoogleDriveSelectionRequest",
+        "type": "object"
+      },
+      "GoogleDriveSelectionResponse": {
+        "description": "Saved folder and exact-file roots. Unbounded so existing grants still load.",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
+            },
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "title": "GoogleDriveSelectionResponse",
+        "type": "object"
+      },
+      "GoogleDriveStatusResponse": {
+        "description": "Google Drive connector presence and user OAuth connection (no secrets).",
+        "properties": {
+          "account_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Email"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "connected": {
+            "default": false,
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "connection_state": {
+            "default": "disconnected",
+            "title": "Connection State",
+            "type": "string"
+          },
+          "document_count": {
+            "default": 0,
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "folder_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Count"
+          },
+          "last_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoogleDriveLastSyncResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oauth_ready": {
+            "default": false,
+            "title": "Oauth Ready",
+            "type": "boolean"
+          },
+          "reauthorization_required": {
+            "default": false,
+            "title": "Reauthorization Required",
+            "type": "boolean"
+          },
+          "setup_required": {
+            "default": false,
+            "title": "Setup Required",
+            "type": "boolean"
+          },
+          "sync_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Scope"
+          }
+        },
+        "required": ["configured", "available"],
+        "title": "GoogleDriveStatusResponse",
+        "type": "object"
+      },
+      "GoogleDriveSyncResponse": {
+        "description": "Projected connector sync counts and per-document outcomes.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "ingested_count": {
+            "title": "Ingested Count",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorSyncOutcomeResponse"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ingested_count",
+          "skipped_count",
+          "failed_count",
+          "outcomes"
+        ],
+        "title": "GoogleDriveSyncResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "HealthResponse": {
@@ -979,6 +1335,42 @@
         "required": ["tool_name", "result_chars"],
         "title": "ToolUsedResponse",
         "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError",
+        "type": "object"
       }
     }
   },
@@ -1059,9 +1451,544 @@
         "tags": ["chat"]
       }
     },
+    "/api/v1/connectors/google-drive": {
+      "delete": {
+        "description": "Revoke and delete the stored user grant. Indexed documents stay.",
+        "operationId": "google_drive_connector_disconnect_api_v1_connectors_google_drive_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Connector Disconnect",
+        "tags": ["connectors"]
+      },
+      "get": {
+        "description": "Return presentation-safe Drive SA flags and user OAuth connection.",
+        "operationId": "google_drive_connector_status_api_v1_connectors_google_drive_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Connector Status",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/items": {
+      "get": {
+        "description": "List Drive folders or files for the content picker. No tokens on the wire.",
+        "operationId": "google_drive_connector_items_api_v1_connectors_google_drive_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "folders",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveBrowsePageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Google Drive Connector Items",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/oauth/callback": {
+      "get": {
+        "description": "Validate state, exchange the code server-side, and return to the Hub.",
+        "operationId": "google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Oauth Callback",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/oauth/start": {
+      "get": {
+        "description": "Issue CSRF state and redirect the browser to Google, or back to the Hub.",
+        "operationId": "google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Oauth Start",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/selection": {
+      "get": {
+        "description": "Return saved folder and file roots (Drive IDs and names only).",
+        "operationId": "google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Google Drive Connector Get Selection",
+        "tags": ["connectors"]
+      },
+      "put": {
+        "description": "Validate access and atomically replace the saved Drive selection.",
+        "operationId": "google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleDriveSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Google Drive Connector Put Selection",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/google-drive/sync": {
+      "post": {
+        "description": "Synchronize Drive for the stored user OAuth grant.",
+        "operationId": "google_drive_connector_sync_api_v1_connectors_google_drive_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Google Drive Connector Sync",
+        "tags": ["connectors"]
+      }
+    },
     "/api/v1/documents": {
       "get": {
-        "description": "Return uploaded catalog rows for the documents UI.",
+        "description": "Return upload and Google Drive catalog rows for the documents UI.",
         "operationId": "list_documents_api_v1_documents_get",
         "responses": {
           "200": {

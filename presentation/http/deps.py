@@ -7,12 +7,19 @@ from typing import Annotated, Protocol
 
 from fastapi import Depends
 
+from application.contracts import ConnectorSyncResponse
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
+    GoogleDriveBrowsePage,
+    GoogleDriveSelection,
+    GoogleDriveSelectedItem,
+    GoogleDriveStatus,
     GroundedAsk,
     Settings,
+    browse_google_drive_items,
     build_chat_model,
+    build_document_catalog,
     build_prompt_repository,
     build_probe_ollama_status,
     build_runtime_settings,
@@ -20,12 +27,19 @@ from composition import (
     build_vector_store,
     create_uploaded_document,
     delete_uploaded_document,
+    complete_google_drive_oauth,
+    disconnect_google_drive_oauth,
+    get_google_drive_selection,
+    google_drive_status,
     list_uploaded_documents,
     load_runtime_settings,
+    put_google_drive_selection,
     replace_uploaded_document,
+    start_google_drive_oauth,
+    sync_google_drive_oauth,
 )
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
-from domain.ports import PromptRepository, VectorStore
+from domain.ports import DocumentCatalog, PromptRepository, VectorStore
 from presentation.http.schemas import ChatRuntimeRequest
 
 
@@ -43,6 +57,12 @@ def get_settings() -> Settings:
 def get_vector_store() -> VectorStore:
     """Process-cached vector store (hybrid BM25 hydrate once per process)."""
     return build_vector_store(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_document_catalog() -> DocumentCatalog:
+    """Process-cached document catalog (one SQLite/JSON adapter per process)."""
+    return build_document_catalog(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -117,28 +137,42 @@ def get_document_operations(
 
     The store is not built here — ``list`` must work without embedding
     credentials. Mutating operations resolve it on first use via the
-    process-wide ``get_vector_store`` cache.
+    process-wide ``get_vector_store`` cache. The process-cached catalog is
+    resolved on first use so a missing catalog still maps to
+    ``DocumentOperationError`` instead of failing dependency resolution.
     """
 
     def create(payload: UploadPayload) -> CatalogDocument:
         return create_uploaded_document(
-            settings, payload, vector_store=get_vector_store()
+            settings,
+            payload,
+            catalog=get_document_catalog(),
+            vector_store=get_vector_store(),
         )
 
     def replace(
         reference: SourceReference, payload: UploadPayload
     ) -> CatalogDocument:
         return replace_uploaded_document(
-            settings, reference, payload, vector_store=get_vector_store()
+            settings,
+            reference,
+            payload,
+            catalog=get_document_catalog(),
+            vector_store=get_vector_store(),
         )
 
     def delete(reference: SourceReference) -> None:
         delete_uploaded_document(
-            settings, reference, vector_store=get_vector_store()
+            settings,
+            reference,
+            catalog=get_document_catalog(),
+            vector_store=get_vector_store(),
         )
 
     return DocumentOperations(
-        list=lambda: list_uploaded_documents(settings),
+        list=lambda: list_uploaded_documents(
+            settings, catalog=get_document_catalog()
+        ),
         create=create,
         replace=replace,
         delete=delete,
@@ -147,10 +181,152 @@ def get_document_operations(
     )
 
 
+def get_google_drive_status(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GoogleDriveStatus:
+    """Report Drive configuration presence and extra availability."""
+    return google_drive_status(
+        settings, catalog_factory=get_document_catalog
+    )
+
+
+def get_google_drive_sync(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], ConnectorSyncResponse]:
+    """Return a Drive sync callable that builds the vector store lazily.
+
+    The store is not built here — unconfigured POST must 409 without embedding
+    credentials. After the not-connected / reauth / selection guards,
+    ``sync_google_drive_oauth`` reuses the process-cached DualWrite/BM25 store.
+    """
+
+    def sync() -> ConnectorSyncResponse:
+        return sync_google_drive_oauth(
+            settings,
+            catalog_factory=get_document_catalog,
+            vector_store_factory=get_vector_store,
+        )
+
+    return sync
+
+
+def get_google_drive_oauth_start(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], str]:
+    """Return a callable that issues CSRF state and builds Google's auth URL."""
+
+    def start() -> str:
+        return start_google_drive_oauth(settings)
+
+    return start
+
+
+def get_google_drive_oauth_callback(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[str | None, str | None, str | None], str]:
+    """Return a callable that completes the OAuth callback."""
+
+    def complete(
+        state: str | None, code: str | None, error: str | None
+    ) -> str:
+        return complete_google_drive_oauth(
+            settings, state=state, code=code, error=error
+        )
+
+    return complete
+
+
+def get_google_drive_disconnect(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], None]:
+    """Return a callable that revokes and deletes the stored user grant."""
+
+    def disconnect() -> None:
+        disconnect_google_drive_oauth(settings)
+
+    return disconnect
+
+
+def get_google_drive_browse(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GoogleDriveBrowsePage]:
+    """Return a Drive picker listing callable bound to this process."""
+
+    def browse(
+        *,
+        parent_id: str | None = None,
+        kind: str = "folders",
+        query: str | None = None,
+        page_token: str | None = None,
+    ) -> GoogleDriveBrowsePage:
+        return browse_google_drive_items(
+            settings,
+            parent_id=parent_id,
+            kind=kind,
+            query=query,
+            page_token=page_token,
+        )
+
+    return browse
+
+
+def get_google_drive_selection_read(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], GoogleDriveSelection]:
+    """Return a callable that loads the saved Drive selection."""
+
+    def load() -> GoogleDriveSelection:
+        return get_google_drive_selection(settings)
+
+    return load
+
+
+def get_google_drive_selection_write(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GoogleDriveSelection]:
+    """Return a callable that validates and replaces the saved Drive selection."""
+
+    def save(
+        *,
+        folders: tuple[GoogleDriveSelectedItem, ...],
+        files: tuple[GoogleDriveSelectedItem, ...],
+    ) -> GoogleDriveSelection:
+        return put_google_drive_selection(
+            settings, folders=folders, files=files
+        )
+
+    return save
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
 AskFactoryDep = Annotated[AskFactory, Depends(get_ask_factory)]
 DocumentOperationsDep = Annotated[
     DocumentOperations, Depends(get_document_operations)
+]
+GoogleDriveStatusDep = Annotated[
+    GoogleDriveStatus, Depends(get_google_drive_status)
+]
+GoogleDriveSyncDep = Annotated[
+    Callable[[], ConnectorSyncResponse], Depends(get_google_drive_sync)
+]
+GoogleDriveOAuthStartDep = Annotated[
+    Callable[[], str], Depends(get_google_drive_oauth_start)
+]
+GoogleDriveOAuthCallbackDep = Annotated[
+    Callable[[str | None, str | None, str | None], str],
+    Depends(get_google_drive_oauth_callback),
+]
+GoogleDriveDisconnectDep = Annotated[
+    Callable[[], None], Depends(get_google_drive_disconnect)
+]
+GoogleDriveBrowseDep = Annotated[
+    Callable[..., GoogleDriveBrowsePage], Depends(get_google_drive_browse)
+]
+GoogleDriveSelectionReadDep = Annotated[
+    Callable[[], GoogleDriveSelection], Depends(get_google_drive_selection_read)
+]
+GoogleDriveSelectionWriteDep = Annotated[
+    Callable[..., GoogleDriveSelection], Depends(get_google_drive_selection_write)
 ]

@@ -31,7 +31,6 @@ from presentation.http.errors import problem_from_exception
 
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
     monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "catalog" / "uploads.json"))
@@ -73,7 +72,6 @@ def test_build_document_catalog_uses_sql_path_and_workspace(
     from domain.knowledge import CatalogDocument, CatalogStatus, SourceType
     from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
     monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
@@ -100,6 +98,44 @@ def test_build_document_catalog_uses_sql_path_and_workspace(
     sql_path = settings.document_catalog.sql_path
     assert SqlDocumentCatalog(sql_path, "ws-a").get(document.reference) == document
     assert SqlDocumentCatalog(sql_path, "ws-b").all() == ()
+
+
+def test_build_document_catalog_maps_catalog_error(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.catalog.errors import CatalogError
+
+    def boom(_path: Path) -> object:
+        raise CatalogError("corrupt catalog")
+
+    monkeypatch.setattr(composition_container, "JsonDocumentCatalog", boom)
+    with pytest.raises(DocumentOperationError, match="corrupt catalog"):
+        composition_container.build_document_catalog(settings)
+
+
+def test_build_document_catalog_maps_oserror(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(_path: Path) -> object:
+        raise OSError("read-only catalog")
+
+    monkeypatch.setattr(composition_container, "JsonDocumentCatalog", boom)
+    with pytest.raises(DocumentOperationError, match="read-only catalog"):
+        composition_container.build_document_catalog(settings)
+
+
+def test_build_document_catalog_requires_sql_workspace(settings: Settings) -> None:
+    sql_settings = replace(
+        settings,
+        document_catalog=replace(
+            settings.document_catalog,
+            backend="sql",
+            workspace_id=None,
+            sql_path=settings.document_catalog.sql_path,
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        composition_container.build_document_catalog(sql_settings)
 
 
 def test_list_create_replace_delete_round_trip(
@@ -207,6 +243,41 @@ def test_replace_unknown_becomes_document_operation_error(
             settings,
             missing,
             UploadPayload(file_name="x.md", content=b"# x\n"),
+        )
+    assert isinstance(raised.value.__cause__, UnknownDocumentError)
+
+
+def test_replace_google_drive_row_is_unknown(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    catalog = composition_container.build_document_catalog(settings)
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("drive-1", SourceType.GOOGLE_DRIVE),
+            file_name="notes.md",
+            title="notes",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+        )
+    )
+    with pytest.raises(DocumentOperationError) as raised:
+        composition_container.replace_uploaded_document(
+            settings,
+            SourceReference("drive-1", SourceType.KNOWLEDGE_DOCUMENT),
+            UploadPayload(file_name="x.md", content=b"# x\n" * 20),
         )
     assert isinstance(raised.value.__cause__, UnknownDocumentError)
 

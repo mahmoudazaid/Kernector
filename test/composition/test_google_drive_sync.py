@@ -87,7 +87,6 @@ class RecordingStore:
 
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
@@ -316,7 +315,6 @@ def test_per_document_failures_stay_inside_the_response(
 def test_load_runtime_settings_still_works_without_drive_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)

@@ -5,11 +5,13 @@ from typing import Protocol
 
 from domain.knowledge import (
     CatalogDocument,
+    CatalogStatus,
     ConnectorDocument,
     EmbeddedChunk,
     ScoredChunk,
     SourceDocument,
     SourceReference,
+    SourceType,
     UploadPayload,
     Vector,
 )
@@ -203,6 +205,23 @@ class DocumentCatalog(Protocol):
 
     def delete(self, reference: SourceReference) -> None:
         """Remove the record for ``reference``. Missing references are a no-op."""
+
+    def count(
+        self,
+        *,
+        source_type: SourceType | None = None,
+        status: CatalogStatus | None = None,
+    ) -> int:
+        """Return how many records match the optional filters.
+
+        Args:
+            source_type (SourceType | None): Limit to this source, or all sources.
+            status (CatalogStatus | None): Limit to this status, or all statuses.
+
+        Returns:
+            int: Matching catalog row count.
+        """
+        ...
 
 
 class DocumentExtractor(Protocol):
