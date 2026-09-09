@@ -35,14 +35,71 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
     monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "catalog" / "uploads.json"))
+    monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
+    monkeypatch.delenv("DOCUMENT_CATALOG_SQL_PATH", raising=False)
+    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     return load_settings()
 
 
-def test_build_document_catalog_uses_settings_path(settings: Settings) -> None:
+def test_build_document_catalog_uses_json_path(settings: Settings) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument, CatalogStatus, SourceType
+    from infrastructure.catalog.json_catalog import JsonDocumentCatalog
+
     catalog = composition_container.build_document_catalog(settings)
-    assert catalog.all() == ()
-    assert settings.document_catalog.path == settings.document_catalog.path
+    assert type(catalog) is JsonDocumentCatalog
+    document = CatalogDocument(
+        reference=SourceReference("id-json", SourceType.KNOWLEDGE_DOCUMENT),
+        file_name="guide.md",
+        title="Guide",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=1,
+        error=None,
+    )
+    catalog.upsert(document)
+    persisted = JsonDocumentCatalog(settings.document_catalog.path)
+    assert persisted.get(document.reference) == document
+
+
+def test_build_document_catalog_uses_sql_path_and_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument, CatalogStatus, SourceType
+    from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
+
+    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
+    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-a")
+    monkeypatch.setenv(
+        "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog" / "catalog.sqlite")
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    settings = load_settings()
+
+    catalog = composition_container.build_document_catalog(settings)
+    assert type(catalog) is SqlDocumentCatalog
+    document = CatalogDocument(
+        reference=SourceReference("id-sql", SourceType.KNOWLEDGE_DOCUMENT),
+        file_name="guide.md",
+        title="Guide",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=1,
+        error=None,
+    )
+    catalog.upsert(document)
+    sql_path = settings.document_catalog.sql_path
+    assert SqlDocumentCatalog(sql_path, "ws-a").get(document.reference) == document
+    assert SqlDocumentCatalog(sql_path, "ws-b").all() == ()
 
 
 def test_list_create_replace_delete_round_trip(
