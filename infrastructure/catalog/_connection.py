@@ -13,21 +13,16 @@ SELECT_COLUMNS = (
     "uploaded_at, chunk_count, error, revision"
 )
 _COLUMN_NAMES = tuple(part.strip() for part in SELECT_COLUMNS.split(","))
+_CONFLICT_KEY = ("workspace_id", "source_type", "source_id")
+_UPDATABLE_COLUMNS = tuple(name for name in _COLUMN_NAMES if name not in _CONFLICT_KEY)
 _UPSERT_SQL = f"""
 INSERT INTO catalog_documents (
     workspace_id, {SELECT_COLUMNS}
 ) VALUES (
     :workspace_id, {", ".join(f":{name}" for name in _COLUMN_NAMES)}
 )
-ON CONFLICT (workspace_id, source_type, source_id) DO UPDATE SET
-    file_name = excluded.file_name,
-    title = excluded.title,
-    content_format = excluded.content_format,
-    status = excluded.status,
-    uploaded_at = excluded.uploaded_at,
-    chunk_count = excluded.chunk_count,
-    error = excluded.error,
-    revision = excluded.revision
+ON CONFLICT ({", ".join(_CONFLICT_KEY)}) DO UPDATE SET
+    {", ".join(f"{name} = excluded.{name}" for name in _UPDATABLE_COLUMNS)}
 """
 
 
@@ -76,8 +71,10 @@ def set_journal_mode(connection: sqlite3.Connection) -> None:
     try:
         connection.execute(f"PRAGMA journal_mode = {journal_mode()}")
     except sqlite3.OperationalError as error:
-        message = str(error).lower()
-        if "locked" not in message and "busy" not in message:
+        if error.sqlite_errorcode not in (
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+        ):
             raise
 
 

@@ -143,20 +143,53 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
     assert catalog.all() == ()
 
 
-def test_set_journal_mode_tolerates_locked_transition() -> None:
+def test_set_journal_mode_tolerates_locked_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from infrastructure.catalog._connection import set_journal_mode
 
-    class _Locked:
-        def execute(self, sql: str, parameters: object = ()) -> object:
-            raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(
+        "infrastructure.catalog._connection.journal_mode", lambda: "WAL"
+    )
+    path = tmp_path / "busy.sqlite"
+    bootstrap = sqlite3.connect(path)
+    bootstrap.execute("CREATE TABLE t (x)")
+    bootstrap.close()
+    holder = sqlite3.connect(path, isolation_level=None)
+    holder.execute("BEGIN")
+    holder.execute("SELECT * FROM t").fetchall()
+    victim = sqlite3.connect(path, isolation_level=None)
+    victim.execute("PRAGMA busy_timeout = 100")
+    try:
+        with pytest.raises(sqlite3.OperationalError) as raised:
+            victim.execute("PRAGMA journal_mode = WAL")
+        assert raised.value.sqlite_errorname == "SQLITE_BUSY"
+        set_journal_mode(victim)
+    finally:
+        holder.rollback()
+        holder.close()
+        victim.close()
 
-    class _Other:
-        def execute(self, sql: str, parameters: object = ()) -> object:
-            raise sqlite3.OperationalError("disk I/O error")
 
-    set_journal_mode(_Locked())  # type: ignore[arg-type]
-    with pytest.raises(sqlite3.OperationalError, match="disk I/O"):
-        set_journal_mode(_Other())  # type: ignore[arg-type]
+def test_set_journal_mode_reraises_non_busy_operational_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.catalog._connection import set_journal_mode
+
+    monkeypatch.setattr(
+        "infrastructure.catalog._connection.journal_mode", lambda: "WAL"
+    )
+    path = tmp_path / "readonly.sqlite"
+    bootstrap = sqlite3.connect(path)
+    bootstrap.execute("CREATE TABLE t (x)")
+    bootstrap.close()
+    victim = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        with pytest.raises(sqlite3.OperationalError) as raised:
+            set_journal_mode(victim)
+        assert raised.value.sqlite_errorcode == sqlite3.SQLITE_READONLY
+    finally:
+        victim.close()
 
 
 def test_non_sqlite_file_reports_catalog_error_not_version_zero(
