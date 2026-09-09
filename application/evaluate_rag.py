@@ -24,7 +24,6 @@ from application.rag_judge_contracts import (
     RagJudgeFingerprints,
     RagJudgeReport,
     RagJudgeThresholds,
-    CASE_ERROR_TYPES,
 )
 from application.rag_judge_policy import (
     DEFAULT_ALLOWED_DROP,
@@ -36,19 +35,20 @@ from application.rag_judge_policy import (
     build_metric_messages,
 )
 from domain.errors import ProviderError
-from domain.knowledge import SourceType
+from domain.knowledge import STORY_SOURCE_TYPES, SourceType
 from domain.ports import ChatModel
 
 _WELL_KNOWN_SOURCE_TYPES = frozenset(
     {
         SourceType.KNOWLEDGE_DOCUMENT,
         SourceType.GOOGLE_DRIVE,
-        "story",
-        "user_story",
+        *STORY_SOURCE_TYPES,
         "srs",
         "test",
     }
 )
+
+_OBSERVATION_ERROR_TYPES = frozenset({"observation_integrity", "judge_error"})
 
 _LIMITATIONS: tuple[str, ...] = (
     "Judge scores are model opinions, not ground truth.",
@@ -315,69 +315,90 @@ def parse_judge_output(metric_id: str, raw: str) -> MetricResult:
 
 
 def _extract_json_object(raw: str) -> object:
+    candidates = _candidate_texts(raw)
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        try:
+            return _verdict_object(candidate, require_score=True)
+        except json.JSONDecodeError as error:
+            last_error = error
+    for candidate in candidates:
+        try:
+            return _verdict_object(candidate, require_score=False)
+        except json.JSONDecodeError as error:
+            last_error = error
+    if last_error is not None:
+        raise last_error
+    raise json.JSONDecodeError("no judge verdict object", raw, 0)
+
+
+def _candidate_texts(raw: str) -> list[str]:
     stripped = raw.strip()
-    positions: list[int] = []
+    bodies: list[str] = []
+    opens: list[int] = []
     index = 0
     while True:
         pos = stripped.find("```", index)
         if pos < 0:
             break
-        positions.append(pos)
-        index = pos + 3
-    candidates: list[str] = []
-    for close_index in range(len(positions) - 1, 0, -1):
-        close = positions[close_index]
-        for open_index in range(close_index - 1, -1, -1):
-            body = stripped[positions[open_index] + 3 : close].strip()
+        if opens:
+            open_pos = opens.pop()
+            body = stripped[open_pos + 3 : pos].strip()
             if body.lower().startswith("json"):
                 rest = body[4:]
                 if not rest or rest[0].isspace():
                     body = rest.lstrip()
+            bodies.append(body)
+        else:
+            opens.append(pos)
+        index = pos + 3
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for body in reversed(bodies):
+        if body and body not in seen:
+            seen.add(body)
             candidates.append(body)
-    candidates.append(stripped)
-    last_error: json.JSONDecodeError | None = None
-    for candidate in candidates:
-        try:
-            return _verdict_object(candidate)
-        except json.JSONDecodeError as error:
-            last_error = error
-    if last_error is not None:
-        raise last_error
-    raise json.JSONDecodeError("no judge verdict object", stripped, 0)
+    if stripped not in seen:
+        candidates.append(stripped)
+    return candidates
 
 
-def _verdict_object(text: str) -> object:
+def _verdict_object(text: str, *, require_score: bool) -> object:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        payload = None
+        pass
     else:
-        if isinstance(payload, dict):
+        if isinstance(payload, dict) and (
+            not require_score or "score" in payload
+        ):
             return payload
     decoder = json.JSONDecoder()
-    scored: object | None = None
-    for start in range(len(text) - 1, -1, -1):
-        if text[start] != "{":
-            continue
+    fallback: object | None = None
+    start = text.rfind("{")
+    while start >= 0:
         try:
             candidate, _end = decoder.raw_decode(text, start)
         except json.JSONDecodeError:
+            start = text.rfind("{", 0, start)
             continue
-        if not isinstance(candidate, dict):
-            continue
-        if "score" in candidate:
-            return candidate
-        if scored is None:
-            scored = candidate
-    if scored is not None:
-        return scored
+        if isinstance(candidate, dict):
+            if "score" in candidate:
+                return candidate
+            if not require_score and fallback is None:
+                fallback = candidate
+        start = text.rfind("{", 0, start)
+    if fallback is not None:
+        return fallback
     raise json.JSONDecodeError("no judge verdict object", text, 0)
 
 
 def _observation_error_type(code: object) -> str:
-    if isinstance(code, str) and code in CASE_ERROR_TYPES:
+    if isinstance(code, str) and code in _OBSERVATION_ERROR_TYPES:
         return code
-    return "judge_error"
+    raise ApplicationValidationError(
+        "observation error_type must be observation_integrity or judge_error"
+    )
 
 
 def _diagnostics(
@@ -481,7 +502,10 @@ def _gate(
         return True, False, "failed"
     if any(item.error_type == "observation_integrity" for item in results):
         return True, False, "failed"
-    assert baseline is not None
+    if baseline is None:
+        raise ApplicationValidationError(
+            "compared baseline status requires a baseline"
+        )
     drop = min(thresholds.allowed_drop, baseline.allowed_drop)
     for metric_id, aggregate in aggregates.items():
         if aggregate.mean is None:

@@ -35,11 +35,11 @@
         "citation_completeness"
       ],
       "properties": {
-        "context_relevance": { "type": "number" },
-        "faithfulness": { "type": "number" },
-        "answer_correctness": { "type": "number" },
-        "citation_accuracy": { "type": "number" },
-        "citation_completeness": { "type": "number" }
+        "context_relevance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "faithfulness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "answer_correctness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "citation_accuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "citation_completeness": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "fingerprints": {

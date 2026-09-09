@@ -18,6 +18,7 @@ from application.evaluation_contracts import eval_report_to_json, eval_report_to
 from application.rag_judge_contracts import RagJudgeReport
 from composition.errors import KnowledgeLoadError
 from composition.evaluate import (
+    LIVE_JUDGE_PATH_FAILED,
     JudgeSkipped,
     build_evaluate_knowledge,
     load_eval_cases,
@@ -100,7 +101,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(error), file=sys.stderr)
         return 2
     except (ProviderError, VectorStoreError, DomainValidationError):
-        print("live Judge answer path failed", file=sys.stderr)
+        print(LIVE_JUDGE_PATH_FAILED, file=sys.stderr)
         return 2
 
     judge_json_path = output_dir / "rag-judge-report.json"

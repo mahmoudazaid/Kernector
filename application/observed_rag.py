@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from application.contracts import AskRequest, AskResponse, Citation, RunMeta
 from application.errors import ApplicationValidationError, ObservationIntegrityError
 from application.evaluation_contracts import EvalCase
-from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from domain.knowledge import ScoredChunk
 
 
@@ -170,14 +169,12 @@ class ObservedRagRunner:
                     f"insufficient outcome must not carry generation_hits "
                     f"for case {case.id}"
                 )
-            if response.answer != INSUFFICIENT_KNOWLEDGE_ANSWER:
-                raise ObservationIntegrityError(
-                    f"insufficient outcome requires the insufficient answer "
-                    f"for case {case.id}"
-                )
             contexts: tuple[ScoredChunk, ...] = ()
             reported = None if response.run is None else response.run.hit_count
-            shared = reported == 0
+            if reported is not None and reported != 0:
+                raise ObservationIntegrityError(
+                    f"insufficient outcome hit_count must be 0 for case {case.id}"
+                )
         else:
             if not generation and recorded:
                 raise ObservationIntegrityError(
@@ -190,7 +187,10 @@ class ObservedRagRunner:
                 )
             contexts = generation
             reported = None if response.run is None else response.run.hit_count
-            shared = reported == len(contexts)
+            if reported is not None and reported != len(contexts):
+                raise ObservationIntegrityError(
+                    f"hit_count does not match generation_hits for case {case.id}"
+                )
         return RagObservation(
             case_id=case.id,
             query=case.query or "",
@@ -199,7 +199,7 @@ class ObservedRagRunner:
             retrieved_contexts=contexts,
             run=response.run,
             answer_model=self._answer_model,
-            shared_retrieve_hits=shared,
+            shared_retrieve_hits=True,
         )
 
 

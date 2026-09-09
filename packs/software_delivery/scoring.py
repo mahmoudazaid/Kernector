@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 
-from domain.knowledge import SourceReference
+from domain.knowledge import STORY_SOURCE_TYPES, SourceReference
 from packs.software_delivery.contracts import (
     RiskAssessmentRequest,
     RiskAssessmentResult,
@@ -13,8 +13,6 @@ from packs.software_delivery.contracts import (
     RiskFactor,
 )
 from packs.software_delivery.errors import RiskScoreValidationError
-
-STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
 
 _FACTOR_WEIGHTS: dict[str, int] = {
     "missing_acceptance_criteria": 25,

@@ -42,7 +42,7 @@ from application.rag_judge_contracts import (
     RagJudgeReport,
     RagJudgeThresholds,
 )
-from application.rag_judge_policy import DEFAULT_ALLOWED_DROP, METRIC_IDS, PROMPT_VERSION
+from application.rag_judge_policy import METRIC_IDS, PROMPT_VERSION
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition.container import (
@@ -74,6 +74,8 @@ from infrastructure.eval.corpus import EvalCorpusError, load_eval_corpus
 from infrastructure.eval.deterministic_chat import DeterministicChatModel
 from infrastructure.eval.identity_rewriter import IdentityQueryRewriter
 from infrastructure.lexical.bm25 import Bm25LexicalIndex
+
+LIVE_JUDGE_PATH_FAILED = "live Judge answer path failed"
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = _PROJECT_ROOT / "data" / "eval"
@@ -475,7 +477,7 @@ def live_observed_rag_session(
     try:
         chat = chat_model if chat_model is not None else build_chat_model(settings)
     except ProviderError as error:
-        raise ConfigurationError("live Judge answer path failed") from error
+        raise ConfigurationError(LIVE_JUDGE_PATH_FAILED) from error
     reject_deterministic_answer_model(chat)
     production_chroma = settings.chroma.persist_path.resolve()
     with TemporaryDirectory(prefix="kernector-eval-chroma-") as raw_tmp:
@@ -524,7 +526,7 @@ def live_observed_rag_session(
                 ),
             )
         except (ProviderError, VectorStoreError) as error:
-            raise ConfigurationError("live Judge answer path failed") from error
+            raise ConfigurationError(LIVE_JUDGE_PATH_FAILED) from error
         yield LiveObservedRagSession(
             runner=runner,
             answer_meta=answer_meta,
@@ -603,19 +605,19 @@ def run_rag_judge(
 
     Raises:
         JudgeSkipped: ``auto`` cannot construct live answer RAG and Judge.
-        ConfigurationError: Live construction failed.
+        ConfigurationError: Live construction failed (including wrapped
+            ``ProviderError`` / ``VectorStoreError`` with
+            ``LIVE_JUDGE_PATH_FAILED``).
         ApplicationValidationError: Baseline file is malformed.
+        DomainValidationError: Escapes only if not caught per case; CLI maps it
+            to ``LIVE_JUDGE_PATH_FAILED``.
     """
     if settings is None:
         settings = load_runtime_settings()
     dataset = cases_path if cases_path is not None else EVAL_CASES_PATH
     corpus = corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
     baseline = load_rag_judge_baseline(baseline_path)
-    thresholds = RagJudgeThresholds(
-        allowed_drop=(
-            baseline.allowed_drop if baseline is not None else DEFAULT_ALLOWED_DROP
-        )
-    )
+    thresholds = RagJudgeThresholds()
     if mode == "auto":
         if not live_answer_config_ready(settings) or not judge_config_ready(settings):
             raise JudgeSkipped(

@@ -181,7 +181,7 @@ def test_insufficient_with_generation_hits_raises() -> None:
         runner.execute(_ask_case())
 
 
-def test_shared_retrieve_hits_false_when_hit_count_mismatches() -> None:
+def test_hit_count_mismatch_raises_observation_integrity() -> None:
     hits = (_hit("doc-a"),)
     rewrite = _FakeRewrite(hits)
     recorder = RetrievalRecorder()
@@ -197,10 +197,30 @@ def test_shared_retrieve_hits_false_when_hit_count_mismatches() -> None:
         AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
     )
 
+    with pytest.raises(ObservationIntegrityError, match="hit_count"):
+        runner.execute(_ask_case())
+
+
+def test_missing_hit_count_still_shares_when_generation_matches() -> None:
+    hits = (_hit("doc-a"),)
+    rewrite = _FakeRewrite(hits)
+    recorder = RetrievalRecorder()
+    recording = RecordingRewriteAndRetrieve(rewrite, recorder)
+    response = AskResponse(
+        answer="Use backoff.",
+        run=RunMeta(outcome="success"),
+        generation_hits=hits,
+    )
+    runner = ObservedRagRunner(
+        _AskThatRetrieves(recording, response),
+        recorder,
+        AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
+    )
+
     observation = runner.execute(_ask_case())
 
     assert observation.retrieved_contexts == hits
-    assert observation.shared_retrieve_hits is False
+    assert observation.shared_retrieve_hits is True
 
 
 def test_dropped_generation_hits_raise() -> None:

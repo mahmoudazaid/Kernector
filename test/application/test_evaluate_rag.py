@@ -2,48 +2,40 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-
 import pytest
 
-from application.contracts import AskResponse, Citation, RunMeta
 from application.errors import ApplicationValidationError
 from application.evaluate_rag import (
-    EvaluateRag,
     parse_judge_output,
     parse_rag_judge_baseline,
     rag_judge_report_to_csv,
+    _WELL_KNOWN_SOURCE_TYPES,
 )
 from application.evaluation_contracts import EvalCase, EvalCitationLabel
-from application.observed_rag import AnswerModelMetadata, RagObservation
 from application.rag_judge_contracts import (
     CSV_HEADERS,
     RAG_JUDGE_BASELINE_SCHEMA_VERSION,
-    AnswerRunMetadata,
-    JudgeMetadata,
     RagJudgeBaseline,
     RagJudgeFingerprints,
     RagJudgeThresholds,
 )
 from application.rag_judge_policy import METRIC_IDS, PROMPT_VERSION
 from domain.errors import ProviderError
-from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
+from domain.knowledge import STORY_SOURCE_TYPES
 from domain.models import AskResult
-from test.fixtures import rag_judge as _fx
-
-_hit = _fx.hit
-_citation = _fx.citation
-_fingerprints = _fx.fingerprints
-_fingerprint_payload = _fx.fingerprint_payload
-_judge_meta = _fx.judge_meta
-_answer_meta = _fx.answer_meta
-_baseline = _fx.make_baseline
-_ask_case = _fx.ask_case
-_observation = _fx.observation
-_ScriptedJudge = _fx.ScriptedJudge
-_coverage_cases = _fx.coverage_cases
-_observations_for = _fx.observations_for
-_execute = _fx.execute
+from test.fixtures.rag_judge import (
+    ScriptedJudge as _ScriptedJudge,
+    ask_case as _ask_case,
+    citation as _citation,
+    coverage_cases as _coverage_cases,
+    execute as _execute,
+    fingerprint_payload as _fingerprint_payload,
+    fingerprints as _fingerprints,
+    hit as _hit,
+    make_baseline as _baseline,
+    observation as _observation,
+    observations_for as _observations_for,
+)
 
 
 def test_evaluate_rag_ignores_non_ask_cases() -> None:
@@ -317,6 +309,15 @@ def test_trailing_json_object_is_the_verdict() -> None:
     assert parse_judge_output("faithfulness", placeholder).score == 0.8
     fenced_inner = '```json\n{"score": 0.8, "explanation": "use ```py fences"}\n```'
     assert parse_judge_output("faithfulness", fenced_inner).score == 0.8
+    wrapper = '{"result": {"score": 0.9, "explanation": "ok"}}'
+    assert parse_judge_output("faithfulness", f"Verdict: {wrapper}").score == 0.9
+    scratchpad = (
+        '```json\n{"score": 0.9, "explanation": "ok"}\n```\n'
+        '```\n{"note": "scratchpad"}\n```'
+    )
+    assert parse_judge_output("faithfulness", scratchpad).score == 0.9
+    reasoning = '```\nreasoning {"note": 1}\n```\n{"score": 0.75, "explanation": "ok"}'
+    assert parse_judge_output("faithfulness", reasoning).score == 0.75
 
 
 def test_half_unscored_cases_fail_the_gate() -> None:
@@ -356,25 +357,41 @@ def test_observation_integrity_fails_the_gate() -> None:
         observation_errors={"cite": "observation_integrity"},
         judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
     )
-    assert bad.results[-2].error_type == "observation_integrity" or any(
-        item.error_type == "observation_integrity" for item in bad.results
-    )
+    cite = next(item for item in bad.results if item.case_id == "cite")
+    assert cite.error_type == "observation_integrity"
+    assert bad.results[4] is cite
     assert bad.gate_status == "failed"
 
 
-def test_unknown_observation_error_falls_back_to_judge_error() -> None:
+def test_all_observation_integrity_fails_the_gate() -> None:
+    cases = _coverage_cases()
+    report = _execute(
+        cases,
+        observations={},
+        observation_errors={
+            case.id: "observation_integrity" for case in cases
+        },
+        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+    )
+    assert all(item.error_type == "observation_integrity" for item in report.results)
+    assert report.gate_status == "failed"
+
+
+def test_unknown_observation_error_raises() -> None:
     cases = _coverage_cases()
     observations = _observations_for(cases)
     del observations["cite"]
-    report = _execute(
-        cases,
-        observations=observations,
-        observation_errors={"cite": "boom"},
-        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
-    )
-    cite = next(item for item in report.results if item.case_id == "cite")
-    assert cite.error_type == "judge_error"
-    assert report.gate_status == "passed"
+    with pytest.raises(ApplicationValidationError, match="observation error_type"):
+        _execute(
+            cases,
+            observations=observations,
+            observation_errors={"cite": "boom"},
+            judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+        )
+
+
+def test_story_source_types_match_domain_vocabulary() -> None:
+    assert STORY_SOURCE_TYPES <= _WELL_KNOWN_SOURCE_TYPES
 
 
 def test_story_source_type_is_well_known() -> None:
