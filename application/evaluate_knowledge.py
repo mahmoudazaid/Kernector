@@ -83,13 +83,11 @@ class EvaluateKnowledge:
     InvokeTool.
 
     Ask scoring consumes ``ObservedRagRunner`` same-run hits. It does not
-    retrieve a second time. ``shared_retrieve_hits`` is true when observation
-    succeeded (exactly one retrieve was recorded by the runner).
+    retrieve a second time. ``shared_retrieve_hits`` is true when
+    ``run.hit_count`` matches ``len(retrieved_contexts)``.
 
     Args:
         retrieve (_RetrieveSeam): Seam returning ``RetrieveResponse``.
-        ask (_AskSeam): Grounded ask seam (packs irrelevant). Unused for ask
-            scoring when ``observed_rag`` is provided.
         ask_pack_off (_AskSeam): Ask seam that must fall through with ``path=rag``.
         invoke (_InvokeSeam | None): Optional tool invoke seam; ``None`` skips
             invoke_tool cases.
@@ -100,13 +98,11 @@ class EvaluateKnowledge:
     def __init__(
         self,
         retrieve: _RetrieveSeam,
-        ask: _AskSeam,
         ask_pack_off: _AskSeam,
         invoke: _InvokeSeam | None = None,
         observed_rag: _ObservedRagSeam | None = None,
     ) -> None:
         self._retrieve = retrieve
-        self._ask = ask
         self._ask_pack_off = ask_pack_off
         self._invoke = invoke
         self._observed_rag = observed_rag
@@ -167,7 +163,10 @@ class EvaluateKnowledge:
         observation: RagObservation = self._observed_rag.execute(case)
         hits = observation.retrieved_contexts
         metrics: dict[str, int | float | bool] = {}
-        checks: dict[str, bool] = {"shared_retrieve_hits": True}
+        hit_count = None if observation.run is None else observation.run.hit_count
+        checks: dict[str, bool] = {
+            "shared_retrieve_hits": hit_count == len(hits)
+        }
         if case.expected_source_ids:
             retrieval_metrics, _ = _retrieval_scores(hits, case)
             metrics.update(retrieval_metrics)

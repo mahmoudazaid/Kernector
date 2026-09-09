@@ -89,6 +89,7 @@ def test_observed_runner_returns_same_run_hits_after_one_retrieve() -> None:
     response = AskResponse(
         answer="Use backoff.",
         run=RunMeta(outcome="success", hit_count=2),
+        generation_hits=hits,
     )
     runner = ObservedRagRunner(
         _AskThatRetrieves(recording, response),
@@ -150,8 +151,6 @@ def test_insufficient_outcome_has_empty_generation_contexts() -> None:
         _AskThatRetrieves(recording, response),
         recorder,
         AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
-        keep_retrieved_hits=False,
-        relevance_threshold=0.5,
     )
 
     observation = runner.execute(_ask_case())

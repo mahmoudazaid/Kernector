@@ -28,6 +28,7 @@ from application.evaluation_contracts import (
 from application.observed_rag import (
     AnswerModelMetadata,
     ObservedRagRunner,
+    RagObservation,
     RecordingRewriteAndRetrieve,
     RetrievalRecorder,
 )
@@ -54,6 +55,7 @@ from composition.container import (
 from composition.correlated_ask import CorrelatedAsk
 from composition.errors import KnowledgeLoadError
 from composition.tool_augmented_ask import ToolAugmentedAsk
+from domain.errors import ProviderError, VectorStoreError
 from domain.knowledge import EmbeddedChunk, SourceDocument
 from domain.models import PromptVariant
 from domain.ports import ChatModel
@@ -249,12 +251,9 @@ def build_evaluate_knowledge(
         ask,
         recorder,
         AnswerModelMetadata(provider="eval", model="eval-offline"),
-        relevance_threshold=settings.retrieval.relevance_threshold,
-        keep_retrieved_hits=True,
     )
     return EvaluateKnowledge(
         retrieve=retrieve,
-        ask=ask,
         ask_pack_off=pack_off_ask,
         invoke=invoke,
         observed_rag=observed,
@@ -367,6 +366,10 @@ def load_rag_judge_baseline(path: Path | None = None) -> RagJudgeBaseline | None
         return None
     try:
         payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as error:
+        raise ApplicationValidationError(
+            "rag judge baseline is not valid UTF-8"
+        ) from error
     except json.JSONDecodeError as error:
         raise ApplicationValidationError("rag judge baseline is not valid JSON") from error
     except OSError as error:
@@ -466,7 +469,10 @@ def live_observed_rag_session(
             or provider construction failure.
         KnowledgeLoadError: Eval corpus cannot be loaded.
     """
-    chat = chat_model if chat_model is not None else build_chat_model(settings)
+    try:
+        chat = chat_model if chat_model is not None else build_chat_model(settings)
+    except ProviderError as error:
+        raise ConfigurationError("live Judge answer path failed") from error
     reject_deterministic_answer_model(chat)
     production_chroma = settings.chroma.persist_path.resolve()
     with TemporaryDirectory(prefix="kernector-eval-chroma-") as raw_tmp:
@@ -482,39 +488,40 @@ def live_observed_rag_session(
                 collection=_LIVE_EVAL_COLLECTION,
             ),
         )
-        store = build_vector_store(eval_settings)
-        ingest = build_ingest_knowledge(eval_settings, vector_store=store)
-        documents = _load_corpus(
-            corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
-        )
-        ingest.execute(IngestRequest(documents=documents))
-        rewrite = build_rewrite_and_retrieve_knowledge(
-            eval_settings, vector_store=store
-        )
-        recorder = RetrievalRecorder()
-        recording = RecordingRewriteAndRetrieve(rewrite, recorder)
-        ask = AskKnowledge(
-            recording,
-            AskService(chat),
-            build_prompt_repository(eval_settings),
-            default_retrieval_limit=eval_settings.retrieval.limit,
-            relevance_threshold=eval_settings.retrieval.relevance_threshold,
-            max_input_length=eval_settings.max_input_length,
-            keep_retrieved_hits=eval_settings.retrieval.hybrid_enabled,
-        )
-        answer_meta = AnswerRunMetadata(
-            provider=eval_settings.provider,
-            model=_answer_model_id(eval_settings),
-        )
-        runner = ObservedRagRunner(
-            ask,
-            recorder,
-            AnswerModelMetadata(
-                provider=answer_meta.provider, model=answer_meta.model
-            ),
-            relevance_threshold=eval_settings.retrieval.relevance_threshold,
-            keep_retrieved_hits=eval_settings.retrieval.hybrid_enabled,
-        )
+        try:
+            store = build_vector_store(eval_settings)
+            ingest = build_ingest_knowledge(eval_settings, vector_store=store)
+            documents = _load_corpus(
+                corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
+            )
+            ingest.execute(IngestRequest(documents=documents))
+            rewrite = build_rewrite_and_retrieve_knowledge(
+                eval_settings, vector_store=store
+            )
+            recorder = RetrievalRecorder()
+            recording = RecordingRewriteAndRetrieve(rewrite, recorder)
+            ask = AskKnowledge(
+                recording,
+                AskService(chat),
+                build_prompt_repository(eval_settings),
+                default_retrieval_limit=eval_settings.retrieval.limit,
+                relevance_threshold=eval_settings.retrieval.relevance_threshold,
+                max_input_length=eval_settings.max_input_length,
+                keep_retrieved_hits=eval_settings.retrieval.hybrid_enabled,
+            )
+            answer_meta = AnswerRunMetadata(
+                provider=eval_settings.provider,
+                model=_answer_model_id(eval_settings),
+            )
+            runner = ObservedRagRunner(
+                ask,
+                recorder,
+                AnswerModelMetadata(
+                    provider=answer_meta.provider, model=answer_meta.model
+                ),
+            )
+        except (ProviderError, VectorStoreError) as error:
+            raise ConfigurationError("live Judge answer path failed") from error
         yield LiveObservedRagSession(
             runner=runner,
             answer_meta=answer_meta,
@@ -602,6 +609,8 @@ def run_rag_judge(
     corpus = corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
     baseline = load_rag_judge_baseline(baseline_path)
     thresholds = RagJudgeThresholds()
+    if baseline is not None:
+        thresholds = RagJudgeThresholds(allowed_drop=baseline.allowed_drop)
     if mode == "auto":
         if not live_answer_config_ready(settings) or not judge_config_ready(settings):
             raise JudgeSkipped(
@@ -644,16 +653,22 @@ def run_rag_judge(
             "RAG_JUDGE_PROVIDER and RAG_JUDGE_MODEL are required for live Judge"
         )
     complete_kwargs, seed_applied = judge_complete_kwargs(settings)
-    judge_model = judge if judge is not None else build_judge_chat_model(settings)
+    try:
+        judge_model = judge if judge is not None else build_judge_chat_model(settings)
+    except ProviderError as error:
+        raise ConfigurationError("live Judge could not be constructed") from error
     judge_meta = _judge_metadata(settings, seed_applied)
     with live_observed_rag_session(
         settings, corpus_path=corpus, chat_model=chat_model
     ) as session:
-        observations = {
-            case.id: session.runner.execute(case)
-            for case in cases
-            if case.kind == "ask"
-        }
+        observations: dict[str, RagObservation] = {}
+        for case in cases:
+            if case.kind != "ask":
+                continue
+            try:
+                observations[case.id] = session.runner.execute(case)
+            except (ApplicationValidationError, ProviderError, VectorStoreError):
+                continue
         fingerprints = _fingerprints_for(
             settings,
             judge_provider=judge_meta.provider,

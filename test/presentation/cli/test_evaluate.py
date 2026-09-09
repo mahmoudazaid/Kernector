@@ -478,54 +478,27 @@ def test_cli_offline_dataset_writes_reports_to_tmp_path(
 
 
 def _judge_report(*, eligible: bool, passed: bool, mode: str = "live"):
-    from application.evaluate_rag import EvaluateRag
-    from application.rag_judge_contracts import (
-        AnswerRunMetadata,
-        JudgeMetadata,
-        RagJudgeFingerprints,
-        RagJudgeThresholds,
+    from test.application.test_evaluate_rag import (
+        _ScriptedJudge,
+        _baseline,
+        _coverage_cases,
+        _execute,
     )
-    from application.rag_judge_policy import METRIC_IDS, PROMPT_VERSION
 
-    fingerprints = RagJudgeFingerprints(
-        dataset_hash="d" * 64,
-        corpus_hash="c" * 64,
-        metric_set=METRIC_IDS,
-        judge_provider="openrouter",
-        judge_model="judge",
-        prompt_version=PROMPT_VERSION,
-        answer_provider="openrouter",
-        answer_model="answer",
-        embedding_model="embed",
-        retrieval_limit=5,
-        relevance_threshold=0.0,
-        hybrid_enabled=True,
-        hybrid_alpha=0.5,
-        rewriter="openrouter:rewrite",
+    del mode
+    if not eligible:
+        return _execute(_coverage_cases(), execution_mode="fake", baseline=None)
+    content = (
+        '{"score": 1.0, "explanation": "ok"}'
+        if passed
+        else '{"score": 0.8, "explanation": "ok"}'
     )
-    report = EvaluateRag().execute(
-        (),
-        {},
-        object(),  # unused in fake
-        RagJudgeThresholds(),
-        None,
-        JudgeMetadata(
-            provider="openrouter",
-            model="judge",
-            prompt_version=PROMPT_VERSION,
-            temperature=0,
-        ),
-        AnswerRunMetadata(provider="openrouter", model="answer"),
-        fingerprints,
-        execution_mode="fake" if not eligible else mode,
+    return _execute(
+        _coverage_cases(),
+        judge=_ScriptedJudge(content),
+        baseline=_baseline(),
+        execution_mode="live",
     )
-    if eligible:
-        object.__setattr__(report, "quality_gate_eligible", True)
-        object.__setattr__(report, "quality_gate_passed", passed)
-        object.__setattr__(report, "gate_status", "passed" if passed else "failed")
-        object.__setattr__(report, "execution_mode", "live")
-        object.__setattr__(report, "baseline_comparison", "compared")
-    return report
 
 
 def test_cli_fake_writes_additive_judge_reports_and_exits_two(
@@ -605,3 +578,26 @@ def test_cli_live_quality_failure_exits_one(
     code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
 
     assert code == 1
+
+
+def test_cli_live_provider_error_exits_two_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from domain.errors import ProviderError
+
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: (_ for _ in ()).throw(ProviderError("sk-secret-token")),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Traceback" not in captured.err
+    assert "sk-secret-token" not in captured.err
+    assert "live Judge answer path failed" in captured.err

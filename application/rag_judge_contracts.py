@@ -315,6 +315,10 @@ class RagJudgeBaseline:
                     f"means[{key}] must be a finite number"
                 )
             copied[key] = float(value)
+        if set(copied) != set(METRIC_IDS):
+            raise ApplicationValidationError(
+                "baseline means must include exactly the five Judge metrics"
+            )
         object.__setattr__(self, "means", copied)
         object.__setattr__(self, "allowed_drop", float(self.allowed_drop))
 

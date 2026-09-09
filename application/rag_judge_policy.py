@@ -76,17 +76,33 @@ class JudgePayloadTooLargeError(ApplicationValidationError):
     """The composed Judge prompt exceeded the documented size bound."""
 
 
+def _defang_untrusted(text: str) -> str:
+    """Neutralise Judge delimiters so corpus text cannot close the block early.
+
+    Args:
+        text (str): Untrusted payload.
+
+    Returns:
+        str: Text with ``UNTRUSTED_OPEN`` / ``UNTRUSTED_CLOSE`` replaced.
+    """
+    return text.replace(UNTRUSTED_OPEN, "<«BEGIN_UNTRUSTED_EVAL_TEXT»>").replace(
+        UNTRUSTED_CLOSE, "<«END_UNTRUSTED_EVAL_TEXT»>"
+    )
+
+
 def wrap_untrusted(label: str, text: str) -> str:
     """Wrap untrusted text in explicit ignore-instructions delimiters.
 
     Args:
         label (str): Field name shown outside the delimiters.
-        text (str): Untrusted payload.
+        text (str): Untrusted payload. Delimiter substrings are defanged.
 
     Returns:
         str: Labeled delimited block.
     """
-    return f"{label}:\n{UNTRUSTED_OPEN}\n{text}\n{UNTRUSTED_CLOSE}"
+    return (
+        f"{label}:\n{UNTRUSTED_OPEN}\n{_defang_untrusted(text)}\n{UNTRUSTED_CLOSE}"
+    )
 
 
 def metric_system_prompt(metric_id: str) -> str:

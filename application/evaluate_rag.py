@@ -42,6 +42,7 @@ _WELL_KNOWN_SOURCE_TYPES = frozenset(
         SourceType.KNOWLEDGE_DOCUMENT,
         SourceType.GOOGLE_DRIVE,
         "user_story",
+        "story",
         "srs",
         "test",
     }
@@ -110,11 +111,17 @@ class EvaluateRag:
             baselines refuse the regression gate (``gate_status=refused_baseline``)
             rather than silently applying floors.
         """
-        settings = dict(judge_settings or {"temperature": 0})
+        settings = dict(judge_settings) if judge_settings is not None else {
+            "temperature": 0
+        }
+        if baseline is not None:
+            thresholds = RagJudgeThresholds(
+                metric_floor=thresholds.metric_floor,
+                pass_rate_floor=thresholds.pass_rate_floor,
+                allowed_drop=baseline.allowed_drop,
+            )
         eligible = tuple(case for case in cases if case.kind == "ask")
-        baseline_status = _baseline_status(
-            execution_mode, baseline, fingerprints, thresholds
-        )
+        baseline_status = _baseline_status(execution_mode, baseline, fingerprints)
         results: list[RagJudgeCaseResult] = []
         for case in eligible:
             if execution_mode == "fake":
@@ -156,15 +163,14 @@ def _baseline_status(
     execution_mode: str,
     baseline: RagJudgeBaseline | None,
     fingerprints: RagJudgeFingerprints,
-    thresholds: RagJudgeThresholds,
 ) -> str:
     if execution_mode == "fake":
         return "not_compared"
-    if baseline is None or not baseline.accepted:
+    if baseline is None:
+        return "not_compared"
+    if not baseline.accepted:
         return "unaccepted"
     if not fingerprints_compatible(fingerprints, baseline.fingerprints):
-        return "incompatible"
-    if abs(baseline.allowed_drop - thresholds.allowed_drop) > 1e-12:
         return "incompatible"
     return "compared"
 
@@ -235,21 +241,32 @@ def parse_judge_output(metric_id: str, raw: str) -> MetricResult:
 
     Args:
         metric_id (str): Metric being scored.
-        raw (str): Provider content.
+        raw (str): Provider content. A fenced or extra-key JSON object is
+            accepted when ``score`` and ``explanation`` are present.
 
     Returns:
         MetricResult: ``scored`` on valid JSON, else ``judge_failure`` with a
         sanitized ``error_type`` and ``score=None``.
     """
     try:
-        payload = json.loads(raw)
+        payload = _extract_json_object(raw)
     except json.JSONDecodeError:
         return MetricResult(
             metric_id=metric_id, status="judge_failure", error_type="invalid_json"
         )
-    if not isinstance(payload, dict) or set(payload) != {"score", "explanation"}:
+    if not isinstance(payload, dict):
         return MetricResult(
             metric_id=metric_id, status="judge_failure", error_type="invalid_json"
+        )
+    if "score" not in payload:
+        return MetricResult(
+            metric_id=metric_id, status="judge_failure", error_type="missing_score"
+        )
+    if "explanation" not in payload:
+        return MetricResult(
+            metric_id=metric_id,
+            status="judge_failure",
+            error_type="missing_explanation",
         )
     score = payload["score"]
     explanation = payload["explanation"]
@@ -286,6 +303,25 @@ def parse_judge_output(metric_id: str, raw: str) -> MetricResult:
         score=value,
         explanation=explanation,
     )
+
+
+def _extract_json_object(raw: str) -> object:
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        stripped = stripped[3:].lstrip()
+        if stripped[:4].lower() == "json":
+            stripped = stripped[4:].lstrip()
+        close = stripped.rfind("```")
+        if close >= 0:
+            stripped = stripped[:close].strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        if start < 0:
+            raise
+        payload, _end = json.JSONDecoder().raw_decode(stripped, start)
+        return payload
 
 
 def _diagnostics(
@@ -379,8 +415,6 @@ def _gate(
         return False, False, "refused_baseline"
     if not results or not coverage_ok:
         return True, False, "failed"
-    if any(item.error_type is not None for item in results):
-        return True, False, "failed"
     for metric_id, aggregate in aggregates.items():
         if aggregate.mean is None:
             return True, False, "failed"
@@ -388,7 +422,7 @@ def _gate(
             return True, False, "failed"
         if aggregate.pass_rate < thresholds.pass_rate_floor:
             return True, False, "failed"
-        if baseline is not None and metric_id in baseline.means:
+        if baseline is not None:
             floor = baseline.means[metric_id] - thresholds.allowed_drop
             if aggregate.mean < floor:
                 return True, False, "failed"
@@ -541,31 +575,53 @@ def parse_rag_judge_baseline(payload: Mapping[str, object]) -> RagJudgeBaseline:
     means_raw = payload.get("means")
     if not isinstance(means_raw, Mapping):
         raise ApplicationValidationError("baseline means must be an object")
-    allowed = payload.get("allowed_drop", DEFAULT_ALLOWED_DROP)
     accepted = payload.get("accepted")
     if not isinstance(accepted, bool):
         raise ApplicationValidationError("baseline accepted must be a bool")
-    return RagJudgeBaseline(
-        accepted=accepted,
-        means={str(key): value for key, value in means_raw.items()},
-        fingerprints=RagJudgeFingerprints(
-            dataset_hash=str(fingerprints_raw["dataset_hash"]),
-            corpus_hash=str(fingerprints_raw["corpus_hash"]),
-            metric_set=tuple(fingerprints_raw["metric_set"]),
-            judge_provider=str(fingerprints_raw["judge_provider"]),
-            judge_model=str(fingerprints_raw["judge_model"]),
-            prompt_version=str(fingerprints_raw["prompt_version"]),
-            answer_provider=str(fingerprints_raw["answer_provider"]),
-            answer_model=str(fingerprints_raw["answer_model"]),
-            embedding_model=str(fingerprints_raw["embedding_model"]),
+    try:
+        allowed = float(payload.get("allowed_drop", DEFAULT_ALLOWED_DROP))
+    except (TypeError, ValueError) as error:
+        raise ApplicationValidationError(
+            "baseline allowed_drop is invalid"
+        ) from error
+    try:
+        fingerprints = RagJudgeFingerprints(
+            dataset_hash=_baseline_text(fingerprints_raw, "dataset_hash"),
+            corpus_hash=_baseline_text(fingerprints_raw, "corpus_hash"),
+            metric_set=tuple(fingerprints_raw["metric_set"]),  # type: ignore[arg-type]
+            judge_provider=_baseline_text(fingerprints_raw, "judge_provider"),
+            judge_model=_baseline_text(fingerprints_raw, "judge_model"),
+            prompt_version=_baseline_text(fingerprints_raw, "prompt_version"),
+            answer_provider=_baseline_text(fingerprints_raw, "answer_provider"),
+            answer_model=_baseline_text(fingerprints_raw, "answer_model"),
+            embedding_model=_baseline_text(fingerprints_raw, "embedding_model"),
             retrieval_limit=int(fingerprints_raw["retrieval_limit"]),
             relevance_threshold=float(fingerprints_raw["relevance_threshold"]),
             hybrid_enabled=bool(fingerprints_raw["hybrid_enabled"]),
             hybrid_alpha=float(fingerprints_raw["hybrid_alpha"]),
-            rewriter=str(fingerprints_raw["rewriter"]),
-        ),
-        allowed_drop=float(allowed),
-    )
+            rewriter=_baseline_text(fingerprints_raw, "rewriter"),
+        )
+    except (KeyError, TypeError, ValueError, ApplicationValidationError) as error:
+        raise ApplicationValidationError(
+            "rag judge baseline fingerprints are invalid"
+        ) from error
+    try:
+        means = {str(key): value for key, value in means_raw.items()}
+        return RagJudgeBaseline(
+            accepted=accepted,
+            means=means,
+            fingerprints=fingerprints,
+            allowed_drop=allowed,
+        )
+    except (TypeError, ValueError, ApplicationValidationError) as error:
+        raise ApplicationValidationError("rag judge baseline is invalid") from error
+
+
+def _baseline_text(raw: Mapping[str, object], key: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ApplicationValidationError(f"baseline fingerprints.{key} is invalid")
+    return value
 
 
 def rag_judge_report_to_json(report: RagJudgeReport) -> str:

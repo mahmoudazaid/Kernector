@@ -115,16 +115,13 @@ class ObservedRagRunner:
     """Run one ask case and capture the exact hits used for generation.
 
     Wraps the rewrite-and-retrieve seam already injected into ask. Does not
-    retrieve a second time.
+    retrieve a second time. Generation hits come from ``AskResponse``, not a
+    reconstructed filter.
 
     Args:
         ask: Ask collaborator (``execute(AskRequest) -> AskResponse``).
         recorder (RetrievalRecorder): Recorder wrapping that ask's retrieve.
         answer_model (AnswerModelMetadata): Effective answer-model metadata.
-        relevance_threshold (float): Cosine floor when ``keep_retrieved_hits``
-            is false. Defaults to ``0.0``.
-        keep_retrieved_hits (bool): When true, all recorded hits entered
-            generation (hybrid fused scores). Defaults to ``True``.
     """
 
     def __init__(
@@ -132,15 +129,10 @@ class ObservedRagRunner:
         ask: object,
         recorder: RetrievalRecorder,
         answer_model: AnswerModelMetadata,
-        *,
-        relevance_threshold: float = 0.0,
-        keep_retrieved_hits: bool = True,
     ) -> None:
         self._ask = ask
         self._recorder = recorder
         self._answer_model = answer_model
-        self._relevance_threshold = relevance_threshold
-        self._keep_retrieved_hits = keep_retrieved_hits
 
     def execute(self, case: EvalCase) -> RagObservation:
         """Ask once, require exactly one retrieve, and return the observation.
@@ -163,60 +155,12 @@ class ObservedRagRunner:
                 f"expected exactly one retrieve for case {case.id}, "
                 f"got {len(self._recorder.calls)}"
             )
-        contexts = _generation_contexts(
-            self._recorder.calls[0],
-            response,
-            keep_retrieved_hits=self._keep_retrieved_hits,
-            relevance_threshold=self._relevance_threshold,
-        )
         return RagObservation(
             case_id=case.id,
             query=case.query or "",
             answer=response.answer,
             citations=response.citations,
-            retrieved_contexts=contexts,
+            retrieved_contexts=tuple(response.generation_hits),
             run=response.run,
             answer_model=self._answer_model,
         )
-
-
-def _generation_contexts(
-    recorded: Sequence[ScoredChunk],
-    response: AskResponse,
-    *,
-    keep_retrieved_hits: bool,
-    relevance_threshold: float,
-) -> tuple[ScoredChunk, ...]:
-    if response.run is not None and response.run.outcome == "insufficient":
-        return ()
-    if keep_retrieved_hits:
-        return tuple(recorded)
-    return tuple(hit for hit in recorded if hit.score >= relevance_threshold)
-
-
-def observation_from_ask_response(
-    case: EvalCase,
-    response: AskResponse,
-    hits: Sequence[ScoredChunk],
-    answer_model: AnswerModelMetadata,
-) -> RagObservation:
-    """Build an observation for tests that already hold ask output and hits.
-
-    Args:
-        case (EvalCase): Ask case.
-        response (AskResponse): Ask output.
-        hits (Sequence[ScoredChunk]): Generation-time hits.
-        answer_model (AnswerModelMetadata): Answer-model identity.
-
-    Returns:
-        RagObservation: Frozen observation.
-    """
-    return RagObservation(
-        case_id=case.id,
-        query=case.query or "",
-        answer=response.answer,
-        citations=response.citations,
-        retrieved_contexts=tuple(hits),
-        run=response.run,
-        answer_model=answer_model,
-    )

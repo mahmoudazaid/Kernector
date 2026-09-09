@@ -189,14 +189,12 @@ def _observation(
 def _evaluate(
     *,
     retrieve: object = None,
-    ask: object = None,
     ask_pack_off: object = None,
     invoke: object | None = None,
     observed_rag: object | None = None,
 ) -> EvaluateKnowledge:
     return EvaluateKnowledge(
         retrieve=retrieve if retrieve is not None else _Unused(),
-        ask=ask if ask is not None else _Unused(),
         ask_pack_off=ask_pack_off if ask_pack_off is not None else _Unused(),
         invoke=invoke,
         observed_rag=observed_rag,
@@ -418,6 +416,29 @@ def test_ask_does_not_call_retrieve_seam() -> None:
 
     assert report.results[0].status == "pass"
     assert report.results[0].checks["shared_retrieve_hits"] is True
+
+
+def test_shared_retrieve_hits_fails_when_hit_count_mismatches_contexts() -> None:
+    gold = EvalCitationLabel("doc-a", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
+    case = _ask_case(
+        "cite-mismatch",
+        case_class="citation_provenance",
+        query="checkout retry",
+        expected_citations=(gold,),
+    )
+    ask = AskResponse(
+        answer="Use exponential backoff.",
+        citations=(_citation("doc-a"),),
+        run=RunMeta(outcome="success", hit_count=2),
+    )
+    report = _evaluate(
+        retrieve=_Unused(),
+        observed_rag=_FakeObservedRag(_observation(case, ask, (_hit("doc-a"),))),
+    ).execute((case,))
+
+    result = report.results[0]
+    assert result.checks["shared_retrieve_hits"] is False
+    assert result.status == "fail"
 
 
 def test_unexpected_citation_versus_gold_fails_gold_precision() -> None:

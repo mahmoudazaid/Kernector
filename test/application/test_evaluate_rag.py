@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+import pytest
+
 from application.contracts import AskResponse, Citation, RunMeta
-from application.evaluate_rag import EvaluateRag, parse_judge_output, rag_judge_report_to_csv
+from application.errors import ApplicationValidationError
+from application.evaluate_rag import (
+    EvaluateRag,
+    parse_judge_output,
+    parse_rag_judge_baseline,
+    rag_judge_report_to_csv,
+)
 from application.evaluation_contracts import EvalCase, EvalCitationLabel
 from application.observed_rag import AnswerModelMetadata, RagObservation
 from application.rag_judge_contracts import (
@@ -54,6 +62,26 @@ def _fingerprints() -> RagJudgeFingerprints:
         hybrid_alpha=0.5,
         rewriter="openrouter-rewrite",
     )
+
+
+def _fingerprint_payload() -> dict[str, object]:
+    fingerprints = _fingerprints()
+    return {
+        "dataset_hash": fingerprints.dataset_hash,
+        "corpus_hash": fingerprints.corpus_hash,
+        "metric_set": list(fingerprints.metric_set),
+        "judge_provider": fingerprints.judge_provider,
+        "judge_model": fingerprints.judge_model,
+        "prompt_version": fingerprints.prompt_version,
+        "answer_provider": fingerprints.answer_provider,
+        "answer_model": fingerprints.answer_model,
+        "embedding_model": fingerprints.embedding_model,
+        "retrieval_limit": fingerprints.retrieval_limit,
+        "relevance_threshold": fingerprints.relevance_threshold,
+        "hybrid_enabled": fingerprints.hybrid_enabled,
+        "hybrid_alpha": fingerprints.hybrid_alpha,
+        "rewriter": fingerprints.rewriter,
+    }
 
 
 def _judge_meta() -> JudgeMetadata:
@@ -192,25 +220,31 @@ def _observations_for(cases: Sequence[EvalCase]) -> dict[str, RagObservation]:
     return mapping
 
 
+_UNSET = object()
+
+
 def _execute(
     cases: Sequence[EvalCase],
     *,
     judge: object | None = None,
-    baseline: RagJudgeBaseline | None = None,
+    baseline: object = _UNSET,
     execution_mode: str = "live",
     observations: Mapping[str, RagObservation] | None = None,
+    judge_settings: object = _UNSET,
 ):
+    resolved_baseline = _baseline() if baseline is _UNSET else baseline
+    settings = {"temperature": 0} if judge_settings is _UNSET else judge_settings
     return EvaluateRag().execute(
         cases,
         observations if observations is not None else _observations_for(cases),
         judge if judge is not None else _ScriptedJudge(),
         RagJudgeThresholds(),
-        baseline if baseline is not None else _baseline(),
+        resolved_baseline,
         _judge_meta(),
         _answer_meta(),
         _fingerprints(),
         execution_mode=execution_mode,
-        judge_settings={"temperature": 0},
+        judge_settings=settings,
     )
 
 
@@ -271,7 +305,10 @@ def test_malformed_and_non_finite_scores_are_judge_failures() -> None:
     ).error_type == "invalid_score"
     assert parse_judge_output(
         "faithfulness", '{"score": 0.2}'
-    ).error_type == "invalid_json"
+    ).error_type == "missing_explanation"
+    assert parse_judge_output("faithfulness", '{"explanation": "x"}').error_type == (
+        "missing_score"
+    )
     failed = parse_judge_output("faithfulness", '{"score": true, "explanation": "x"}')
     assert failed.status == "judge_failure"
     assert failed.score is None
@@ -391,3 +428,111 @@ def test_csv_headers_are_stable() -> None:
     csv_text = rag_judge_report_to_csv(report)
     header = csv_text.splitlines()[0]
     assert header.split(",") == list(CSV_HEADERS)
+
+
+def test_fenced_json_and_extra_keys_are_scored() -> None:
+    fenced = '```json\n{"score": 0.7, "explanation": "ok", "extra": true}\n```'
+    result = parse_judge_output("faithfulness", fenced)
+    assert result.status == "scored"
+    assert result.score == 0.7
+    trailing = '{"score": 0.4, "explanation": "ok"} trailing text'
+    result = parse_judge_output("faithfulness", trailing)
+    assert result.status == "scored"
+    assert result.score == 0.4
+
+
+def test_one_invalid_judge_call_does_not_fail_the_gate() -> None:
+    class _OneBad:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def complete(self, system, messages, settings):
+            self.n += 1
+            if self.n == 1:
+                return AskResult(content="not-json", model="j")
+            return AskResult(
+                content='{"score": 1.0, "explanation": "ok"}', model="j"
+            )
+
+    report = _execute(_coverage_cases(), judge=_OneBad())
+    assert report.quality_gate_passed is True
+    assert report.gate_status == "passed"
+
+
+def test_incomplete_baseline_means_raise() -> None:
+    with pytest.raises(ApplicationValidationError, match="exactly the five"):
+        RagJudgeBaseline(
+            accepted=True,
+            means={},
+            fingerprints=_fingerprints(),
+            allowed_drop=0.05,
+        )
+
+
+def test_missing_baseline_is_not_compared() -> None:
+    report = _execute(_coverage_cases(), baseline=None)
+    assert report.baseline_comparison == "not_compared"
+    assert report.gate_status == "refused_baseline"
+    assert report.quality_gate_passed is False
+
+
+def test_allowed_drop_from_baseline_is_compared() -> None:
+    baseline = RagJudgeBaseline(
+        accepted=True,
+        means={name: 0.9 for name in METRIC_IDS},
+        fingerprints=_fingerprints(),
+        allowed_drop=0.10,
+    )
+    report = _execute(_coverage_cases(), baseline=baseline)
+    assert report.baseline_comparison == "compared"
+    assert report.gate_status == "passed"
+
+
+def test_empty_judge_settings_are_not_replaced() -> None:
+    judge = _ScriptedJudge()
+    _execute(_coverage_cases(), judge=judge, judge_settings={})
+    assert judge.calls
+    assert judge.calls[0][2] == {}
+
+
+def test_story_source_type_is_well_known() -> None:
+    case = _ask_case(
+        "cite",
+        case_class="citation_provenance",
+        expected_source_ids=("s",),
+        expected_citations=(EvalCitationLabel("s", "story", 0),),
+    )
+    observation = _observation(
+        case,
+        (_hit("s", source_type="story"),),
+        (_citation("s", source_type="story"),),
+    )
+    cases = tuple(item for item in _coverage_cases() if item.id != "cite") + (case,)
+    report = _execute(
+        cases,
+        observations={**_observations_for(cases), "cite": observation},
+        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+    )
+    result = next(item for item in report.results if item.case_id == "cite")
+    assert "story" not in result.unknown_source_types
+    assert "unknown_source_type" not in result.failure_categories
+
+
+def test_parse_baseline_rejects_missing_fingerprint_and_invalid_limit() -> None:
+    payload: dict[str, object] = {
+        "accepted": True,
+        "means": {name: 0.9 for name in METRIC_IDS},
+        "fingerprints": _fingerprint_payload(),
+    }
+    missing = dict(payload)
+    fingerprints = dict(payload["fingerprints"])  # type: ignore[arg-type]
+    del fingerprints["dataset_hash"]
+    missing["fingerprints"] = fingerprints
+    with pytest.raises(ApplicationValidationError):
+        parse_rag_judge_baseline(missing)
+    invalid_limit = dict(payload)
+    limit_prints = dict(payload["fingerprints"])  # type: ignore[arg-type]
+    limit_prints["retrieval_limit"] = "five"
+    invalid_limit["fingerprints"] = limit_prints
+    with pytest.raises(ApplicationValidationError):
+        parse_rag_judge_baseline(invalid_limit)
