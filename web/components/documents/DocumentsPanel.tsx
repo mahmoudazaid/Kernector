@@ -13,6 +13,7 @@ import {
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
 import { EmptyState } from "@/components/states/EmptyState";
+import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -479,13 +480,13 @@ export function DocumentsPanel({
 
   if (catalog.kind === "loading") {
     return (
-      <section className="kern-documents">
+      <section className="kern-documents" aria-busy="true">
         <header className="kern-hub-head">
           <h1>Knowledge Hub</h1>
-          <p className="kern-documents-lead" role="status">
-            Loading uploaded documents…
-          </p>
         </header>
+        <div className="kern-content-state">
+          <LoadingState label="Loading documents" />
+        </div>
       </section>
     );
   }
@@ -576,10 +577,6 @@ export function DocumentsPanel({
       >
         <div className="kern-hub-section-head">
           <h2>Connected sources</h2>
-          <p className="kern-hub-section-note">
-            Each connector owns its setup and sync actions; documents stay in
-            the shared catalog.
-          </p>
         </div>
         <div className="kern-source-grid">
           <article className="kern-source-card">

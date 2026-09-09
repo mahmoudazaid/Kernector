@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { KernectorLoaderMark } from "@/components/shell/KernectorLoaderMark";
+import { Loader } from "@/components/ui/Loader";
 import { ApiError } from "@/lib/api/errors";
 import {
   listGoogleDriveItems,
@@ -461,9 +461,8 @@ export function GoogleDrivePicker({
           }
         >
           {view.kind === "loading" ? (
-            <div className="kern-picker-loading" role="status">
-              <KernectorLoaderMark className="kern-picker-loader" />
-              <span className="visually-hidden">Loading Google Drive…</span>
+            <div className="kern-picker-loading">
+              <Loader label="Loading Google Drive" />
             </div>
           ) : null}
           {view.kind === "error" ? (

@@ -73,6 +73,8 @@ inventing a local look.
    - Settings: fieldsets, radios, range thumbs, SoftSelect
    - Knowledge Hub: fieldsets, file inputs (`::file-selector-button`),
      row actions, confirm dialogs
+   - Waits: brand `Loader` (`web/components/ui/Loader.tsx`) on every
+     screen-level load
    - Dialogs: `ConfirmDialog` (`.kern-dialog`) for destructive or
      irreversible confirms
 
@@ -102,13 +104,26 @@ inventing a local look.
    defaults; multi-layer neon glow; emoji decoration as chrome; per-page
    accent colors; narrow “card column” layouts on workspace pages that waste
    the main pane; native system dialogs for confirms; or copied third-party
-   widget markup that bypasses tokens.
+   widget markup that bypasses tokens; skeleton bars or “Loading …” lead
+   copy as the wait UI.
 
 9. **Guardrail tests** — `web/__tests__/design-tokens.test.ts` asserts the
    required token names on `:root` and theme overrides (including control
    sheen / emboss tokens). Keep that contract in sync when adding tokens.
    Visual regressions on a screen are fixed by applying shared recipes, not
    by forking tokens under a new name for one page.
+
+10. **Brand loader (required wait recipe)** — Screen-level and in-panel
+    waits use the blinking Kernector mark via
+    [`web/components/ui/Loader.tsx`](../../web/components/ui/Loader.tsx)
+    (and `LoadingState` for full-pane waits). Status copy is visually
+    hidden (`role="status"`). Do not present “Loading …” lead text,
+    skeleton bars, or a second spinner as the wait UI. Chat
+    turn-in-progress stays `KernectorThinkingMark` — that is a thinking
+    cue, not a page loader. Overlay waits (Drive sync, picker browse)
+    reuse `Loader` at `sm` / `md`; page waits use `lg`. Honor
+    `prefers-reduced-motion` (lids hold closed). New routes must use this
+    recipe before merge.
 
 ## Consequences
 
@@ -132,5 +147,9 @@ inventing a local look.
 - [web/styles/tokens.css](../../web/styles/tokens.css) — token definitions
 - [web/components/ui/ConfirmDialog.tsx](../../web/components/ui/ConfirmDialog.tsx)
   — shared soft-glass confirm dialog
+- [web/components/ui/Loader.tsx](../../web/components/ui/Loader.tsx) —
+  brand wait mark for every screen
+- [web/components/states/LoadingState.tsx](../../web/components/states/LoadingState.tsx)
+  — full-pane wait wrapping `Loader`
 - [ADR 0002](0002-nextjs-presentation-migration.md) — Next.js / HTTP ownership
   of `web/`

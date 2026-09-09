@@ -73,6 +73,19 @@ describe("SettingsPanel", () => {
     localStorage.clear();
   });
 
+  it("shows the brand loader while the catalog is loading", () => {
+    render(
+      <SettingsPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadCatalog={() => new Promise(() => {})}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/loading settings/i);
+    expect(screen.queryByText(/loading provider catalog/i)).toBeNull();
+  });
+
   it("renders OpenRouter happy path from the catalog", async () => {
     render(
       <SettingsPanel

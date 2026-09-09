@@ -87,6 +87,22 @@ async function openUploadModal(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("DocumentsPanel", () => {
+  it("shows the brand loader while the catalog is loading", async () => {
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={() => new Promise(() => {})}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Knowledge Hub" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/loading documents/i);
+    expect(screen.queryByText(/loading uploaded documents/i)).toBeNull();
+  });
+
   it("lists uploaded documents in a table", async () => {
     const list = vi.fn().mockResolvedValue(
       listResponse([

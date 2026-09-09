@@ -84,7 +84,7 @@ describe("GoogleDrivePicker", () => {
     });
     const status = within(dialog).getByRole("status");
     expect(status).toHaveTextContent(/loading google drive/i);
-    expect(status.querySelector("svg.kern-picker-loader")).toBeInTheDocument();
+    expect(status.querySelector("svg.kern-loader-mark")).toBeInTheDocument();
     expect(
       status.querySelector(".kern-chat-thinking-mark"),
     ).not.toBeInTheDocument();

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
-import { KernectorLoaderMark } from "@/components/shell/KernectorLoaderMark";
+import { Loader } from "@/components/ui/Loader";
 import {
   disconnectGoogleDrive,
   getGoogleDriveSelection,
@@ -370,9 +370,8 @@ export function GoogleDrivePanel({
       aria-busy={cardBusy}
     >
       {cardBusy ? (
-        <div className="kern-drive-sync-overlay" role="status">
-          <KernectorLoaderMark className="kern-drive-sync-loader" />
-          <span className="visually-hidden">Syncing Google Drive…</span>
+        <div className="kern-drive-sync-overlay">
+          <Loader label="Syncing Google Drive" size="sm" />
         </div>
       ) : null}
       <div className="kern-source-card-title">

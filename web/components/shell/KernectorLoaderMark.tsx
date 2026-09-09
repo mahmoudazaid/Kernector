@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 type KernectorLoaderMarkProps = {
   className?: string;
 };
@@ -10,6 +12,9 @@ const BLINK = {
 } as const;
 
 export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
+  const uid = useId().replace(/:/g, "");
+  const clipA = `${uid}-lid-a`;
+  const clipB = `${uid}-lid-b`;
   return (
     <svg
       className={className}
@@ -18,10 +23,10 @@ export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
       aria-hidden="true"
     >
       <defs>
-        <clipPath id="kern-loader-a">
+        <clipPath id={clipA}>
           <path d="M114.3 57.78L134.9 37.18A12.12 12.12 0 0 0 117.77 20.05L97.17 40.65A12.12 12.12 0 0 0 114.3 57.78Z" />
         </clipPath>
-        <clipPath id="kern-loader-b">
+        <clipPath id={clipB}>
           <path d="M37.18 134.9L57.78 114.3A12.12 12.12 0 0 0 40.65 97.17L20.05 117.77A12.12 12.12 0 0 0 37.18 134.9Z" />
         </clipPath>
       </defs>
@@ -41,7 +46,7 @@ export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
         />
         <circle cx="104.78" cy="50.28" r="7.07" />
       </g>
-      <g clipPath="url(#kern-loader-a)">
+      <g clipPath={`url(#${clipA})`}>
         <g transform="rotate(-45 116.04 38.92)">
           <rect
             className="kn-lid kern-brand-mark-accent"
@@ -62,7 +67,7 @@ export function KernectorLoaderMark({ className }: KernectorLoaderMarkProps) {
           </rect>
         </g>
       </g>
-      <g clipPath="url(#kern-loader-b)">
+      <g clipPath={`url(#${clipB})`}>
         <g transform="rotate(-45 38.92 116.04)">
           <rect
             className="kn-lid kern-brand-mark-body"

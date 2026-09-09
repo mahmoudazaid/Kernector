@@ -343,7 +343,7 @@ describe("GoogleDrivePanel", () => {
       ".kern-drive-sync-overlay",
     );
     expect(overlay).toBeInTheDocument();
-    expect(overlay?.querySelector(".kern-drive-sync-loader")).toBeInTheDocument();
+    expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
     resolveSync({});
   });
 

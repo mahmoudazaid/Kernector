@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, startTransition, type ReactNode } from "react";
+import { LoadingState } from "@/components/states/LoadingState";
 import { Button } from "@/components/ui/Button";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import { ApiError } from "@/lib/api/errors";
@@ -292,7 +293,9 @@ export function SettingsPanel({
     return (
       <div className="kern-settings" aria-busy="true">
         <h1>Settings</h1>
-        <p className="kern-settings-lead">Loading provider catalog…</p>
+        <div className="kern-content-state">
+          <LoadingState label="Loading settings" />
+        </div>
       </div>
     );
   }
