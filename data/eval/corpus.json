@@ -1,0 +1,38 @@
+[
+  {
+    "source_id": "checkout-retry",
+    "source_type": "knowledge_document",
+    "title": "Checkout retry policy",
+    "content": "Checkout retry uses exponential backoff with jitter on payment capture."
+  },
+  {
+    "source_id": "payment-timeout-a",
+    "source_type": "knowledge_document",
+    "title": "Payment timeout circuit breaker",
+    "content": "Payment timeout uses a circuit breaker after repeated capture failures."
+  },
+  {
+    "source_id": "payment-timeout-b",
+    "source_type": "knowledge_document",
+    "title": "Payment timeout fallback queue",
+    "content": "Payment timeout enqueues a fallback queue when the breaker opens."
+  },
+  {
+    "source_id": "inventory-sla-fast",
+    "source_type": "knowledge_document",
+    "title": "Inventory SLA forty seconds",
+    "content": "Inventory SLA is forty seconds for stock reservation."
+  },
+  {
+    "source_id": "inventory-sla-slow",
+    "source_type": "knowledge_document",
+    "title": "Inventory SLA four minutes",
+    "content": "Inventory SLA is four minutes for stock reservation."
+  },
+  {
+    "source_id": "widget-sync",
+    "source_type": "future-connector",
+    "title": "Widget synchronizer handshake",
+    "content": "Widget synchronizer handshake protocol uses nonce tokens."
+  }
+]
