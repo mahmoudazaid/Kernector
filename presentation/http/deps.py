@@ -138,15 +138,15 @@ def get_document_operations(
     The store is not built here — ``list`` must work without embedding
     credentials. Mutating operations resolve it on first use via the
     process-wide ``get_vector_store`` cache. The process-cached catalog is
-    reused so Hub list/create/replace/delete do not re-run migrations.
+    resolved on first use so a missing catalog still maps to
+    ``DocumentOperationError`` instead of failing dependency resolution.
     """
-    catalog = get_document_catalog()
 
     def create(payload: UploadPayload) -> CatalogDocument:
         return create_uploaded_document(
             settings,
             payload,
-            catalog=catalog,
+            catalog=get_document_catalog(),
             vector_store=get_vector_store(),
         )
 
@@ -157,7 +157,7 @@ def get_document_operations(
             settings,
             reference,
             payload,
-            catalog=catalog,
+            catalog=get_document_catalog(),
             vector_store=get_vector_store(),
         )
 
@@ -165,12 +165,14 @@ def get_document_operations(
         delete_uploaded_document(
             settings,
             reference,
-            catalog=catalog,
+            catalog=get_document_catalog(),
             vector_store=get_vector_store(),
         )
 
     return DocumentOperations(
-        list=lambda: list_uploaded_documents(settings, catalog=catalog),
+        list=lambda: list_uploaded_documents(
+            settings, catalog=get_document_catalog()
+        ),
         create=create,
         replace=replace,
         delete=delete,
@@ -186,7 +188,7 @@ def get_google_drive_status(
     try:
         catalog = get_document_catalog()
     except (OSError, ValueError, RuntimeError):
-        catalog = None
+        return google_drive_status(settings, catalog_unavailable=True)
     return google_drive_status(settings, catalog=catalog)
 
 
@@ -203,7 +205,7 @@ def get_google_drive_sync(
     def sync() -> ConnectorSyncResponse:
         return sync_google_drive_oauth(
             settings,
-            catalog=get_document_catalog(),
+            catalog_factory=get_document_catalog,
             vector_store_factory=get_vector_store,
         )
 

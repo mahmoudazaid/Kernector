@@ -27,6 +27,7 @@ _AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 _REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 _DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+_DRIVE_HTTP_TIMEOUT_SECONDS = 20
 _ABOUT_ENDPOINT = "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)"
 _REDACTED = "***"
 
@@ -73,12 +74,14 @@ class GoogleOAuthConnection:
     reauthorization_required: bool
     folders: tuple[GoogleDriveSelectedItem, ...] = ()
     files: tuple[GoogleDriveSelectedItem, ...] = ()
+    account_email_unverified: bool = False
 
     def __repr__(self) -> str:
         return (
             "GoogleOAuthConnection("
             f"refresh_token={_REDACTED!r}, access_token={_REDACTED!r}, "
             f"account_email={self.account_email!r}, "
+            f"account_email_unverified={self.account_email_unverified}, "
             f"folders={len(self.folders)}, files={len(self.files)}, "
             f"last_synced_at={self.last_synced_at!r}, "
             f"reauthorization_required={self.reauthorization_required})"
@@ -207,6 +210,7 @@ class GoogleOAuthConnectionStore:
             reauthorization_required=bool(raw.get("reauthorization_required")),
             folders=_parse_selected_items(raw.get("folders")),
             files=_parse_selected_items(raw.get("files")),
+            account_email_unverified=bool(raw.get("account_email_unverified")),
         )
 
 
@@ -305,7 +309,9 @@ class HttpGoogleOAuthGateway:
 
 def build_oauth_drive_files(settings: GoogleOAuthSettings, *, refresh_token: str):
     """Build a Drive ``files`` resource from a stored refresh token."""
+    import httplib2
     from google.oauth2.credentials import Credentials
+    from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
 
     if settings.client_id is None or settings.client_secret is None:
@@ -318,7 +324,10 @@ def build_oauth_drive_files(settings: GoogleOAuthSettings, *, refresh_token: str
         client_secret=settings.client_secret,
         scopes=(_DRIVE_SCOPE,),
     )
-    service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+    http = AuthorizedHttp(
+        credentials, http=httplib2.Http(timeout=_DRIVE_HTTP_TIMEOUT_SECONDS)
+    )
+    service = build("drive", "v3", http=http, cache_discovery=False)
     return service.files()
 
 
@@ -372,6 +381,7 @@ def _connection_payload(connection: GoogleOAuthConnection) -> dict[str, object]:
         "last_sync_unchanged": connection.last_sync_unchanged,
         "last_sync_failed": connection.last_sync_failed,
         "reauthorization_required": connection.reauthorization_required,
+        "account_email_unverified": connection.account_email_unverified,
     }
 
 

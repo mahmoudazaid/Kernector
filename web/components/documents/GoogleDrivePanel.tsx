@@ -124,6 +124,7 @@ export function GoogleDrivePanel({
   const [selection, setSelection] =
     useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
   const [selectionReady, setSelectionReady] = useState(false);
+  const [pickerNotice, setPickerNotice] = useState<string | null>(null);
   const busyRef = useRef(false);
   const aliveRef = useRef(true);
   const selectionSeqRef = useRef(0);
@@ -196,9 +197,11 @@ export function GoogleDrivePanel({
         return null;
       }
       if (forPicker || pickerOpenRef.current) {
-        setActionError(actionErrorMessage(error));
         if (forPicker || !selectionReadyRef.current) {
+          setActionError(actionErrorMessage(error));
           setPickerOpen(false);
+        } else {
+          setPickerNotice(actionErrorMessage(error));
         }
       }
       return null;
@@ -240,6 +243,7 @@ export function GoogleDrivePanel({
     if (!pickerOpen) {
       selectionAbortRef.current?.abort();
       setSelectionReady(false);
+      setPickerNotice(null);
       return;
     }
     void refreshSelection({ forPicker: true });
@@ -538,7 +542,12 @@ export function GoogleDrivePanel({
           busy={busy}
           listItems={listItems}
           onConfirm={(next) => void onAddSelection(next)}
-          onCancel={() => setPickerOpen(false)}
+          notice={pickerNotice}
+          onCancel={() => {
+            setActionError(null);
+            setPickerNotice(null);
+            setPickerOpen(false);
+          }}
         />
       ) : null}
 

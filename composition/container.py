@@ -680,6 +680,7 @@ def google_drive_status(
     settings: Settings,
     *,
     catalog: DocumentCatalog | None = None,
+    catalog_unavailable: bool = False,
 ) -> GoogleDriveStatus:
     """Report SA flags plus user OAuth connection metadata.
 
@@ -689,6 +690,7 @@ def google_drive_status(
     Args:
         settings (Settings): Loaded environment settings.
         catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_unavailable (bool): Construction already failed; do not retry.
 
     Returns:
         GoogleDriveStatus: Presentation-safe flags and connection metadata.
@@ -726,9 +728,17 @@ def google_drive_status(
         available=available,
         connected=connection is not None,
         oauth_ready=_oauth_ready(settings),
-        account_email=None if connection is None else connection.account_email,
-        document_count=_drive_document_count(
-            settings, connection=connection, catalog=catalog
+        account_email=(
+            None
+            if connection is None or connection.account_email_unverified
+            else connection.account_email
+        ),
+        document_count=(
+            0
+            if catalog_unavailable
+            else _drive_document_count(
+                settings, connection=connection, catalog=catalog
+            )
         ),
         folder_count=None if connection is None else len(connection.folders),
         last_sync=last_sync,
@@ -869,6 +879,7 @@ def complete_google_drive_oauth(
                 reauthorization_required=False,
                 folders=() if not keep_scope else existing.folders,
                 files=() if not keep_scope else existing.files,
+                account_email_unverified=probe_failed,
             )
 
         tokens_store.mutate(_next)
@@ -1187,20 +1198,27 @@ def _validate_selection_items(
         _fill()
         while in_flight:
             done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
-            for future in done:
+            for future in sorted(done, key=in_flight.__getitem__):
                 index = in_flight.pop(future)
                 resolved[index] = future.result()
             _fill()
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
+        for future in in_flight:
+            if future.cancelled():
+                continue
+            error = future.exception()
+            if error is not None:
+                logger.warning(
+                    "Drive selection validation job failed",
+                    exc_info=error,
+                )
     folder_count = len(folder_items)
-    folders_out = tuple(
-        item for item in resolved[:folder_count] if item is not None
-    )
-    files_out = tuple(
-        item for item in resolved[folder_count:] if item is not None
-    )
-    return folders_out, files_out
+    folders_out = tuple(resolved[:folder_count])
+    files_out = tuple(resolved[folder_count:])
+    if None in folders_out or None in files_out:
+        raise RuntimeError("Drive selection validation left an unresolved item")
+    return folders_out, files_out  # type: ignore[return-value]
 
 
 def _validate_selected_item(
@@ -1285,6 +1303,7 @@ def sync_google_drive_oauth(
     settings: Settings,
     *,
     catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
     connection_store=None,
@@ -1294,6 +1313,8 @@ def sync_google_drive_oauth(
     Args:
         settings (Settings): Loaded environment settings.
         catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog
+            builder used after not-connected / reauth / selection guards.
         vector_store (VectorStore | None): Shared store for the run.
         vector_store_factory (Callable[[], VectorStore] | None): Lazy store
             builder used after not-connected / reauth / selection guards.
@@ -1325,7 +1346,12 @@ def sync_google_drive_oauth(
             "Google Drive sync scope is not selected"
         )
     try:
-        working_catalog = catalog if catalog is not None else build_document_catalog(settings)
+        if catalog is not None:
+            working_catalog = catalog
+        elif catalog_factory is not None:
+            working_catalog = catalog_factory()
+        else:
+            working_catalog = build_document_catalog(settings)
         before = {
             row.reference.source_id
             for row in working_catalog.all()

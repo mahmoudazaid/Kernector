@@ -59,6 +59,7 @@ def test_count_filters_source_type_and_status(tmp_path: Path, backend: str) -> N
         == 1
     )
     assert catalog.count(status=CatalogStatus.FAILED) == 1
+    assert catalog.count(status=CatalogStatus.READY) == 2
     if backend == "sql":
         assert other.count() == 1
         assert catalog.count() == 3

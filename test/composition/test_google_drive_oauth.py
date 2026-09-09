@@ -339,8 +339,52 @@ def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
     stored = tokens.load()
     assert stored is not None
     assert stored.account_email == "ada@example.com"
+    assert stored.account_email_unverified is True
     assert stored.folders == (StoredItem(id="folder-1", name="Specs"),)
     assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
+    status = google_drive_status(settings)
+    assert status.account_email is None
+
+
+def test_callback_reconnect_after_unverified_probe_resets_on_other_account(
+    settings,
+) -> None:
+    states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//old-refresh",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at="2026-09-08T12:00:00+00:00",
+            last_sync_new=1,
+            last_sync_updated=0,
+            last_sync_unchanged=2,
+            last_sync_failed=0,
+            reauthorization_required=False,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            files=(),
+            account_email_unverified=True,
+        )
+    )
+    state = states.issue()
+    url = complete_google_drive_oauth(
+        settings,
+        state=state,
+        code="4/auth-code",
+        error=None,
+        state_store=states,
+        connection_store=tokens,
+        gateway=OtherAccountGateway(),
+    )
+
+    assert url.endswith("drive=connected")
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.account_email == "other@example.com"
+    assert stored.account_email_unverified is False
+    assert stored.folders == ()
+    assert stored.last_synced_at is None
 
 
 def test_status_reads_store_not_memory(settings) -> None:
@@ -852,13 +896,14 @@ def test_browse_and_put_selection_use_ids_and_skip_tokens(settings) -> None:
     assert "ya29.access-secret" not in repr(page)
     assert "1//refresh-secret" not in repr(page)
 
+    refresh = tokens.load().refresh_token
     saved = put_google_drive_selection(
         settings,
         folders=(GoogleDriveSelectedItem(id="folder-1", name="Old name"),),
         files=(),
         connection_store=tokens,
         connector_factory=lambda: build_google_drive_oauth_connector(
-            settings, refresh_token=tokens.load().refresh_token, files=files
+            settings, refresh_token=refresh, files=FakeBrowseFiles()
         ),
     )
     assert saved.folders[0].id == "folder-1"
@@ -966,6 +1011,7 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
         )
     )
     started: list[str] = []
+    finished: list[str] = []
     lock = threading.Lock()
     failed = threading.Event()
 
@@ -973,11 +1019,15 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
         def get_item(self, item_id: str):
             with lock:
                 started.append(item_id)
-            if item_id == "folder-0":
-                failed.set()
-                raise InputRejectedError(_SELECTION_KIND)
-            failed.wait(timeout=2)
-            return _FakeRemote(item_id, "folder")
+            try:
+                if item_id == "folder-0":
+                    failed.set()
+                    raise InputRejectedError(_SELECTION_KIND)
+                failed.wait(timeout=2)
+                return _FakeRemote(item_id, "folder")
+            finally:
+                with lock:
+                    finished.append(item_id)
 
     items = tuple(
         GoogleDriveSelectedItem(id=f"folder-{index}", name=f"Folder {index}")
@@ -992,6 +1042,7 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
             connector_factory=lambda: Connector(),
         )
     assert len(started) <= _DRIVE_SELECTION_VALIDATE_WORKERS
+    assert len(finished) == len(started)
 
 
 _SELECTION_KIND = "A selected Drive item does not match the requested type."

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from domain.knowledge import (
     SourceType,
     UploadPayload,
 )
+from presentation.http import deps as http_deps
 from presentation.http.app import create_app
 from presentation.http.deps import DocumentOperations, get_document_operations
 from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE
@@ -353,3 +355,56 @@ def test_partial_failure_returns_409_with_retry_sentence(
     assert body["code"] == "document_partial_failure"
     assert "retry" in body["detail"].lower()
     assert "half" not in body["detail"]
+
+
+def test_document_operations_resolve_catalog_lazily(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    def boom() -> object:
+        calls.append(1)
+        raise RuntimeError("catalog unavailable")
+
+    monkeypatch.setattr(http_deps, "get_document_catalog", boom)
+    ops = http_deps.get_document_operations(SimpleNamespace(max_upload_bytes=1))
+    assert calls == []
+    with pytest.raises(RuntimeError, match="catalog unavailable"):
+        ops.list()
+    assert calls == [1]
+
+
+def test_document_operations_reuse_the_process_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = object()
+    seen: list[tuple[str, object]] = []
+    monkeypatch.setattr(http_deps, "get_document_catalog", lambda: catalog)
+    monkeypatch.setattr(http_deps, "get_vector_store", lambda: object())
+
+    def record(name: str):
+        def _fn(*_args, catalog=None, **_kwargs):
+            seen.append((name, catalog))
+            if name == "list":
+                return ()
+            if name == "delete":
+                return None
+            return object()
+
+        return _fn
+
+    monkeypatch.setattr(http_deps, "list_uploaded_documents", record("list"))
+    monkeypatch.setattr(http_deps, "create_uploaded_document", record("create"))
+    monkeypatch.setattr(http_deps, "replace_uploaded_document", record("replace"))
+    monkeypatch.setattr(http_deps, "delete_uploaded_document", record("delete"))
+    ops = http_deps.get_document_operations(SimpleNamespace(max_upload_bytes=1))
+    ops.list()
+    ops.create(object())
+    ops.replace(object(), object())
+    ops.delete(object())
+    assert seen == [
+        ("list", catalog),
+        ("create", catalog),
+        ("replace", catalog),
+        ("delete", catalog),
+    ]

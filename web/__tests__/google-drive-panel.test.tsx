@@ -579,12 +579,17 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    const dialog = screen.getByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "The Google Drive request failed.",
     );
+    await user.click(within(dialog).getByRole("button", { name: /^close$/i }));
     expect(
-      screen.getByRole("dialog", { name: /choose from google drive/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("dialog", { name: /choose from google drive/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does not show a card error when the picker is closed during selection load", async () => {

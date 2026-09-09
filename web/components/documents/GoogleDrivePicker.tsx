@@ -25,6 +25,7 @@ export type GoogleDrivePickerProps = {
   }>;
   onConfirm: (selection: GoogleDriveSelectionResponse) => void;
   onCancel: () => void;
+  notice?: string | null;
 };
 
 type Crumb = { id: string; name: string };
@@ -175,6 +176,7 @@ export function GoogleDrivePicker({
   listItems = listGoogleDriveItems,
   onConfirm,
   onCancel,
+  notice = null,
 }: GoogleDrivePickerProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -433,6 +435,14 @@ export function GoogleDrivePicker({
         {listLoading ? (
           <div className="kern-picker-loading">
             <Loader label="Loading Google Drive" />
+          </div>
+        ) : null}
+        {notice ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+          >
+            <p>{notice}</p>
           </div>
         ) : null}
         {view.kind === "error" && !selectionLoading ? (

@@ -33,6 +33,7 @@ def manage_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", COLLECTION)
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "json")
     monkeypatch.setenv(
         "DOCUMENT_CATALOG_PATH", str(tmp_path / "catalog" / "uploads.json")
     )
