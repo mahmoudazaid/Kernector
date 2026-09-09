@@ -16,7 +16,6 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     Without this, a local `.env` silently beats `monkeypatch.setenv` and these
     tests would pass while reading a developer's real configuration (§3.1).
     """
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("CHROMA_PERSIST_PATH", raising=False)
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)

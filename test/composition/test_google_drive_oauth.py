@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from application.contracts import (
 )
 from application.errors import (
     GoogleDriveNotConnectedError,
+    GoogleDriveReauthorizationRequiredError,
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
 )
@@ -36,6 +38,7 @@ from composition.container import (
     _DRIVE_SELECTION_VALIDATE_WORKERS,
     build_google_drive_oauth_connector,
 )
+from domain.errors import ConnectorAuthError
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -75,7 +78,6 @@ class FakeGateway:
 
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
@@ -105,7 +107,6 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_start_without_oauth_client_returns_hub_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
@@ -344,6 +345,10 @@ def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
     assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
     status = google_drive_status(settings)
     assert status.account_email is None
+    assert status.reauthorization_required is True
+    assert status.connection_state == "reauthorization_required"
+    with pytest.raises(GoogleDriveReauthorizationRequiredError):
+        sync_google_drive_oauth(settings, connection_store=tokens)
 
 
 def test_callback_reconnect_after_unverified_probe_resets_on_other_account(
@@ -1014,6 +1019,7 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
     finished: list[str] = []
     lock = threading.Lock()
     failed = threading.Event()
+    hold = threading.Event()
 
     class Connector:
         def get_item(self, item_id: str):
@@ -1024,6 +1030,7 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
                     failed.set()
                     raise InputRejectedError(_SELECTION_KIND)
                 failed.wait(timeout=2)
+                hold.wait(timeout=5)
                 return _FakeRemote(item_id, "folder")
             finally:
                 with lock:
@@ -1033,6 +1040,7 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
         GoogleDriveSelectedItem(id=f"folder-{index}", name=f"Folder {index}")
         for index in range(40)
     )
+    started_at = time.monotonic()
     with pytest.raises(InputRejectedError):
         put_google_drive_selection(
             settings,
@@ -1041,8 +1049,47 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
             connection_store=tokens,
             connector_factory=lambda: Connector(),
         )
+    assert time.monotonic() - started_at < 0.5
     assert len(started) <= _DRIVE_SELECTION_VALIDATE_WORKERS
-    assert len(finished) == len(started)
+    hold.set()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and len(finished) < len(started):
+        time.sleep(0.01)
+
+
+def test_put_selection_prefers_auth_error_over_rejected(settings) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    class Connector:
+        def get_item(self, item_id: str):
+            if item_id == "folder-0":
+                raise InputRejectedError(_SELECTION_KIND)
+            raise ConnectorAuthError("credentials rejected")
+
+    with pytest.raises(GoogleDriveReauthorizationRequiredError):
+        put_google_drive_selection(
+            settings,
+            folders=(
+                GoogleDriveSelectedItem(id="folder-0", name="A"),
+                GoogleDriveSelectedItem(id="folder-1", name="B"),
+            ),
+            files=(),
+            connection_store=tokens,
+            connector_factory=lambda: Connector(),
+        )
 
 
 _SELECTION_KIND = "A selected Drive item does not match the requested type."

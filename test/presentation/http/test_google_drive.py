@@ -11,8 +11,7 @@ from application.contracts import (
     ConnectorSyncResponse,
     ConnectorSyncStatus,
 )
-from application.errors import ConfigurationError, GoogleDriveNotConnectedError
-from infrastructure.catalog.errors import CatalogError
+from application.errors import GoogleDriveNotConnectedError
 from presentation.http.schemas import GOOGLE_DRIVE_SELECTION_LIST_MAX
 from composition import (
     ConnectorSyncError,
@@ -90,42 +89,35 @@ def test_status_dep_passes_the_process_catalog(
 
     monkeypatch.setattr(http_deps, "get_document_catalog", lambda: catalog)
 
-    def fake_status(_settings, *, catalog=None, catalog_unavailable=False):
-        seen.append((catalog, catalog_unavailable))
+    def fake_status(_settings, *, catalog=None, catalog_factory=None):
+        seen.append((catalog, catalog_factory))
         return _status()
 
     monkeypatch.setattr(http_deps, "google_drive_status", fake_status)
     http_deps.get_google_drive_status(SimpleNamespace())
-    assert seen == [(catalog, False)]
+    assert seen == [(None, http_deps.get_document_catalog)]
 
 
-@pytest.mark.parametrize(
-    "error",
-    [
-        OSError("catalog directory missing"),
-        CatalogError("catalog migration failed"),
-        ConfigurationError("DOCUMENT_CATALOG_WORKSPACE_ID is required"),
-    ],
-    ids=["oserror", "catalog_error", "configuration_error"],
-)
-def test_status_dep_degrades_when_catalog_construction_fails(
+def test_status_dep_does_not_build_catalog_at_resolution(
     monkeypatch: pytest.MonkeyPatch,
-    error: Exception,
 ) -> None:
+    calls: list[int] = []
     seen: list[object] = []
 
     def boom() -> object:
-        raise error
+        calls.append(1)
+        raise OSError("catalog directory missing")
 
     monkeypatch.setattr(http_deps, "get_document_catalog", boom)
 
-    def fake_status(_settings, *, catalog=None, catalog_unavailable=False):
-        seen.append((catalog, catalog_unavailable))
+    def fake_status(_settings, *, catalog=None, catalog_factory=None):
+        seen.append((catalog, catalog_factory))
         return _status()
 
     monkeypatch.setattr(http_deps, "google_drive_status", fake_status)
     http_deps.get_google_drive_status(SimpleNamespace())
-    assert seen == [(None, True)]
+    assert calls == []
+    assert seen == [(None, boom)]
 
 
 def test_sync_dep_passes_the_process_catalog(monkeypatch: pytest.MonkeyPatch) -> None:

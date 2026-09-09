@@ -288,7 +288,7 @@ class HttpGoogleOAuthGateway:
             method="GET",
         )
         try:
-            with urlopen(request, timeout=20) as response:
+            with urlopen(request, timeout=_DRIVE_HTTP_TIMEOUT_SECONDS) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
             _LOG.info("Drive about lookup failed; account email omitted")
@@ -309,10 +309,10 @@ class HttpGoogleOAuthGateway:
 
 def build_oauth_drive_files(settings: GoogleOAuthSettings, *, refresh_token: str):
     """Build a Drive ``files`` resource from a stored refresh token."""
-    import httplib2
     from google.oauth2.credentials import Credentials
     from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
+    from googleapiclient.http import build_http
 
     if settings.client_id is None or settings.client_secret is None:
         raise GoogleOAuthError("OAuth client is not configured")
@@ -324,9 +324,9 @@ def build_oauth_drive_files(settings: GoogleOAuthSettings, *, refresh_token: str
         client_secret=settings.client_secret,
         scopes=(_DRIVE_SCOPE,),
     )
-    http = AuthorizedHttp(
-        credentials, http=httplib2.Http(timeout=_DRIVE_HTTP_TIMEOUT_SECONDS)
-    )
+    base = build_http()
+    base.timeout = _DRIVE_HTTP_TIMEOUT_SECONDS
+    http = AuthorizedHttp(credentials, http=base)
     service = build("drive", "v3", http=http, cache_discovery=False)
     return service.files()
 
@@ -343,7 +343,7 @@ def _post_form(url: str, fields: dict[str, str]) -> dict[str, object]:
         },
     )
     try:
-        with urlopen(request, timeout=20) as response:
+        with urlopen(request, timeout=_DRIVE_HTTP_TIMEOUT_SECONDS) as response:
             raw = response.read().decode("utf-8")
     except HTTPError as error:
         _LOG.info("Google OAuth HTTP error status=%s", error.code)

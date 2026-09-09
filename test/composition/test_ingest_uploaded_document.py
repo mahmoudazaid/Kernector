@@ -39,7 +39,6 @@ class _RecordingIngest:
 @pytest.fixture
 def chroma_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Settings pointed at `tmp_path`, with `.env` neutralized first."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     target = tmp_path / "chroma"
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(target))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")

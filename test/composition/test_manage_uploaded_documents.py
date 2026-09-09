@@ -31,7 +31,6 @@ from presentation.http.errors import problem_from_exception
 
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
     monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "catalog" / "uploads.json"))
@@ -73,7 +72,6 @@ def test_build_document_catalog_uses_sql_path_and_workspace(
     from domain.knowledge import CatalogDocument, CatalogStatus, SourceType
     from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
     monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")

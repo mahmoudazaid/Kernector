@@ -184,6 +184,7 @@ export function GoogleDrivePanel({
         return null;
       }
       setSelection(current);
+      setPickerNotice(null);
       if (pickerOpenRef.current) {
         setSelectionReady(true);
       }

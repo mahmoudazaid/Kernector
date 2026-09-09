@@ -406,6 +406,15 @@ export function GoogleDrivePicker({
         </form>
       </div>
 
+      {notice && view.kind !== "error" && !listLoading ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          <p>{notice}</p>
+        </div>
+      ) : null}
+
       {query || listLoading ? null : (
         <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
           {crumbs.map((crumb, index) => (
@@ -435,14 +444,6 @@ export function GoogleDrivePicker({
         {listLoading ? (
           <div className="kern-picker-loading">
             <Loader label="Loading Google Drive" />
-          </div>
-        ) : null}
-        {notice ? (
-          <div
-            className="kern-settings-callout kern-settings-callout--error"
-            role="alert"
-          >
-            <p>{notice}</p>
           </div>
         ) : null}
         {view.kind === "error" && !selectionLoading ? (

@@ -142,11 +142,19 @@ def get_document_operations(
     ``DocumentOperationError`` instead of failing dependency resolution.
     """
 
+    catalog: DocumentCatalog | None = None
+
+    def shared_catalog() -> DocumentCatalog:
+        nonlocal catalog
+        if catalog is None:
+            catalog = get_document_catalog()
+        return catalog
+
     def create(payload: UploadPayload) -> CatalogDocument:
         return create_uploaded_document(
             settings,
             payload,
-            catalog=get_document_catalog(),
+            catalog=shared_catalog(),
             vector_store=get_vector_store(),
         )
 
@@ -157,7 +165,7 @@ def get_document_operations(
             settings,
             reference,
             payload,
-            catalog=get_document_catalog(),
+            catalog=shared_catalog(),
             vector_store=get_vector_store(),
         )
 
@@ -165,13 +173,13 @@ def get_document_operations(
         delete_uploaded_document(
             settings,
             reference,
-            catalog=get_document_catalog(),
+            catalog=shared_catalog(),
             vector_store=get_vector_store(),
         )
 
     return DocumentOperations(
         list=lambda: list_uploaded_documents(
-            settings, catalog=get_document_catalog()
+            settings, catalog=shared_catalog()
         ),
         create=create,
         replace=replace,
@@ -185,11 +193,9 @@ def get_google_drive_status(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GoogleDriveStatus:
     """Report Drive configuration presence and extra availability."""
-    try:
-        catalog = get_document_catalog()
-    except (OSError, ValueError, RuntimeError):
-        return google_drive_status(settings, catalog_unavailable=True)
-    return google_drive_status(settings, catalog=catalog)
+    return google_drive_status(
+        settings, catalog_factory=get_document_catalog
+    )
 
 
 def get_google_drive_sync(

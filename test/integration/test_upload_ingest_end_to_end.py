@@ -34,7 +34,6 @@ def _identities(store: ChromaVectorStore) -> list[tuple[str, int]]:
 
 @pytest.fixture
 def upload_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     target = tmp_path / "chroma"
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(target))
     monkeypatch.setenv("CHROMA_COLLECTION", COLLECTION)
