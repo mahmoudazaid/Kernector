@@ -183,6 +183,9 @@ describe("GoogleDrivePanel", () => {
       await screen.findByRole("button", { name: /Sync/i }),
     ).toBeEnabled();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.queryByText(/^sync scope$/i)).toBeNull();
     expect(screen.queryByRole("link", { name: /^connect$/i })).toBeNull();
     expect(document.body.textContent).not.toMatch(/ya29\.|1\/\/|client-secret/);
   });
@@ -232,16 +235,17 @@ describe("GoogleDrivePanel", () => {
     );
 
     expect(await screen.findByText(/^never$/i)).toBeInTheDocument();
-    expect(screen.getByText(/not selected/i)).toBeInTheDocument();
     expect(screen.getByText(/setup required/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Sync/i })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: /Browse/i }),
     ).toBeEnabled();
+    expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^sync scope$/i)).toBeNull();
     expect(screen.queryByText(/^new$/i)).toBeNull();
   });
 
-  it("updates last-sync counts from a status refetch after Sync", async () => {
+  it("updates last-synced time from a status refetch after Sync", async () => {
     const user = userEvent.setup();
     const getStatus = vi
       .fn()
@@ -274,11 +278,18 @@ describe("GoogleDrivePanel", () => {
 
     await user.click(await screen.findByRole("button", { name: /Sync/i }));
 
-    expect(await screen.findByText(/^new$/i)).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/new\s*1/i);
-    expect(screen.getByRole("status")).toHaveTextContent(/updated\s*2/i);
-    expect(screen.getByRole("status")).toHaveTextContent(/unchanged\s*3/i);
-    expect(screen.getByRole("status")).toHaveTextContent(/failed\s*0/i);
+    const lastSynced = await screen.findByRole("status");
+    expect(
+      screen.getByRole("heading", { name: /last synced/i }),
+    ).toBeInTheDocument();
+    expect(lastSynced.querySelector("time")).toHaveAttribute(
+      "dateTime",
+      "2026-09-08T12:00:00+00:00",
+    );
+    expect(screen.queryByText(/^new$/i)).toBeNull();
+    expect(screen.queryByText(/^updated$/i)).toBeNull();
+    expect(screen.queryByText(/^unchanged$/i)).toBeNull();
+    expect(screen.queryByText(/^failed$/i)).toBeNull();
   });
 
   it("notifies the catalog after Sync succeeds", async () => {
@@ -605,7 +616,7 @@ describe("GoogleDrivePanel", () => {
     expect(await within(dialog).findByRole("checkbox")).toBeChecked();
   });
 
-  it("renders partial failure counts from the last backend sync", async () => {
+  it("renders a Documents callout when the last sync had failures", async () => {
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
@@ -629,11 +640,11 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    const results = await screen.findByLabelText(
-      /last synchronization result/i,
-    );
-    expect(results).toHaveTextContent(/failed\s*3/i);
-    expect(results).toHaveTextContent(/new\s*1/i);
+    expect(
+      await screen.findByText(/3 files failed to index\. see documents\./i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^new$/i)).toBeNull();
+    expect(screen.queryByLabelText(/last synchronization result/i)).toBeNull();
   });
 
   it("restores connector, selection, and sync state from the backend on remount", async () => {
@@ -665,7 +676,11 @@ describe("GoogleDrivePanel", () => {
     );
 
     expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/updated\s*2/i);
+    expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
+    expect(screen.getByRole("status").querySelector("time")).toHaveAttribute(
+      "dateTime",
+      "2026-09-08T12:00:00+00:00",
+    );
     expect(
       screen.getByRole("button", { name: /Browse/i }),
     ).toBeInTheDocument();

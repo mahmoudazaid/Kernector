@@ -313,6 +313,7 @@ export function GoogleDrivePanel({
               : "Available";
 
   const lastSync = status?.last_sync ?? null;
+  const failedCount = lastSync?.failed_count ?? 0;
   const alertMessage =
     view.kind === "error"
       ? view.message
@@ -405,7 +406,7 @@ export function GoogleDrivePanel({
         </div>
       ) : null}
 
-      <div className="kern-source-metrics kern-source-metrics--three">
+      <div className="kern-source-metrics">
         <div>
           <span className="kern-metric-label">Account</span>
           <span className="kern-metric-value">
@@ -413,57 +414,29 @@ export function GoogleDrivePanel({
           </span>
         </div>
         <div>
-          <span className="kern-metric-label">Documents</span>
+          <span className="kern-metric-label">Indexed</span>
           <span className="kern-metric-value">
             {status?.document_count ?? 0}
-          </span>
-        </div>
-        <div>
-          <span className="kern-metric-label">Sync scope</span>
-          <span className="kern-metric-value">
-            {status?.sync_scope ?? "Not selected"}
           </span>
         </div>
       </div>
       <div className="kern-sync-section" role="status">
         <div className="kern-sync-heading">
-          <h3>Last sync</h3>
+          <h3>Last synced</h3>
           <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
             {lastSync ? formatLastSync(lastSync.synced_at) : "Never"}
           </time>
         </div>
-        {lastSync ? (
-          <div
-            className="kern-sync-results kern-sync-results--oauth"
-            aria-label="Last synchronization result"
-          >
-            <div>
-              <span className="kern-metric-label">New</span>
-              <span className="kern-metric-value">{lastSync.new_count}</span>
-            </div>
-            <div>
-              <span className="kern-metric-label">Updated</span>
-              <span className="kern-metric-value">
-                {lastSync.updated_count}
-              </span>
-            </div>
-            <div>
-              <span className="kern-metric-label">Unchanged</span>
-              <span className="kern-metric-value">
-                {lastSync.unchanged_count}
-              </span>
-            </div>
-            <div>
-              <span className="kern-metric-label">Failed</span>
-              <span
-                className={`kern-metric-value${lastSync.failed_count === 0 ? " is-ok" : ""}`}
-              >
-                {lastSync.failed_count}
-              </span>
-            </div>
-          </div>
-        ) : null}
       </div>
+      {failedCount > 0 ? (
+        <div className="kern-settings-callout kern-settings-callout--warn">
+          <p>
+            {failedCount === 1
+              ? "1 file failed to index. See Documents."
+              : `${failedCount} files failed to index. See Documents.`}
+          </p>
+        </div>
+      ) : null}
 
       <div className="kern-source-actions is-split">
         <div className="kern-action-group">

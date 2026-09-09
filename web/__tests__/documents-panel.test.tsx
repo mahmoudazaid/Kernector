@@ -114,6 +114,7 @@ describe("DocumentsPanel", () => {
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.getByText("spec.md")).toBeInTheDocument();
     expect(screen.getByText("guide.txt")).toBeInTheDocument();
+    expect(screen.getByText("failed")).toHaveClass("kern-doc-failed");
     expect(
       screen.getByText(/catalog identity is the source id/i),
     ).toBeInTheDocument();
@@ -348,6 +349,41 @@ describe("DocumentsPanel", () => {
 
     expect(
       await screen.findByText(/ingestion failed for this document/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Drive failed files with Google Drive source and sync guidance", async () => {
+    const list = vi.fn().mockResolvedValue(
+      listResponse([
+        doc({
+          source_id: "file-9",
+          source_type: "google_drive",
+          file_name: "guide.md",
+          status: "failed",
+          has_error: true,
+          error_summary:
+            "This Google Drive file could not be indexed. Sync again or remove it in Browse.",
+        }),
+      ]),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("guide.md")).toBeInTheDocument();
+    expect(within(table).getByText("Google Drive")).toBeInTheDocument();
+    expect(within(table).getByText("failed")).toHaveClass("kern-doc-failed");
+    expect(
+      screen.getByText(
+        /this google drive file could not be indexed\. sync again or remove it in browse\./i,
+      ),
     ).toBeInTheDocument();
   });
 

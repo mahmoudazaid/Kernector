@@ -74,6 +74,7 @@ from domain.errors import (
 )
 from domain.knowledge import (
     CatalogDocument,
+    CatalogStatus,
     ScoredChunk,
     SourceDocument,
     SourceReference,
@@ -555,7 +556,7 @@ class GoogleDriveStatus:
         connected (bool): A user OAuth refresh token is stored.
         oauth_ready (bool): OAuth client ID, secret, and redirect URI are set.
         account_email (str | None): Display email from Drive about.get.
-        document_count (int): Catalog rows with ``source_type=google_drive``.
+        document_count (int): Ready catalog rows with ``source_type=google_drive``.
         folder_count (int | None): Selected folder count when connected.
         last_sync (GoogleDriveLastSync | None): Last HTTP sync summary.
         reauthorization_required (bool): Stored refresh token was rejected.
@@ -618,6 +619,7 @@ def _drive_document_count(settings: Settings) -> int:
         1
         for row in catalog.all()
         if row.reference.source_type == SourceType.GOOGLE_DRIVE
+        and row.status is CatalogStatus.READY
     )
 
 

@@ -431,6 +431,27 @@ def test_fetch_failure_preserves_ready_row_and_continues(
     assert SECRET not in "".join(payloads)
 
 
+def test_fetch_failure_on_new_document_persists_failed() -> None:
+    listed = _listed(revision="8")
+    catalog = InMemoryDocumentCatalog()
+    connector = RecordingConnector(
+        (listed,),
+        {},
+        fetch_errors={listed.source_id: ConnectorError("could not read file")},
+    )
+    ingest = RecordingIngest()
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.status is CatalogStatus.FAILED
+    assert stored.file_name == "guide.md"
+    assert stored.revision == "8"
+    assert stored.chunk_count == 0
+    assert response.outcomes[0].status is ConnectorSyncStatus.FAILED
+    assert ingest.calls == []
+
+
 def test_pre_mutation_ingest_failure_restores_previous_ready_row() -> None:
     listed = _listed(revision="2")
     catalog = InMemoryDocumentCatalog()

@@ -128,6 +128,19 @@ function sourceLabel(sourceType: string): string {
   return sourceType === GOOGLE_DRIVE_SOURCE ? "Google Drive" : "File upload";
 }
 
+function documentStatusClass(status: string): string | undefined {
+  if (status === "ready") {
+    return "kern-doc-ready";
+  }
+  if (status === "failed") {
+    return "kern-doc-failed";
+  }
+  if (status === "degraded") {
+    return "kern-doc-degraded";
+  }
+  return undefined;
+}
+
 function UploadIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -742,11 +755,7 @@ export function DocumentsPanel({
                         </span>
                       </td>
                       <td>
-                        <span
-                          className={
-                            doc.status === "ready" ? "kern-doc-ready" : undefined
-                          }
-                        >
+                        <span className={documentStatusClass(doc.status)}>
                           {doc.status}
                         </span>
                       </td>

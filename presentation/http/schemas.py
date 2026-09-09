@@ -14,7 +14,7 @@ from application.contracts import (
     RunMeta,
 )
 from composition.software_delivery_tools import SoftwareDeliveryRunView
-from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference
+from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference, SourceType
 
 
 class HealthResponse(BaseModel):
@@ -410,6 +410,15 @@ _ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
     ),
 }
 
+_DRIVE_ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
+    CatalogStatus.FAILED: (
+        "This Google Drive file could not be indexed. Sync again or remove it in Browse."
+    ),
+    CatalogStatus.DEGRADED: (
+        "Indexing did not finish cleanly. Sync again or remove it in Browse."
+    ),
+}
+
 
 class CatalogDocumentResponse(BaseModel):
     """Wire projection of one uploaded catalog row (sanitized diagnostics)."""
@@ -434,7 +443,11 @@ class DocumentListResponse(BaseModel):
 
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
     """Project a catalog row; never serialize raw adapter ``error`` text."""
-    summary = _ERROR_SUMMARY_BY_STATUS.get(document.status)
+    summary = (
+        _DRIVE_ERROR_SUMMARY_BY_STATUS.get(document.status)
+        if document.reference.source_type == SourceType.GOOGLE_DRIVE
+        else _ERROR_SUMMARY_BY_STATUS.get(document.status)
+    )
     return CatalogDocumentResponse(
         source_id=document.reference.source_id,
         source_type=document.reference.source_type,

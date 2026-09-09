@@ -192,6 +192,70 @@ def test_status_reads_store_not_memory(settings) -> None:
     assert status.last_sync is None
 
 
+def test_status_counts_ready_drive_documents_only(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = InMemoryDocumentCatalog()
+    uploaded_at = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("file-ready", SourceType.GOOGLE_DRIVE),
+            file_name="ready.md",
+            title="ready",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=uploaded_at,
+            chunk_count=1,
+            error=None,
+            revision="1",
+        )
+    )
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("file-failed", SourceType.GOOGLE_DRIVE),
+            file_name="failed.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.FAILED,
+            uploaded_at=uploaded_at,
+            chunk_count=0,
+            error="ConnectorError",
+            revision="1",
+        )
+    )
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("upload-1", SourceType.KNOWLEDGE_DOCUMENT),
+            file_name="spec.md",
+            title="Spec",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=uploaded_at,
+            chunk_count=3,
+            error=None,
+        )
+    )
+    monkeypatch.setattr(
+        composition_container, "build_document_catalog", lambda _settings: catalog
+    )
+    GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    assert google_drive_status(settings).document_count == 1
+
+
 def test_disconnect_revokes_and_clears(settings) -> None:
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
     tokens.save(
