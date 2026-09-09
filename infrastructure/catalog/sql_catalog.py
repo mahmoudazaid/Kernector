@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference
+from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference, SourceType
 from infrastructure.catalog import _connection
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_schema import apply_migrations
@@ -86,6 +86,34 @@ class SqlDocumentCatalog:
             except Exception:
                 connection.rollback()
                 raise
+
+    def count(
+        self,
+        *,
+        source_type: SourceType | None = None,
+        status: CatalogStatus | None = None,
+    ) -> int:
+        """Return how many in-workspace records match the optional filters."""
+        clauses = ["workspace_id = ?"]
+        params: list[object] = [self._workspace_id]
+        if source_type is not None:
+            clauses.append("source_type = ?")
+            params.append(source_type)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = " AND ".join(clauses)
+        with self._connect() as connection:
+            try:
+                row = connection.execute(
+                    f"SELECT COUNT(*) FROM catalog_documents WHERE {where}",
+                    params,
+                ).fetchone()
+            except sqlite3.Error as error:
+                raise CatalogError(
+                    f"could not read catalog at {self._path}"
+                ) from error
+        return 0 if row is None else int(row[0])
 
     def delete(self, reference: SourceReference) -> None:
         """Remove the in-workspace record. Missing references are a no-op."""

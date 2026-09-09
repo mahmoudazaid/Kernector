@@ -3,6 +3,18 @@
 from composition.container import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
+    GoogleDriveBrowsePage,
+    GoogleDriveLastSync,
+    GoogleDriveSelection,
+    GoogleDriveSelectedItem,
+    GoogleDriveStatus,
+    browse_google_drive_items,
+    complete_google_drive_oauth,
+    disconnect_google_drive_oauth,
+    get_google_drive_selection,
+    put_google_drive_selection,
+    start_google_drive_oauth,
+    sync_google_drive_oauth,
     unsupported_upload_type_detail,
     available_providers,
     build_ask_knowledge,
@@ -34,6 +46,7 @@ from composition.container import (
     probe_ollama,
     reindex_filter_metadata,
     replace_uploaded_document,
+    google_drive_status,
     sync_google_drive,
 )
 from composition.software_delivery_tools import (
@@ -68,6 +81,11 @@ from infrastructure.config import Settings
 
 __all__ = [
     "ConnectorSyncError",
+    "GoogleDriveBrowsePage",
+    "GoogleDriveLastSync",
+    "GoogleDriveSelection",
+    "GoogleDriveSelectedItem",
+    "GoogleDriveStatus",
     "DocumentContentError",
     "DocumentOperationError",
     "DocumentUploadError",
@@ -123,5 +141,13 @@ __all__ = [
     "probe_ollama",
     "reindex_filter_metadata",
     "replace_uploaded_document",
+    "browse_google_drive_items",
+    "complete_google_drive_oauth",
+    "disconnect_google_drive_oauth",
+    "get_google_drive_selection",
+    "google_drive_status",
+    "put_google_drive_selection",
+    "start_google_drive_oauth",
     "sync_google_drive",
+    "sync_google_drive_oauth",
 ]

@@ -60,6 +60,54 @@ def test_failed_document_uses_fixed_summary_not_adapter_text() -> None:
     assert "/var/tmp" not in str(payload)
 
 
+def test_failed_drive_document_uses_sync_guidance() -> None:
+    projected = catalog_document_response(
+        CatalogDocument(
+            reference=SourceReference(
+                source_id="file-9",
+                source_type=SourceType.GOOGLE_DRIVE,
+            ),
+            file_name="guide.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.FAILED,
+            uploaded_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+            chunk_count=0,
+            error="ConnectorError",
+            revision="8",
+        )
+    )
+
+    assert projected.has_error is True
+    assert projected.error_summary == (
+        "This Google Drive file could not be indexed. Sync again or remove it in Browse."
+    )
+
+
+def test_degraded_drive_document_uses_sync_guidance() -> None:
+    projected = catalog_document_response(
+        CatalogDocument(
+            reference=SourceReference(
+                source_id="file-9",
+                source_type=SourceType.GOOGLE_DRIVE,
+            ),
+            file_name="guide.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.DEGRADED,
+            uploaded_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+            chunk_count=2,
+            error="partial",
+            revision="8",
+        )
+    )
+
+    assert projected.has_error is True
+    assert projected.error_summary == (
+        "Indexing did not finish cleanly. Sync again or remove it in Browse."
+    )
+
+
 def test_pending_document_is_not_reported_as_error() -> None:
     projected = catalog_document_response(_doc(status=CatalogStatus.PENDING))
 

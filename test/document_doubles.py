@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 
 from domain.knowledge import (
     CatalogDocument,
+    CatalogStatus,
     SourceDocument,
     SourceReference,
+    SourceType,
     UploadPayload,
 )
 
@@ -36,6 +38,21 @@ class InMemoryDocumentCatalog:
         if self.fail_on_delete:
             raise RuntimeError("catalog delete failed")
         self._records.pop(reference, None)
+
+    def count(
+        self,
+        *,
+        source_type: SourceType | None = None,
+        status: CatalogStatus | None = None,
+    ) -> int:
+        total = 0
+        for row in self._records.values():
+            if source_type is not None and row.reference.source_type != source_type:
+                continue
+            if status is not None and row.status != status:
+                continue
+            total += 1
+        return total
 
 
 class RecordingExtractor:

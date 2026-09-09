@@ -131,6 +131,8 @@ def test_workspaces_isolate_the_same_source_identity(tmp_path: Path) -> None:
     assert workspace_b.all() == (document_b,)
     assert workspace_a.get(document_a.reference) == document_a
     assert workspace_b.get(document_b.reference) == document_b
+    assert workspace_a.count() == 1
+    assert workspace_b.count() == 1
 
 
 @pytest.mark.parametrize("workspace_id", ["bad id", "ws/id", "w" * 65, "", "   "])

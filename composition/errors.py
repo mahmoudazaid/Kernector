@@ -76,3 +76,7 @@ class ConnectorSyncError(RuntimeError):
 
     def __init__(self, message: str = "The connector sync failed.") -> None:
         super().__init__(message)
+
+
+class GoogleDriveConnectorError(RuntimeError):
+    """A Drive browse or selection call failed without exposing provider details."""

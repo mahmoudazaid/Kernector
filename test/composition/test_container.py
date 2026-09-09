@@ -138,7 +138,6 @@ def test_composition_root_boots_without_presentation(tmp_path: Path) -> None:
 
 def _openrouter_chat_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub OpenRouter chat settings so CI can build without a real `.env`."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
@@ -203,7 +202,6 @@ def test_ask_service_receives_its_collaborator() -> None:
 
 
 def test_prompt_repository_allows_zero_packs(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     repository: PromptRepository = build_prompt_repository(load_settings())
@@ -217,7 +215,6 @@ def test_build_ask_knowledge_wires_with_zero_packs(
     from application.ask_knowledge import AskKnowledge
     from composition import build_ask_knowledge
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -233,7 +230,6 @@ def test_build_ask_knowledge_wires_configured_retrieval_settings(
 ) -> None:
     from composition import build_ask_knowledge
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -255,7 +251,6 @@ def test_build_ask_knowledge_wires_max_input_length_from_settings(
 ) -> None:
     from composition import build_ask_knowledge
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -271,7 +266,6 @@ def test_build_ask_knowledge_wires_max_input_length_from_settings(
 def test_build_rewrite_and_retrieve_wires_max_input_length_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
@@ -286,7 +280,6 @@ def test_build_rewrite_and_retrieve_wires_max_input_length_from_settings(
 def test_build_retrieve_knowledge_wires_max_input_length_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
@@ -301,7 +294,6 @@ def test_build_runtime_settings_exposes_constraints_and_enabled_packs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The catalog the UI reads shares env-owned constraints and pack filtering."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
@@ -328,7 +320,6 @@ def test_build_ask_knowledge_routes_generation_through_ask_service(
     from application.ask_service import AskService
     from composition import build_ask_knowledge
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -343,7 +334,6 @@ def test_build_ask_knowledge_routes_generation_through_ask_service(
 def test_build_invoke_tool_registers_software_delivery_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -363,7 +353,6 @@ def test_build_invoke_tool_registers_software_delivery_tools(
 def test_build_invoke_tool_runs_real_risk_score(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
 
@@ -391,7 +380,6 @@ def test_build_invoke_tool_runs_real_risk_score(
 def test_build_orchestrate_software_delivery_wires_pack_orchestrator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -409,7 +397,6 @@ def test_build_orchestrate_software_delivery_wires_pack_orchestrator(
 def test_build_orchestrate_requires_enabled_pack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
 
     with pytest.raises(ConfigurationError, match="software-delivery pack must be enabled"):
@@ -422,7 +409,6 @@ def test_disabled_orchestration_does_not_import_pack_at_composition_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fresh interpreter: composition import must not load SD orchestration."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     script = r"""
 import sys
 import importlib
@@ -517,7 +503,6 @@ def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC3: with no pack enabled the chat path is still correlated AskKnowledge."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -772,7 +757,6 @@ def test_disabled_pack_does_not_import_chat_intent_at_composition_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC5: a disabled pack contributes nothing to a fresh interpreter."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     script = r"""
 import sys
 import importlib
@@ -797,7 +781,6 @@ print("ok")
 
 
 def _sd_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -859,7 +842,6 @@ class _RecordingRewriteRetrieve:
 def test_presentation_can_import_composition_tool_types_without_packs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     script = r"""
 import sys
 import importlib
@@ -890,7 +872,6 @@ print("ok")
 def test_disabled_pack_does_not_import_software_delivery_at_composition_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     script = r"""
 import sys
 import importlib
@@ -912,7 +893,6 @@ print("ok")
 
 
 def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     repository: PromptRepository = build_prompt_repository(load_settings())
@@ -925,7 +905,6 @@ def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -
 def test_build_prompt_repository_uses_settings_pack_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     pack = tmp_path / "custom-pack"
     pack.mkdir()
     (pack / "only.md").write_text(
@@ -951,7 +930,6 @@ def test_build_prompt_repository_uses_settings_pack_paths(
 def test_build_prompt_repository_wires_default_key_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     pack = tmp_path / "custom-pack"
     pack.mkdir()
     (pack / "alpha.md").write_text(
@@ -989,7 +967,6 @@ def test_build_prompt_repository_wires_default_key_override(
 def test_build_prompt_repository_rejects_unknown_default_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     pack = tmp_path / "custom-pack"
     pack.mkdir()
     (pack / "only.md").write_text(
@@ -1026,13 +1003,11 @@ def test_built_chat_models_satisfy_the_port(
 
 @pytest.fixture
 def chroma_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
-    """Settings pointed at `tmp_path`, with `.env` neutralized first.
+    """Settings pointed at `tmp_path`. ``.env`` is stubbed in ``test/conftest.py``.
 
-    `load_settings()` calls `load_dotenv(override=True)`, so without the patch a
-    developer's local `.env` would beat `setenv` and these tests would build a
-    store inside their real data directory while still passing (§3.1).
+    Autouse ``_isolate_settings_from_dotenv`` stubs ``load_dotenv`` before this
+    fixture runs, so ``setenv`` is not overwritten by a developer ``.env``.
     """
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     target = tmp_path / "chroma"
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(target))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
@@ -1059,7 +1034,6 @@ def test_build_vector_store_returns_the_chroma_adapter(
 def test_build_vector_store_wraps_dual_write_when_hybrid_enabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
@@ -1082,7 +1056,6 @@ def test_build_vector_store_wraps_dual_write_when_hybrid_enabled(
 def test_build_vector_store_skips_bm25_when_hybrid_alpha_is_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
@@ -1106,7 +1079,6 @@ def test_build_vector_store_skips_bm25_when_hybrid_alpha_is_zero(
 def test_build_retrieve_knowledge_skips_embedding_when_hybrid_alpha_is_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
@@ -1136,7 +1108,6 @@ def test_build_ask_knowledge_keeps_hybrid_hits_without_refiltering_fused_scores(
 ) -> None:
     from composition import build_ask_knowledge
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("PROMPT_PACKS", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -1186,7 +1157,6 @@ def test_relevant_retrieve_keeps_hybrid_hits_without_reapplying_raw_threshold(
                 rewritten_query="q",
             )
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
     monkeypatch.setenv("HYBRID_ALPHA", "0.5")
     monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.5")
@@ -1238,7 +1208,6 @@ def test_relevant_retrieve_applies_raw_threshold_when_hybrid_disabled(
                 rewritten_query="q",
             )
 
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "false")
     monkeypatch.setenv("RELEVANCE_THRESHOLD", "0.5")
     monkeypatch.setenv("RETRIEVAL_LIMIT", "3")
@@ -1260,7 +1229,6 @@ def test_relevant_retrieve_applies_raw_threshold_when_hybrid_disabled(
 def test_reindex_filter_metadata_works_with_hybrid_enabled_without_bm25_hydrate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")
     monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
@@ -1460,7 +1428,6 @@ def test_missing_chat_configuration_surfaces_as_configuration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Absent OpenRouter chat credentials fail at build_chat_model, typed."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     settings = load_settings()
     assert settings.openrouter.api_key is None
@@ -1473,7 +1440,6 @@ def test_build_chat_model_maps_missing_ollama_base_url_to_configuration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Ollama construction failures follow the same typed config path as OpenRouter."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     settings = load_settings()
     assert settings.ollama.base_url is None
@@ -1518,7 +1484,6 @@ def test_load_runtime_settings_maps_invalid_max_input_length_to_configuration_er
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bad MAX_INPUT_LENGTH is operator config, not a request-contract error."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("MAX_INPUT_LENGTH", "0")
 
     with pytest.raises(ConfigurationError, match="MAX_INPUT_LENGTH must be > 0"):

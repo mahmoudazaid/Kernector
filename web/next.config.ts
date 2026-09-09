@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    optimizePackageImports: ["motion"],
+  },
   async rewrites() {
     return [
       { source: "/favicon.ico", destination: "/brand/favicon.ico" },

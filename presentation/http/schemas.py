@@ -5,11 +5,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from application.contracts import Citation, InvokeToolResponse, RunMeta
+from application.contracts import (
+    Citation,
+    ConnectorSyncResponse,
+    InvokeToolResponse,
+    RunMeta,
+)
 from composition.software_delivery_tools import SoftwareDeliveryRunView
-from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference
+from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference, SourceType
 
 
 class HealthResponse(BaseModel):
@@ -71,6 +76,131 @@ class OllamaStatusResponse(BaseModel):
 
     reachable: bool
     models: list[str]
+
+
+class GoogleDriveLastSyncResponse(BaseModel):
+    """Last user-OAuth sync summary. Counts are honest; no secrets."""
+
+    synced_at: str
+    new_count: int
+    updated_count: int
+    unchanged_count: int
+    failed_count: int
+
+
+class GoogleDriveStatusResponse(BaseModel):
+    """Google Drive connector presence and user OAuth connection (no secrets)."""
+
+    configured: bool
+    available: bool
+    connected: bool = False
+    oauth_ready: bool = False
+    account_email: str | None = None
+    document_count: int = 0
+    folder_count: int | None = None
+    last_sync: GoogleDriveLastSyncResponse | None = None
+    reauthorization_required: bool = False
+    setup_required: bool = False
+    connection_state: str = "disconnected"
+    sync_scope: str | None = None
+
+
+class GoogleDriveBrowseItemResponse(BaseModel):
+    """One Drive picker row. ``id`` is the only identity field."""
+
+    id: str
+    name: str
+    kind: str
+    mime_type: str | None = None
+    supported: bool
+    modified_at: str | None = None
+
+
+class GoogleDriveBrowsePageResponse(BaseModel):
+    """One page of Drive picker results. Tokens stay off this payload."""
+
+    items: list[GoogleDriveBrowseItemResponse]
+    next_page_token: str | None = None
+
+
+class GoogleDriveSelectedItemResponse(BaseModel):
+    """Saved sync root: Drive ID plus a presentation name."""
+
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1)
+
+
+class GoogleDriveSelectedItemRequest(BaseModel):
+    """PUT selection item. ``root`` is rejected so sync cannot cover all Drive."""
+
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    name: str = Field(min_length=1, max_length=256)
+
+    @field_validator("id")
+    @classmethod
+    def reject_my_drive_root(cls, value: str) -> str:
+        if value == "root":
+            raise ValueError("Drive selection cannot use the My Drive root")
+        return value
+
+
+GOOGLE_DRIVE_SELECTION_LIST_MAX = 100
+
+
+class GoogleDriveSelectionResponse(BaseModel):
+    """Saved folder and exact-file roots. Unbounded so existing grants still load."""
+
+    folders: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
+    files: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
+
+
+class GoogleDriveSelectionRequest(BaseModel):
+    """PUT body: bounded so one request can finish inside the client timeout."""
+
+    folders: list[GoogleDriveSelectedItemRequest] = Field(
+        default_factory=list, max_length=GOOGLE_DRIVE_SELECTION_LIST_MAX
+    )
+    files: list[GoogleDriveSelectedItemRequest] = Field(
+        default_factory=list, max_length=GOOGLE_DRIVE_SELECTION_LIST_MAX
+    )
+
+
+class ConnectorSyncOutcomeResponse(BaseModel):
+    """One listed Drive document outcome from a sync run."""
+
+    source_id: str
+    status: Literal["ingested", "skipped", "failed"]
+    chunk_count: int
+    error_type: str | None = None
+
+
+class GoogleDriveSyncResponse(BaseModel):
+    """Projected connector sync counts and per-document outcomes."""
+
+    ingested_count: int
+    skipped_count: int
+    failed_count: int
+    outcomes: list[ConnectorSyncOutcomeResponse]
+
+
+def google_drive_sync_response(
+    response: ConnectorSyncResponse,
+) -> GoogleDriveSyncResponse:
+    """Project application sync counts onto the wire schema."""
+    return GoogleDriveSyncResponse(
+        ingested_count=response.ingested_count,
+        skipped_count=response.skipped_count,
+        failed_count=response.failed_count,
+        outcomes=[
+            ConnectorSyncOutcomeResponse(
+                source_id=outcome.source_id,
+                status=outcome.status.value,
+                chunk_count=outcome.chunk_count,
+                error_type=outcome.error_type,
+            )
+            for outcome in response.outcomes
+        ],
+    )
 
 
 class ChatHistoryMessage(BaseModel):
@@ -308,6 +438,15 @@ _ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
     ),
 }
 
+_DRIVE_ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
+    CatalogStatus.FAILED: (
+        "This Google Drive file could not be indexed. Sync again or remove it in Browse."
+    ),
+    CatalogStatus.DEGRADED: (
+        "Indexing did not finish cleanly. Sync again or remove it in Browse."
+    ),
+}
+
 
 class CatalogDocumentResponse(BaseModel):
     """Wire projection of one uploaded catalog row (sanitized diagnostics)."""
@@ -332,7 +471,11 @@ class DocumentListResponse(BaseModel):
 
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
     """Project a catalog row; never serialize raw adapter ``error`` text."""
-    summary = _ERROR_SUMMARY_BY_STATUS.get(document.status)
+    summary = (
+        _DRIVE_ERROR_SUMMARY_BY_STATUS.get(document.status)
+        if document.reference.source_type == SourceType.GOOGLE_DRIVE
+        else _ERROR_SUMMARY_BY_STATUS.get(document.status)
+    )
     return CatalogDocumentResponse(
         source_id=document.reference.source_id,
         source_type=document.reference.source_type,

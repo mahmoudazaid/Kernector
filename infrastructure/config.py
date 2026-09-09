@@ -3,6 +3,7 @@
 import os
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -135,6 +136,46 @@ class GoogleDriveSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class GoogleOAuthSettings:
+    """User OAuth for the Next.js Drive connection (not the CLI service account).
+
+    Client secret is never exposed on HTTP responses. Token JSON is stored at
+    ``token_path`` and is not loaded into this dataclass.
+
+    Args:
+        client_id (str | None): Google OAuth client ID.
+        client_secret (str | None): Google OAuth client secret.
+        redirect_uri (str | None): Exact allow-listed callback URL.
+        frontend_redirect (str | None): Knowledge Hub URL after the callback.
+        token_path (Path): Server-side connection file (refresh token + metadata).
+        state_path (Path): Single-use CSRF state file.
+        state_ttl_seconds (int): How long an issued ``state`` remains valid.
+    """
+
+    client_id: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str | None = None
+    frontend_redirect: str | None = None
+    token_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "google-oauth-connection.json"
+    )
+    state_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "google-oauth-state.json"
+    )
+    state_ttl_seconds: int = 600
+
+    def __repr__(self) -> str:
+        return (
+            "GoogleOAuthSettings("
+            f"client_id={self.client_id!r}, client_secret='***', "
+            f"redirect_uri={self.redirect_uri!r}, "
+            f"frontend_redirect={self.frontend_redirect!r}, "
+            f"token_path={self.token_path!r}, state_path={self.state_path!r}, "
+            f"state_ttl_seconds={self.state_ttl_seconds})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -150,6 +191,7 @@ class Settings:
     domain_tools: DomainToolSettings
     http: HttpAdapterSettings
     google_drive: GoogleDriveSettings = field(default_factory=GoogleDriveSettings)
+    google_oauth: GoogleOAuthSettings = field(default_factory=GoogleOAuthSettings)
 
 
 def load_settings() -> Settings:
@@ -191,6 +233,7 @@ def load_settings() -> Settings:
         domain_tools=_load_domain_tool_settings(),
         http=_load_http_adapter_settings(),
         google_drive=_load_google_drive_settings(),
+        google_oauth=_load_google_oauth_settings(),
     )
 
 
@@ -226,6 +269,20 @@ def _resolve_under_project_root(raw: str) -> Path:
     """
     path = Path(raw).expanduser()
     return path if path.is_absolute() else _PROJECT_ROOT / path
+
+
+def _require_google_oauth_json_path(path: Path, env_name: str) -> Path:
+    """Reject in-repo grant paths that would not match the OAuth gitignore."""
+    resolved = path.expanduser().resolve()
+    if not resolved.is_relative_to(_PROJECT_ROOT.resolve()):
+        return path
+    if not resolved.name.startswith("google-oauth-") or not resolved.name.endswith(
+        ".json"
+    ):
+        raise ValueError(
+            f"{env_name} must use a google-oauth-*.json filename so the grant stays gitignored"
+        )
+    return path
 
 
 def _load_chroma_settings() -> ChromaSettings:
@@ -435,4 +492,62 @@ def _load_google_drive_settings() -> GoogleDriveSettings:
         service_account_file=service_account_file,
         folder_id=folder_id,
         page_size=page_size,
+    )
+
+
+def _require_absolute_http_url(name: str, raw: str) -> str:
+    """Reject relative paths and non-http(s) schemes for OAuth redirects."""
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"{name} must be an absolute http(s) URL")
+    return raw
+
+
+def _load_google_oauth_settings() -> GoogleOAuthSettings:
+    """Parse user-OAuth env without reading stored refresh tokens."""
+    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    raw_redirect = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
+    raw_frontend = os.getenv("GOOGLE_OAUTH_FRONTEND_REDIRECT")
+    raw_token = os.getenv("GOOGLE_OAUTH_TOKEN_PATH")
+    raw_state = os.getenv("GOOGLE_OAUTH_STATE_PATH")
+    ttl = _env_int("GOOGLE_OAUTH_STATE_TTL_SECONDS", "600")
+    if ttl < 30:
+        raise ValueError("GOOGLE_OAUTH_STATE_TTL_SECONDS must be at least 30")
+    redirect_uri = None
+    if raw_redirect is not None and raw_redirect.strip():
+        redirect_uri = _require_absolute_http_url(
+            "GOOGLE_OAUTH_REDIRECT_URI", raw_redirect.strip()
+        )
+    frontend_redirect = None
+    if raw_frontend is not None and raw_frontend.strip():
+        frontend_redirect = _require_absolute_http_url(
+            "GOOGLE_OAUTH_FRONTEND_REDIRECT", raw_frontend.strip()
+        )
+    token_path = _require_google_oauth_json_path(
+        (
+            _resolve_under_project_root(raw_token.strip())
+            if raw_token and raw_token.strip()
+            else _PROJECT_ROOT / "data" / "google-oauth-connection.json"
+        ),
+        "GOOGLE_OAUTH_TOKEN_PATH",
+    )
+    state_path = _require_google_oauth_json_path(
+        (
+            _resolve_under_project_root(raw_state.strip())
+            if raw_state and raw_state.strip()
+            else _PROJECT_ROOT / "data" / "google-oauth-state.json"
+        ),
+        "GOOGLE_OAUTH_STATE_PATH",
+    )
+    return GoogleOAuthSettings(
+        client_id=client_id.strip() if client_id and client_id.strip() else None,
+        client_secret=(
+            client_secret.strip() if client_secret and client_secret.strip() else None
+        ),
+        redirect_uri=redirect_uri,
+        frontend_redirect=frontend_redirect,
+        token_path=token_path,
+        state_path=state_path,
+        state_ttl_seconds=ttl,
     )

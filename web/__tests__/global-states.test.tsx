@@ -24,15 +24,12 @@ vi.mock("next/link", () => ({
 }));
 
 describe("global UI states", () => {
-  it("shows a loading shell message", () => {
+  it("shows a brand loader", () => {
     render(<LoadingState />);
 
-    expect(
-      screen.getByRole("heading", { name: /loading page shell/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/keeps the surrounding navigation available/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/^loading$/i);
+    expect(screen.getByRole("status").querySelector("svg")).toBeInTheDocument();
+    expect(screen.queryByRole("heading")).toBeNull();
   });
 
   it("shows a neutral empty state", () => {

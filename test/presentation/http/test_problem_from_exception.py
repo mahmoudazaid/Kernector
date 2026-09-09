@@ -6,12 +6,18 @@ from application.contracts import AskRequest
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GoogleDriveNotConfiguredError,
+    GoogleDriveNotConnectedError,
+    GoogleDriveOAuthNotConfiguredError,
+    GoogleDriveReauthorizationRequiredError,
+    GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
     UploadTooLargeError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
 from composition.errors import (
+    ConnectorSyncError,
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
@@ -46,6 +52,27 @@ from presentation.http.errors import (
         (DomainValidationError("invariant"), 500, "operational_error"),
         (InsufficientEvidenceError("no hits"), 422, "insufficient_evidence"),
         (ConfigurationError("missing key"), 500, "configuration_error"),
+        (
+            GoogleDriveNotConfiguredError("missing folder"),
+            409,
+            "google_drive_unconfigured",
+        ),
+        (
+            GoogleDriveOAuthNotConfiguredError("missing client"),
+            409,
+            "google_drive_oauth_unconfigured",
+        ),
+        (
+            GoogleDriveNotConnectedError("no grant"),
+            409,
+            "google_drive_not_connected",
+        ),
+        (
+            GoogleDriveReauthorizationRequiredError("revoked"),
+            409,
+            "google_drive_reauthorization_required",
+        ),
+        (ConnectorSyncError("vendor body"), 502, "connector_sync_failed"),
         (ProviderError("upstream"), 502, "provider_error"),
         (ToolFailureError("tool broke"), 500, "tool_failure"),
         (VectorStoreError("chroma down"), 500, "store_error"),
@@ -241,6 +268,56 @@ def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
         "Upload must be at most 16 bytes; this file is 17 bytes."
     )
     assert "UploadPayload(" not in body
+
+
+def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> None:
+    """Subclass must map to 409; ConfigurationError remains 500."""
+    unconfigured = problem_from_exception(
+        GoogleDriveNotConfiguredError("GOOGLE_DRIVE_FOLDER_ID missing")
+    )
+    generic = problem_from_exception(ConfigurationError("missing key"))
+
+    assert isinstance(
+        GoogleDriveNotConfiguredError("missing"), ConfigurationError
+    )
+    assert unconfigured.status == 409
+    assert unconfigured.code == "google_drive_unconfigured"
+    assert "GOOGLE_DRIVE_FOLDER_ID" not in unconfigured.detail
+    assert generic.status == 500
+    assert generic.code == "configuration_error"
+
+
+def test_google_drive_oauth_errors_are_not_swallowed_by_configuration_error() -> None:
+    oauth = problem_from_exception(
+        GoogleDriveOAuthNotConfiguredError("GOOGLE_OAUTH_CLIENT_SECRET missing")
+    )
+    disconnected = problem_from_exception(GoogleDriveNotConnectedError("no grant"))
+    reauth = problem_from_exception(
+        GoogleDriveReauthorizationRequiredError("token 1//revoked")
+    )
+
+    assert oauth.status == 409
+    assert oauth.code == "google_drive_oauth_unconfigured"
+    assert "CLIENT_SECRET" not in oauth.detail
+    assert disconnected.status == 409
+    assert disconnected.code == "google_drive_not_connected"
+    assert reauth.status == 409
+    assert reauth.code == "google_drive_reauthorization_required"
+    assert "1//" not in reauth.detail
+    selection = problem_from_exception(
+        GoogleDriveSelectionRequiredError("Google Drive sync scope is not selected")
+    )
+    assert selection.status == 409
+    assert selection.code == "google_drive_selection_required"
+
+
+def test_connector_sync_error_uses_fixed_sanitized_detail() -> None:
+    problem = problem_from_exception(ConnectorSyncError("path /secret/sa.json"))
+
+    assert problem.status == 502
+    assert problem.code == "connector_sync_failed"
+    assert problem.detail == "The Google Drive connector sync failed."
+    assert "/secret/sa.json" not in problem.detail
 
 
 def test_problem_responses_413_describes_payload_too_large() -> None:

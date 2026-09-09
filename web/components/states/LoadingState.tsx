@@ -1,15 +1,13 @@
-export function LoadingState() {
+import { Loader } from "@/components/ui/Loader";
+
+type LoadingStateProps = {
+  label?: string;
+};
+
+export function LoadingState({ label = "Loading" }: LoadingStateProps) {
   return (
     <div className="kern-state">
-      <div className="kern-skeleton" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-      <h2>Loading page shell…</h2>
-      <p>
-        The global loading boundary keeps the surrounding navigation available.
-      </p>
+      <Loader label={label} size="lg" />
     </div>
   );
 }

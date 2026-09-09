@@ -8,11 +8,6 @@ from presentation.http.app import create_app, cors_origins_from_env
 _ORIGIN = "http://localhost:3000"
 
 
-@pytest.fixture(autouse=True)
-def _neutralize_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
-
-
 def test_dev_cors_allows_configured_origin(monkeypatch) -> None:
     monkeypatch.setenv("HTTP_DEV_CORS", "true")
     monkeypatch.setenv("HTTP_CORS_ORIGINS", _ORIGIN)

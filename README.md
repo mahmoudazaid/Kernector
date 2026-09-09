@@ -14,7 +14,7 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 `domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` registers `software_delivery.risk_score`, `software_delivery.generate_test_cases`, `software_delivery.export_test_cases_markdown`, and a deterministic chat-intent policy, without importing application or presentation code. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the FastAPI HTTP adapter and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly. The interactive UI is Next.js under `web/`, talking HTTP to FastAPI.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, and the CLI-only Google Drive connector.
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, and the Google Drive connector (HTTP status/sync plus CLI).
 
 ## Knowledge path from source to cited answer
 
@@ -205,17 +205,51 @@ rm -rf data/chroma
 
 ## Sync documents from Google Drive
 
-Ticket #196 adds a **CLI-only** Google Drive sync job. There is no OAuth picker, FastAPI connector route, or Next.js management screen in this ticket.
+Google Drive has two connection strategies. Knowledge Hub uses **user OAuth**. The CLI (#196) still uses a **service account**. Do not enter Google credentials in Next.js.
+
+### Knowledge Hub (user OAuth)
+
+1. Enable the Google Drive API and create an OAuth **Web application** client.
+2. Set the authorized redirect URI to exactly
+   `http://127.0.0.1:8000/api/v1/connectors/google-drive/oauth/callback`
+   (or your deployed callback URL).
+3. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+   `GOOGLE_OAUTH_REDIRECT_URI`, and optionally `GOOGLE_OAUTH_FRONTEND_REDIRECT`
+   (see [`.env.example`](.env.example)). Never commit those values.
+4. Install the extra: `uv sync --extra google-drive`.
+5. In Knowledge Hub, click **Connect**. Google owns account selection and consent.
+6. After the callback, choose folders (recommended) or individual files, then
+   **Add selection & sync**. That saves the scope and runs the first import.
+   Later **Sync** refreshes only new or changed documents. **Change Drive
+   selection** reopens the picker. **Disconnect** revokes the stored grant
+   and leaves already indexed documents in place.
+
+Tokens stay on the server (`GOOGLE_OAUTH_TOKEN_PATH`). The browser only sees
+presentation fields (`connected`, account email, counts, selection names).
+Scope is `https://www.googleapis.com/auth/drive.readonly` with offline access.
+That **restricted** scope is required so a selected folder remains a durable
+sync root: Kernector must list current descendants and files added later.
+Google may require app verification and, when restricted-scope data is stored
+or transmitted by the server, a security assessment. `drive.file` cannot
+truthfully support recursive folder sync.
+
+A selected **folder** is a durable root (recursive, add/update-only). A selected
+**file** tracks that exact Drive ID. Duplicate IDs are ingested once. Identity is
+the Drive file ID; renames do not create a second catalog document. Moved,
+trashed, deleted, inaccessible, and unsupported items are omitted from the next
+listing and are **not** deleted from the catalog. Unchanged Drive `version`
+(or `md5Checksum` / `modifiedTime` fallback) values skip download, chunking,
+and embedding.
+
+### CLI (service account)
 
 1. Create a Google Cloud service account.
 2. Enable the Google Drive API for that project.
 3. Download the service-account JSON key.
 4. Keep that key **outside the repository**.
 5. Share the target Drive folder with the service-account email (Viewer is enough).
-6. Set the environment variables in `.env` (see [`.env.example`](.env.example)):
-   - `GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE` — path to the JSON key
-   - `GOOGLE_DRIVE_FOLDER_ID` — folder whose **direct children** are synced
-   - `GOOGLE_DRIVE_PAGE_SIZE` — optional list page size (default `100`, max `1000`)
+6. Set `GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE` and `GOOGLE_DRIVE_FOLDER_ID`
+   (see [`.env.example`](.env.example)).
 7. Install the optional extra and run:
 
 ```bash

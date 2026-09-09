@@ -7,6 +7,11 @@ from pydantic import BaseModel
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GoogleDriveNotConfiguredError,
+    GoogleDriveNotConnectedError,
+    GoogleDriveOAuthNotConfiguredError,
+    GoogleDriveReauthorizationRequiredError,
+    GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
     OllamaNotConfiguredError,
@@ -14,9 +19,11 @@ from application.errors import (
 )
 from application.manage_documents import PartialCreateFailure
 from composition.errors import (
+    ConnectorSyncError,
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GoogleDriveConnectorError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
@@ -244,6 +251,69 @@ def problem_from_exception(
             title="Ollama not configured",
             status=409,
             detail="Ollama base URL is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveNotConfiguredError):
+        return _problem(
+            code="google_drive_unconfigured",
+            title="Google Drive not configured",
+            status=409,
+            detail="Google Drive is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveOAuthNotConfiguredError):
+        return _problem(
+            code="google_drive_oauth_unconfigured",
+            title="Google Drive OAuth not configured",
+            status=409,
+            detail="Google Drive OAuth is not configured on the server.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveNotConnectedError):
+        return _problem(
+            code="google_drive_not_connected",
+            title="Google Drive not connected",
+            status=409,
+            detail="Google Drive is not connected.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveReauthorizationRequiredError):
+        return _problem(
+            code="google_drive_reauthorization_required",
+            title="Google Drive reauthorization required",
+            status=409,
+            detail="Google Drive authorization was revoked. Connect again.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveSelectionRequiredError):
+        return _problem(
+            code="google_drive_selection_required",
+            title="Google Drive selection required",
+            status=409,
+            detail="Select Google Drive folders or files before syncing.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GoogleDriveConnectorError):
+        return _problem(
+            code="google_drive_request_failed",
+            title="Google Drive request failed",
+            status=502,
+            detail="The Google Drive request failed.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorSyncError):
+        return _problem(
+            code="connector_sync_failed",
+            title="Connector sync failed",
+            status=502,
+            detail="The Google Drive connector sync failed.",
             instance=instance,
             request_id=request_id,
         )

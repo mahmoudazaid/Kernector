@@ -1,16 +1,30 @@
 """Composition root: the only place that constructs infrastructure."""
 
+import importlib.util
 import logging
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+import re
+import threading
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NoReturn
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
-from application.contracts import ConnectorSyncResponse, IngestRequest, IngestResponse
+from application.contracts import (
+    ConnectorSyncResponse,
+    ConnectorSyncStatus,
+    IngestRequest,
+    IngestResponse,
+)
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GoogleDriveNotConnectedError,
+    GoogleDriveReauthorizationRequiredError,
+    GoogleDriveSelectionRequiredError,
+    InputRejectedError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -36,6 +50,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GoogleDriveConnectorError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
@@ -54,8 +69,21 @@ from composition.tool_registry import (
     enabled_domain_tool_packs,
     build_tool_registry,
 )
-from domain.errors import ConnectorError, DomainValidationError, VectorStoreError
-from domain.knowledge import CatalogDocument, ScoredChunk, SourceDocument, SourceReference, UploadPayload
+from domain.errors import (
+    ConnectorAuthError,
+    ConnectorError,
+    DomainValidationError,
+    VectorStoreError,
+)
+from domain.knowledge import (
+    CatalogDocument,
+    CatalogStatus,
+    ScoredChunk,
+    SourceDocument,
+    SourceReference,
+    SourceType,
+    UploadPayload,
+)
 from domain.ports import (
     ChatModel,
     DocumentCatalog,
@@ -476,16 +504,35 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
 
     Raises:
         ConfigurationError: SQL is selected without a workspace id.
+        DocumentOperationError: The catalog file or SQLite schema is unusable.
     """
     catalog = settings.document_catalog
-    if catalog.backend == "sql":
-        if catalog.workspace_id is None:
-            raise ConfigurationError(
-                "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
-                "DOCUMENT_CATALOG_BACKEND=sql"
-            )
-        return SqlDocumentCatalog(catalog.sql_path, catalog.workspace_id)
-    return JsonDocumentCatalog(catalog.path)
+    try:
+        if catalog.backend == "sql":
+            if catalog.workspace_id is None:
+                raise ConfigurationError(
+                    "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
+                    "DOCUMENT_CATALOG_BACKEND=sql"
+                )
+            return SqlDocumentCatalog(catalog.sql_path, catalog.workspace_id)
+        return JsonDocumentCatalog(catalog.path)
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except OSError as error:
+        raise DocumentOperationError(str(error)) from error
+
+
+def _resolve_catalog(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None,
+    catalog_factory: Callable[[], DocumentCatalog] | None,
+) -> DocumentCatalog:
+    if catalog is not None:
+        return catalog
+    if catalog_factory is not None:
+        return catalog_factory()
+    return build_document_catalog(settings)
 
 
 def migrate_document_catalog(settings: Settings) -> None:
@@ -521,9 +568,892 @@ def migrate_document_catalog(settings: Settings) -> None:
 
 _DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
 _DRIVE_SYNC_MESSAGE = "The Google Drive connector sync failed."
+_DRIVE_REQUEST_MESSAGE = "The Google Drive request failed."
 _DRIVE_CLIENT_MISSING_MESSAGE = (
     "Google Drive client is not installed; run uv sync --extra google-drive."
 )
+_DRIVE_ITEM_ID = re.compile(r"^(root|[A-Za-z0-9_-]{1,128})$")
+_DRIVE_SELECTION_ID = re.compile(r"^(?!root$)[A-Za-z0-9_-]{1,128}$")
+_DRIVE_ITEM_NAME_MAX = 256
+_DRIVE_QUERY_MAX = 200
+_DRIVE_SELECTION_VALIDATE_WORKERS = 16
+_DRIVE_VALIDATION_POOL = ThreadPoolExecutor(
+    max_workers=_DRIVE_SELECTION_VALIDATE_WORKERS,
+    thread_name_prefix="drive-validate",
+)
+_SELECTION_INACCESSIBLE_DETAIL = "A selected Drive item is not accessible."
+_SELECTION_KIND_DETAIL = "A selected Drive item does not match the requested type."
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveLastSync:
+    """Last HTTP OAuth sync counts persisted with the user grant."""
+
+    synced_at: str
+    new_count: int
+    updated_count: int
+    unchanged_count: int
+    failed_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveBrowseItem:
+    """Presentation-safe Drive picker row. Identity is ``id``, never ``name``."""
+
+    id: str
+    name: str
+    kind: str
+    mime_type: str | None
+    supported: bool
+    modified_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveBrowsePage:
+    """One picker page plus an opaque continuation token."""
+
+    items: tuple[GoogleDriveBrowseItem, ...]
+    next_page_token: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveSelectedItem:
+    """Saved sync root: stable Drive ID plus a display name."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveSelection:
+    """Saved folder and exact-file roots for the connected grant."""
+
+    folders: tuple[GoogleDriveSelectedItem, ...]
+    files: tuple[GoogleDriveSelectedItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveStatus:
+    """Drive SA presence, extra availability, and user OAuth connection.
+
+    Args:
+        configured (bool): Folder ID and service-account path are both set (CLI).
+        available (bool): ``googleapiclient`` is importable.
+        connected (bool): A user OAuth refresh token is stored.
+        oauth_ready (bool): OAuth client ID, secret, and redirect URI are set.
+        account_email (str | None): Display email from Drive about.get.
+        document_count (int): Ready catalog rows with ``source_type=google_drive``.
+        folder_count (int | None): Selected folder count when connected.
+        last_sync (GoogleDriveLastSync | None): Last HTTP sync summary.
+        reauthorization_required (bool): Stored refresh token was rejected.
+        setup_required (bool): Unused; empty selection is still connected.
+        connection_state (str): disconnected, ready, or
+            reauthorization_required.
+        sync_scope (str | None): Presentation summary such as ``2 folders + 1 file``.
+    """
+
+    configured: bool
+    available: bool
+    connected: bool = False
+    oauth_ready: bool = False
+    account_email: str | None = None
+    document_count: int = 0
+    folder_count: int | None = None
+    last_sync: GoogleDriveLastSync | None = None
+    reauthorization_required: bool = False
+    setup_required: bool = False
+    connection_state: str = "disconnected"
+    sync_scope: str | None = None
+
+
+def _oauth_ready(settings: Settings) -> bool:
+    oauth = settings.google_oauth
+    return bool(oauth.client_id and oauth.client_secret and oauth.redirect_uri)
+
+
+def _connection_store(settings: Settings):
+    from infrastructure.connectors.google_oauth import GoogleOAuthConnectionStore
+
+    return GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+
+
+def _state_store(settings: Settings):
+    from infrastructure.connectors.google_oauth import GoogleOAuthStateStore
+
+    return GoogleOAuthStateStore(
+        settings.google_oauth.state_path,
+        ttl_seconds=settings.google_oauth.state_ttl_seconds,
+    )
+
+
+def _hub_redirect(settings: Settings, *, result: str) -> str:
+    base = settings.google_oauth.frontend_redirect
+    if base is None:
+        origin = (
+            settings.http.cors_origins[0]
+            if settings.http.cors_origins
+            else "http://localhost:3000"
+        )
+        base = f"{origin.rstrip('/')}/documents"
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}drive={result}"
+
+
+def google_drive_status(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+) -> GoogleDriveStatus:
+    """Report SA flags plus user OAuth connection metadata.
+
+    Does not import the Google client or load the service-account JSON.
+    Catalog I/O failures degrade ``document_count`` to ``0``.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog
+            builder used after the connection is known.
+
+    Returns:
+        GoogleDriveStatus: Presentation-safe flags and connection metadata.
+    """
+    drive = settings.google_drive
+    configured = (
+        drive.folder_id is not None and drive.service_account_file is not None
+    )
+    available = importlib.util.find_spec("googleapiclient") is not None
+    connection = _connection_store(settings).load()
+    last_sync = None
+    if (
+        connection is not None
+        and connection.last_synced_at is not None
+        and connection.last_sync_new is not None
+        and connection.last_sync_updated is not None
+        and connection.last_sync_unchanged is not None
+        and connection.last_sync_failed is not None
+    ):
+        last_sync = GoogleDriveLastSync(
+            synced_at=connection.last_synced_at,
+            new_count=connection.last_sync_new,
+            updated_count=connection.last_sync_updated,
+            unchanged_count=connection.last_sync_unchanged,
+            failed_count=connection.last_sync_failed,
+        )
+    reauthorization_required = (
+        False if connection is None else connection.reauthorization_required
+    )
+    if connection is None:
+        connection_state = "disconnected"
+    elif reauthorization_required:
+        connection_state = "reauthorization_required"
+    else:
+        connection_state = "ready"
+    return GoogleDriveStatus(
+        configured=configured,
+        available=available,
+        connected=connection is not None,
+        oauth_ready=_oauth_ready(settings),
+        account_email=(
+            None
+            if connection is None or connection.account_email_unverified
+            else connection.account_email
+        ),
+        document_count=_drive_document_count(
+            settings,
+            connection=connection,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+        ),
+        folder_count=None if connection is None else len(connection.folders),
+        last_sync=last_sync,
+        reauthorization_required=reauthorization_required,
+        setup_required=False,
+        connection_state=connection_state,
+        sync_scope=None if connection is None else _sync_scope_label(connection),
+    )
+
+
+def _drive_document_count(
+    settings: Settings,
+    *,
+    connection,
+    catalog: DocumentCatalog | None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+) -> int:
+    if connection is None:
+        return 0
+    try:
+        working = _resolve_catalog(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
+        return working.count(
+            source_type=SourceType.GOOGLE_DRIVE,
+            status=CatalogStatus.READY,
+        )
+    except (
+        CatalogError,
+        ConfigurationError,
+        DocumentOperationError,
+        OSError,
+        ValueError,
+    ):
+        logger.warning("Drive document count unavailable", exc_info=True)
+        return 0
+
+
+def _sync_scope_label(connection) -> str | None:
+    folders = len(connection.folders)
+    files = len(connection.files)
+    if folders == 0 and files == 0:
+        return None
+    parts: list[str] = []
+    if folders:
+        parts.append(f"{folders} folder" + ("" if folders == 1 else "s"))
+    if files:
+        parts.append(f"{files} file" + ("" if files == 1 else "s"))
+    return " + ".join(parts)
+
+
+def start_google_drive_oauth(
+    settings: Settings,
+    *,
+    state_store=None,
+) -> str:
+    """Issue CSRF state and return Google's authorization URL.
+
+    When the OAuth client is missing, return the Hub URL with ``drive=unconfigured``
+    so a browser GET never lands on a JSON problem page.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        state_store: Injected state store for tests.
+
+    Returns:
+        str: Google authorization URL, or the Knowledge Hub error redirect.
+    """
+    if not _oauth_ready(settings):
+        return _hub_redirect(settings, result="unconfigured")
+    from infrastructure.connectors.google_oauth import authorization_url
+
+    store = state_store if state_store is not None else _state_store(settings)
+    state = store.issue()
+    return authorization_url(settings.google_oauth, state=state)
+
+
+def complete_google_drive_oauth(
+    settings: Settings,
+    *,
+    state: str | None,
+    code: str | None,
+    error: str | None,
+    state_store=None,
+    connection_store=None,
+    gateway=None,
+) -> str:
+    """Validate callback query params, persist the grant, return the Hub URL.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        state (str | None): CSRF token from Google.
+        code (str | None): Authorization code from Google.
+        error (str | None): Provider error such as ``access_denied``.
+        state_store: Injected state store for tests.
+        connection_store: Injected connection store for tests.
+        gateway: Injected Google token gateway for tests.
+
+    Returns:
+        str: Knowledge Hub URL with a non-sensitive ``drive=`` result.
+    """
+    if error == "access_denied":
+        return _hub_redirect(settings, result="denied")
+    store = state_store if state_store is not None else _state_store(settings)
+    if not store.consume(state):
+        return _hub_redirect(settings, result="invalid_state")
+    if error or not code:
+        return _hub_redirect(settings, result="error")
+    if not _oauth_ready(settings):
+        return _hub_redirect(settings, result="error")
+    from infrastructure.connectors.google_oauth import (
+        GoogleOAuthConnection,
+        GoogleOAuthError,
+        HttpGoogleOAuthGateway,
+    )
+
+    oauth_gateway = gateway if gateway is not None else HttpGoogleOAuthGateway(
+        settings.google_oauth
+    )
+    tokens_store = (
+        connection_store if connection_store is not None else _connection_store(settings)
+    )
+    try:
+        grant = oauth_gateway.exchange_code(code)
+        email = oauth_gateway.fetch_account_email(grant.access_token)
+
+        def _next(existing):
+            probe_failed = email is None
+            keep_scope = (
+                existing is not None
+                and not probe_failed
+                and existing.account_email == email
+            )
+            return GoogleOAuthConnection(
+                refresh_token=grant.refresh_token,
+                access_token=grant.access_token,
+                account_email=(
+                    existing.account_email
+                    if probe_failed and existing is not None
+                    else email
+                ),
+                last_synced_at=None if not keep_scope else existing.last_synced_at,
+                last_sync_new=None if not keep_scope else existing.last_sync_new,
+                last_sync_updated=None if not keep_scope else existing.last_sync_updated,
+                last_sync_unchanged=None if not keep_scope else existing.last_sync_unchanged,
+                last_sync_failed=None if not keep_scope else existing.last_sync_failed,
+                reauthorization_required=False,
+                folders=() if not keep_scope else existing.folders,
+                files=() if not keep_scope else existing.files,
+                account_email_unverified=probe_failed,
+            )
+
+        tokens_store.mutate(_next)
+    except GoogleOAuthError:
+        return _hub_redirect(settings, result="error")
+    return _hub_redirect(settings, result="connected")
+
+
+def disconnect_google_drive_oauth(
+    settings: Settings,
+    *,
+    connection_store=None,
+    gateway=None,
+) -> None:
+    """Revoke the stored refresh token and delete the local grant.
+
+    Indexed Drive catalog rows are left in place.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        connection_store: Injected connection store for tests.
+        gateway: Injected Google token gateway for tests.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+    """
+    tokens_store = (
+        connection_store if connection_store is not None else _connection_store(settings)
+    )
+    connection = tokens_store.load()
+    if connection is None:
+        raise GoogleDriveNotConnectedError("Google Drive is not connected")
+    from infrastructure.connectors.google_oauth import HttpGoogleOAuthGateway
+
+    oauth_gateway = gateway if gateway is not None else HttpGoogleOAuthGateway(
+        settings.google_oauth
+    )
+    oauth_gateway.revoke(connection.refresh_token)
+    tokens_store.clear()
+
+
+def _require_drive_grant(settings: Settings, *, connection_store=None):
+    tokens_store = (
+        connection_store if connection_store is not None else _connection_store(settings)
+    )
+    connection = tokens_store.load()
+    if connection is None:
+        raise GoogleDriveNotConnectedError("Google Drive is not connected")
+    if connection.reauthorization_required:
+        raise GoogleDriveReauthorizationRequiredError(
+            "Google Drive authorization was revoked"
+        )
+    return tokens_store, connection
+
+
+def _mark_reauth(tokens_store, error: BaseException) -> NoReturn:
+    tokens_store.mutate(
+        lambda current: None
+        if current is None
+        else replace(current, reauthorization_required=True)
+    )
+    raise GoogleDriveReauthorizationRequiredError(
+        "Google Drive authorization was revoked"
+    ) from error
+
+
+def browse_google_drive_items(
+    settings: Settings,
+    *,
+    parent_id: str | None = None,
+    kind: str = "folders",
+    query: str | None = None,
+    page_token: str | None = None,
+    connection_store=None,
+    files=None,
+) -> GoogleDriveBrowsePage:
+    """List Drive folders or files for the content picker.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        parent_id (str | None): Folder to list. Defaults to My Drive (``root``).
+            Ignored when ``query`` is set.
+        kind (str): ``folders`` or ``files``.
+        query (str | None): Optional name search.
+        page_token (str | None): Opaque continuation token.
+        connection_store: Injected grant store for tests.
+        files: Injected Drive files resource for tests.
+
+    Returns:
+        GoogleDriveBrowsePage: Presentation-safe rows and optional next token.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
+        InputRejectedError: ``parent_id``, ``kind``, or ``query`` is invalid.
+        GoogleDriveConnectorError: Listing failed at the Google boundary.
+    """
+    if kind not in {"folders", "files"}:
+        raise InputRejectedError("kind must be folders or files.")
+    resolved_parent = "root" if parent_id is None or not parent_id.strip() else parent_id.strip()
+    if not _DRIVE_ITEM_ID.fullmatch(resolved_parent):
+        raise InputRejectedError("parent_id must be a Drive folder ID.")
+    stripped_query = None if query is None else query.strip()
+    if stripped_query == "":
+        stripped_query = None
+    if stripped_query is not None and len(stripped_query) > _DRIVE_QUERY_MAX:
+        raise InputRejectedError("query is too long.")
+    if page_token is not None and (not page_token.strip() or len(page_token) > 1024):
+        raise InputRejectedError("page_token is invalid.")
+    tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    try:
+        connector = build_google_drive_oauth_connector(
+            settings,
+            refresh_token=connection.refresh_token,
+            files=files,
+        )
+        page = connector.list_items(
+            parent_id=resolved_parent,
+            kind=kind,
+            query=stripped_query,
+            page_token=None if page_token is None else page_token.strip(),
+        )
+    except ConnectorAuthError as error:
+        _mark_reauth(tokens_store, error)
+    except ConnectorError as error:
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
+    return GoogleDriveBrowsePage(
+        items=tuple(
+            GoogleDriveBrowseItem(
+                id=item.id,
+                name=item.name,
+                kind=item.kind,
+                mime_type=item.mime_type,
+                supported=item.supported,
+                modified_at=item.modified_at,
+            )
+            for item in page.items
+        ),
+        next_page_token=page.next_page_token,
+    )
+
+
+def get_google_drive_selection(
+    settings: Settings,
+    *,
+    connection_store=None,
+) -> GoogleDriveSelection:
+    """Return the saved folder and file roots (IDs and display names only).
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        connection_store: Injected grant store for tests.
+
+    Returns:
+        GoogleDriveSelection: Saved roots. Empty when setup is still required.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
+    """
+    _tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    return GoogleDriveSelection(
+        folders=tuple(
+            GoogleDriveSelectedItem(id=item.id, name=item.name)
+            for item in connection.folders
+        ),
+        files=tuple(
+            GoogleDriveSelectedItem(id=item.id, name=item.name)
+            for item in connection.files
+        ),
+    )
+
+
+def put_google_drive_selection(
+    settings: Settings,
+    *,
+    folders: Sequence[GoogleDriveSelectedItem],
+    files: Sequence[GoogleDriveSelectedItem],
+    connection_store=None,
+    connector_factory=None,
+) -> GoogleDriveSelection:
+    """Validate access and atomically replace the saved Drive selection.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        folders (Sequence[GoogleDriveSelectedItem]): Folder roots by Drive ID.
+        files (Sequence[GoogleDriveSelectedItem]): Exact file IDs.
+        connection_store: Injected grant store for tests.
+        connector_factory: Injected ``get_item`` factory for tests.
+
+    Returns:
+        GoogleDriveSelection: The persisted roots.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
+        InputRejectedError: Duplicate, inaccessible, or mistyped items.
+        GoogleDriveConnectorError: Validation failed at the Google boundary.
+    """
+    folder_items = _dedupe_selected(folders)
+    file_items = _dedupe_selected(files)
+    folder_ids = {item.id for item in folder_items}
+    if folder_ids & {item.id for item in file_items}:
+        raise InputRejectedError(_SELECTION_KIND_DETAIL)
+    tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    try:
+        resolved_folders, resolved_files = _validate_selection_items(
+            settings,
+            refresh_token=connection.refresh_token,
+            folder_items=folder_items,
+            file_items=file_items,
+            connector_factory=connector_factory,
+        )
+    except ConnectorAuthError as error:
+        _mark_reauth(tokens_store, error)
+    except ConnectorError as error:
+        raise InputRejectedError(_SELECTION_INACCESSIBLE_DETAIL) from error
+    from infrastructure.connectors.google_oauth import GoogleDriveSelectedItem as StoredItem
+
+    def _apply(current):
+        if current is None:
+            raise GoogleDriveNotConnectedError("Google Drive is not connected")
+        if current.reauthorization_required:
+            raise GoogleDriveReauthorizationRequiredError(
+                "Google Drive authorization was revoked"
+            )
+        return replace(
+            current,
+            folders=tuple(
+                StoredItem(id=item.id, name=item.name) for item in resolved_folders
+            ),
+            files=tuple(
+                StoredItem(id=item.id, name=item.name) for item in resolved_files
+            ),
+        )
+
+    tokens_store.mutate(_apply)
+    return GoogleDriveSelection(folders=resolved_folders, files=resolved_files)
+
+
+def _dedupe_selected(
+    items: Sequence[GoogleDriveSelectedItem],
+) -> tuple[GoogleDriveSelectedItem, ...]:
+    seen: set[str] = set()
+    unique: list[GoogleDriveSelectedItem] = []
+    for item in items:
+        item_id = item.id.strip()
+        name = item.name.strip()
+        if not _DRIVE_SELECTION_ID.fullmatch(item_id):
+            raise InputRejectedError("A selected Drive ID is invalid.")
+        if not name:
+            raise InputRejectedError("A selected Drive name is missing.")
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        unique.append(GoogleDriveSelectedItem(id=item_id, name=name))
+    return tuple(unique)
+
+
+def _clamped_drive_name(name: str) -> str:
+    stripped = name.strip()
+    return stripped[:_DRIVE_ITEM_NAME_MAX]
+
+
+def _validate_selection_items(
+    settings: Settings,
+    *,
+    refresh_token: str,
+    folder_items: Sequence[GoogleDriveSelectedItem],
+    file_items: Sequence[GoogleDriveSelectedItem],
+    connector_factory=None,
+) -> tuple[tuple[GoogleDriveSelectedItem, ...], tuple[GoogleDriveSelectedItem, ...]]:
+    jobs = [(item, "folder") for item in folder_items] + [
+        (item, "file") for item in file_items
+    ]
+    if not jobs:
+        return (), ()
+
+    def default_factory():
+        return build_google_drive_oauth_connector(
+            settings, refresh_token=refresh_token
+        )
+
+    factory = default_factory if connector_factory is None else connector_factory
+    probe_item, probe_kind = jobs[0]
+    try:
+        _validate_selected_item(factory(), probe_item, expected_kind=probe_kind)
+    except ConnectorAuthError:
+        raise
+    except (InputRejectedError, ConnectorError):
+        pass
+
+    local = threading.local()
+
+    def _run(item: GoogleDriveSelectedItem, kind: str) -> GoogleDriveSelectedItem:
+        connector = getattr(local, "connector", None)
+        if connector is None:
+            connector = factory()
+            local.connector = connector
+        return _validate_selected_item(connector, item, expected_kind=kind)
+
+    workers = min(_DRIVE_SELECTION_VALIDATE_WORKERS, len(jobs))
+    resolved: dict[int, GoogleDriveSelectedItem] = {}
+    next_job = 0
+    in_flight: dict[Future[GoogleDriveSelectedItem], int] = {}
+
+    def _fill() -> None:
+        nonlocal next_job
+        while next_job < len(jobs) and len(in_flight) < workers:
+            item, kind = jobs[next_job]
+            in_flight[_DRIVE_VALIDATION_POOL.submit(_run, item, kind)] = next_job
+            next_job += 1
+
+    _fill()
+    try:
+        while in_flight:
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            errors: list[tuple[int, BaseException]] = []
+            for future in done:
+                index = in_flight.pop(future)
+                try:
+                    resolved[index] = future.result()
+                except BaseException as error:
+                    errors.append((index, error))
+            if errors:
+                raise _preferred_validation_error(errors)
+            _fill()
+    finally:
+        _log_finished_validation_jobs(in_flight)
+    folder_count = len(folder_items)
+    return (
+        tuple(resolved[index] for index in range(folder_count)),
+        tuple(resolved[index] for index in range(folder_count, len(jobs))),
+    )
+
+
+def _preferred_validation_error(
+    errors: Sequence[tuple[int, BaseException]],
+) -> BaseException:
+    for _index, error in errors:
+        if isinstance(error, ConnectorAuthError):
+            return error
+    return min(errors, key=lambda pair: pair[0])[1]
+
+
+def _log_finished_validation_jobs(
+    futures: Iterable[Future[GoogleDriveSelectedItem]],
+) -> None:
+    for future in futures:
+        if not future.done() or future.cancelled():
+            continue
+        error = future.exception()
+        if error is None:
+            continue
+        if isinstance(error, InputRejectedError):
+            logger.debug("Drive selection validation job rejected: %s", error)
+            continue
+        logger.warning(
+            "Drive selection validation job failed",
+            exc_info=error,
+        )
+
+
+def _validate_selected_item(
+    connector,
+    item: GoogleDriveSelectedItem,
+    *,
+    expected_kind: str,
+) -> GoogleDriveSelectedItem:
+    remote = connector.get_item(item.id)
+    if remote.kind != expected_kind:
+        raise InputRejectedError(_SELECTION_KIND_DETAIL)
+    if expected_kind == "file" and not remote.supported:
+        raise InputRejectedError(_SELECTION_KIND_DETAIL)
+    name = _clamped_drive_name(remote.name) or _clamped_drive_name(item.name)
+    return GoogleDriveSelectedItem(id=remote.id, name=name)
+
+
+def build_google_drive_oauth_connector(
+    settings: Settings,
+    *,
+    refresh_token: str,
+    folder_ids: Sequence[str] = (),
+    file_ids: Sequence[str] = (),
+    recursive: bool = True,
+    files=None,
+):
+    """Build a Drive connector from a stored user refresh token.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        refresh_token (str): Stored user refresh token.
+        folder_ids (Sequence[str]): Saved folder roots. Recursive when True.
+        file_ids (Sequence[str]): Exact Drive file IDs.
+        recursive (bool): Walk folder descendants. Hub sync uses True.
+        files: Injected Drive ``files`` resource for tests.
+
+    Returns:
+        KnowledgeConnector: Drive adapter bound to the saved selection.
+
+    Raises:
+        ConfigurationError: Client extra or OAuth client is unusable.
+        GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
+    """
+    from infrastructure.config import GoogleDriveSettings
+    from infrastructure.connectors.google_oauth import (
+        GoogleOAuthError,
+        build_oauth_drive_files,
+    )
+
+    try:
+        from infrastructure.connectors.google_drive import (
+            GoogleDriveConfigError,
+            GoogleDriveConnector,
+        )
+    except ImportError as error:
+        raise ConfigurationError(_DRIVE_CLIENT_MISSING_MESSAGE) from error
+    try:
+        drive_files = (
+            files
+            if files is not None
+            else build_oauth_drive_files(
+                settings.google_oauth, refresh_token=refresh_token
+            )
+        )
+        return GoogleDriveConnector(
+            GoogleDriveSettings(
+                service_account_file=None,
+                folder_id=None,
+                page_size=settings.google_drive.page_size,
+            ),
+            max_upload_bytes=settings.max_upload_bytes,
+            files=drive_files,
+            folder_ids=tuple(folder_ids),
+            file_ids=tuple(file_ids),
+            recursive=recursive,
+        )
+    except (GoogleDriveConfigError, GoogleOAuthError) as error:
+        raise ConfigurationError(_DRIVE_CONFIG_MESSAGE) from error
+
+
+def sync_google_drive_oauth(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+    connection_store=None,
+) -> ConnectorSyncResponse:
+    """Synchronize Drive using the stored user OAuth grant.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog
+            builder used after not-connected / reauth / selection guards.
+        vector_store (VectorStore | None): Shared store for the run.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store
+            builder used after not-connected / reauth / selection guards.
+        connection_store: Injected connection store for tests.
+
+    Returns:
+        ConnectorSyncResponse: Per-document outcomes in listing order.
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
+        GoogleDriveSelectionRequiredError: The grant has no saved Drive roots.
+        ConnectorSyncError: Listing, auth, catalog, or store infrastructure failed.
+    """
+    from datetime import datetime, timezone
+
+    tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    if not connection.folders and not connection.files:
+        raise GoogleDriveSelectionRequiredError(
+            "Google Drive sync scope is not selected"
+        )
+    try:
+        working_catalog = _resolve_catalog(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
+        before = {
+            row.reference.source_id
+            for row in working_catalog.all()
+            if row.reference.source_type == SourceType.GOOGLE_DRIVE
+        }
+        connector = build_google_drive_oauth_connector(
+            settings,
+            refresh_token=connection.refresh_token,
+            folder_ids=tuple(item.id for item in connection.folders),
+            file_ids=tuple(item.id for item in connection.files),
+            recursive=True,
+        )
+        result = sync_google_drive(
+            settings,
+            connector=connector,
+            catalog=working_catalog,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
+    except ConnectorSyncError as error:
+        if isinstance(error.__cause__, ConnectorAuthError):
+            _mark_reauth(tokens_store, error)
+        raise
+    new_count = sum(
+        1
+        for outcome in result.outcomes
+        if outcome.status is ConnectorSyncStatus.INGESTED
+        and outcome.source_id not in before
+    )
+    updated_count = sum(
+        1
+        for outcome in result.outcomes
+        if outcome.status is ConnectorSyncStatus.INGESTED
+        and outcome.source_id in before
+    )
+    synced_at = datetime.now(timezone.utc).isoformat()
+    tokens_store.mutate(
+        lambda current: None
+        if current is None
+        else replace(
+            current,
+            last_synced_at=synced_at,
+            last_sync_new=new_count,
+            last_sync_updated=updated_count,
+            last_sync_unchanged=result.skipped_count,
+            last_sync_failed=result.failed_count,
+        )
+    )
+    return result
 
 
 def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
@@ -561,6 +1491,7 @@ def sync_google_drive(
     connector: KnowledgeConnector | None = None,
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> ConnectorSyncResponse:
     """Synchronize the configured Drive folder into the knowledge base.
 
@@ -572,6 +1503,8 @@ def sync_google_drive(
         connector (KnowledgeConnector | None): Injected connector for tests.
         catalog (DocumentCatalog | None): Injected catalog for tests.
         vector_store (VectorStore | None): Shared store for the run, if already built.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store builder
+            used by ingest instead of constructing the store up front.
 
     Returns:
         ConnectorSyncResponse: Per-document outcomes in listing order.
@@ -590,7 +1523,10 @@ def sync_google_drive(
         def get_store() -> VectorStore:
             nonlocal shared_store
             if shared_store is None:
-                shared_store = build_vector_store(settings)
+                if vector_store_factory is not None:
+                    shared_store = vector_store_factory()
+                else:
+                    shared_store = build_vector_store(settings)
             return shared_store
 
         return SyncConnectorDocuments(
@@ -615,7 +1551,10 @@ def build_document_extractor() -> UploadedFileExtractor:
 
 
 def build_manage_uploaded_documents(
-    settings: Settings, *, vector_store: VectorStore | None = None
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
 
@@ -643,7 +1582,7 @@ def build_manage_uploaded_documents(
         return build_ingest_knowledge(settings, vector_store=_vector_store())
 
     return ManageUploadedDocuments(
-        catalog=build_document_catalog(settings),
+        catalog=catalog if catalog is not None else build_document_catalog(settings),
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
@@ -651,10 +1590,14 @@ def build_manage_uploaded_documents(
     )
 
 
-def list_uploaded_documents(settings: Settings) -> tuple[CatalogDocument, ...]:
+def list_uploaded_documents(
+    settings: Settings, *, catalog: DocumentCatalog | None = None
+) -> tuple[CatalogDocument, ...]:
     """Return every uploaded-document catalog row."""
     try:
-        return tuple(build_manage_uploaded_documents(settings).list())
+        return tuple(
+            build_manage_uploaded_documents(settings, catalog=catalog).list()
+        )
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
 
@@ -663,6 +1606,7 @@ def create_uploaded_document(
     settings: Settings,
     payload: UploadPayload,
     *,
+    catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
 ) -> CatalogDocument:
     """Create a new uploaded document with a system-managed source ID.
@@ -675,7 +1619,7 @@ def create_uploaded_document(
     """
     try:
         return build_manage_uploaded_documents(
-            settings, vector_store=vector_store
+            settings, catalog=catalog, vector_store=vector_store
         ).create(payload)
     except UnreadableDocumentError as error:
         raise DocumentContentError(str(error)) from error
@@ -705,6 +1649,7 @@ def replace_uploaded_document(
     reference: SourceReference,
     payload: UploadPayload,
     *,
+    catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
 ) -> CatalogDocument:
     """Replace an existing uploaded document under the same source ID.
@@ -718,9 +1663,10 @@ def replace_uploaded_document(
         DocumentUploadError: The replacement file could not be extracted.
     """
     try:
-        return build_manage_uploaded_documents(
-            settings, vector_store=vector_store
-        ).replace(reference, payload)
+        ops = build_manage_uploaded_documents(
+            settings, catalog=catalog, vector_store=vector_store
+        )
+        return ops.replace(reference, payload)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error
     except UnreadableDocumentError as error:
@@ -755,19 +1701,26 @@ def delete_uploaded_document(
     settings: Settings,
     reference: SourceReference,
     *,
+    catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
 ) -> None:
     """Delete vector chunks then the catalog row for ``reference``.
+
+    Google Drive rows are also removed from the saved Drive file selection so
+    the next sync does not bring them back.
 
     Raises:
         PartialDocumentOperationError: The chunks are gone but the catalog row
             remains, so a retry is genuinely required.
         DocumentOperationError: The delete stopped before removing anything.
     """
+    ops = build_manage_uploaded_documents(
+        settings, catalog=catalog, vector_store=vector_store
+    )
+    row = ops.resolve(reference.source_id)
+    target = row.reference if row is not None else reference
     try:
-        build_manage_uploaded_documents(
-            settings, vector_store=vector_store
-        ).delete(reference)
+        ops.delete(target)
     except PartialDeleteFailure as error:
         raise PartialDocumentOperationError(
             str(error), operation="delete"
@@ -776,6 +1729,23 @@ def delete_uploaded_document(
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
+    if (
+        row is not None
+        and row.reference.source_type == SourceType.GOOGLE_DRIVE
+    ):
+        _after_google_drive_document_deleted(settings, row.reference.source_id)
+
+
+def _after_google_drive_document_deleted(settings: Settings, file_id: str) -> None:
+    """Drop ``file_id`` from saved file roots after a Drive catalog delete."""
+    _connection_store(settings).mutate(
+        lambda current: None
+        if current is None
+        else replace(
+            current,
+            files=tuple(item for item in current.files if item.id != file_id),
+        )
+    )
 
 
 def build_prompt_repository(settings: Settings) -> PromptRepository:
