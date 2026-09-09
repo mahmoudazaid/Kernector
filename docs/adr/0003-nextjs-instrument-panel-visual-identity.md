@@ -113,9 +113,12 @@ inventing a local look.
    sheen / emboss tokens). Keep that contract in sync when adding tokens.
    `web/__tests__/timestamp-guardrail.test.ts` forbids locale-default date
    formatters (`toLocaleString`, `toLocaleDateString`, `toLocaleTimeString`,
-   `Intl.DateTimeFormat`) in `web/lib` and `web/components` except
-   `formatTimestamp`. Visual regressions on a screen are fixed by applying
-   shared recipes, not by forking tokens under a new name for one page.
+   `Intl.DateTimeFormat`) and relative-time copy (“Just now”, “Yesterday”,
+   “N min ago”) in `web/lib` and `web/components` except `formatTimestamp`.
+   `toLocaleString` also matches number grouping; mark those lines with
+   `// allow-locale-number`. Visual regressions on a screen are fixed by
+   applying shared recipes, not by forking tokens under a new name for one
+   page.
 
 10. **Brand loader (required wait recipe)** — Screen-level and in-panel
     waits use the blinking Kernector mark via

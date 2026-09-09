@@ -1,9 +1,7 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
-
-const WEB_ROOT = join(__dirname, "..");
-const SCAN_DIRS = [join(WEB_ROOT, "lib"), join(WEB_ROOT, "components")];
+import { SCAN_DIRS, WEB_ROOT, walk } from "./support/scan";
 
 /** Direct infrastructure / provider client seams — not denylist mentions. */
 const FORBIDDEN = [
@@ -22,26 +20,6 @@ const FORBIDDEN = [
   /www\.googleapis\.com/,
   /accounts\.google\.com/,
 ];
-
-function walk(dir: string): string[] {
-  const entries = readdirSync(dir);
-  const files: string[] = [];
-  for (const entry of entries) {
-    const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      if (entry === "generated" || entry === "node_modules") {
-        continue;
-      }
-      files.push(...walk(full));
-      continue;
-    }
-    if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry)) {
-      files.push(full);
-    }
-  }
-  return files;
-}
 
 describe("frontend isolation", () => {
   it("does not call infrastructure providers from lib or components", () => {
