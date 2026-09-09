@@ -59,7 +59,9 @@ def set_journal_mode(connection: sqlite3.Connection) -> None:
     The rollback-to-WAL transition needs an exclusive lock and returns
     SQLITE_BUSY immediately instead of waiting on ``busy_timeout``. Journal
     mode is a persistent database property, so whichever cold-start writer
-    wins the race sets it for every later connection.
+    wins the race sets it for every later connection. The match uses the
+    primary result code (``sqlite_errorcode & 0xFF``) so extended BUSY and
+    LOCKED variants are covered.
 
     Args:
         connection (sqlite3.Connection): Open SQLite connection.
@@ -71,7 +73,7 @@ def set_journal_mode(connection: sqlite3.Connection) -> None:
     try:
         connection.execute(f"PRAGMA journal_mode = {journal_mode()}")
     except sqlite3.OperationalError as error:
-        if error.sqlite_errorcode not in (
+        if error.sqlite_errorcode & 0xFF not in (
             sqlite3.SQLITE_BUSY,
             sqlite3.SQLITE_LOCKED,
         ):

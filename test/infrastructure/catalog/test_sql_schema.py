@@ -187,7 +187,7 @@ def test_set_journal_mode_reraises_non_busy_operational_error(
     try:
         with pytest.raises(sqlite3.OperationalError) as raised:
             set_journal_mode(victim)
-        assert raised.value.sqlite_errorcode == sqlite3.SQLITE_READONLY
+        assert raised.value.sqlite_errorcode & 0xFF == sqlite3.SQLITE_READONLY
     finally:
         victim.close()
 
