@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { GoogleDrivePanel } from "@/components/documents/GoogleDrivePanel";
@@ -539,7 +539,7 @@ describe("GoogleDrivePanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("closes an open picker when a later selection refresh fails", async () => {
+  it("keeps an open picker when a later selection refresh fails", async () => {
     const user = userEvent.setup();
     let calls = 0;
     const loadSelection = async () => {
@@ -583,8 +583,47 @@ describe("GoogleDrivePanel", () => {
       "The Google Drive request failed.",
     );
     expect(
+      screen.getByRole("dialog", { name: /choose from google drive/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show a card error when the picker is closed during selection load", async () => {
+    const user = userEvent.setup();
+    let rejectLoad: (error: unknown) => void = () => {};
+    const loadSelection = () =>
+      new Promise<never>((_resolve, reject) => {
+        rejectLoad = reject;
+      });
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => SETUP_REQUIRED}
+        loadSelection={loadSelection}
+        listItems={folderPage}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    await user.click(within(dialog).getByRole("button", { name: /^close$/i }));
+    expect(
       screen.queryByRole("dialog", { name: /choose from google drive/i }),
     ).not.toBeInTheDocument();
+
+    await act(async () => {
+      rejectLoad(
+        new ApiError({
+          status: 502,
+          title: "Google Drive request failed",
+          detail: "The Google Drive request failed.",
+          code: "google_drive_request_failed",
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("saves the selection by Drive ID and starts one initial sync", async () => {

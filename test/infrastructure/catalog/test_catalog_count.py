@@ -59,8 +59,6 @@ def test_count_filters_source_type_and_status(tmp_path: Path, backend: str) -> N
         == 1
     )
     assert catalog.count(status=CatalogStatus.FAILED) == 1
-    assert catalog.count(status="ready") == 2
     if backend == "sql":
-        other = SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-b")
         assert other.count() == 1
         assert catalog.count() == 3

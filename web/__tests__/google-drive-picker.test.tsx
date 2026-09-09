@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -320,21 +320,32 @@ describe("GoogleDrivePicker", () => {
   });
 
   it("keeps the loader and disables Save while selection is loading", async () => {
-    renderPicker({
-      selectionLoading: true,
-      initialSelection: { folders: [{ id: "folder-1", name: "Specs" }], files: [] },
-      listItems: async () => {
-        throw new ApiError({
-          status: 502,
-          title: "Google Drive request failed",
-          detail: "The Google Drive request failed.",
-          code: "google_drive_request_failed",
-        });
-      },
+    const listItems = vi.fn(async () => {
+      throw new ApiError({
+        status: 502,
+        title: "Google Drive request failed",
+        detail: "The Google Drive request failed.",
+        code: "google_drive_request_failed",
+      });
     });
+    const pickerProps = {
+      open: true,
+      apiBaseUrl: "http://api.test",
+      initialSelection: {
+        folders: [{ id: "folder-1", name: "Specs" }],
+        files: [] as { id: string; name: string }[],
+      },
+      listItems,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const { rerender } = render(
+      <GoogleDrivePicker {...pickerProps} selectionLoading />,
+    );
     const dialog = screen.getByRole("dialog", {
       name: /choose from google drive/i,
     });
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
     expect(within(dialog).getByRole("status")).toHaveTextContent(
       /loading google drive/i,
     );
@@ -342,5 +353,10 @@ describe("GoogleDrivePicker", () => {
     expect(within(dialog).queryByText("Specs")).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: /^save$/i })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: /^close$/i })).toBeEnabled();
+
+    rerender(<GoogleDrivePicker {...pickerProps} selectionLoading={false} />);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "The Google Drive request failed.",
+    );
   });
 });

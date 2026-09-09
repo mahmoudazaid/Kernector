@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,7 +31,11 @@ from composition import (
     sync_google_drive_oauth,
 )
 from composition import container as composition_container
-from composition.container import GoogleDriveSelectedItem
+from composition.container import (
+    GoogleDriveSelectedItem,
+    _DRIVE_SELECTION_VALIDATE_WORKERS,
+    build_google_drive_oauth_connector,
+)
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -303,7 +306,7 @@ class UnknownEmailGateway(FakeGateway):
         return None
 
 
-def test_callback_reconnect_with_unknown_email_clears_scope(settings) -> None:
+def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
     states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
     tokens.save(
@@ -335,9 +338,9 @@ def test_callback_reconnect_with_unknown_email_clears_scope(settings) -> None:
     assert url.endswith("drive=connected")
     stored = tokens.load()
     assert stored is not None
-    assert stored.account_email is None
-    assert stored.folders == ()
-    assert stored.last_synced_at is None
+    assert stored.account_email == "ada@example.com"
+    assert stored.folders == (StoredItem(id="folder-1", name="Specs"),)
+    assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
 
 
 def test_status_reads_store_not_memory(settings) -> None:
@@ -854,7 +857,9 @@ def test_browse_and_put_selection_use_ids_and_skip_tokens(settings) -> None:
         folders=(GoogleDriveSelectedItem(id="folder-1", name="Old name"),),
         files=(),
         connection_store=tokens,
-        files_resource=files,
+        connector_factory=lambda: build_google_drive_oauth_connector(
+            settings, refresh_token=tokens.load().refresh_token, files=files
+        ),
     )
     assert saved.folders[0].id == "folder-1"
     assert saved.folders[0].name == "Specs"
@@ -962,14 +967,16 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
     )
     started: list[str] = []
     lock = threading.Lock()
+    failed = threading.Event()
 
     class Connector:
         def get_item(self, item_id: str):
             with lock:
                 started.append(item_id)
             if item_id == "folder-0":
+                failed.set()
                 raise InputRejectedError(_SELECTION_KIND)
-            time.sleep(0.2)
+            failed.wait(timeout=2)
             return _FakeRemote(item_id, "folder")
 
     items = tuple(
@@ -984,7 +991,7 @@ def test_put_selection_cancels_remaining_validation_jobs(settings) -> None:
             connection_store=tokens,
             connector_factory=lambda: Connector(),
         )
-    assert len(started) < 40
+    assert len(started) <= _DRIVE_SELECTION_VALIDATE_WORKERS
 
 
 _SELECTION_KIND = "A selected Drive item does not match the requested type."

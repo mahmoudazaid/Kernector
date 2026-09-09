@@ -8,6 +8,7 @@ from typing import Annotated, Protocol
 from fastapi import Depends
 
 from application.contracts import ConnectorSyncResponse
+from application.errors import ConfigurationError
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
@@ -40,6 +41,7 @@ from composition import (
 )
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
 from domain.ports import DocumentCatalog, PromptRepository, VectorStore
+from infrastructure.catalog.errors import CatalogError
 from presentation.http.schemas import ChatRuntimeRequest
 
 
@@ -137,28 +139,40 @@ def get_document_operations(
 
     The store is not built here — ``list`` must work without embedding
     credentials. Mutating operations resolve it on first use via the
-    process-wide ``get_vector_store`` cache.
+    process-wide ``get_vector_store`` cache. The process-cached catalog is
+    reused so Hub list/create/replace/delete do not re-run migrations.
     """
+    catalog = get_document_catalog()
 
     def create(payload: UploadPayload) -> CatalogDocument:
         return create_uploaded_document(
-            settings, payload, vector_store=get_vector_store()
+            settings,
+            payload,
+            catalog=catalog,
+            vector_store=get_vector_store(),
         )
 
     def replace(
         reference: SourceReference, payload: UploadPayload
     ) -> CatalogDocument:
         return replace_uploaded_document(
-            settings, reference, payload, vector_store=get_vector_store()
+            settings,
+            reference,
+            payload,
+            catalog=catalog,
+            vector_store=get_vector_store(),
         )
 
     def delete(reference: SourceReference) -> None:
         delete_uploaded_document(
-            settings, reference, vector_store=get_vector_store()
+            settings,
+            reference,
+            catalog=catalog,
+            vector_store=get_vector_store(),
         )
 
     return DocumentOperations(
-        list=lambda: list_uploaded_documents(settings),
+        list=lambda: list_uploaded_documents(settings, catalog=catalog),
         create=create,
         replace=replace,
         delete=delete,
@@ -171,7 +185,11 @@ def get_google_drive_status(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GoogleDriveStatus:
     """Report Drive configuration presence and extra availability."""
-    return google_drive_status(settings, catalog=get_document_catalog())
+    try:
+        catalog = get_document_catalog()
+    except (CatalogError, ConfigurationError, OSError, ValueError):
+        catalog = None
+    return google_drive_status(settings, catalog=catalog)
 
 
 def get_google_drive_sync(
@@ -186,7 +204,9 @@ def get_google_drive_sync(
 
     def sync() -> ConnectorSyncResponse:
         return sync_google_drive_oauth(
-            settings, vector_store_factory=get_vector_store
+            settings,
+            catalog=get_document_catalog(),
+            vector_store_factory=get_vector_store,
         )
 
     return sync

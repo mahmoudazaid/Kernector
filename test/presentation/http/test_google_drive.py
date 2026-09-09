@@ -98,6 +98,56 @@ def test_status_dep_passes_the_process_catalog(
     assert seen == [catalog]
 
 
+def test_status_dep_degrades_when_catalog_construction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[object] = []
+
+    def boom() -> object:
+        raise OSError("catalog directory missing")
+
+    monkeypatch.setattr(http_deps, "get_document_catalog", boom)
+
+    def fake_status(_settings, *, catalog=None):
+        seen.append(catalog)
+        return _status()
+
+    monkeypatch.setattr(http_deps, "google_drive_status", fake_status)
+    http_deps.get_google_drive_status(SimpleNamespace())
+    assert seen == [None]
+
+
+def test_document_operations_reuse_the_process_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = object()
+    seen: list[object] = []
+    monkeypatch.setattr(http_deps, "get_document_catalog", lambda: catalog)
+
+    def fake_list(_settings, *, catalog=None):
+        seen.append(catalog)
+        return ()
+
+    monkeypatch.setattr(http_deps, "list_uploaded_documents", fake_list)
+    ops = http_deps.get_document_operations(SimpleNamespace(max_upload_bytes=1))
+    ops.list()
+    assert seen == [catalog]
+
+
+def test_sync_dep_passes_the_process_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    catalog = object()
+    seen: list[object] = []
+    monkeypatch.setattr(http_deps, "get_document_catalog", lambda: catalog)
+
+    def fake_sync(_settings, *, catalog=None, vector_store_factory=None):
+        seen.append(catalog)
+        return ConnectorSyncResponse(outcomes=())
+
+    monkeypatch.setattr(http_deps, "sync_google_drive_oauth", fake_sync)
+    http_deps.get_google_drive_sync(SimpleNamespace())()
+    assert seen == [catalog]
+
+
 def test_google_drive_status_returns_presentation_fields() -> None:
     app = create_app()
     app.dependency_overrides[get_google_drive_status] = lambda: _status(

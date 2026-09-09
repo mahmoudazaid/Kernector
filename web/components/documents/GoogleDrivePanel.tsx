@@ -130,6 +130,8 @@ export function GoogleDrivePanel({
   const selectionAbortRef = useRef<AbortController | null>(null);
   const pickerOpenRef = useRef(pickerOpen);
   pickerOpenRef.current = pickerOpen;
+  const selectionReadyRef = useRef(selectionReady);
+  selectionReadyRef.current = selectionReady;
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
   const onCatalogChangeRef = useRef(onCatalogChange);
@@ -195,7 +197,9 @@ export function GoogleDrivePanel({
       }
       if (forPicker || pickerOpenRef.current) {
         setActionError(actionErrorMessage(error));
-        setPickerOpen(false);
+        if (forPicker || !selectionReadyRef.current) {
+          setPickerOpen(false);
+        }
       }
       return null;
     }
@@ -234,6 +238,7 @@ export function GoogleDrivePanel({
 
   useEffect(() => {
     if (!pickerOpen) {
+      selectionAbortRef.current?.abort();
       setSelectionReady(false);
       return;
     }

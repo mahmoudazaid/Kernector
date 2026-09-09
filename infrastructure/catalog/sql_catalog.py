@@ -101,7 +101,7 @@ class SqlDocumentCatalog:
             params.append(source_type)
         if status is not None:
             clauses.append("status = ?")
-            params.append(getattr(status, "value", status))
+            params.append(status)
         where = " AND ".join(clauses)
         with self._connect() as connection:
             try:

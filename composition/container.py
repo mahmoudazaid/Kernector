@@ -5,7 +5,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NoReturn
@@ -756,6 +756,7 @@ def _drive_document_count(
             status=CatalogStatus.READY,
         )
     except (CatalogError, ConfigurationError, OSError, ValueError):
+        logger.warning("Drive document count unavailable", exc_info=True)
         return 0
 
 
@@ -848,15 +849,18 @@ def complete_google_drive_oauth(
         email = oauth_gateway.fetch_account_email(grant.access_token)
 
         def _next(existing):
-            keep_scope = (
-                existing is not None
-                and email is not None
-                and existing.account_email == email
+            probe_failed = email is None
+            keep_scope = existing is not None and (
+                probe_failed or existing.account_email == email
             )
             return GoogleOAuthConnection(
                 refresh_token=grant.refresh_token,
                 access_token=grant.access_token,
-                account_email=email,
+                account_email=(
+                    existing.account_email
+                    if probe_failed and existing is not None
+                    else email
+                ),
                 last_synced_at=None if not keep_scope else existing.last_synced_at,
                 last_sync_new=None if not keep_scope else existing.last_sync_new,
                 last_sync_updated=None if not keep_scope else existing.last_sync_updated,
@@ -1050,7 +1054,6 @@ def put_google_drive_selection(
     folders: Sequence[GoogleDriveSelectedItem],
     files: Sequence[GoogleDriveSelectedItem],
     connection_store=None,
-    files_resource=None,
     connector_factory=None,
 ) -> GoogleDriveSelection:
     """Validate access and atomically replace the saved Drive selection.
@@ -1060,7 +1063,6 @@ def put_google_drive_selection(
         folders (Sequence[GoogleDriveSelectedItem]): Folder roots by Drive ID.
         files (Sequence[GoogleDriveSelectedItem]): Exact file IDs.
         connection_store: Injected grant store for tests.
-        files_resource: Injected Drive files resource for tests.
         connector_factory: Injected ``get_item`` factory for tests.
 
     Returns:
@@ -1086,7 +1088,6 @@ def put_google_drive_selection(
             refresh_token=connection.refresh_token,
             folder_items=folder_items,
             file_items=file_items,
-            files_resource=files_resource,
             connector_factory=connector_factory,
         )
     except ConnectorAuthError as error:
@@ -1146,7 +1147,6 @@ def _validate_selection_items(
     refresh_token: str,
     folder_items: Sequence[GoogleDriveSelectedItem],
     file_items: Sequence[GoogleDriveSelectedItem],
-    files_resource=None,
     connector_factory=None,
 ) -> tuple[tuple[GoogleDriveSelectedItem, ...], tuple[GoogleDriveSelectedItem, ...]]:
     jobs = [(item, "folder") for item in folder_items] + [
@@ -1157,7 +1157,7 @@ def _validate_selection_items(
 
     def default_factory():
         return build_google_drive_oauth_connector(
-            settings, refresh_token=refresh_token, files=files_resource
+            settings, refresh_token=refresh_token
         )
 
     factory = default_factory if connector_factory is None else connector_factory
@@ -1171,14 +1171,36 @@ def _validate_selection_items(
         return _validate_selected_item(connector, item, expected_kind=kind)
 
     workers = min(_DRIVE_SELECTION_VALIDATE_WORKERS, len(jobs))
+    resolved: list[GoogleDriveSelectedItem | None] = [None] * len(jobs)
     pool = ThreadPoolExecutor(max_workers=workers)
     try:
-        futures = [pool.submit(_run, item, kind) for item, kind in jobs]
-        resolved = [future.result() for future in futures]
+        next_job = 0
+        in_flight: dict[Future[GoogleDriveSelectedItem], int] = {}
+
+        def _fill() -> None:
+            nonlocal next_job
+            while next_job < len(jobs) and len(in_flight) < workers:
+                item, kind = jobs[next_job]
+                in_flight[pool.submit(_run, item, kind)] = next_job
+                next_job += 1
+
+        _fill()
+        while in_flight:
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                index = in_flight.pop(future)
+                resolved[index] = future.result()
+            _fill()
     finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+        pool.shutdown(wait=True, cancel_futures=True)
     folder_count = len(folder_items)
-    return tuple(resolved[:folder_count]), tuple(resolved[folder_count:])
+    folders_out = tuple(
+        item for item in resolved[:folder_count] if item is not None
+    )
+    files_out = tuple(
+        item for item in resolved[folder_count:] if item is not None
+    )
+    return folders_out, files_out
 
 
 def _validate_selected_item(
@@ -1450,7 +1472,10 @@ def build_document_extractor() -> UploadedFileExtractor:
 
 
 def build_manage_uploaded_documents(
-    settings: Settings, *, vector_store: VectorStore | None = None
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
 
@@ -1478,7 +1503,7 @@ def build_manage_uploaded_documents(
         return build_ingest_knowledge(settings, vector_store=_vector_store())
 
     return ManageUploadedDocuments(
-        catalog=build_document_catalog(settings),
+        catalog=catalog if catalog is not None else build_document_catalog(settings),
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
@@ -1486,10 +1511,14 @@ def build_manage_uploaded_documents(
     )
 
 
-def list_uploaded_documents(settings: Settings) -> tuple[CatalogDocument, ...]:
+def list_uploaded_documents(
+    settings: Settings, *, catalog: DocumentCatalog | None = None
+) -> tuple[CatalogDocument, ...]:
     """Return every uploaded-document catalog row."""
     try:
-        return tuple(build_manage_uploaded_documents(settings).list())
+        return tuple(
+            build_manage_uploaded_documents(settings, catalog=catalog).list()
+        )
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
 
@@ -1498,6 +1527,7 @@ def create_uploaded_document(
     settings: Settings,
     payload: UploadPayload,
     *,
+    catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
 ) -> CatalogDocument:
     """Create a new uploaded document with a system-managed source ID.
@@ -1510,7 +1540,7 @@ def create_uploaded_document(
     """
     try:
         return build_manage_uploaded_documents(
-            settings, vector_store=vector_store
+            settings, catalog=catalog, vector_store=vector_store
         ).create(payload)
     except UnreadableDocumentError as error:
         raise DocumentContentError(str(error)) from error
@@ -1540,6 +1570,7 @@ def replace_uploaded_document(
     reference: SourceReference,
     payload: UploadPayload,
     *,
+    catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
 ) -> CatalogDocument:
     """Replace an existing uploaded document under the same source ID.
@@ -1554,7 +1585,7 @@ def replace_uploaded_document(
     """
     try:
         ops = build_manage_uploaded_documents(
-            settings, vector_store=vector_store
+            settings, catalog=catalog, vector_store=vector_store
         )
         return ops.replace(reference, payload)
     except UnknownDocumentError as error:
@@ -1591,6 +1622,7 @@ def delete_uploaded_document(
     settings: Settings,
     reference: SourceReference,
     *,
+    catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
 ) -> None:
     """Delete vector chunks then the catalog row for ``reference``.
@@ -1604,7 +1636,7 @@ def delete_uploaded_document(
         DocumentOperationError: The delete stopped before removing anything.
     """
     ops = build_manage_uploaded_documents(
-        settings, vector_store=vector_store
+        settings, catalog=catalog, vector_store=vector_store
     )
     row = ops.resolve(reference.source_id)
     target = row.reference if row is not None else reference
