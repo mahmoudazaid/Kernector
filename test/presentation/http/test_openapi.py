@@ -11,6 +11,10 @@ _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/settings": ("get", ("405", "500")),
     "/api/v1/ollama/status": ("get", ("405", "409", "500")),
     "/api/v1/chat/ask": ("post", ("405", "422", "500", "502")),
+    "/api/v1/connectors/google-drive": ("get", ("405", "500")),
+    "/api/v1/connectors/google-drive/sync": ("post", ("405", "409", "500", "502")),
+    "/api/v1/connectors/google-drive/oauth/start": ("get", ("405", "500")),
+    "/api/v1/connectors/google-drive/oauth/callback": ("get", ("405", "500")),
 }
 
 
@@ -93,6 +97,15 @@ def test_openapi_error_responses_use_problem_json_only() -> None:
             )
             ref = content[_PROBLEM]["schema"].get("$ref", "")
             assert ref.endswith("/Problem"), f"{path} {status} schema ref={ref}"
+
+
+def test_openapi_google_drive_delete_declares_problem_errors() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    delete = schema["paths"]["/api/v1/connectors/google-drive"]["delete"]["responses"]
+    assert "204" in delete
+    for status in ("405", "409", "500"):
+        content = delete[status]["content"]
+        assert list(content) == [_PROBLEM]
 
 
 def test_openapi_documents_delete_does_not_declare_404() -> None:

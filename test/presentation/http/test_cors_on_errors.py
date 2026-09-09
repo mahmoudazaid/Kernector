@@ -71,7 +71,6 @@ def test_oversized_document_upload_413_includes_cors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Size middleware must sit inside CORS so browsers can read the 413."""
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("MAX_UPLOAD_BYTES", "100")
     client = TestClient(create_app(cors_origins=(_ORIGIN,)))
 

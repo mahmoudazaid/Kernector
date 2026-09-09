@@ -32,7 +32,6 @@ class _FakeChat:
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
     return monkeypatch
 

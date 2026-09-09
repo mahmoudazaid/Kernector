@@ -156,7 +156,7 @@ def test_oversized_create_is_rejected_before_extract_or_catalog() -> None:
     assert len(catalog.all()) == 0
 
 
-def test_list_omits_google_drive_catalog_rows() -> None:
+def test_list_includes_google_drive_catalog_rows() -> None:
     catalog = InMemoryDocumentCatalog()
     uploaded = _use_case(catalog).create(
         UploadPayload(file_name="guide.md", content=b"# Guide\n")
@@ -172,6 +172,17 @@ def test_list_omits_google_drive_catalog_rows() -> None:
         error=None,
         revision="1",
     )
+    seed = CatalogDocument(
+        reference=SourceReference("US-1", "user_story"),
+        file_name="story.md",
+        title="story",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=1,
+        error=None,
+    )
     catalog.upsert(drive)
+    catalog.upsert(seed)
     listed = _use_case(catalog).list()
-    assert listed == (uploaded,)
+    assert listed == (uploaded, drive)

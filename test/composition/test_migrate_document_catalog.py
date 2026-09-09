@@ -39,7 +39,6 @@ def _document() -> CatalogDocument:
 def test_wrapper_requires_sql_backend_before_opening_sqlite(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "json")
     monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "uploads.json"))
     monkeypatch.setenv(
@@ -57,7 +56,6 @@ def test_wrapper_imports_json_into_configured_sql_workspace(
     json_path = tmp_path / "uploads.json"
     sql_path = tmp_path / "catalog.sqlite"
     JsonDocumentCatalog(json_path).upsert(_document())
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-a")
     monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(json_path))
@@ -72,7 +70,6 @@ def test_wrapper_imports_json_into_configured_sql_workspace(
 def test_wrapper_maps_catalog_error_to_document_operation_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
     monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-a")
     monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "uploads.json"))
