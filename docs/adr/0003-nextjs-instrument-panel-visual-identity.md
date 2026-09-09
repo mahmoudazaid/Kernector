@@ -75,8 +75,8 @@ inventing a local look.
      row actions, confirm dialogs
    - Waits: brand `Loader` (`web/components/ui/Loader.tsx`) on every
      screen-level load
-   - Dialogs: `ConfirmDialog` (`.kern-dialog`) for destructive or
-     irreversible confirms
+   - Dialogs: `DialogFrame` (`.kern-dialog`) for every overlay; `ConfirmDialog`
+     for destructive or irreversible confirms
    - Timestamps: `formatTimestamp` (`09 Sep 2026, 09:35 AM`)
 
    New routes must match before merge. Prefer shared classes
@@ -89,15 +89,27 @@ inventing a local look.
    `web/components/ui/SoftSelect.tsx` rather than a second select pattern.
    **Do not use `window.confirm`, `window.alert`, or `window.prompt`** for
    product flows — they break Instrument panel identity. Use
-   `web/components/ui/ConfirmDialog.tsx` (soft-glass panel, embossed actions,
-   Escape / backdrop dismiss) or an equivalent token-backed dialog. Destructive
-   confirms use the danger button variant (`.kern-btn-danger`).
+   `web/components/ui/ConfirmDialog.tsx` or `DialogFrame` (soft-glass panel,
+   overlay fade + panel scale, embossed actions, Escape / backdrop dismiss).
+   Destructive confirms use the danger button variant (`.kern-btn-danger`).
 
 7. **Geometry and motion** — Pill radii for many controls
    (`--kern-radius-pill`); chat send stays a **circle** (`border-radius: 50%`),
    not a rounded rectangle. Motion uses `--kern-duration` /
    `--kern-duration-emphasis` and `--kern-ease` / `--kern-ease-out`. Prefer a
    light press-in (`emboss-press` + slight scale) over heavy glow stacks.
+
+   **Dialog enter / exit (required overlay recipe)** — Every product dialog
+   (delete confirm, upload, Google Drive picker, and future overlays) uses
+   [`DialogFrame`](../../web/components/ui/DialogFrame.tsx) with the
+   [Motion Base UI dialog](https://motion.dev/examples/react-base-dialog)
+   overlay + content pattern: the scrim fades on its own (`opacity` 0→1,
+   ~200ms) while the soft-glass panel independently fades and scales
+   (`opacity` 0→1, `scale` 0.9→1) on a spring (`duration` 0.5, `bounce`
+   0.2). Do not fade the positioning root — that hides the scale. Keep
+   Instrument panel chrome (tokens, emboss, type); do not adopt Base UI
+   styling. `prefers-reduced-motion` keeps a 200ms opacity fade and drops
+   scale. Do not invent a second overlay animation per screen.
 
 8. **Explicit non-goals (do not regress to)** — Do not replace this identity
    with: purple / indigo gradient kits; warm cream + terracotta serif
@@ -161,6 +173,8 @@ inventing a local look.
 - [web/README.md](../../web/README.md) — Visual direction summary for
   contributors
 - [web/styles/tokens.css](../../web/styles/tokens.css) — token definitions
+- [web/components/ui/DialogFrame.tsx](../../web/components/ui/DialogFrame.tsx)
+  — shared overlay fade + panel scale for every dialog
 - [web/components/ui/ConfirmDialog.tsx](../../web/components/ui/ConfirmDialog.tsx)
   — shared soft-glass confirm dialog
 - [web/components/ui/Loader.tsx](../../web/components/ui/Loader.tsx) —

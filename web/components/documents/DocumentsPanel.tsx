@@ -18,6 +18,7 @@ import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { DialogFrame } from "@/components/ui/DialogFrame";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
@@ -85,11 +86,7 @@ const PLANNED_CONNECTORS = [
   { name: "Confluence", kind: "Team documentation", icon: "book" },
 ] as const;
 
-const SOURCE_FILTERS = [
-  "All sources",
-  "File uploads",
-  "Google Drive",
-] as const;
+const SOURCE_FILTERS = ["All sources", "File uploads", "Google Drive"] as const;
 
 function isDriveDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GOOGLE_DRIVE_SOURCE;
@@ -139,7 +136,11 @@ function DriveIcon() {
   );
 }
 
-function PlannedIcon({ name }: { name: (typeof PLANNED_CONNECTORS)[number]["icon"] }) {
+function PlannedIcon({
+  name,
+}: {
+  name: (typeof PLANNED_CONNECTORS)[number]["icon"];
+}) {
   if (name === "github") {
     return (
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -445,12 +446,15 @@ export function DocumentsPanel({
     (Boolean(settingsError) && settingsLoading) ||
     (documentsRetryable && refreshing);
 
-  const latestUpload = uploadedDocuments.reduce<string | null>((latest, doc) => {
-    if (!latest || Date.parse(doc.uploaded_at) > Date.parse(latest)) {
-      return doc.uploaded_at;
-    }
-    return latest;
-  }, null);
+  const latestUpload = uploadedDocuments.reduce<string | null>(
+    (latest, doc) => {
+      if (!latest || Date.parse(doc.uploaded_at) > Date.parse(latest)) {
+        return doc.uploaded_at;
+      }
+      return latest;
+    },
+    null,
+  );
   const connectedCount = 1 + (driveConnected ? 1 : 0);
 
   if (catalog.kind === "loading") {
@@ -494,7 +498,11 @@ export function DocumentsPanel({
         <p className="kern-documents-lead">{HUB_LEDE}</p>
       </header>
 
-      <div className="kern-hub-tabs" role="tablist" aria-label="Knowledge Hub sections">
+      <div
+        className="kern-hub-tabs"
+        role="tablist"
+        aria-label="Knowledge Hub sections"
+      >
         <button
           className="kern-hub-tab"
           type="button"
@@ -570,7 +578,9 @@ export function DocumentsPanel({
             <div className="kern-source-metrics">
               <div>
                 <span className="kern-metric-label">Documents</span>
-                <span className="kern-metric-value">{uploadedDocuments.length}</span>
+                <span className="kern-metric-value">
+                  {uploadedDocuments.length}
+                </span>
               </div>
               <div>
                 <span className="kern-metric-label">Latest upload</span>
@@ -682,7 +692,10 @@ export function DocumentsPanel({
 
         {documents.length === 0 && catalog.kind === "ready" ? (
           <div className="kern-content-state">
-            <EmptyState title="No uploaded documents" description={EMPTY_COPY} />
+            <EmptyState
+              title="No uploaded documents"
+              description={EMPTY_COPY}
+            />
           </div>
         ) : visibleDocuments.length === 0 ? (
           <div className="kern-content-state">
@@ -733,7 +746,11 @@ export function DocumentsPanel({
                       <td>
                         <span className="kern-source-cell">
                           <span className="kern-mini-icon">
-                            {isDriveDocument(doc) ? <DriveIcon /> : <UploadIcon />}
+                            {isDriveDocument(doc) ? (
+                              <DriveIcon />
+                            ) : (
+                              <UploadIcon />
+                            )}
                           </span>
                           {sourceLabel(doc.source_type)}
                         </span>
@@ -833,64 +850,53 @@ export function DocumentsPanel({
         ) : null}
       </section>
 
-      {uploadOpen ? (
-        <div className="kern-dialog-root">
-          <button
-            type="button"
-            className="kern-dialog-backdrop"
-            aria-label="Dismiss dialog"
-            onClick={() => {
-              if (!busy) {
+      <DialogFrame
+        open={uploadOpen}
+        titleId="hub-upload-title"
+        panelClassName="kern-hub-upload-dialog"
+        dismissDisabled={busy}
+        onDismiss={() => {
+          setUploadOpen(false);
+          clearUploadInput();
+        }}
+      >
+        <h2 id="hub-upload-title" className="kern-dialog-title">
+          Upload files
+        </h2>
+        <p className="kern-dialog-body">
+          Files become part of the shared document catalog. A system-managed
+          source ID is assigned automatically.
+        </p>
+        <form className="kern-documents-form" onSubmit={onUpload}>
+          <label className="kern-settings-field">
+            <span>Document file</span>
+            <input
+              key={uploadInputKey}
+              type="file"
+              accept={accept}
+              className="kern-settings-input"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                setUploadFile(event.target.files?.[0] ?? null);
+              }}
+            />
+          </label>
+          <div className="kern-dialog-actions">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
                 setUploadOpen(false);
                 clearUploadInput();
-              }
-            }}
-          />
-          <div
-            className="kern-dialog kern-hub-upload-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="hub-upload-title"
-          >
-            <h2 id="hub-upload-title" className="kern-dialog-title">
-              Upload files
-            </h2>
-            <p className="kern-dialog-body">
-              Files become part of the shared document catalog. A system-managed
-              source ID is assigned automatically.
-            </p>
-            <form className="kern-documents-form" onSubmit={onUpload}>
-              <label className="kern-settings-field">
-                <span>Document file</span>
-                <input
-                  key={uploadInputKey}
-                  type="file"
-                  accept={accept}
-                  className="kern-settings-input"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                    setUploadFile(event.target.files?.[0] ?? null);
-                  }}
-                />
-              </label>
-              <div className="kern-dialog-actions">
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setUploadOpen(false);
-                    clearUploadInput();
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={busy || !uploadFile}>
-                  Upload new
-                </Button>
-              </div>
-            </form>
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy || !uploadFile}>
+              Upload new
+            </Button>
           </div>
-        </div>
-      ) : null}
+        </form>
+      </DialogFrame>
 
       <ConfirmDialog
         open={pendingDelete !== null}

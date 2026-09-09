@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { DialogFrame } from "@/components/ui/DialogFrame";
 import { Loader } from "@/components/ui/Loader";
 import { ApiError } from "@/lib/api/errors";
 import {
@@ -36,15 +37,6 @@ type BrowseView =
       nextFolderToken: string | null;
       nextFileToken: string | null;
     };
-
-const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
-].join(", ");
 
 const ROOT: Crumb = { id: "root", name: "My Drive" };
 
@@ -111,10 +103,7 @@ function mixedRows(
   files: GoogleDriveBrowseItemResponse[],
 ): GoogleDriveBrowseItemResponse[] {
   const seen = new Set(folders.map((item) => item.id));
-  return [
-    ...folders,
-    ...files.filter((item) => !seen.has(item.id)),
-  ];
+  return [...folders, ...files.filter((item) => !seen.has(item.id))];
 }
 
 function FolderGlyph() {
@@ -174,10 +163,7 @@ export function GoogleDrivePicker({
   const titleId = useId();
   const descriptionId = useId();
   const searchId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
 
   const [crumbs, setCrumbs] = useState<Crumb[]>([ROOT]);
   const [search, setSearch] = useState("");
@@ -317,69 +303,6 @@ export function GoogleDrivePicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on browse identity
   }, [open, parentId, submittedQuery]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const previous =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    searchRef.current?.focus();
-
-    function focusableNodes(): HTMLElement[] {
-      const root = dialogRef.current;
-      if (!root) {
-        return [];
-      }
-      return Array.from(
-        root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      ).filter(
-        (node) => !node.hasAttribute("disabled") && node.tabIndex !== -1,
-      );
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancelRef.current();
-        return;
-      }
-      if (event.key !== "Tab") {
-        return;
-      }
-      const nodes = focusableNodes();
-      if (nodes.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey) {
-        if (active === first || !dialogRef.current?.contains(active)) {
-          event.preventDefault();
-          last.focus();
-        }
-        return;
-      }
-      if (active === last || !dialogRef.current?.contains(active)) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previous?.focus();
-    };
-  }, [open]);
-
-  if (!open) {
-    return null;
-  }
-
   const countLabel =
     selected.size === 0 ? "No items selected" : `${selected.size} selected`;
   const selectionUnchanged = sameSelection(selected, initialSelection);
@@ -398,8 +321,7 @@ export function GoogleDrivePicker({
     });
   }
 
-  const rows =
-    view.kind === "ready" ? mixedRows(view.folders, view.files) : [];
+  const rows = view.kind === "ready" ? mixedRows(view.folders, view.files) : [];
   const nextPageKind =
     view.kind === "ready" && view.nextFolderToken
       ? "folders"
@@ -407,205 +329,193 @@ export function GoogleDrivePicker({
         ? "files"
         : null;
   const nextPageToken =
-    view.kind === "ready"
-      ? (view.nextFolderToken ?? view.nextFileToken)
-      : null;
+    view.kind === "ready" ? (view.nextFolderToken ?? view.nextFileToken) : null;
 
   return (
-    <div className="kern-dialog-root">
-      <button
-        type="button"
-        className="kern-dialog-backdrop"
-        aria-label="Dismiss dialog"
-        onClick={onCancel}
-      />
-      <div
-        ref={dialogRef}
-        className="kern-dialog kern-picker-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-      >
-        <div className="kern-picker-head">
-          <div className="kern-picker-title-row">
-            <div>
-              <h2 id={titleId} className="kern-dialog-title">
-                Choose from Google Drive
-              </h2>
-              <p id={descriptionId} className="kern-dialog-body">
-                Select the files or folders Kernector should keep synchronized.
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              className="kern-picker-close"
-              aria-label="Close"
-              onClick={onCancel}
-            >
-              <CloseGlyph />
-            </Button>
-          </div>
-          <form
-            className="kern-picker-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSubmittedQuery(search);
-            }}
-          >
-            <label htmlFor={searchId} className="visually-hidden">
-              Search Google Drive
-            </label>
-            <input
-              ref={searchRef}
-              id={searchId}
-              type="search"
-              className="kern-settings-input"
-              placeholder="Search in Drive"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Button type="submit" variant="secondary">
-              Search
-            </Button>
-          </form>
-        </div>
-
-        {query || view.kind === "loading" ? null : (
-          <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
-            {crumbs.map((crumb, index) => (
-              <span key={crumb.id}>
-                {index > 0 ? <span aria-hidden="true"> / </span> : null}
-                {index === crumbs.length - 1 ? (
-                  <strong>{crumb.name}</strong>
-                ) : (
-                  <button
-                    type="button"
-                    className="kern-picker-crumb"
-                    onClick={() => setCrumbs(crumbs.slice(0, index + 1))}
-                  >
-                    {crumb.name}
-                  </button>
-                )}
-              </span>
-            ))}
-          </nav>
-        )}
-
-        <div
-          className={
-            view.kind === "loading"
-              ? "kern-picker-list is-loading"
-              : "kern-picker-list"
-          }
-        >
-          {view.kind === "loading" ? (
-            <div className="kern-picker-loading">
-              <Loader label="Loading Google Drive" />
-            </div>
-          ) : null}
-          {view.kind === "error" ? (
-            <div
-              className="kern-settings-callout kern-settings-callout--error"
-              role="alert"
-            >
-              <p>
-                {view.code === "google_drive_reauthorization_required"
-                  ? "Google Drive authorization was revoked. Connect again."
-                  : view.message}
-              </p>
-              <Button variant="secondary" onClick={() => void loadPage()}>
-                Retry
-              </Button>
-            </div>
-          ) : null}
-          {view.kind === "ready" && rows.length === 0 ? (
-            <p role="status">
-              {query
-                ? "No matching Drive items."
-                : "This folder has no items you can select."}
+    <DialogFrame
+      open={open}
+      titleId={titleId}
+      descriptionId={descriptionId}
+      panelClassName="kern-picker-dialog"
+      initialFocusRef={searchRef}
+      onDismiss={onCancel}
+    >
+      <div className="kern-picker-head">
+        <div className="kern-picker-title-row">
+          <div>
+            <h2 id={titleId} className="kern-dialog-title">
+              Choose from Google Drive
+            </h2>
+            <p id={descriptionId} className="kern-dialog-body">
+              Select the files or folders Kernector should keep synchronized.
             </p>
-          ) : null}
-          {view.kind === "ready"
-            ? rows.map((item) => {
-                const itemKind = item.kind === "folder" ? "folder" : "file";
-                const navigable = itemKind === "folder" && !query;
-                const checked = selected.has(item.id);
-                return (
-                  <div
-                    className={
-                      checked ? "kern-drive-item is-checked" : "kern-drive-item"
-                    }
-                    key={item.id}
-                  >
-                    <label className="kern-drive-item-select">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={
-                          itemKind === "file" && item.supported === false
-                        }
-                        onChange={() => toggle(item)}
-                      />
-                      <span className="kern-drive-item-icon">
-                        {itemKind === "folder" ? <FolderGlyph /> : <FileGlyph />}
-                      </span>
-                      <span className="kern-drive-item-copy">
-                        <strong>{item.name}</strong>
-                        <span className="kern-drive-item-meta">
-                          {itemKind === "folder"
-                            ? "Includes future files and updates"
-                            : (item.mime_type ?? "File")}
-                        </span>
-                      </span>
-                    </label>
-                    {navigable ? (
-                      <Button
-                        variant="ghost"
-                        onClick={() =>
-                          setCrumbs((current) => [
-                            ...current,
-                            { id: item.id, name: item.name },
-                          ])
-                        }
-                      >
-                        Open
-                      </Button>
-                    ) : null}
-                  </div>
-                );
-              })
-            : null}
-          {nextPageKind && nextPageToken ? (
-            <Button
-              variant="secondary"
-              onClick={() =>
-                void loadPage({
-                  pageToken: nextPageToken,
-                  pageKind: nextPageKind,
-                })
-              }
-            >
-              Load more
-            </Button>
-          ) : null}
+          </div>
+          <Button
+            variant="ghost"
+            className="kern-picker-close"
+            aria-label="Close"
+            onClick={onCancel}
+          >
+            <CloseGlyph />
+          </Button>
         </div>
+        <form
+          className="kern-picker-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSubmittedQuery(search);
+          }}
+        >
+          <label htmlFor={searchId} className="visually-hidden">
+            Search Google Drive
+          </label>
+          <input
+            ref={searchRef}
+            id={searchId}
+            type="search"
+            className="kern-settings-input"
+            placeholder="Search in Drive"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Button type="submit" variant="secondary">
+            Search
+          </Button>
+        </form>
+      </div>
 
-        <div className="kern-picker-foot">
-          <span aria-live="polite">{countLabel}</span>
-          <div className="kern-dialog-actions">
-            <Button variant="secondary" onClick={onCancel} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              disabled={busy || selectionUnchanged}
-              onClick={() => onConfirm(toSelection(selected))}
-            >
-              Save
+      {query || view.kind === "loading" ? null : (
+        <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
+          {crumbs.map((crumb, index) => (
+            <span key={crumb.id}>
+              {index > 0 ? <span aria-hidden="true"> / </span> : null}
+              {index === crumbs.length - 1 ? (
+                <strong>{crumb.name}</strong>
+              ) : (
+                <button
+                  type="button"
+                  className="kern-picker-crumb"
+                  onClick={() => setCrumbs(crumbs.slice(0, index + 1))}
+                >
+                  {crumb.name}
+                </button>
+              )}
+            </span>
+          ))}
+        </nav>
+      )}
+
+      <div
+        className={
+          view.kind === "loading"
+            ? "kern-picker-list is-loading"
+            : "kern-picker-list"
+        }
+      >
+        {view.kind === "loading" ? (
+          <div className="kern-picker-loading">
+            <Loader label="Loading Google Drive" />
+          </div>
+        ) : null}
+        {view.kind === "error" ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+          >
+            <p>
+              {view.code === "google_drive_reauthorization_required"
+                ? "Google Drive authorization was revoked. Connect again."
+                : view.message}
+            </p>
+            <Button variant="secondary" onClick={() => void loadPage()}>
+              Retry
             </Button>
           </div>
+        ) : null}
+        {view.kind === "ready" && rows.length === 0 ? (
+          <p role="status">
+            {query
+              ? "No matching Drive items."
+              : "This folder has no items you can select."}
+          </p>
+        ) : null}
+        {view.kind === "ready"
+          ? rows.map((item) => {
+              const itemKind = item.kind === "folder" ? "folder" : "file";
+              const navigable = itemKind === "folder" && !query;
+              const checked = selected.has(item.id);
+              return (
+                <div
+                  className={
+                    checked ? "kern-drive-item is-checked" : "kern-drive-item"
+                  }
+                  key={item.id}
+                >
+                  <label className="kern-drive-item-select">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={itemKind === "file" && item.supported === false}
+                      onChange={() => toggle(item)}
+                    />
+                    <span className="kern-drive-item-icon">
+                      {itemKind === "folder" ? <FolderGlyph /> : <FileGlyph />}
+                    </span>
+                    <span className="kern-drive-item-copy">
+                      <strong>{item.name}</strong>
+                      <span className="kern-drive-item-meta">
+                        {itemKind === "folder"
+                          ? "Includes future files and updates"
+                          : (item.mime_type ?? "File")}
+                      </span>
+                    </span>
+                  </label>
+                  {navigable ? (
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        setCrumbs((current) => [
+                          ...current,
+                          { id: item.id, name: item.name },
+                        ])
+                      }
+                    >
+                      Open
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })
+          : null}
+        {nextPageKind && nextPageToken ? (
+          <Button
+            variant="secondary"
+            onClick={() =>
+              void loadPage({
+                pageToken: nextPageToken,
+                pageKind: nextPageKind,
+              })
+            }
+          >
+            Load more
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="kern-picker-foot">
+        <span aria-live="polite">{countLabel}</span>
+        <div className="kern-dialog-actions">
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            disabled={busy || selectionUnchanged}
+            onClick={() => onConfirm(toSelection(selected))}
+          >
+            Save
+          </Button>
         </div>
       </div>
-    </div>
+    </DialogFrame>
   );
 }

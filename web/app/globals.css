@@ -1820,15 +1820,17 @@ a.kern-btn {
 .kern-dialog-root {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 41;
   display: grid;
   place-items: center;
   padding: var(--kern-space-4);
+  pointer-events: none;
 }
 
 .kern-dialog-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 40;
   border: 0;
   padding: 0;
   margin: 0;
@@ -1849,6 +1851,8 @@ a.kern-btn {
   padding: var(--kern-space-5);
   border: 1px solid color-mix(in srgb, var(--kern-line) 85%, transparent);
   border-radius: 20px;
+  transform-origin: center;
+  pointer-events: auto;
   background:
     var(--kern-control-sheen),
     var(--kern-surface);
