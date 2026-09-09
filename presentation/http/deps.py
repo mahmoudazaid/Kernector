@@ -8,7 +8,6 @@ from typing import Annotated, Protocol
 from fastapi import Depends
 
 from application.contracts import ConnectorSyncResponse
-from application.errors import ConfigurationError
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
@@ -41,7 +40,6 @@ from composition import (
 )
 from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
 from domain.ports import DocumentCatalog, PromptRepository, VectorStore
-from infrastructure.catalog.errors import CatalogError
 from presentation.http.schemas import ChatRuntimeRequest
 
 
@@ -187,7 +185,7 @@ def get_google_drive_status(
     """Report Drive configuration presence and extra availability."""
     try:
         catalog = get_document_catalog()
-    except (CatalogError, ConfigurationError, OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):
         catalog = None
     return google_drive_status(settings, catalog=catalog)
 
