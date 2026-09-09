@@ -284,9 +284,11 @@ class GoogleDriveConnector:
         visited.add(folder_id)
         child_folders: list[str] = []
         page_token: str | None = None
+        pages_ok = 0
         try:
             while True:
                 payload = self._list_children(folder_id, page_token)
+                pages_ok += 1
                 files = payload.get("files", ())
                 if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
                     raise ConnectorError(_MSG_REQUEST_FAILED)
@@ -315,6 +317,8 @@ class GoogleDriveConnector:
             if status == 401 or isinstance(mapped, ConnectorUnavailableError):
                 raise mapped from error
             if status in {403, 404}:
+                if pages_ok > 0:
+                    raise mapped from error
                 return
             raise mapped from error
 

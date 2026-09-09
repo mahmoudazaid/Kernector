@@ -1,9 +1,5 @@
 """Versioned Google Drive connector routes."""
 
-from application.errors import (
-    GoogleDriveNotConnectedError,
-    GoogleDriveReauthorizationRequiredError,
-)
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 
@@ -105,16 +101,9 @@ def google_drive_oauth_callback(
     responses=problem_responses(405, 409, 500, 502),
 )
 def google_drive_connector_sync(
-    status: GoogleDriveStatusDep,
     sync: GoogleDriveSyncDep,
 ) -> GoogleDriveSyncResponse:
     """Synchronize Drive for the stored user OAuth grant."""
-    if not status.connected:
-        raise GoogleDriveNotConnectedError("Google Drive is not connected")
-    if status.reauthorization_required:
-        raise GoogleDriveReauthorizationRequiredError(
-            "Google Drive authorization was revoked"
-        )
     return google_drive_sync_response(sync())
 
 

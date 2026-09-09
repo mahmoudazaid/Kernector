@@ -184,6 +184,9 @@ export function GoogleDrivePicker({
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [view, setView] = useState<BrowseView>({ kind: "loading" });
   const [selected, setSelected] = useState(() => selectedMap(initialSelection));
+  const dirtyRef = useRef(false);
+  const loadSeqRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const parentId = crumbs[crumbs.length - 1]?.id ?? "root";
   const query = submittedQuery.trim();
@@ -194,9 +197,13 @@ export function GoogleDrivePicker({
   }) {
     const pageToken = options?.pageToken ?? null;
     const pageKind = options?.pageKind;
+    const seq = pageToken ? loadSeqRef.current : ++loadSeqRef.current;
     if (!pageToken) {
+      loadAbortRef.current?.abort();
+      loadAbortRef.current = new AbortController();
       setView({ kind: "loading" });
     }
+    const signal = loadAbortRef.current?.signal;
     try {
       if (pageToken && pageKind) {
         const page = await listItems({
@@ -205,7 +212,11 @@ export function GoogleDrivePicker({
           kind: pageKind,
           query: query || undefined,
           pageToken,
+          signal,
         });
+        if (seq !== loadSeqRef.current || signal?.aborted) {
+          return;
+        }
         setView((current) => {
           if (current.kind !== "ready") {
             return current;
@@ -238,14 +249,19 @@ export function GoogleDrivePicker({
           parentId,
           kind: "folders",
           query: query || undefined,
+          signal,
         }),
         listItems({
           baseUrl: apiBaseUrl,
           parentId,
           kind: "files",
           query: query || undefined,
+          signal,
         }),
       ]);
+      if (seq !== loadSeqRef.current || signal?.aborted) {
+        return;
+      }
       setView({
         kind: "ready",
         folders: folderPage.items,
@@ -254,15 +270,27 @@ export function GoogleDrivePicker({
         nextFileToken: filePage.next_page_token ?? null,
       });
     } catch (error) {
+      if (seq !== loadSeqRef.current || signal?.aborted) {
+        return;
+      }
+      if (error instanceof ApiError && error.code === "aborted") {
+        return;
+      }
       setView({ kind: "error", ...browseErrorMessage(error) });
     }
   }
 
   const initialSelectionRef = useRef(initialSelection);
   initialSelectionRef.current = initialSelection;
+  const baselineKey = [
+    ...(initialSelection.folders ?? []).map((item) => `folder:${item.id}`),
+    ...(initialSelection.files ?? []).map((item) => `file:${item.id}`),
+  ].join("|");
 
   useEffect(() => {
     if (!open) {
+      dirtyRef.current = false;
+      loadAbortRef.current?.abort();
       return;
     }
     setCrumbs([ROOT]);
@@ -272,10 +300,20 @@ export function GoogleDrivePicker({
   }, [open]);
 
   useEffect(() => {
+    if (!open || dirtyRef.current) {
+      return;
+    }
+    setSelected(selectedMap(initialSelectionRef.current));
+  }, [open, baselineKey]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
     void loadPage();
+    return () => {
+      loadAbortRef.current?.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on browse identity
   }, [open, parentId, submittedQuery]);
 
@@ -348,6 +386,7 @@ export function GoogleDrivePicker({
 
   function toggle(item: GoogleDriveBrowseItemResponse) {
     const kind = item.kind === "folder" ? "folder" : "file";
+    dirtyRef.current = true;
     setSelected((current) => {
       const next = new Map(current);
       if (next.has(item.id)) {

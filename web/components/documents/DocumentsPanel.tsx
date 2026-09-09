@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   GoogleDrivePanel,
+  readDriveCallback,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
 import { EmptyState } from "@/components/states/EmptyState";
@@ -217,6 +218,8 @@ export function DocumentsPanel({
     useState<(typeof SOURCE_FILTERS)[number]>("All sources");
   const [driveConnected, setDriveConnected] = useState(false);
   const [driveReloadToken, setDriveReloadToken] = useState(0);
+  const [oauthCallback] = useState(readDriveCallback);
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
@@ -319,10 +322,13 @@ export function DocumentsPanel({
     );
   });
   const selected =
-    visibleDocuments.find((doc) => doc.source_id === selectedId) ??
-    visibleDocuments[0] ??
-    null;
+    visibleDocuments.find((doc) => doc.source_id === selectedId) ?? null;
   const accept = constraints?.supported_upload_suffixes.join(",");
+  const selectedSourceId = selected?.source_id ?? null;
+
+  useEffect(() => {
+    clearReplaceInput();
+  }, [selectedSourceId]);
 
   function clearUploadInput() {
     setUploadFile(null);
@@ -601,6 +607,9 @@ export function DocumentsPanel({
                 void refresh();
               }}
               reloadToken={driveReloadToken}
+              oauthCallback={oauthCallback}
+              pickerOpen={drivePickerOpen}
+              onPickerOpenChange={setDrivePickerOpen}
             />
           ) : null}
         </div>
@@ -622,6 +631,9 @@ export function DocumentsPanel({
                 void refresh();
               }}
               reloadToken={driveReloadToken}
+              oauthCallback={oauthCallback}
+              pickerOpen={drivePickerOpen}
+              onPickerOpenChange={setDrivePickerOpen}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (

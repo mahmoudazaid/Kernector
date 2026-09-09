@@ -483,6 +483,7 @@
             "items": {
               "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
             },
+            "maxItems": 100,
             "title": "Files",
             "type": "array"
           },
@@ -490,6 +491,7 @@
             "items": {
               "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
             },
+            "maxItems": 100,
             "title": "Folders",
             "type": "array"
           }
@@ -1946,7 +1948,7 @@
     },
     "/api/v1/documents": {
       "get": {
-        "description": "Return uploaded catalog rows for the documents UI.",
+        "description": "Return upload and Google Drive catalog rows for the documents UI.",
         "operationId": "list_documents_api_v1_documents_get",
         "responses": {
           "200": {

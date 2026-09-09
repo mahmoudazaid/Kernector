@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from urllib.error import URLError
 
@@ -48,6 +49,14 @@ def test_state_is_single_use_and_rejects_replay(tmp_path: Path) -> None:
     assert store.consume("unknown") is False
 
 
+def test_unknown_consume_does_not_erase_pending_states(tmp_path: Path) -> None:
+    store = GoogleOAuthStateStore(tmp_path / "state.json", ttl_seconds=600)
+    token = store.issue()
+
+    assert store.consume("unknown") is False
+    assert store.consume(token) is True
+
+
 def test_state_file_is_owner_readable_only(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     store = GoogleOAuthStateStore(path, ttl_seconds=600)
@@ -81,6 +90,17 @@ def test_connection_store_round_trip(tmp_path: Path) -> None:
 
     store.clear()
     assert store.load() is None
+
+
+def test_connection_file_is_never_world_readable(tmp_path: Path) -> None:
+    path = tmp_path / "conn.json"
+    previous = os.umask(0)
+    try:
+        GoogleOAuthConnectionStore(path).save(_connection())
+    finally:
+        os.umask(previous)
+
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_authorization_url_uses_exact_redirect_and_readonly_scope() -> None:

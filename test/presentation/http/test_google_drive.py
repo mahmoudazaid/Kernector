@@ -11,6 +11,7 @@ from application.contracts import (
     ConnectorSyncResponse,
     ConnectorSyncStatus,
 )
+from application.errors import GoogleDriveNotConnectedError
 from composition import (
     ConnectorSyncError,
     GoogleDriveBrowsePage,
@@ -254,14 +255,14 @@ def test_openapi_includes_google_drive_oauth_paths() -> None:
 def test_google_drive_sync_conflicts_when_disconnected_without_calling_sync(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sync_calls: list[str] = []
     store_builds: list[str] = []
 
     monkeypatch.setattr(
         http_deps,
         "sync_google_drive_oauth",
-        lambda *_args, **_kwargs: sync_calls.append("sync")
-        or ConnectorSyncResponse(outcomes=()),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            GoogleDriveNotConnectedError("Google Drive is not connected")
+        ),
     )
 
     def recording_store() -> object:
@@ -284,7 +285,6 @@ def test_google_drive_sync_conflicts_when_disconnected_without_calling_sync(
     assert body["code"] == "google_drive_not_connected"
     assert "not connected" in body["detail"].lower()
     assert response.headers["content-type"].startswith("application/problem+json")
-    assert sync_calls == []
     assert store_builds == []
     for key in _SECRET_KEYS:
         assert key not in body["detail"]

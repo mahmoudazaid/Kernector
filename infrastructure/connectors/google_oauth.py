@@ -5,9 +5,12 @@ Tokens stay on disk. This module never logs codes, tokens, or client secrets.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
+import os
 import secrets
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,23 +88,29 @@ class GoogleOAuthStateStore:
     def issue(self) -> str:
         """Create and persist a new single-use state token."""
         token = secrets.token_urlsafe(32)
-        items = self._read()
-        now = time.time()
-        items = {
-            key: exp for key, exp in items.items() if isinstance(exp, (int, float)) and exp > now
-        }
-        items[token] = now + self._ttl_seconds
-        self._write(items)
+        with ExclusiveLock(self._path):
+            items = self._read()
+            now = time.time()
+            items = {
+                key: exp
+                for key, exp in items.items()
+                if isinstance(exp, (int, float)) and exp > now
+            }
+            items[token] = now + self._ttl_seconds
+            self._write(items)
         return token
 
     def consume(self, token: str | None) -> bool:
         """Return True once for a valid unexpired token; reject replays."""
         if not token:
             return False
-        items = self._read()
-        expiry = items.pop(token, None)
-        self._write(items)
-        return isinstance(expiry, (int, float)) and expiry >= time.time()
+        with ExclusiveLock(self._path):
+            items = self._read()
+            expiry = items.pop(token, None)
+            if expiry is None:
+                return False
+            self._write(items)
+            return isinstance(expiry, (int, float)) and expiry >= time.time()
 
     def _read(self) -> dict[str, float]:
         if not self._path.is_file():
@@ -119,9 +128,7 @@ class GoogleOAuthStateStore:
         return parsed
 
     def _write(self, items: dict[str, float]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(items), encoding="utf-8")
-        self._path.chmod(0o600)
+        _atomic_write_json(self._path, items)
 
 
 class GoogleOAuthConnectionStore:
@@ -160,7 +167,6 @@ class GoogleOAuthConnectionStore:
 
     def save(self, connection: GoogleOAuthConnection) -> None:
         """Persist the grant. Overwrites the previous connection."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "refresh_token": connection.refresh_token,
             "access_token": connection.access_token,
@@ -175,8 +181,8 @@ class GoogleOAuthConnectionStore:
             "last_sync_failed": connection.last_sync_failed,
             "reauthorization_required": connection.reauthorization_required,
         }
-        self._path.write_text(json.dumps(payload), encoding="utf-8")
-        self._path.chmod(0o600)
+        with ExclusiveLock(self._path):
+            _atomic_write_json(self._path, payload)
 
     def clear(self) -> None:
         """Delete the stored grant."""
@@ -354,3 +360,43 @@ def _parse_selected_items(raw: object) -> tuple[GoogleDriveSelectedItem, ...]:
         seen.add(item_id)
         items.append(GoogleDriveSelectedItem(id=item_id, name=name))
     return tuple(items)
+
+
+class ExclusiveLock:
+    """Process-wide exclusive lock for one JSON grant/state path."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path.with_name(path.name + ".lock")
+        self._fd: int | None = None
+
+    def __enter__(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._fd = os.open(self._path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(self._fd, fcntl.LOCK_EX)
+
+    def __exit__(self, *_exc: object) -> None:
+        fd = self._fd
+        if fd is None:
+            return
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+        self._fd = None
+
+
+def _atomic_write_json(path: Path, payload: object) -> None:
+    """Write JSON to ``path`` at mode ``0600`` via temp file + ``os.replace``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

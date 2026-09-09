@@ -20,6 +20,7 @@ from application.errors import (
     ConfigurationError,
     GoogleDriveNotConnectedError,
     GoogleDriveReauthorizationRequiredError,
+    GoogleDriveSelectionRequiredError,
     InputRejectedError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -766,18 +767,21 @@ def complete_google_drive_oauth(
     try:
         grant = oauth_gateway.exchange_code(code)
         email = oauth_gateway.fetch_account_email(grant.access_token)
+        existing = tokens_store.load()
         tokens_store.save(
             GoogleOAuthConnection(
                 refresh_token=grant.refresh_token,
                 access_token=grant.access_token,
                 account_email=email,
-                folder_count=0,
-                last_synced_at=None,
-                last_sync_new=None,
-                last_sync_updated=None,
-                last_sync_unchanged=None,
-                last_sync_failed=None,
+                folder_count=existing.folder_count if existing is not None else 0,
+                last_synced_at=None if existing is None else existing.last_synced_at,
+                last_sync_new=None if existing is None else existing.last_sync_new,
+                last_sync_updated=None if existing is None else existing.last_sync_updated,
+                last_sync_unchanged=None if existing is None else existing.last_sync_unchanged,
+                last_sync_failed=None if existing is None else existing.last_sync_failed,
                 reauthorization_required=False,
+                folders=() if existing is None else existing.folders,
+                files=() if existing is None else existing.files,
             )
         )
     except GoogleOAuthError:
@@ -1133,6 +1137,7 @@ def sync_google_drive_oauth(
     Raises:
         GoogleDriveNotConnectedError: No stored grant.
         GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
+        GoogleDriveSelectionRequiredError: The grant has no saved Drive roots.
         ConnectorSyncError: Listing, auth, catalog, or store infrastructure failed.
     """
     from datetime import datetime, timezone
@@ -1146,6 +1151,10 @@ def sync_google_drive_oauth(
     if connection.reauthorization_required:
         raise GoogleDriveReauthorizationRequiredError(
             "Google Drive authorization was revoked"
+        )
+    if not connection.folders and not connection.files:
+        raise GoogleDriveSelectionRequiredError(
+            "Google Drive sync scope is not selected"
         )
     try:
         working_catalog = catalog if catalog is not None else build_document_catalog(settings)
@@ -1392,9 +1401,13 @@ def replace_uploaded_document(
         DocumentUploadError: The replacement file could not be extracted.
     """
     try:
-        return build_manage_uploaded_documents(
+        ops = build_manage_uploaded_documents(
             settings, vector_store=vector_store
-        ).replace(reference, payload)
+        )
+        row = ops.resolve(reference.source_id)
+        if row is None:
+            raise UnknownDocumentError(reference=reference)
+        return ops.replace(row.reference, payload)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error
     except UnreadableDocumentError as error:
@@ -1445,8 +1458,9 @@ def delete_uploaded_document(
         settings, vector_store=vector_store
     )
     row = ops.resolve(reference.source_id)
+    target = row.reference if row is not None else reference
     try:
-        ops.delete(reference)
+        ops.delete(target)
     except PartialDeleteFailure as error:
         raise PartialDocumentOperationError(
             str(error), operation="delete"

@@ -297,11 +297,8 @@ class ManageUploadedDocuments:
 
         Missing chunks or rows are no-ops so retry converges. Catalog failure
         after a successful vector delete raises ``PartialDeleteFailure``.
-        A ``knowledge_document`` locator still matches a Google Drive row with
-        the same ``source_id``, so the documents API can delete either kind.
+        A missing row is a no-op so retry converges.
         """
-        resolved = self.resolve(reference.source_id)
-        reference = resolved.reference if resolved is not None else reference
         try:
             self._vector_store_factory().delete_source(reference)
         except Exception as error:

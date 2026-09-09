@@ -133,8 +133,12 @@ class GoogleDriveSelectedItemResponse(BaseModel):
 class GoogleDriveSelectionResponse(BaseModel):
     """Saved folder and exact-file roots for the connected grant."""
 
-    folders: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
-    files: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
+    folders: list[GoogleDriveSelectedItemResponse] = Field(
+        default_factory=list, max_length=100
+    )
+    files: list[GoogleDriveSelectedItemResponse] = Field(
+        default_factory=list, max_length=100
+    )
 
 
 class ConnectorSyncOutcomeResponse(BaseModel):

@@ -206,7 +206,7 @@ def test_partial_delete_failure_message_leaks_neither_locator_nor_vendor(
     assert payload["source_id"] == sentinel
 
 
-def test_delete_resolves_google_drive_row_from_knowledge_document_locator() -> None:
+def test_delete_does_not_guess_type_from_source_id_alone() -> None:
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()
     drive_ref = SourceReference("drive-file-1", SourceType.GOOGLE_DRIVE)
@@ -228,7 +228,7 @@ def test_delete_resolves_google_drive_row_from_knowledge_document_locator() -> N
         SourceReference("drive-file-1", SourceType.KNOWLEDGE_DOCUMENT)
     )
 
-    assert catalog.get(drive_ref) is None
+    assert catalog.get(drive_ref) is not None
 
 
 def test_delete_missing_data_is_idempotent_and_retry_converges() -> None:

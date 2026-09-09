@@ -161,7 +161,7 @@ export interface paths {
     };
     /**
      * List Documents
-     * @description Return uploaded catalog rows for the documents UI.
+     * @description Return upload and Google Drive catalog rows for the documents UI.
      */
     get: operations["list_documents_api_v1_documents_get"];
     put?: never;

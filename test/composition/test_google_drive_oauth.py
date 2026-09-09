@@ -15,6 +15,7 @@ from application.contracts import (
 )
 from application.errors import (
     GoogleDriveNotConnectedError,
+    GoogleDriveSelectionRequiredError,
 )
 from composition import (
     browse_google_drive_items,
@@ -166,6 +167,46 @@ def test_callback_rejects_replayed_state(settings) -> None:
     assert status.setup_required is False
     assert status.connection_state == "ready"
     assert status.sync_scope is None
+
+
+def test_callback_reconnect_keeps_saved_scope(settings) -> None:
+    states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//old-refresh",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            last_synced_at="2026-09-08T12:00:00+00:00",
+            last_sync_new=1,
+            last_sync_updated=0,
+            last_sync_unchanged=2,
+            last_sync_failed=0,
+            reauthorization_required=True,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            files=(),
+        )
+    )
+    state = states.issue()
+    url = complete_google_drive_oauth(
+        settings,
+        state=state,
+        code="4/auth-code",
+        error=None,
+        state_store=states,
+        connection_store=tokens,
+        gateway=FakeGateway(),
+    )
+
+    assert url.endswith("drive=connected")
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.refresh_token == "1//refresh-secret"
+    assert stored.reauthorization_required is False
+    assert stored.folders == (StoredItem(id="folder-1", name="Specs"),)
+    assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
+    assert stored.last_sync_unchanged == 2
 
 
 def test_status_reads_store_not_memory(settings) -> None:
@@ -345,7 +386,7 @@ def test_oauth_sync_persists_last_sync_counts(
     assert result.ingested_count == 1
 
 
-def test_sync_without_selection_runs(
+def test_sync_without_selection_conflicts(
     settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
@@ -368,27 +409,18 @@ def test_sync_without_selection_runs(
         "build_google_drive_oauth_connector",
         lambda *_args, **_kwargs: object(),
     )
-    monkeypatch.setattr(
-        composition_container,
-        "sync_google_drive",
-        lambda *_args, **_kwargs: ConnectorSyncResponse(outcomes=()),
-    )
 
-    result = sync_google_drive_oauth(
-        settings,
-        catalog=InMemoryDocumentCatalog(),
-        vector_store=object(),  # type: ignore[arg-type]
-        connection_store=tokens,
-    )
+    with pytest.raises(GoogleDriveSelectionRequiredError):
+        sync_google_drive_oauth(
+            settings,
+            catalog=InMemoryDocumentCatalog(),
+            vector_store=object(),  # type: ignore[arg-type]
+            connection_store=tokens,
+        )
 
-    assert result.outcomes == ()
     stored = tokens.load()
     assert stored is not None
-    assert stored.last_sync_new == 0
-    assert stored.last_sync_updated == 0
-    assert stored.last_sync_unchanged == 0
-    assert stored.last_sync_failed == 0
-    assert stored.last_synced_at is not None
+    assert stored.last_synced_at is None
 
 
 class FakeBrowseFiles:

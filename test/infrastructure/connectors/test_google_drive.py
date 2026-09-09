@@ -563,6 +563,30 @@ def test_inaccessible_folder_is_skipped_without_deleting_or_aborting() -> None:
     assert documents == ()
 
 
+def test_mid_pagination_403_does_not_look_like_a_complete_listing() -> None:
+    class MidPageForbidden(FakeDriveFiles):
+        def list(self, **kwargs: object) -> FakeListRequest:
+            self.list_calls.append(dict(kwargs))
+            if len(self.list_calls) == 1:
+                return FakeListRequest(
+                    {"files": [_file("a", "a.md")], "nextPageToken": "page-2"}
+                )
+            return FakeListRequest(
+                error=_http_error(
+                    403,
+                    {
+                        "error": {
+                            "errors": [{"reason": "insufficientFilePermissions"}],
+                            "message": SECRET,
+                        }
+                    },
+                )
+            )
+
+    with pytest.raises(ConnectorError):
+        _connector(MidPageForbidden()).list_documents()
+
+
 def test_recursive_folder_discovers_nested_supported_files() -> None:
     files = FakeDriveFiles(
         children_by_parent={

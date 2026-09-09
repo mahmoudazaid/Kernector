@@ -254,6 +254,15 @@ def _resolve_under_project_root(raw: str) -> Path:
     return path if path.is_absolute() else _PROJECT_ROOT / path
 
 
+def _require_google_oauth_json_path(path: Path, env_name: str) -> Path:
+    """Reject grant paths that would not match the gitignore for OAuth files."""
+    if not path.name.startswith("google-oauth-") or not path.name.endswith(".json"):
+        raise ValueError(
+            f"{env_name} must use a google-oauth-*.json filename so the grant stays gitignored"
+        )
+    return path
+
+
 def _load_chroma_settings() -> ChromaSettings:
     collection = os.getenv("CHROMA_COLLECTION", "kernector_knowledge")
     if not collection.strip():
@@ -465,15 +474,21 @@ def _load_google_oauth_settings() -> GoogleOAuthSettings:
         frontend_redirect = _require_absolute_http_url(
             "GOOGLE_OAUTH_FRONTEND_REDIRECT", raw_frontend.strip()
         )
-    token_path = (
-        _resolve_under_project_root(raw_token.strip())
-        if raw_token and raw_token.strip()
-        else _PROJECT_ROOT / "data" / "google-oauth-connection.json"
+    token_path = _require_google_oauth_json_path(
+        (
+            _resolve_under_project_root(raw_token.strip())
+            if raw_token and raw_token.strip()
+            else _PROJECT_ROOT / "data" / "google-oauth-connection.json"
+        ),
+        "GOOGLE_OAUTH_TOKEN_PATH",
     )
-    state_path = (
-        _resolve_under_project_root(raw_state.strip())
-        if raw_state and raw_state.strip()
-        else _PROJECT_ROOT / "data" / "google-oauth-state.json"
+    state_path = _require_google_oauth_json_path(
+        (
+            _resolve_under_project_root(raw_state.strip())
+            if raw_state and raw_state.strip()
+            else _PROJECT_ROOT / "data" / "google-oauth-state.json"
+        ),
+        "GOOGLE_OAUTH_STATE_PATH",
     )
     return GoogleOAuthSettings(
         client_id=client_id.strip() if client_id and client_id.strip() else None,

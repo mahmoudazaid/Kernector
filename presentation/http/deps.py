@@ -177,7 +177,7 @@ def get_google_drive_sync(
     """
 
     def sync() -> ConnectorSyncResponse:
-        return sync_google_drive_oauth(settings, vector_store=get_vector_store())
+        return sync_google_drive_oauth(settings)
 
     return sync
 

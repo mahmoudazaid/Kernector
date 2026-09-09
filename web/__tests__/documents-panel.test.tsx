@@ -817,6 +817,7 @@ describe("DocumentsPanel", () => {
     await user.click(screen.getByRole("option", { name: "Google Drive" }));
     expect(screen.getByText("Mieterselbtstauskunft")).toBeInTheDocument();
     expect(screen.queryByText("spec.md")).not.toBeInTheDocument();
+    await user.click(within(table).getByText("Mieterselbtstauskunft"));
     expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^replace$/i })).not.toBeInTheDocument();
   });
@@ -1013,5 +1014,38 @@ describe("DocumentsPanel", () => {
       name: "Available connectors",
     }).parentElement?.nextElementSibling;
     expect(available?.textContent).not.toMatch(/google drive/i);
+  });
+
+  it("opens the Drive picker after OAuth when the panel remounts as connected", async () => {
+    window.history.pushState({}, "", "/documents?drive=connected");
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        loadSettings={loadSettings}
+        getDriveStatus={async () => ({
+          configured: false,
+          available: true,
+          connected: true,
+          oauth_ready: true,
+          account_email: "ada@example.com",
+          document_count: 0,
+          folder_count: 0,
+          last_sync: null,
+          reauthorization_required: false,
+          setup_required: true,
+          connection_state: "setup_required",
+          sync_scope: null,
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", {
+          name: /choose from google drive/i,
+        }),
+      ).toBeInTheDocument();
+    });
   });
 });

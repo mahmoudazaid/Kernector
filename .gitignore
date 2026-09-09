@@ -46,8 +46,7 @@ learning/
 output/
 data/chroma/
 data/catalog/
-data/google-oauth-connection.json
-data/google-oauth-state.json
+**/google-oauth-*.json
 
 # Local scratch output
 .tmp-*

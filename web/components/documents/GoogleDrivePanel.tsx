@@ -28,6 +28,7 @@ import { formatTimestamp } from "@/lib/format/timestamp";
 
 export type GoogleDrivePanelProps = {
   apiBaseUrl: string;
+  oauthCallback?: string | null;
   getStatus?: (
     options: GetGoogleDriveStatusOptions,
   ) => Promise<GoogleDriveStatusResponse>;
@@ -46,6 +47,8 @@ export type GoogleDrivePanelProps = {
   onConnectionChange?: (connected: boolean) => void;
   onCatalogChange?: () => void;
   reloadToken?: number;
+  pickerOpen?: boolean;
+  onPickerOpenChange?: (open: boolean) => void;
 };
 
 type StatusView =
@@ -77,7 +80,7 @@ function actionErrorMessage(error: unknown): string {
   return "The request failed. Please try again later.";
 }
 
-function readDriveCallback(): string | null {
+export function readDriveCallback(): string | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -117,14 +120,20 @@ export function GoogleDrivePanel({
   onConnectionChange,
   onCatalogChange,
   reloadToken = 0,
+  oauthCallback,
+  pickerOpen: pickerOpenProp,
+  onPickerOpenChange,
 }: GoogleDrivePanelProps) {
   const [view, setView] = useState<StatusView>({ kind: "loading" });
-  const [callbackError, setCallbackError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [internalPickerOpen, setInternalPickerOpen] = useState(false);
+  const pickerOpen = onPickerOpenChange
+    ? (pickerOpenProp ?? false)
+    : internalPickerOpen;
+  const setPickerOpen = onPickerOpenChange ?? setInternalPickerOpen;
   const [selection, setSelection] =
     useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
   const busyRef = useRef(false);
@@ -156,16 +165,17 @@ export function GoogleDrivePanel({
   }
 
   useEffect(() => {
-    const drive = readDriveCallback();
-    if (drive === "connected") {
-      setPickerOpen(true);
-    } else if (drive) {
-      setCallbackError(CALLBACK_ERRORS[drive] ?? CALLBACK_ERRORS.error);
-    }
+    const drive =
+      oauthCallback !== undefined ? oauthCallback : readDriveCallback();
     void (async () => {
       const status = await loadStatus();
       if (status?.connected) {
         await refreshSelection();
+      }
+      if (drive === "connected") {
+        setPickerOpen(true);
+      } else if (drive) {
+        setActionError(CALLBACK_ERRORS[drive] ?? CALLBACK_ERRORS.error);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
@@ -302,8 +312,7 @@ export function GoogleDrivePanel({
   const alertMessage =
     view.kind === "error"
       ? view.message
-      : (callbackError ??
-        actionError ??
+      : (actionError ??
         (reauth
           ? "Google Drive authorization was revoked. Connect again."
           : null));

@@ -257,7 +257,7 @@ def test_blank_source_id_is_422_not_500(client_factory) -> None:
 def test_replace_keeps_source_id_and_forces_knowledge_document(
     client_factory,
 ) -> None:
-    ops, ledger = _stub_ops()
+    ops, ledger = _stub_ops(documents=(_document(source_id="keep-me"),))
     client = client_factory(ops)
 
     response = client.put(
@@ -290,7 +290,7 @@ def test_replace_unknown_source_id_is_404(client_factory) -> None:
 
 
 def test_delete_returns_204_empty_body(client_factory) -> None:
-    ops, ledger = _stub_ops()
+    ops, ledger = _stub_ops(documents=(_document(),))
     client = client_factory(ops)
 
     response = client.delete("/api/v1/documents/src-1")
@@ -337,6 +337,7 @@ def test_partial_failure_returns_409_with_retry_sentence(
         raise PartialDocumentOperationError("half", operation="delete")
 
     ops, _ledger = _stub_ops(
+        documents=(_document(),),
         create_impl=_create, replace_impl=_replace, delete_impl=_delete
     )
     client = client_factory(ops)

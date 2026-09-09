@@ -9,7 +9,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
 from composition import unsupported_upload_type_detail
-from domain.knowledge import SourceReference, SourceType, UploadPayload
+from composition.errors import UnknownUploadedDocumentError
+from domain.knowledge import CatalogDocument, UploadPayload
 from presentation.http.deps import DocumentOperationsDep
 from presentation.http.errors import (
     MissingUploadFileError,
@@ -40,6 +41,13 @@ def _require_source_id(source_id: str) -> str:
             ]
         )
     return source_id
+
+
+def _hub_row(ops: DocumentOperationsDep, source_id: str) -> CatalogDocument | None:
+    for document in ops.list():
+        if document.reference.source_id == source_id:
+            return document
+    return None
 
 
 def _read_upload(
@@ -131,11 +139,10 @@ def replace_document(
         max_upload_bytes=ops.max_upload_bytes,
         supported_suffixes=ops.supported_suffixes,
     )
-    reference = SourceReference(
-        source_id=source_id,
-        source_type=SourceType.KNOWLEDGE_DOCUMENT,
-    )
-    document = ops.replace(reference, payload)
+    row = _hub_row(ops, source_id)
+    if row is None:
+        raise UnknownUploadedDocumentError(source_id)
+    document = ops.replace(row.reference, payload)
     return catalog_document_response(document)
 
 
@@ -147,9 +154,7 @@ def replace_document(
 def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     """Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op."""
     source_id = _require_source_id(source_id)
-    reference = SourceReference(
-        source_id=source_id,
-        source_type=SourceType.KNOWLEDGE_DOCUMENT,
-    )
-    ops.delete(reference)
+    row = _hub_row(ops, source_id)
+    if row is not None:
+        ops.delete(row.reference)
     return Response(status_code=204)
