@@ -77,6 +77,7 @@ inventing a local look.
      screen-level load
    - Dialogs: `ConfirmDialog` (`.kern-dialog`) for destructive or
      irreversible confirms
+   - Timestamps: `formatTimestamp` (`09 Sep 2026, 09:35 AM`)
 
    New routes must match before merge. Prefer shared classes
    (`.kern-settings-fieldset`, `.kern-settings-input`, `.kern-btn`, …) over
@@ -105,7 +106,7 @@ inventing a local look.
    accent colors; narrow “card column” layouts on workspace pages that waste
    the main pane; native system dialogs for confirms; or copied third-party
    widget markup that bypasses tokens; skeleton bars or “Loading …” lead
-   copy as the wait UI.
+   copy as the wait UI; mixed timestamp formats.
 
 9. **Guardrail tests** — `web/__tests__/design-tokens.test.ts` asserts the
    required token names on `:root` and theme overrides (including control
@@ -124,6 +125,14 @@ inventing a local look.
     reuse `Loader` at `sm` / `md`; page waits use `lg`. Honor
     `prefers-reduced-motion` (lids hold closed). New routes must use this
     recipe before merge.
+
+11. **Timestamps** — Every visible clock time in `web/` uses
+    [`formatTimestamp`](../../web/lib/format/timestamp.ts):
+    **`09 Sep 2026, 09:35 AM`** (local wall clock, `DD Mon YYYY, HH:MM AM/PM`,
+    English month abbreviations, 12-hour, no timezone suffix). Do not use
+    relative copy (“5 min ago”), locale-default `toLocaleString()`, or
+    timezone abbreviations (`EEST`). Machine values stay ISO-8601 on the
+    wire and in `datetime` attributes.
 
 ## Consequences
 
@@ -151,5 +160,7 @@ inventing a local look.
   brand wait mark for every screen
 - [web/components/states/LoadingState.tsx](../../web/components/states/LoadingState.tsx)
   — full-pane wait wrapping `Loader`
+- [web/lib/format/timestamp.ts](../../web/lib/format/timestamp.ts) —
+  unified `09 Sep 2026, 09:35 AM` display timestamps
 - [ADR 0002](0002-nextjs-presentation-migration.md) — Next.js / HTTP ownership
   of `web/`

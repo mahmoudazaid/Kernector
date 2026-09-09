@@ -32,6 +32,7 @@ import {
 } from "@/lib/api/documents";
 import { ApiError } from "@/lib/api/errors";
 import { validateUpload } from "@/lib/documents/upload";
+import { formatTimestamp } from "@/lib/format/timestamp";
 import {
   useRuntimeCatalog,
   type RuntimeCatalogLoader,
@@ -88,38 +89,6 @@ const SOURCE_FILTERS = [
   "File uploads",
   "Google Drive",
 ] as const;
-
-function formatUploadedAt(value: string): string {
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
-}
-
-function formatRelative(value: string): string {
-  const then = Date.parse(value);
-  if (Number.isNaN(then)) {
-    return value;
-  }
-  const deltaMs = Date.now() - then;
-  const minutes = Math.floor(deltaMs / 60_000);
-  if (minutes < 1) {
-    return "Just now";
-  }
-  if (minutes < 60) {
-    return `${minutes} min ago`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  }
-  const days = Math.floor(hours / 24);
-  if (days === 1) {
-    return "Yesterday";
-  }
-  return `${days} days ago`;
-}
 
 function isDriveDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GOOGLE_DRIVE_SOURCE;
@@ -600,7 +569,7 @@ export function DocumentsPanel({
               <div>
                 <span className="kern-metric-label">Latest upload</span>
                 <span className="kern-metric-value">
-                  {latestUpload ? formatRelative(latestUpload) : "None yet"}
+                  {latestUpload ? formatTimestamp(latestUpload) : "None yet"}
                 </span>
               </div>
             </div>
@@ -757,7 +726,7 @@ export function DocumentsPanel({
                         </span>
                       </td>
                       <td>{doc.chunk_count}</td>
-                      <td>{formatUploadedAt(doc.uploaded_at)}</td>
+                      <td>{formatTimestamp(doc.uploaded_at)}</td>
                       <td className="kern-documents-actions">
                         <button
                           type="button"
@@ -797,8 +766,8 @@ export function DocumentsPanel({
           <div className="kern-documents-detail">
             <p className="kern-settings-hint">
               {isDriveDocument(selected)
-                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatUploadedAt(selected.uploaded_at)}`
-                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatUploadedAt(selected.uploaded_at)}`}
+                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
+                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
             </p>
             {selected.error_summary ? (
               <div

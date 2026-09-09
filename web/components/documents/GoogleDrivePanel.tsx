@@ -24,6 +24,7 @@ import {
   type SyncGoogleDriveOptions,
 } from "@/lib/api/connectors";
 import { ApiError } from "@/lib/api/errors";
+import { formatTimestamp } from "@/lib/format/timestamp";
 
 export type GoogleDrivePanelProps = {
   apiBaseUrl: string;
@@ -90,17 +91,6 @@ function readDriveCallback(): string | null {
   const next = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
   window.history.replaceState(null, "", next);
   return drive;
-}
-
-function formatLastSync(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
 }
 
 function CloudIcon() {
@@ -418,7 +408,7 @@ export function GoogleDrivePanel({
         <div className="kern-sync-heading">
           <h3>Last synced</h3>
           <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
-            {lastSync ? formatLastSync(lastSync.synced_at) : "Never"}
+            {lastSync ? formatTimestamp(lastSync.synced_at) : "Never"}
           </time>
         </div>
       </div>
