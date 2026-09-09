@@ -30,6 +30,7 @@ _ALLOWED_FIELDS: frozenset[str] = frozenset(
         "source_id",
         "case_id",
         "error_type",
+        "exception_type",
         "path",
         "prompt_tokens",
         "completion_tokens",

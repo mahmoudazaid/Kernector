@@ -60,6 +60,7 @@ _ERROR_TYPES = frozenset(
         "fake_ineligible",
     }
 )
+CASE_ERROR_TYPES = _ERROR_TYPES
 _SLICES = frozenset({"core", "software_delivery"})
 
 
@@ -69,6 +70,19 @@ def _require_text(value: object, field_name: str) -> str:
             f"{field_name} must be a non-empty string, got {type(value).__name__}"
         )
     return value
+
+
+def _require_unit_number(value: object, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ApplicationValidationError(
+            f"{field_name} must be a finite number in [0, 1]"
+        )
+    number = float(value)
+    if not isfinite(number) or number < 0.0 or number > 1.0:
+        raise ApplicationValidationError(
+            f"{field_name} must be a finite number in [0, 1]"
+        )
+    return number
 
 
 def _require_sequence(value: object, field_name: str) -> Sequence[object]:
@@ -278,14 +292,7 @@ class RagJudgeThresholds:
 
     def __post_init__(self) -> None:
         for name in ("metric_floor", "pass_rate_floor", "allowed_drop"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ApplicationValidationError(f"{name} must be a number")
-            if not isfinite(float(value)) or float(value) < 0.0 or float(value) > 1.0:
-                raise ApplicationValidationError(
-                    f"{name} must be a finite number in [0, 1]"
-                )
-            object.__setattr__(self, name, float(value))
+            object.__setattr__(self, name, _require_unit_number(getattr(self, name), name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,30 +325,12 @@ class RagJudgeBaseline:
             _require_text(key, "means key")
             if key not in METRIC_IDS:
                 raise ApplicationValidationError(f"unknown baseline metric {key}")
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ApplicationValidationError(
-                    f"means[{key}] must be a finite number"
-                )
-            number = float(value)
-            if not isfinite(number):
-                raise ApplicationValidationError(
-                    f"means[{key}] must be a finite number"
-                )
-            copied[key] = number
+            copied[key] = _require_unit_number(value, f"means[{key}]")
         if set(copied) != set(METRIC_IDS):
             raise ApplicationValidationError(
                 "baseline means must include exactly the five Judge metrics"
             )
-        drop = self.allowed_drop
-        if isinstance(drop, bool) or not isinstance(drop, (int, float)):
-            raise ApplicationValidationError(
-                "allowed_drop must be a finite number in [0, 1]"
-            )
-        drop = float(drop)
-        if not isfinite(drop) or drop < 0.0 or drop > 1.0:
-            raise ApplicationValidationError(
-                "allowed_drop must be a finite number in [0, 1]"
-            )
+        drop = _require_unit_number(self.allowed_drop, "allowed_drop")
         object.__setattr__(self, "means", copied)
         object.__setattr__(self, "allowed_drop", drop)
 

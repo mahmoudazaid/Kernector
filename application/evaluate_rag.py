@@ -24,6 +24,7 @@ from application.rag_judge_contracts import (
     RagJudgeFingerprints,
     RagJudgeReport,
     RagJudgeThresholds,
+    CASE_ERROR_TYPES,
 )
 from application.rag_judge_policy import (
     DEFAULT_ALLOWED_DROP,
@@ -42,6 +43,7 @@ _WELL_KNOWN_SOURCE_TYPES = frozenset(
     {
         SourceType.KNOWLEDGE_DOCUMENT,
         SourceType.GOOGLE_DRIVE,
+        "story",
         "user_story",
         "srs",
         "test",
@@ -117,7 +119,10 @@ class EvaluateRag:
         settings = dict(judge_settings) if judge_settings is not None else {
             "temperature": 0
         }
-        missing_errors = observation_errors or {}
+        missing_errors = {
+            case_id: _observation_error_type(code)
+            for case_id, code in (observation_errors or {}).items()
+        }
         eligible = tuple(case for case in cases if case.kind == "ask")
         baseline_status = _baseline_status(execution_mode, baseline, fingerprints)
         results: list[RagJudgeCaseResult] = []
@@ -135,12 +140,13 @@ class EvaluateRag:
                 )
                 continue
             results.append(_score_case(case, observation, judge, settings))
-        aggregates = _aggregates(tuple(results), thresholds)
-        coverage_ok = _coverage_ok(eligible, tuple(results))
+        frozen = tuple(results)
+        aggregates = _aggregates(frozen, thresholds)
+        coverage_ok = _coverage_ok(eligible, frozen)
         gate_eligible, gate_passed, gate_status = _gate(
             execution_mode,
             baseline_status,
-            tuple(results),
+            frozen,
             aggregates,
             thresholds,
             baseline,
@@ -155,7 +161,7 @@ class EvaluateRag:
             answer_model=answer_meta,
             judge=judge_meta,
             fingerprints=fingerprints,
-            results=tuple(results),
+            results=frozen,
             aggregates=aggregates,
             limitations=_LIMITATIONS,
             baseline_comparison=baseline_status,
@@ -310,21 +316,68 @@ def parse_judge_output(metric_id: str, raw: str) -> MetricResult:
 
 def _extract_json_object(raw: str) -> object:
     stripped = raw.strip()
-    if stripped.startswith("```"):
-        stripped = stripped[3:].lstrip()
-        if stripped[:4].lower() == "json":
-            stripped = stripped[4:].lstrip()
-        close = stripped.find("```")
-        if close >= 0:
-            stripped = stripped[:close].strip()
+    positions: list[int] = []
+    index = 0
+    while True:
+        pos = stripped.find("```", index)
+        if pos < 0:
+            break
+        positions.append(pos)
+        index = pos + 3
+    candidates: list[str] = []
+    for close_index in range(len(positions) - 1, 0, -1):
+        close = positions[close_index]
+        for open_index in range(close_index - 1, -1, -1):
+            body = stripped[positions[open_index] + 3 : close].strip()
+            if body.lower().startswith("json"):
+                rest = body[4:]
+                if not rest or rest[0].isspace():
+                    body = rest.lstrip()
+            candidates.append(body)
+    candidates.append(stripped)
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        try:
+            return _verdict_object(candidate)
+        except json.JSONDecodeError as error:
+            last_error = error
+    if last_error is not None:
+        raise last_error
+    raise json.JSONDecodeError("no judge verdict object", stripped, 0)
+
+
+def _verdict_object(text: str) -> object:
     try:
-        return json.loads(stripped)
+        payload = json.loads(text)
     except json.JSONDecodeError:
-        start = stripped.rfind("{")
-        if start < 0:
-            raise
-        payload, _end = json.JSONDecoder().raw_decode(stripped, start)
-        return payload
+        payload = None
+    else:
+        if isinstance(payload, dict):
+            return payload
+    decoder = json.JSONDecoder()
+    scored: object | None = None
+    for start in range(len(text) - 1, -1, -1):
+        if text[start] != "{":
+            continue
+        try:
+            candidate, _end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(candidate, dict):
+            continue
+        if "score" in candidate:
+            return candidate
+        if scored is None:
+            scored = candidate
+    if scored is not None:
+        return scored
+    raise json.JSONDecodeError("no judge verdict object", text, 0)
+
+
+def _observation_error_type(code: object) -> str:
+    if isinstance(code, str) and code in CASE_ERROR_TYPES:
+        return code
+    return "judge_error"
 
 
 def _diagnostics(
@@ -428,23 +481,20 @@ def _gate(
         return True, False, "failed"
     if any(item.error_type == "observation_integrity" for item in results):
         return True, False, "failed"
+    assert baseline is not None
+    drop = min(thresholds.allowed_drop, baseline.allowed_drop)
     for metric_id, aggregate in aggregates.items():
-        if aggregate.mean is None or not isfinite(aggregate.mean):
+        if aggregate.mean is None:
             return True, False, "failed"
-        if (
-            aggregate.eligible_count
-            and aggregate.scored_count <= aggregate.eligible_count // 2
-        ):
+        if aggregate.scored_count <= aggregate.eligible_count // 2:
             return True, False, "failed"
         if aggregate.mean < thresholds.metric_floor:
             return True, False, "failed"
         if aggregate.pass_rate < thresholds.pass_rate_floor:
             return True, False, "failed"
-        if baseline is not None:
-            drop = min(thresholds.allowed_drop, baseline.allowed_drop)
-            floor = baseline.means[metric_id] - drop
-            if aggregate.mean < floor:
-                return True, False, "failed"
+        floor = baseline.means[metric_id] - drop
+        if aggregate.mean < floor:
+            return True, False, "failed"
     return True, True, "passed"
 
 

@@ -13,8 +13,9 @@ from application.contracts import (
     RewriteRetrieveResponse,
     RunMeta,
 )
-from application.errors import ApplicationValidationError
+from application.errors import ObservationIntegrityError
 from application.evaluation_contracts import EvalCase, EvalCitationLabel
+from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from application.observed_rag import (
     AnswerModelMetadata,
     ObservedRagRunner,
@@ -117,7 +118,7 @@ def test_observed_runner_rejects_zero_retrieves() -> None:
         AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
     )
 
-    with pytest.raises(ApplicationValidationError, match="exactly one retrieve"):
+    with pytest.raises(ObservationIntegrityError, match="exactly one retrieve"):
         runner.execute(_ask_case())
 
 
@@ -135,7 +136,7 @@ def test_observed_runner_rejects_two_retrieves() -> None:
         AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
     )
 
-    with pytest.raises(ApplicationValidationError, match="exactly one retrieve"):
+    with pytest.raises(ObservationIntegrityError, match="exactly one retrieve"):
         runner.execute(_ask_case())
 
 
@@ -144,9 +145,9 @@ def test_insufficient_outcome_has_empty_generation_contexts() -> None:
     recorder = RetrievalRecorder()
     recording = RecordingRewriteAndRetrieve(rewrite, recorder)
     response = AskResponse(
-        answer="The available knowledge is insufficient to answer this question.",
+        answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
         run=RunMeta(outcome="insufficient", hit_count=0),
-        generation_hits=(_hit("noise", score=0.1),),
+        generation_hits=(),
     )
     runner = ObservedRagRunner(
         _AskThatRetrieves(recording, response),
@@ -159,6 +160,47 @@ def test_insufficient_outcome_has_empty_generation_contexts() -> None:
     assert observation.retrieved_contexts == ()
     assert observation.shared_retrieve_hits is True
     assert rewrite.calls == 1
+
+
+def test_insufficient_with_generation_hits_raises() -> None:
+    rewrite = _FakeRewrite((_hit("noise", score=0.1),))
+    recorder = RetrievalRecorder()
+    recording = RecordingRewriteAndRetrieve(rewrite, recorder)
+    response = AskResponse(
+        answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+        run=RunMeta(outcome="insufficient", hit_count=0),
+        generation_hits=(_hit("noise", score=0.1),),
+    )
+    runner = ObservedRagRunner(
+        _AskThatRetrieves(recording, response),
+        recorder,
+        AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
+    )
+
+    with pytest.raises(ObservationIntegrityError, match="generation_hits"):
+        runner.execute(_ask_case())
+
+
+def test_shared_retrieve_hits_false_when_hit_count_mismatches() -> None:
+    hits = (_hit("doc-a"),)
+    rewrite = _FakeRewrite(hits)
+    recorder = RetrievalRecorder()
+    recording = RecordingRewriteAndRetrieve(rewrite, recorder)
+    response = AskResponse(
+        answer="Use backoff.",
+        run=RunMeta(outcome="success", hit_count=5),
+        generation_hits=hits,
+    )
+    runner = ObservedRagRunner(
+        _AskThatRetrieves(recording, response),
+        recorder,
+        AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
+    )
+
+    observation = runner.execute(_ask_case())
+
+    assert observation.retrieved_contexts == hits
+    assert observation.shared_retrieve_hits is False
 
 
 def test_dropped_generation_hits_raise() -> None:
@@ -176,5 +218,5 @@ def test_dropped_generation_hits_raise() -> None:
         AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
     )
 
-    with pytest.raises(ApplicationValidationError, match="generation_hits missing"):
+    with pytest.raises(ObservationIntegrityError, match="generation_hits missing"):
         runner.execute(_ask_case())

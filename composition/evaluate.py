@@ -15,7 +15,7 @@ from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
 from application.chunking import chunk_document
 from application.contracts import IngestRequest
-from application.errors import ApplicationValidationError, ConfigurationError
+from application.errors import ApplicationValidationError, ConfigurationError, ObservationIntegrityError
 from application.evaluate_knowledge import EvaluateKnowledge
 from application.evaluate_rag import (
     EvaluateRag,
@@ -42,7 +42,7 @@ from application.rag_judge_contracts import (
     RagJudgeReport,
     RagJudgeThresholds,
 )
-from application.rag_judge_policy import METRIC_IDS, PROMPT_VERSION
+from application.rag_judge_policy import DEFAULT_ALLOWED_DROP, METRIC_IDS, PROMPT_VERSION
 from application.retrieve_knowledge import RetrieveKnowledge
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from composition.container import (
@@ -57,7 +57,7 @@ from composition.container import (
 from composition.correlated_ask import CorrelatedAsk
 from composition.errors import KnowledgeLoadError
 from composition.tool_augmented_ask import ToolAugmentedAsk
-from domain.errors import ProviderError, VectorStoreError
+from domain.errors import DomainValidationError, ProviderError, VectorStoreError
 from domain.knowledge import EmbeddedChunk, SourceDocument
 from domain.models import PromptVariant
 from domain.ports import ChatModel
@@ -611,7 +611,11 @@ def run_rag_judge(
     dataset = cases_path if cases_path is not None else EVAL_CASES_PATH
     corpus = corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
     baseline = load_rag_judge_baseline(baseline_path)
-    thresholds = RagJudgeThresholds()
+    thresholds = RagJudgeThresholds(
+        allowed_drop=(
+            baseline.allowed_drop if baseline is not None else DEFAULT_ALLOWED_DROP
+        )
+    )
     if mode == "auto":
         if not live_answer_config_ready(settings) or not judge_config_ready(settings):
             raise JudgeSkipped(
@@ -669,7 +673,7 @@ def run_rag_judge(
                 continue
             try:
                 observations[case.id] = session.runner.execute(case)
-            except ApplicationValidationError:
+            except ObservationIntegrityError:
                 observation_errors[case.id] = "observation_integrity"
                 log_operation(
                     logger,
@@ -678,13 +682,19 @@ def run_rag_judge(
                     error_type="observation_integrity",
                     case_id=case.id,
                 )
-            except (ProviderError, VectorStoreError) as error:
+            except (
+                ApplicationValidationError,
+                DomainValidationError,
+                ProviderError,
+                VectorStoreError,
+            ) as error:
                 observation_errors[case.id] = "judge_error"
                 log_operation(
                     logger,
                     operation="judge_observe",
                     outcome="error",
-                    error_type=type(error).__name__,
+                    error_type="judge_error",
+                    exception_type=type(error).__name__,
                     case_id=case.id,
                 )
         fingerprints = _fingerprints_for(

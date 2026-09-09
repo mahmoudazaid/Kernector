@@ -23,6 +23,7 @@ from composition.evaluate import (
     load_eval_cases,
     run_rag_judge,
 )
+from domain.errors import DomainValidationError, ProviderError, VectorStoreError
 
 _DEFAULT_OUTPUT = "output/eval"
 _JUDGE_MODES = ("off", "live", "fake", "auto")
@@ -97,6 +98,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     except (ApplicationValidationError, KnowledgeLoadError, ConfigurationError) as error:
         print(str(error), file=sys.stderr)
+        return 2
+    except (ProviderError, VectorStoreError, DomainValidationError):
+        print("live Judge answer path failed", file=sys.stderr)
         return 2
 
     judge_json_path = output_dir / "rag-judge-report.json"

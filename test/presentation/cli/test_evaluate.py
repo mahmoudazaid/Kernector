@@ -567,15 +567,13 @@ def test_cli_live_provider_error_exits_two_without_traceback(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from application.errors import ConfigurationError
+    from domain.errors import ProviderError
 
     _patch_success(monkeypatch, _report())
     monkeypatch.setattr(
         evaluate_cli,
         "run_rag_judge",
-        lambda mode, cases: (_ for _ in ()).throw(
-            ConfigurationError("live Judge answer path failed")
-        ),
+        lambda mode, cases: (_ for _ in ()).throw(ProviderError("sk-secret-token")),
     )
 
     code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])

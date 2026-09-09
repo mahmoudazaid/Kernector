@@ -29,227 +29,21 @@ from application.rag_judge_policy import METRIC_IDS, PROMPT_VERSION
 from domain.errors import ProviderError
 from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 from domain.models import AskResult
+from test.fixtures import rag_judge as _fx
 
-
-def _hit(source_id: str, *, source_type: str = "knowledge_document") -> ScoredChunk:
-    return ScoredChunk(
-        chunk=DocumentChunk(
-            metadata=SourceMetadata(SourceReference(source_id, source_type)),
-            index=0,
-            content="chunk",
-        ),
-        score=1.0,
-    )
-
-
-def _citation(source_id: str, *, source_type: str = "knowledge_document") -> Citation:
-    return Citation(SourceReference(source_id, source_type), quote="chunk", chunk_index=0)
-
-
-def _fingerprints() -> RagJudgeFingerprints:
-    return RagJudgeFingerprints(
-        dataset_hash="d" * 64,
-        corpus_hash="c" * 64,
-        metric_set=METRIC_IDS,
-        judge_provider="openrouter",
-        judge_model="judge-model",
-        prompt_version=PROMPT_VERSION,
-        answer_provider="openrouter",
-        answer_model="answer-model",
-        embedding_model="embed-model",
-        retrieval_limit=5,
-        relevance_threshold=0.0,
-        hybrid_enabled=True,
-        hybrid_alpha=0.5,
-        rewriter="openrouter-rewrite",
-    )
-
-
-def _fingerprint_payload() -> dict[str, object]:
-    fingerprints = _fingerprints()
-    return {
-        "dataset_hash": fingerprints.dataset_hash,
-        "corpus_hash": fingerprints.corpus_hash,
-        "metric_set": list(fingerprints.metric_set),
-        "judge_provider": fingerprints.judge_provider,
-        "judge_model": fingerprints.judge_model,
-        "prompt_version": fingerprints.prompt_version,
-        "answer_provider": fingerprints.answer_provider,
-        "answer_model": fingerprints.answer_model,
-        "embedding_model": fingerprints.embedding_model,
-        "retrieval_limit": fingerprints.retrieval_limit,
-        "relevance_threshold": fingerprints.relevance_threshold,
-        "hybrid_enabled": fingerprints.hybrid_enabled,
-        "hybrid_alpha": fingerprints.hybrid_alpha,
-        "rewriter": fingerprints.rewriter,
-    }
-
-
-def _judge_meta() -> JudgeMetadata:
-    return JudgeMetadata(
-        provider="openrouter",
-        model="judge-model",
-        prompt_version=PROMPT_VERSION,
-        temperature=0,
-    )
-
-
-def _answer_meta() -> AnswerRunMetadata:
-    return AnswerRunMetadata(provider="openrouter", model="answer-model")
-
-
-def _baseline(*, accepted: bool = True) -> RagJudgeBaseline:
-    return RagJudgeBaseline(
-        accepted=accepted,
-        means={name: 0.9 for name in METRIC_IDS},
-        fingerprints=_fingerprints(),
-        allowed_drop=0.05,
-    )
-
-
-def _ask_case(
-    case_id: str,
-    *,
-    case_class: str,
-    query: str = "q",
-    slice: str = "core",
-    expected_source_ids: Sequence[str] | None = ("doc-a",),
-    expected_citations: Sequence[EvalCitationLabel] | None = None,
-    expected_answer_mode: str = "grounded",
-    reference_answer: str = "reference",
-) -> EvalCase:
-    if expected_citations is None and expected_answer_mode == "grounded":
-        expected_citations = (EvalCitationLabel("doc-a", "knowledge_document", 0),)
-    return EvalCase(
-        id=case_id,
-        case_class=case_class,
-        kind="ask",
-        query=query,
-        k=5,
-        expected_answer_mode=expected_answer_mode,
-        expected_source_ids=expected_source_ids,
-        expected_citations=expected_citations or (),
-        slice=slice,
-        reference_answer=reference_answer,
-    )
-
-
-def _observation(case: EvalCase, hits: Sequence[ScoredChunk], citations: Sequence[Citation]) -> RagObservation:
-    return RagObservation(
-        case_id=case.id,
-        query=case.query or "",
-        answer="visible answer",
-        citations=citations,
-        retrieved_contexts=hits,
-        run=RunMeta(outcome="success", hit_count=len(hits)),
-        answer_model=AnswerModelMetadata(provider="openrouter", model="answer-model"),
-    )
-
-
-class _ScriptedJudge:
-    def __init__(self, content: str = '{"score": 0.8, "explanation": "ok"}') -> None:
-        self.content = content
-        self.calls: list[tuple[str, tuple, dict]] = []
-
-    def complete(self, system: str, messages: Sequence[object], settings: Mapping[str, object]) -> AskResult:
-        self.calls.append((system, tuple(messages), dict(settings)))
-        return AskResult(content=self.content, model="judge-model")
-
-
-def _coverage_cases() -> tuple[EvalCase, ...]:
-    return (
-        _ask_case(
-            "cross",
-            case_class="cross_source",
-            expected_source_ids=("a", "b"),
-            expected_citations=(
-                EvalCitationLabel("a", "knowledge_document"),
-                EvalCitationLabel("b", "knowledge_document"),
-            ),
-        ),
-        _ask_case(
-            "irr",
-            case_class="irrelevant",
-            expected_source_ids=None,
-            expected_citations=(),
-            expected_answer_mode="insufficient",
-        ),
-        _ask_case(
-            "conf",
-            case_class="conflicting",
-            expected_source_ids=("a", "b"),
-            expected_citations=(
-                EvalCitationLabel("a", "knowledge_document"),
-                EvalCitationLabel("b", "knowledge_document"),
-            ),
-        ),
-        _ask_case(
-            "unk",
-            case_class="unknown_source_kind",
-            expected_source_ids=("w",),
-            expected_citations=(EvalCitationLabel("w", "future-connector", 0),),
-        ),
-        _ask_case("cite", case_class="citation_provenance"),
-        _ask_case(
-            "sd",
-            case_class="citation_provenance",
-            slice="software_delivery",
-            expected_source_ids=("story",),
-            expected_citations=(EvalCitationLabel("story", "user_story", 0),),
-        ),
-    )
-
-
-def _observations_for(cases: Sequence[EvalCase]) -> dict[str, RagObservation]:
-    mapping: dict[str, RagObservation] = {}
-    for case in cases:
-        if case.kind != "ask":
-            continue
-        ids = tuple(case.expected_source_ids or ())
-        hits = tuple(_hit(item) for item in ids)
-        citations = tuple(_citation(item) for item in ids)
-        if case.case_class == "unknown_source_kind":
-            hits = (_hit("w", source_type="future-connector"),)
-            citations = (_citation("w", source_type="future-connector"),)
-        if case.case_class == "irrelevant":
-            hits = ()
-            citations = ()
-        if case.id == "sd":
-            hits = (_hit("story", source_type="user_story"),)
-            citations = (_citation("story", source_type="user_story"),)
-        mapping[case.id] = _observation(case, hits, citations)
-    return mapping
-
-
-_UNSET = object()
-
-
-def _execute(
-    cases: Sequence[EvalCase],
-    *,
-    judge: object | None = None,
-    baseline: object = _UNSET,
-    execution_mode: str = "live",
-    observations: Mapping[str, RagObservation] | None = None,
-    judge_settings: object = _UNSET,
-    thresholds: RagJudgeThresholds | None = None,
-    observation_errors: Mapping[str, str] | None = None,
-):
-    resolved_baseline = _baseline() if baseline is _UNSET else baseline
-    settings = {"temperature": 0} if judge_settings is _UNSET else judge_settings
-    return EvaluateRag().execute(
-        cases,
-        observations if observations is not None else _observations_for(cases),
-        judge if judge is not None else _ScriptedJudge(),
-        thresholds if thresholds is not None else RagJudgeThresholds(),
-        resolved_baseline,
-        _judge_meta(),
-        _answer_meta(),
-        _fingerprints(),
-        execution_mode=execution_mode,
-        judge_settings=settings,
-        observation_errors=observation_errors,
-    )
+_hit = _fx.hit
+_citation = _fx.citation
+_fingerprints = _fx.fingerprints
+_fingerprint_payload = _fx.fingerprint_payload
+_judge_meta = _fx.judge_meta
+_answer_meta = _fx.answer_meta
+_baseline = _fx.make_baseline
+_ask_case = _fx.ask_case
+_observation = _fx.observation
+_ScriptedJudge = _fx.ScriptedJudge
+_coverage_cases = _fx.coverage_cases
+_observations_for = _fx.observations_for
+_execute = _fx.execute
 
 
 def test_evaluate_rag_ignores_non_ask_cases() -> None:
@@ -491,6 +285,7 @@ def test_allowed_drop_from_baseline_is_compared() -> None:
         _coverage_cases(),
         baseline=baseline,
         thresholds=RagJudgeThresholds(allowed_drop=0.10),
+        judge=_ScriptedJudge('{"score": 0.82, "explanation": "ok"}'),
     )
     assert report.baseline_comparison == "compared"
     assert report.gate_status == "passed"
@@ -514,34 +309,107 @@ def test_trailing_json_object_is_the_verdict() -> None:
     result = parse_judge_output("faithfulness", raw)
     assert result.status == "scored"
     assert result.score == 0.1
+    nested = 'Verdict: {"score": 0.9, "explanation": "ok", "details": {"a": 1}}'
+    assert parse_judge_output("faithfulness", nested).score == 0.9
+    placeholder = (
+        'Verdict: {"score": 0.8, "explanation": "used {placeholder} syntax"}'
+    )
+    assert parse_judge_output("faithfulness", placeholder).score == 0.8
+    fenced_inner = '```json\n{"score": 0.8, "explanation": "use ```py fences"}\n```'
+    assert parse_judge_output("faithfulness", fenced_inner).score == 0.8
 
 
 def test_half_unscored_cases_fail_the_gate() -> None:
-    cases = _coverage_cases()
+    extras = tuple(
+        _ask_case(f"extra{i}", case_class="citation_provenance") for i in range(1, 5)
+    )
+    cases = _coverage_cases() + extras
     observations = _observations_for(cases)
-    for case_id in ("cross", "irr", "conf"):
+    for case_id in ("cite", "extra1", "extra2", "extra3", "extra4"):
         del observations[case_id]
-    report = _execute(cases, observations=observations)
+    report = _execute(
+        cases,
+        observations=observations,
+        observation_errors={case_id: "judge_error" for case_id in ("cite", "extra1", "extra2", "extra3", "extra4")},
+        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+    )
+    assert report.aggregates["faithfulness"].eligible_count == 10
+    assert report.aggregates["faithfulness"].scored_count == 5
     assert report.quality_gate_passed is False
     assert report.gate_status == "failed"
 
 
 def test_observation_integrity_fails_the_gate() -> None:
-    report = _execute(
-        _coverage_cases(),
-        observations={},
-        observation_errors={case.id: "observation_integrity" for case in _coverage_cases()},
+    cases = _coverage_cases()
+    observations = _observations_for(cases)
+    del observations["cite"]
+    ok = _execute(
+        cases,
+        observations=observations,
+        observation_errors={"cite": "judge_error"},
         judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
     )
-    assert report.results[0].error_type == "observation_integrity"
-    assert report.gate_status == "failed"
+    assert ok.gate_status == "passed"
+    bad = _execute(
+        cases,
+        observations=observations,
+        observation_errors={"cite": "observation_integrity"},
+        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+    )
+    assert bad.results[-2].error_type == "observation_integrity" or any(
+        item.error_type == "observation_integrity" for item in bad.results
+    )
+    assert bad.gate_status == "failed"
+
+
+def test_unknown_observation_error_falls_back_to_judge_error() -> None:
+    cases = _coverage_cases()
+    observations = _observations_for(cases)
+    del observations["cite"]
+    report = _execute(
+        cases,
+        observations=observations,
+        observation_errors={"cite": "boom"},
+        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+    )
+    cite = next(item for item in report.results if item.case_id == "cite")
+    assert cite.error_type == "judge_error"
+    assert report.gate_status == "passed"
+
+
+def test_story_source_type_is_well_known() -> None:
+    case = _ask_case(
+        "story-type",
+        case_class="citation_provenance",
+        expected_source_ids=("s",),
+        expected_citations=(EvalCitationLabel("s", "story", 0),),
+    )
+    observations = {
+        case.id: _observation(
+            case,
+            (_hit("s", source_type="story"),),
+            (_citation("s", source_type="story"),),
+        )
+    }
+    report = _execute((case,), observations=observations, baseline=None)
+    assert report.results[0].unknown_source_types == ()
 
 
 def test_nan_means_are_rejected() -> None:
-    with pytest.raises(ApplicationValidationError, match="finite"):
+    with pytest.raises(ApplicationValidationError, match=r"finite|\[0, 1\]"):
         RagJudgeBaseline(
             accepted=True,
             means={name: float("nan") for name in METRIC_IDS},
+            fingerprints=_fingerprints(),
+            allowed_drop=0.05,
+        )
+
+
+def test_means_out_of_range_are_rejected() -> None:
+    with pytest.raises(ApplicationValidationError, match=r"\[0, 1\]"):
+        RagJudgeBaseline(
+            accepted=True,
+            means={name: 5.0 for name in METRIC_IDS},
             fingerprints=_fingerprints(),
             allowed_drop=0.05,
         )

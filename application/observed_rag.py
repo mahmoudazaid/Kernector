@@ -6,8 +6,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from application.contracts import AskRequest, AskResponse, Citation, RunMeta
-from application.errors import ApplicationValidationError
+from application.errors import ApplicationValidationError, ObservationIntegrityError
 from application.evaluation_contracts import EvalCase
+from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from domain.knowledge import ScoredChunk
 
 
@@ -42,8 +43,8 @@ class RagObservation:
         retrieved_contexts (Sequence[ScoredChunk]): Hits that entered generation.
         run (RunMeta | None): Safe run metadata.
         answer_model (AnswerModelMetadata): Answer-model identity.
-        shared_retrieve_hits (bool): True when generation hits match the
-            recorded retrieve (or empty on insufficient).
+        shared_retrieve_hits (bool): True when reported hit_count matches
+            generation hits that are a subset of the recorded retrieve.
     """
 
     case_id: str
@@ -53,7 +54,7 @@ class RagObservation:
     retrieved_contexts: Sequence[ScoredChunk]
     run: RunMeta | None
     answer_model: AnswerModelMetadata
-    shared_retrieve_hits: bool = True
+    shared_retrieve_hits: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.case_id, str) or not self.case_id.strip():
@@ -147,14 +148,14 @@ class ObservedRagRunner:
             RagObservation: Answer, citations, and generation-time hits.
 
         Raises:
-            ApplicationValidationError: Retrieve ran zero or multiple times.
+            ObservationIntegrityError: Retrieve count or hit-sharing failed.
         """
         self._recorder.clear()
         response: AskResponse = self._ask.execute(
             AskRequest(query=case.query, retrieval_limit=case.k)
         )
         if len(self._recorder.calls) != 1:
-            raise ApplicationValidationError(
+            raise ObservationIntegrityError(
                 f"expected exactly one retrieve for case {case.id}, "
                 f"got {len(self._recorder.calls)}"
             )
@@ -164,20 +165,32 @@ class ObservedRagRunner:
         )
         generation = tuple(response.generation_hits)
         if insufficient:
+            if generation:
+                raise ObservationIntegrityError(
+                    f"insufficient outcome must not carry generation_hits "
+                    f"for case {case.id}"
+                )
+            if response.answer != INSUFFICIENT_KNOWLEDGE_ANSWER:
+                raise ObservationIntegrityError(
+                    f"insufficient outcome requires the insufficient answer "
+                    f"for case {case.id}"
+                )
             contexts: tuple[ScoredChunk, ...] = ()
-            shared = True
+            reported = None if response.run is None else response.run.hit_count
+            shared = reported == 0
         else:
             if not generation and recorded:
-                raise ApplicationValidationError(
+                raise ObservationIntegrityError(
                     f"generation_hits missing for case {case.id}"
                 )
             recorded_keys = {_hit_key(hit) for hit in recorded}
             if any(_hit_key(hit) not in recorded_keys for hit in generation):
-                raise ApplicationValidationError(
+                raise ObservationIntegrityError(
                     f"generation_hits do not match retrieve for case {case.id}"
                 )
             contexts = generation
-            shared = True
+            reported = None if response.run is None else response.run.hit_count
+            shared = reported == len(contexts)
         return RagObservation(
             case_id=case.id,
             query=case.query or "",
