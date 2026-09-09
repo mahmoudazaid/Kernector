@@ -13,6 +13,7 @@ from application.evaluation_contracts import EvalCase
 from application.observed_rag import RagObservation
 from application.rag_judge_contracts import (
     CSV_HEADERS,
+    OBSERVATION_ERROR_TYPES,
     RAG_JUDGE_BASELINE_SCHEMA_VERSION,
     RAG_JUDGE_SCHEMA_VERSION,
     AnswerRunMetadata,
@@ -26,7 +27,6 @@ from application.rag_judge_contracts import (
     RagJudgeThresholds,
 )
 from application.rag_judge_policy import (
-    DEFAULT_ALLOWED_DROP,
     MAX_EXPLANATION_CHARS,
     METRIC_IDS,
     REQUIRED_JUDGE_CLASSES,
@@ -47,8 +47,6 @@ _WELL_KNOWN_SOURCE_TYPES = frozenset(
         "test",
     }
 )
-
-_OBSERVATION_ERROR_TYPES = frozenset({"observation_integrity", "judge_error"})
 
 _LIMITATIONS: tuple[str, ...] = (
     "Judge scores are model opinions, not ground truth.",
@@ -316,45 +314,51 @@ def parse_judge_output(metric_id: str, raw: str) -> MetricResult:
 
 def _extract_json_object(raw: str) -> object:
     candidates = _candidate_texts(raw)
-    last_error: json.JSONDecodeError | None = None
+    fallback: object | None = None
     for candidate in candidates:
-        try:
-            return _verdict_object(candidate, require_score=True)
-        except json.JSONDecodeError as error:
-            last_error = error
-    for candidate in candidates:
-        try:
-            return _verdict_object(candidate, require_score=False)
-        except json.JSONDecodeError as error:
-            last_error = error
-    if last_error is not None:
-        raise last_error
+        payload = _last_top_level_object(candidate)
+        if not isinstance(payload, dict):
+            continue
+        scored = _score_bearing(payload)
+        if scored is not None:
+            return scored
+        if fallback is None:
+            fallback = payload
+    if fallback is not None:
+        return fallback
     raise json.JSONDecodeError("no judge verdict object", raw, 0)
 
 
 def _candidate_texts(raw: str) -> list[str]:
+    """Prefer `` ```json `` fences, then the whole completion.
+
+    Fence open/close pairs are tried exhaustively so a stray `` ``` `` earlier
+    in the completion cannot hide a later tagged fence. Bare fences are ignored
+    so echoed context cannot outrank a trailing prose verdict.
+    """
     stripped = raw.strip()
-    bodies: list[str] = []
-    opens: list[int] = []
+    positions: list[int] = []
     index = 0
     while True:
         pos = stripped.find("```", index)
         if pos < 0:
             break
-        if opens:
-            open_pos = opens.pop()
-            body = stripped[open_pos + 3 : pos].strip()
-            if body.lower().startswith("json"):
-                rest = body[4:]
-                if not rest or rest[0].isspace():
-                    body = rest.lstrip()
-            bodies.append(body)
-        else:
-            opens.append(pos)
+        positions.append(pos)
         index = pos + 3
+    bodies: list[tuple[int, str]] = []
+    for open_index, open_pos in enumerate(positions):
+        for close_pos in positions[open_index + 1 :]:
+            body = stripped[open_pos + 3 : close_pos].strip()
+            if not body.lower().startswith("json"):
+                continue
+            rest = body[4:]
+            if rest and not rest[0].isspace():
+                continue
+            bodies.append((close_pos, rest.lstrip()))
+            break
     candidates: list[str] = []
     seen: set[str] = set()
-    for body in reversed(bodies):
+    for _close, body in sorted(bodies, key=lambda item: item[0], reverse=True):
         if body and body not in seen:
             seen.add(body)
             candidates.append(body)
@@ -363,38 +367,44 @@ def _candidate_texts(raw: str) -> list[str]:
     return candidates
 
 
-def _verdict_object(text: str, *, require_score: bool) -> object:
+def _last_top_level_object(text: str) -> object | None:
+    """Return the last top-level JSON object in ``text``."""
     try:
-        payload = json.loads(text)
+        return json.loads(text)
     except json.JSONDecodeError:
         pass
-    else:
-        if isinstance(payload, dict) and (
-            not require_score or "score" in payload
-        ):
-            return payload
     decoder = json.JSONDecoder()
-    fallback: object | None = None
-    start = text.rfind("{")
-    while start >= 0:
+    last: object | None = None
+    index = 0
+    while index < len(text):
+        start = text.find("{", index)
+        if start < 0:
+            break
         try:
-            candidate, _end = decoder.raw_decode(text, start)
+            candidate, end = decoder.raw_decode(text, start)
         except json.JSONDecodeError:
-            start = text.rfind("{", 0, start)
+            index = start + 1
             continue
-        if isinstance(candidate, dict):
-            if "score" in candidate:
-                return candidate
-            if not require_score and fallback is None:
-                fallback = candidate
-        start = text.rfind("{", 0, start)
-    if fallback is not None:
-        return fallback
-    raise json.JSONDecodeError("no judge verdict object", text, 0)
+        last = candidate
+        index = max(end, start + 1)
+    return last
+
+
+def _score_bearing(payload: object) -> dict[str, object] | None:
+    """Return ``payload`` or a nested dict that carries a ``score`` key."""
+    if not isinstance(payload, dict):
+        return None
+    if "score" in payload:
+        return payload
+    for value in payload.values():
+        found = _score_bearing(value)
+        if found is not None:
+            return found
+    return None
 
 
 def _observation_error_type(code: object) -> str:
-    if isinstance(code, str) and code in _OBSERVATION_ERROR_TYPES:
+    if isinstance(code, str) and code in OBSERVATION_ERROR_TYPES:
         return code
     raise ApplicationValidationError(
         "observation error_type must be observation_integrity or judge_error"
@@ -416,12 +426,12 @@ def _diagnostics(
     types: list[str] = []
     seen: set[str] = set()
     for hit in observation.retrieved_contexts:
-        source_type = hit.chunk.reference.source_type
+        source_type = hit.chunk.reference.source_type.strip().lower()
         if source_type not in _WELL_KNOWN_SOURCE_TYPES and source_type not in seen:
             types.append(source_type)
             seen.add(source_type)
     for citation in observation.citations:
-        source_type = citation.reference.source_type
+        source_type = citation.reference.source_type.strip().lower()
         if source_type not in _WELL_KNOWN_SOURCE_TYPES and source_type not in seen:
             types.append(source_type)
             seen.add(source_type)
@@ -683,7 +693,7 @@ def parse_rag_judge_baseline(payload: Mapping[str, object]) -> RagJudgeBaseline:
     accepted = payload.get("accepted")
     if not isinstance(accepted, bool):
         raise ApplicationValidationError("baseline accepted must be a bool")
-    allowed = _baseline_number(payload, "allowed_drop", DEFAULT_ALLOWED_DROP)
+    allowed = _baseline_number(payload, "allowed_drop")
     try:
         fingerprints = RagJudgeFingerprints(
             dataset_hash=_baseline_text(fingerprints_raw, "dataset_hash"),

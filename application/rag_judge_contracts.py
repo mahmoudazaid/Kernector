@@ -60,7 +60,7 @@ _ERROR_TYPES = frozenset(
         "fake_ineligible",
     }
 )
-CASE_ERROR_TYPES = _ERROR_TYPES
+OBSERVATION_ERROR_TYPES = frozenset({"observation_integrity", "judge_error"})
 _SLICES = frozenset({"core", "software_delivery"})
 
 

@@ -181,7 +181,7 @@ def test_insufficient_with_generation_hits_raises() -> None:
         runner.execute(_ask_case())
 
 
-def test_hit_count_mismatch_raises_observation_integrity() -> None:
+def test_hit_count_mismatch_sets_shared_retrieve_hits_false() -> None:
     hits = (_hit("doc-a"),)
     rewrite = _FakeRewrite(hits)
     recorder = RetrievalRecorder()
@@ -197,7 +197,28 @@ def test_hit_count_mismatch_raises_observation_integrity() -> None:
         AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
     )
 
-    with pytest.raises(ObservationIntegrityError, match="hit_count"):
+    observation = runner.execute(_ask_case())
+
+    assert observation.retrieved_contexts == hits
+    assert observation.shared_retrieve_hits is False
+
+
+def test_insufficient_answer_desync_raises() -> None:
+    rewrite = _FakeRewrite((_hit("noise", score=0.1),))
+    recorder = RetrievalRecorder()
+    recording = RecordingRewriteAndRetrieve(rewrite, recorder)
+    response = AskResponse(
+        answer="I still answered.",
+        run=RunMeta(outcome="insufficient", hit_count=0),
+        generation_hits=(),
+    )
+    runner = ObservedRagRunner(
+        _AskThatRetrieves(recording, response),
+        recorder,
+        AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
+    )
+
+    with pytest.raises(ObservationIntegrityError, match="insufficient answer"):
         runner.execute(_ask_case())
 
 
