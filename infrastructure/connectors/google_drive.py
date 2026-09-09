@@ -278,6 +278,8 @@ class GoogleDriveConnector:
         folder_id: str,
         documents: dict[str, ConnectorDocument],
         visited: set[str],
+        *,
+        is_root: bool = True,
     ) -> None:
         if folder_id in visited:
             return
@@ -310,16 +312,18 @@ class GoogleDriveConnector:
                 page_token = next_token
             if self._recursive:
                 for child_id in child_folders:
-                    self._collect_folder(child_id, documents, visited)
+                    self._collect_folder(
+                        child_id, documents, visited, is_root=False
+                    )
         except HttpError as error:
             mapped = _map_google_error(error)
             status = _http_status(error)
             if status == 401 or isinstance(mapped, ConnectorUnavailableError):
                 raise mapped from error
             if status in {403, 404}:
-                if pages_ok > 0:
-                    raise mapped from error
-                return
+                if is_root and pages_ok == 0:
+                    return
+                raise mapped from error
             raise mapped from error
 
     def _list_children(self, folder_id: str, page_token: str | None) -> Mapping[str, object]:

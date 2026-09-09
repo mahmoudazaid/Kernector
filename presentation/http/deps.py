@@ -173,11 +173,14 @@ def get_google_drive_sync(
     """Return a Drive sync callable that builds the vector store lazily.
 
     The store is not built here — unconfigured POST must 409 without embedding
-    credentials.
+    credentials. After the not-connected / reauth / selection guards,
+    ``sync_google_drive_oauth`` reuses the process-cached DualWrite/BM25 store.
     """
 
     def sync() -> ConnectorSyncResponse:
-        return sync_google_drive_oauth(settings)
+        return sync_google_drive_oauth(
+            settings, vector_store_factory=get_vector_store
+        )
 
     return sync
 

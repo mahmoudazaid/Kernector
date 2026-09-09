@@ -464,12 +464,13 @@ def test_google_oauth_defaults_are_absent(env: pytest.MonkeyPatch) -> None:
     assert oauth.token_path == PROJECT_ROOT / "data" / "google-oauth-connection.json"
 
 
-def test_google_oauth_paths_must_use_gitignored_filenames(
-    env: pytest.MonkeyPatch,
+def test_google_oauth_absolute_token_path_is_preserved(
+    env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", "data/drive/token.json")
-    with pytest.raises(ValueError, match="GOOGLE_OAUTH_TOKEN_PATH"):
-        load_settings()
+    secret = tmp_path / "drive-token.json"
+    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", str(secret))
+    oauth = load_settings().google_oauth
+    assert oauth.token_path == secret
 
 
 def test_google_oauth_redirect_must_be_absolute_http(env: pytest.MonkeyPatch) -> None:

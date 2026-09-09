@@ -308,12 +308,13 @@ def test_delete_unknown_document_is_204_noop_so_retry_converges(
     def _delete(_ref: SourceReference) -> None:
         return None
 
-    ops, _ledger = _stub_ops(delete_impl=_delete)
+    ops, ledger = _stub_ops(delete_impl=_delete)
     client = client_factory(ops)
 
     response = client.delete("/api/v1/documents/already-gone")
 
     assert response.status_code == 204
+    assert ledger["deleted"][0].source_id == "already-gone"
 
 
 @pytest.mark.parametrize(

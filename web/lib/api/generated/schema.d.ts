@@ -441,6 +441,16 @@ export interface components {
       updated_count: number;
     };
     /**
+     * GoogleDriveSelectedItemRequest
+     * @description PUT selection item. ``root`` is rejected so sync cannot cover all Drive.
+     */
+    GoogleDriveSelectedItemRequest: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /**
      * GoogleDriveSelectedItemResponse
      * @description Saved sync root: Drive ID plus a presentation name.
      */
@@ -451,8 +461,18 @@ export interface components {
       name: string;
     };
     /**
+     * GoogleDriveSelectionRequest
+     * @description PUT body: bounded so one request can finish inside the client timeout.
+     */
+    GoogleDriveSelectionRequest: {
+      /** Files */
+      files?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
+      /** Folders */
+      folders?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
+    };
+    /**
      * GoogleDriveSelectionResponse
-     * @description Saved folder and exact-file roots for the connected grant.
+     * @description Saved folder and exact-file roots. Unbounded so existing grants still load.
      */
     GoogleDriveSelectionResponse: {
       /** Files */
@@ -1173,7 +1193,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
+        "application/json": components["schemas"]["GoogleDriveSelectionRequest"];
       };
     };
     responses: {

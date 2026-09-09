@@ -25,6 +25,10 @@ import {
 } from "@/lib/api/connectors";
 import { ApiError } from "@/lib/api/errors";
 import { formatTimestamp } from "@/lib/format/timestamp";
+import {
+  consumeDriveCallback,
+  readDriveCallback,
+} from "@/lib/documents/drive-callback";
 
 export type GoogleDrivePanelProps = {
   apiBaseUrl: string;
@@ -49,6 +53,7 @@ export type GoogleDrivePanelProps = {
   reloadToken?: number;
   pickerOpen?: boolean;
   onPickerOpenChange?: (open: boolean) => void;
+  onOAuthCallbackConsumed?: () => void;
 };
 
 type StatusView =
@@ -80,22 +85,6 @@ function actionErrorMessage(error: unknown): string {
   return "The request failed. Please try again later.";
 }
 
-export function readDriveCallback(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const params = new URLSearchParams(window.location.search);
-  const drive = params.get("drive");
-  if (!drive) {
-    return null;
-  }
-  params.delete("drive");
-  const query = params.toString();
-  const next = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
-  window.history.replaceState(null, "", next);
-  return drive;
-}
-
 function CloudIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -123,6 +112,7 @@ export function GoogleDrivePanel({
   oauthCallback,
   pickerOpen: pickerOpenProp,
   onPickerOpenChange,
+  onOAuthCallbackConsumed,
 }: GoogleDrivePanelProps) {
   const [view, setView] = useState<StatusView>({ kind: "loading" });
   const [actionError, setActionError] = useState<string | null>(null);
@@ -137,17 +127,33 @@ export function GoogleDrivePanel({
   const [selection, setSelection] =
     useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
   const busyRef = useRef(false);
+  const aliveRef = useRef(true);
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
   const onCatalogChangeRef = useRef(onCatalogChange);
   onCatalogChangeRef.current = onCatalogChange;
+  const onOAuthCallbackConsumedRef = useRef(onOAuthCallbackConsumed);
+  onOAuthCallbackConsumedRef.current = onOAuthCallbackConsumed;
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   async function loadStatus() {
     try {
       const status = await getStatus({ baseUrl: apiBaseUrl });
+      if (!aliveRef.current) {
+        return status;
+      }
       setView({ kind: "ready", status });
       return status;
     } catch (error) {
+      if (!aliveRef.current) {
+        return null;
+      }
       setView({ kind: "error", message: actionErrorMessage(error) });
       return null;
     }
@@ -156,30 +162,53 @@ export function GoogleDrivePanel({
   async function refreshSelection() {
     try {
       const current = await loadSelection({ baseUrl: apiBaseUrl });
+      if (!aliveRef.current) {
+        return current;
+      }
       setSelection(current);
       return current;
     } catch {
+      if (!aliveRef.current) {
+        return EMPTY_SELECTION;
+      }
       setSelection(EMPTY_SELECTION);
       return EMPTY_SELECTION;
     }
   }
 
   useEffect(() => {
+    if (oauthCallback === undefined && onOAuthCallbackConsumed) {
+      return;
+    }
+    let ignore = false;
     const drive =
       oauthCallback !== undefined ? oauthCallback : readDriveCallback();
     void (async () => {
       const status = await loadStatus();
+      if (ignore) {
+        return;
+      }
       if (status?.connected) {
         await refreshSelection();
+      }
+      if (ignore) {
+        return;
       }
       if (drive === "connected") {
         setPickerOpen(true);
       } else if (drive) {
         setActionError(CALLBACK_ERRORS[drive] ?? CALLBACK_ERRORS.error);
       }
+      if (drive != null) {
+        consumeDriveCallback();
+        onOAuthCallbackConsumedRef.current?.();
+      }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
-  }, []);
+    return () => {
+      ignore = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / callback once
+  }, [oauthCallback]);
 
   useEffect(() => {
     if (reloadToken === 0) {

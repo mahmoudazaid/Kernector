@@ -209,6 +209,50 @@ def test_callback_reconnect_keeps_saved_scope(settings) -> None:
     assert stored.last_sync_unchanged == 2
 
 
+class OtherAccountGateway(FakeGateway):
+    def fetch_account_email(self, _access_token: str) -> str | None:
+        return "other@example.com"
+
+
+def test_callback_reconnect_as_other_account_resets_scope(settings) -> None:
+    states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//old-refresh",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            last_synced_at="2026-09-08T12:00:00+00:00",
+            last_sync_new=1,
+            last_sync_updated=0,
+            last_sync_unchanged=2,
+            last_sync_failed=0,
+            reauthorization_required=True,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            files=(),
+        )
+    )
+    state = states.issue()
+    url = complete_google_drive_oauth(
+        settings,
+        state=state,
+        code="4/auth-code",
+        error=None,
+        state_store=states,
+        connection_store=tokens,
+        gateway=OtherAccountGateway(),
+    )
+
+    assert url.endswith("drive=connected")
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.account_email == "other@example.com"
+    assert stored.folders == ()
+    assert stored.last_synced_at is None
+    assert stored.folder_count == 0
+
+
 def test_status_reads_store_not_memory(settings) -> None:
     assert google_drive_status(settings).connected is False
     GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
@@ -421,6 +465,175 @@ def test_sync_without_selection_conflicts(
     stored = tokens.load()
     assert stored is not None
     assert stored.last_synced_at is None
+
+
+def test_oauth_sync_does_not_revert_selection_changed_during_run(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_google_drive_oauth_connector",
+        lambda *_args, **_kwargs: object(),
+    )
+
+    def _sync(*_args, **_kwargs):
+        tokens.save(
+            replace(
+                tokens.load(),
+                folders=(StoredItem(id="folder-2", name="New"),),
+                folder_count=1,
+            )
+        )
+        return ConnectorSyncResponse(outcomes=())
+
+    monkeypatch.setattr(composition_container, "sync_google_drive", _sync)
+
+    sync_google_drive_oauth(
+        settings,
+        catalog=InMemoryDocumentCatalog(),
+        vector_store=object(),  # type: ignore[arg-type]
+        connection_store=tokens,
+    )
+
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.folders == (StoredItem(id="folder-2", name="New"),)
+    assert stored.last_synced_at is not None
+
+
+def test_oauth_sync_does_not_recreate_grant_cleared_during_run(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_google_drive_oauth_connector",
+        lambda *_args, **_kwargs: object(),
+    )
+
+    def _sync(*_args, **_kwargs):
+        tokens.clear()
+        return ConnectorSyncResponse(outcomes=())
+
+    monkeypatch.setattr(composition_container, "sync_google_drive", _sync)
+
+    sync_google_drive_oauth(
+        settings,
+        catalog=InMemoryDocumentCatalog(),
+        vector_store=object(),  # type: ignore[arg-type]
+        connection_store=tokens,
+    )
+
+    assert tokens.load() is None
+
+
+def test_oauth_sync_uses_vector_store_factory_only_after_guards(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=0,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    built: list[str] = []
+
+    def _factory():
+        built.append("store")
+        raise AssertionError("vector store must stay lazy until selection exists")
+
+    with pytest.raises(GoogleDriveSelectionRequiredError):
+        sync_google_drive_oauth(
+            settings,
+            catalog=InMemoryDocumentCatalog(),
+            vector_store_factory=_factory,
+            connection_store=tokens,
+        )
+
+    assert built == []
+
+
+def test_oauth_sync_passes_factory_store_into_sync(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    store = object()
+    captured: list[object] = []
+    monkeypatch.setattr(
+        composition_container,
+        "build_google_drive_oauth_connector",
+        lambda *_args, **_kwargs: object(),
+    )
+
+    def _sync(*_args, **kwargs):
+        captured.append(kwargs.get("vector_store"))
+        return ConnectorSyncResponse(outcomes=())
+
+    monkeypatch.setattr(composition_container, "sync_google_drive", _sync)
+
+    sync_google_drive_oauth(
+        settings,
+        catalog=InMemoryDocumentCatalog(),
+        vector_store_factory=lambda: store,
+        connection_store=tokens,
+    )
+
+    assert captured == [store]
 
 
 class FakeBrowseFiles:

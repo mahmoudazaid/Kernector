@@ -455,13 +455,33 @@
         "title": "GoogleDriveLastSyncResponse",
         "type": "object"
       },
+      "GoogleDriveSelectedItemRequest": {
+        "description": "PUT selection item. ``root`` is rejected so sync cannot cover all Drive.",
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["id", "name"],
+        "title": "GoogleDriveSelectedItemRequest",
+        "type": "object"
+      },
       "GoogleDriveSelectedItemResponse": {
         "description": "Saved sync root: Drive ID plus a presentation name.",
         "properties": {
           "id": {
             "maxLength": 128,
             "minLength": 1,
-            "pattern": "^(root|[A-Za-z0-9_-]+)$",
             "title": "Id",
             "type": "string"
           },
@@ -476,14 +496,36 @@
         "title": "GoogleDriveSelectedItemResponse",
         "type": "object"
       },
+      "GoogleDriveSelectionRequest": {
+        "description": "PUT body: bounded so one request can finish inside the client timeout.",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemRequest"
+            },
+            "maxItems": 20,
+            "title": "Files",
+            "type": "array"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleDriveSelectedItemRequest"
+            },
+            "maxItems": 20,
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "title": "GoogleDriveSelectionRequest",
+        "type": "object"
+      },
       "GoogleDriveSelectionResponse": {
-        "description": "Saved folder and exact-file roots for the connected grant.",
+        "description": "Saved folder and exact-file roots. Unbounded so existing grants still load.",
         "properties": {
           "files": {
             "items": {
               "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
             },
-            "maxItems": 100,
             "title": "Files",
             "type": "array"
           },
@@ -491,7 +533,6 @@
             "items": {
               "$ref": "#/components/schemas/GoogleDriveSelectedItemResponse"
             },
-            "maxItems": 100,
             "title": "Folders",
             "type": "array"
           }
@@ -1814,7 +1855,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GoogleDriveSelectionResponse"
+                "$ref": "#/components/schemas/GoogleDriveSelectionRequest"
               }
             }
           },

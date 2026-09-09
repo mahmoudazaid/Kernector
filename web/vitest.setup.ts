@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { MotionGlobalConfig } from "motion/react";
 import { afterEach } from "vitest";
+import { consumeDriveCallback } from "@/lib/documents/drive-callback";
 
 MotionGlobalConfig.skipAnimations = true;
 
@@ -21,5 +22,6 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 afterEach(() => {
+  consumeDriveCallback();
   cleanup();
 });

@@ -822,6 +822,37 @@ describe("DocumentsPanel", () => {
     expect(screen.queryByRole("button", { name: /^replace$/i })).not.toBeInTheDocument();
   });
 
+  it("prompts to select a document when the current row is filtered out", async () => {
+    const user = userEvent.setup();
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc(),
+            doc({
+              source_id: "drive-1",
+              source_type: "google_drive",
+              file_name: "Mieterselbtstauskunft",
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    await user.click(screen.getByRole("combobox", { name: /^source$/i }));
+    await user.click(screen.getByRole("option", { name: "Google Drive" }));
+    expect(
+      screen.getByText(/select a document to see details or replace it/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^replace$/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("deletes a Google Drive document from the catalog", async () => {
     const user = userEvent.setup();
     const remove = vi.fn().mockResolvedValue(undefined);

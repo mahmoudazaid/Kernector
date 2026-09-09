@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from application.contracts import (
     Citation,
@@ -126,18 +126,42 @@ class GoogleDriveBrowsePageResponse(BaseModel):
 class GoogleDriveSelectedItemResponse(BaseModel):
     """Saved sync root: Drive ID plus a presentation name."""
 
-    id: str = Field(min_length=1, max_length=128, pattern=r"^(root|[A-Za-z0-9_-]+)$")
+    id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
 
 
-class GoogleDriveSelectionResponse(BaseModel):
-    """Saved folder and exact-file roots for the connected grant."""
+class GoogleDriveSelectedItemRequest(BaseModel):
+    """PUT selection item. ``root`` is rejected so sync cannot cover all Drive."""
 
-    folders: list[GoogleDriveSelectedItemResponse] = Field(
-        default_factory=list, max_length=100
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    name: str = Field(min_length=1, max_length=256)
+
+    @field_validator("id")
+    @classmethod
+    def reject_my_drive_root(cls, value: str) -> str:
+        if value == "root":
+            raise ValueError("Drive selection cannot use the My Drive root")
+        return value
+
+
+_SELECTION_LIST_MAX = 20
+
+
+class GoogleDriveSelectionResponse(BaseModel):
+    """Saved folder and exact-file roots. Unbounded so existing grants still load."""
+
+    folders: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
+    files: list[GoogleDriveSelectedItemResponse] = Field(default_factory=list)
+
+
+class GoogleDriveSelectionRequest(BaseModel):
+    """PUT body: bounded so one request can finish inside the client timeout."""
+
+    folders: list[GoogleDriveSelectedItemRequest] = Field(
+        default_factory=list, max_length=_SELECTION_LIST_MAX
     )
-    files: list[GoogleDriveSelectedItemResponse] = Field(
-        default_factory=list, max_length=100
+    files: list[GoogleDriveSelectedItemRequest] = Field(
+        default_factory=list, max_length=_SELECTION_LIST_MAX
     )
 
 

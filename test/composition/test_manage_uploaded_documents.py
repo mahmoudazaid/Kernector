@@ -154,6 +154,41 @@ def test_replace_unknown_becomes_document_operation_error(
     assert isinstance(raised.value.__cause__, UnknownDocumentError)
 
 
+def test_replace_google_drive_row_is_unknown(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    catalog = composition_container.build_document_catalog(settings)
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("drive-1", SourceType.GOOGLE_DRIVE),
+            file_name="notes.md",
+            title="notes",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+        )
+    )
+    with pytest.raises(DocumentOperationError) as raised:
+        composition_container.replace_uploaded_document(
+            settings,
+            SourceReference("drive-1", SourceType.KNOWLEDGE_DOCUMENT),
+            UploadPayload(file_name="x.md", content=b"# x\n" * 20),
+        )
+    assert isinstance(raised.value.__cause__, UnknownDocumentError)
+
+
 def test_create_extraction_failure_becomes_document_upload_error(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

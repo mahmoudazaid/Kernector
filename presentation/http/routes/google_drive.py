@@ -20,6 +20,7 @@ from presentation.http.schemas import (
     GoogleDriveBrowsePageResponse,
     GoogleDriveLastSyncResponse,
     GoogleDriveSelectedItemResponse,
+    GoogleDriveSelectionRequest,
     GoogleDriveSelectionResponse,
     GoogleDriveStatusResponse,
     GoogleDriveSyncResponse,
@@ -170,7 +171,7 @@ def google_drive_connector_get_selection(
     responses=problem_responses(405, 409, 422, 500, 502),
 )
 def google_drive_connector_put_selection(
-    body: GoogleDriveSelectionResponse,
+    body: GoogleDriveSelectionRequest,
     save_selection: GoogleDriveSelectionWriteDep,
 ) -> GoogleDriveSelectionResponse:
     """Validate access and atomically replace the saved Drive selection."""

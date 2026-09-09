@@ -587,6 +587,40 @@ def test_mid_pagination_403_does_not_look_like_a_complete_listing() -> None:
         _connector(MidPageForbidden()).list_documents()
 
 
+def test_inaccessible_nested_folder_does_not_look_like_a_complete_listing() -> None:
+    class NestedForbidden(FakeDriveFiles):
+        def list(self, **kwargs: object) -> FakeListRequest:
+            self.list_calls.append(dict(kwargs))
+            query = str(kwargs.get("q") or "")
+            if "nested" in query:
+                return FakeListRequest(
+                    error=_http_error(
+                        403,
+                        {
+                            "error": {
+                                "errors": [{"reason": "insufficientFilePermissions"}],
+                                "message": SECRET,
+                            }
+                        },
+                    )
+                )
+            return FakeListRequest(
+                {
+                    "files": [
+                        _file(
+                            "nested",
+                            "Nested",
+                            mime_type="application/vnd.google-apps.folder",
+                        ),
+                        _file("root-file", "root.md"),
+                    ]
+                }
+            )
+
+    with pytest.raises(ConnectorError):
+        _connector(NestedForbidden(), recursive=True).list_documents()
+
+
 def test_recursive_folder_discovers_nested_supported_files() -> None:
     files = FakeDriveFiles(
         children_by_parent={

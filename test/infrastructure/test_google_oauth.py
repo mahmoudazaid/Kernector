@@ -103,6 +103,37 @@ def test_connection_file_is_never_world_readable(tmp_path: Path) -> None:
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+def test_lock_file_matches_google_oauth_gitignore_pattern(tmp_path: Path) -> None:
+    path = tmp_path / "google-oauth-connection.json"
+    GoogleOAuthConnectionStore(path).save(_connection())
+    lock = path.with_suffix(".lock.json")
+    assert lock.is_file()
+    assert lock.name.startswith("google-oauth-")
+    assert lock.name.endswith(".json")
+
+
+def test_atomic_write_temp_uses_gitignored_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tempfile
+
+    seen: list[dict[str, object]] = []
+    real = tempfile.mkstemp
+
+    def _spy(*args: object, **kwargs: object):
+        seen.append(dict(kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(oauth_mod.tempfile, "mkstemp", _spy)
+    GoogleOAuthConnectionStore(tmp_path / "google-oauth-connection.json").save(
+        _connection()
+    )
+
+    assert seen
+    assert seen[0]["prefix"] == "google-oauth-tmp-"
+    assert seen[0]["suffix"] == ".json"
+
+
 def test_authorization_url_uses_exact_redirect_and_readonly_scope() -> None:
     settings = GoogleOAuthSettings(
         client_id="client.apps.googleusercontent.com",

@@ -537,3 +537,41 @@ def test_put_selection_replaces_by_id() -> None:
     assert response.status_code == 200
     assert saved[0]["folders"][0].id == "folder-1"
     assert response.json()["folders"][0]["id"] == "folder-1"
+
+
+def test_put_selection_rejects_root_id() -> None:
+    saved: list[object] = []
+    app = create_app()
+    app.dependency_overrides[get_google_drive_selection_write] = lambda: (
+        lambda **kwargs: saved.append(kwargs)
+        or GoogleDriveSelection(
+            folders=kwargs["folders"],
+            files=kwargs["files"],
+        )
+    )
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/v1/connectors/google-drive/selection",
+        json={"folders": [{"id": "root", "name": "My Drive"}], "files": []},
+    )
+
+    assert response.status_code == 422
+    assert saved == []
+
+
+def test_get_selection_loads_more_than_put_bound() -> None:
+    folders = tuple(
+        GoogleDriveSelectedItem(id=f"folder-{index}", name=f"Folder {index}")
+        for index in range(30)
+    )
+    app = create_app()
+    app.dependency_overrides[get_google_drive_selection_read] = lambda: (
+        lambda: GoogleDriveSelection(folders=folders, files=())
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/v1/connectors/google-drive/selection")
+
+    assert response.status_code == 200
+    assert len(response.json()["folders"]) == 30

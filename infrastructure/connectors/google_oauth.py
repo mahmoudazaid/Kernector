@@ -12,6 +12,7 @@ import os
 import secrets
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -139,6 +140,41 @@ class GoogleOAuthConnectionStore:
 
     def load(self) -> GoogleOAuthConnection | None:
         """Return the stored grant, or None when disconnected."""
+        return self._load_unlocked()
+
+    def save(self, connection: GoogleOAuthConnection) -> None:
+        """Persist the grant. Overwrites the previous connection."""
+        self.mutate(lambda _current: connection)
+
+    def clear(self) -> None:
+        """Delete the stored grant under the same lock as ``save``."""
+        self.mutate(lambda _current: None)
+
+    def mutate(
+        self,
+        mutator: Callable[
+            [GoogleOAuthConnection | None], GoogleOAuthConnection | None
+        ],
+    ) -> GoogleOAuthConnection | None:
+        """Re-read, apply ``mutator``, and persist under the exclusive lock.
+
+        ``mutator`` receives the current grant (or ``None``) and returns the next
+        grant, or ``None`` to delete it. Callers that loaded earlier must merge
+        through this method so a concurrent selection change or disconnect is
+        not overwritten.
+        """
+        with ExclusiveLock(self._path):
+            next_value = mutator(self._load_unlocked())
+            if next_value is None:
+                try:
+                    self._path.unlink()
+                except FileNotFoundError:
+                    pass
+                return None
+            _atomic_write_json(self._path, _connection_payload(next_value))
+            return next_value
+
+    def _load_unlocked(self) -> GoogleOAuthConnection | None:
         if not self._path.is_file():
             return None
         try:
@@ -164,32 +200,6 @@ class GoogleOAuthConnectionStore:
             folders=_parse_selected_items(raw.get("folders")),
             files=_parse_selected_items(raw.get("files")),
         )
-
-    def save(self, connection: GoogleOAuthConnection) -> None:
-        """Persist the grant. Overwrites the previous connection."""
-        payload = {
-            "refresh_token": connection.refresh_token,
-            "access_token": connection.access_token,
-            "account_email": connection.account_email,
-            "folder_count": connection.folder_count,
-            "folders": [{"id": item.id, "name": item.name} for item in connection.folders],
-            "files": [{"id": item.id, "name": item.name} for item in connection.files],
-            "last_synced_at": connection.last_synced_at,
-            "last_sync_new": connection.last_sync_new,
-            "last_sync_updated": connection.last_sync_updated,
-            "last_sync_unchanged": connection.last_sync_unchanged,
-            "last_sync_failed": connection.last_sync_failed,
-            "reauthorization_required": connection.reauthorization_required,
-        }
-        with ExclusiveLock(self._path):
-            _atomic_write_json(self._path, payload)
-
-    def clear(self) -> None:
-        """Delete the stored grant."""
-        try:
-            self._path.unlink()
-        except FileNotFoundError:
-            return
 
 
 class GoogleOAuthGateway(Protocol):
@@ -341,6 +351,23 @@ def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _connection_payload(connection: GoogleOAuthConnection) -> dict[str, object]:
+    return {
+        "refresh_token": connection.refresh_token,
+        "access_token": connection.access_token,
+        "account_email": connection.account_email,
+        "folder_count": connection.folder_count,
+        "folders": [{"id": item.id, "name": item.name} for item in connection.folders],
+        "files": [{"id": item.id, "name": item.name} for item in connection.files],
+        "last_synced_at": connection.last_synced_at,
+        "last_sync_new": connection.last_sync_new,
+        "last_sync_updated": connection.last_sync_updated,
+        "last_sync_unchanged": connection.last_sync_unchanged,
+        "last_sync_failed": connection.last_sync_failed,
+        "reauthorization_required": connection.reauthorization_required,
+    }
+
+
 def _parse_selected_items(raw: object) -> tuple[GoogleDriveSelectedItem, ...]:
     if not isinstance(raw, list):
         return ()
@@ -366,7 +393,7 @@ class ExclusiveLock:
     """Process-wide exclusive lock for one JSON grant/state path."""
 
     def __init__(self, path: Path) -> None:
-        self._path = path.with_name(path.name + ".lock")
+        self._path = path.with_suffix(".lock.json")
         self._fd: int | None = None
 
     def __enter__(self) -> None:
@@ -386,17 +413,43 @@ class ExclusiveLock:
 def _atomic_write_json(path: Path, payload: object) -> None:
     """Write JSON to ``path`` at mode ``0600`` via temp file + ``os.replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
+    fd, tmp = tempfile.mkstemp(
+        prefix="google-oauth-tmp-",
+        suffix=".json",
+        dir=path.parent,
+    )
+    handle = None
     try:
         os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-            handle.flush()
-            os.fsync(handle.fileno())
+        handle = os.fdopen(fd, "w", encoding="utf-8")
+        fd = -1
+        json.dump(payload, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+        handle.close()
+        handle = None
         os.replace(tmp, path)
+        _fsync_dir(path.parent)
     except BaseException:
+        if handle is not None:
+            handle.close()
+        elif fd >= 0:
+            os.close(fd)
         try:
             os.unlink(tmp)
         except OSError:
             pass
         raise
+
+
+def _fsync_dir(directory: Path) -> None:
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
