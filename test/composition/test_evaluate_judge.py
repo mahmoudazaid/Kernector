@@ -51,14 +51,14 @@ def test_one_failed_observation_does_not_abort_remaining(
     env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from application.rag_judge_contracts import AnswerRunMetadata
-    from test.application.test_evaluate_rag import (
-        _ScriptedJudge,
-        _coverage_cases,
-        _observations_for,
+    from test.fixtures.rag_judge import (
+        coverage_cases,
+        observations_for,
+        scripted_judge,
     )
 
-    cases = _coverage_cases()
-    observations = _observations_for(cases)
+    cases = coverage_cases()
+    observations = observations_for(cases)
     seen: list[str] = []
 
     class _Runner:
@@ -86,7 +86,7 @@ def test_one_failed_observation_does_not_abort_remaining(
         "live",
         cases,
         settings=load_settings(),
-        judge=_ScriptedJudge('{"score": 1.0, "explanation": "ok"}'),
+        judge=scripted_judge('{"score": 1.0, "explanation": "ok"}'),
         baseline_path=tmp_path / "missing-baseline.json",
     )
     assert seen == [case.id for case in cases]
@@ -95,3 +95,52 @@ def test_one_failed_observation_does_not_abort_remaining(
     scored = next(item for item in report.results if item.case_id == "irr")
     assert scored.metrics["faithfulness"].status == "scored"
     assert "sk-secret-token" not in str(report)
+
+
+def test_observation_integrity_is_logged_without_error_text(
+    env: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import json
+    import logging
+
+    from application.rag_judge_contracts import AnswerRunMetadata
+    from test.fixtures.rag_judge import coverage_cases, observations_for, scripted_judge
+
+    cases = coverage_cases()
+    observations = observations_for(cases)
+
+    class _Runner:
+        def execute(self, case):
+            if case.id == "cross":
+                raise ApplicationValidationError("generation_hits missing for case cross")
+            return observations[case.id]
+
+    session = LiveObservedRagSession(
+        runner=_Runner(),
+        answer_meta=AnswerRunMetadata(provider="openrouter", model="answer-model"),
+        persist_path=tmp_path,
+        rewriter="openrouter-rewrite",
+        embedding_model="embed-model",
+    )
+
+    @contextmanager
+    def _fake_session(*args, **kwargs):
+        del args, kwargs
+        yield session
+
+    env.setattr("composition.evaluate.live_observed_rag_session", _fake_session)
+    with caplog.at_level(logging.INFO, logger="composition.evaluate"):
+        report = run_rag_judge(
+            "live",
+            cases,
+            settings=load_settings(),
+            judge=scripted_judge('{"score": 1.0, "explanation": "ok"}'),
+            baseline_path=tmp_path / "missing-baseline.json",
+        )
+    cross = next(item for item in report.results if item.case_id == "cross")
+    assert cross.error_type == "observation_integrity"
+    records = [json.loads(record.message) for record in caplog.records]
+    observe = next(item for item in records if item.get("operation") == "judge_observe")
+    assert observe["error_type"] == "observation_integrity"
+    assert observe["case_id"] == "cross"
+    assert "generation_hits missing" not in caplog.text

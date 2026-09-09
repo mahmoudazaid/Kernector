@@ -13,6 +13,7 @@ from application.evaluation_contracts import EvalCase
 from application.observed_rag import RagObservation
 from application.rag_judge_contracts import (
     CSV_HEADERS,
+    RAG_JUDGE_BASELINE_SCHEMA_VERSION,
     RAG_JUDGE_SCHEMA_VERSION,
     AnswerRunMetadata,
     JudgeMetadata,
@@ -42,7 +43,6 @@ _WELL_KNOWN_SOURCE_TYPES = frozenset(
         SourceType.KNOWLEDGE_DOCUMENT,
         SourceType.GOOGLE_DRIVE,
         "user_story",
-        "story",
         "srs",
         "test",
     }
@@ -91,6 +91,7 @@ class EvaluateRag:
         *,
         execution_mode: str = "live",
         judge_settings: Mapping[str, object] | None = None,
+        observation_errors: Mapping[str, str] | None = None,
     ) -> RagJudgeReport:
         """Score eligible ask cases and aggregate a Judge report.
 
@@ -105,6 +106,8 @@ class EvaluateRag:
             fingerprints (RagJudgeFingerprints): Dataset and RAG fingerprints.
             execution_mode (str): ``live`` or ``fake``.
             judge_settings (Mapping[str, object] | None): Settings sent to complete.
+            observation_errors (Mapping[str, str] | None): Per-case error types
+                when an observation is missing.
 
         Returns:
             RagJudgeReport: Additive Judge report. Incompatible or unaccepted
@@ -114,12 +117,7 @@ class EvaluateRag:
         settings = dict(judge_settings) if judge_settings is not None else {
             "temperature": 0
         }
-        if baseline is not None:
-            thresholds = RagJudgeThresholds(
-                metric_floor=thresholds.metric_floor,
-                pass_rate_floor=thresholds.pass_rate_floor,
-                allowed_drop=baseline.allowed_drop,
-            )
+        missing_errors = observation_errors or {}
         eligible = tuple(case for case in cases if case.kind == "ask")
         baseline_status = _baseline_status(execution_mode, baseline, fingerprints)
         results: list[RagJudgeCaseResult] = []
@@ -129,11 +127,16 @@ class EvaluateRag:
                 continue
             observation = observations.get(case.id)
             if observation is None:
-                results.append(_failed_case(case, error_type="judge_error"))
+                results.append(
+                    _failed_case(
+                        case,
+                        error_type=missing_errors.get(case.id, "judge_error"),
+                    )
+                )
                 continue
             results.append(_score_case(case, observation, judge, settings))
         aggregates = _aggregates(tuple(results), thresholds)
-        coverage_ok = _coverage_ok(eligible)
+        coverage_ok = _coverage_ok(eligible, tuple(results))
         gate_eligible, gate_passed, gate_status = _gate(
             execution_mode,
             baseline_status,
@@ -311,13 +314,13 @@ def _extract_json_object(raw: str) -> object:
         stripped = stripped[3:].lstrip()
         if stripped[:4].lower() == "json":
             stripped = stripped[4:].lstrip()
-        close = stripped.rfind("```")
+        close = stripped.find("```")
         if close >= 0:
             stripped = stripped[:close].strip()
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
-        start = stripped.find("{")
+        start = stripped.rfind("{")
         if start < 0:
             raise
         payload, _end = json.JSONDecoder().raw_decode(stripped, start)
@@ -393,11 +396,19 @@ def _aggregates(
     return aggregates
 
 
-def _coverage_ok(eligible: Sequence[EvalCase]) -> bool:
-    classes = {case.case_class for case in eligible}
+def _coverage_ok(
+    eligible: Sequence[EvalCase], results: Sequence[RagJudgeCaseResult]
+) -> bool:
+    scored_ids = {
+        item.case_id
+        for item in results
+        if any(metric.status == "scored" for metric in item.metrics.values())
+    }
+    scored_cases = tuple(case for case in eligible if case.id in scored_ids)
+    classes = {case.case_class for case in scored_cases}
     if any(name not in classes for name in REQUIRED_JUDGE_CLASSES):
         return False
-    return any(case.slice == REQUIRED_JUDGE_SLICE for case in eligible)
+    return any(case.slice == REQUIRED_JUDGE_SLICE for case in scored_cases)
 
 
 def _gate(
@@ -415,15 +426,23 @@ def _gate(
         return False, False, "refused_baseline"
     if not results or not coverage_ok:
         return True, False, "failed"
+    if any(item.error_type == "observation_integrity" for item in results):
+        return True, False, "failed"
     for metric_id, aggregate in aggregates.items():
-        if aggregate.mean is None:
+        if aggregate.mean is None or not isfinite(aggregate.mean):
+            return True, False, "failed"
+        if (
+            aggregate.eligible_count
+            and aggregate.scored_count <= aggregate.eligible_count // 2
+        ):
             return True, False, "failed"
         if aggregate.mean < thresholds.metric_floor:
             return True, False, "failed"
         if aggregate.pass_rate < thresholds.pass_rate_floor:
             return True, False, "failed"
         if baseline is not None:
-            floor = baseline.means[metric_id] - thresholds.allowed_drop
+            drop = min(thresholds.allowed_drop, baseline.allowed_drop)
+            floor = baseline.means[metric_id] - drop
             if aggregate.mean < floor:
                 return True, False, "failed"
     return True, True, "passed"
@@ -555,6 +574,11 @@ def _case_to_dict(item: RagJudgeCaseResult) -> dict[str, object]:
     }
 
 
+_BASELINE_ROOT_KEYS = frozenset(
+    {"schema_version", "accepted", "allowed_drop", "means", "fingerprints"}
+)
+
+
 def parse_rag_judge_baseline(payload: Mapping[str, object]) -> RagJudgeBaseline:
     """Decode a committed baseline object.
 
@@ -569,6 +593,13 @@ def parse_rag_judge_baseline(payload: Mapping[str, object]) -> RagJudgeBaseline:
     """
     if not isinstance(payload, Mapping):
         raise ApplicationValidationError("baseline root must be an object")
+    unknown = set(payload) - _BASELINE_ROOT_KEYS
+    if unknown:
+        raise ApplicationValidationError("rag judge baseline has unknown fields")
+    if payload.get("schema_version") != RAG_JUDGE_BASELINE_SCHEMA_VERSION:
+        raise ApplicationValidationError(
+            "rag judge baseline schema_version is invalid"
+        )
     fingerprints_raw = payload.get("fingerprints")
     if not isinstance(fingerprints_raw, Mapping):
         raise ApplicationValidationError("baseline fingerprints must be an object")
@@ -578,27 +609,24 @@ def parse_rag_judge_baseline(payload: Mapping[str, object]) -> RagJudgeBaseline:
     accepted = payload.get("accepted")
     if not isinstance(accepted, bool):
         raise ApplicationValidationError("baseline accepted must be a bool")
-    try:
-        allowed = float(payload.get("allowed_drop", DEFAULT_ALLOWED_DROP))
-    except (TypeError, ValueError) as error:
-        raise ApplicationValidationError(
-            "baseline allowed_drop is invalid"
-        ) from error
+    allowed = _baseline_number(payload, "allowed_drop", DEFAULT_ALLOWED_DROP)
     try:
         fingerprints = RagJudgeFingerprints(
             dataset_hash=_baseline_text(fingerprints_raw, "dataset_hash"),
             corpus_hash=_baseline_text(fingerprints_raw, "corpus_hash"),
-            metric_set=tuple(fingerprints_raw["metric_set"]),  # type: ignore[arg-type]
+            metric_set=_baseline_metric_set(fingerprints_raw),
             judge_provider=_baseline_text(fingerprints_raw, "judge_provider"),
             judge_model=_baseline_text(fingerprints_raw, "judge_model"),
             prompt_version=_baseline_text(fingerprints_raw, "prompt_version"),
             answer_provider=_baseline_text(fingerprints_raw, "answer_provider"),
             answer_model=_baseline_text(fingerprints_raw, "answer_model"),
             embedding_model=_baseline_text(fingerprints_raw, "embedding_model"),
-            retrieval_limit=int(fingerprints_raw["retrieval_limit"]),
-            relevance_threshold=float(fingerprints_raw["relevance_threshold"]),
-            hybrid_enabled=bool(fingerprints_raw["hybrid_enabled"]),
-            hybrid_alpha=float(fingerprints_raw["hybrid_alpha"]),
+            retrieval_limit=_baseline_int(fingerprints_raw, "retrieval_limit"),
+            relevance_threshold=_baseline_number(
+                fingerprints_raw, "relevance_threshold"
+            ),
+            hybrid_enabled=_baseline_bool(fingerprints_raw, "hybrid_enabled"),
+            hybrid_alpha=_baseline_number(fingerprints_raw, "hybrid_alpha"),
             rewriter=_baseline_text(fingerprints_raw, "rewriter"),
         )
     except (KeyError, TypeError, ValueError, ApplicationValidationError) as error:
@@ -622,6 +650,43 @@ def _baseline_text(raw: Mapping[str, object], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ApplicationValidationError(f"baseline fingerprints.{key} is invalid")
     return value
+
+
+def _baseline_bool(raw: Mapping[str, object], key: str) -> bool:
+    value = raw.get(key)
+    if not isinstance(value, bool):
+        raise ApplicationValidationError(f"baseline fingerprints.{key} is invalid")
+    return value
+
+
+def _baseline_int(raw: Mapping[str, object], key: str) -> int:
+    value = raw.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ApplicationValidationError(f"baseline fingerprints.{key} is invalid")
+    return value
+
+
+def _baseline_number(
+    raw: Mapping[str, object], key: str, default: float | None = None
+) -> float:
+    if key not in raw:
+        if default is None:
+            raise ApplicationValidationError(f"baseline {key} is invalid")
+        return float(default)
+    value = raw[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ApplicationValidationError(f"baseline {key} is invalid")
+    number = float(value)
+    if not isfinite(number):
+        raise ApplicationValidationError(f"baseline {key} is invalid")
+    return number
+
+
+def _baseline_metric_set(raw: Mapping[str, object]) -> tuple[str, ...]:
+    value = raw.get("metric_set")
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ApplicationValidationError("baseline fingerprints.metric_set is invalid")
+    return tuple(str(item) for item in value)
 
 
 def rag_judge_report_to_json(report: RagJudgeReport) -> str:

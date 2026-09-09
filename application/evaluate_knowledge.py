@@ -83,8 +83,8 @@ class EvaluateKnowledge:
     InvokeTool.
 
     Ask scoring consumes ``ObservedRagRunner`` same-run hits. It does not
-    retrieve a second time. ``shared_retrieve_hits`` is true when
-    ``run.hit_count`` matches ``len(retrieved_contexts)``.
+    retrieve a second time. ``shared_retrieve_hits`` is true when the runner
+    confirmed generation hits against the recorded retrieve.
 
     Args:
         retrieve (_RetrieveSeam): Seam returning ``RetrieveResponse``.
@@ -163,9 +163,8 @@ class EvaluateKnowledge:
         observation: RagObservation = self._observed_rag.execute(case)
         hits = observation.retrieved_contexts
         metrics: dict[str, int | float | bool] = {}
-        hit_count = None if observation.run is None else observation.run.hit_count
         checks: dict[str, bool] = {
-            "shared_retrieve_hits": hit_count == len(hits)
+            "shared_retrieve_hits": observation.shared_retrieve_hits
         }
         if case.expected_source_ids:
             retrieval_metrics, _ = _retrieval_scores(hits, case)

@@ -146,6 +146,7 @@ def test_insufficient_outcome_has_empty_generation_contexts() -> None:
     response = AskResponse(
         answer="The available knowledge is insufficient to answer this question.",
         run=RunMeta(outcome="insufficient", hit_count=0),
+        generation_hits=(_hit("noise", score=0.1),),
     )
     runner = ObservedRagRunner(
         _AskThatRetrieves(recording, response),
@@ -156,4 +157,24 @@ def test_insufficient_outcome_has_empty_generation_contexts() -> None:
     observation = runner.execute(_ask_case())
 
     assert observation.retrieved_contexts == ()
+    assert observation.shared_retrieve_hits is True
     assert rewrite.calls == 1
+
+
+def test_dropped_generation_hits_raise() -> None:
+    hits = (_hit("doc-a"),)
+    rewrite = _FakeRewrite(hits)
+    recorder = RetrievalRecorder()
+    recording = RecordingRewriteAndRetrieve(rewrite, recorder)
+    response = AskResponse(
+        answer="Use backoff.",
+        run=RunMeta(outcome="success", hit_count=1),
+    )
+    runner = ObservedRagRunner(
+        _AskThatRetrieves(recording, response),
+        recorder,
+        AnswerModelMetadata(provider="eval-offline", model="eval-offline"),
+    )
+
+    with pytest.raises(ApplicationValidationError, match="generation_hits missing"):
+        runner.execute(_ask_case())

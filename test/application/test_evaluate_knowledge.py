@@ -174,6 +174,8 @@ def _observation(
     case: EvalCase,
     response: AskResponse,
     hits: Sequence[ScoredChunk] = (),
+    *,
+    shared_retrieve_hits: bool = True,
 ) -> RagObservation:
     return RagObservation(
         case_id=case.id,
@@ -183,6 +185,7 @@ def _observation(
         retrieved_contexts=hits,
         run=response.run,
         answer_model=_answer_meta(),
+        shared_retrieve_hits=shared_retrieve_hits,
     )
 
 
@@ -433,7 +436,9 @@ def test_shared_retrieve_hits_fails_when_hit_count_mismatches_contexts() -> None
     )
     report = _evaluate(
         retrieve=_Unused(),
-        observed_rag=_FakeObservedRag(_observation(case, ask, (_hit("doc-a"),))),
+        observed_rag=_FakeObservedRag(
+            _observation(case, ask, (_hit("doc-a"),), shared_retrieve_hits=False)
+        ),
     ).execute((case,))
 
     result = report.results[0]

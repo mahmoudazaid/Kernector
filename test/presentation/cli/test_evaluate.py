@@ -477,28 +477,10 @@ def test_cli_offline_dataset_writes_reports_to_tmp_path(
     assert not (output / "rag-judge-report.csv").exists()
 
 
-def _judge_report(*, eligible: bool, passed: bool, mode: str = "live"):
-    from test.application.test_evaluate_rag import (
-        _ScriptedJudge,
-        _baseline,
-        _coverage_cases,
-        _execute,
-    )
+def _judge_report(*, eligible: bool, passed: bool):
+    from test.fixtures.rag_judge import judge_report
 
-    del mode
-    if not eligible:
-        return _execute(_coverage_cases(), execution_mode="fake", baseline=None)
-    content = (
-        '{"score": 1.0, "explanation": "ok"}'
-        if passed
-        else '{"score": 0.8, "explanation": "ok"}'
-    )
-    return _execute(
-        _coverage_cases(),
-        judge=_ScriptedJudge(content),
-        baseline=_baseline(),
-        execution_mode="live",
-    )
+    return judge_report(eligible=eligible, passed=passed)
 
 
 def test_cli_fake_writes_additive_judge_reports_and_exits_two(
@@ -585,13 +567,15 @@ def test_cli_live_provider_error_exits_two_without_traceback(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from domain.errors import ProviderError
+    from application.errors import ConfigurationError
 
     _patch_success(monkeypatch, _report())
     monkeypatch.setattr(
         evaluate_cli,
         "run_rag_judge",
-        lambda mode, cases: (_ for _ in ()).throw(ProviderError("sk-secret-token")),
+        lambda mode, cases: (_ for _ in ()).throw(
+            ConfigurationError("live Judge answer path failed")
+        ),
     )
 
     code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])

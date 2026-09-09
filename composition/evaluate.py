@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -25,6 +26,7 @@ from application.evaluation_contracts import (
     EvalCase,
     EvalCitationLabel,
 )
+from application.observability import log_operation
 from application.observed_rag import (
     AnswerModelMetadata,
     ObservedRagRunner,
@@ -79,6 +81,7 @@ EVAL_CORPUS_PATH = EVAL_DIR / "corpus.json"
 EVAL_CASES_PATH = EVAL_DIR / "cases.json"
 EVAL_BASELINE_PATH = EVAL_DIR / "baselines" / "rag-judge-baseline.json"
 _LIVE_EVAL_COLLECTION = "kernector_eval_judge"
+logger = logging.getLogger(__name__)
 
 _CASE_KEYS = frozenset(
     {
@@ -609,8 +612,6 @@ def run_rag_judge(
     corpus = corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
     baseline = load_rag_judge_baseline(baseline_path)
     thresholds = RagJudgeThresholds()
-    if baseline is not None:
-        thresholds = RagJudgeThresholds(allowed_drop=baseline.allowed_drop)
     if mode == "auto":
         if not live_answer_config_ready(settings) or not judge_config_ready(settings):
             raise JudgeSkipped(
@@ -662,13 +663,30 @@ def run_rag_judge(
         settings, corpus_path=corpus, chat_model=chat_model
     ) as session:
         observations: dict[str, RagObservation] = {}
+        observation_errors: dict[str, str] = {}
         for case in cases:
             if case.kind != "ask":
                 continue
             try:
                 observations[case.id] = session.runner.execute(case)
-            except (ApplicationValidationError, ProviderError, VectorStoreError):
-                continue
+            except ApplicationValidationError:
+                observation_errors[case.id] = "observation_integrity"
+                log_operation(
+                    logger,
+                    operation="judge_observe",
+                    outcome="error",
+                    error_type="observation_integrity",
+                    case_id=case.id,
+                )
+            except (ProviderError, VectorStoreError) as error:
+                observation_errors[case.id] = "judge_error"
+                log_operation(
+                    logger,
+                    operation="judge_observe",
+                    outcome="error",
+                    error_type=type(error).__name__,
+                    case_id=case.id,
+                )
         fingerprints = _fingerprints_for(
             settings,
             judge_provider=judge_meta.provider,
@@ -690,4 +708,5 @@ def run_rag_judge(
             fingerprints,
             execution_mode="live",
             judge_settings=complete_kwargs,
+            observation_errors=observation_errors,
         )

@@ -16,6 +16,7 @@ from application.rag_judge_policy import (
 )
 
 RAG_JUDGE_SCHEMA_VERSION = "kernector.rag-judge.v1"
+RAG_JUDGE_BASELINE_SCHEMA_VERSION = "kernector.rag-judge-baseline.v1"
 CSV_HEADERS: tuple[str, ...] = (
     "case_id",
     "slice",
@@ -55,6 +56,7 @@ _ERROR_TYPES = frozenset(
         "payload_too_large",
         "provider_error",
         "judge_error",
+        "observation_integrity",
         "fake_ineligible",
     }
 )
@@ -250,8 +252,14 @@ class RagJudgeFingerprints:
             )
         if not isinstance(self.hybrid_enabled, bool):
             raise ApplicationValidationError("hybrid_enabled must be a bool")
-        object.__setattr__(self, "relevance_threshold", float(self.relevance_threshold))
-        object.__setattr__(self, "hybrid_alpha", float(self.hybrid_alpha))
+        for name in ("relevance_threshold", "hybrid_alpha"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ApplicationValidationError(f"{name} must be a finite number")
+            number = float(value)
+            if not isfinite(number):
+                raise ApplicationValidationError(f"{name} must be a finite number")
+            object.__setattr__(self, name, number)
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,13 +322,28 @@ class RagJudgeBaseline:
                 raise ApplicationValidationError(
                     f"means[{key}] must be a finite number"
                 )
-            copied[key] = float(value)
+            number = float(value)
+            if not isfinite(number):
+                raise ApplicationValidationError(
+                    f"means[{key}] must be a finite number"
+                )
+            copied[key] = number
         if set(copied) != set(METRIC_IDS):
             raise ApplicationValidationError(
                 "baseline means must include exactly the five Judge metrics"
             )
+        drop = self.allowed_drop
+        if isinstance(drop, bool) or not isinstance(drop, (int, float)):
+            raise ApplicationValidationError(
+                "allowed_drop must be a finite number in [0, 1]"
+            )
+        drop = float(drop)
+        if not isfinite(drop) or drop < 0.0 or drop > 1.0:
+            raise ApplicationValidationError(
+                "allowed_drop must be a finite number in [0, 1]"
+            )
         object.__setattr__(self, "means", copied)
-        object.__setattr__(self, "allowed_drop", float(self.allowed_drop))
+        object.__setattr__(self, "allowed_drop", drop)
 
 
 @dataclass(frozen=True, slots=True)

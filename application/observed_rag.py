@@ -42,6 +42,8 @@ class RagObservation:
         retrieved_contexts (Sequence[ScoredChunk]): Hits that entered generation.
         run (RunMeta | None): Safe run metadata.
         answer_model (AnswerModelMetadata): Answer-model identity.
+        shared_retrieve_hits (bool): True when generation hits match the
+            recorded retrieve (or empty on insufficient).
     """
 
     case_id: str
@@ -51,6 +53,7 @@ class RagObservation:
     retrieved_contexts: Sequence[ScoredChunk]
     run: RunMeta | None
     answer_model: AnswerModelMetadata
+    shared_retrieve_hits: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.case_id, str) or not self.case_id.strip():
@@ -155,12 +158,38 @@ class ObservedRagRunner:
                 f"expected exactly one retrieve for case {case.id}, "
                 f"got {len(self._recorder.calls)}"
             )
+        recorded = self._recorder.calls[0]
+        insufficient = (
+            response.run is not None and response.run.outcome == "insufficient"
+        )
+        generation = tuple(response.generation_hits)
+        if insufficient:
+            contexts: tuple[ScoredChunk, ...] = ()
+            shared = True
+        else:
+            if not generation and recorded:
+                raise ApplicationValidationError(
+                    f"generation_hits missing for case {case.id}"
+                )
+            recorded_keys = {_hit_key(hit) for hit in recorded}
+            if any(_hit_key(hit) not in recorded_keys for hit in generation):
+                raise ApplicationValidationError(
+                    f"generation_hits do not match retrieve for case {case.id}"
+                )
+            contexts = generation
+            shared = True
         return RagObservation(
             case_id=case.id,
             query=case.query or "",
             answer=response.answer,
             citations=response.citations,
-            retrieved_contexts=tuple(response.generation_hits),
+            retrieved_contexts=contexts,
             run=response.run,
             answer_model=self._answer_model,
+            shared_retrieve_hits=shared,
         )
+
+
+def _hit_key(hit: ScoredChunk) -> tuple[object, ...]:
+    reference = hit.chunk.reference
+    return (reference.source_id, reference.source_type, hit.chunk.index)
