@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pathlib import Path
 
+from infrastructure.catalog.workspace import parse_workspace_id
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
 _GOOGLE_DRIVE_FOLDER_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -49,7 +51,22 @@ class KnowledgeSettings:
 
 @dataclass(frozen=True, slots=True)
 class DocumentCatalogSettings:
+    """Uploaded-document catalog adapter configuration.
+
+    Args:
+        path (Path): JSON catalog file used by the JSON adapter and as the
+            importer source.
+        backend (str): Selected adapter, ``json`` or ``sql``.
+        sql_path (Path): SQLite file used by the SQL adapter.
+        workspace_id (str | None): Bound SQL workspace. Required when
+            ``backend`` is ``sql``; optional and validated when present under
+            JSON.
+    """
+
     path: Path
+    backend: str
+    sql_path: Path
+    workspace_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,8 +321,36 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
         raise ValueError(
             f"DOCUMENT_CATALOG_PATH must be non-empty, got {catalog_path!r}"
         )
+    backend = os.getenv("DOCUMENT_CATALOG_BACKEND", "json").strip().lower()
+    if backend not in {"json", "sql"}:
+        raise ValueError(
+            f"DOCUMENT_CATALOG_BACKEND must be 'json' or 'sql', got {backend!r}"
+        )
+    sql_path = os.getenv(
+        "DOCUMENT_CATALOG_SQL_PATH", "data/catalog/catalog.sqlite"
+    )
+    if not sql_path.strip():
+        raise ValueError(
+            f"DOCUMENT_CATALOG_SQL_PATH must be non-empty, got {sql_path!r}"
+        )
+    try:
+        workspace_id = parse_workspace_id(
+            os.getenv("DOCUMENT_CATALOG_WORKSPACE_ID")
+        )
+    except ValueError as error:
+        raise ValueError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
+        ) from error
+    if backend == "sql" and workspace_id is None:
+        raise ValueError(
+            "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
+            "DOCUMENT_CATALOG_BACKEND=sql"
+        )
     return DocumentCatalogSettings(
         path=_resolve_under_project_root(catalog_path),
+        backend=backend,
+        sql_path=_resolve_under_project_root(sql_path),
+        workspace_id=workspace_id,
     )
 
 

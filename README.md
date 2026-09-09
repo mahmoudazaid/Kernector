@@ -160,8 +160,8 @@ stays current without re-hydrating from Chroma on every request.
 ## Upload and manage documents
 
 Open Next.js `/documents` against FastAPI. Prefer a **single uvicorn worker**
-until the catalog store is multi-process safe — the JSON catalog lock is per
-process.
+when using the JSON catalog — that lock is per process. SQL is safe for
+same-host processes on a local filesystem.
 
 1. Start the FastAPI + Next stack above and open **Documents**.
 2. Under **Upload new**, choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
@@ -170,7 +170,27 @@ process.
 5. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.
 6. To remove a document, confirm and click **Delete** (vector chunks first, then the catalog row).
 
-Upload catalog metadata is stored at `data/catalog/uploads.json` by default (`DOCUMENT_CATALOG_PATH`). Seed-corpus documents remain separate and do not appear in this list.
+Upload catalog metadata defaults to JSON at `data/catalog/uploads.json`
+(`DOCUMENT_CATALOG_BACKEND=json`, `DOCUMENT_CATALOG_PATH`). Use JSON for local
+single-process work. Set `DOCUMENT_CATALOG_BACKEND=sql`,
+`DOCUMENT_CATALOG_SQL_PATH` (default `data/catalog/catalog.sqlite`), and
+`DOCUMENT_CATALOG_WORKSPACE_ID` when you need transactional writes and
+versioned schema.
+
+To copy existing JSON rows into SQL (idempotent; source JSON unchanged):
+
+```bash
+uv run python -m presentation.cli.migrate_document_catalog
+```
+
+Verified official SQLite builds (3.51.3+, 3.50.7+ within 3.50, 3.44.6+ within
+3.44) use WAL; other builds use rollback-journal with `BEGIN IMMEDIATE`. WAL
+needs a local filesystem and same-host processes. To roll back a SQL catalog,
+stop writers and restore from a SQLite-produced backup (`VACUUM INTO` or
+`Connection.backup`) — do not splice a live `.sqlite` with WAL/SHM files.
+Keep the source JSON if you need to re-import.
+
+Seed-corpus documents remain separate and do not appear in this list.
 
 Create, replace, and delete run to completion before the UI refreshes, and the
 outcome appears above the document list. A failure that left chunks or a catalog
