@@ -12,10 +12,13 @@ SELECT_COLUMNS = (
     "source_id, source_type, file_name, title, content_format, status, "
     "uploaded_at, chunk_count, error, revision"
 )
+_COLUMN_NAMES = tuple(part.strip() for part in SELECT_COLUMNS.split(","))
 _UPSERT_SQL = f"""
 INSERT INTO catalog_documents (
     workspace_id, {SELECT_COLUMNS}
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (
+    :workspace_id, {", ".join(f":{name}" for name in _COLUMN_NAMES)}
+)
 ON CONFLICT (workspace_id, source_type, source_id) DO UPDATE SET
     file_name = excluded.file_name,
     title = excluded.title,
@@ -41,7 +44,7 @@ def connect(path: Path) -> sqlite3.Connection:
     try:
         connection.row_factory = sqlite3.Row
         connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
-        connection.execute(f"PRAGMA journal_mode = {journal_mode()}")
+        set_journal_mode(connection)
     except Exception:
         connection.close()
         raise
@@ -53,6 +56,29 @@ def journal_mode() -> str:
     if _is_wal_safe(sqlite3.sqlite_version_info):
         return "WAL"
     return "DELETE"
+
+
+def set_journal_mode(connection: sqlite3.Connection) -> None:
+    """Apply the journal mode, tolerating a concurrent transition.
+
+    The rollback-to-WAL transition needs an exclusive lock and returns
+    SQLITE_BUSY immediately instead of waiting on ``busy_timeout``. Journal
+    mode is a persistent database property, so whichever cold-start writer
+    wins the race sets it for every later connection.
+
+    Args:
+        connection (sqlite3.Connection): Open SQLite connection.
+
+    Raises:
+        sqlite3.OperationalError: The PRAGMA failed for a reason other than
+            a concurrent journal-mode transition.
+    """
+    try:
+        connection.execute(f"PRAGMA journal_mode = {journal_mode()}")
+    except sqlite3.OperationalError as error:
+        message = str(error).lower()
+        if "locked" not in message and "busy" not in message:
+            raise
 
 
 def upsert_document_row(
@@ -69,19 +95,19 @@ def upsert_document_row(
     """
     connection.execute(
         _UPSERT_SQL,
-        (
-            workspace_id,
-            document.reference.source_id,
-            document.reference.source_type,
-            document.file_name,
-            document.title,
-            document.content_format,
-            document.status.value,
-            document.uploaded_at.isoformat(),
-            document.chunk_count,
-            document.error,
-            document.revision,
-        ),
+        {
+            "workspace_id": workspace_id,
+            "source_id": document.reference.source_id,
+            "source_type": document.reference.source_type,
+            "file_name": document.file_name,
+            "title": document.title,
+            "content_format": document.content_format,
+            "status": document.status.value,
+            "uploaded_at": document.uploaded_at.isoformat(),
+            "chunk_count": document.chunk_count,
+            "error": document.error,
+            "revision": document.revision,
+        },
     )
 
 

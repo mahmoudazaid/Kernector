@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import sqlite3
 import threading
 
 import pytest
 
+from infrastructure.catalog._connection import journal_mode
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_schema import apply_migrations, current_schema_version
 
@@ -129,10 +131,32 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
             future.result(timeout=15)
 
     assert current_schema_version(path) == 1
+    connection = sqlite3.connect(path)
+    try:
+        recorded_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+    finally:
+        connection.close()
+    assert str(recorded_mode).lower() == journal_mode().lower()
     from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 
     catalog = SqlDocumentCatalog(path, "ws-a")
     assert catalog.all() == ()
+
+
+def test_set_journal_mode_tolerates_locked_transition() -> None:
+    from infrastructure.catalog._connection import set_journal_mode
+
+    class _Locked:
+        def execute(self, sql: str, parameters: object = ()) -> object:
+            raise sqlite3.OperationalError("database is locked")
+
+    class _Other:
+        def execute(self, sql: str, parameters: object = ()) -> object:
+            raise sqlite3.OperationalError("disk I/O error")
+
+    set_journal_mode(_Locked())  # type: ignore[arg-type]
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O"):
+        set_journal_mode(_Other())  # type: ignore[arg-type]
 
 
 def test_non_sqlite_file_reports_catalog_error_not_version_zero(
