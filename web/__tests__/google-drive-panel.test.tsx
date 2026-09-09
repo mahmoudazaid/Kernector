@@ -544,15 +544,15 @@ describe("GoogleDrivePanel", () => {
     let calls = 0;
     const loadSelection = async () => {
       calls += 1;
-      if (calls <= 2) {
-        return EMPTY_SELECTION;
+      if (calls === 3) {
+        throw new ApiError({
+          status: 502,
+          title: "Google Drive request failed",
+          detail: "The Google Drive request failed.",
+          code: "google_drive_request_failed",
+        });
       }
-      throw new ApiError({
-        status: 502,
-        title: "Google Drive request failed",
-        detail: "The Google Drive request failed.",
-        code: "google_drive_request_failed",
-      });
+      return EMPTY_SELECTION;
     };
     const { rerender } = render(
       <GoogleDrivePanel
@@ -582,14 +582,25 @@ describe("GoogleDrivePanel", () => {
     const dialog = screen.getByRole("dialog", {
       name: /choose from google drive/i,
     });
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "The Google Drive request failed.",
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("The Google Drive request failed.");
+    expect(alert.closest(".kern-picker-list")).toBeNull();
+
+    rerender(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        reloadToken={2}
+        getStatus={async () => SETUP_REQUIRED}
+        loadSelection={loadSelection}
+        listItems={folderPage}
+      />,
     );
-    await user.click(within(dialog).getByRole("button", { name: /^close$/i }));
+    await waitFor(() => {
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    });
     expect(
-      screen.queryByRole("dialog", { name: /choose from google drive/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      screen.getByRole("dialog", { name: /choose from google drive/i }),
+    ).toBeInTheDocument();
   });
 
   it("does not show a card error when the picker is closed during selection load", async () => {

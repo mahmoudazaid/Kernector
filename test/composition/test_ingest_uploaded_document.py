@@ -38,7 +38,7 @@ class _RecordingIngest:
 
 @pytest.fixture
 def chroma_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
-    """Settings pointed at `tmp_path`, with `.env` neutralized first."""
+    """Settings pointed at `tmp_path`. ``.env`` is stubbed in ``test/conftest.py``."""
     target = tmp_path / "chroma"
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(target))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_knowledge")

@@ -100,6 +100,44 @@ def test_build_document_catalog_uses_sql_path_and_workspace(
     assert SqlDocumentCatalog(sql_path, "ws-b").all() == ()
 
 
+def test_build_document_catalog_maps_catalog_error(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.catalog.errors import CatalogError
+
+    def boom(_path: Path) -> object:
+        raise CatalogError("corrupt catalog")
+
+    monkeypatch.setattr(composition_container, "JsonDocumentCatalog", boom)
+    with pytest.raises(DocumentOperationError, match="corrupt catalog"):
+        composition_container.build_document_catalog(settings)
+
+
+def test_build_document_catalog_maps_oserror(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(_path: Path) -> object:
+        raise OSError("read-only catalog")
+
+    monkeypatch.setattr(composition_container, "JsonDocumentCatalog", boom)
+    with pytest.raises(DocumentOperationError, match="read-only catalog"):
+        composition_container.build_document_catalog(settings)
+
+
+def test_build_document_catalog_requires_sql_workspace(settings: Settings) -> None:
+    sql_settings = replace(
+        settings,
+        document_catalog=replace(
+            settings.document_catalog,
+            backend="sql",
+            workspace_id=None,
+            sql_path=settings.document_catalog.sql_path,
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        composition_container.build_document_catalog(sql_settings)
+
+
 def test_list_create_replace_delete_round_trip(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

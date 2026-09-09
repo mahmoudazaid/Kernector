@@ -1003,11 +1003,10 @@ def test_built_chat_models_satisfy_the_port(
 
 @pytest.fixture
 def chroma_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
-    """Settings pointed at `tmp_path`, with `.env` neutralized first.
+    """Settings pointed at `tmp_path`. ``.env`` is stubbed in ``test/conftest.py``.
 
-    `load_settings()` calls `load_dotenv(override=True)`, so without the patch a
-    developer's local `.env` would beat `setenv` and these tests would build a
-    store inside their real data directory while still passing (§3.1).
+    Autouse ``_isolate_settings_from_dotenv`` stubs ``load_dotenv`` before this
+    fixture runs, so ``setenv`` is not overwritten by a developer ``.env``.
     """
     target = tmp_path / "chroma"
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(target))

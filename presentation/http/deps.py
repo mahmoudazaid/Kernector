@@ -142,19 +142,11 @@ def get_document_operations(
     ``DocumentOperationError`` instead of failing dependency resolution.
     """
 
-    catalog: DocumentCatalog | None = None
-
-    def shared_catalog() -> DocumentCatalog:
-        nonlocal catalog
-        if catalog is None:
-            catalog = get_document_catalog()
-        return catalog
-
     def create(payload: UploadPayload) -> CatalogDocument:
         return create_uploaded_document(
             settings,
             payload,
-            catalog=shared_catalog(),
+            catalog=get_document_catalog(),
             vector_store=get_vector_store(),
         )
 
@@ -165,7 +157,7 @@ def get_document_operations(
             settings,
             reference,
             payload,
-            catalog=shared_catalog(),
+            catalog=get_document_catalog(),
             vector_store=get_vector_store(),
         )
 
@@ -173,13 +165,13 @@ def get_document_operations(
         delete_uploaded_document(
             settings,
             reference,
-            catalog=shared_catalog(),
+            catalog=get_document_catalog(),
             vector_store=get_vector_store(),
         )
 
     return DocumentOperations(
         list=lambda: list_uploaded_documents(
-            settings, catalog=shared_catalog()
+            settings, catalog=get_document_catalog()
         ),
         create=create,
         replace=replace,

@@ -377,15 +377,9 @@ def test_document_operations_resolve_catalog_lazily(
 def test_document_operations_reuse_the_process_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[int] = []
     catalog = object()
     seen: list[tuple[str, object]] = []
-
-    def factory() -> object:
-        calls.append(1)
-        return catalog
-
-    monkeypatch.setattr(http_deps, "get_document_catalog", factory)
+    monkeypatch.setattr(http_deps, "get_document_catalog", lambda: catalog)
     monkeypatch.setattr(http_deps, "get_vector_store", lambda: object())
 
     def record(name: str):
@@ -408,7 +402,6 @@ def test_document_operations_reuse_the_process_catalog(
     ops.create(object())
     ops.replace(object(), object())
     ops.delete(object())
-    assert calls == [1]
     assert seen == [
         ("list", catalog),
         ("create", catalog),

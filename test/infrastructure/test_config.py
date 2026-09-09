@@ -11,10 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    """Neutralize `.env`, which `load_settings()` loads with `override=True`.
+    """Clear settings env so defaults are testable.
 
-    Without this, a local `.env` silently beats `monkeypatch.setenv` and these
-    tests would pass while reading a developer's real configuration (§3.1).
+    ``load_dotenv`` is stubbed in ``test/conftest.py``. This fixture only
+    removes pinned catalog/chroma keys so ``load_settings`` sees defaults.
     """
     monkeypatch.delenv("CHROMA_PERSIST_PATH", raising=False)
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)

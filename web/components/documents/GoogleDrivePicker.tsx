@@ -406,7 +406,7 @@ export function GoogleDrivePicker({
         </form>
       </div>
 
-      {notice && view.kind !== "error" && !listLoading ? (
+      {notice ? (
         <div
           className="kern-settings-callout kern-settings-callout--error"
           role="alert"
@@ -449,7 +449,7 @@ export function GoogleDrivePicker({
         {view.kind === "error" && !selectionLoading ? (
           <div
             className="kern-settings-callout kern-settings-callout--error"
-            role="alert"
+            role="status"
           >
             <p>
               {view.code === "google_drive_reauthorization_required"

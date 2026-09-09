@@ -211,7 +211,7 @@ describe("GoogleDrivePicker", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
       /do not have access/i,
     );
     await user.click(within(dialog).getByRole("button", { name: /^retry$/i }));
@@ -229,8 +229,10 @@ describe("GoogleDrivePicker", () => {
         });
       },
     });
-    expect(await screen.findByRole("alert")).toHaveTextContent(/revoked/i);
-    expect(screen.getByRole("button", { name: /^retry$/i })).toBeEnabled();
+    expect(
+      await screen.findByRole("button", { name: /^retry$/i }),
+    ).toBeEnabled();
+    expect(screen.getByText(/revoked/i)).toBeInTheDocument();
   });
 
   it("confirms selected Drive IDs rather than names", async () => {
@@ -355,7 +357,7 @@ describe("GoogleDrivePicker", () => {
     expect(within(dialog).getByRole("button", { name: /^close$/i })).toBeEnabled();
 
     rerender(<GoogleDrivePicker {...pickerProps} selectionLoading={false} />);
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
       "The Google Drive request failed.",
     );
   });

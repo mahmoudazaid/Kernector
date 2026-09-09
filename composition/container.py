@@ -5,7 +5,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from concurrent.futures import FIRST_EXCEPTION, Future, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NoReturn
@@ -522,6 +522,19 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
         raise DocumentOperationError(str(error)) from error
 
 
+def _resolve_catalog(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None,
+    catalog_factory: Callable[[], DocumentCatalog] | None,
+) -> DocumentCatalog:
+    if catalog is not None:
+        return catalog
+    if catalog_factory is not None:
+        return catalog_factory()
+    return build_document_catalog(settings)
+
+
 def migrate_document_catalog(settings: Settings) -> None:
     """Import the JSON catalog into the configured SQL workspace.
 
@@ -564,8 +577,10 @@ _DRIVE_SELECTION_ID = re.compile(r"^(?!root$)[A-Za-z0-9_-]{1,128}$")
 _DRIVE_ITEM_NAME_MAX = 256
 _DRIVE_QUERY_MAX = 200
 _DRIVE_SELECTION_VALIDATE_WORKERS = 16
-_DRIVE_VALIDATION_COLLECT_SECONDS = 0.05
-_DRIVE_VALIDATION_DRAIN_SECONDS = 2
+_DRIVE_VALIDATION_POOL = ThreadPoolExecutor(
+    max_workers=_DRIVE_SELECTION_VALIDATE_WORKERS,
+    thread_name_prefix="drive-validate",
+)
 _SELECTION_INACCESSIBLE_DETAIL = "A selected Drive item is not accessible."
 _SELECTION_KIND_DETAIL = "A selected Drive item does not match the requested type."
 
@@ -726,12 +741,12 @@ def google_drive_status(
             unchanged_count=connection.last_sync_unchanged,
             failed_count=connection.last_sync_failed,
         )
-    needs_reverify = connection is not None and (
-        connection.reauthorization_required or connection.account_email_unverified
+    reauthorization_required = (
+        False if connection is None else connection.reauthorization_required
     )
     if connection is None:
         connection_state = "disconnected"
-    elif needs_reverify:
+    elif reauthorization_required:
         connection_state = "reauthorization_required"
     else:
         connection_state = "ready"
@@ -753,7 +768,7 @@ def google_drive_status(
         ),
         folder_count=None if connection is None else len(connection.folders),
         last_sync=last_sync,
-        reauthorization_required=needs_reverify,
+        reauthorization_required=reauthorization_required,
         setup_required=False,
         connection_state=connection_state,
         sync_scope=None if connection is None else _sync_scope_label(connection),
@@ -770,12 +785,9 @@ def _drive_document_count(
     if connection is None:
         return 0
     try:
-        if catalog is not None:
-            working = catalog
-        elif catalog_factory is not None:
-            working = catalog_factory()
-        else:
-            working = build_document_catalog(settings)
+        working = _resolve_catalog(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
         return working.count(
             source_type=SourceType.GOOGLE_DRIVE,
             status=CatalogStatus.READY,
@@ -881,8 +893,10 @@ def complete_google_drive_oauth(
 
         def _next(existing):
             probe_failed = email is None
-            keep_scope = existing is not None and (
-                probe_failed or existing.account_email == email
+            keep_scope = (
+                existing is not None
+                and not probe_failed
+                and existing.account_email == email
             )
             return GoogleOAuthConnection(
                 refresh_token=grant.refresh_token,
@@ -1061,13 +1075,11 @@ def get_google_drive_selection(
 
     Raises:
         GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
     """
-    tokens_store = (
-        connection_store if connection_store is not None else _connection_store(settings)
+    _tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
     )
-    connection = tokens_store.load()
-    if connection is None:
-        raise GoogleDriveNotConnectedError("Google Drive is not connected")
     return GoogleDriveSelection(
         folders=tuple(
             GoogleDriveSelectedItem(id=item.id, name=item.name)
@@ -1193,6 +1205,14 @@ def _validate_selection_items(
         )
 
     factory = default_factory if connector_factory is None else connector_factory
+    probe_item, probe_kind = jobs[0]
+    try:
+        _validate_selected_item(factory(), probe_item, expected_kind=probe_kind)
+    except ConnectorAuthError:
+        raise
+    except (InputRejectedError, ConnectorError):
+        pass
+
     local = threading.local()
 
     def _run(item: GoogleDriveSelectedItem, kind: str) -> GoogleDriveSelectedItem:
@@ -1204,44 +1224,32 @@ def _validate_selection_items(
 
     workers = min(_DRIVE_SELECTION_VALIDATE_WORKERS, len(jobs))
     resolved: dict[int, GoogleDriveSelectedItem] = {}
-    pool = ThreadPoolExecutor(max_workers=workers)
+    next_job = 0
+    in_flight: dict[Future[GoogleDriveSelectedItem], int] = {}
+
+    def _fill() -> None:
+        nonlocal next_job
+        while next_job < len(jobs) and len(in_flight) < workers:
+            item, kind = jobs[next_job]
+            in_flight[_DRIVE_VALIDATION_POOL.submit(_run, item, kind)] = next_job
+            next_job += 1
+
+    _fill()
     try:
-        next_job = 0
-        in_flight: dict[Future[GoogleDriveSelectedItem], int] = {}
-
-        def _fill() -> None:
-            nonlocal next_job
-            while next_job < len(jobs) and len(in_flight) < workers:
-                item, kind = jobs[next_job]
-                in_flight[pool.submit(_run, item, kind)] = next_job
-                next_job += 1
-
-        _fill()
         while in_flight:
-            done, _ = wait(in_flight, return_when=FIRST_EXCEPTION)
-            errors: list[BaseException] = []
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            errors: list[tuple[int, BaseException]] = []
             for future in done:
                 index = in_flight.pop(future)
                 try:
                     resolved[index] = future.result()
                 except BaseException as error:
-                    errors.append(error)
+                    errors.append((index, error))
             if errors:
-                if in_flight:
-                    rest, _leftover = wait(
-                        in_flight, timeout=_DRIVE_VALIDATION_COLLECT_SECONDS
-                    )
-                    for future in rest:
-                        index = in_flight.pop(future)
-                        try:
-                            resolved[index] = future.result()
-                        except BaseException as error:
-                            errors.append(error)
                 raise _preferred_validation_error(errors)
             _fill()
     finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-        _drain_validation_jobs(in_flight)
+        _log_finished_validation_jobs(in_flight)
     folder_count = len(folder_items)
     return (
         tuple(resolved[index] for index in range(folder_count)),
@@ -1249,39 +1257,31 @@ def _validate_selection_items(
     )
 
 
-def _preferred_validation_error(errors: Sequence[BaseException]) -> BaseException:
-    for error in errors:
+def _preferred_validation_error(
+    errors: Sequence[tuple[int, BaseException]],
+) -> BaseException:
+    for _index, error in errors:
         if isinstance(error, ConnectorAuthError):
             return error
-    return errors[0]
+    return min(errors, key=lambda pair: pair[0])[1]
 
 
-def _drain_validation_jobs(
+def _log_finished_validation_jobs(
     futures: Iterable[Future[GoogleDriveSelectedItem]],
 ) -> None:
-    pending = list(futures)
-    if not pending:
-        return
-
-    def _drain() -> None:
-        wait(pending, timeout=_DRIVE_VALIDATION_DRAIN_SECONDS)
-        for future in pending:
-            if future.cancelled():
-                continue
-            error = future.exception()
-            if error is None:
-                continue
-            if isinstance(error, (InputRejectedError, ConnectorError)) and not isinstance(
-                error, ConnectorAuthError
-            ):
-                logger.debug("Drive selection validation job rejected")
-                continue
-            logger.warning(
-                "Drive selection validation job failed",
-                exc_info=error,
-            )
-
-    threading.Thread(target=_drain, daemon=True).start()
+    for future in futures:
+        if not future.done() or future.cancelled():
+            continue
+        error = future.exception()
+        if error is None:
+            continue
+        if isinstance(error, InputRejectedError):
+            logger.debug("Drive selection validation job rejected: %s", error)
+            continue
+        logger.warning(
+            "Drive selection validation job failed",
+            exc_info=error,
+        )
 
 
 def _validate_selected_item(
@@ -1394,27 +1394,17 @@ def sync_google_drive_oauth(
     """
     from datetime import datetime, timezone
 
-    tokens_store = (
-        connection_store if connection_store is not None else _connection_store(settings)
+    tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
     )
-    connection = tokens_store.load()
-    if connection is None:
-        raise GoogleDriveNotConnectedError("Google Drive is not connected")
-    if connection.reauthorization_required or connection.account_email_unverified:
-        raise GoogleDriveReauthorizationRequiredError(
-            "Google Drive authorization was revoked"
-        )
     if not connection.folders and not connection.files:
         raise GoogleDriveSelectionRequiredError(
             "Google Drive sync scope is not selected"
         )
     try:
-        if catalog is not None:
-            working_catalog = catalog
-        elif catalog_factory is not None:
-            working_catalog = catalog_factory()
-        else:
-            working_catalog = build_document_catalog(settings)
+        working_catalog = _resolve_catalog(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
         before = {
             row.reference.source_id
             for row in working_catalog.all()
