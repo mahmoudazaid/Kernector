@@ -569,7 +569,13 @@ export function DocumentsPanel({
               <div>
                 <span className="kern-metric-label">Latest upload</span>
                 <span className="kern-metric-value">
-                  {latestUpload ? formatTimestamp(latestUpload) : "None yet"}
+                  {latestUpload ? (
+                    <time dateTime={latestUpload}>
+                      {formatTimestamp(latestUpload)}
+                    </time>
+                  ) : (
+                    "None yet"
+                  )}
                 </span>
               </div>
             </div>
@@ -726,7 +732,11 @@ export function DocumentsPanel({
                         </span>
                       </td>
                       <td>{doc.chunk_count}</td>
-                      <td>{formatTimestamp(doc.uploaded_at)}</td>
+                      <td>
+                        <time dateTime={doc.uploaded_at}>
+                          {formatTimestamp(doc.uploaded_at)}
+                        </time>
+                      </td>
                       <td className="kern-documents-actions">
                         <button
                           type="button"

@@ -111,8 +111,11 @@ inventing a local look.
 9. **Guardrail tests** — `web/__tests__/design-tokens.test.ts` asserts the
    required token names on `:root` and theme overrides (including control
    sheen / emboss tokens). Keep that contract in sync when adding tokens.
-   Visual regressions on a screen are fixed by applying shared recipes, not
-   by forking tokens under a new name for one page.
+   `web/__tests__/timestamp-guardrail.test.ts` forbids locale-default date
+   formatters (`toLocaleString`, `toLocaleDateString`, `toLocaleTimeString`,
+   `Intl.DateTimeFormat`) in `web/lib` and `web/components` except
+   `formatTimestamp`. Visual regressions on a screen are fixed by applying
+   shared recipes, not by forking tokens under a new name for one page.
 
 10. **Brand loader (required wait recipe)** — Screen-level and in-panel
     waits use the blinking Kernector mark via
@@ -132,7 +135,8 @@ inventing a local look.
     English month abbreviations, 12-hour, no timezone suffix). Do not use
     relative copy (“5 min ago”), locale-default `toLocaleString()`, or
     timezone abbreviations (`EEST`). Machine values stay ISO-8601 on the
-    wire and in `datetime` attributes.
+    wire and in `datetime` attributes wherever the timestamp is rendered as
+    its own element.
 
 ## Consequences
 

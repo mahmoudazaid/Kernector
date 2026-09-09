@@ -132,6 +132,9 @@ describe("DocumentsPanel", () => {
     expect(screen.getByText("guide.txt")).toBeInTheDocument();
     expect(screen.getByText("failed")).toHaveClass("kern-doc-failed");
     expect(
+      screen.getByText("spec.md").closest("tr")?.querySelector("time"),
+    ).toHaveAttribute("dateTime", "2026-09-05T09:12:44+00:00");
+    expect(
       screen.getByText(/catalog identity is the source id/i),
     ).toBeInTheDocument();
   });
@@ -897,6 +900,10 @@ describe("DocumentsPanel", () => {
       .closest("article");
     expect(card?.querySelector(".kern-source-metrics")).toHaveTextContent(
       /documents\s*1/i,
+    );
+    expect(card?.querySelector("time")).toHaveAttribute(
+      "dateTime",
+      "2026-09-05T09:12:44+00:00",
     );
     expect(screen.getByRole("tab", { name: /documents/i })).toHaveTextContent("2");
   });
