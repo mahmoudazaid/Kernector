@@ -134,7 +134,7 @@ class GoogleDriveSelectedItemRequest(BaseModel):
     """PUT selection item. ``root`` is rejected so sync cannot cover all Drive."""
 
     id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]{1,128}$")
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=256)
 
     @field_validator("id")
     @classmethod
@@ -144,7 +144,7 @@ class GoogleDriveSelectedItemRequest(BaseModel):
         return value
 
 
-_SELECTION_LIST_MAX = 100
+GOOGLE_DRIVE_SELECTION_LIST_MAX = 100
 
 
 class GoogleDriveSelectionResponse(BaseModel):
@@ -158,10 +158,10 @@ class GoogleDriveSelectionRequest(BaseModel):
     """PUT body: bounded so one request can finish inside the client timeout."""
 
     folders: list[GoogleDriveSelectedItemRequest] = Field(
-        default_factory=list, max_length=_SELECTION_LIST_MAX
+        default_factory=list, max_length=GOOGLE_DRIVE_SELECTION_LIST_MAX
     )
     files: list[GoogleDriveSelectedItemRequest] = Field(
-        default_factory=list, max_length=_SELECTION_LIST_MAX
+        default_factory=list, max_length=GOOGLE_DRIVE_SELECTION_LIST_MAX
     )
 
 

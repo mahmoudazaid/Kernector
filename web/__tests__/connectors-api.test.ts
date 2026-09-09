@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api/errors";
 import {
   CONNECTOR_SYNC_TIMEOUT_MS,
   GOOGLE_DRIVE_OAUTH_START_PATH,
+  GOOGLE_DRIVE_SELECTION_ITEM_MAX,
   GOOGLE_DRIVE_SELECTION_TIMEOUT_MS,
   disconnectGoogleDrive,
   getGoogleDriveSelection,
@@ -43,6 +44,14 @@ describe("google drive connector wrappers", () => {
     );
     expect(GOOGLE_DRIVE_OAUTH_START_PATH).toBe(
       "/api/v1/connectors/google-drive/oauth/start",
+    );
+  });
+
+  it("derives the selection cap from the committed OpenAPI spec", async () => {
+    const spec = await import("../openapi/openapi.json");
+    expect(GOOGLE_DRIVE_SELECTION_ITEM_MAX).toBe(
+      spec.components.schemas.GoogleDriveSelectionRequest.properties.folders
+        .maxItems,
     );
   });
 

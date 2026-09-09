@@ -444,6 +444,7 @@ describe("GoogleDrivePanel", () => {
             account_email: "ada@example.com",
           })
         }
+        loadSelection={emptySelection}
       />,
     );
 
@@ -500,6 +501,9 @@ describe("GoogleDrivePanel", () => {
     expect(
       screen.queryByRole("dialog", { name: /choose from google drive/i }),
     ).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: /loading google drive/i }),
+    ).toBeInTheDocument();
     resolveSelection({
       folders: [{ id: "folder-1", name: "Specs" }],
       files: [],
@@ -510,6 +514,35 @@ describe("GoogleDrivePanel", () => {
     expect(
       await within(dialog).findByRole("checkbox", { name: /specs/i }),
     ).toBeChecked();
+  });
+
+  it("does not open the picker when saved selection cannot be loaded", async () => {
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        oauthCallback="connected"
+        getStatus={async () => SETUP_REQUIRED}
+        loadSelection={async () => {
+          throw new ApiError({
+            status: 502,
+            title: "Google Drive request failed",
+            detail: "The Google Drive request failed.",
+            code: "google_drive_request_failed",
+          });
+        }}
+        listItems={folderPage}
+      />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The Google Drive request failed.",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: /choose from google drive/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /loading google drive/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("saves the selection by Drive ID and starts one initial sync", async () => {

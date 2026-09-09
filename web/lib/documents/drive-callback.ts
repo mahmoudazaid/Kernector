@@ -1,6 +1,17 @@
 let capturedDriveCallback: string | null | undefined;
 
-export function readDriveCallback(): string | null {
+function driveParam(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return new URLSearchParams(window.location.search).get("drive");
+}
+
+export function peekDriveCallback(): string | null {
+  return driveParam() ?? capturedDriveCallback ?? null;
+}
+
+export function captureDriveCallback(): string | null {
   if (typeof window === "undefined") {
     return null;
   }

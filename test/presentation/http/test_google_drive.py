@@ -12,6 +12,7 @@ from application.contracts import (
     ConnectorSyncStatus,
 )
 from application.errors import GoogleDriveNotConnectedError
+from presentation.http.schemas import GOOGLE_DRIVE_SELECTION_LIST_MAX
 from composition import (
     ConnectorSyncError,
     GoogleDriveBrowsePage,
@@ -560,10 +561,31 @@ def test_put_selection_rejects_root_id() -> None:
     assert saved == []
 
 
+def test_put_selection_rejects_long_item_name() -> None:
+    saved: list[object] = []
+    app = create_app()
+    app.dependency_overrides[get_google_drive_selection_write] = lambda: (
+        lambda **kwargs: saved.append(kwargs)
+        or GoogleDriveSelection(
+            folders=kwargs["folders"],
+            files=kwargs["files"],
+        )
+    )
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/v1/connectors/google-drive/selection",
+        json={"folders": [{"id": "folder-1", "name": "n" * 257}], "files": []},
+    )
+
+    assert response.status_code == 422
+    assert saved == []
+
+
 def test_get_selection_loads_more_than_put_bound() -> None:
     folders = tuple(
         GoogleDriveSelectedItem(id=f"folder-{index}", name=f"Folder {index}")
-        for index in range(30)
+        for index in range(GOOGLE_DRIVE_SELECTION_LIST_MAX + 10)
     )
     app = create_app()
     app.dependency_overrides[get_google_drive_selection_read] = lambda: (
@@ -574,7 +596,7 @@ def test_get_selection_loads_more_than_put_bound() -> None:
     response = client.get("/api/v1/connectors/google-drive/selection")
 
     assert response.status_code == 200
-    assert len(response.json()["folders"]) == 30
+    assert len(response.json()["folders"]) == GOOGLE_DRIVE_SELECTION_LIST_MAX + 10
 
 
 def test_get_selection_accepts_long_drive_names() -> None:

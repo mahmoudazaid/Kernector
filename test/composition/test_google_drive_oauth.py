@@ -36,7 +36,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from infrastructure.config import GoogleOAuthSettings, load_settings
+from infrastructure.config import DocumentCatalogSettings, GoogleOAuthSettings, load_settings
 from infrastructure.connectors.google_oauth import (
     GoogleDriveSelectedItem as StoredItem,
     GoogleOAuthConnection,
@@ -86,6 +86,7 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             state_path=tmp_path / "state.json",
             state_ttl_seconds=600,
         ),
+        document_catalog=DocumentCatalogSettings(path=tmp_path / "catalog.json"),
     )
 
 
@@ -291,7 +292,7 @@ def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
     assert url.endswith("drive=connected")
     stored = tokens.load()
     assert stored is not None
-    assert stored.account_email is None
+    assert stored.account_email == "ada@example.com"
     assert stored.folders == (StoredItem(id="folder-1", name="Specs"),)
     assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
     assert stored.folder_count == 1
@@ -320,13 +321,48 @@ def test_status_reads_store_not_memory(settings) -> None:
     assert status.last_sync is None
 
 
-def test_status_reads_persisted_document_count_without_catalog_scan(
+def test_status_counts_ready_drive_catalog_rows(
     settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("drive-ready", SourceType.GOOGLE_DRIVE),
+            file_name="ready.md",
+            title="ready",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+        )
+    )
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("drive-failed", SourceType.GOOGLE_DRIVE),
+            file_name="failed.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.FAILED,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=0,
+            error="ConnectorError",
+        )
+    )
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("upload-ready", SourceType.KNOWLEDGE_DOCUMENT),
+            file_name="upload.md",
+            title="upload",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+        )
+    )
     monkeypatch.setattr(
-        composition_container,
-        "build_document_catalog",
-        lambda _settings: (_ for _ in ()).throw(AssertionError("status must not scan the catalog")),
+        composition_container, "build_document_catalog", lambda _settings: catalog
     )
     GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
         GoogleOAuthConnection(
@@ -344,7 +380,7 @@ def test_status_reads_persisted_document_count_without_catalog_scan(
         )
     )
 
-    assert google_drive_status(settings).document_count == 4
+    assert google_drive_status(settings).document_count == 1
 
 
 def test_disconnect_revokes_and_clears(settings) -> None:
@@ -461,7 +497,6 @@ def test_oauth_sync_persists_last_sync_counts(
     assert stored.last_sync_failed == 0
     assert stored.last_synced_at is not None
     assert result.ingested_count == 1
-    assert stored.document_count == 1
     assert stored.reauthorization_required is False
 
 
@@ -829,7 +864,6 @@ def test_delete_drive_document_drops_file_from_selection(
             last_sync_unchanged=None,
             last_sync_failed=None,
             reauthorization_required=False,
-            document_count=2,
             files=(
                 StoredItem(id="file-9", name="guide.md"),
                 StoredItem(id="keep", name="keep.md"),
@@ -846,4 +880,3 @@ def test_delete_drive_document_drops_file_from_selection(
     loaded = tokens.load()
     assert loaded is not None
     assert [item.id for item in loaded.files] == ["keep"]
-    assert loaded.document_count == 1

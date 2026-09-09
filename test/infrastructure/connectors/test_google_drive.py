@@ -587,6 +587,20 @@ def test_mid_pagination_403_does_not_look_like_a_complete_listing() -> None:
         _connector(MidPageForbidden()).list_documents()
 
 
+def test_mid_pagination_404_does_not_look_like_a_complete_listing() -> None:
+    class MidPageMissing(FakeDriveFiles):
+        def list(self, **kwargs: object) -> FakeListRequest:
+            self.list_calls.append(dict(kwargs))
+            if len(self.list_calls) == 1:
+                return FakeListRequest(
+                    {"files": [_file("a", "a.md")], "nextPageToken": "page-2"}
+                )
+            return FakeListRequest(error=_http_error(404))
+
+    with pytest.raises(ConnectorError):
+        _connector(MidPageMissing()).list_documents()
+
+
 def test_inaccessible_nested_folder_does_not_look_like_a_complete_listing() -> None:
     class NestedForbidden(FakeDriveFiles):
         def list(self, **kwargs: object) -> FakeListRequest:

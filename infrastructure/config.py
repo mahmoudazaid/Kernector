@@ -256,9 +256,12 @@ def _resolve_under_project_root(raw: str) -> Path:
 
 def _require_google_oauth_json_path(path: Path, env_name: str) -> Path:
     """Reject in-repo grant paths that would not match the OAuth gitignore."""
-    if not path.is_relative_to(_PROJECT_ROOT):
+    resolved = path.expanduser().resolve()
+    if not resolved.is_relative_to(_PROJECT_ROOT.resolve()):
         return path
-    if not path.name.startswith("google-oauth-") or not path.name.endswith(".json"):
+    if not resolved.name.startswith("google-oauth-") or not resolved.name.endswith(
+        ".json"
+    ):
         raise ValueError(
             f"{env_name} must use a google-oauth-*.json filename so the grant stays gitignored"
         )

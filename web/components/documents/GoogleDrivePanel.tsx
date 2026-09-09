@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { DialogFrame } from "@/components/ui/DialogFrame";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { Loader } from "@/components/ui/Loader";
 import {
@@ -124,8 +125,11 @@ export function GoogleDrivePanel({
   const [selection, setSelection] =
     useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
   const [selectionReady, setSelectionReady] = useState(false);
+  const pickerTitleId = useId();
   const busyRef = useRef(false);
   const aliveRef = useRef(true);
+  const selectionSeqRef = useRef(0);
+  const selectionAbortRef = useRef<AbortController | null>(null);
   const onConnectionChangeRef = useRef(onConnectionChange);
   onConnectionChangeRef.current = onConnectionChange;
   const onCatalogChangeRef = useRef(onCatalogChange);
@@ -137,6 +141,7 @@ export function GoogleDrivePanel({
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      selectionAbortRef.current?.abort();
     };
   }, []);
 
@@ -158,19 +163,34 @@ export function GoogleDrivePanel({
   }
 
   async function refreshSelection() {
+    const controller = new AbortController();
+    selectionAbortRef.current = controller;
+    const seq = selectionSeqRef.current;
     try {
-      const current = await loadSelection({ baseUrl: apiBaseUrl });
-      if (!aliveRef.current) {
-        return current;
+      const current = await loadSelection({
+        baseUrl: apiBaseUrl,
+        signal: controller.signal,
+      });
+      if (
+        seq !== selectionSeqRef.current ||
+        controller.signal.aborted ||
+        !aliveRef.current
+      ) {
+        return null;
       }
       setSelection(current);
       return current;
-    } catch {
-      if (!aliveRef.current) {
-        return EMPTY_SELECTION;
+    } catch (error) {
+      if (
+        seq !== selectionSeqRef.current ||
+        controller.signal.aborted ||
+        !aliveRef.current
+      ) {
+        return null;
       }
-      setSelection(EMPTY_SELECTION);
-      return EMPTY_SELECTION;
+      setActionError(actionErrorMessage(error));
+      setPickerOpen(false);
+      return null;
     }
   }
 
@@ -212,8 +232,8 @@ export function GoogleDrivePanel({
     }
     let ignore = false;
     void (async () => {
-      await refreshSelection();
-      if (!ignore && aliveRef.current) {
+      const current = await refreshSelection();
+      if (!ignore && aliveRef.current && current != null) {
         setSelectionReady(true);
       }
     })();
@@ -283,6 +303,8 @@ export function GoogleDrivePanel({
         baseUrl: apiBaseUrl,
         selection: next,
       });
+      selectionSeqRef.current += 1;
+      selectionAbortRef.current?.abort();
       setSelection(saved);
       const hasScope =
         (saved.folders?.length ?? 0) > 0 || (saved.files?.length ?? 0) > 0;
@@ -503,6 +525,22 @@ export function GoogleDrivePanel({
           Disconnect
         </Button>
       </div>
+
+      {pickerOpen && !selectionReady ? (
+        <DialogFrame
+          open
+          titleId={pickerTitleId}
+          panelClassName="kern-picker-dialog"
+          onDismiss={() => setPickerOpen(false)}
+        >
+          <div className="kern-picker-head">
+            <h2 id={pickerTitleId} className="kern-dialog-title">
+              Loading Google Drive
+            </h2>
+          </div>
+          <Loader label="Loading saved Google Drive selection" />
+        </DialogFrame>
+      ) : null}
 
       {pickerOpen && selectionReady ? (
         <GoogleDrivePicker

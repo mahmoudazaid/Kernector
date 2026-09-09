@@ -276,7 +276,7 @@ describe("GoogleDrivePicker", () => {
     expect(onConfirm).toHaveBeenCalledWith({ folders: [], files: [] });
   });
 
-  it("does not add items past the saved-selection cap", async () => {
+  it("does not add extra folders past the folder cap and still allows a file", async () => {
     const user = userEvent.setup();
     const extra: GoogleDriveBrowseItemResponse = {
       ...FOLDER,
@@ -293,7 +293,7 @@ describe("GoogleDrivePicker", () => {
       },
       listItems: async (options) => {
         if (options.kind === "files") {
-          return { items: [], next_page_token: null };
+          return { items: [FILE], next_page_token: null };
         }
         return { items: [extra], next_page_token: null };
       },
@@ -306,7 +306,16 @@ describe("GoogleDrivePicker", () => {
       within(dialog).getByText(new RegExp(`${GOOGLE_DRIVE_SELECTION_ITEM_MAX} selected`)),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText(new RegExp(`at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX}`)),
+      within(dialog).getByText(
+        new RegExp(`at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX} folders or files each`),
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(await within(dialog).findByRole("checkbox", { name: /guide.md/i }));
+    expect(
+      within(dialog).getByText(
+        new RegExp(`${GOOGLE_DRIVE_SELECTION_ITEM_MAX + 1} selected`),
+      ),
     ).toBeInTheDocument();
   });
 });

@@ -12,7 +12,7 @@ import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
-import { readDriveCallback } from "@/lib/documents/drive-callback";
+import { captureDriveCallback, peekDriveCallback } from "@/lib/documents/drive-callback";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
@@ -220,7 +220,7 @@ export function DocumentsPanel({
   const [driveConnected, setDriveConnected] = useState(false);
   const [driveReloadToken, setDriveReloadToken] = useState(0);
   const [oauthCallback, setOauthCallback] = useState<string | null>(
-    readDriveCallback,
+    peekDriveCallback,
   );
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -228,6 +228,10 @@ export function DocumentsPanel({
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setOauthCallback(captureDriveCallback());
+  }, []);
 
   function retryAll() {
     if (settingsError) {

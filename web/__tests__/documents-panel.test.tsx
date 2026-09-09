@@ -10,32 +10,34 @@ import type {
 } from "@/lib/api/documents";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 
-vi.mock("@/lib/api/connectors", () => ({
-  getGoogleDriveStatus: vi.fn().mockResolvedValue({
-    configured: false,
-    available: true,
-    connected: false,
-    oauth_ready: true,
-    account_email: null,
-    document_count: 0,
-    folder_count: null,
-    last_sync: null,
-    reauthorization_required: false,
-  }),
-  syncGoogleDrive: vi.fn(),
-  disconnectGoogleDrive: vi.fn(),
-  getGoogleDriveSelection: vi
-    .fn()
-    .mockResolvedValue({ folders: [], files: [] }),
-  putGoogleDriveSelection: vi.fn(),
-  listGoogleDriveItems: vi
-    .fn()
-    .mockResolvedValue({ items: [], next_page_token: null }),
-  googleDriveOAuthStartUrl: (baseUrl: string) =>
-    `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
-  GOOGLE_DRIVE_OAUTH_START_PATH: "/api/v1/connectors/google-drive/oauth/start",
-  GOOGLE_DRIVE_SELECTION_ITEM_MAX: 100,
-}));
+vi.mock("@/lib/api/connectors", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/connectors")>();
+  return {
+    ...actual,
+    getGoogleDriveStatus: vi.fn().mockResolvedValue({
+      configured: false,
+      available: true,
+      connected: false,
+      oauth_ready: true,
+      account_email: null,
+      document_count: 0,
+      folder_count: null,
+      last_sync: null,
+      reauthorization_required: false,
+    }),
+    syncGoogleDrive: vi.fn(),
+    disconnectGoogleDrive: vi.fn(),
+    getGoogleDriveSelection: vi
+      .fn()
+      .mockResolvedValue({ folders: [], files: [] }),
+    putGoogleDriveSelection: vi.fn(),
+    listGoogleDriveItems: vi
+      .fn()
+      .mockResolvedValue({ items: [], next_page_token: null }),
+    googleDriveOAuthStartUrl: (baseUrl: string) =>
+      `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
+  };
+});
 
 const SETTINGS: RuntimeSettingsResponse = {
   providers: ["openrouter"],

@@ -481,6 +481,25 @@ def test_google_oauth_in_repo_token_path_must_match_gitignore(
         load_settings()
 
 
+def test_google_oauth_relative_parent_token_path_is_allowed(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", "../outside-token.json")
+    oauth = load_settings().google_oauth
+    assert oauth.token_path == PROJECT_ROOT / "../outside-token.json"
+
+
+def test_google_oauth_token_path_that_resolves_into_repo_must_match_gitignore(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv(
+        "GOOGLE_OAUTH_TOKEN_PATH",
+        str(PROJECT_ROOT / ".." / PROJECT_ROOT.name / "data" / "drive-token.json"),
+    )
+    with pytest.raises(ValueError, match="google-oauth-\\*\\.json"):
+        load_settings()
+
+
 def test_google_oauth_redirect_must_be_absolute_http(env: pytest.MonkeyPatch) -> None:
     env.setenv("GOOGLE_OAUTH_REDIRECT_URI", "/oauth/callback")
     with pytest.raises(ValueError, match="GOOGLE_OAUTH_REDIRECT_URI"):

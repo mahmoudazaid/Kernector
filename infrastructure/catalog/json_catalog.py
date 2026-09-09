@@ -16,6 +16,7 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     SourceReference,
+    SourceType,
 )
 
 
@@ -77,6 +78,24 @@ class JsonDocumentCatalog:
             del records[reference]
             self._write_unlocked(records)
 
+    def count(
+        self,
+        *,
+        source_type: SourceType | None = None,
+        status: CatalogStatus | None = None,
+    ) -> int:
+        """Return how many records match the optional filters."""
+        with self._lock():
+            wanted_status = None if status is None else status.value
+            total = 0
+            for entry in self._raw_entries_unlocked():
+                if source_type is not None and entry.get("source_type") != source_type:
+                    continue
+                if wanted_status is not None and entry.get("status") != wanted_status:
+                    continue
+                total += 1
+            return total
+
     def _lock(self) -> threading.Lock:
         key = str(self._path.resolve())
         with self._locks_guard:
@@ -87,8 +106,47 @@ class JsonDocumentCatalog:
             return lock
 
     def _load_unlocked(self) -> dict[SourceReference, CatalogDocument]:
+        records: dict[SourceReference, CatalogDocument] = {}
+        for index, entry in enumerate(self._read_payload_unlocked()):
+            document = _document_from_entry(entry, index=index)
+            if document.reference in records:
+                # Refusing beats last-one-wins: the next write serializes this
+                # dict, so silently collapsing the pair would delete a row from
+                # disk and orphan its chunks with nothing left pointing at them.
+                reference = document.reference
+                raise CatalogValidationError(
+                    f"catalog entry {index} duplicates source "
+                    f"{reference.source_type}:{reference.source_id}; "
+                    "each source may appear at most once"
+                )
+            records[document.reference] = document
+        return records
+
+    def _raw_entries_unlocked(self) -> list[dict[str, object]]:
+        payload = self._read_payload_unlocked()
+        entries: list[dict[str, object]] = []
+        seen: set[tuple[str, str]] = set()
+        for index, entry in enumerate(payload):
+            document = _document_from_entry(entry, index=index)
+            key = (document.reference.source_type, document.reference.source_id)
+            if key in seen:
+                reference = document.reference
+                raise CatalogValidationError(
+                    f"catalog entry {index} duplicates source "
+                    f"{reference.source_type}:{reference.source_id}; "
+                    "each source may appear at most once"
+                )
+            seen.add(key)
+            if not isinstance(entry, dict):
+                raise CatalogValidationError(
+                    f"catalog entry {index} must be an object, got {type(entry).__name__}"
+                )
+            entries.append(entry)
+        return entries
+
+    def _read_payload_unlocked(self) -> list[object]:
         if not self._path.exists():
-            return {}
+            return []
         try:
             text = self._path.read_text(encoding="utf-8")
         except OSError as error:
@@ -103,21 +161,7 @@ class JsonDocumentCatalog:
             raise CatalogValidationError(
                 f"catalog root must be a JSON array, got {type(payload).__name__}"
             )
-        records: dict[SourceReference, CatalogDocument] = {}
-        for index, entry in enumerate(payload):
-            document = _document_from_entry(entry, index=index)
-            if document.reference in records:
-                # Refusing beats last-one-wins: the next write serializes this
-                # dict, so silently collapsing the pair would delete a row from
-                # disk and orphan its chunks with nothing left pointing at them.
-                reference = document.reference
-                raise CatalogValidationError(
-                    f"catalog entry {index} duplicates source "
-                    f"{reference.source_type}:{reference.source_id}; "
-                    "each source may appear at most once"
-                )
-            records[document.reference] = document
-        return records
+        return payload
 
     def _write_unlocked(
         self, records: Mapping[SourceReference, CatalogDocument]

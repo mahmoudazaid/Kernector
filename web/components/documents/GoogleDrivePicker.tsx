@@ -57,6 +57,19 @@ function selectedMap(
   return map;
 }
 
+function countKind(
+  map: Map<string, { kind: "folder" | "file" }>,
+  kind: "folder" | "file",
+): number {
+  let count = 0;
+  for (const item of map.values()) {
+    if (item.kind === kind) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function toSelection(
   map: Map<string, { id: string; name: string; kind: "folder" | "file" }>,
 ): GoogleDriveSelectionResponse {
@@ -306,6 +319,9 @@ export function GoogleDrivePicker({
 
   const countLabel =
     selected.size === 0 ? "No items selected" : `${selected.size} selected`;
+  const atListCap =
+    countKind(selected, "folder") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX ||
+    countKind(selected, "file") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX;
   const selectionUnchanged = sameSelection(selected, initialSelection);
 
   function toggle(item: GoogleDriveBrowseItemResponse) {
@@ -315,7 +331,7 @@ export function GoogleDrivePicker({
       const next = new Map(current);
       if (next.has(item.id)) {
         next.delete(item.id);
-      } else if (next.size >= GOOGLE_DRIVE_SELECTION_ITEM_MAX) {
+      } else if (countKind(next, kind) >= GOOGLE_DRIVE_SELECTION_ITEM_MAX) {
         return current;
       } else {
         next.set(item.id, { id: item.id, name: item.name, kind });
@@ -508,8 +524,8 @@ export function GoogleDrivePicker({
       <div className="kern-picker-foot">
         <span aria-live="polite">
           {countLabel}
-          {selected.size >= GOOGLE_DRIVE_SELECTION_ITEM_MAX
-            ? ` · at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX} items`
+          {atListCap
+            ? ` · at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX} folders or files each`
             : ""}
         </span>
         <div className="kern-dialog-actions">
