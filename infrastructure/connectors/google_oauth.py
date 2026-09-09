@@ -35,6 +35,13 @@ class GoogleOAuthError(RuntimeError):
     """The Google OAuth token endpoint or revoke call failed."""
 
 
+class ConnectionStoreDelete:
+    """Mutator result that unlinks the grant file."""
+
+
+DELETE_GRANT = ConnectionStoreDelete()
+
+
 @dataclass(frozen=True, slots=True)
 class GoogleDriveSelectedItem:
     """Stable Drive identity plus a display name. Name is never an identifier."""
@@ -67,6 +74,7 @@ class GoogleOAuthConnection:
     reauthorization_required: bool
     folders: tuple[GoogleDriveSelectedItem, ...] = ()
     files: tuple[GoogleDriveSelectedItem, ...] = ()
+    document_count: int = 0
 
     def __repr__(self) -> str:
         return (
@@ -148,24 +156,27 @@ class GoogleOAuthConnectionStore:
 
     def clear(self) -> None:
         """Delete the stored grant under the same lock as ``save``."""
-        self.mutate(lambda _current: None)
+        self.mutate(lambda _current: DELETE_GRANT)
 
     def mutate(
         self,
         mutator: Callable[
-            [GoogleOAuthConnection | None], GoogleOAuthConnection | None
+            [GoogleOAuthConnection | None],
+            GoogleOAuthConnection | ConnectionStoreDelete | None,
         ],
     ) -> GoogleOAuthConnection | None:
         """Re-read, apply ``mutator``, and persist under the exclusive lock.
 
-        ``mutator`` receives the current grant (or ``None``) and returns the next
-        grant, or ``None`` to delete it. Callers that loaded earlier must merge
-        through this method so a concurrent selection change or disconnect is
-        not overwritten.
+        ``mutator`` receives the current grant (or ``None`` when missing or
+        unreadable) and returns the next grant, ``DELETE_GRANT`` to unlink the
+        file, or ``None`` to leave the file unchanged.
         """
         with ExclusiveLock(self._path):
-            next_value = mutator(self._load_unlocked())
+            current = self._load_unlocked()
+            next_value = mutator(current)
             if next_value is None:
+                return current
+            if isinstance(next_value, ConnectionStoreDelete):
                 try:
                     self._path.unlink()
                 except FileNotFoundError:
@@ -199,6 +210,7 @@ class GoogleOAuthConnectionStore:
             reauthorization_required=bool(raw.get("reauthorization_required")),
             folders=_parse_selected_items(raw.get("folders")),
             files=_parse_selected_items(raw.get("files")),
+            document_count=_optional_int(raw.get("document_count")) or 0,
         )
 
 
@@ -365,6 +377,7 @@ def _connection_payload(connection: GoogleOAuthConnection) -> dict[str, object]:
         "last_sync_unchanged": connection.last_sync_unchanged,
         "last_sync_failed": connection.last_sync_failed,
         "reauthorization_required": connection.reauthorization_required,
+        "document_count": connection.document_count,
     }
 
 

@@ -466,7 +466,6 @@
             "type": "string"
           },
           "name": {
-            "maxLength": 256,
             "minLength": 1,
             "title": "Name",
             "type": "string"
@@ -486,7 +485,6 @@
             "type": "string"
           },
           "name": {
-            "maxLength": 256,
             "minLength": 1,
             "title": "Name",
             "type": "string"
@@ -503,7 +501,7 @@
             "items": {
               "$ref": "#/components/schemas/GoogleDriveSelectedItemRequest"
             },
-            "maxItems": 20,
+            "maxItems": 100,
             "title": "Files",
             "type": "array"
           },
@@ -511,7 +509,7 @@
             "items": {
               "$ref": "#/components/schemas/GoogleDriveSelectedItemRequest"
             },
-            "maxItems": 20,
+            "maxItems": 100,
             "title": "Folders",
             "type": "array"
           }

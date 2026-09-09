@@ -473,6 +473,14 @@ def test_google_oauth_absolute_token_path_is_preserved(
     assert oauth.token_path == secret
 
 
+def test_google_oauth_in_repo_token_path_must_match_gitignore(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_OAUTH_TOKEN_PATH", "data/drive-token.json")
+    with pytest.raises(ValueError, match="google-oauth-\\*\\.json"):
+        load_settings()
+
+
 def test_google_oauth_redirect_must_be_absolute_http(env: pytest.MonkeyPatch) -> None:
     env.setenv("GOOGLE_OAUTH_REDIRECT_URI", "/oauth/callback")
     with pytest.raises(ValueError, match="GOOGLE_OAUTH_REDIRECT_URI"):

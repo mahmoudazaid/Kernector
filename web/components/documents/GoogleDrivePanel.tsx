@@ -25,10 +25,7 @@ import {
 } from "@/lib/api/connectors";
 import { ApiError } from "@/lib/api/errors";
 import { formatTimestamp } from "@/lib/format/timestamp";
-import {
-  consumeDriveCallback,
-  readDriveCallback,
-} from "@/lib/documents/drive-callback";
+import { consumeDriveCallback } from "@/lib/documents/drive-callback";
 
 export type GoogleDrivePanelProps = {
   apiBaseUrl: string;
@@ -109,7 +106,7 @@ export function GoogleDrivePanel({
   onConnectionChange,
   onCatalogChange,
   reloadToken = 0,
-  oauthCallback,
+  oauthCallback = null,
   pickerOpen: pickerOpenProp,
   onPickerOpenChange,
   onOAuthCallbackConsumed,
@@ -126,6 +123,7 @@ export function GoogleDrivePanel({
   const setPickerOpen = onPickerOpenChange ?? setInternalPickerOpen;
   const [selection, setSelection] =
     useState<GoogleDriveSelectionResponse>(EMPTY_SELECTION);
+  const [selectionReady, setSelectionReady] = useState(false);
   const busyRef = useRef(false);
   const aliveRef = useRef(true);
   const onConnectionChangeRef = useRef(onConnectionChange);
@@ -177,12 +175,7 @@ export function GoogleDrivePanel({
   }
 
   useEffect(() => {
-    if (oauthCallback === undefined && onOAuthCallbackConsumed) {
-      return;
-    }
     let ignore = false;
-    const drive =
-      oauthCallback !== undefined ? oauthCallback : readDriveCallback();
     void (async () => {
       const status = await loadStatus();
       if (ignore) {
@@ -191,24 +184,44 @@ export function GoogleDrivePanel({
       if (status?.connected) {
         await refreshSelection();
       }
-      if (ignore) {
-        return;
-      }
-      if (drive === "connected") {
-        setPickerOpen(true);
-      } else if (drive) {
-        setActionError(CALLBACK_ERRORS[drive] ?? CALLBACK_ERRORS.error);
-      }
-      if (drive != null) {
-        consumeDriveCallback();
-        onOAuthCallbackConsumedRef.current?.();
+    })();
+    return () => {
+      ignore = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
+  }, []);
+
+  useEffect(() => {
+    if (oauthCallback == null) {
+      return;
+    }
+    const drive = oauthCallback;
+    consumeDriveCallback();
+    onOAuthCallbackConsumedRef.current?.();
+    if (drive === "connected") {
+      setPickerOpen(true);
+    } else {
+      setActionError(CALLBACK_ERRORS[drive] ?? CALLBACK_ERRORS.error);
+    }
+  }, [oauthCallback, setPickerOpen]);
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      setSelectionReady(false);
+      return;
+    }
+    let ignore = false;
+    void (async () => {
+      await refreshSelection();
+      if (!ignore && aliveRef.current) {
+        setSelectionReady(true);
       }
     })();
     return () => {
       ignore = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / callback once
-  }, [oauthCallback]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- picker open
+  }, [pickerOpen]);
 
   useEffect(() => {
     if (reloadToken === 0) {
@@ -316,9 +329,6 @@ export function GoogleDrivePanel({
 
   async function openPicker() {
     setActionError(null);
-    if (connected) {
-      await refreshSelection();
-    }
     setPickerOpen(true);
   }
 
@@ -494,15 +504,17 @@ export function GoogleDrivePanel({
         </Button>
       </div>
 
-      <GoogleDrivePicker
-        open={pickerOpen}
-        apiBaseUrl={apiBaseUrl}
-        initialSelection={selection}
-        busy={busy}
-        listItems={listItems}
-        onConfirm={(next) => void onAddSelection(next)}
-        onCancel={() => setPickerOpen(false)}
-      />
+      {pickerOpen && selectionReady ? (
+        <GoogleDrivePicker
+          open
+          apiBaseUrl={apiBaseUrl}
+          initialSelection={selection}
+          busy={busy}
+          listItems={listItems}
+          onConfirm={(next) => void onAddSelection(next)}
+          onCancel={() => setPickerOpen(false)}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={confirmOpen}

@@ -12,10 +12,7 @@ import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
-import {
-  consumeDriveCallback,
-  readDriveCallback,
-} from "@/lib/documents/drive-callback";
+import { readDriveCallback } from "@/lib/documents/drive-callback";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
@@ -222,19 +219,15 @@ export function DocumentsPanel({
     useState<(typeof SOURCE_FILTERS)[number]>("All sources");
   const [driveConnected, setDriveConnected] = useState(false);
   const [driveReloadToken, setDriveReloadToken] = useState(0);
-  const [oauthCallback, setOauthCallback] = useState<
-    string | null | undefined
-  >(undefined);
+  const [oauthCallback, setOauthCallback] = useState<string | null>(
+    readDriveCallback,
+  );
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    setOauthCallback(readDriveCallback());
-  }, []);
 
   function retryAll() {
     if (settingsError) {
@@ -628,7 +621,6 @@ export function DocumentsPanel({
               reloadToken={driveReloadToken}
               oauthCallback={oauthCallback}
               onOAuthCallbackConsumed={() => {
-                consumeDriveCallback();
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
@@ -656,7 +648,6 @@ export function DocumentsPanel({
               reloadToken={driveReloadToken}
               oauthCallback={oauthCallback}
               onOAuthCallbackConsumed={() => {
-                consumeDriveCallback();
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
@@ -834,7 +825,7 @@ export function DocumentsPanel({
               </div>
             ) : null}
           </div>
-        ) : documents.length > 0 ? (
+        ) : visibleDocuments.length > 0 ? (
           <p className="kern-settings-hint">
             Select a document to see details or replace it
           </p>

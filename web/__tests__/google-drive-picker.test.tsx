@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { ApiError } from "@/lib/api/errors";
 import type { GoogleDriveBrowseItemResponse } from "@/lib/api/connectors";
+import { GOOGLE_DRIVE_SELECTION_ITEM_MAX } from "@/lib/api/connectors";
 
 const FOLDER: GoogleDriveBrowseItemResponse = {
   id: "folder-1",
@@ -273,5 +274,39 @@ describe("GoogleDrivePicker", () => {
 
     await user.click(save);
     expect(onConfirm).toHaveBeenCalledWith({ folders: [], files: [] });
+  });
+
+  it("does not add items past the saved-selection cap", async () => {
+    const user = userEvent.setup();
+    const extra: GoogleDriveBrowseItemResponse = {
+      ...FOLDER,
+      id: "folder-extra",
+      name: "Extra",
+    };
+    renderPicker({
+      initialSelection: {
+        folders: Array.from({ length: GOOGLE_DRIVE_SELECTION_ITEM_MAX }, (_, index) => ({
+          id: `folder-${index}`,
+          name: `Folder ${index}`,
+        })),
+        files: [],
+      },
+      listItems: async (options) => {
+        if (options.kind === "files") {
+          return { items: [], next_page_token: null };
+        }
+        return { items: [extra], next_page_token: null };
+      },
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    await user.click(await within(dialog).findByRole("checkbox", { name: /extra/i }));
+    expect(
+      within(dialog).getByText(new RegExp(`${GOOGLE_DRIVE_SELECTION_ITEM_MAX} selected`)),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(new RegExp(`at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX}`)),
+    ).toBeInTheDocument();
   });
 });

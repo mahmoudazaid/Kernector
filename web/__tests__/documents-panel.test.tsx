@@ -34,6 +34,7 @@ vi.mock("@/lib/api/connectors", () => ({
   googleDriveOAuthStartUrl: (baseUrl: string) =>
     `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
   GOOGLE_DRIVE_OAUTH_START_PATH: "/api/v1/connectors/google-drive/oauth/start",
+  GOOGLE_DRIVE_SELECTION_ITEM_MAX: 100,
 }));
 
 const SETTINGS: RuntimeSettingsResponse = {

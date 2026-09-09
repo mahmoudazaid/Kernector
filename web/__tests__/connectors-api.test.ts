@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api/errors";
 import {
   CONNECTOR_SYNC_TIMEOUT_MS,
   GOOGLE_DRIVE_OAUTH_START_PATH,
+  GOOGLE_DRIVE_SELECTION_TIMEOUT_MS,
   disconnectGoogleDrive,
   getGoogleDriveSelection,
   getGoogleDriveStatus,
@@ -131,6 +132,7 @@ describe("google drive connector wrappers", () => {
           folders: [{ id: "folder-1", name: "Specs" }],
           files: [],
         },
+        timeoutMs: GOOGLE_DRIVE_SELECTION_TIMEOUT_MS,
       }),
     );
   });

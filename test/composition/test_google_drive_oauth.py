@@ -253,6 +253,50 @@ def test_callback_reconnect_as_other_account_resets_scope(settings) -> None:
     assert stored.folder_count == 0
 
 
+class UnknownEmailGateway(FakeGateway):
+    def fetch_account_email(self, _access_token: str) -> str | None:
+        return None
+
+
+def test_callback_reconnect_with_unknown_email_keeps_scope(settings) -> None:
+    states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//old-refresh",
+            access_token=None,
+            account_email="ada@example.com",
+            folder_count=1,
+            last_synced_at="2026-09-08T12:00:00+00:00",
+            last_sync_new=1,
+            last_sync_updated=0,
+            last_sync_unchanged=2,
+            last_sync_failed=0,
+            reauthorization_required=True,
+            folders=(StoredItem(id="folder-1", name="Specs"),),
+            files=(),
+        )
+    )
+    state = states.issue()
+    url = complete_google_drive_oauth(
+        settings,
+        state=state,
+        code="4/auth-code",
+        error=None,
+        state_store=states,
+        connection_store=tokens,
+        gateway=UnknownEmailGateway(),
+    )
+
+    assert url.endswith("drive=connected")
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.account_email is None
+    assert stored.folders == (StoredItem(id="folder-1", name="Specs"),)
+    assert stored.last_synced_at == "2026-09-08T12:00:00+00:00"
+    assert stored.folder_count == 1
+
+
 def test_status_reads_store_not_memory(settings) -> None:
     assert google_drive_status(settings).connected is False
     GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
@@ -276,51 +320,13 @@ def test_status_reads_store_not_memory(settings) -> None:
     assert status.last_sync is None
 
 
-def test_status_counts_ready_drive_documents_only(
+def test_status_reads_persisted_document_count_without_catalog_scan(
     settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    catalog = InMemoryDocumentCatalog()
-    uploaded_at = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-    catalog.upsert(
-        CatalogDocument(
-            reference=SourceReference("file-ready", SourceType.GOOGLE_DRIVE),
-            file_name="ready.md",
-            title="ready",
-            content_format="markdown",
-            status=CatalogStatus.READY,
-            uploaded_at=uploaded_at,
-            chunk_count=1,
-            error=None,
-            revision="1",
-        )
-    )
-    catalog.upsert(
-        CatalogDocument(
-            reference=SourceReference("file-failed", SourceType.GOOGLE_DRIVE),
-            file_name="failed.md",
-            title=None,
-            content_format=None,
-            status=CatalogStatus.FAILED,
-            uploaded_at=uploaded_at,
-            chunk_count=0,
-            error="ConnectorError",
-            revision="1",
-        )
-    )
-    catalog.upsert(
-        CatalogDocument(
-            reference=SourceReference("upload-1", SourceType.KNOWLEDGE_DOCUMENT),
-            file_name="spec.md",
-            title="Spec",
-            content_format="markdown",
-            status=CatalogStatus.READY,
-            uploaded_at=uploaded_at,
-            chunk_count=3,
-            error=None,
-        )
-    )
     monkeypatch.setattr(
-        composition_container, "build_document_catalog", lambda _settings: catalog
+        composition_container,
+        "build_document_catalog",
+        lambda _settings: (_ for _ in ()).throw(AssertionError("status must not scan the catalog")),
     )
     GoogleOAuthConnectionStore(settings.google_oauth.token_path).save(
         GoogleOAuthConnection(
@@ -334,10 +340,11 @@ def test_status_counts_ready_drive_documents_only(
             last_sync_unchanged=None,
             last_sync_failed=None,
             reauthorization_required=False,
+            document_count=4,
         )
     )
 
-    assert google_drive_status(settings).document_count == 1
+    assert google_drive_status(settings).document_count == 4
 
 
 def test_disconnect_revokes_and_clears(settings) -> None:
@@ -413,9 +420,35 @@ def test_oauth_sync_persists_last_sync_counts(
         ),
     )
 
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("indexed", SourceType.GOOGLE_DRIVE),
+            file_name="ready.md",
+            title="ready",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+        )
+    )
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("drive:failed", SourceType.GOOGLE_DRIVE),
+            file_name="failed.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.FAILED,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=0,
+            error="ConnectorError",
+        )
+    )
+
     result = sync_google_drive_oauth(
         settings,
-        catalog=InMemoryDocumentCatalog(),
+        catalog=catalog,
         vector_store=object(),  # type: ignore[arg-type]
         connection_store=tokens,
     )
@@ -428,6 +461,8 @@ def test_oauth_sync_persists_last_sync_counts(
     assert stored.last_sync_failed == 0
     assert stored.last_synced_at is not None
     assert result.ingested_count == 1
+    assert stored.document_count == 1
+    assert stored.reauthorization_required is False
 
 
 def test_sync_without_selection_conflicts(
@@ -621,19 +656,23 @@ def test_oauth_sync_passes_factory_store_into_sync(
     )
 
     def _sync(*_args, **kwargs):
-        captured.append(kwargs.get("vector_store"))
+        captured.append(kwargs)
         return ConnectorSyncResponse(outcomes=())
 
     monkeypatch.setattr(composition_container, "sync_google_drive", _sync)
 
+    def _factory():
+        return store
+
     sync_google_drive_oauth(
         settings,
         catalog=InMemoryDocumentCatalog(),
-        vector_store_factory=lambda: store,
+        vector_store_factory=_factory,
         connection_store=tokens,
     )
 
-    assert captured == [store]
+    assert captured[0].get("vector_store") is None
+    assert captured[0].get("vector_store_factory") is _factory
 
 
 class FakeBrowseFiles:
@@ -790,6 +829,7 @@ def test_delete_drive_document_drops_file_from_selection(
             last_sync_unchanged=None,
             last_sync_failed=None,
             reauthorization_required=False,
+            document_count=2,
             files=(
                 StoredItem(id="file-9", name="guide.md"),
                 StoredItem(id="keep", name="keep.md"),
@@ -806,3 +846,4 @@ def test_delete_drive_document_drops_file_from_selection(
     loaded = tokens.load()
     assert loaded is not None
     assert [item.id for item in loaded.files] == ["keep"]
+    assert loaded.document_count == 1

@@ -575,3 +575,19 @@ def test_get_selection_loads_more_than_put_bound() -> None:
 
     assert response.status_code == 200
     assert len(response.json()["folders"]) == 30
+
+
+def test_get_selection_accepts_long_drive_names() -> None:
+    folders = (
+        GoogleDriveSelectedItem(id="folder-1", name="n" * 3000),
+    )
+    app = create_app()
+    app.dependency_overrides[get_google_drive_selection_read] = lambda: (
+        lambda: GoogleDriveSelection(folders=folders, files=())
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/v1/connectors/google-drive/selection")
+
+    assert response.status_code == 200
+    assert response.json()["folders"][0]["name"] == "n" * 3000

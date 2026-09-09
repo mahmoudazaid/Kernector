@@ -4,6 +4,7 @@ import importlib.util
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -495,6 +496,7 @@ _DRIVE_CLIENT_MISSING_MESSAGE = (
 )
 _DRIVE_ITEM_ID = re.compile(r"^(root|[A-Za-z0-9_-]{1,128})$")
 _DRIVE_SELECTION_ID = re.compile(r"^(?!root$)[A-Za-z0-9_-]{1,128}$")
+_DRIVE_ITEM_NAME_MAX = 256
 _DRIVE_QUERY_MAX = 200
 _SELECTION_INACCESSIBLE_DETAIL = "A selected Drive item is not accessible."
 _SELECTION_KIND_DETAIL = "A selected Drive item does not match the requested type."
@@ -614,16 +616,6 @@ def _hub_redirect(settings: Settings, *, result: str) -> str:
     return f"{base}{separator}drive={result}"
 
 
-def _drive_document_count(settings: Settings) -> int:
-    catalog = build_document_catalog(settings)
-    return sum(
-        1
-        for row in catalog.all()
-        if row.reference.source_type == SourceType.GOOGLE_DRIVE
-        and row.status is CatalogStatus.READY
-    )
-
-
 def google_drive_status(settings: Settings) -> GoogleDriveStatus:
     """Report SA flags plus user OAuth connection metadata.
 
@@ -669,7 +661,7 @@ def google_drive_status(settings: Settings) -> GoogleDriveStatus:
         connected=connection is not None,
         oauth_ready=_oauth_ready(settings),
         account_email=None if connection is None else connection.account_email,
-        document_count=_drive_document_count(settings),
+        document_count=0 if connection is None else connection.document_count,
         folder_count=None if connection is None else len(connection.folders),
         last_sync=last_sync,
         reauthorization_required=(
@@ -772,6 +764,8 @@ def complete_google_drive_oauth(
         def _next(existing):
             if (
                 existing is not None
+                and email is not None
+                and existing.account_email is not None
                 and existing.account_email != email
             ):
                 existing = None
@@ -788,6 +782,7 @@ def complete_google_drive_oauth(
                 reauthorization_required=False,
                 folders=() if existing is None else existing.folders,
                 files=() if existing is None else existing.files,
+                document_count=0 if existing is None else existing.document_count,
             )
 
         tokens_store.mutate(_next)
@@ -844,11 +839,15 @@ def _require_drive_grant(settings: Settings, *, connection_store=None):
 
 
 def _mark_reauth(tokens_store, connection, error: BaseException):
-    tokens_store.mutate(
-        lambda current: None
-        if current is None
-        else replace(current, reauthorization_required=True)
-    )
+    def apply(current):
+        if current is not None:
+            return replace(current, reauthorization_required=True)
+        path = getattr(tokens_store, "_path", None)
+        if path is not None and path.is_file():
+            return replace(connection, reauthorization_required=True)
+        return None
+
+    tokens_store.mutate(apply)
     raise GoogleDriveReauthorizationRequiredError(
         "Google Drive authorization was revoked"
     ) from error
@@ -1007,13 +1006,8 @@ def put_google_drive_selection(
             refresh_token=connection.refresh_token,
             files=files_resource,
         )
-        resolved_folders = tuple(
-            _validate_selected_item(connector, item, expected_kind="folder")
-            for item in folder_items
-        )
-        resolved_files = tuple(
-            _validate_selected_item(connector, item, expected_kind="file")
-            for item in file_items
+        resolved_folders, resolved_files = _validate_selection_items(
+            connector, folder_items, file_items
         )
     except ConnectorAuthError as error:
         _mark_reauth(tokens_store, connection, error)
@@ -1062,6 +1056,36 @@ def _dedupe_selected(
     return tuple(unique)
 
 
+def _clamped_drive_name(name: str) -> str:
+    stripped = name.strip()
+    return stripped[:_DRIVE_ITEM_NAME_MAX]
+
+
+def _validate_selection_items(
+    connector,
+    folder_items: Sequence[GoogleDriveSelectedItem],
+    file_items: Sequence[GoogleDriveSelectedItem],
+) -> tuple[tuple[GoogleDriveSelectedItem, ...], tuple[GoogleDriveSelectedItem, ...]]:
+    pending = [(item, "folder") for item in folder_items] + [
+        (item, "file") for item in file_items
+    ]
+    if not pending:
+        return (), ()
+    resolved: list[GoogleDriveSelectedItem | None] = [None] * len(pending)
+    workers = min(8, len(pending))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_validate_selected_item, connector, item, expected_kind=kind): index
+            for index, (item, kind) in enumerate(pending)
+        }
+        for future in as_completed(futures):
+            resolved[futures[future]] = future.result()
+    folder_count = len(folder_items)
+    folders = tuple(resolved[:folder_count])  # type: ignore[arg-type]
+    files = tuple(resolved[folder_count:])  # type: ignore[arg-type]
+    return folders, files
+
+
 def _validate_selected_item(
     connector,
     item: GoogleDriveSelectedItem,
@@ -1073,7 +1097,8 @@ def _validate_selected_item(
         raise InputRejectedError(_SELECTION_KIND_DETAIL)
     if expected_kind == "file" and not remote.supported:
         raise InputRejectedError(_SELECTION_KIND_DETAIL)
-    return GoogleDriveSelectedItem(id=remote.id, name=remote.name)
+    name = _clamped_drive_name(remote.name) or _clamped_drive_name(item.name)
+    return GoogleDriveSelectedItem(id=remote.id, name=name)
 
 
 def build_google_drive_oauth_connector(
@@ -1182,9 +1207,6 @@ def sync_google_drive_oauth(
         raise GoogleDriveSelectionRequiredError(
             "Google Drive sync scope is not selected"
         )
-    store = vector_store
-    if store is None and vector_store_factory is not None:
-        store = vector_store_factory()
     try:
         working_catalog = catalog if catalog is not None else build_document_catalog(settings)
         before = {
@@ -1203,18 +1225,12 @@ def sync_google_drive_oauth(
             settings,
             connector=connector,
             catalog=working_catalog,
-            vector_store=store,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
         )
     except ConnectorSyncError as error:
         if isinstance(error.__cause__, ConnectorAuthError):
-            tokens_store.mutate(
-                lambda current: None
-                if current is None
-                else replace(current, reauthorization_required=True)
-            )
-            raise GoogleDriveReauthorizationRequiredError(
-                "Google Drive authorization was revoked"
-            ) from error
+            _mark_reauth(tokens_store, connection, error)
         raise
     new_count = sum(
         1
@@ -1229,6 +1245,12 @@ def sync_google_drive_oauth(
         and outcome.source_id in before
     )
     synced_at = datetime.now(timezone.utc).isoformat()
+    indexed_count = sum(
+        1
+        for row in working_catalog.all()
+        if row.reference.source_type == SourceType.GOOGLE_DRIVE
+        and row.status is CatalogStatus.READY
+    )
     tokens_store.mutate(
         lambda current: None
         if current is None
@@ -1239,7 +1261,7 @@ def sync_google_drive_oauth(
             last_sync_updated=updated_count,
             last_sync_unchanged=result.skipped_count,
             last_sync_failed=result.failed_count,
-            reauthorization_required=False,
+            document_count=indexed_count,
         )
     )
     return result
@@ -1280,6 +1302,7 @@ def sync_google_drive(
     connector: KnowledgeConnector | None = None,
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> ConnectorSyncResponse:
     """Synchronize the configured Drive folder into the knowledge base.
 
@@ -1291,6 +1314,8 @@ def sync_google_drive(
         connector (KnowledgeConnector | None): Injected connector for tests.
         catalog (DocumentCatalog | None): Injected catalog for tests.
         vector_store (VectorStore | None): Shared store for the run, if already built.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store builder
+            used by ingest instead of constructing the store up front.
 
     Returns:
         ConnectorSyncResponse: Per-document outcomes in listing order.
@@ -1309,7 +1334,10 @@ def sync_google_drive(
         def get_store() -> VectorStore:
             nonlocal shared_store
             if shared_store is None:
-                shared_store = build_vector_store(settings)
+                if vector_store_factory is not None:
+                    shared_store = vector_store_factory()
+                else:
+                    shared_store = build_vector_store(settings)
             return shared_store
 
         return SyncConnectorDocuments(
@@ -1440,12 +1468,7 @@ def replace_uploaded_document(
         ops = build_manage_uploaded_documents(
             settings, vector_store=vector_store
         )
-        row = ops.resolve(reference.source_id)
-        if row is None:
-            raise UnknownDocumentError(reference=reference)
-        if row.reference.source_type != SourceType.KNOWLEDGE_DOCUMENT:
-            raise UnknownDocumentError(reference=reference)
-        return ops.replace(row.reference, payload)
+        return ops.replace(reference, payload)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error
     except UnreadableDocumentError as error:
@@ -1511,26 +1534,25 @@ def delete_uploaded_document(
         row is not None
         and row.reference.source_type == SourceType.GOOGLE_DRIVE
     ):
-        _deselect_google_drive_file(settings, row.reference.source_id)
+        _after_google_drive_document_deleted(
+            settings,
+            row.reference.source_id,
+            was_ready=row.status is CatalogStatus.READY,
+        )
 
 
-def _deselect_google_drive_file(settings: Settings, file_id: str) -> None:
-    """Drop ``file_id`` from the saved Drive file roots. Missing grants no-op."""
-    tokens_store = _connection_store(settings)
-    connection = tokens_store.load()
-    if connection is None:
-        return
-    remaining = tuple(
-        item for item in connection.files if item.id != file_id
-    )
-    if remaining == connection.files:
-        return
-    tokens_store.mutate(
+def _after_google_drive_document_deleted(
+    settings: Settings, file_id: str, *, was_ready: bool
+) -> None:
+    """Drop ``file_id`` from saved file roots and keep the indexed count in sync."""
+    decrement = 1 if was_ready else 0
+    _connection_store(settings).mutate(
         lambda current: None
         if current is None
         else replace(
             current,
             files=tuple(item for item in current.files if item.id != file_id),
+            document_count=max(0, current.document_count - decrement),
         )
     )
 

@@ -127,14 +127,14 @@ class GoogleDriveSelectedItemResponse(BaseModel):
     """Saved sync root: Drive ID plus a presentation name."""
 
     id: str = Field(min_length=1, max_length=128)
-    name: str = Field(min_length=1, max_length=256)
+    name: str = Field(min_length=1)
 
 
 class GoogleDriveSelectedItemRequest(BaseModel):
     """PUT selection item. ``root`` is rejected so sync cannot cover all Drive."""
 
     id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]{1,128}$")
-    name: str = Field(min_length=1, max_length=256)
+    name: str = Field(min_length=1)
 
     @field_validator("id")
     @classmethod
@@ -144,7 +144,7 @@ class GoogleDriveSelectedItemRequest(BaseModel):
         return value
 
 
-_SELECTION_LIST_MAX = 20
+_SELECTION_LIST_MAX = 100
 
 
 class GoogleDriveSelectionResponse(BaseModel):

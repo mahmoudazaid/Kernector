@@ -621,6 +621,30 @@ def test_inaccessible_nested_folder_does_not_look_like_a_complete_listing() -> N
         _connector(NestedForbidden(), recursive=True).list_documents()
 
 
+def test_inaccessible_nested_folder_404_is_skipped() -> None:
+    class NestedMissing(FakeDriveFiles):
+        def list(self, **kwargs: object) -> FakeListRequest:
+            self.list_calls.append(dict(kwargs))
+            query = str(kwargs.get("q") or "")
+            if "nested" in query:
+                return FakeListRequest(error=_http_error(404))
+            return FakeListRequest(
+                {
+                    "files": [
+                        _file(
+                            "nested",
+                            "Nested",
+                            mime_type="application/vnd.google-apps.folder",
+                        ),
+                        _file("root-file", "root.md"),
+                    ]
+                }
+            )
+
+    documents = _connector(NestedMissing(), recursive=True).list_documents()
+    assert [document.source_id for document in documents] == ["root-file"]
+
+
 def test_recursive_folder_discovers_nested_supported_files() -> None:
     files = FakeDriveFiles(
         children_by_parent={

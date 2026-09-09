@@ -125,10 +125,10 @@ describe("GoogleDrivePanel", () => {
   });
 
   it("shows an accessible error after unconfigured callback", async () => {
-    window.history.pushState({}, "", "/documents?drive=unconfigured");
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
+        oauthCallback="unconfigured"
         getStatus={async () => status({ oauth_ready: false })}
       />,
     );
@@ -191,10 +191,10 @@ describe("GoogleDrivePanel", () => {
   });
 
   it("shows an accessible error after denial and stays available", async () => {
-    window.history.pushState({}, "", "/documents?drive=denied");
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
+        oauthCallback="denied"
         getStatus={async () => status()}
       />,
     );
@@ -205,14 +205,13 @@ describe("GoogleDrivePanel", () => {
     expect(
       screen.getByRole("link", { name: /^connect$/i }),
     ).toBeInTheDocument();
-    expect(window.location.search).not.toContain("drive=");
   });
 
   it("shows an accessible error after invalid_state", async () => {
-    window.history.pushState({}, "", "/documents?drive=invalid_state");
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
+        oauthCallback="invalid_state"
         getStatus={async () => status()}
       />,
     );
@@ -459,10 +458,10 @@ describe("GoogleDrivePanel", () => {
   });
 
   it("opens the folder picker after a successful OAuth callback", async () => {
-    window.history.pushState({}, "", "/documents?drive=connected");
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
+        oauthCallback="connected"
         getStatus={async () => SETUP_REQUIRED}
         loadSelection={emptySelection}
         listItems={folderPage}
@@ -474,8 +473,43 @@ describe("GoogleDrivePanel", () => {
     });
     expect(within(dialog).queryByRole("tab")).not.toBeInTheDocument();
     expect(await within(dialog).findByText("Specs")).toBeInTheDocument();
-    expect(window.location.search).not.toContain("drive=");
     expect(document.body.textContent).not.toMatch(/ya29\.|1\/\/|client-secret/);
+  });
+
+  it("does not seed the picker from an empty selection while roots are loading", async () => {
+    let resolveSelection: (value: {
+      folders: { id: string; name: string }[];
+      files: { id: string; name: string }[];
+    }) => void = () => {};
+    const pending = new Promise<{
+      folders: { id: string; name: string }[];
+      files: { id: string; name: string }[];
+    }>((resolve) => {
+      resolveSelection = resolve;
+    });
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        oauthCallback="connected"
+        getStatus={async () => SETUP_REQUIRED}
+        loadSelection={async () => pending}
+        listItems={folderPage}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("dialog", { name: /choose from google drive/i }),
+    ).not.toBeInTheDocument();
+    resolveSelection({
+      folders: [{ id: "folder-1", name: "Specs" }],
+      files: [],
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    expect(
+      await within(dialog).findByRole("checkbox", { name: /specs/i }),
+    ).toBeChecked();
   });
 
   it("saves the selection by Drive ID and starts one initial sync", async () => {

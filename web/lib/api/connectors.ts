@@ -17,6 +17,11 @@ export type GoogleDriveSelectedItemResponse =
 /** A first whole-folder sync fetches, extracts, and embeds every file. */
 export const CONNECTOR_SYNC_TIMEOUT_MS = 300_000;
 
+/** PUT selection validates each Drive ID; 100 items can exceed the default 10s. */
+export const GOOGLE_DRIVE_SELECTION_TIMEOUT_MS = 120_000;
+
+export const GOOGLE_DRIVE_SELECTION_ITEM_MAX = 100;
+
 export const GOOGLE_DRIVE_OAUTH_START_PATH =
   "/api/v1/connectors/google-drive/oauth/start";
 
@@ -132,7 +137,7 @@ export async function putGoogleDriveSelection(
       files: options.selection.files ?? [],
     },
     signal: options.signal,
-    timeoutMs: options.timeoutMs,
+    timeoutMs: options.timeoutMs ?? GOOGLE_DRIVE_SELECTION_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
 

@@ -92,6 +92,17 @@ def test_connection_store_round_trip(tmp_path: Path) -> None:
     assert store.load() is None
 
 
+def test_mutate_none_leaves_unreadable_grant(tmp_path: Path) -> None:
+    path = tmp_path / "conn.json"
+    path.write_text("{not-json", encoding="utf-8")
+    store = GoogleOAuthConnectionStore(path)
+
+    result = store.mutate(lambda current: None if current is None else current)
+
+    assert result is None
+    assert path.read_text(encoding="utf-8") == "{not-json"
+
+
 def test_connection_file_is_never_world_readable(tmp_path: Path) -> None:
     path = tmp_path / "conn.json"
     previous = os.umask(0)

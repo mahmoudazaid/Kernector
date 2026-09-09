@@ -7,6 +7,7 @@ import { Loader } from "@/components/ui/Loader";
 import { ApiError } from "@/lib/api/errors";
 import {
   listGoogleDriveItems,
+  GOOGLE_DRIVE_SELECTION_ITEM_MAX,
   type GoogleDriveBrowseItemResponse,
   type GoogleDriveSelectionResponse,
   type ListGoogleDriveItemsOptions,
@@ -314,6 +315,8 @@ export function GoogleDrivePicker({
       const next = new Map(current);
       if (next.has(item.id)) {
         next.delete(item.id);
+      } else if (next.size >= GOOGLE_DRIVE_SELECTION_ITEM_MAX) {
+        return current;
       } else {
         next.set(item.id, { id: item.id, name: item.name, kind });
       }
@@ -503,7 +506,12 @@ export function GoogleDrivePicker({
       </div>
 
       <div className="kern-picker-foot">
-        <span aria-live="polite">{countLabel}</span>
+        <span aria-live="polite">
+          {countLabel}
+          {selected.size >= GOOGLE_DRIVE_SELECTION_ITEM_MAX
+            ? ` · at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX} items`
+            : ""}
+        </span>
         <div className="kern-dialog-actions">
           <Button variant="secondary" onClick={onCancel} disabled={busy}>
             Cancel
