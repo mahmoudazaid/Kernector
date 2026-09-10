@@ -150,12 +150,11 @@ def test_document_catalog_absolute_sql_path_is_preserved(
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
-def test_blank_document_catalog_sql_path_is_rejected(
+def test_blank_document_catalog_sql_path_is_absent(
     env: pytest.MonkeyPatch, raw: str
 ) -> None:
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", raw)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_SQL_PATH"):
-        load_settings()
+    assert load_settings().document_catalog.sql_path is None
 
 
 def test_absent_workspace_id_is_none(env: pytest.MonkeyPatch) -> None:
@@ -196,10 +195,10 @@ def test_retired_catalog_env_does_not_fail_settings_load(
 ) -> None:
     """Retired keys are rejected when building the catalog, not at load."""
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
-    env.setenv("DOCUMENT_CATALOG_" + "BACKEND", "json")
+    env.setenv("DOCUMENT_CATALOG_BACKEND", "json")
     assert load_settings().document_catalog.sql_path == tmp_path / "catalog.sqlite"
-    env.delenv("DOCUMENT_CATALOG_" + "BACKEND", raising=False)
-    env.setenv("DOCUMENT_CATALOG_" + "PATH", str(tmp_path / "uploads.json"))
+    env.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
+    env.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "uploads.json"))
     assert load_settings().document_catalog.workspace_id == "test-workspace"
 
 

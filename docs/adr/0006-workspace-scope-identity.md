@@ -65,11 +65,10 @@ personalisation only. It explicitly excludes full organisation RBAC and is
    [ADR 0007](0007-retire-json-document-catalog.md).**
    `JsonDocumentCatalog` is retired; it is no longer a live adapter.
 
-7. **Minimal authorization rule (SQL only)** — when SQL is selected, the
-   current trusted single-user deployment is authorized only for its configured
-   workspace. A bound `SqlDocumentCatalog` must not read, update, list, or
-   delete another workspace’s rows. Do not imply the current JSON runtime has
-   a configured workspace.
+7. **Minimal authorization rule (SQL)** — the current trusted single-user
+   deployment is authorized only for its configured workspace. A bound
+   `SqlDocumentCatalog` must not read, update, list, or delete another
+   workspace’s rows.
 
 8. **~~JSON→SQL importer~~** — **Superseded by
    [ADR 0007](0007-retire-json-document-catalog.md).** The migrator and migrate

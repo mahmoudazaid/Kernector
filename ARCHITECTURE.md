@@ -411,7 +411,8 @@ adapter instance. Uniqueness is `(workspace_id, source_type, source_id)` per
 unscoped. Application and presentation do not branch on adapter type.
 
 - **SQLite path** — `DOCUMENT_CATALOG_SQL_PATH` (default
-  `data/catalog/catalog.sqlite`).
+  `data/catalog/catalog.sqlite`). Blank values are stored as absent and fail at
+  catalog build, not process bootstrap.
 - **Workspace** — `DOCUMENT_CATALOG_WORKSPACE_ID`. There is no reserved
   `"default"` workspace. `load_settings()` stores the stripped value when
   present (blank is absent) and does not validate charset or length.

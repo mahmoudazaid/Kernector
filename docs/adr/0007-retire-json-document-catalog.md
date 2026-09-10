@@ -23,8 +23,8 @@ writes, and no `workspace_id` scope.
    `DOCUMENT_CATALOG_PATH`. If either is present and non-blank,
    building the catalog fails with `ConfigurationError` and points operators at
    `DOCUMENT_CATALOG_SQL_PATH` / `DOCUMENT_CATALOG_WORKSPACE_ID`. Process
-   bootstrap (`load_settings`, HTTP CORS, OpenAPI export, CLI `--help`) does
-   not inherit this failure.
+   bootstrap (`load_settings`, HTTP CORS, OpenAPI export) does not inherit this
+   failure.
 3. **Workspace at use** — `load_settings()` stores a stripped
    `DOCUMENT_CATALOG_WORKSPACE_ID` when present (blank is absent) without
    charset or length validation, so process bootstrap stays catalog-agnostic.

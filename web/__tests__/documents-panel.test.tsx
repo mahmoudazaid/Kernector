@@ -329,8 +329,53 @@ describe("DocumentsPanel", () => {
     const alert = await screen.findByRole("alert");
     expect(dialog.contains(alert)).toBe(true);
     expect(alert).toHaveTextContent(/document upload failed/i);
+    expect(dialog).toHaveAttribute(
+      "aria-describedby",
+      "hub-upload-error",
+    );
     expect(screen.getByText(/selected: spec\.md/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^upload new$/i })).toBeEnabled();
+  });
+
+  it("does not show unrelated feedback errors inside the upload dialog", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Delete failed",
+        detail: "The document operation failed.",
+        code: "document_operation_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        remove={remove}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(
+      within(deleteDialog).getByRole("button", { name: /^delete$/i }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /document operation failed/i,
+    );
+
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await openUploadModal(user);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /document operation failed/i,
+    );
   });
 
   it("replaces only the selected document's source id", async () => {

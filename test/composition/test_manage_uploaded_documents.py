@@ -102,6 +102,15 @@ def test_build_document_catalog_requires_workspace(settings: Settings) -> None:
         composition_container.build_document_catalog(missing)
 
 
+def test_build_document_catalog_rejects_blank_sql_path(settings: Settings) -> None:
+    blank = replace(
+        settings,
+        document_catalog=replace(settings.document_catalog, sql_path=None),
+    )
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_SQL_PATH"):
+        composition_container.build_document_catalog(blank)
+
+
 def test_build_document_catalog_maps_invalid_workspace_value_error(
     settings: Settings,
 ) -> None:
@@ -119,13 +128,21 @@ def test_build_document_catalog_maps_invalid_workspace_value_error(
 def test_build_document_catalog_rejects_retired_env_keys(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("DOCUMENT_CATALOG_" + "BACKEND", "sql")
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
     with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_BACKEND is retired"):
         composition_container.build_document_catalog(settings)
-    monkeypatch.delenv("DOCUMENT_CATALOG_" + "BACKEND", raising=False)
-    monkeypatch.setenv("DOCUMENT_CATALOG_" + "PATH", "/tmp/uploads.json")
+    monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
+    monkeypatch.setenv("DOCUMENT_CATALOG_PATH", "/tmp/uploads.json")
     with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_PATH is retired"):
         composition_container.build_document_catalog(settings)
+
+
+def test_build_document_catalog_ignores_blank_retired_env_keys(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "")
+    monkeypatch.setenv("DOCUMENT_CATALOG_PATH", "   ")
+    assert composition_container.build_document_catalog(settings) is not None
 
 
 def test_list_create_replace_delete_round_trip(

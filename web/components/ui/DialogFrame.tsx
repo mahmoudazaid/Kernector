@@ -28,6 +28,8 @@ export type DialogFrameProps = {
   descriptionId?: string;
   panelClassName?: string;
   initialFocusRef?: RefObject<HTMLElement | null>;
+  /** When set, focus returns here on close instead of the previously focused node. */
+  restoreFocusRef?: RefObject<HTMLElement | null>;
   dismissDisabled?: boolean;
   onDismiss: () => void;
   children?: ReactNode;
@@ -48,6 +50,7 @@ export function DialogFrame({
   descriptionId,
   panelClassName,
   initialFocusRef,
+  restoreFocusRef,
   dismissDisabled = false,
   onDismiss,
   children,
@@ -59,6 +62,8 @@ export function DialogFrame({
   dismissDisabledRef.current = dismissDisabled;
   const initialFocusRefStored = useRef(initialFocusRef);
   initialFocusRefStored.current = initialFocusRef;
+  const restoreFocusRefStored = useRef(restoreFocusRef);
+  restoreFocusRefStored.current = restoreFocusRef;
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -110,7 +115,8 @@ export function DialogFrame({
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      previous?.focus();
+      const restore = restoreFocusRefStored.current?.current ?? previous;
+      restore?.focus();
     };
   }, [open]);
 

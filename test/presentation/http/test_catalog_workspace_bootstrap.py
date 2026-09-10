@@ -33,10 +33,20 @@ def test_create_app_and_health_work_with_malformed_catalog_workspace(
 def test_create_app_and_health_work_with_retired_catalog_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DOCUMENT_CATALOG_" + "BACKEND", "sql")
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
     app = create_app()
     response = TestClient(app).get("/health")
     assert response.status_code == 200
+
+
+def test_create_app_and_health_work_with_blank_sql_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", "")
+    app = create_app()
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert load_settings().document_catalog.sql_path is None
 
 
 def test_list_documents_reports_configuration_error_without_workspace(

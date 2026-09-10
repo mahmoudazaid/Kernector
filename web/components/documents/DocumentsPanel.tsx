@@ -227,14 +227,32 @@ export function DocumentsPanel({
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const uploadCardRef = useRef<HTMLElement>(null);
+  const uploadErrorRef = useRef<HTMLDivElement>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const focusFeedbackAfterUploadRef = useRef(false);
 
   useEffect(() => {
     captureDriveCallback();
   }, []);
+
+  useEffect(() => {
+    if (!focusFeedbackAfterUploadRef.current || feedback.kind !== "success") {
+      return;
+    }
+    focusFeedbackAfterUploadRef.current = false;
+    feedbackRef.current?.focus();
+  }, [feedback]);
+
+  useEffect(() => {
+    if (uploadOpen && uploadError) {
+      uploadErrorRef.current?.focus();
+    }
+  }, [uploadOpen, uploadError]);
 
   function retryAll() {
     if (settingsError) {
@@ -366,22 +384,21 @@ export function DocumentsPanel({
     const file = uploadFile;
     const validated = validateUpload(file, constraints);
     if (!validated.ok) {
-      setFeedback({ kind: "error", message: validated.message });
+      setUploadError(validated.message);
       return;
     }
+    setUploadError(null);
     setUploadOpen(false);
     setUploading(true);
     setBusy(true);
     setFeedback({ kind: "idle" });
-    queueMicrotask(() => {
-      uploadCardRef.current?.focus();
-    });
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
         file,
       });
       clearUploadInput();
+      focusFeedbackAfterUploadRef.current = true;
       setFeedback({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
@@ -390,7 +407,7 @@ export function DocumentsPanel({
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      setUploadError(actionErrorMessage(error));
       setUploadOpen(true);
     } finally {
       setUploading(false);
@@ -546,22 +563,26 @@ export function DocumentsPanel({
       </div>
 
       {catalog.kind === "error" || settingsError ? (
-        <div
-          className="kern-settings-callout kern-settings-callout--error"
-          role="alert"
-        >
-          {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
-          {settingsError ? <p>{settingsError}</p> : null}
-          <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
-            {retryBusy ? "Checking…" : "Retry"}
-          </Button>
-        </div>
+        !uploadOpen ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+          >
+            {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
+            {settingsError ? <p>{settingsError}</p> : null}
+            <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+              {retryBusy ? "Checking…" : "Retry"}
+            </Button>
+          </div>
+        ) : null
       ) : null}
 
-      {feedback.kind !== "idle" && !uploadOpen ? (
+      {feedback.kind !== "idle" ? (
         <div
+          ref={feedbackRef}
           className={`kern-settings-callout kern-settings-callout--${feedback.kind === "success" ? "ok" : "error"}`}
           role="status"
+          tabIndex={-1}
         >
           <p>{feedback.message}</p>
         </div>
@@ -625,7 +646,10 @@ export function DocumentsPanel({
               <Button
                 type="button"
                 disabled={busy || !constraints}
-                onClick={() => setUploadOpen(true)}
+                onClick={() => {
+                  setUploadError(null);
+                  setUploadOpen(true);
+                }}
               >
                 <UploadIcon />
                 Add files
@@ -889,10 +913,14 @@ export function DocumentsPanel({
       <DialogFrame
         open={uploadOpen}
         titleId="hub-upload-title"
+        descriptionId={uploadError ? "hub-upload-error" : undefined}
         panelClassName="kern-hub-upload-dialog"
+        initialFocusRef={uploadError ? uploadErrorRef : undefined}
+        restoreFocusRef={uploadCardRef}
         dismissDisabled={busy}
         onDismiss={() => {
           setUploadOpen(false);
+          setUploadError(null);
           clearUploadInput();
         }}
       >
@@ -903,12 +931,15 @@ export function DocumentsPanel({
           Files become part of the shared document catalog. A system-managed
           source ID is assigned automatically.
         </p>
-        {feedback.kind === "error" ? (
+        {uploadError ? (
           <div
+            ref={uploadErrorRef}
+            id="hub-upload-error"
             className="kern-settings-callout kern-settings-callout--error"
             role="alert"
+            tabIndex={-1}
           >
-            <p>{feedback.message}</p>
+            <p>{uploadError}</p>
           </div>
         ) : null}
         <form className="kern-documents-form" onSubmit={onUpload}>
@@ -933,6 +964,7 @@ export function DocumentsPanel({
               disabled={busy}
               onClick={() => {
                 setUploadOpen(false);
+                setUploadError(null);
                 clearUploadInput();
               }}
             >

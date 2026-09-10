@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — Decision 4 superseded for the live runtime by
+[ADR 0007](0007-retire-json-document-catalog.md).
 
 ## Context
 

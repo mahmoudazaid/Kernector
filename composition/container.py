@@ -95,7 +95,7 @@ from domain.ports import (
 )
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
-from infrastructure.catalog.workspace import require_workspace_id
+from infrastructure.catalog.workspace import parse_workspace_id
 from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
@@ -516,19 +516,28 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
         DocumentCatalog: ``SqlDocumentCatalog`` bound to the configured workspace.
 
     Raises:
-        ConfigurationError: ``DOCUMENT_CATALOG_WORKSPACE_ID`` is absent or
-            invalid, or a retired catalog env key is still set.
+        ConfigurationError: ``DOCUMENT_CATALOG_SQL_PATH`` or
+            ``DOCUMENT_CATALOG_WORKSPACE_ID`` is absent or invalid, or a retired
+            catalog env key is still set.
         DocumentOperationError: The SQLite file or schema is unusable.
     """
     _reject_retired_catalog_env()
     catalog = settings.document_catalog
-    try:
-        workspace_id = require_workspace_id(catalog.workspace_id)
-    except ValueError as error:
-        detail = str(error).removeprefix("workspace_id ").strip()
+    if catalog.sql_path is None:
         raise ConfigurationError(
-            f"DOCUMENT_CATALOG_WORKSPACE_ID {detail}"
+            "DOCUMENT_CATALOG_SQL_PATH must be non-empty, got ''"
+        )
+    try:
+        workspace_id = parse_workspace_id(catalog.workspace_id)
+    except ValueError as error:
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
         ) from error
+    if workspace_id is None:
+        raise ConfigurationError(
+            "DOCUMENT_CATALOG_WORKSPACE_ID is required; it "
+            "must fullmatch [A-Za-z0-9_-]+ and be at most 64 characters"
+        )
     try:
         return SqlDocumentCatalog(catalog.sql_path, workspace_id)
     except CatalogError as error:

@@ -52,13 +52,15 @@ class DocumentCatalogSettings:
     """Uploaded-document catalog adapter configuration.
 
     Args:
-        sql_path (Path): SQLite file used by the SQL catalog adapter.
+        sql_path (Path | None): SQLite file used by the SQL catalog adapter.
+            ``None`` when ``DOCUMENT_CATALOG_SQL_PATH`` is blank; rejected when
+            composition builds the catalog.
         workspace_id (str | None): Bound SQL workspace identity. Stored as the
             stripped env value when present (including malformed values);
             validated when composition builds the catalog.
     """
 
-    sql_path: Path
+    sql_path: Path | None
     workspace_id: str | None
 
 
@@ -306,25 +308,29 @@ def _load_knowledge_settings() -> KnowledgeSettings:
     )
 
 
+def _optional_env(name: str) -> str | None:
+    """Return a stripped env value, or ``None`` when absent or blank."""
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
 def _load_document_catalog_settings() -> DocumentCatalogSettings:
-    sql_path = os.getenv(
+    raw_sql = os.getenv(
         "DOCUMENT_CATALOG_SQL_PATH", "data/catalog/catalog.sqlite"
     )
-    if not sql_path.strip():
-        raise ValueError(
-            f"DOCUMENT_CATALOG_SQL_PATH must be non-empty, got {sql_path!r}"
-        )
-    # Strip only — charset / presence checks run at catalog build so HTTP
-    # bootstrap, OpenAPI export, and ingest --help stay catalog-agnostic.
-    raw_workspace = os.getenv("DOCUMENT_CATALOG_WORKSPACE_ID")
-    workspace_id = (
-        raw_workspace.strip()
-        if raw_workspace is not None and raw_workspace.strip()
+    # Blank is stored as None — validated at catalog build so HTTP bootstrap
+    # and OpenAPI export stay catalog-agnostic.
+    sql_path = (
+        _resolve_under_project_root(raw_sql.strip())
+        if raw_sql.strip()
         else None
     )
     return DocumentCatalogSettings(
-        sql_path=_resolve_under_project_root(sql_path),
-        workspace_id=workspace_id,
+        sql_path=sql_path,
+        workspace_id=_optional_env("DOCUMENT_CATALOG_WORKSPACE_ID"),
     )
 
 
@@ -439,23 +445,16 @@ def _load_http_adapter_settings() -> HttpAdapterSettings:
 
 def _load_google_drive_settings() -> GoogleDriveSettings:
     """Parse optional Drive connector env vars without reading credential JSON."""
-    raw_file = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
-    service_account_file: Path | None
-    if raw_file is None or not raw_file.strip():
-        service_account_file = None
-    else:
-        service_account_file = _resolve_under_project_root(raw_file.strip())
-    raw_folder = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
-    folder_id: str | None
-    if raw_folder is None or not raw_folder.strip():
-        folder_id = None
-    else:
-        folder_id = raw_folder.strip()
-        if not _GOOGLE_DRIVE_FOLDER_ID.fullmatch(folder_id):
-            raise ValueError(
-                "GOOGLE_DRIVE_FOLDER_ID must be a Drive folder ID "
-                "(letters, digits, `-`, `_`); it looks like you pasted a URL or path"
-            )
+    raw_file = _optional_env("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
+    service_account_file = (
+        _resolve_under_project_root(raw_file) if raw_file else None
+    )
+    folder_id = _optional_env("GOOGLE_DRIVE_FOLDER_ID")
+    if folder_id is not None and not _GOOGLE_DRIVE_FOLDER_ID.fullmatch(folder_id):
+        raise ValueError(
+            "GOOGLE_DRIVE_FOLDER_ID must be a Drive folder ID "
+            "(letters, digits, `-`, `_`); it looks like you pasted a URL or path"
+        )
     page_size = _env_int("GOOGLE_DRIVE_PAGE_SIZE", "100")
     if not 1 <= page_size <= 1000:
         raise ValueError(
