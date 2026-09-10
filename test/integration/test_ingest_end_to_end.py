@@ -1,7 +1,7 @@
 """End-to-end ingest proof: the real Chroma adapter, no network, no seed corpus.
 
 `ChromaSettings` is constructed directly and `load_settings()` is never called
-here: it loads `.env` with `override=True`, so a developer's own configuration
+here: it loads `.env` with `override=False`, so a developer's own configuration
 would decide where this test writes (§3.1).
 
 Embedding goes through `StubEmbeddingModel`, so the pipeline is exercised

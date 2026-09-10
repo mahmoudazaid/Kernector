@@ -25,13 +25,15 @@ writes, and no `workspace_id` scope.
    `DOCUMENT_CATALOG_SQL_PATH` / `DOCUMENT_CATALOG_WORKSPACE_ID`. Process
    bootstrap (`load_settings`, HTTP CORS, OpenAPI export) does not inherit this
    failure.
-3. **Catalog config at use** — `load_settings()` stores stripped
-   `DOCUMENT_CATALOG_WORKSPACE_ID` and `DOCUMENT_CATALOG_SQL_PATH` when present
-   (blank is absent) without charset/length or non-empty path validation, so
-   process bootstrap stays catalog-agnostic. Building the catalog requires a
-   non-blank SQL path and a valid workspace and raises `ConfigurationError`
-   when either is missing or invalid. Unset `DOCUMENT_CATALOG_SQL_PATH` to use
-   the `data/catalog/catalog.sqlite` default.
+3. **Adapter config at use** — `load_settings()` stores stripped optional
+   values (blank is absent) without charset/length validation, so process
+   bootstrap stays adapter-agnostic. Checks run where the value is used:
+   - `DOCUMENT_CATALOG_SQL_PATH` / `DOCUMENT_CATALOG_WORKSPACE_ID` when building
+     the catalog (`ConfigurationError` when missing or invalid). Unset
+     `DOCUMENT_CATALOG_SQL_PATH` to use the `data/catalog/catalog.sqlite`
+     default.
+   - `GOOGLE_DRIVE_FOLDER_ID` when building the Drive connector or reporting
+     SA `configured` status (`is_drive_folder_id` / `require_drive_folder_id`).
 4. **Upgrade path** — Operators with rows in `data/catalog/uploads.json` must
    run the migrator on a release that still ships it, then upgrade. This ADR
    does not reintroduce the migrator.

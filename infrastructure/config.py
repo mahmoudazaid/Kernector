@@ -187,7 +187,7 @@ class Settings:
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
-    load_dotenv(override=True)
+    load_dotenv(override=False)
     max_input_length = _env_int("MAX_INPUT_LENGTH", "10000")
     if max_input_length <= 0:
         raise ValueError(f"MAX_INPUT_LENGTH must be > 0, got {max_input_length}")
@@ -312,7 +312,7 @@ def _optional_env(name: str, default: str | None = None) -> str | None:
         default: Fallback when the variable is unset. Blank values still
             resolve to ``None`` (they do not fall through to ``default``).
     """
-    raw = os.getenv(name) if default is None else os.getenv(name, default)
+    raw = os.getenv(name, default)
     if raw is None:
         return None
     value = raw.strip()

@@ -227,6 +227,7 @@ export function DocumentsPanel({
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+  const [feedbackSeq, setFeedbackSeq] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadErrorSeq, setUploadErrorSeq] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -234,26 +235,30 @@ export function DocumentsPanel({
   const refreshAbortRef = useRef<AbortController | null>(null);
   const uploadErrorRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
-  const focusFeedbackRef = useRef(false);
   const deleteRestoreRef = useRef<HTMLElement | null>(null);
+  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
 
   useEffect(() => {
     captureDriveCallback();
   }, []);
 
   useEffect(() => {
-    if (!focusFeedbackRef.current || feedback.kind === "idle") {
+    if (feedback.kind === "idle" || dialogOpen) {
       return;
     }
-    focusFeedbackRef.current = false;
     feedbackRef.current?.focus();
-  }, [feedback]);
+  }, [feedbackSeq, dialogOpen, feedback.kind]);
 
   useEffect(() => {
     if (uploadOpen && uploadError) {
       uploadErrorRef.current?.focus();
     }
   }, [uploadOpen, uploadError, uploadErrorSeq]);
+
+  function announce(next: ActionFeedback) {
+    setFeedback(next);
+    setFeedbackSeq((seq) => seq + 1);
+  }
 
   function announceUploadError(message: string) {
     setUploadError(message);
@@ -333,7 +338,6 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
-  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
@@ -397,15 +401,14 @@ export function DocumentsPanel({
     setUploadOpen(false);
     setUploading(true);
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    announce({ kind: "idle" });
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
         file,
       });
       clearUploadInput();
-      focusFeedbackRef.current = true;
-      setFeedback({
+      announce({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
       });
@@ -428,28 +431,25 @@ export function DocumentsPanel({
     }
     const validated = validateUpload(replaceFile, constraints);
     if (!validated.ok) {
-      focusFeedbackRef.current = true;
-      setFeedback({ kind: "error", message: validated.message });
+      announce({ kind: "error", message: validated.message });
       return;
     }
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    announce({ kind: "idle" });
     try {
       const document = await replace({
         baseUrl: apiBaseUrl,
         sourceId: selected.source_id,
         file: replaceFile!,
       });
-      focusFeedbackRef.current = true;
-      setFeedback({
+      announce({
         kind: "success",
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
       });
       clearReplaceInput();
       await refresh();
     } catch (error) {
-      focusFeedbackRef.current = true;
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      announce({ kind: "error", message: actionErrorMessage(error) });
     } finally {
       setBusy(false);
     }
@@ -457,14 +457,14 @@ export function DocumentsPanel({
 
   async function onDelete(document: CatalogDocumentResponse) {
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    announce({ kind: "idle" });
     try {
       await remove({
         baseUrl: apiBaseUrl,
         sourceId: document.source_id,
       });
-      focusFeedbackRef.current = true;
-      setFeedback({
+      setPendingDelete(null);
+      announce({
         kind: "success",
         message: `Deleted document ${document.source_id}.`,
       });
@@ -476,10 +476,9 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
-      focusFeedbackRef.current = true;
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
-    } finally {
       setPendingDelete(null);
+      announce({ kind: "error", message: actionErrorMessage(error) });
+    } finally {
       setBusy(false);
     }
   }
@@ -573,25 +572,33 @@ export function DocumentsPanel({
         </button>
       </div>
 
-      {(catalog.kind === "error" || settingsError) && !dialogOpen ? (
+      {(catalog.kind === "error" || settingsError) ? (
         <div
           className="kern-settings-callout kern-settings-callout--error"
           role="alert"
+          hidden={dialogOpen}
+          aria-hidden={dialogOpen}
         >
           {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
           {settingsError ? <p>{settingsError}</p> : null}
-          <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+          <Button
+            variant="secondary"
+            disabled={retryBusy || dialogOpen}
+            onClick={retryAll}
+          >
             {retryBusy ? "Checking…" : "Retry"}
           </Button>
         </div>
       ) : null}
 
-      {feedback.kind !== "idle" && !dialogOpen ? (
+      {feedback.kind !== "idle" ? (
         <div
           ref={feedbackRef}
           className={`kern-settings-callout kern-settings-callout--${feedback.kind === "success" ? "ok" : "error"}`}
           role={feedback.kind === "error" ? "alert" : "status"}
           tabIndex={-1}
+          hidden={dialogOpen}
+          aria-hidden={dialogOpen}
         >
           <p>{feedback.message}</p>
         </div>
@@ -939,7 +946,6 @@ export function DocumentsPanel({
         </p>
         {uploadError ? (
           <div
-            key={uploadErrorSeq}
             ref={uploadErrorRef}
             id="hub-upload-error"
             className="kern-settings-callout kern-settings-callout--error"

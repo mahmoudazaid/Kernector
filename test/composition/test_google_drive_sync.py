@@ -144,14 +144,22 @@ def test_build_google_drive_connector_maps_config_error_without_path(
     assert isinstance(raised.value.__cause__, GoogleDriveConfigError)
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "bad id",
+        "x' in parents or '' = '",
+        "https://drive.google.com/drive/folders/abc123",
+    ],
+)
 def test_build_google_drive_connector_rejects_malformed_folder_id(
-    settings: Settings,
+    settings: Settings, raw: str
 ) -> None:
     settings = replace(
         settings,
         google_drive=GoogleDriveSettings(
             service_account_file=Path("/secret/sa.json"),
-            folder_id="bad id",
+            folder_id=raw,
         ),
     )
     with pytest.raises(ConfigurationError, match="GOOGLE_DRIVE_FOLDER_ID"):

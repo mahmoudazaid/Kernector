@@ -28,7 +28,7 @@ export type DialogFrameProps = {
   descriptionId?: string;
   panelClassName?: string;
   initialFocusRef?: RefObject<HTMLElement | null>;
-  /** When set, focus returns here on close instead of the previously focused node. */
+  /** When set, prefer this target on close if it is still focusable. */
   restoreFocusRef?: RefObject<HTMLElement | null>;
   dismissDisabled?: boolean;
   onDismiss: () => void;
@@ -42,6 +42,26 @@ function focusableNodes(root: HTMLElement | null): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
   ).filter((node) => !node.hasAttribute("disabled") && node.tabIndex !== -1);
+}
+
+function isRestorable(node: HTMLElement | null | undefined): node is HTMLElement {
+  return Boolean(
+    node &&
+      node.isConnected &&
+      !node.hasAttribute("disabled") &&
+      node.getAttribute("aria-disabled") !== "true",
+  );
+}
+
+function restoreFocus(
+  ...candidates: Array<HTMLElement | null | undefined>
+): void {
+  for (const candidate of candidates) {
+    if (isRestorable(candidate)) {
+      candidate.focus();
+      return;
+    }
+  }
 }
 
 export function DialogFrame({
@@ -64,7 +84,33 @@ export function DialogFrame({
   initialFocusRefStored.current = initialFocusRef;
   const restoreFocusRefStored = useRef(restoreFocusRef);
   restoreFocusRefStored.current = restoreFocusRef;
+  const openerRef = useRef<HTMLElement | null>(null);
   const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    function rememberOpener(event: Event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (panelRef.current?.contains(target)) {
+        return;
+      }
+      const candidate =
+        target instanceof HTMLElement && target.matches(FOCUSABLE_SELECTOR)
+          ? target
+          : target.closest<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (isRestorable(candidate)) {
+        openerRef.current = candidate;
+      }
+    }
+    document.addEventListener("pointerdown", rememberOpener, true);
+    document.addEventListener("keydown", rememberOpener, true);
+    return () => {
+      document.removeEventListener("pointerdown", rememberOpener, true);
+      document.removeEventListener("keydown", rememberOpener, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -115,8 +161,11 @@ export function DialogFrame({
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      const restore = restoreFocusRefStored.current?.current ?? previous;
-      restore?.focus();
+      restoreFocus(
+        restoreFocusRefStored.current?.current,
+        openerRef.current,
+        previous,
+      );
     };
   }, [open]);
 

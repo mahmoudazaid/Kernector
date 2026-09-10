@@ -97,6 +97,10 @@ from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
 from infrastructure.config import Settings, load_settings
+from infrastructure.connectors.drive_folder import (
+    is_drive_folder_id,
+    require_drive_folder_id,
+)
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
@@ -714,7 +718,9 @@ def google_drive_status(
     """
     drive = settings.google_drive
     configured = (
-        drive.folder_id is not None and drive.service_account_file is not None
+        drive.folder_id is not None
+        and is_drive_folder_id(drive.folder_id)
+        and drive.service_account_file is not None
     )
     available = importlib.util.find_spec("googleapiclient") is not None
     connection = _connection_store(settings).load()
@@ -1463,11 +1469,11 @@ def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
             or unusable.
     """
     folder_id = settings.google_drive.folder_id
-    if folder_id is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", folder_id):
-        raise ConfigurationError(
-            "GOOGLE_DRIVE_FOLDER_ID must be a Drive folder ID "
-            "(letters, digits, `-`, `_`); it looks like you pasted a URL or path"
-        )
+    if folder_id is not None:
+        try:
+            require_drive_folder_id(folder_id)
+        except ValueError as error:
+            raise ConfigurationError(str(error)) from error
     try:
         from infrastructure.connectors.google_drive import (
             GoogleDriveConfigError,

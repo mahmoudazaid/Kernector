@@ -70,4 +70,59 @@ describe("DialogFrame", () => {
       screen.getByRole("button", { name: /restore target/i }),
     );
   });
+
+  it("skips a detached or disabled restore target and uses the opener", async () => {
+    const user = userEvent.setup();
+    function SkipDisabledHarness() {
+      const [open, setOpen] = useState(false);
+      const [gone, setGone] = useState(false);
+      const restoreRef = useRef<HTMLButtonElement | null>(null);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          {!gone ? (
+            <button
+              type="button"
+              ref={restoreRef}
+              disabled
+              onClick={() => undefined}
+            >
+              Detached target
+            </button>
+          ) : null}
+          <DialogFrame
+            open={open}
+            titleId="skip-title"
+            restoreFocusRef={restoreRef}
+            onDismiss={() => {
+              setGone(true);
+              setOpen(false);
+            }}
+          >
+            <h2 id="skip-title">Panel</h2>
+            <button
+              type="button"
+              onClick={() => {
+                setGone(true);
+                setOpen(false);
+              }}
+            >
+              Close
+            </button>
+          </DialogFrame>
+        </>
+      );
+    }
+    render(<SkipDisabledHarness />);
+
+    await user.click(screen.getByRole("button", { name: /^open$/i }));
+    await user.click(screen.getByRole("button", { name: /^close$/i }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^open$/i }),
+    );
+  });
 });

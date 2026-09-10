@@ -172,10 +172,8 @@ same-host processes on a local filesystem.
 Upload catalog metadata uses SQLite at `data/catalog/catalog.sqlite` by default
 (`DOCUMENT_CATALOG_SQL_PATH`). Set `DOCUMENT_CATALOG_WORKSPACE_ID` in `.env`
 before opening the catalog (case-sensitive `fullmatch` `[A-Za-z0-9_-]+`, at most
-64 characters). `.env.example` shows a commented `local` example — uncomment it
-for a local copy-and-go setup, but leave it commented when Docker/CI already
-sets the key (`load_settings()` uses `load_dotenv(override=True)`, so `.env`
-wins over the process environment).
+64 characters). `.env.example` ships `local` as a working default. Process
+environment variables win over `.env` (`load_dotenv(override=False)`).
 
 **Upgrading from the JSON catalog.** [#261](https://github.com/mahmoudazaid/Kernector/issues/261)
 removes `JsonDocumentCatalog` and the migrate CLI. If you still have rows in

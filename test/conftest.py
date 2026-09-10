@@ -13,7 +13,7 @@ def _isolate_settings_from_dotenv(
 ) -> None:
     """Stop ``load_settings`` from copying a developer ``.env`` into ``os.environ``.
 
-    ``load_settings`` calls ``load_dotenv(override=True)``. Catalog paths are
+    ``load_settings`` calls ``load_dotenv(override=False)``. Catalog paths are
     also pinned under ``tmp_path`` so tests never touch ``data/catalog``.
     """
     monkeypatch.setattr("infrastructure.config.load_dotenv", lambda *a, **k: False)
