@@ -2346,7 +2346,7 @@
     },
     "/api/v1/documents/{source_id}/chunks": {
       "get": {
-        "description": "Return stored chunks for one catalogued source (allowlisted fields).",
+        "description": "Return a page of stored chunks for one catalogued source.",
         "operationId": "list_document_chunks_api_v1_documents__source_id__chunks_get",
         "parameters": [
           {
@@ -2365,6 +2365,29 @@
             "schema": {
               "title": "Source Type",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],

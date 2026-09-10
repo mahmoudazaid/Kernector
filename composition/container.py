@@ -1556,6 +1556,7 @@ def build_manage_uploaded_documents(
     *,
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
 
@@ -1568,16 +1569,21 @@ def build_manage_uploaded_documents(
     same factory, so ingest and delete cannot drift onto different collections.
 
     Pass ``vector_store`` to reuse a cached DualWrite/Chroma client (hybrid BM25
-    stays in sync with uploads). When omitted, each mutating call builds a fresh
-    store via ``build_vector_store``.
+    stays in sync with uploads). Pass ``vector_store_factory`` to defer opening
+    until a mutating/read-that-needs-store path actually runs (e.g. list chunks
+    after the catalog gate). When both are omitted, each call that needs a store
+    builds one via ``build_vector_store``.
     """
-    shared = vector_store
+    if vector_store_factory is not None:
+        _vector_store = vector_store_factory
+    else:
+        shared = vector_store
 
-    def _vector_store() -> VectorStore:
-        nonlocal shared
-        if shared is None:
-            shared = build_vector_store(settings)
-        return shared
+        def _vector_store() -> VectorStore:
+            nonlocal shared
+            if shared is None:
+                shared = build_vector_store(settings)
+            return shared
 
     def _ingest() -> IngestKnowledge:
         return build_ingest_knowledge(settings, vector_store=_vector_store())
@@ -1704,8 +1710,14 @@ def list_uploaded_document_chunks(
     *,
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> tuple[DocumentChunk, ...]:
     """Return stored chunks for a catalogued document, ordered by index.
+
+    Prefer ``vector_store_factory`` over an already-built ``vector_store`` so the
+    catalog gate can reject unknown references without opening Chroma/BM25.
 
     Raises:
         UnknownUploadedDocumentError: ``reference`` is not in the catalog.
@@ -1714,8 +1726,11 @@ def list_uploaded_document_chunks(
     try:
         return tuple(
             build_manage_uploaded_documents(
-                settings, catalog=catalog, vector_store=vector_store
-            ).list_document_chunks(reference)
+                settings,
+                catalog=catalog,
+                vector_store=vector_store,
+                vector_store_factory=vector_store_factory,
+            ).list_document_chunks(reference, limit=limit, offset=offset)
         )
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error

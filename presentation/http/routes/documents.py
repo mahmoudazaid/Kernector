@@ -27,6 +27,12 @@ from presentation.http.schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
+_HUB_SOURCE_TYPES = frozenset(
+    {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+)
+_DEFAULT_CHUNK_LIMIT = 50
+_MAX_CHUNK_LIMIT = 200
+
 
 def _require_source_id(source_id: str) -> str:
     """Reject blank/whitespace path segments before domain construction."""
@@ -45,7 +51,7 @@ def _require_source_id(source_id: str) -> str:
 
 
 def _require_source_type(source_type: str) -> str:
-    """Reject blank/whitespace source_type query values before domain construction."""
+    """Reject blank or non-hub source_type query values before domain construction."""
     if not source_type.strip():
         raise RequestValidationError(
             [
@@ -54,6 +60,21 @@ def _require_source_type(source_type: str) -> str:
                     "loc": ("query", "source_type"),
                     "msg": "source_type must not be blank",
                     "input": source_type,
+                }
+            ]
+        )
+    if source_type not in _HUB_SOURCE_TYPES:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "enum",
+                    "loc": ("query", "source_type"),
+                    "msg": (
+                        "source_type must be one of: "
+                        + ", ".join(sorted(_HUB_SOURCE_TYPES))
+                    ),
+                    "input": source_type,
+                    "ctx": {"expected": sorted(_HUB_SOURCE_TYPES)},
                 }
             ]
         )
@@ -176,11 +197,21 @@ def list_document_chunks(
     source_id: str,
     ops: DocumentOperationsDep,
     source_type: str = Query(...),
+    limit: int = Query(
+        default=_DEFAULT_CHUNK_LIMIT,
+        ge=1,
+        le=_MAX_CHUNK_LIMIT,
+    ),
+    offset: int = Query(default=0, ge=0),
 ) -> DocumentChunkListResponse:
-    """Return stored chunks for one catalogued source (allowlisted fields)."""
+    """Return a page of stored chunks for one catalogued source."""
     source_id = _require_source_id(source_id)
     source_type = _require_source_type(source_type)
-    chunks = ops.list_chunks(SourceReference(source_id, source_type))
+    chunks = ops.list_chunks(
+        SourceReference(source_id, source_type),
+        limit=limit,
+        offset=offset,
+    )
     return DocumentChunkListResponse(
         chunks=[document_chunk_response(chunk) for chunk in chunks],
     )

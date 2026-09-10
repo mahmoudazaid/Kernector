@@ -209,7 +209,7 @@ export interface paths {
     };
     /**
      * List Document Chunks
-     * @description Return stored chunks for one catalogued source (allowlisted fields).
+     * @description Return a page of stored chunks for one catalogued source.
      */
     get: operations["list_document_chunks_api_v1_documents__source_id__chunks_get"];
     put?: never;
@@ -1608,6 +1608,8 @@ export interface operations {
     parameters: {
       query: {
         source_type: string;
+        limit?: number;
+        offset?: number;
       };
       header?: never;
       path: {

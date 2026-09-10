@@ -633,3 +633,23 @@ def test_list_uploaded_document_chunks_known_empty(
     )
 
     assert chunks == ()
+
+
+def test_list_uploaded_document_chunks_factory_defers_store_open(
+    settings: Settings,
+) -> None:
+    from composition.errors import UnknownUploadedDocumentError
+
+    calls: list[object] = []
+
+    def factory():
+        calls.append(object())
+        raise AssertionError("vector store must not open for unknown refs")
+
+    with pytest.raises(UnknownUploadedDocumentError):
+        composition_container.list_uploaded_document_chunks(
+            settings,
+            SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
+            vector_store_factory=factory,
+        )
+    assert calls == []

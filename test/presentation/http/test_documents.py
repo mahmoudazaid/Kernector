@@ -97,10 +97,15 @@ def _stub_ops(
         if delete_impl is not None:
             delete_impl(reference)
 
-    def list_chunks(reference: SourceReference) -> tuple[DocumentChunk, ...]:
-        ledger["listed_chunks"].append(reference)
+    def list_chunks(
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[DocumentChunk, ...]:
+        ledger["listed_chunks"].append((reference, limit, offset))
         if list_chunks_impl is not None:
-            return list_chunks_impl(reference)
+            return list_chunks_impl(reference, limit=limit, offset=offset)
         return ()
 
     ops = DocumentOperations(
@@ -448,7 +453,7 @@ def _chunk(
 
 
 def test_list_chunks_unknown_is_sanitized_404(client_factory) -> None:
-    def _list_chunks(_ref: SourceReference) -> tuple[DocumentChunk, ...]:
+    def _list_chunks(_ref: SourceReference, **_kwargs: object) -> tuple[DocumentChunk, ...]:
         raise UnknownUploadedDocumentError("missing src-leak")
 
     ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
@@ -467,7 +472,7 @@ def test_list_chunks_unknown_is_sanitized_404(client_factory) -> None:
 
 
 def test_list_chunks_known_empty_returns_200_empty_list(client_factory) -> None:
-    ops, ledger = _stub_ops(list_chunks_impl=lambda _ref: ())
+    ops, ledger = _stub_ops(list_chunks_impl=lambda _ref, **_kwargs: ())
     client = client_factory(ops)
 
     response = client.get(
@@ -477,13 +482,17 @@ def test_list_chunks_known_empty_returns_200_empty_list(client_factory) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"chunks": []}
-    assert ledger["listed_chunks"][0] == SourceReference(
+    assert ledger["listed_chunks"][0][0] == SourceReference(
         "src-1", SourceType.KNOWLEDGE_DOCUMENT
     )
+    assert ledger["listed_chunks"][0][1] == 50
+    assert ledger["listed_chunks"][0][2] == 0
 
 
 def test_list_chunks_returns_ordered_allowlisted_payload(client_factory) -> None:
-    def _list_chunks(reference: SourceReference) -> tuple[DocumentChunk, ...]:
+    def _list_chunks(
+        reference: SourceReference, **_kwargs: object
+    ) -> tuple[DocumentChunk, ...]:
         return (
             _chunk(source_id=reference.source_id, index=0, content="first"),
             _chunk(source_id=reference.source_id, index=1, content="second"),
@@ -534,7 +543,7 @@ def test_list_chunks_encodes_source_id_and_source_type(client_factory) -> None:
     )
 
     assert response.status_code == 200
-    assert ledger["listed_chunks"][0] == SourceReference(source_id, source_type)
+    assert ledger["listed_chunks"][0][0] == SourceReference(source_id, source_type)
 
 
 def test_list_chunks_isolates_equal_ids_under_different_source_types(
@@ -542,7 +551,9 @@ def test_list_chunks_isolates_equal_ids_under_different_source_types(
 ) -> None:
     seen: list[SourceReference] = []
 
-    def _list_chunks(reference: SourceReference) -> tuple[DocumentChunk, ...]:
+    def _list_chunks(
+        reference: SourceReference, **_kwargs: object
+    ) -> tuple[DocumentChunk, ...]:
         seen.append(reference)
         return (_chunk(source_id=reference.source_id, source_type=reference.source_type),)
 
@@ -579,3 +590,33 @@ def test_list_chunks_rejects_blank_source_type(client_factory) -> None:
 
     assert response.status_code == 422
     assert ledger["listed_chunks"] == []
+
+
+def test_list_chunks_rejects_non_hub_source_type(client_factory) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": "story"},
+    )
+
+    assert response.status_code == 422
+    assert ledger["listed_chunks"] == []
+
+
+def test_list_chunks_forwards_limit_and_offset(client_factory) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={
+            "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+            "limit": 10,
+            "offset": 20,
+        },
+    )
+
+    assert response.status_code == 200
+    assert ledger["listed_chunks"][0][1:] == (10, 20)

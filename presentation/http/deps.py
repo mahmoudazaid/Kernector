@@ -31,8 +31,8 @@ from composition import (
     disconnect_google_drive_oauth,
     get_google_drive_selection,
     google_drive_status,
-    list_uploaded_documents,
     list_uploaded_document_chunks,
+    list_uploaded_documents,
     load_runtime_settings,
     put_google_drive_selection,
     replace_uploaded_document,
@@ -129,7 +129,7 @@ class DocumentOperations:
     """The composition document seam, bound to this process's settings."""
 
     list: Callable[[], tuple[CatalogDocument, ...]]
-    list_chunks: Callable[[SourceReference], tuple[DocumentChunk, ...]]
+    list_chunks: Callable[..., tuple[DocumentChunk, ...]]
     create: Callable[[UploadPayload], CatalogDocument]
     replace: Callable[[SourceReference, UploadPayload], CatalogDocument]
     delete: Callable[[SourceReference], None]
@@ -147,6 +147,8 @@ def get_document_operations(
     process-wide ``get_vector_store`` cache. The process-cached catalog is
     resolved on first use so a missing catalog still maps to
     ``DocumentOperationError`` instead of failing dependency resolution.
+    ``list_chunks`` passes ``get_vector_store`` as a factory so unknown
+    catalog references never open Chroma/BM25.
     """
 
     def create(payload: UploadPayload) -> CatalogDocument:
@@ -176,12 +178,19 @@ def get_document_operations(
             vector_store=get_vector_store(),
         )
 
-    def list_chunks(reference: SourceReference) -> tuple[DocumentChunk, ...]:
+    def list_chunks(
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[DocumentChunk, ...]:
         return list_uploaded_document_chunks(
             settings,
             reference,
             catalog=get_document_catalog(),
-            vector_store=get_vector_store(),
+            vector_store_factory=get_vector_store,
+            limit=limit,
+            offset=offset,
         )
 
     return DocumentOperations(

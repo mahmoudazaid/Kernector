@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import {
+  DOCUMENT_CHUNKS_TIMEOUT_MS,
   DOCUMENT_MUTATION_TIMEOUT_MS,
   deleteDocument,
   listDocumentChunks,
@@ -33,13 +34,16 @@ describe("documents api wrappers", () => {
       baseUrl: "http://api.test",
       sourceId: "doc:1 with spaces",
       sourceType: "google_drive",
+      limit: 10,
+      offset: 5,
       request,
     });
 
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: "/api/v1/documents/doc%3A1%20with%20spaces/chunks?source_type=google_drive",
+        path: "/api/v1/documents/doc%3A1%20with%20spaces/chunks?source_type=google_drive&limit=10&offset=5",
         method: "GET",
+        timeoutMs: DOCUMENT_CHUNKS_TIMEOUT_MS,
       }),
     );
   });

@@ -1923,6 +1923,11 @@ a.kern-btn {
   overflow: auto;
 }
 
+.kern-documents-chunk-content:focus-visible {
+  outline: 2px solid var(--kern-accent, Highlight);
+  outline-offset: 2px;
+}
+
 .kern-documents-form .kern-btn,
 .kern-documents-form .kern-btn-secondary,
 .kern-documents .kern-settings-fieldset > .kern-btn,

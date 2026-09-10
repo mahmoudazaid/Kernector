@@ -93,6 +93,40 @@ def test_list_document_chunks_unknown_never_opens_vector_store() -> None:
     assert factory_calls == []
 
 
+def test_list_document_chunks_unknown_logs_operation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from test.log_record import operation_payload, operation_records
+
+    catalog = InMemoryDocumentCatalog()
+    use_case = _use_case(catalog, InMemoryVectorStore())
+    with caplog.at_level(logging.ERROR, logger="application.manage_documents"):
+        with pytest.raises(UnknownDocumentError):
+            use_case.list_document_chunks(_reference("missing"))
+
+    records = operation_records(caplog.records, operation="list_chunks")
+    assert len(records) == 1
+    payload = operation_payload(records[0])
+    assert payload["operation"] == "list_chunks"
+    assert payload["source_id"] == "missing"
+
+
+def test_list_document_chunks_rejects_non_hub_source_type() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    factory_calls: list[object] = []
+    reference = _reference("seed-1", "story")
+    catalog.upsert(_catalog_row(reference))
+    use_case = _use_case(catalog, store, factory_calls=factory_calls)
+
+    with pytest.raises(UnknownDocumentError):
+        use_case.list_document_chunks(reference)
+
+    assert factory_calls == []
+
+
 def test_list_document_chunks_known_empty_returns_empty() -> None:
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()
@@ -157,3 +191,24 @@ def test_list_document_chunks_isolates_same_id_under_different_types() -> None:
 
     assert [c.content for c in listed] == ["kd"]
     assert listed[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+
+
+def test_list_document_chunks_applies_limit_and_offset() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    reference = _reference()
+    catalog.upsert(_catalog_row(reference))
+    store.upsert(
+        [
+            EmbeddedChunk(
+                chunk=_chunk(reference, index=i, content=f"c{i}"),
+                vector=vector_for(f"c{i}"),
+            )
+            for i in range(5)
+        ]
+    )
+    use_case = _use_case(catalog, store)
+
+    page = use_case.list_document_chunks(reference, limit=2, offset=1)
+
+    assert [c.content for c in page] == ["c1", "c2"]

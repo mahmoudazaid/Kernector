@@ -1143,9 +1143,9 @@ describe("DocumentsPanel", () => {
     expect(screen.getByText("Chunk 0")).toBeInTheDocument();
   });
 
-  it("shows empty, not-found, and error chunk states", async () => {
+  it("shows empty chunk state for a ready document with no chunks", async () => {
     const empty = vi.fn().mockResolvedValue({ chunks: [] });
-    const { rerender } = render(
+    render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
         list={vi.fn().mockResolvedValue(listResponse([doc()]))}
@@ -1158,7 +1158,19 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByText(/no stored chunks for this document/i),
     ).toBeInTheDocument();
+  });
 
+  it("shows not-found chunk state and refreshes the catalog on 404", async () => {
+    let resolveRefresh: ((value: DocumentListResponse) => void) | undefined;
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(listResponse([doc()]))
+      .mockImplementationOnce(
+        () =>
+          new Promise<DocumentListResponse>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
     const notFound = vi
       .fn()
       .mockRejectedValue(
@@ -1169,18 +1181,27 @@ describe("DocumentsPanel", () => {
           code: "document_not_found",
         }),
       );
-    rerender(
+    render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
-        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 2 })]))}
+        list={list}
         listChunks={notFound}
         loadSettings={loadSettings}
       />,
     );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
     expect(
       await screen.findByText(/document was not found in the catalog/i),
     ).toBeInTheDocument();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    resolveRefresh?.(listResponse([]));
+    await waitFor(() => {
+      expect(screen.queryByText("spec.md")).not.toBeInTheDocument();
+    });
+  });
 
+  it("shows error chunk state when the chunks request fails", async () => {
     const failing = vi
       .fn()
       .mockRejectedValue(
@@ -1191,14 +1212,16 @@ describe("DocumentsPanel", () => {
           code: "operational_error",
         }),
       );
-    rerender(
+    render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
-        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 3 })]))}
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
         listChunks={failing}
         loadSettings={loadSettings}
       />,
     );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
     expect(await screen.findByText("chunks boom")).toBeInTheDocument();
   });
 
@@ -1257,9 +1280,28 @@ describe("DocumentsPanel", () => {
     const listChunks = vi.fn().mockResolvedValue({ chunks: [] });
     const list = vi
       .fn()
-      .mockResolvedValueOnce(listResponse([doc({ chunk_count: 1 })]))
-      .mockResolvedValueOnce(listResponse([doc({ chunk_count: 2 })]));
-    const replace = vi.fn().mockResolvedValue(doc({ chunk_count: 2 }));
+      .mockResolvedValueOnce(
+        listResponse([
+          doc({
+            chunk_count: 1,
+            uploaded_at: "2026-09-05T09:12:44+00:00",
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(
+        listResponse([
+          doc({
+            chunk_count: 1,
+            uploaded_at: "2026-09-10T12:00:00+00:00",
+          }),
+        ]),
+      );
+    const replace = vi.fn().mockResolvedValue(
+      doc({
+        chunk_count: 1,
+        uploaded_at: "2026-09-10T12:00:00+00:00",
+      }),
+    );
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"

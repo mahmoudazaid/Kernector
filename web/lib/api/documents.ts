@@ -13,6 +13,12 @@ export type DocumentChunkListResponse =
 /** Uploads that embed every chunk routinely exceed the default 10s timeout. */
 export const DOCUMENT_MUTATION_TIMEOUT_MS = 120_000;
 
+/** Chunk inspect can page many records; allow longer than the default 10s. */
+export const DOCUMENT_CHUNKS_TIMEOUT_MS = 60_000;
+
+/** Default page size for ``GET .../chunks`` (matches the HTTP default). */
+export const DOCUMENT_CHUNKS_PAGE_SIZE = 50;
+
 export type ListDocumentsOptions = {
   baseUrl: string;
   signal?: AbortSignal;
@@ -24,6 +30,8 @@ export type ListDocumentChunksOptions = {
   baseUrl: string;
   sourceId: string;
   sourceType: string;
+  limit?: number;
+  offset?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
   request?: typeof apiRequest;
@@ -85,12 +93,18 @@ export async function listDocumentChunks(
 ): Promise<DocumentChunkListResponse> {
   const request = options.request ?? apiRequest;
   const params = new URLSearchParams({ source_type: options.sourceType });
+  if (options.limit != null) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset != null) {
+    params.set("offset", String(options.offset));
+  }
   return request<DocumentChunkListResponse>({
     baseUrl: options.baseUrl,
     path: `/api/v1/documents/${encodeURIComponent(options.sourceId)}/chunks?${params.toString()}`,
     method: "GET",
     signal: options.signal,
-    timeoutMs: options.timeoutMs,
+    timeoutMs: options.timeoutMs ?? DOCUMENT_CHUNKS_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
 

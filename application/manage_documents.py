@@ -192,18 +192,52 @@ class ManageUploadedDocuments:
         )
 
     def list_document_chunks(
-        self, reference: SourceReference
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[DocumentChunk]:
         """Return stored chunks for a catalogued source, ordered by index.
 
         Looks up ``reference`` in the catalog first. An unknown reference raises
-        ``UnknownDocumentError`` without opening the vector store. A known row
-        with no stored chunks returns an empty sequence.
+        ``UnknownDocumentError`` without opening the vector store. Non-hub
+        ``source_type`` values are treated as unknown. A known row with no
+        stored chunks returns an empty sequence. Optional ``limit``/``offset``
+        page the result after ordering.
         """
+        if reference.source_type not in self._HUB_SOURCE_TYPES:
+            error = UnknownDocumentError(reference=reference)
+            log_operation(
+                logger,
+                operation="list_chunks",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=error.source_id,
+                source_type=error.source_type,
+            )
+            raise error
         row = self._catalog.get(reference)
         if row is None:
-            raise UnknownDocumentError(reference=reference)
-        return self._vector_store_factory().list_source_chunks(reference)
+            error = UnknownDocumentError(reference=reference)
+            log_operation(
+                logger,
+                operation="list_chunks",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=error.source_id,
+                source_type=error.source_type,
+            )
+            raise error
+        chunks = self._vector_store_factory().list_source_chunks(reference)
+        start = max(offset, 0)
+        if limit is None:
+            return tuple(chunks[start:])
+        if limit <= 0:
+            return ()
+        return tuple(chunks[start : start + limit])
 
     def create(self, payload: UploadPayload) -> CatalogDocument:
         """Allocate a UUID, ingest the upload, and persist catalog status.
