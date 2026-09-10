@@ -168,4 +168,90 @@ describe("DialogFrame", () => {
     });
     expect(document.activeElement).toBe(openButton);
   });
+
+  it("does not steal focus from an element outside the dialog on exit", async () => {
+    const user = userEvent.setup();
+    function ExternalFocusHarness() {
+      const [open, setOpen] = useState(false);
+      const alertRef = useRef<HTMLDivElement>(null);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          <div
+            ref={alertRef}
+            role="alert"
+            tabIndex={-1}
+            data-testid="fresh-alert"
+          >
+            The request failed
+          </div>
+          <DialogFrame
+            open={open}
+            titleId="alert-title"
+            onDismiss={() => {
+              setOpen(false);
+              queueMicrotask(() => alertRef.current?.focus());
+            }}
+          >
+            <h2 id="alert-title">Panel</h2>
+            <button type="button" onClick={() => setOpen(false)}>
+              Close
+            </button>
+          </DialogFrame>
+        </>
+      );
+    }
+    render(<ExternalFocusHarness />);
+
+    await user.click(screen.getByRole("button", { name: /^open$/i }));
+    await user.click(screen.getByRole("button", { name: /dismiss dialog/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByTestId("fresh-alert"));
+    });
+  });
+
+  it("restores focus when the frame unmounts before exit completes", async () => {
+    const user = userEvent.setup();
+    function UnmountHarness() {
+      const [showFrame, setShowFrame] = useState(true);
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          {showFrame ? (
+            <DialogFrame
+              open={open}
+              titleId="unmount-title"
+              onDismiss={() => {
+                setOpen(false);
+                setShowFrame(false);
+              }}
+            >
+              <h2 id="unmount-title">Panel</h2>
+            </DialogFrame>
+          ) : null}
+        </>
+      );
+    }
+    render(<UnmountHarness />);
+
+    const openButton = screen.getByRole("button", { name: /^open$/i });
+    await user.click(openButton);
+    await user.click(screen.getByRole("button", { name: /dismiss dialog/i }));
+
+    await waitFor(
+      () => {
+        expect(document.activeElement).toBe(openButton);
+      },
+      { timeout: 1000 },
+    );
+  });
 });

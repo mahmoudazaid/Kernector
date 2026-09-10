@@ -89,6 +89,14 @@ class RecordingStore:
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_TOKEN_PATH",
+        str(tmp_path / "google-oauth-connection.json"),
+    )
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_STATE_PATH",
+        str(tmp_path / "google-oauth-state.json"),
+    )
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)

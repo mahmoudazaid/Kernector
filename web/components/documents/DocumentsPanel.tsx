@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -269,27 +270,30 @@ export function DocumentsPanel({
     setFeedbackSeq((seq) => seq + 1);
   }
 
-  function clearFeedback() {
+  const clearFeedback = useCallback(() => {
     setFeedback({ kind: "idle" });
-  }
+  }, []);
 
   function announceUploadError(message: string) {
     setUploadError(message);
     setUploadErrorSeq((seq) => seq + 1);
   }
 
-  function openUploadDialog() {
+  const openUploadDialog = useCallback(() => {
     clearFeedback();
     setUploadError(null);
     setUploadOpen(true);
-  }
+  }, [clearFeedback]);
 
-  function setPickerOpen(next: boolean) {
-    if (next) {
-      clearFeedback();
-    }
-    setDrivePickerOpen(next);
-  }
+  const setPickerOpen = useCallback(
+    (next: boolean) => {
+      if (next) {
+        clearFeedback();
+      }
+      setDrivePickerOpen(next);
+    },
+    [clearFeedback],
+  );
 
   function retryAll() {
     if (settingsError) {

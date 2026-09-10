@@ -66,6 +66,40 @@ function restoreFocus(
   }
 }
 
+function focusAlreadyMovedOn(
+  panel: HTMLElement | null,
+): boolean {
+  const active = document.activeElement;
+  if (
+    !active ||
+    active === document.body ||
+    !(active instanceof Element)
+  ) {
+    return false;
+  }
+  // Focus already moved on (a fresh alert, the user's own Tab): leave it.
+  if (panel?.contains(active)) {
+    return false;
+  }
+  if (active.classList.contains("kern-dialog-backdrop")) {
+    return false;
+  }
+  return true;
+}
+
+function flushPendingRestore(
+  pending: Array<HTMLElement | null | undefined> | null,
+  panel: HTMLElement | null,
+): void {
+  if (!pending) {
+    return;
+  }
+  if (focusAlreadyMovedOn(panel)) {
+    return;
+  }
+  restoreFocus(...pending);
+}
+
 export function DialogFrame({
   open,
   titleId,
@@ -90,7 +124,25 @@ export function DialogFrame({
   const pendingRestoreRef = useRef<Array<
     HTMLElement | null | undefined
   > | null>(null);
+  const restoreFallbackTimerRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
+
+  function clearRestoreFallbackTimer() {
+    if (restoreFallbackTimerRef.current != null) {
+      window.clearTimeout(restoreFallbackTimerRef.current);
+      restoreFallbackTimerRef.current = null;
+    }
+  }
+
+  function consumePendingRestore(panel: HTMLElement | null) {
+    const pending = pendingRestoreRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingRestoreRef.current = null;
+    clearRestoreFallbackTimer();
+    flushPendingRestore(pending, panel);
+  }
 
   useEffect(() => {
     function rememberOpener(event: Event) {
@@ -128,6 +180,7 @@ export function DialogFrame({
     }
     // Cancel a restore still waiting on a previous exit animation.
     pendingRestoreRef.current = null;
+    clearRestoreFallbackTimer();
     const previous =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -174,23 +227,24 @@ export function DialogFrame({
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       // Defer until AnimatePresence exit completes so aria-modal is gone.
-      pendingRestoreRef.current = [
+      const candidates: Array<HTMLElement | null | undefined> = [
         restoreFocusRefStored.current?.current,
         openerRef.current,
         previous,
       ];
+      pendingRestoreRef.current = candidates;
+      // Interrupted exits (frame unmount mid-animation) skip onExitComplete.
+      restoreFallbackTimerRef.current = window.setTimeout(() => {
+        restoreFallbackTimerRef.current = null;
+        consumePendingRestore(null);
+      }, 600);
     };
   }, [open]);
 
   return (
     <AnimatePresence
       onExitComplete={() => {
-        const pending = pendingRestoreRef.current;
-        if (!pending) {
-          return;
-        }
-        pendingRestoreRef.current = null;
-        restoreFocus(...pending);
+        consumePendingRestore(panelRef.current);
       }}
     >
       {open ? (

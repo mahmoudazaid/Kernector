@@ -56,8 +56,12 @@ def test_dotenv_supplies_absent_process_keys(
         "HTTP_CORS_ORIGINS=http://localhost:3000\n",
         encoding="utf-8",
     )
-    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
-    monkeypatch.delenv("HTTP_CORS_ORIGINS", raising=False)
+    # setenv then delenv so monkeypatch records undo even when the key
+    # was absent (bare delenv records nothing for missing keys).
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "")
+    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID")
+    monkeypatch.setenv("HTTP_CORS_ORIGINS", "")
+    monkeypatch.delenv("HTTP_CORS_ORIGINS")
     monkeypatch.setenv(
         "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite")
     )

@@ -472,6 +472,55 @@ describe("DocumentsPanel", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("clears stale page feedback when opening delete confirm, restores opener on Escape", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Delete failed",
+        detail: "The document operation failed.",
+        code: "document_operation_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        remove={remove}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    const deleteButton = screen.getByRole("button", {
+      name: /delete spec\.md/i,
+    });
+    await user.click(deleteButton);
+    const failDialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(
+      within(failDialog).getByRole("button", { name: /^delete$/i }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /document operation failed/i,
+    );
+
+    await user.click(deleteButton);
+    expect(screen.queryByRole("alert")).toBeNull();
+    const confirm = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.activeElement).toBe(deleteButton);
+  });
+
   it("shows sanitized per-document warning from error_summary", async () => {
     const list = vi.fn().mockResolvedValue(
       listResponse([
