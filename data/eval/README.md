@@ -39,7 +39,7 @@ Judge scores are model opinions, not ground truth.
 | `corpus.json` | Small documents (single-source, overlapping cross-source, conflicting SLA pair, novel `future-connector`, Software Delivery `user_story`/`srs`). There is no irrelevant-only document. |
 | `cases.json` | Required #102 classes plus Judge-eligible grounded ask rows (`reference_answer`, optional `slice`). |
 | `schema/` | Strict JSON Schemas for Judge reports, baselines, and ask-case extensions. |
-| `baselines/rag-judge-baseline.json` | Unaccepted placeholder until a live human review. |
+| `baselines/rag-judge-baseline.json` | Unaccepted placeholder until a live human review. `allowed_drop` here is advisory; gate tolerance is caller/policy-owned and recorded on the Judge report. |
 | `human_review.md` | DoD live-review record (not filled by pytest). |
 
 `schema_version` for the offline suite is `kernector.eval.v1`. Judge reports use `kernector.rag-judge.v1`.

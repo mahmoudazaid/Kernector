@@ -31,6 +31,8 @@ An accepted baseline may be created **only** from a reviewed live run. The commi
 - [ ] Sample reviewed; disagreements recorded
 - [ ] Initial accepted baseline created from this run only
 
+Gate regression tolerance (`allowed_drop`) is **caller/policy-owned**. The baseline file still records an `allowed_drop` for review context, but it does not change the gate; the effective value is written on `rag-judge-report.json`.
+
 ## Limitations
 
 Judge scores are model opinions, not ground truth. Metrics do not replace human review.

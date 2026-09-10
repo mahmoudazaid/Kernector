@@ -361,6 +361,10 @@ def test_trailing_json_object_is_the_verdict() -> None:
         'My verdict: {"score": 0.85, "explanation": "well grounded"}'
     )
     assert parse_judge_output("faithfulness", format_echo).score == 0.85
+    bare_array = '[{"score": 0.9, "explanation": "ok"}]'
+    assert parse_judge_output("faithfulness", bare_array).score == 0.9
+    prefixed_array = 'Verdict: [{"score": 0.9, "explanation": "ok"}]'
+    assert parse_judge_output("faithfulness", prefixed_array).score == 0.9
 
 
 def test_half_unscored_cases_fail_the_gate() -> None:

@@ -22,7 +22,8 @@
     "allowed_drop": {
       "type": "number",
       "minimum": 0,
-      "maximum": 1
+      "maximum": 1,
+      "description": "Advisory only. The quality gate uses the caller/policy allowed_drop recorded on the Judge report; changing this baseline field does not change gate tolerance."
     },
     "means": {
       "type": "object",

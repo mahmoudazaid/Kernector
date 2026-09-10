@@ -439,8 +439,8 @@ class RagJudgeReport:
         results (Sequence[RagJudgeCaseResult]): Per eligible ask case.
         aggregates (Mapping[str, MetricAggregate]): Per-metric aggregates.
         limitations (Sequence[str]): Documented limitations.
-        baseline_comparison (str | None): Comparison outcome code.
         allowed_drop (float): Effective regression drop used by the gate.
+        baseline_comparison (str | None): Comparison outcome code.
     """
 
     schema_version: str
@@ -454,8 +454,8 @@ class RagJudgeReport:
     results: Sequence[RagJudgeCaseResult]
     aggregates: Mapping[str, MetricAggregate]
     limitations: Sequence[str]
+    allowed_drop: float
     baseline_comparison: str | None = None
-    allowed_drop: float = DEFAULT_ALLOWED_DROP
 
     def __post_init__(self) -> None:
         if self.schema_version != RAG_JUDGE_SCHEMA_VERSION:

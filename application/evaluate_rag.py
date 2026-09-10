@@ -365,10 +365,8 @@ def _extract_json_object(raw: str) -> object:
 
 
 def _unique_score_bearing(payload: object) -> dict[str, object] | None:
-    """Return a score-bearing dict only when the verdict is unambiguous."""
-    if not isinstance(payload, dict):
-        return None
-    if "score" in payload:
+    """Return the top-level score, else the sole nested score-bearing dict."""
+    if isinstance(payload, dict) and "score" in payload:
         return payload
     found: list[dict[str, object]] = []
 
@@ -384,8 +382,7 @@ def _unique_score_bearing(payload: object) -> dict[str, object] | None:
             for item in node:
                 walk(item)
 
-    for value in payload.values():
-        walk(value)
+    walk(payload)
     if len(found) == 1:
         return found[0]
     return None
