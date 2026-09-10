@@ -192,6 +192,9 @@ enabled prompt packs.
 `DOMAIN_TOOL_PACKS=software-delivery` (CSV; default empty). Composition loads
 packs through an explicit allowlist manifest and `importlib` only for configured
 IDs — a disabled pack is neither imported nor registered.
+``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) optionally replaces the
+deterministic Software Delivery orchestrate with a LangGraph agent; #170 remains
+the default.
 
 #### Multi-source tool flow
 
@@ -292,6 +295,15 @@ band and rationale — never from a second model call. The same typed outcomes a
 projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
 (#178); that view is **not** placed on ``AskResponse``.
 
+**Agent loop (#43), opt-in:** ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default
+**false**) swaps only the pack ``orchestrate`` callable for a LangGraph-backed
+``ToolCallingAgent`` adapter (``infrastructure/agents/langgraph_tool_agent.py``)
+wired through ``composition/software_delivery_agent.py``. Intent selection,
+retrieve → recorder → ordered ``tool_outputs``, stop handling, and sanitized
+``ToolRunFailedError`` stay on the #170 path. Domain and application must not
+import LangGraph; ``langgraph`` is an infrastructure I/O package. Keep the
+deterministic chain as the default until the agent path is proven.
+
 Two properties are worth naming because they are easy to lose:
 
 - **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it
@@ -309,7 +321,7 @@ details**. ``ToolAugmentedAsk.consume_tool_run_view`` (forwarded by
 to the HTTP chat mapping; the Next.js chat UI renders projected results without
 importing pack-named modules or ``packs``.
 
-#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178)
+#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178 vs #43)
 
 - **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
   ``InvokeTool`` that treats arguments and results as opaque strings.
@@ -318,11 +330,14 @@ importing pack-named modules or ``packs``.
   testable with fixtures.
 - **#170** — chat intent → retrieve/orchestrate → populate
   ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
-  (delivered).
+  (delivered; **default** orchestrate path).
 - **#178** — composition projects typed pack outcomes into
   ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Next.js chat
   renders #161 panels from the projected view without putting views on
   ``AskResponse`` (delivered).
+- **#43** — optional LangGraph agent orchestrate behind
+  ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default off); same runner ledger and error
+  taxonomy.
 
 ### Grounded ask: system policy vs optional task prompts
 

@@ -499,6 +499,68 @@ def test_build_tool_augmented_ask_adds_tool_selection_when_the_pack_is_enabled(
     assert isinstance(ask._ask._ask, AskKnowledge)
 
 
+def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default #170 path: deterministic orchestrate, agent builder unused."""
+    _sd_env(monkeypatch)
+    monkeypatch.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    calls: list[object] = []
+
+    def _capture_agent_orchestrate(agent: object, **kwargs: object) -> object:
+        calls.append((agent, kwargs))
+        raise AssertionError("agent orchestrate must not run when flag is off")
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _capture_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+
+    assert calls == []
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+    assert ask._ask._runner._orchestrate.__name__ == "orchestrate"
+
+
+def test_agent_loop_flag_on_wires_agent_orchestrate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag on: composition injects agent-backed orchestrate."""
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    wired: list[object] = []
+
+    def _fake_agent_orchestrate(agent: object, **kwargs: object):
+        wired.append(agent)
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("orchestrate body not under test")
+
+        return orchestrate
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _fake_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    assert len(wired) == 1
+    assert isinstance(wired[0], LangGraphToolAgent)
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+
+
 def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

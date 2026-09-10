@@ -58,6 +58,7 @@ from composition.errors import (
 from composition.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
 from composition.recording_chat import RecordingChatModel
+from composition.software_delivery_agent import build_agent_orchestrate
 from composition.software_delivery_chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -1959,38 +1960,48 @@ def build_tool_augmented_ask(
     # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
     model_calls = RecordingChatModel(chat_model)
 
-    def orchestrate(
-        *,
-        target: str,
-        hits: Sequence[ScoredChunk],
-        generate_tests: bool,
-        output_style: str,
-        invoke: OpaqueInvoke,
-    ):
-        from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
-        from packs.software_delivery.orchestration_contracts import (
-            OrchestrateSoftwareDeliveryRequest,
-        )
-        from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+    if settings.domain_tools.agent_loop:
+        from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
-        # Pass the recording wrapper so any future path that builds tools from
-        # chat_model (when invoke is absent) still contributes to RunMeta.
-        orchestrator = build_orchestrate_software_delivery(
-            settings, chat_model=model_calls, invoke=invoke
-        )
-        intent = (
-            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
-            if generate_tests
-            else SoftwareDeliveryIntent.RISK_SCORE
-        )
-        return orchestrator.execute(
-            OrchestrateSoftwareDeliveryRequest(
-                intent=intent,
-                target=target,
-                evidence=evidence_bundle_from_hits(hits),
-                output_style=output_style,
+        orchestrate = build_agent_orchestrate(
+            LangGraphToolAgent(
+                model_factory=_software_delivery_agent_model_factory(settings)
             )
         )
+    else:
+
+        def orchestrate(
+            *,
+            target: str,
+            hits: Sequence[ScoredChunk],
+            generate_tests: bool,
+            output_style: str,
+            invoke: OpaqueInvoke,
+        ):
+            from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
+            from packs.software_delivery.orchestration_contracts import (
+                OrchestrateSoftwareDeliveryRequest,
+            )
+            from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+
+            # Pass the recording wrapper so any future path that builds tools from
+            # chat_model (when invoke is absent) still contributes to RunMeta.
+            orchestrator = build_orchestrate_software_delivery(
+                settings, chat_model=model_calls, invoke=invoke
+            )
+            intent = (
+                SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+                if generate_tests
+                else SoftwareDeliveryIntent.RISK_SCORE
+            )
+            return orchestrator.execute(
+                OrchestrateSoftwareDeliveryRequest(
+                    intent=intent,
+                    target=target,
+                    evidence=evidence_bundle_from_hits(hits),
+                    output_style=output_style,
+                )
+            )
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_relevant_retrieve(settings, vector_store=vector_store),
@@ -2007,6 +2018,34 @@ def build_tool_augmented_ask(
             pack_id="software-delivery",
         )
     )
+
+
+def _software_delivery_agent_model_factory(settings: Settings):
+    """Return a LangChain chat model factory with ``bind_tools`` for the agent.
+
+    Uses OpenAI-compatible clients for both OpenRouter and Ollama so the
+    LangGraph adapter can bind domain tools without depending on ``ChatModel``.
+    """
+
+    def factory(**_kwargs: object):
+        from langchain_openai import ChatOpenAI
+
+        if settings.provider == "ollama":
+            base = (settings.ollama.base_url or "").rstrip("/")
+            return ChatOpenAI(
+                model=settings.ollama.model,
+                api_key="ollama",
+                base_url=f"{base}/v1",
+                timeout=settings.ollama.timeout,
+            )
+        return ChatOpenAI(
+            model=settings.openrouter.model,
+            api_key=settings.openrouter.api_key,
+            base_url=settings.openrouter.base_url,
+            timeout=settings.openrouter.timeout,
+        )
+
+    return factory
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

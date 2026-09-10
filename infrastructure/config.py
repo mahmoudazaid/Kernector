@@ -106,9 +106,17 @@ class RetrievalSettings:
 
 @dataclass(frozen=True, slots=True)
 class DomainToolSettings:
-    """Optional executable domain tool packs enabled at composition time."""
+    """Optional executable domain tool packs enabled at composition time.
+
+    Args:
+        enabled_packs (tuple[str, ...]): Pack ids from ``DOMAIN_TOOL_PACKS``.
+        agent_loop (bool): When true, Software Delivery chat uses the LangGraph
+            agent orchestrator instead of the deterministic #170 chain. Default
+            false — do not flip until the agent path is proven.
+    """
 
     enabled_packs: tuple[str, ...]
+    agent_loop: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -537,7 +545,10 @@ def _load_domain_tool_settings() -> DomainToolSettings:
             )
         seen.add(name)
         ordered.append(name)
-    return DomainToolSettings(enabled_packs=tuple(ordered))
+    return DomainToolSettings(
+        enabled_packs=tuple(ordered),
+        agent_loop=_env_bool("SOFTWARE_DELIVERY_AGENT_LOOP", "false"),
+    )
 
 
 def _env_truthy(name: str, default: str = "") -> bool:
