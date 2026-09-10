@@ -323,7 +323,9 @@ def _extract_json_object(raw: str) -> object:
     Top-level JSON objects are scanned left-to-right in the completion. The
     last object that uniquely carries a ``score`` wins, so an earlier fenced
     example cannot outrank a later prose verdict. When no score-bearing object
-    exists, the last top-level dict is returned for ``missing_score`` handling.
+    exists, the last top-level dict is returned for ``missing_score`` handling;
+    a scoreless or ambiguous top-level array returns an empty dict for the same
+    path.
     """
     stripped = raw.strip()
     last_scored: object | None = None
