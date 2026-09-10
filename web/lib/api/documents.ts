@@ -1,5 +1,5 @@
 import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
-import type { components } from "@/lib/api/generated/schema";
+import type { components, paths } from "@/lib/api/generated/schema";
 
 export type CatalogDocumentResponse =
   components["schemas"]["CatalogDocumentResponse"];
@@ -29,7 +29,9 @@ export type ListDocumentsOptions = {
 export type ListDocumentChunksOptions = {
   baseUrl: string;
   sourceId: string;
-  sourceType: string;
+  sourceType: NonNullable<
+    paths["/api/v1/documents/{source_id}/chunks"]["get"]["parameters"]["query"]
+  >["source_type"];
   limit?: number;
   offset?: number;
   signal?: AbortSignal;

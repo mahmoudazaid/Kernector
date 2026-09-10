@@ -1,5 +1,7 @@
 """DualWriteVectorStore keeps VectorStore and LexicalIndex in sync."""
 
+import pytest
+
 from domain.knowledge import (
     DocumentChunk,
     EmbeddedChunk,
@@ -111,3 +113,38 @@ def test_dual_write_list_source_chunks_delegates_to_vector_only() -> None:
 
     assert [c.content for c in listed] == ["listed body"]
     assert [c.index for c in listed] == [0]
+
+
+def test_dual_write_list_source_chunks_forwards_limit_and_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vector = InMemoryVectorStore()
+    lexical = InMemoryLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    captured: dict[str, object] = {}
+
+    def spy(
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ):
+        captured["reference"] = reference
+        captured["limit"] = limit
+        captured["offset"] = offset
+        return ()
+
+    monkeypatch.setattr(vector, "list_source_chunks", spy)
+
+    listed = store.list_source_chunks(
+        SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT),
+        limit=2,
+        offset=1,
+    )
+
+    assert listed == ()
+    assert captured == {
+        "reference": SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT),
+        "limit": 2,
+        "offset": 1,
+    }

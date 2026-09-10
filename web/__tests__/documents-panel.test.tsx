@@ -14,7 +14,7 @@ vi.mock("@/lib/api/documents", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/documents")>();
   return {
     ...actual,
-    listDocumentChunks: vi.fn().mockResolvedValue({ chunks: [] }),
+    listDocumentChunks: vi.fn().mockResolvedValue({ chunks: [], has_more: false }),
   };
 });
 
@@ -1105,6 +1105,7 @@ describe("DocumentsPanel", () => {
           extra: {},
         },
       ],
+      has_more: false,
     });
     render(
       <DocumentsPanel
@@ -1144,7 +1145,7 @@ describe("DocumentsPanel", () => {
   });
 
   it("shows empty chunk state for a ready document with no chunks", async () => {
-    const empty = vi.fn().mockResolvedValue({ chunks: [] });
+    const empty = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
@@ -1248,6 +1249,7 @@ describe("DocumentsPanel", () => {
             extra: {},
           },
         ],
+        has_more: false,
       });
     });
     render(
@@ -1272,12 +1274,12 @@ describe("DocumentsPanel", () => {
       expect(firstSignal.current?.aborted).toBe(true);
     });
     expect(await screen.findByText("second doc chunk")).toBeInTheDocument();
-    resolveFirst?.({ chunks: [] });
+    resolveFirst?.({ chunks: [], has_more: false });
     expect(screen.queryByText("first body")).not.toBeInTheDocument();
   });
 
   it("refetches chunks after replace when selection stays ready", async () => {
-    const listChunks = vi.fn().mockResolvedValue({ chunks: [] });
+    const listChunks = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
     const list = vi
       .fn()
       .mockResolvedValueOnce(
@@ -1353,8 +1355,8 @@ describe("DocumentsPanel", () => {
     }));
     const listChunks = vi
       .fn()
-      .mockResolvedValueOnce({ chunks: page1 })
-      .mockResolvedValueOnce({ chunks: page2 });
+      .mockResolvedValueOnce({ chunks: page1, has_more: true })
+      .mockResolvedValueOnce({ chunks: page2, has_more: false });
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
@@ -1366,7 +1368,7 @@ describe("DocumentsPanel", () => {
     const user = userEvent.setup();
     await openDocumentsTab(user);
     expect(await screen.findByText("body-0")).toBeInTheDocument();
-    expect(screen.getByText(/showing 50 of 60 chunks/i)).toBeInTheDocument();
+    expect(screen.getByText(/showing 50 chunks \(more available\)/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /load more chunks/i }));
 
@@ -1375,7 +1377,7 @@ describe("DocumentsPanel", () => {
       expect.objectContaining({ offset: 50, limit: 50 }),
     );
     expect(await screen.findByText("body-59")).toBeInTheDocument();
-    expect(screen.getByText(/showing 60 of 60 chunks/i)).toBeInTheDocument();
+    expect(screen.getByText(/^showing 60 chunks$/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /all chunks loaded/i }),
     ).toBeDisabled();
@@ -1392,7 +1394,7 @@ describe("DocumentsPanel", () => {
       content_format: "markdown",
       extra: {},
     }));
-    const listChunks = vi.fn().mockResolvedValue({ chunks: page });
+    const listChunks = vi.fn().mockResolvedValue({ chunks: page, has_more: false });
     render(
       <DocumentsPanel
         apiBaseUrl="http://api.test"
@@ -1411,7 +1413,7 @@ describe("DocumentsPanel", () => {
   });
 
   it("ignores a stale load-more response after selection changes", async () => {
-    let resolveMore: ((value: { chunks: unknown[] }) => void) | undefined;
+    let resolveMore: ((value: { chunks: unknown[]; has_more: boolean }) => void) | undefined;
     const listChunks = vi.fn().mockImplementation(
       (options: { sourceId: string; offset?: number }) => {
         if (options.sourceId === "src-1" && (options.offset ?? 0) === 0) {
@@ -1426,10 +1428,11 @@ describe("DocumentsPanel", () => {
               content_format: "markdown",
               extra: {},
             })),
+            has_more: true,
           });
         }
         if (options.sourceId === "src-1" && options.offset === 50) {
-          return new Promise<{ chunks: unknown[] }>((resolve) => {
+          return new Promise<{ chunks: unknown[]; has_more: boolean }>((resolve) => {
             resolveMore = resolve;
           });
         }
@@ -1446,6 +1449,7 @@ describe("DocumentsPanel", () => {
               extra: {},
             },
           ],
+          has_more: false,
         });
       },
     );
@@ -1484,6 +1488,7 @@ describe("DocumentsPanel", () => {
           extra: {},
         },
       ],
+      has_more: false,
     });
     await waitFor(() => expect(screen.getByText("b-only")).toBeInTheDocument());
     expect(screen.queryByText("stale-a")).not.toBeInTheDocument();
@@ -1503,6 +1508,7 @@ describe("DocumentsPanel", () => {
           content_format: "markdown",
           extra: {},
         })),
+        has_more: true,
       })
       .mockRejectedValueOnce(ApiError.aborted());
     render(
@@ -1521,11 +1527,11 @@ describe("DocumentsPanel", () => {
       await screen.findByText(/cancelled or timed out/i),
     ).toBeInTheDocument();
     expect(screen.getByText("keep-0")).toBeInTheDocument();
-    expect(screen.getByText(/showing 50 of 60 chunks/i)).toBeInTheDocument();
+    expect(screen.getByText(/showing 50 chunks \(more available\)/i)).toBeInTheDocument();
   });
 
   it("refetches chunks when only chunk_count changes", async () => {
-    const listChunks = vi.fn().mockResolvedValue({ chunks: [] });
+    const listChunks = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
     const list = vi
       .fn()
       .mockResolvedValueOnce(
@@ -1586,6 +1592,7 @@ describe("DocumentsPanel", () => {
           extra: {},
         },
       ],
+      has_more: false,
     });
     render(
       <DocumentsPanel

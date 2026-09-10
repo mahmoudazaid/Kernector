@@ -544,6 +544,31 @@ def test_list_source_chunks_applies_limit_and_offset(
     assert [c.content for c in page] == ["c1", "c2"]
 
 
+def test_list_source_chunks_pages_positionally_with_index_gaps(
+    store: ChromaVectorStore,
+) -> None:
+    """Blank-window gaps in chunk_index must not skew limit/offset pages."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=index, content=f"c{index}")
+            for index in (10, 11, 12, 40, 41)
+        ]
+    )
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=3, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=3, offset=3)
+
+    assert [c.index for c in page1] == [10, 11, 12]
+    assert [c.index for c in page2] == [40, 41]
+
+
+def test_list_source_chunks_rejects_negative_offset(
+    store: ChromaVectorStore,
+) -> None:
+    with pytest.raises(ChromaStoreError, match="offset"):
+        store.list_source_chunks(make_reference("doc-1"), offset=-1)
+
+
 def test_list_source_chunks_does_not_request_embeddings(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -561,8 +586,8 @@ def test_list_source_chunks_does_not_request_embeddings(
     listed = store.list_source_chunks(make_reference("doc-1"))
 
     assert [c.content for c in listed] == ["body"]
-    assert captured == [["metadatas", "documents"]]
-    assert "embeddings" not in captured[0]
+    assert captured == [["metadatas"], ["metadatas", "documents"]]
+    assert all("embeddings" not in include for include in captured)
 
 
 def test_list_source_chunks_get_failure_stays_a_store_error(

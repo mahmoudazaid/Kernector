@@ -156,11 +156,15 @@ class VectorStore(Protocol):
         Scoped by the whole `SourceReference`, so the same `source_id` under a
         different `source_type` is excluded. A reference matching no stored
         record returns an empty sequence. Results are ordered by ascending
-        ``chunk.index``. Optional ``limit``/``offset`` page after that order.
-        Does not return or compute embeddings.
+        ``chunk.index``. Optional ``limit``/``offset`` page **positionally**
+        after that order (not by raw ``chunk.index`` values, which may have
+        gaps). ``offset`` must be ``>= 0``. A non-positive ``limit`` yields an
+        empty sequence. Does not return or compute embeddings.
 
         Raises:
-            VectorStoreError: On any adapter-level failure.
+            VectorStoreError: On any adapter-level failure, including a negative
+                ``offset`` or a non-int ``limit``/``offset`` where the adapter
+                validates types.
         """
 
 

@@ -481,11 +481,11 @@ def test_list_chunks_known_empty_returns_200_empty_list(client_factory) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"chunks": []}
+    assert response.json() == {"chunks": [], "has_more": False}
     assert ledger["listed_chunks"][0][0] == SourceReference(
         "src-1", SourceType.KNOWLEDGE_DOCUMENT
     )
-    assert ledger["listed_chunks"][0][1] == 50
+    assert ledger["listed_chunks"][0][1] == 51
     assert ledger["listed_chunks"][0][2] == 0
 
 
@@ -508,6 +508,7 @@ def test_list_chunks_returns_ordered_allowlisted_payload(client_factory) -> None
 
     assert response.status_code == 200
     body = response.json()
+    assert body["has_more"] is False
     assert [c["index"] for c in body["chunks"]] == [0, 1]
     assert [c["content"] for c in body["chunks"]] == ["first", "second"]
     first = body["chunks"][0]
@@ -619,4 +620,37 @@ def test_list_chunks_forwards_limit_and_offset(client_factory) -> None:
     )
 
     assert response.status_code == 200
-    assert ledger["listed_chunks"][0][1:] == (10, 20)
+    assert ledger["listed_chunks"][0][1:] == (11, 20)
+
+
+def test_list_chunks_reports_has_more_from_limit_plus_one(client_factory) -> None:
+    def _list_chunks(
+        _reference: SourceReference, *, limit: int | None = None, offset: int = 0
+    ) -> tuple[DocumentChunk, ...]:
+        assert limit == 3
+        assert offset == 0
+        return tuple(
+            _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(3)
+        )
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["content"] for c in body["chunks"]] == ["c0", "c1"]
+    assert body["has_more"] is True
+
+
+def test_hub_source_type_literal_matches_domain_allowlist() -> None:
+    from typing import get_args
+
+    from domain.knowledge import HUB_SOURCE_TYPES
+    from presentation.http.routes.documents import HubSourceType
+
+    assert set(get_args(HubSourceType)) == HUB_SOURCE_TYPES

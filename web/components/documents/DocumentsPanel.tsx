@@ -252,17 +252,12 @@ export function DocumentsPanel({
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const listChunksRef = useRef(listChunks);
-  const selectedIdRef = useRef(selectedId);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const [chunksLoadingMore, setChunksLoadingMore] = useState(false);
 
   useEffect(() => {
     listChunksRef.current = listChunks;
   });
-
-  useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
 
   useEffect(() => {
     captureDriveCallback();
@@ -367,10 +362,7 @@ export function DocumentsPanel({
     visibleDocuments.find((doc) => doc.source_id === selectedId) ?? null;
   const accept = constraints?.supported_upload_suffixes.join(",");
   const selectedSourceId = selected?.source_id ?? null;
-  const chunksTarget =
-    selectedSourceId == null
-      ? null
-      : (documents.find((doc) => doc.source_id === selectedSourceId) ?? null);
+  const chunksTarget = selected;
   const chunksTargetSourceType = chunksTarget?.source_type;
   const chunksTargetStatus = chunksTarget?.status;
   const chunksTargetChunkCount = chunksTarget?.chunk_count;
@@ -385,7 +377,7 @@ export function DocumentsPanel({
     loadMoreAbortRef.current?.abort();
     loadMoreAbortRef.current = null;
     setChunksLoadingMore(false);
-    if (!selectedSourceId || !chunksTarget || chunksTargetStatus !== "ready") {
+    if (!chunksTarget || chunksTargetStatus !== "ready") {
       setChunksView({ kind: "idle" });
       return;
     }
@@ -393,7 +385,6 @@ export function DocumentsPanel({
     let active = true;
     const sourceId = chunksTarget.source_id;
     const sourceType = chunksTarget.source_type;
-    const totalCount = chunksTarget.chunk_count;
     setChunksView({ kind: "loading" });
     void listChunksRef
       .current({
@@ -415,7 +406,7 @@ export function DocumentsPanel({
         setChunksView({
           kind: "ready",
           chunks: response.chunks,
-          hasMore: response.chunks.length < totalCount,
+          hasMore: response.has_more,
           loadMoreError: null,
         });
       })
@@ -436,6 +427,7 @@ export function DocumentsPanel({
     return () => {
       active = false;
       controller.abort();
+      loadMoreAbortRef.current?.abort();
     };
     // refresh is stable enough for a post-404 catalog reconcile; omit from deps
     // so a parent re-render does not re-download chunks.
@@ -459,9 +451,7 @@ export function DocumentsPanel({
     ) {
       return;
     }
-    const targetId = chunksTarget.source_id;
     const targetType = chunksTarget.source_type;
-    const totalCount = chunksTarget.chunk_count;
     const offset = chunksView.chunks.length;
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
@@ -470,29 +460,36 @@ export function DocumentsPanel({
     try {
       const response = await listChunksRef.current({
         baseUrl: apiBaseUrl,
-        sourceId: targetId,
+        sourceId: chunksTarget.source_id,
         sourceType: targetType,
         limit: DOCUMENT_CHUNKS_PAGE_SIZE,
         offset,
         signal: controller.signal,
       });
-      if (controller.signal.aborted || selectedIdRef.current !== targetId) {
+      if (controller.signal.aborted) {
         return;
       }
       setChunksView((prev) => {
         if (prev.kind !== "ready") {
           return prev;
         }
-        const chunks = [...prev.chunks, ...response.chunks];
+        const byIndex = new Map(prev.chunks.map((chunk) => [chunk.index, chunk]));
+        for (const chunk of response.chunks) {
+          byIndex.set(chunk.index, chunk);
+        }
+        const chunks = [...byIndex.values()].toSorted(
+          (a, b) => a.index - b.index,
+        );
         return {
           kind: "ready",
           chunks,
-          hasMore: chunks.length < totalCount,
+          hasMore:
+            response.chunks.length > 0 && response.has_more,
           loadMoreError: null,
         };
       });
     } catch (error: unknown) {
-      if (controller.signal.aborted || selectedIdRef.current !== targetId) {
+      if (controller.signal.aborted) {
         return;
       }
       if (error instanceof ApiError && error.status === 404) {
@@ -1020,8 +1017,9 @@ export function DocumentsPanel({
                   ) : null}
                   {chunksView.kind === "ready" ? (
                     <p className="kern-settings-hint">
-                      Showing {chunksView.chunks.length} of{" "}
-                      {selected.chunk_count} chunks
+                      Showing {chunksView.chunks.length} chunk
+                      {chunksView.chunks.length === 1 ? "" : "s"}
+                      {chunksView.hasMore ? " (more available)" : ""}
                     </p>
                   ) : null}
                 </div>
@@ -1043,25 +1041,27 @@ export function DocumentsPanel({
                 ) : null}
                 {chunksView.kind === "ready" ? (
                   <>
-                    <ol
-                      className="kern-documents-chunk-list"
-                      tabIndex={0}
+                    <div
+                      className="kern-documents-chunk-list-scroll"
                       role="region"
                       aria-label="Stored chunks"
+                      tabIndex={0}
                     >
-                      {chunksView.chunks.map((chunk) => (
-                        <li
-                          key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}`}
-                        >
-                          <span className="kern-documents-chunk-index">
-                            Chunk {chunk.index}
-                          </span>
-                          <pre className="kern-documents-chunk-content">
-                            {chunk.content}
-                          </pre>
-                        </li>
-                      ))}
-                    </ol>
+                      <ol className="kern-documents-chunk-list">
+                        {chunksView.chunks.map((chunk) => (
+                          <li
+                            key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}`}
+                          >
+                            <span className="kern-documents-chunk-index">
+                              Chunk {chunk.index}
+                            </span>
+                            <pre className="kern-documents-chunk-content">
+                              {chunk.content}
+                            </pre>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
                     {chunksView.loadMoreError ? (
                       <div
                         className="kern-settings-callout kern-settings-callout--warn"

@@ -1891,19 +1891,22 @@ a.kern-btn {
   gap: var(--kern-space-2);
 }
 
+.kern-documents-chunk-list-scroll {
+  max-height: min(70vh, 36rem);
+  overflow: auto;
+}
+
+.kern-documents-chunk-list-scroll:focus-visible {
+  outline: 2px solid var(--kern-focus);
+  outline-offset: 2px;
+}
+
 .kern-documents-chunk-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   gap: var(--kern-space-3);
-  max-height: min(70vh, 36rem);
-  overflow: auto;
-}
-
-.kern-documents-chunk-list:focus-visible {
-  outline: 2px solid var(--kern-focus);
-  outline-offset: 2px;
 }
 
 .kern-documents-chunk-list li {

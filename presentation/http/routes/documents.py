@@ -28,7 +28,7 @@ from presentation.http.schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
-HubSourceType = Literal["knowledge_document", "google_drive"]
+HubSourceType = Literal[SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE]
 _DEFAULT_CHUNK_LIMIT = 50
 _MAX_CHUNK_LIMIT = 200
 
@@ -174,11 +174,14 @@ def list_document_chunks(
 ) -> DocumentChunkListResponse:
     """Return a page of stored chunks for one catalogued source."""
     source_id = _require_source_id(source_id)
-    chunks = ops.list_chunks(
+    fetched = ops.list_chunks(
         SourceReference(source_id, source_type),
-        limit=limit,
+        limit=limit + 1,
         offset=offset,
     )
+    has_more = len(fetched) > limit
+    page = fetched[:limit] if has_more else fetched
     return DocumentChunkListResponse(
-        chunks=[document_chunk_response(chunk) for chunk in chunks],
+        chunks=[document_chunk_response(chunk) for chunk in page],
+        has_more=has_more,
     )

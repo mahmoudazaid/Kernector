@@ -343,9 +343,13 @@
             },
             "title": "Chunks",
             "type": "array"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
           }
         },
-        "required": ["chunks"],
+        "required": ["chunks", "has_more"],
         "title": "DocumentChunkListResponse",
         "type": "object"
       },

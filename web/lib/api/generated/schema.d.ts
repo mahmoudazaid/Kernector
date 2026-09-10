@@ -415,6 +415,8 @@ export interface components {
     DocumentChunkListResponse: {
       /** Chunks */
       chunks: components["schemas"]["DocumentChunkResponse"][];
+      /** Has More */
+      has_more: boolean;
     };
     /**
      * DocumentChunkResponse

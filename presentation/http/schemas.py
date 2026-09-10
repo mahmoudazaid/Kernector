@@ -492,6 +492,7 @@ class DocumentChunkListResponse(BaseModel):
     """Stored chunks for one catalogued document."""
 
     chunks: list[DocumentChunkResponse]
+    has_more: bool
 
 
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
