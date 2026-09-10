@@ -172,14 +172,19 @@ same-host processes on a local filesystem.
 Upload catalog metadata uses SQLite at `data/catalog/catalog.sqlite` by default
 (`DOCUMENT_CATALOG_SQL_PATH`). Set `DOCUMENT_CATALOG_WORKSPACE_ID` in `.env`
 before opening the catalog (case-sensitive `fullmatch` `[A-Za-z0-9_-]+`, at most
-64 characters). `.env.example` ships `local` as a working default.
+64 characters). `.env.example` shows `local` as a commented example — uncomment
+or set it in the process environment; `.env` overrides the process environment
+when `load_settings()` runs.
 
 **Upgrading from the JSON catalog.** [#261](https://github.com/mahmoudazaid/Kernector/issues/261)
 removes `JsonDocumentCatalog` and the migrate CLI. If you still have rows in
 `data/catalog/uploads.json`, run the migrator on the **previous** release first
 (`uv run python -m presentation.cli.migrate_document_catalog` with
-`DOCUMENT_CATALOG_BACKEND=sql` and a valid workspace id), then upgrade. Skipping
-that step leaves Chroma chunks without listable catalog rows.
+`DOCUMENT_CATALOG_BACKEND=sql` and a valid workspace id), then upgrade. Before
+starting the upgraded build, remove `DOCUMENT_CATALOG_BACKEND` and
+`DOCUMENT_CATALOG_PATH` from `.env` (and the process environment). Non-blank
+values fail when the catalog is built. Skipping migration leaves Chroma chunks
+without listable catalog rows.
 
 Verified official SQLite builds (3.51.3+, 3.50.7+ within 3.50, 3.44.6+ within
 3.44) use WAL; other builds use rollback-journal with `BEGIN IMMEDIATE`. WAL

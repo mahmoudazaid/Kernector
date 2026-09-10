@@ -12,11 +12,20 @@ _WORKSPACE_ID_CONTRACT = (
 )
 
 
-def _parse_workspace_id(raw: str | None) -> str | None:
+def parse_workspace_id(raw: str | None) -> str | None:
     """Strip and validate a workspace identifier.
 
     Empty or whitespace-only values are absent. Present values must match the
     charset and length contract.
+
+    Args:
+        raw (str | None): Candidate identifier, typically from configuration.
+
+    Returns:
+        str | None: The stripped identifier, or ``None`` when absent.
+
+    Raises:
+        ValueError: The stripped value fails the charset or length contract.
     """
     if raw is None:
         return None
@@ -39,9 +48,10 @@ def require_workspace_id(raw: str | None) -> str:
 
     Raises:
         ValueError: The value is absent or fails the charset or length contract.
+            The message names ``workspace_id``.
     """
     try:
-        parsed = _parse_workspace_id(raw)
+        parsed = parse_workspace_id(raw)
     except ValueError as error:
         raise ValueError(f"workspace_id {error}") from error
     if parsed is None:

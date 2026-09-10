@@ -2,6 +2,7 @@
 
 import importlib.util
 import logging
+import os
 import re
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -94,6 +95,7 @@ from domain.ports import (
 )
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
+from infrastructure.catalog.workspace import require_workspace_id
 from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
@@ -486,30 +488,49 @@ def ingest_uploaded_document(
         raise _upload_error_from_ingest_failure(settings, error) from error
 
 
+_RETIRED_CATALOG_ENV = (
+    "DOCUMENT_CATALOG_BACKEND",
+    "DOCUMENT_CATALOG_PATH",
+)
+
+
+def _reject_retired_catalog_env() -> None:
+    """Fail when a non-blank retired catalog key is still configured."""
+    for key in _RETIRED_CATALOG_ENV:
+        value = os.getenv(key)
+        if value is not None and value.strip():
+            raise ConfigurationError(
+                f"{key} is retired; use DOCUMENT_CATALOG_SQL_PATH and "
+                "DOCUMENT_CATALOG_WORKSPACE_ID"
+            )
+
+
 def build_document_catalog(settings: Settings) -> DocumentCatalog:
     """Build the workspace-bound SQL catalog adapter.
 
     Args:
-        settings (Settings): Runtime catalog configuration with a validated
-            ``sql_path`` and ``workspace_id``.
+        settings (Settings): Runtime catalog configuration with a
+            ``sql_path`` and optional ``workspace_id`` (validated here).
 
     Returns:
         DocumentCatalog: ``SqlDocumentCatalog`` bound to the configured workspace.
 
     Raises:
         ConfigurationError: ``DOCUMENT_CATALOG_WORKSPACE_ID`` is absent or
-            invalid.
+            invalid, or a retired catalog env key is still set.
         DocumentOperationError: The SQLite file or schema is unusable.
     """
+    _reject_retired_catalog_env()
     catalog = settings.document_catalog
-    if catalog.workspace_id is None:
-        raise ConfigurationError(
-            "DOCUMENT_CATALOG_WORKSPACE_ID is required"
-        )
     try:
-        return SqlDocumentCatalog(catalog.sql_path, catalog.workspace_id)
+        workspace_id = require_workspace_id(catalog.workspace_id)
     except ValueError as error:
-        raise ConfigurationError(str(error)) from error
+        detail = str(error).removeprefix("workspace_id ").strip()
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID {detail}"
+        ) from error
+    try:
+        return SqlDocumentCatalog(catalog.sql_path, workspace_id)
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
     except OSError as error:

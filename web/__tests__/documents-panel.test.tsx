@@ -289,13 +289,16 @@ describe("DocumentsPanel", () => {
       .closest(".kern-source-busy-overlay");
     expect(overlay).toBeInTheDocument();
     expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /add files/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /add files/i })).toBeDisabled();
 
     resolveUpload(doc({ source_id: "new-id" }));
     expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByText(/uploading files/i)).not.toBeInTheDocument();
     });
+    expect(
+      screen.queryByRole("heading", { name: /upload files/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("reopens the upload dialog with the same file after a failed upload", async () => {
@@ -322,12 +325,10 @@ describe("DocumentsPanel", () => {
     await user.upload(screen.getByLabelText(/document file/i), file);
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /document upload failed/i,
-    );
-    expect(
-      await screen.findByRole("heading", { name: /upload files/i }),
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog");
+    const alert = await screen.findByRole("alert");
+    expect(dialog.contains(alert)).toBe(true);
+    expect(alert).toHaveTextContent(/document upload failed/i);
     expect(screen.getByText(/selected: spec\.md/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^upload new$/i })).toBeEnabled();
   });

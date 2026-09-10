@@ -230,6 +230,7 @@ export function DocumentsPanel({
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const uploadCardRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     captureDriveCallback();
@@ -372,6 +373,9 @@ export function DocumentsPanel({
     setUploading(true);
     setBusy(true);
     setFeedback({ kind: "idle" });
+    queueMicrotask(() => {
+      uploadCardRef.current?.focus();
+    });
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
@@ -554,7 +558,7 @@ export function DocumentsPanel({
         </div>
       ) : null}
 
-      {feedback.kind !== "idle" ? (
+      {feedback.kind !== "idle" && !uploadOpen ? (
         <div
           className={`kern-settings-callout kern-settings-callout--${feedback.kind === "success" ? "ok" : "error"}`}
           role="status"
@@ -575,7 +579,9 @@ export function DocumentsPanel({
         </div>
         <div className="kern-source-grid">
           <article
+            ref={uploadCardRef}
             className="kern-source-card"
+            tabIndex={-1}
             aria-busy={uploading}
           >
             {uploading ? (
@@ -618,7 +624,7 @@ export function DocumentsPanel({
             <div className="kern-source-actions">
               <Button
                 type="button"
-                disabled={!constraints || (busy && !uploading)}
+                disabled={busy || !constraints}
                 onClick={() => setUploadOpen(true)}
               >
                 <UploadIcon />
@@ -897,6 +903,14 @@ export function DocumentsPanel({
           Files become part of the shared document catalog. A system-managed
           source ID is assigned automatically.
         </p>
+        {feedback.kind === "error" ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+          >
+            <p>{feedback.message}</p>
+          </div>
+        ) : null}
         <form className="kern-documents-form" onSubmit={onUpload}>
           <label className="kern-settings-field">
             <span>Document file</span>

@@ -8,8 +8,6 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pathlib import Path
 
-from infrastructure.catalog.workspace import _parse_workspace_id
-
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
 _GOOGLE_DRIVE_FOLDER_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -55,8 +53,9 @@ class DocumentCatalogSettings:
 
     Args:
         sql_path (Path): SQLite file used by the SQL catalog adapter.
-        workspace_id (str | None): Bound SQL workspace identity. Validated when
-            present; required when composition builds the catalog.
+        workspace_id (str | None): Bound SQL workspace identity. Stored as the
+            stripped env value when present (including malformed values);
+            validated when composition builds the catalog.
     """
 
     sql_path: Path
@@ -308,16 +307,6 @@ def _load_knowledge_settings() -> KnowledgeSettings:
 
 
 def _load_document_catalog_settings() -> DocumentCatalogSettings:
-    if os.getenv("DOCUMENT_CATALOG_BACKEND") is not None:
-        raise ValueError(
-            "DOCUMENT_CATALOG_BACKEND is retired; use "
-            "DOCUMENT_CATALOG_SQL_PATH and DOCUMENT_CATALOG_WORKSPACE_ID"
-        )
-    if os.getenv("DOCUMENT_CATALOG_PATH") is not None:
-        raise ValueError(
-            "DOCUMENT_CATALOG_PATH is retired; use "
-            "DOCUMENT_CATALOG_SQL_PATH and DOCUMENT_CATALOG_WORKSPACE_ID"
-        )
     sql_path = os.getenv(
         "DOCUMENT_CATALOG_SQL_PATH", "data/catalog/catalog.sqlite"
     )
@@ -325,14 +314,14 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
         raise ValueError(
             f"DOCUMENT_CATALOG_SQL_PATH must be non-empty, got {sql_path!r}"
         )
-    try:
-        workspace_id = _parse_workspace_id(
-            os.getenv("DOCUMENT_CATALOG_WORKSPACE_ID")
-        )
-    except ValueError as error:
-        raise ValueError(
-            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
-        ) from error
+    # Strip only — charset / presence checks run at catalog build so HTTP
+    # bootstrap, OpenAPI export, and ingest --help stay catalog-agnostic.
+    raw_workspace = os.getenv("DOCUMENT_CATALOG_WORKSPACE_ID")
+    workspace_id = (
+        raw_workspace.strip()
+        if raw_workspace is not None and raw_workspace.strip()
+        else None
+    )
     return DocumentCatalogSettings(
         sql_path=_resolve_under_project_root(sql_path),
         workspace_id=workspace_id,

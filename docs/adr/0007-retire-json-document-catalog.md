@@ -20,12 +20,14 @@ writes, and no `workspace_id` scope.
 1. **SQL only** — Composition wires only `SqlDocumentCatalog`. Delete
    `JsonDocumentCatalog`, the JSON→SQL migrator, and the migrate CLI.
 2. **Retired env keys** — Stop reading `DOCUMENT_CATALOG_BACKEND` and
-   `DOCUMENT_CATALOG_PATH`. If either is present in the environment,
-   `load_settings()` fails fast and points operators at
-   `DOCUMENT_CATALOG_SQL_PATH` / `DOCUMENT_CATALOG_WORKSPACE_ID`.
-3. **Workspace at use** — `load_settings()` validates
-   `DOCUMENT_CATALOG_WORKSPACE_ID` when present (blank is absent) but does not
-   require it for process bootstrap (HTTP CORS, OpenAPI export, ingest help).
+   `DOCUMENT_CATALOG_PATH`. If either is present and non-blank,
+   building the catalog fails with `ConfigurationError` and points operators at
+   `DOCUMENT_CATALOG_SQL_PATH` / `DOCUMENT_CATALOG_WORKSPACE_ID`. Process
+   bootstrap (`load_settings`, HTTP CORS, OpenAPI export, CLI `--help`) does
+   not inherit this failure.
+3. **Workspace at use** — `load_settings()` stores a stripped
+   `DOCUMENT_CATALOG_WORKSPACE_ID` when present (blank is absent) without
+   charset or length validation, so process bootstrap stays catalog-agnostic.
    Building the catalog requires a valid workspace and raises
    `ConfigurationError` when it is missing or invalid.
 4. **Upgrade path** — Operators with rows in `data/catalog/uploads.json` must

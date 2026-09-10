@@ -103,13 +103,28 @@ def test_build_document_catalog_requires_workspace(settings: Settings) -> None:
 
 
 def test_build_document_catalog_maps_invalid_workspace_value_error(
+    settings: Settings,
+) -> None:
+    bad = replace(
+        settings,
+        document_catalog=replace(
+            settings.document_catalog,
+            workspace_id="bad id",
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        composition_container.build_document_catalog(bad)
+
+
+def test_build_document_catalog_rejects_retired_env_keys(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(_path: Path, _workspace_id: str) -> object:
-        raise ValueError("workspace_id must fullmatch [A-Za-z0-9_-]+")
-
-    monkeypatch.setattr(composition_container, "SqlDocumentCatalog", boom)
-    with pytest.raises(ConfigurationError, match="workspace_id"):
+    monkeypatch.setenv("DOCUMENT_CATALOG_" + "BACKEND", "sql")
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_BACKEND is retired"):
+        composition_container.build_document_catalog(settings)
+    monkeypatch.delenv("DOCUMENT_CATALOG_" + "BACKEND", raising=False)
+    monkeypatch.setenv("DOCUMENT_CATALOG_" + "PATH", "/tmp/uploads.json")
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_PATH is retired"):
         composition_container.build_document_catalog(settings)
 
 

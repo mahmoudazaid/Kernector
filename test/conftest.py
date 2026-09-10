@@ -21,3 +21,5 @@ def _isolate_settings_from_dotenv(
         "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite")
     )
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
+    monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
+    monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)

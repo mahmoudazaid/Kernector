@@ -5,8 +5,6 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from application.errors import ConfigurationError
-from composition import container as composition_container
 from infrastructure.config import load_settings
 from presentation.http.app import create_app
 
@@ -22,11 +20,32 @@ def test_create_app_and_health_work_without_catalog_workspace(
     assert load_settings().document_catalog.workspace_id is None
 
 
-def test_build_document_catalog_fails_when_workspace_absent_after_bootstrap(
+def test_create_app_and_health_work_with_malformed_catalog_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "bad id")
+    app = create_app()
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert load_settings().document_catalog.workspace_id == "bad id"
+
+
+def test_create_app_and_health_work_with_retired_catalog_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCUMENT_CATALOG_" + "BACKEND", "sql")
+    app = create_app()
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+
+
+def test_list_documents_reports_configuration_error_without_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
-    settings = load_settings()
-    assert settings.document_catalog.workspace_id is None
-    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        composition_container.build_document_catalog(settings)
+    app = create_app()
+    response = TestClient(app).get("/api/v1/documents")
+    assert response.status_code == 500
+    body = response.json()
+    assert body["code"] == "configuration_error"
+    assert body["detail"] == "The service is not configured correctly."

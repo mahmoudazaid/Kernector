@@ -20,9 +20,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_SQL_PATH", raising=False)
-    # Suite pin from conftest; keep a valid default for non-catalog tests.
-    # Absence is only cleared in tests that assert the optional load path.
-    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
+    # Workspace pin and retired-key clears live in test/conftest.py.
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
@@ -172,18 +170,20 @@ def test_blank_workspace_id_is_absent(env: pytest.MonkeyPatch, raw: str) -> None
 
 
 @pytest.mark.parametrize("raw", ["ws/id", "ws id", "ws.id", "ws@id"])
-def test_invalid_workspace_id_charset_is_rejected(
+def test_malformed_workspace_id_is_stored_for_catalog_build(
     env: pytest.MonkeyPatch, raw: str
 ) -> None:
+    """Charset checks run at catalog build, not settings load."""
     env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", raw)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        load_settings()
+    assert load_settings().document_catalog.workspace_id == raw
 
 
-def test_workspace_id_longer_than_64_is_rejected(env: pytest.MonkeyPatch) -> None:
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "w" * 65)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        load_settings()
+def test_oversized_workspace_id_is_stored_for_catalog_build(
+    env: pytest.MonkeyPatch,
+) -> None:
+    raw = "w" * 65
+    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", raw)
+    assert load_settings().document_catalog.workspace_id == raw
 
 
 def test_workspace_id_is_stripped(env: pytest.MonkeyPatch) -> None:
@@ -191,17 +191,16 @@ def test_workspace_id_is_stripped(env: pytest.MonkeyPatch) -> None:
     assert load_settings().document_catalog.workspace_id == "ws-trim"
 
 
-def test_retired_backend_and_path_env_are_rejected(
+def test_retired_catalog_env_does_not_fail_settings_load(
     env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Retired keys are rejected when building the catalog, not at load."""
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
     env.setenv("DOCUMENT_CATALOG_" + "BACKEND", "json")
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_BACKEND is retired"):
-        load_settings()
+    assert load_settings().document_catalog.sql_path == tmp_path / "catalog.sqlite"
     env.delenv("DOCUMENT_CATALOG_" + "BACKEND", raising=False)
     env.setenv("DOCUMENT_CATALOG_" + "PATH", str(tmp_path / "uploads.json"))
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_PATH is retired"):
-        load_settings()
+    assert load_settings().document_catalog.workspace_id == "test-workspace"
 
 
 def test_prompt_packs_default_to_core(env: pytest.MonkeyPatch) -> None:

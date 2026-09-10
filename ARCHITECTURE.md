@@ -413,15 +413,20 @@ unscoped. Application and presentation do not branch on adapter type.
 - **SQLite path** — `DOCUMENT_CATALOG_SQL_PATH` (default
   `data/catalog/catalog.sqlite`).
 - **Workspace** — `DOCUMENT_CATALOG_WORKSPACE_ID`. There is no reserved
-  `"default"` workspace. `load_settings()` validates the id when present
-  (`fullmatch` `[A-Za-z0-9_-]+`, at most 64 characters, stripped); blank values
-  are absent. Composition requires a workspace when building
-  `SqlDocumentCatalog` and maps that failure to `ConfigurationError`.
+  `"default"` workspace. `load_settings()` stores the stripped value when
+  present (blank is absent) and does not validate charset or length.
+  Composition requires a valid workspace when building `SqlDocumentCatalog`
+  and maps absence/malformation to `ConfigurationError`.
+- **Retired keys** — Non-blank `DOCUMENT_CATALOG_BACKEND` or
+  `DOCUMENT_CATALOG_PATH` fail at catalog build with `ConfigurationError`
+  (not at process bootstrap). Remove them after migrating from JSON.
 
 **Upgrading from JSON.** Before upgrading past the release that removed the
 JSON adapter ([#261](https://github.com/mahmoudazaid/Kernector/issues/261)),
 operators with rows in `data/catalog/uploads.json` must run the migrator on
-that prior release. See [README.md](README.md) and
+that prior release, then remove `DOCUMENT_CATALOG_BACKEND` and
+`DOCUMENT_CATALOG_PATH` before starting the upgraded build. See
+[README.md](README.md) and
 [ADR 0007](docs/adr/0007-retire-json-document-catalog.md).
 
 **Journal mode.** Official SQLite WAL-reset fixes are 3.51.3+, 3.50.7+ within
