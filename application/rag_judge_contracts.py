@@ -440,6 +440,7 @@ class RagJudgeReport:
         aggregates (Mapping[str, MetricAggregate]): Per-metric aggregates.
         limitations (Sequence[str]): Documented limitations.
         baseline_comparison (str | None): Comparison outcome code.
+        allowed_drop (float): Effective regression drop used by the gate.
     """
 
     schema_version: str
@@ -454,6 +455,7 @@ class RagJudgeReport:
     aggregates: Mapping[str, MetricAggregate]
     limitations: Sequence[str]
     baseline_comparison: str | None = None
+    allowed_drop: float = DEFAULT_ALLOWED_DROP
 
     def __post_init__(self) -> None:
         if self.schema_version != RAG_JUDGE_SCHEMA_VERSION:
@@ -476,6 +478,9 @@ class RagJudgeReport:
             raise ApplicationValidationError(
                 "ineligible runs cannot pass the quality gate"
             )
+        object.__setattr__(
+            self, "allowed_drop", _require_unit_number(self.allowed_drop, "allowed_drop")
+        )
         object.__setattr__(self, "results", tuple(self.results))
         object.__setattr__(self, "limitations", tuple(self.limitations))
         if not isinstance(self.aggregates, Mapping):

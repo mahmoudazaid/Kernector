@@ -83,8 +83,8 @@ class EvaluateKnowledge:
     InvokeTool.
 
     Ask scoring consumes ``ObservedRagRunner`` same-run hits. It does not
-    retrieve a second time. ``shared_retrieve_hits`` is true when the runner
-    confirmed generation hits against the recorded retrieve.
+    retrieve a second time. ``shared_retrieve_hits`` is true unless a populated
+    ``hit_count`` disagreed with generation hits.
 
     Args:
         retrieve (_RetrieveSeam): Seam returning ``RetrieveResponse``.

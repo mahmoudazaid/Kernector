@@ -16,7 +16,8 @@
     "fingerprints",
     "aggregates",
     "limitations",
-    "results"
+    "results",
+    "allowed_drop"
   ],
   "properties": {
     "schema_version": {
@@ -36,6 +37,11 @@
     "baseline_comparison": {
       "type": ["string", "null"],
       "enum": ["compared", "unaccepted", "incompatible", "not_compared", null]
+    },
+    "allowed_drop": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
     },
     "answer_model": {
       "type": "object",

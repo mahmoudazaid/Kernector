@@ -163,6 +163,7 @@ class EvaluateRag:
             aggregates=aggregates,
             limitations=_LIMITATIONS,
             baseline_comparison=baseline_status,
+            allowed_drop=thresholds.allowed_drop,
         )
 
 
@@ -205,7 +206,11 @@ def _score_case(
         citation_source_misses=citation_misses,
         unknown_source_types=unknown_types,
         failure_categories=_failure_categories(
-            metrics, retrieved_misses, citation_misses, unknown_types
+            metrics,
+            retrieved_misses,
+            citation_misses,
+            unknown_types,
+            shared_retrieve_hits=observation.shared_retrieve_hits,
         ),
         error_type=first_error,
     )
@@ -313,93 +318,76 @@ def parse_judge_output(metric_id: str, raw: str) -> MetricResult:
 
 
 def _extract_json_object(raw: str) -> object:
-    candidates = _candidate_texts(raw)
-    fallback: object | None = None
-    for candidate in candidates:
-        payload = _last_top_level_object(candidate)
-        if not isinstance(payload, dict):
-            continue
-        scored = _score_bearing(payload)
-        if scored is not None:
-            return scored
-        if fallback is None:
-            fallback = payload
-    if fallback is not None:
-        return fallback
-    raise json.JSONDecodeError("no judge verdict object", raw, 0)
+    """Return the last score-bearing object in document order.
 
-
-def _candidate_texts(raw: str) -> list[str]:
-    """Prefer `` ```json `` fences, then the whole completion.
-
-    Fence open/close pairs are tried exhaustively so a stray `` ``` `` earlier
-    in the completion cannot hide a later tagged fence. Bare fences are ignored
-    so echoed context cannot outrank a trailing prose verdict.
+    Top-level JSON objects are scanned left-to-right in the completion. The
+    last object that uniquely carries a ``score`` wins, so an earlier fenced
+    example cannot outrank a later prose verdict. When no score-bearing object
+    exists, the last top-level dict is returned for ``missing_score`` handling.
     """
     stripped = raw.strip()
-    positions: list[int] = []
-    index = 0
-    while True:
-        pos = stripped.find("```", index)
-        if pos < 0:
-            break
-        positions.append(pos)
-        index = pos + 3
-    bodies: list[tuple[int, str]] = []
-    for open_index, open_pos in enumerate(positions):
-        for close_pos in positions[open_index + 1 :]:
-            body = stripped[open_pos + 3 : close_pos].strip()
-            if not body.lower().startswith("json"):
-                continue
-            rest = body[4:]
-            if rest and not rest[0].isspace():
-                continue
-            bodies.append((close_pos, rest.lstrip()))
-            break
-    candidates: list[str] = []
-    seen: set[str] = set()
-    for _close, body in sorted(bodies, key=lambda item: item[0], reverse=True):
-        if body and body not in seen:
-            seen.add(body)
-            candidates.append(body)
-    if stripped not in seen:
-        candidates.append(stripped)
-    return candidates
-
-
-def _last_top_level_object(text: str) -> object | None:
-    """Return the last top-level JSON object in ``text``."""
+    last_scored: object | None = None
+    last_dict: object | None = None
     try:
-        return json.loads(text)
+        payload = json.loads(stripped)
     except json.JSONDecodeError:
-        pass
+        payload = None
+    else:
+        scored = _unique_score_bearing(payload)
+        if scored is not None:
+            return scored
+        if isinstance(payload, dict):
+            return payload
+        raise json.JSONDecodeError("no judge verdict object", raw, 0)
+
     decoder = json.JSONDecoder()
-    last: object | None = None
     index = 0
-    while index < len(text):
-        start = text.find("{", index)
+    while index < len(stripped):
+        start = stripped.find("{", index)
         if start < 0:
             break
         try:
-            candidate, end = decoder.raw_decode(text, start)
+            candidate, end = decoder.raw_decode(stripped, start)
         except json.JSONDecodeError:
             index = start + 1
             continue
-        last = candidate
+        if isinstance(candidate, dict):
+            last_dict = candidate
+            scored = _unique_score_bearing(candidate)
+            if scored is not None:
+                last_scored = scored
         index = max(end, start + 1)
-    return last
+    if last_scored is not None:
+        return last_scored
+    if last_dict is not None:
+        return last_dict
+    raise json.JSONDecodeError("no judge verdict object", raw, 0)
 
 
-def _score_bearing(payload: object) -> dict[str, object] | None:
-    """Return ``payload`` or a nested dict that carries a ``score`` key."""
+def _unique_score_bearing(payload: object) -> dict[str, object] | None:
+    """Return a score-bearing dict only when the verdict is unambiguous."""
     if not isinstance(payload, dict):
         return None
     if "score" in payload:
         return payload
+    found: list[dict[str, object]] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            if "score" in node:
+                found.append(node)
+                return
+            for value in node.values():
+                walk(value)
+            return
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+
     for value in payload.values():
-        found = _score_bearing(value)
-        if found is not None:
-            return found
+        walk(value)
+    if len(found) == 1:
+        return found[0]
     return None
 
 
@@ -426,15 +414,17 @@ def _diagnostics(
     types: list[str] = []
     seen: set[str] = set()
     for hit in observation.retrieved_contexts:
-        source_type = hit.chunk.reference.source_type.strip().lower()
-        if source_type not in _WELL_KNOWN_SOURCE_TYPES and source_type not in seen:
-            types.append(source_type)
-            seen.add(source_type)
+        raw = hit.chunk.reference.source_type
+        normalized = raw.strip().lower()
+        if normalized not in _WELL_KNOWN_SOURCE_TYPES and normalized not in seen:
+            types.append(raw)
+            seen.add(normalized)
     for citation in observation.citations:
-        source_type = citation.reference.source_type.strip().lower()
-        if source_type not in _WELL_KNOWN_SOURCE_TYPES and source_type not in seen:
-            types.append(source_type)
-            seen.add(source_type)
+        raw = citation.reference.source_type
+        normalized = raw.strip().lower()
+        if normalized not in _WELL_KNOWN_SOURCE_TYPES and normalized not in seen:
+            types.append(raw)
+            seen.add(normalized)
     return retrieved_misses, citation_misses, tuple(types)
 
 
@@ -443,6 +433,8 @@ def _failure_categories(
     retrieved_misses: Sequence[str],
     citation_misses: Sequence[str],
     unknown_types: Sequence[str],
+    *,
+    shared_retrieve_hits: bool = True,
 ) -> tuple[str, ...]:
     categories: list[str] = []
     if retrieved_misses:
@@ -451,6 +443,8 @@ def _failure_categories(
         categories.append("citation_source_miss")
     if unknown_types:
         categories.append("unknown_source_type")
+    if not shared_retrieve_hits:
+        categories.append("shared_retrieve_hits")
     if any(item.status == "judge_failure" for item in metrics.values()):
         categories.append("judge_failure")
     return tuple(categories)
@@ -516,7 +510,8 @@ def _gate(
         raise ApplicationValidationError(
             "compared baseline status requires a baseline"
         )
-    drop = min(thresholds.allowed_drop, baseline.allowed_drop)
+    # Caller/policy thresholds own the drop; baseline.allowed_drop is not mixed in.
+    drop = thresholds.allowed_drop
     for metric_id, aggregate in aggregates.items():
         if aggregate.mean is None:
             return True, False, "failed"
@@ -590,6 +585,7 @@ def rag_judge_report_to_dict(report: RagJudgeReport) -> dict[str, object]:
         "quality_gate_passed": report.quality_gate_passed,
         "gate_status": report.gate_status,
         "baseline_comparison": report.baseline_comparison,
+        "allowed_drop": report.allowed_drop,
         "answer_model": {
             "provider": report.answer_model.provider,
             "model": report.answer_model.model,

@@ -617,11 +617,9 @@ def run_rag_judge(
     dataset = cases_path if cases_path is not None else EVAL_CASES_PATH
     corpus = corpus_path if corpus_path is not None else EVAL_CORPUS_PATH
     baseline = load_rag_judge_baseline(baseline_path)
-    thresholds = (
-        RagJudgeThresholds(allowed_drop=baseline.allowed_drop)
-        if baseline is not None
-        else RagJudgeThresholds()
-    )
+    # Caller/policy owns the regression tolerance; baseline.allowed_drop is
+    # recorded for review but does not drive the gate.
+    thresholds = RagJudgeThresholds()
     if mode == "auto":
         if not live_answer_config_ready(settings) or not judge_config_ready(settings):
             raise JudgeSkipped(

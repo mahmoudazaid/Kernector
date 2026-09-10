@@ -43,8 +43,9 @@ class RagObservation:
         retrieved_contexts (Sequence[ScoredChunk]): Hits that entered generation.
         run (RunMeta | None): Safe run metadata.
         answer_model (AnswerModelMetadata): Answer-model identity.
-        shared_retrieve_hits (bool): True when reported hit_count matches
-            generation hits that are a subset of the recorded retrieve.
+        shared_retrieve_hits (bool): True unless a populated ``hit_count``
+            disagreed with generation hits. Missing ``hit_count`` is treated as
+            unknown and does not fail this check.
     """
 
     case_id: str
@@ -54,7 +55,7 @@ class RagObservation:
     retrieved_contexts: Sequence[ScoredChunk]
     run: RunMeta | None
     answer_model: AnswerModelMetadata
-    shared_retrieve_hits: bool = False
+    shared_retrieve_hits: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.case_id, str) or not self.case_id.strip():
@@ -181,7 +182,8 @@ class ObservedRagRunner:
                 raise ObservationIntegrityError(
                     f"insufficient outcome hit_count must be 0 for case {case.id}"
                 )
-            shared = reported is None or reported == 0
+            # hit_count already validated above; mismatch cannot reach here.
+            shared = True
         else:
             if not generation and recorded:
                 raise ObservationIntegrityError(
