@@ -78,6 +78,7 @@ from domain.errors import (
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    DocumentChunk,
     ScoredChunk,
     SourceDocument,
     SourceReference,
@@ -1695,6 +1696,37 @@ def replace_uploaded_document(
         raise
     except Exception as error:
         raise DocumentUploadError(str(error)) from error
+
+
+def list_uploaded_document_chunks(
+    settings: Settings,
+    reference: SourceReference,
+    *,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
+) -> tuple[DocumentChunk, ...]:
+    """Return stored chunks for a catalogued document, ordered by index.
+
+    Raises:
+        UnknownUploadedDocumentError: ``reference`` is not in the catalog.
+        DocumentOperationError: The catalog or vector store could not be read.
+    """
+    try:
+        return tuple(
+            build_manage_uploaded_documents(
+                settings, catalog=catalog, vector_store=vector_store
+            ).list_document_chunks(reference)
+        )
+    except UnknownDocumentError as error:
+        raise UnknownUploadedDocumentError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    except (ApplicationValidationError, ConfigurationError):
+        raise
+    except Exception as error:
+        raise DocumentOperationError(str(error)) from error
 
 
 def delete_uploaded_document(

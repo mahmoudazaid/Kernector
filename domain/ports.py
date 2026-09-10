@@ -7,6 +7,7 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     ConnectorDocument,
+    DocumentChunk,
     EmbeddedChunk,
     ScoredChunk,
     SourceDocument,
@@ -138,6 +139,20 @@ class VectorStore(Protocol):
         Enables replacement on re-ingestion: deleting a source and upserting
         its freshly generated chunks leaves no stale higher-index records
         behind when the new content chunks into fewer pieces.
+
+        Raises:
+            VectorStoreError: On any adapter-level failure.
+        """
+
+    def list_source_chunks(
+        self, reference: SourceReference
+    ) -> Sequence[DocumentChunk]:
+        """Return all chunks for one complete source reference.
+
+        Scoped by the whole `SourceReference`, so the same `source_id` under a
+        different `source_type` is excluded. A reference matching no stored
+        record returns an empty sequence. Results are ordered by ascending
+        ``chunk.index``. Does not return or compute embeddings.
 
         Raises:
             VectorStoreError: On any adapter-level failure.

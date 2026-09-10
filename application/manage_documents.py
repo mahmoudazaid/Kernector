@@ -16,6 +16,7 @@ from application.observability import log_operation
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    DocumentChunk,
     SourceDocument,
     SourceReference,
     SourceType,
@@ -189,6 +190,20 @@ class ManageUploadedDocuments:
             for row in self._catalog.all()
             if row.reference.source_type in self._HUB_SOURCE_TYPES
         )
+
+    def list_document_chunks(
+        self, reference: SourceReference
+    ) -> Sequence[DocumentChunk]:
+        """Return stored chunks for a catalogued source, ordered by index.
+
+        Looks up ``reference`` in the catalog first. An unknown reference raises
+        ``UnknownDocumentError`` without opening the vector store. A known row
+        with no stored chunks returns an empty sequence.
+        """
+        row = self._catalog.get(reference)
+        if row is None:
+            raise UnknownDocumentError(reference=reference)
+        return self._vector_store_factory().list_source_chunks(reference)
 
     def create(self, payload: UploadPayload) -> CatalogDocument:
         """Allocate a UUID, ingest the upload, and persist catalog status.

@@ -191,6 +191,17 @@ class InMemoryVectorStore:
         for key in [key for key in self.records if key[:2] == scope]:
             del self.records[key]
 
+    def list_source_chunks(
+        self, reference: SourceReference
+    ) -> Sequence[DocumentChunk]:
+        scope = (str(reference.source_type), reference.source_id)
+        matched = [
+            item.chunk
+            for key, item in self.records.items()
+            if key[:2] == scope
+        ]
+        return tuple(sorted(matched, key=lambda chunk: chunk.index))
+
 
 class InMemoryLexicalIndex:
     """Dict-backed LexicalIndex for use-case tests (no BM25 dependency).

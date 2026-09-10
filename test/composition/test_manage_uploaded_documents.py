@@ -578,3 +578,58 @@ def test_partial_delete_is_translated(
     with pytest.raises(PartialDocumentOperationError) as raised:
         composition_container.delete_uploaded_document(settings, created.reference)
     assert isinstance(raised.value.__cause__, PartialDeleteFailure)
+
+
+def test_list_uploaded_document_chunks_unknown_is_unknown_uploaded(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from composition.errors import UnknownUploadedDocumentError
+    from test.doubles import InMemoryVectorStore
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_vector_store",
+        lambda _settings: InMemoryVectorStore(),
+    )
+    with pytest.raises(UnknownUploadedDocumentError) as raised:
+        composition_container.list_uploaded_document_chunks(
+            settings,
+            SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
+        )
+    assert isinstance(raised.value.__cause__, UnknownDocumentError)
+
+
+def test_list_uploaded_document_chunks_known_empty(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument
+    from test.doubles import InMemoryVectorStore
+
+    store = InMemoryVectorStore()
+    monkeypatch.setattr(
+        composition_container,
+        "build_vector_store",
+        lambda _settings: store,
+    )
+    catalog = composition_container.build_document_catalog(settings)
+    reference = SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    catalog.upsert(
+        CatalogDocument(
+            reference=reference,
+            file_name="doc.md",
+            title="Doc",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            chunk_count=0,
+            error=None,
+        )
+    )
+
+    chunks = composition_container.list_uploaded_document_chunks(
+        settings, reference, catalog=catalog, vector_store=store
+    )
+
+    assert chunks == ()

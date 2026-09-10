@@ -334,6 +334,85 @@
         "title": "ConnectorSyncOutcomeResponse",
         "type": "object"
       },
+      "DocumentChunkListResponse": {
+        "description": "Stored chunks for one catalogued document.",
+        "properties": {
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentChunkResponse"
+            },
+            "title": "Chunks",
+            "type": "array"
+          }
+        },
+        "required": ["chunks"],
+        "title": "DocumentChunkListResponse",
+        "type": "object"
+      },
+      "DocumentChunkResponse": {
+        "description": "Allowlisted projection of one stored chunk for the documents UI.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Format"
+          },
+          "extra": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Extra",
+            "type": "object"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": ["index", "content", "source_id", "source_type", "extra"],
+        "title": "DocumentChunkResponse",
+        "type": "object"
+      },
       "DocumentListResponse": {
         "description": "Uploaded-document catalog for the documents UI.",
         "properties": {
@@ -2262,6 +2341,86 @@
           }
         },
         "summary": "Replace Document",
+        "tags": ["documents"]
+      }
+    },
+    "/api/v1/documents/{source_id}/chunks": {
+      "get": {
+        "description": "Return stored chunks for one catalogued source (allowlisted fields).",
+        "operationId": "list_document_chunks_api_v1_documents__source_id__chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_type",
+            "required": true,
+            "schema": {
+              "title": "Source Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChunkListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "List Document Chunks",
         "tags": ["documents"]
       }
     },

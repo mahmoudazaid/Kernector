@@ -433,6 +433,133 @@ def test_a_delete_failure_stays_a_store_error(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------
+# List source chunks
+# --------------------------------------------------------------------------
+
+
+def test_list_source_chunks_isolates_same_id_under_different_types(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(
+                source_id="shared",
+                source_type=SourceType.KNOWLEDGE_DOCUMENT,
+                content="kd",
+                title="KD",
+            ),
+            make_embedded(
+                source_id="shared",
+                source_type=SourceType.GOOGLE_DRIVE,
+                content="gd",
+                title="GD",
+            ),
+        ]
+    )
+
+    listed = store.list_source_chunks(
+        make_reference("shared", source_type=SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert len(listed) == 1
+    assert listed[0].content == "kd"
+    assert listed[0].metadata.title == "KD"
+    assert listed[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+
+
+def test_list_source_chunks_returns_deterministic_index_order(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=2, content="third"),
+            make_embedded(source_id="doc-1", index=0, content="first"),
+            make_embedded(source_id="doc-1", index=1, content="second"),
+        ]
+    )
+
+    listed = store.list_source_chunks(make_reference("doc-1"))
+
+    assert [c.index for c in listed] == [0, 1, 2]
+    assert [c.content for c in listed] == ["first", "second", "third"]
+
+
+def test_list_source_chunks_unknown_reference_returns_empty(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+
+    listed = store.list_source_chunks(make_reference("missing"))
+
+    assert listed == ()
+
+
+def test_list_source_chunks_empty_store_returns_empty(
+    store: ChromaVectorStore,
+) -> None:
+    listed = store.list_source_chunks(make_reference("doc-1"))
+
+    assert listed == ()
+
+
+def test_list_source_chunks_rejects_a_non_reference(
+    store: ChromaVectorStore,
+) -> None:
+    with pytest.raises(ChromaStoreError, match="reference"):
+        store.list_source_chunks("doc-1")  # type: ignore[arg-type]
+
+
+def test_list_source_chunks_mismatched_lengths_raise_store_error(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+
+    def bad_get(**kwargs: object) -> dict[str, object]:
+        return {
+            "ids": ["a", "b"],
+            "documents": ["only-one"],
+            "metadatas": [{"source_id": "doc-1"}, {"source_id": "doc-1"}],
+        }
+
+    monkeypatch.setattr(store._collection, "get", bad_get)
+
+    with pytest.raises(ChromaStoreError, match="mismatched lengths"):
+        store.list_source_chunks(make_reference("doc-1"))
+
+
+def test_list_source_chunks_does_not_request_embeddings(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0, content="body")])
+    captured: list[object] = []
+
+    real_get = store._collection.get
+
+    def spy_get(**kwargs: object) -> object:
+        captured.append(kwargs.get("include"))
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", spy_get)
+
+    listed = store.list_source_chunks(make_reference("doc-1"))
+
+    assert [c.content for c in listed] == ["body"]
+    assert captured == [["metadatas", "documents"]]
+    assert "embeddings" not in captured[0]
+
+
+def test_list_source_chunks_get_failure_stays_a_store_error(
+    tmp_path: Path,
+) -> None:
+    store = ChromaVectorStore(settings(tmp_path / "chroma"))
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+    store._client.delete_collection(COLLECTION)
+
+    with pytest.raises(ChromaStoreError, match="could not list source"):
+        store.list_source_chunks(make_reference("doc-1"))
+
+
+# --------------------------------------------------------------------------
 # Search (§9)
 # --------------------------------------------------------------------------
 

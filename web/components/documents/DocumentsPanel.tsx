@@ -22,12 +22,16 @@ import { DialogFrame } from "@/components/ui/DialogFrame";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
+  listDocumentChunks,
   listDocuments,
   replaceDocument,
   uploadDocument,
   type CatalogDocumentResponse,
   type DeleteDocumentOptions,
+  type DocumentChunkListResponse,
+  type DocumentChunkResponse,
   type DocumentListResponse,
+  type ListDocumentChunksOptions,
   type ListDocumentsOptions,
   type ReplaceDocumentOptions,
   type UploadDocumentOptions,
@@ -43,6 +47,9 @@ import {
 export type DocumentsPanelProps = {
   apiBaseUrl: string;
   list?: (options: ListDocumentsOptions) => Promise<DocumentListResponse>;
+  listChunks?: (
+    options: ListDocumentChunksOptions,
+  ) => Promise<DocumentChunkListResponse>;
   upload?: (options: UploadDocumentOptions) => Promise<CatalogDocumentResponse>;
   replace?: (
     options: ReplaceDocumentOptions,
@@ -68,6 +75,14 @@ type CatalogView =
       kind: "ready";
       documents: CatalogDocumentResponse[];
     };
+
+type ChunksView =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; chunks: DocumentChunkResponse[] }
+  | { kind: "empty" }
+  | { kind: "not_found" }
+  | { kind: "error"; message: string };
 
 type ActionFeedback =
   | { kind: "idle" }
@@ -189,6 +204,7 @@ function actionErrorMessage(error: unknown): string {
 export function DocumentsPanel({
   apiBaseUrl,
   list = listDocuments,
+  listChunks = listDocumentChunks,
   upload = uploadDocument,
   replace = replaceDocument,
   remove = deleteDocument,
@@ -206,6 +222,7 @@ export function DocumentsPanel({
   const constraints = runtimeCatalog?.constraints ?? null;
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chunksView, setChunksView] = useState<ChunksView>({ kind: "idle" });
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [uploadInputKey, setUploadInputKey] = useState(0);
@@ -228,6 +245,8 @@ export function DocumentsPanel({
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const chunksSeqRef = useRef(0);
+  const chunksAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     captureDriveCallback();
@@ -337,6 +356,60 @@ export function DocumentsPanel({
     setReplaceFile(null);
     setReplaceInputKey((key) => key + 1);
   }, [selectedSourceId]);
+
+  useEffect(() => {
+    chunksAbortRef.current?.abort();
+    if (!selected || selected.status !== "ready") {
+      chunksSeqRef.current += 1;
+      setChunksView({ kind: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    chunksAbortRef.current = controller;
+    const seq = ++chunksSeqRef.current;
+    const sourceId = selected.source_id;
+    const sourceType = selected.source_type;
+    setChunksView({ kind: "loading" });
+    void listChunks({
+      baseUrl: apiBaseUrl,
+      sourceId,
+      sourceType,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (seq !== chunksSeqRef.current || controller.signal.aborted) {
+          return;
+        }
+        if (response.chunks.length === 0) {
+          setChunksView({ kind: "empty" });
+          return;
+        }
+        setChunksView({ kind: "ready", chunks: response.chunks });
+      })
+      .catch((error: unknown) => {
+        if (seq !== chunksSeqRef.current || controller.signal.aborted) {
+          return;
+        }
+        if (error instanceof ApiError && error.status === 404) {
+          setChunksView({ kind: "not_found" });
+          return;
+        }
+        setChunksView({
+          kind: "error",
+          message: actionErrorMessage(error),
+        });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [
+    apiBaseUrl,
+    listChunks,
+    selectedSourceId,
+    selected?.source_type,
+    selected?.status,
+    selected?.chunk_count,
+  ]);
 
   function clearUploadInput() {
     setUploadFile(null);
@@ -826,6 +899,48 @@ export function DocumentsPanel({
                 role="status"
               >
                 <p>{selected.error_summary}</p>
+              </div>
+            ) : null}
+            {selected.status === "ready" ? (
+              <div className="kern-documents-chunks" aria-live="polite">
+                {chunksView.kind === "loading" ? (
+                  <p className="kern-settings-hint">Loading stored chunks…</p>
+                ) : null}
+                {chunksView.kind === "empty" ? (
+                  <p className="kern-settings-hint">
+                    No stored chunks for this document.
+                  </p>
+                ) : null}
+                {chunksView.kind === "not_found" ? (
+                  <div
+                    className="kern-settings-callout kern-settings-callout--warn"
+                    role="status"
+                  >
+                    <p>Document was not found in the catalog.</p>
+                  </div>
+                ) : null}
+                {chunksView.kind === "error" ? (
+                  <div
+                    className="kern-settings-callout kern-settings-callout--warn"
+                    role="status"
+                  >
+                    <p>{chunksView.message}</p>
+                  </div>
+                ) : null}
+                {chunksView.kind === "ready" ? (
+                  <ol className="kern-documents-chunk-list">
+                    {chunksView.chunks.map((chunk) => (
+                      <li key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}`}>
+                        <span className="kern-documents-chunk-index">
+                          Chunk {chunk.index}
+                        </span>
+                        <pre className="kern-documents-chunk-content">
+                          {chunk.content}
+                        </pre>
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
               </div>
             ) : null}
           </div>

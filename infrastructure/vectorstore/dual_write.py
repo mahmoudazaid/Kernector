@@ -2,7 +2,13 @@
 
 from collections.abc import Mapping, Sequence
 
-from domain.knowledge import EmbeddedChunk, ScoredChunk, SourceReference, Vector
+from domain.knowledge import (
+    DocumentChunk,
+    EmbeddedChunk,
+    ScoredChunk,
+    SourceReference,
+    Vector,
+)
 from domain.ports import LexicalIndex, VectorStore
 
 
@@ -31,3 +37,8 @@ class DualWriteVectorStore:
     def delete_source(self, reference: SourceReference) -> None:
         self._vector.delete_source(reference)
         self.lexical.delete_source(reference)
+
+    def list_source_chunks(
+        self, reference: SourceReference
+    ) -> Sequence[DocumentChunk]:
+        return self._vector.list_source_chunks(reference)

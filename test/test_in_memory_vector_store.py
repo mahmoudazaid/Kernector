@@ -139,3 +139,108 @@ def test_owned_scalar_fields_are_not_filter_targets() -> None:
     hits = store.search(PROBE, 10, metadata_filters={"title": "runbook"})
 
     assert [hit.chunk.source_id for hit in hits] == ["real"]
+
+
+def test_list_source_chunks_isolates_same_source_id_under_different_types() -> None:
+    store = InMemoryVectorStore()
+    kd = DocumentChunk(
+        metadata=SourceMetadata(
+            SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT),
+            title="KD",
+            extra={"kind": "kd"},
+        ),
+        index=0,
+        content="knowledge body",
+    )
+    gd = DocumentChunk(
+        metadata=SourceMetadata(
+            SourceReference("doc-1", SourceType.GOOGLE_DRIVE),
+            title="GD",
+            provider="google",
+            extra={"kind": "gd"},
+        ),
+        index=0,
+        content="drive body",
+    )
+    _seed(store, kd, gd)
+
+    listed = store.list_source_chunks(
+        SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert len(listed) == 1
+    assert listed[0].content == "knowledge body"
+    assert listed[0].metadata.title == "KD"
+    assert listed[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+
+
+def test_list_source_chunks_returns_deterministic_index_order_with_provenance() -> None:
+    store = InMemoryVectorStore()
+    chunks = [
+        DocumentChunk(
+            metadata=SourceMetadata(
+                SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT),
+                title="Report",
+                provider="upload",
+                content_format="text/plain",
+                extra={"page": "2"},
+            ),
+            index=2,
+            content="third",
+        ),
+        DocumentChunk(
+            metadata=SourceMetadata(
+                SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT),
+                title="Report",
+                provider="upload",
+                content_format="text/plain",
+                extra={"page": "0"},
+            ),
+            index=0,
+            content="first",
+        ),
+        DocumentChunk(
+            metadata=SourceMetadata(
+                SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT),
+                title="Report",
+                provider="upload",
+                content_format="text/plain",
+                extra={"page": "1"},
+            ),
+            index=1,
+            content="second",
+        ),
+    ]
+    _seed(store, *chunks)
+
+    listed = store.list_source_chunks(
+        SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert [c.index for c in listed] == [0, 1, 2]
+    assert [c.content for c in listed] == ["first", "second", "third"]
+    assert listed[0].metadata.title == "Report"
+    assert listed[0].metadata.provider == "upload"
+    assert listed[0].metadata.content_format == "text/plain"
+    assert dict(listed[1].metadata.extra) == {"page": "1"}
+
+
+def test_list_source_chunks_missing_reference_returns_empty() -> None:
+    store = InMemoryVectorStore()
+    _seed(store, _chunk("other"))
+
+    listed = store.list_source_chunks(
+        SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert listed == ()
+
+
+def test_list_source_chunks_empty_store_returns_empty() -> None:
+    store = InMemoryVectorStore()
+
+    listed = store.list_source_chunks(
+        SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert listed == ()

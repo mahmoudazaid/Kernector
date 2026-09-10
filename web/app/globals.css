@@ -1886,6 +1886,43 @@ a.kern-btn {
   gap: var(--kern-space-3);
 }
 
+.kern-documents-chunks {
+  display: grid;
+  gap: var(--kern-space-2);
+}
+
+.kern-documents-chunk-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--kern-space-3);
+}
+
+.kern-documents-chunk-list li {
+  display: grid;
+  gap: var(--kern-space-1);
+}
+
+.kern-documents-chunk-index {
+  font-size: 0.85rem;
+  color: var(--kern-muted, inherit);
+}
+
+.kern-documents-chunk-content {
+  margin: 0;
+  padding: var(--kern-space-2) var(--kern-space-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--kern-surface) 92%, transparent);
+  max-height: 12rem;
+  overflow: auto;
+}
+
 .kern-documents-form .kern-btn,
 .kern-documents-form .kern-btn-secondary,
 .kern-documents .kern-settings-fieldset > .kern-btn,

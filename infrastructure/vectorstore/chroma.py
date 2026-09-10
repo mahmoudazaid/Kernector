@@ -724,6 +724,55 @@ class ChromaVectorStore:
                 f"{self._collection.name!r}: {exc}"
             ) from exc
 
+    def list_source_chunks(
+        self, reference: SourceReference
+    ) -> Sequence[DocumentChunk]:
+        """Return chunks for one source. See `domain.ports.VectorStore`.
+
+        Reads documents and metadatas only (no embeddings). Scoped by the same
+        ``source_id`` + ``source_type`` filter as ``delete_source``. Results are
+        ordered by ascending ``chunk.index``.
+        """
+        if not isinstance(reference, SourceReference):
+            raise ChromaStoreError(
+                f"reference must be a SourceReference, got {reference!r}"
+            )
+        where = {
+            "$and": [
+                {_KEY_SOURCE_ID: reference.source_id},
+                {_KEY_SOURCE_TYPE: str(reference.source_type)},
+            ]
+        }
+        try:
+            result = self._collection.get(
+                where=where,
+                include=["metadatas", "documents"],
+            )
+        except (ChromaError, ValueError) as exc:
+            raise ChromaStoreError(
+                f"could not list source {reference.source_type}:"
+                f"{reference.source_id} from collection "
+                f"{self._collection.name!r}: {exc}"
+            ) from exc
+        ids = result.get("ids") or []
+        if not ids:
+            return ()
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        if not (len(documents) == len(ids) and len(metadatas) == len(ids)):
+            raise ChromaStoreError(
+                f"collection {self._collection.name!r}: list_source_chunks "
+                f"get() returned mismatched lengths ids={len(ids)} "
+                f"documents={len(documents)} metadatas={len(metadatas)}"
+            )
+        chunks = [
+            _decode_chunk(record_id, document, metadata)
+            for record_id, document, metadata in zip(
+                ids, documents, metadatas, strict=True
+            )
+        ]
+        return tuple(sorted(chunks, key=lambda chunk: chunk.index))
+
     def reindex_filter_metadata(self) -> int:
         """Rewrite every record so `SourceMetadata.extra` keys are filterable.
 

@@ -32,13 +32,19 @@ from composition import (
     get_google_drive_selection,
     google_drive_status,
     list_uploaded_documents,
+    list_uploaded_document_chunks,
     load_runtime_settings,
     put_google_drive_selection,
     replace_uploaded_document,
     start_google_drive_oauth,
     sync_google_drive_oauth,
 )
-from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
+from domain.knowledge import (
+    CatalogDocument,
+    DocumentChunk,
+    SourceReference,
+    UploadPayload,
+)
 from domain.ports import DocumentCatalog, PromptRepository, VectorStore
 from presentation.http.schemas import ChatRuntimeRequest
 
@@ -123,6 +129,7 @@ class DocumentOperations:
     """The composition document seam, bound to this process's settings."""
 
     list: Callable[[], tuple[CatalogDocument, ...]]
+    list_chunks: Callable[[SourceReference], tuple[DocumentChunk, ...]]
     create: Callable[[UploadPayload], CatalogDocument]
     replace: Callable[[SourceReference, UploadPayload], CatalogDocument]
     delete: Callable[[SourceReference], None]
@@ -169,10 +176,19 @@ def get_document_operations(
             vector_store=get_vector_store(),
         )
 
+    def list_chunks(reference: SourceReference) -> tuple[DocumentChunk, ...]:
+        return list_uploaded_document_chunks(
+            settings,
+            reference,
+            catalog=get_document_catalog(),
+            vector_store=get_vector_store(),
+        )
+
     return DocumentOperations(
         list=lambda: list_uploaded_documents(
             settings, catalog=get_document_catalog()
         ),
+        list_chunks=list_chunks,
         create=create,
         replace=replace,
         delete=delete,

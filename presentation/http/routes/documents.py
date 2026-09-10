@@ -1,10 +1,10 @@
-"""Uploaded-document HTTP routes (list / create / replace / delete)."""
+"""Uploaded-document HTTP routes (list / create / replace / delete / chunks)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
@@ -19,8 +19,10 @@ from presentation.http.errors import (
 )
 from presentation.http.schemas import (
     CatalogDocumentResponse,
+    DocumentChunkListResponse,
     DocumentListResponse,
     catalog_document_response,
+    document_chunk_response,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
@@ -40,6 +42,22 @@ def _require_source_id(source_id: str) -> str:
             ]
         )
     return source_id
+
+
+def _require_source_type(source_type: str) -> str:
+    """Reject blank/whitespace source_type query values before domain construction."""
+    if not source_type.strip():
+        raise RequestValidationError(
+            [
+                {
+                    "type": "string_too_short",
+                    "loc": ("query", "source_type"),
+                    "msg": "source_type must not be blank",
+                    "input": source_type,
+                }
+            ]
+        )
+    return source_type
 
 
 def _read_upload(
@@ -148,3 +166,21 @@ def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     source_id = _require_source_id(source_id)
     ops.delete(SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT))
     return Response(status_code=204)
+
+
+@router.get(
+    "/documents/{source_id}/chunks",
+    responses=problem_responses(404, 405, 422, 500),
+)
+def list_document_chunks(
+    source_id: str,
+    ops: DocumentOperationsDep,
+    source_type: str = Query(...),
+) -> DocumentChunkListResponse:
+    """Return stored chunks for one catalogued source (allowlisted fields)."""
+    source_id = _require_source_id(source_id)
+    source_type = _require_source_type(source_type)
+    chunks = ops.list_chunks(SourceReference(source_id, source_type))
+    return DocumentChunkListResponse(
+        chunks=[document_chunk_response(chunk) for chunk in chunks],
+    )

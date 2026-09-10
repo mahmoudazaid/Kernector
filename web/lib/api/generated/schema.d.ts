@@ -200,6 +200,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/documents/{source_id}/chunks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Document Chunks
+     * @description Return stored chunks for one catalogued source (allowlisted fields).
+     */
+    get: operations["list_document_chunks_api_v1_documents__source_id__chunks_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/ollama/status": {
     parameters: {
       query?: never;
@@ -387,6 +407,38 @@ export interface components {
        * @enum {string}
        */
       status: "ingested" | "skipped" | "failed";
+    };
+    /**
+     * DocumentChunkListResponse
+     * @description Stored chunks for one catalogued document.
+     */
+    DocumentChunkListResponse: {
+      /** Chunks */
+      chunks: components["schemas"]["DocumentChunkResponse"][];
+    };
+    /**
+     * DocumentChunkResponse
+     * @description Allowlisted projection of one stored chunk for the documents UI.
+     */
+    DocumentChunkResponse: {
+      /** Content */
+      content: string;
+      /** Content Format */
+      content_format?: string | null;
+      /** Extra */
+      extra: {
+        [key: string]: string;
+      };
+      /** Index */
+      index: number;
+      /** Provider */
+      provider?: string | null;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+      /** Title */
+      title?: string | null;
     };
     /**
      * DocumentListResponse
@@ -1525,6 +1577,66 @@ export interface operations {
       };
       /** @description Conflict */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_document_chunks_api_v1_documents__source_id__chunks_get: {
+    parameters: {
+      query: {
+        source_type: string;
+      };
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentChunkListResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
         headers: {
           [name: string]: unknown;
         };

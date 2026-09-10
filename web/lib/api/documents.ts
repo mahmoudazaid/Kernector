@@ -5,12 +5,25 @@ export type CatalogDocumentResponse =
   components["schemas"]["CatalogDocumentResponse"];
 export type DocumentListResponse =
   components["schemas"]["DocumentListResponse"];
+export type DocumentChunkResponse =
+  components["schemas"]["DocumentChunkResponse"];
+export type DocumentChunkListResponse =
+  components["schemas"]["DocumentChunkListResponse"];
 
 /** Uploads that embed every chunk routinely exceed the default 10s timeout. */
 export const DOCUMENT_MUTATION_TIMEOUT_MS = 120_000;
 
 export type ListDocumentsOptions = {
   baseUrl: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  request?: typeof apiRequest;
+};
+
+export type ListDocumentChunksOptions = {
+  baseUrl: string;
+  sourceId: string;
+  sourceType: string;
   signal?: AbortSignal;
   timeoutMs?: number;
   request?: typeof apiRequest;
@@ -57,6 +70,24 @@ export async function listDocuments(
   return request<DocumentListResponse>({
     baseUrl: options.baseUrl,
     path: "/api/v1/documents",
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * List stored chunks for one document via
+ * ``GET /api/v1/documents/{source_id}/chunks?source_type=``.
+ */
+export async function listDocumentChunks(
+  options: ListDocumentChunksOptions,
+): Promise<DocumentChunkListResponse> {
+  const request = options.request ?? apiRequest;
+  const params = new URLSearchParams({ source_type: options.sourceType });
+  return request<DocumentChunkListResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/documents/${encodeURIComponent(options.sourceId)}/chunks?${params.toString()}`,
     method: "GET",
     signal: options.signal,
     timeoutMs: options.timeoutMs,

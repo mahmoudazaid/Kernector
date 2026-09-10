@@ -82,3 +82,32 @@ def test_dual_write_replace_updates_lexical_retrieval_immediately() -> None:
         "xyzzy" not in hit.chunk.content for hit in lexical.search("xyzzy", 5)
     )
     assert lexical.search("plugh", 1)[0].chunk.source_id == "doc"
+
+
+def test_dual_write_list_source_chunks_delegates_to_vector_only() -> None:
+    vector = InMemoryVectorStore()
+    lexical = InMemoryLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    chunk = _chunk("doc", "listed body", index=0)
+    store.upsert([_embed(chunk)])
+    # Lexical-only extra record must not appear in list results.
+    lexical.upsert(
+        [
+            _embed(
+                DocumentChunk(
+                    metadata=SourceMetadata(
+                        SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
+                    ),
+                    index=1,
+                    content="lexical-only",
+                )
+            )
+        ]
+    )
+
+    listed = store.list_source_chunks(
+        SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert [c.content for c in listed] == ["listed body"]
+    assert [c.index for c in listed] == [0]

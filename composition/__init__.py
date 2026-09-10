@@ -46,6 +46,7 @@ from composition.container import (
     probe_ollama,
     reindex_filter_metadata,
     replace_uploaded_document,
+    list_uploaded_document_chunks,
     google_drive_status,
     sync_google_drive,
 )
@@ -134,6 +135,7 @@ __all__ = [
     "delete_uploaded_document",
     "ingest_uploaded_document",
     "list_uploaded_documents",
+    "list_uploaded_document_chunks",
     "load_eval_cases",
     "load_knowledge_documents",
     "load_runtime_settings",

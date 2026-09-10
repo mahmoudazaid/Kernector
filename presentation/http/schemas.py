@@ -14,7 +14,13 @@ from application.contracts import (
     RunMeta,
 )
 from composition.software_delivery_tools import SoftwareDeliveryRunView
-from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference, SourceType
+from domain.knowledge import (
+    CatalogDocument,
+    CatalogStatus,
+    DocumentChunk,
+    SourceReference,
+    SourceType,
+)
 
 
 class HealthResponse(BaseModel):
@@ -469,6 +475,25 @@ class DocumentListResponse(BaseModel):
     documents: list[CatalogDocumentResponse]
 
 
+class DocumentChunkResponse(BaseModel):
+    """Allowlisted projection of one stored chunk for the documents UI."""
+
+    index: int
+    content: str
+    source_id: str
+    source_type: str
+    title: str | None = None
+    provider: str | None = None
+    content_format: str | None = None
+    extra: dict[str, str]
+
+
+class DocumentChunkListResponse(BaseModel):
+    """Stored chunks for one catalogued document."""
+
+    chunks: list[DocumentChunkResponse]
+
+
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
     """Project a catalog row; never serialize raw adapter ``error`` text."""
     summary = (
@@ -488,5 +513,19 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
         has_error=document.status
         in {CatalogStatus.FAILED, CatalogStatus.DEGRADED},
         error_summary=summary,
+    )
+
+
+def document_chunk_response(chunk: DocumentChunk) -> DocumentChunkResponse:
+    """Project a stored chunk to the allowlisted wire fields only."""
+    return DocumentChunkResponse(
+        index=chunk.index,
+        content=chunk.content,
+        source_id=chunk.reference.source_id,
+        source_type=chunk.reference.source_type,
+        title=chunk.metadata.title,
+        provider=chunk.metadata.provider,
+        content_format=chunk.metadata.content_format,
+        extra=dict(chunk.metadata.extra),
     )
 
