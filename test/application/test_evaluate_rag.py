@@ -365,6 +365,16 @@ def test_trailing_json_object_is_the_verdict() -> None:
     assert parse_judge_output("faithfulness", bare_array).score == 0.9
     prefixed_array = 'Verdict: [{"score": 0.9, "explanation": "ok"}]'
     assert parse_judge_output("faithfulness", prefixed_array).score == 0.9
+    ambiguous_object = '{"a": {"score": 0.1}, "b": {"score": 0.9}}'
+    assert parse_judge_output("faithfulness", ambiguous_object).error_type == (
+        "missing_score"
+    )
+    ambiguous_array = (
+        '[{"score": 0.1, "explanation": "a"}, {"score": 0.9, "explanation": "b"}]'
+    )
+    assert parse_judge_output("faithfulness", ambiguous_array).error_type == (
+        "missing_score"
+    )
 
 
 def test_half_unscored_cases_fail_the_gate() -> None:

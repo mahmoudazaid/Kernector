@@ -338,6 +338,9 @@ def _extract_json_object(raw: str) -> object:
             return scored
         if isinstance(payload, dict):
             return payload
+        if isinstance(payload, list):
+            # Ambiguous/scoreless array → missing_score (same as ambiguous object).
+            return {}
         raise json.JSONDecodeError("no judge verdict object", raw, 0)
 
     decoder = json.JSONDecoder()
