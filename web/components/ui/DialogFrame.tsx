@@ -44,12 +44,14 @@ function focusableNodes(root: HTMLElement | null): HTMLElement[] {
   ).filter((node) => !node.hasAttribute("disabled") && node.tabIndex !== -1);
 }
 
-function isRestorable(node: HTMLElement | null | undefined): node is HTMLElement {
+function isRestorable(
+  node: HTMLElement | null | undefined,
+): node is HTMLElement {
   return Boolean(
     node &&
-      node.isConnected &&
-      !node.hasAttribute("disabled") &&
-      node.getAttribute("aria-disabled") !== "true",
+    node.isConnected &&
+    !node.hasAttribute("disabled") &&
+    node.getAttribute("aria-disabled") !== "true",
   );
 }
 
@@ -85,6 +87,9 @@ export function DialogFrame({
   const restoreFocusRefStored = useRef(restoreFocusRef);
   restoreFocusRefStored.current = restoreFocusRef;
   const openerRef = useRef<HTMLElement | null>(null);
+  const pendingRestoreRef = useRef<Array<
+    HTMLElement | null | undefined
+  > | null>(null);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -93,7 +98,12 @@ export function DialogFrame({
       if (!(target instanceof Element)) {
         return;
       }
-      if (panelRef.current?.contains(target)) {
+      // Dialog chrome is never the opener: the backdrop is a <button> that
+      // outlives the close by one exit animation, so it would beat the opener.
+      if (
+        panelRef.current?.contains(target) ||
+        target.closest(".kern-dialog-root, .kern-dialog-backdrop")
+      ) {
         return;
       }
       const candidate =
@@ -116,6 +126,8 @@ export function DialogFrame({
     if (!open) {
       return;
     }
+    // Cancel a restore still waiting on a previous exit animation.
+    pendingRestoreRef.current = null;
     const previous =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -161,16 +173,26 @@ export function DialogFrame({
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      restoreFocus(
+      // Defer until AnimatePresence exit completes so aria-modal is gone.
+      pendingRestoreRef.current = [
         restoreFocusRefStored.current?.current,
         openerRef.current,
         previous,
-      );
+      ];
     };
   }, [open]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence
+      onExitComplete={() => {
+        const pending = pendingRestoreRef.current;
+        if (!pending) {
+          return;
+        }
+        pendingRestoreRef.current = null;
+        restoreFocus(...pending);
+      }}
+    >
       {open ? (
         <motion.button
           key="kern-dialog-backdrop"

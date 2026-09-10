@@ -12,7 +12,10 @@ import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
-import { captureDriveCallback, peekDriveCallback } from "@/lib/documents/drive-callback";
+import {
+  captureDriveCallback,
+  peekDriveCallback,
+} from "@/lib/documents/drive-callback";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
@@ -236,6 +239,7 @@ export function DocumentsPanel({
   const uploadErrorRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const deleteRestoreRef = useRef<HTMLElement | null>(null);
+  const announcedSeqRef = useRef(0);
   const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
 
   useEffect(() => {
@@ -243,9 +247,14 @@ export function DocumentsPanel({
   }, []);
 
   useEffect(() => {
-    if (feedback.kind === "idle" || dialogOpen) {
+    if (
+      feedback.kind === "idle" ||
+      dialogOpen ||
+      announcedSeqRef.current === feedbackSeq
+    ) {
       return;
     }
+    announcedSeqRef.current = feedbackSeq;
     feedbackRef.current?.focus();
   }, [feedbackSeq, dialogOpen, feedback.kind]);
 
@@ -255,14 +264,31 @@ export function DocumentsPanel({
     }
   }, [uploadOpen, uploadError, uploadErrorSeq]);
 
-  function announce(next: ActionFeedback) {
+  function announce(next: Exclude<ActionFeedback, { kind: "idle" }>) {
     setFeedback(next);
     setFeedbackSeq((seq) => seq + 1);
+  }
+
+  function clearFeedback() {
+    setFeedback({ kind: "idle" });
   }
 
   function announceUploadError(message: string) {
     setUploadError(message);
     setUploadErrorSeq((seq) => seq + 1);
+  }
+
+  function openUploadDialog() {
+    clearFeedback();
+    setUploadError(null);
+    setUploadOpen(true);
+  }
+
+  function setPickerOpen(next: boolean) {
+    if (next) {
+      clearFeedback();
+    }
+    setDrivePickerOpen(next);
   }
 
   function retryAll() {
@@ -401,7 +427,7 @@ export function DocumentsPanel({
     setUploadOpen(false);
     setUploading(true);
     setBusy(true);
-    announce({ kind: "idle" });
+    clearFeedback();
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
@@ -435,7 +461,7 @@ export function DocumentsPanel({
       return;
     }
     setBusy(true);
-    announce({ kind: "idle" });
+    clearFeedback();
     try {
       const document = await replace({
         baseUrl: apiBaseUrl,
@@ -457,7 +483,7 @@ export function DocumentsPanel({
 
   async function onDelete(document: CatalogDocumentResponse) {
     setBusy(true);
-    announce({ kind: "idle" });
+    clearFeedback();
     try {
       await remove({
         baseUrl: apiBaseUrl,
@@ -572,20 +598,15 @@ export function DocumentsPanel({
         </button>
       </div>
 
-      {(catalog.kind === "error" || settingsError) ? (
+      {catalog.kind === "error" || settingsError ? (
         <div
           className="kern-settings-callout kern-settings-callout--error"
           role="alert"
           hidden={dialogOpen}
-          aria-hidden={dialogOpen}
         >
           {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
           {settingsError ? <p>{settingsError}</p> : null}
-          <Button
-            variant="secondary"
-            disabled={retryBusy || dialogOpen}
-            onClick={retryAll}
-          >
+          <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
             {retryBusy ? "Checking…" : "Retry"}
           </Button>
         </div>
@@ -598,7 +619,6 @@ export function DocumentsPanel({
           role={feedback.kind === "error" ? "alert" : "status"}
           tabIndex={-1}
           hidden={dialogOpen}
-          aria-hidden={dialogOpen}
         >
           <p>{feedback.message}</p>
         </div>
@@ -615,10 +635,7 @@ export function DocumentsPanel({
           <h2>Connected sources</h2>
         </div>
         <div className="kern-source-grid">
-          <article
-            className="kern-source-card"
-            aria-busy={uploading}
-          >
+          <article className="kern-source-card" aria-busy={uploading}>
             {uploading ? (
               <div className="kern-source-busy-overlay">
                 <Loader label="Uploading files" size="sm" />
@@ -660,10 +677,7 @@ export function DocumentsPanel({
               <Button
                 type="button"
                 disabled={busy || !constraints}
-                onClick={() => {
-                  setUploadError(null);
-                  setUploadOpen(true);
-                }}
+                onClick={openUploadDialog}
               >
                 <UploadIcon />
                 Add files
@@ -686,7 +700,7 @@ export function DocumentsPanel({
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
-              onPickerOpenChange={setDrivePickerOpen}
+              onPickerOpenChange={setPickerOpen}
             />
           ) : null}
         </div>
@@ -713,7 +727,7 @@ export function DocumentsPanel({
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
-              onPickerOpenChange={setDrivePickerOpen}
+              onPickerOpenChange={setPickerOpen}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
@@ -844,6 +858,7 @@ export function DocumentsPanel({
                           disabled={busy || dialogOpen}
                           onClick={(event) => {
                             event.stopPropagation();
+                            clearFeedback();
                             deleteRestoreRef.current = event.currentTarget;
                             setPendingDelete(doc);
                           }}

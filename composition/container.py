@@ -98,6 +98,7 @@ from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
 from infrastructure.config import Settings, load_settings
 from infrastructure.connectors.drive_folder import (
+    DRIVE_ID_BODY,
     is_drive_folder_id,
     require_drive_folder_id,
 )
@@ -569,8 +570,8 @@ _DRIVE_REQUEST_MESSAGE = "The Google Drive request failed."
 _DRIVE_CLIENT_MISSING_MESSAGE = (
     "Google Drive client is not installed; run uv sync --extra google-drive."
 )
-_DRIVE_ITEM_ID = re.compile(r"^(root|[A-Za-z0-9_-]{1,128})$")
-_DRIVE_SELECTION_ID = re.compile(r"^(?!root$)[A-Za-z0-9_-]{1,128}$")
+_DRIVE_ITEM_ID = re.compile(rf"^(root|{DRIVE_ID_BODY})$")
+_DRIVE_SELECTION_ID = re.compile(rf"^(?!root$){DRIVE_ID_BODY}$")
 _DRIVE_ITEM_NAME_MAX = 256
 _DRIVE_QUERY_MAX = 200
 _DRIVE_SELECTION_VALIDATE_WORKERS = 16

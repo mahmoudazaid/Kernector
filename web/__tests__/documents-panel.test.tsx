@@ -373,8 +373,7 @@ describe("DocumentsPanel", () => {
     await openUploadModal(user);
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelector('[role="alert"]')).toBeNull();
-    const stale = screen.getByText(/document operation failed/i);
-    expect(stale.closest("[hidden]")).not.toBeNull();
+    expect(screen.queryByText(/document operation failed/i)).toBeNull();
   });
 
   it("replaces only the selected document's source id", async () => {

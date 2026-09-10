@@ -13,6 +13,7 @@ from application.errors import ConfigurationError
 from composition import (
     ConnectorSyncError,
     build_google_drive_connector,
+    google_drive_status,
     load_runtime_settings,
     sync_google_drive,
 )
@@ -150,6 +151,7 @@ def test_build_google_drive_connector_maps_config_error_without_path(
         "bad id",
         "x' in parents or '' = '",
         "https://drive.google.com/drive/folders/abc123",
+        "w" * 129,
     ],
 )
 def test_build_google_drive_connector_rejects_malformed_folder_id(
@@ -164,6 +166,41 @@ def test_build_google_drive_connector_rejects_malformed_folder_id(
     )
     with pytest.raises(ConfigurationError, match="GOOGLE_DRIVE_FOLDER_ID"):
         build_google_drive_connector(settings)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "bad id",
+        "x' in parents or '' = '",
+        "https://drive.google.com/drive/folders/abc123",
+        "w" * 129,
+    ],
+)
+def test_google_drive_status_configured_false_for_malformed_folder_id(
+    settings: Settings, raw: str
+) -> None:
+    settings = replace(
+        settings,
+        google_drive=GoogleDriveSettings(
+            service_account_file=Path("/secret/sa.json"),
+            folder_id=raw,
+        ),
+    )
+    assert google_drive_status(settings).configured is False
+
+
+def test_google_drive_status_configured_true_for_valid_folder_id(
+    settings: Settings,
+) -> None:
+    settings = replace(
+        settings,
+        google_drive=GoogleDriveSettings(
+            service_account_file=Path("/secret/sa.json"),
+            folder_id="1AbC_dEf-GhI",
+        ),
+    )
+    assert google_drive_status(settings).configured is True
 
 
 def test_build_google_drive_connector_maps_missing_client_extra(
