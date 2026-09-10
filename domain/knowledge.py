@@ -20,6 +20,11 @@ class SourceType:
 STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
 """Source kinds treated as user stories by eval and software-delivery scoring."""
 
+HUB_SOURCE_TYPES = frozenset(
+    {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+)
+"""Source kinds shown in the shared documents hub and chunk-inspect API."""
+
 
 class CatalogStatus(StrEnum):
     """Lifecycle status of a catalogued knowledge document."""

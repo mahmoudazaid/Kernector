@@ -1571,19 +1571,20 @@ def build_manage_uploaded_documents(
     Pass ``vector_store`` to reuse a cached DualWrite/Chroma client (hybrid BM25
     stays in sync with uploads). Pass ``vector_store_factory`` to defer opening
     until a mutating/read-that-needs-store path actually runs (e.g. list chunks
-    after the catalog gate). When both are omitted, each call that needs a store
-    builds one via ``build_vector_store``.
+    after the catalog gate). When both are set, ``vector_store`` seeds the cache
+    and the factory is used only if that seed is still ``None``. When both are
+    omitted, each call that needs a store builds one via ``build_vector_store``.
     """
-    if vector_store_factory is not None:
-        _vector_store = vector_store_factory
-    else:
-        shared = vector_store
+    shared_store = vector_store
 
-        def _vector_store() -> VectorStore:
-            nonlocal shared
-            if shared is None:
-                shared = build_vector_store(settings)
-            return shared
+    def _vector_store() -> VectorStore:
+        nonlocal shared_store
+        if shared_store is None:
+            if vector_store_factory is not None:
+                shared_store = vector_store_factory()
+            else:
+                shared_store = build_vector_store(settings)
+        return shared_store
 
     def _ingest() -> IngestKnowledge:
         return build_ingest_knowledge(settings, vector_store=_vector_store())
@@ -1716,8 +1717,9 @@ def list_uploaded_document_chunks(
 ) -> tuple[DocumentChunk, ...]:
     """Return stored chunks for a catalogued document, ordered by index.
 
-    Prefer ``vector_store_factory`` over an already-built ``vector_store`` so the
-    catalog gate can reject unknown references without opening Chroma/BM25.
+    Prefer ``vector_store_factory`` when the store should open only after the
+    catalog gate. Pass ``vector_store`` to seed a shared client; when both are
+    set, the seed wins until it is ``None``.
 
     Raises:
         UnknownUploadedDocumentError: ``reference`` is not in the catalog.

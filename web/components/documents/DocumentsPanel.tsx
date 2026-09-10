@@ -80,7 +80,12 @@ type CatalogView =
 type ChunksView =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ready"; chunks: DocumentChunkResponse[]; hasMore: boolean }
+  | {
+      kind: "ready";
+      chunks: DocumentChunkResponse[];
+      hasMore: boolean;
+      loadMoreError: string | null;
+    }
   | { kind: "empty" }
   | { kind: "not_found" }
   | { kind: "error"; message: string };
@@ -247,8 +252,17 @@ export function DocumentsPanel({
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const listChunksRef = useRef(listChunks);
-  listChunksRef.current = listChunks;
+  const selectedIdRef = useRef(selectedId);
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
   const [chunksLoadingMore, setChunksLoadingMore] = useState(false);
+
+  useEffect(() => {
+    listChunksRef.current = listChunks;
+  });
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     captureDriveCallback();
@@ -354,9 +368,9 @@ export function DocumentsPanel({
   const accept = constraints?.supported_upload_suffixes.join(",");
   const selectedSourceId = selected?.source_id ?? null;
   const chunksTarget =
-    selectedId == null
+    selectedSourceId == null
       ? null
-      : (documents.find((doc) => doc.source_id === selectedId) ?? null);
+      : (documents.find((doc) => doc.source_id === selectedSourceId) ?? null);
   const chunksTargetSourceType = chunksTarget?.source_type;
   const chunksTargetStatus = chunksTarget?.status;
   const chunksTargetChunkCount = chunksTarget?.chunk_count;
@@ -368,7 +382,10 @@ export function DocumentsPanel({
   }, [selectedSourceId]);
 
   useEffect(() => {
-    if (!chunksTarget || chunksTargetStatus !== "ready") {
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = null;
+    setChunksLoadingMore(false);
+    if (!selectedSourceId || !chunksTarget || chunksTargetStatus !== "ready") {
       setChunksView({ kind: "idle" });
       return;
     }
@@ -376,6 +393,7 @@ export function DocumentsPanel({
     let active = true;
     const sourceId = chunksTarget.source_id;
     const sourceType = chunksTarget.source_type;
+    const totalCount = chunksTarget.chunk_count;
     setChunksView({ kind: "loading" });
     void listChunksRef
       .current({
@@ -397,7 +415,8 @@ export function DocumentsPanel({
         setChunksView({
           kind: "ready",
           chunks: response.chunks,
-          hasMore: response.chunks.length >= DOCUMENT_CHUNKS_PAGE_SIZE,
+          hasMore: response.chunks.length < totalCount,
+          loadMoreError: null,
         });
       })
       .catch((error: unknown) => {
@@ -423,7 +442,7 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed off catalog identity fields
   }, [
     apiBaseUrl,
-    selectedId,
+    selectedSourceId,
     chunksTargetSourceType,
     chunksTargetStatus,
     chunksTargetChunkCount,
@@ -440,15 +459,26 @@ export function DocumentsPanel({
     ) {
       return;
     }
+    const targetId = chunksTarget.source_id;
+    const targetType = chunksTarget.source_type;
+    const totalCount = chunksTarget.chunk_count;
+    const offset = chunksView.chunks.length;
+    loadMoreAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreAbortRef.current = controller;
     setChunksLoadingMore(true);
     try {
       const response = await listChunksRef.current({
         baseUrl: apiBaseUrl,
-        sourceId: chunksTarget.source_id,
-        sourceType: chunksTarget.source_type,
+        sourceId: targetId,
+        sourceType: targetType,
         limit: DOCUMENT_CHUNKS_PAGE_SIZE,
-        offset: chunksView.chunks.length,
+        offset,
+        signal: controller.signal,
       });
+      if (controller.signal.aborted || selectedIdRef.current !== targetId) {
+        return;
+      }
       setChunksView((prev) => {
         if (prev.kind !== "ready") {
           return prev;
@@ -457,20 +487,32 @@ export function DocumentsPanel({
         return {
           kind: "ready",
           chunks,
-          hasMore: response.chunks.length >= DOCUMENT_CHUNKS_PAGE_SIZE,
+          hasMore: chunks.length < totalCount,
+          loadMoreError: null,
         };
       });
     } catch (error: unknown) {
+      if (controller.signal.aborted || selectedIdRef.current !== targetId) {
+        return;
+      }
       if (error instanceof ApiError && error.status === 404) {
         setChunksView({ kind: "not_found" });
         void refresh();
         return;
       }
-      setChunksView({
-        kind: "error",
-        message: actionErrorMessage(error),
+      setChunksView((prev) => {
+        if (prev.kind !== "ready") {
+          return prev;
+        }
+        return {
+          ...prev,
+          loadMoreError: actionErrorMessage(error),
+        };
       });
     } finally {
+      if (loadMoreAbortRef.current === controller) {
+        loadMoreAbortRef.current = null;
+      }
       setChunksLoadingMore(false);
     }
   }
@@ -976,6 +1018,12 @@ export function DocumentsPanel({
                       No stored chunks for this document.
                     </p>
                   ) : null}
+                  {chunksView.kind === "ready" ? (
+                    <p className="kern-settings-hint">
+                      Showing {chunksView.chunks.length} of{" "}
+                      {selected.chunk_count} chunks
+                    </p>
+                  ) : null}
                 </div>
                 {chunksView.kind === "not_found" ? (
                   <div
@@ -995,7 +1043,12 @@ export function DocumentsPanel({
                 ) : null}
                 {chunksView.kind === "ready" ? (
                   <>
-                    <ol className="kern-documents-chunk-list">
+                    <ol
+                      className="kern-documents-chunk-list"
+                      tabIndex={0}
+                      role="region"
+                      aria-label="Stored chunks"
+                    >
                       {chunksView.chunks.map((chunk) => (
                         <li
                           key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}`}
@@ -1003,26 +1056,35 @@ export function DocumentsPanel({
                           <span className="kern-documents-chunk-index">
                             Chunk {chunk.index}
                           </span>
-                          <pre
-                            className="kern-documents-chunk-content"
-                            tabIndex={0}
-                          >
+                          <pre className="kern-documents-chunk-content">
                             {chunk.content}
                           </pre>
                         </li>
                       ))}
                     </ol>
-                    {chunksView.hasMore ? (
-                      <Button
-                        type="button"
-                        disabled={chunksLoadingMore}
-                        onClick={() => {
-                          void loadMoreChunks();
-                        }}
+                    {chunksView.loadMoreError ? (
+                      <div
+                        className="kern-settings-callout kern-settings-callout--warn"
+                        role="status"
                       >
-                        {chunksLoadingMore ? "Loading…" : "Load more chunks"}
-                      </Button>
+                        <p>{chunksView.loadMoreError}</p>
+                      </div>
                     ) : null}
+                    <Button
+                      type="button"
+                      disabled={
+                        chunksLoadingMore || !chunksView.hasMore
+                      }
+                      onClick={() => {
+                        void loadMoreChunks();
+                      }}
+                    >
+                      {chunksLoadingMore
+                        ? "Loading…"
+                        : chunksView.hasMore
+                          ? "Load more chunks"
+                          : "All chunks loaded"}
+                    </Button>
                   </>
                 ) : null}
               </div>

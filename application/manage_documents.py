@@ -17,6 +17,7 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     DocumentChunk,
+    HUB_SOURCE_TYPES,
     SourceDocument,
     SourceReference,
     SourceType,
@@ -160,9 +161,7 @@ class ManageUploadedDocuments:
     operations that never read one.
     """
 
-    _HUB_SOURCE_TYPES = frozenset(
-        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
-    )
+    _HUB_SOURCE_TYPES = HUB_SOURCE_TYPES
 
     def __init__(
         self,
@@ -204,7 +203,7 @@ class ManageUploadedDocuments:
         ``UnknownDocumentError`` without opening the vector store. Non-hub
         ``source_type`` values are treated as unknown. A known row with no
         stored chunks returns an empty sequence. Optional ``limit``/``offset``
-        page the result after ordering.
+        are forwarded to the vector store (no post-fetch slice).
         """
         if reference.source_type not in self._HUB_SOURCE_TYPES:
             error = UnknownDocumentError(reference=reference)
@@ -231,13 +230,9 @@ class ManageUploadedDocuments:
                 source_type=error.source_type,
             )
             raise error
-        chunks = self._vector_store_factory().list_source_chunks(reference)
-        start = max(offset, 0)
-        if limit is None:
-            return tuple(chunks[start:])
-        if limit <= 0:
-            return ()
-        return tuple(chunks[start : start + limit])
+        return self._vector_store_factory().list_source_chunks(
+            reference, limit=limit, offset=offset
+        )
 
     def create(self, payload: UploadPayload) -> CatalogDocument:
         """Allocate a UUID, ingest the upload, and persist catalog status.

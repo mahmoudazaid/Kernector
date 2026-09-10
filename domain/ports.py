@@ -145,14 +145,19 @@ class VectorStore(Protocol):
         """
 
     def list_source_chunks(
-        self, reference: SourceReference
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[DocumentChunk]:
-        """Return all chunks for one complete source reference.
+        """Return chunks for one complete source reference.
 
         Scoped by the whole `SourceReference`, so the same `source_id` under a
         different `source_type` is excluded. A reference matching no stored
         record returns an empty sequence. Results are ordered by ascending
-        ``chunk.index``. Does not return or compute embeddings.
+        ``chunk.index``. Optional ``limit``/``offset`` page after that order.
+        Does not return or compute embeddings.
 
         Raises:
             VectorStoreError: On any adapter-level failure.

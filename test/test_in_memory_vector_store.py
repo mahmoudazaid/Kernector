@@ -236,11 +236,12 @@ def test_list_source_chunks_missing_reference_returns_empty() -> None:
     assert listed == ()
 
 
-def test_list_source_chunks_empty_store_returns_empty() -> None:
+def test_list_source_chunks_applies_limit_and_offset() -> None:
     store = InMemoryVectorStore()
+    reference = SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    for index in range(5):
+        _seed(store, _chunk("doc-1", index=index, content=f"c{index}"))
 
-    listed = store.list_source_chunks(
-        SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
-    )
+    page = store.list_source_chunks(reference, limit=2, offset=1)
 
-    assert listed == ()
+    assert [c.content for c in page] == ["c1", "c2"]

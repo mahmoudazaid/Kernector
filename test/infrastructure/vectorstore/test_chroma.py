@@ -527,6 +527,23 @@ def test_list_source_chunks_mismatched_lengths_raise_store_error(
         store.list_source_chunks(make_reference("doc-1"))
 
 
+def test_list_source_chunks_applies_limit_and_offset(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=i, content=f"c{i}")
+            for i in range(5)
+        ]
+    )
+
+    page = store.list_source_chunks(
+        make_reference("doc-1"), limit=2, offset=1
+    )
+
+    assert [c.content for c in page] == ["c1", "c2"]
+
+
 def test_list_source_chunks_does_not_request_embeddings(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:

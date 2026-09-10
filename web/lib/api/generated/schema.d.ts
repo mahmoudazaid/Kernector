@@ -1607,7 +1607,7 @@ export interface operations {
   list_document_chunks_api_v1_documents__source_id__chunks_get: {
     parameters: {
       query: {
-        source_type: string;
+        source_type: "knowledge_document" | "google_drive";
         limit?: number;
         offset?: number;
       };

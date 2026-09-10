@@ -1897,6 +1897,13 @@ a.kern-btn {
   list-style: none;
   display: grid;
   gap: var(--kern-space-3);
+  max-height: min(70vh, 36rem);
+  overflow: auto;
+}
+
+.kern-documents-chunk-list:focus-visible {
+  outline: 2px solid var(--kern-focus);
+  outline-offset: 2px;
 }
 
 .kern-documents-chunk-list li {
@@ -1919,13 +1926,6 @@ a.kern-btn {
   border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
   border-radius: 12px;
   background: color-mix(in srgb, var(--kern-surface) 92%, transparent);
-  max-height: 12rem;
-  overflow: auto;
-}
-
-.kern-documents-chunk-content:focus-visible {
-  outline: 2px solid var(--kern-accent, Highlight);
-  outline-offset: 2px;
 }
 
 .kern-documents-form .kern-btn,

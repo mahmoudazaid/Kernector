@@ -192,7 +192,11 @@ class InMemoryVectorStore:
             del self.records[key]
 
     def list_source_chunks(
-        self, reference: SourceReference
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[DocumentChunk]:
         scope = (str(reference.source_type), reference.source_id)
         matched = [
@@ -200,7 +204,13 @@ class InMemoryVectorStore:
             for key, item in self.records.items()
             if key[:2] == scope
         ]
-        return tuple(sorted(matched, key=lambda chunk: chunk.index))
+        ordered = sorted(matched, key=lambda chunk: chunk.index)
+        start = max(offset, 0)
+        if limit is None:
+            return tuple(ordered[start:])
+        if limit <= 0:
+            return ()
+        return tuple(ordered[start : start + limit])
 
 
 class InMemoryLexicalIndex:

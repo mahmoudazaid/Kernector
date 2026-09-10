@@ -124,12 +124,24 @@ def get_ask_factory(
     return factory
 
 
+class ListDocumentChunks(Protocol):
+    """List stored chunks for one catalogued source reference."""
+
+    def __call__(
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[DocumentChunk, ...]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DocumentOperations:
     """The composition document seam, bound to this process's settings."""
 
     list: Callable[[], tuple[CatalogDocument, ...]]
-    list_chunks: Callable[..., tuple[DocumentChunk, ...]]
+    list_chunks: ListDocumentChunks
     create: Callable[[UploadPayload], CatalogDocument]
     replace: Callable[[SourceReference, UploadPayload], CatalogDocument]
     delete: Callable[[SourceReference], None]

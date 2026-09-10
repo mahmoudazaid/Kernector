@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -27,9 +28,7 @@ from presentation.http.schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
-_HUB_SOURCE_TYPES = frozenset(
-    {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
-)
+HubSourceType = Literal["knowledge_document", "google_drive"]
 _DEFAULT_CHUNK_LIMIT = 50
 _MAX_CHUNK_LIMIT = 200
 
@@ -48,37 +47,6 @@ def _require_source_id(source_id: str) -> str:
             ]
         )
     return source_id
-
-
-def _require_source_type(source_type: str) -> str:
-    """Reject blank or non-hub source_type query values before domain construction."""
-    if not source_type.strip():
-        raise RequestValidationError(
-            [
-                {
-                    "type": "string_too_short",
-                    "loc": ("query", "source_type"),
-                    "msg": "source_type must not be blank",
-                    "input": source_type,
-                }
-            ]
-        )
-    if source_type not in _HUB_SOURCE_TYPES:
-        raise RequestValidationError(
-            [
-                {
-                    "type": "enum",
-                    "loc": ("query", "source_type"),
-                    "msg": (
-                        "source_type must be one of: "
-                        + ", ".join(sorted(_HUB_SOURCE_TYPES))
-                    ),
-                    "input": source_type,
-                    "ctx": {"expected": sorted(_HUB_SOURCE_TYPES)},
-                }
-            ]
-        )
-    return source_type
 
 
 def _read_upload(
@@ -196,7 +164,7 @@ def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
 def list_document_chunks(
     source_id: str,
     ops: DocumentOperationsDep,
-    source_type: str = Query(...),
+    source_type: HubSourceType = Query(...),
     limit: int = Query(
         default=_DEFAULT_CHUNK_LIMIT,
         ge=1,
@@ -206,7 +174,6 @@ def list_document_chunks(
 ) -> DocumentChunkListResponse:
     """Return a page of stored chunks for one catalogued source."""
     source_id = _require_source_id(source_id)
-    source_type = _require_source_type(source_type)
     chunks = ops.list_chunks(
         SourceReference(source_id, source_type),
         limit=limit,

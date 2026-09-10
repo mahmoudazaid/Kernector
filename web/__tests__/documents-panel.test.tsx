@@ -1329,4 +1329,292 @@ describe("DocumentsPanel", () => {
       }),
     );
   });
+
+  it("loads more chunks and hides the phantom button at exact page size", async () => {
+    const page1 = Array.from({ length: 50 }, (_, index) => ({
+      index,
+      content: `body-${index}`,
+      source_id: "src-1",
+      source_type: "knowledge_document",
+      title: "Spec",
+      provider: "upload",
+      content_format: "markdown",
+      extra: {},
+    }));
+    const page2 = Array.from({ length: 10 }, (_, index) => ({
+      index: index + 50,
+      content: `body-${index + 50}`,
+      source_id: "src-1",
+      source_type: "knowledge_document",
+      title: "Spec",
+      provider: "upload",
+      content_format: "markdown",
+      extra: {},
+    }));
+    const listChunks = vi
+      .fn()
+      .mockResolvedValueOnce({ chunks: page1 })
+      .mockResolvedValueOnce({ chunks: page2 });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 60 })]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    expect(await screen.findByText("body-0")).toBeInTheDocument();
+    expect(screen.getByText(/showing 50 of 60 chunks/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /load more chunks/i }));
+
+    await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(2));
+    expect(listChunks.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ offset: 50, limit: 50 }),
+    );
+    expect(await screen.findByText("body-59")).toBeInTheDocument();
+    expect(screen.getByText(/showing 60 of 60 chunks/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /all chunks loaded/i }),
+    ).toBeDisabled();
+  });
+
+  it("does not show load more when chunk_count equals the first page size", async () => {
+    const page = Array.from({ length: 50 }, (_, index) => ({
+      index,
+      content: `exact-${index}`,
+      source_id: "src-1",
+      source_type: "knowledge_document",
+      title: "Spec",
+      provider: "upload",
+      content_format: "markdown",
+      extra: {},
+    }));
+    const listChunks = vi.fn().mockResolvedValue({ chunks: page });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 50 })]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    expect(await screen.findByText("exact-0")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /all chunks loaded/i }),
+    ).toBeDisabled();
+    expect(listChunks).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a stale load-more response after selection changes", async () => {
+    let resolveMore: ((value: { chunks: unknown[] }) => void) | undefined;
+    const listChunks = vi.fn().mockImplementation(
+      (options: { sourceId: string; offset?: number }) => {
+        if (options.sourceId === "src-1" && (options.offset ?? 0) === 0) {
+          return Promise.resolve({
+            chunks: Array.from({ length: 50 }, (_, index) => ({
+              index,
+              content: `a-${index}`,
+              source_id: "src-1",
+              source_type: "knowledge_document",
+              title: "A",
+              provider: "upload",
+              content_format: "markdown",
+              extra: {},
+            })),
+          });
+        }
+        if (options.sourceId === "src-1" && options.offset === 50) {
+          return new Promise<{ chunks: unknown[] }>((resolve) => {
+            resolveMore = resolve;
+          });
+        }
+        return Promise.resolve({
+          chunks: [
+            {
+              index: 0,
+              content: "b-only",
+              source_id: "src-2",
+              source_type: "knowledge_document",
+              title: "B",
+              provider: "upload",
+              content_format: "markdown",
+              extra: {},
+            },
+          ],
+        });
+      },
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({ source_id: "src-1", file_name: "a.md", chunk_count: 60 }),
+            doc({ source_id: "src-2", file_name: "b.md", chunk_count: 1 }),
+          ]),
+        )}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    expect(await screen.findByText("a-0")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /load more chunks/i }));
+    await waitFor(() => expect(resolveMore).toBeDefined());
+
+    await user.click(screen.getByRole("button", { name: /b\.md\s*src-2/i }));
+    expect(await screen.findByText("b-only")).toBeInTheDocument();
+
+    resolveMore?.({
+      chunks: [
+        {
+          index: 50,
+          content: "stale-a",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "A",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        },
+      ],
+    });
+    await waitFor(() => expect(screen.getByText("b-only")).toBeInTheDocument());
+    expect(screen.queryByText("stale-a")).not.toBeInTheDocument();
+  });
+
+  it("keeps loaded chunks when load more fails", async () => {
+    const listChunks = vi
+      .fn()
+      .mockResolvedValueOnce({
+        chunks: Array.from({ length: 50 }, (_, index) => ({
+          index,
+          content: `keep-${index}`,
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        })),
+      })
+      .mockRejectedValueOnce(ApiError.aborted());
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 60 })]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    expect(await screen.findByText("keep-0")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /load more chunks/i }));
+    expect(
+      await screen.findByText(/cancelled or timed out/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("keep-0")).toBeInTheDocument();
+    expect(screen.getByText(/showing 50 of 60 chunks/i)).toBeInTheDocument();
+  });
+
+  it("refetches chunks when only chunk_count changes", async () => {
+    const listChunks = vi.fn().mockResolvedValue({ chunks: [] });
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(
+        listResponse([
+          doc({
+            chunk_count: 1,
+            uploaded_at: "2026-09-05T09:12:44+00:00",
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(
+        listResponse([
+          doc({
+            chunk_count: 2,
+            uploaded_at: "2026-09-05T09:12:44+00:00",
+          }),
+        ]),
+      );
+    const replace = vi.fn().mockResolvedValue(
+      doc({
+        chunk_count: 2,
+        uploaded_at: "2026-09-05T09:12:44+00:00",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        listChunks={listChunks}
+        replace={replace}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(1));
+
+    const file = new File(["# v2"], "v2.md", { type: "text/markdown" });
+    const input = screen.getByLabelText(/replacement file/i);
+    await user.upload(input, file);
+    await user.click(screen.getByRole("button", { name: /^replace$/i }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not fetch chunks for a filter-hidden selection", async () => {
+    const listChunks = vi.fn().mockResolvedValue({
+      chunks: [
+        {
+          index: 0,
+          content: "hidden-body",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        },
+      ],
+    });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({ source_id: "src-1", file_name: "upload.md" }),
+            doc({
+              source_id: "drive-1",
+              file_name: "drive.md",
+              source_type: "google_drive",
+            }),
+          ]),
+        )}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    await waitFor(() => expect(listChunks).toHaveBeenCalled());
+    listChunks.mockClear();
+
+    await user.click(screen.getByRole("combobox", { name: /^source$/i }));
+    await user.click(screen.getByRole("option", { name: /google drive/i }));
+    await waitFor(() => {
+      expect(screen.queryByText("upload.md")).not.toBeInTheDocument();
+    });
+    expect(listChunks).not.toHaveBeenCalled();
+    expect(screen.queryByText("hidden-body")).not.toBeInTheDocument();
+  });
 });

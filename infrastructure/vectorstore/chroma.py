@@ -725,24 +725,42 @@ class ChromaVectorStore:
             ) from exc
 
     def list_source_chunks(
-        self, reference: SourceReference
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[DocumentChunk]:
         """Return chunks for one source. See `domain.ports.VectorStore`.
 
         Reads documents and metadatas only (no embeddings). Scoped by the same
-        ``source_id`` + ``source_type`` filter as ``delete_source``. Results are
+        ``source_id`` + ``source_type`` filter as ``delete_source``. When
+        ``limit``/``offset`` are set, filters on contiguous ``chunk_index``
+        ranges so Chroma pages without hydrating the full source. Results are
         ordered by ascending ``chunk.index``.
         """
         if not isinstance(reference, SourceReference):
             raise ChromaStoreError(
                 f"reference must be a SourceReference, got {reference!r}"
             )
-        where = {
-            "$and": [
-                {_KEY_SOURCE_ID: reference.source_id},
-                {_KEY_SOURCE_TYPE: str(reference.source_type)},
-            ]
-        }
+        if isinstance(limit, bool) or (limit is not None and not isinstance(limit, int)):
+            raise ChromaStoreError(f"limit must be an int or None, got {limit!r}")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ChromaStoreError(f"offset must be a non-negative int, got {offset!r}")
+        clauses: list[dict[str, object]] = [
+            {_KEY_SOURCE_ID: reference.source_id},
+            {_KEY_SOURCE_TYPE: str(reference.source_type)},
+        ]
+        start = offset
+        if limit is not None and limit <= 0:
+            return ()
+        if start > 0:
+            clauses.append({_KEY_CHUNK_INDEX: {"$gte": start}})
+        if limit is not None:
+            clauses.append({_KEY_CHUNK_INDEX: {"$lt": start + limit}})
+        where: dict[str, object] = (
+            {"$and": clauses} if len(clauses) > 1 else clauses[0]
+        )
         try:
             result = self._collection.get(
                 where=where,

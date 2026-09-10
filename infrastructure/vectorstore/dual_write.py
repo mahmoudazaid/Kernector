@@ -39,6 +39,12 @@ class DualWriteVectorStore:
         self.lexical.delete_source(reference)
 
     def list_source_chunks(
-        self, reference: SourceReference
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> Sequence[DocumentChunk]:
-        return self._vector.list_source_chunks(reference)
+        return self._vector.list_source_chunks(
+            reference, limit=limit, offset=offset
+        )
