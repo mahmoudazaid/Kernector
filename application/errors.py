@@ -5,6 +5,15 @@ class ApplicationValidationError(ValueError):
     """A use-case contract invariant was violated."""
 
 
+class ObservationIntegrityError(ApplicationValidationError):
+    """Same-run RAG observation invariants were violated.
+
+    Raised by ``ObservedRagRunner`` when retrieve/generation hit sharing cannot
+    be confirmed. Distinct from ``InputRejectedError`` so live Judge composition
+    can hard-fail only integrity breaches.
+    """
+
+
 class InputRejectedError(ApplicationValidationError):
     """Caller-supplied input was refused at a use-case boundary.
 

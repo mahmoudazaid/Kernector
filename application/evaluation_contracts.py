@@ -34,12 +34,15 @@ _RESULT_STATUSES = frozenset({"pass", "fail", "skip"})
 _COVERAGE_STATES = frozenset({"exercised", "skipped"})
 _SKIP_REASONS = frozenset({"tool_unavailable", "no_case_configured"})
 
+_SLICES = frozenset({"core", "software_delivery"})
+
 _RETRIEVE_FORBIDDEN = (
     "expected_answer_mode",
     "expected_citations",
     "tool_name",
     "arguments",
     "expected_tool_result",
+    "reference_answer",
 )
 _ASK_FORBIDDEN = ("tool_name", "arguments", "expected_tool_result")
 _PACK_OFF_FORBIDDEN = (
@@ -49,6 +52,7 @@ _PACK_OFF_FORBIDDEN = (
     "tool_name",
     "arguments",
     "expected_tool_result",
+    "reference_answer",
 )
 _INVOKE_FORBIDDEN = (
     "query",
@@ -56,6 +60,7 @@ _INVOKE_FORBIDDEN = (
     "expected_source_ids",
     "expected_citations",
     "expected_answer_mode",
+    "reference_answer",
 )
 
 
@@ -208,6 +213,9 @@ class EvalCase:
         tool_name (str | None): Tool identifier for invoke_tool.
         arguments (Mapping[str, object] | None): JSON-compatible tool arguments.
         expected_tool_result (Mapping[str, object] | None): Expected JSON subset.
+        slice (str): ``core`` or ``software_delivery``. Defaults to ``core``.
+        reference_answer (str | None): Human reference for Judge-eligible ask cases.
+            Forbidden on retrieve, pack_off, and invoke_tool.
     """
 
     id: str
@@ -221,10 +229,18 @@ class EvalCase:
     tool_name: str | None = None
     arguments: Mapping[str, object] | None = None
     expected_tool_result: Mapping[str, object] | None = None
+    slice: str = "core"
+    reference_answer: str | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.id, "id")
         _require_text(self.case_class, "case_class")
+        if self.slice not in _SLICES:
+            raise ApplicationValidationError(
+                "slice must be core or software_delivery"
+            )
+        if self.reference_answer is not None:
+            _require_text(self.reference_answer, "reference_answer")
         if self.case_class not in REQUIRED_CASE_CLASSES:
             raise ApplicationValidationError(
                 f"case_class must be a required eval class, got {self.case_class}"

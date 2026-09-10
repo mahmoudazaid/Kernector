@@ -507,7 +507,9 @@ category sentences in `presentation/failure_messages.py`; Next.js
 proof that `str(error)` is safe. When execution starts, failures also set
 sanitized `RunMeta` on the response (`request_id`, `outcome="error"`,
 `error_type` only — never exception text). Pre-execute construction failures
-leave `run=None`.
+leave `run=None`. Structured operation logs may use `error_type` for a
+sanitized category and `exception_type` for the exception class name when both
+are needed (see README observability).
 
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
