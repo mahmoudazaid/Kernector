@@ -509,11 +509,15 @@ def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
         "composition.container.build_rewrite_and_retrieve_knowledge",
         lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
     )
-    calls: list[object] = []
+    agent_builds: list[object] = []
 
     def _capture_agent_orchestrate(agent: object, **kwargs: object) -> object:
-        calls.append((agent, kwargs))
-        raise AssertionError("agent orchestrate must not run when flag is off")
+        agent_builds.append((agent, kwargs))
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("agent orchestrate must not run when flag is off")
+
+        return orchestrate
 
     monkeypatch.setattr(
         "composition.container.build_agent_orchestrate",
@@ -522,9 +526,14 @@ def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
 
-    assert calls == []
+    assert agent_builds == []
     assert isinstance(ask._ask, ToolAugmentedAsk)
-    assert ask._ask._runner._orchestrate.__name__ == "orchestrate"
+    # Provenance: wired callable came from the local else-branch, not the
+    # agent builder (which was never invoked and would have returned the
+    # capturing closure above).
+    assert ask._ask._runner._orchestrate.__module__ == "composition.container"
+    assert ask._ask._runner._orchestrate.__qualname__.endswith(".orchestrate")
+    assert "build_agent_orchestrate" not in ask._ask._runner._orchestrate.__qualname__
 
 
 def test_agent_loop_flag_on_wires_agent_orchestrate(

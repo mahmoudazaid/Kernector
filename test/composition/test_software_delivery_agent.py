@@ -111,6 +111,48 @@ def test_agent_orchestrate_records_ordered_tool_outputs_and_stops() -> None:
     assert outcome.run_view.risk.score == 40
     assert agent.max_steps_seen == [6]
     assert any("AUTH-101" in goal or "MFA" in goal for goal in agent.goals)
+    assert all(
+        "<<<BEGIN_UNTRUSTED_EVAL_TEXT>>>" in goal for goal in agent.goals
+    )
+
+
+def test_agent_orchestrate_summary_follows_tools_that_ran() -> None:
+    from composition.software_delivery_agent import build_agent_orchestrate
+
+    agent = _OrderedFakeAgent(())
+    runner = PackSoftwareDeliveryChat(
+        retrieve=lambda _target: (_hit(),),
+        invoke=_invoke,
+        orchestrate=build_agent_orchestrate(agent),
+    )
+
+    outcome = runner.run("Create test cases for AUTH-101", generate_tests=True)
+
+    assert outcome.tool_outputs == ()
+    assert outcome.answer == "No software-delivery tools were invoked."
+    assert "exported Markdown" not in outcome.answer
+    assert outcome.run_view is not None
+    assert outcome.run_view.calls == ()
+    assert outcome.run_view.risk is None
+
+
+def test_agent_orchestrate_partial_run_summary_matches_risk_only() -> None:
+    from composition.software_delivery_agent import build_agent_orchestrate
+
+    agent = _OrderedFakeAgent((_RISK_TOOL,))
+    runner = PackSoftwareDeliveryChat(
+        retrieve=lambda _target: (_hit(),),
+        invoke=_invoke,
+        orchestrate=build_agent_orchestrate(agent),
+    )
+
+    outcome = runner.run("Create test cases for AUTH-101", generate_tests=True)
+
+    assert "exported Markdown" not in outcome.answer
+    assert "Scored software-delivery risk" in outcome.answer
+    assert outcome.run_view is not None
+    assert outcome.run_view.risk is not None
+    assert outcome.run_view.markdown == ""
 
 
 def test_agent_orchestrate_sanitizes_provider_failure() -> None:

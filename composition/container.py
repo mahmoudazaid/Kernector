@@ -1958,14 +1958,19 @@ def build_tool_augmented_ask(
     registration = importlib.import_module("packs.software_delivery.registration")
     # Tools invoke ChatModel through the opaque boundary; record safe RunMeta so
     # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
-    model_calls = RecordingChatModel(chat_model)
+    # Agent loop accumulates ReAct model turns plus any tool ChatModel calls.
+    model_calls = RecordingChatModel(
+        chat_model, accumulate=settings.domain_tools.agent_loop
+    )
 
     if settings.domain_tools.agent_loop:
         from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
         orchestrate = build_agent_orchestrate(
             LangGraphToolAgent(
-                model_factory=_software_delivery_agent_model_factory(settings)
+                model_factory=_software_delivery_agent_model_factory(
+                    settings, recorder=model_calls
+                )
             )
         )
     else:
@@ -2020,32 +2025,124 @@ def build_tool_augmented_ask(
     )
 
 
-def _software_delivery_agent_model_factory(settings: Settings):
+def _software_delivery_agent_model_factory(
+    settings: Settings,
+    *,
+    recorder: RecordingChatModel | None = None,
+):
     """Return a LangChain chat model factory with ``bind_tools`` for the agent.
 
-    Uses OpenAI-compatible clients for both OpenRouter and Ollama so the
-    LangGraph adapter can bind domain tools without depending on ``ChatModel``.
+    Validates OpenRouter credentials the same way as ``OpenRouterChat`` before
+    constructing ``ChatOpenAI``. Wraps invoke so failures become ``ProviderError``
+    (a ``RuntimeError``) and optional ``recorder`` observations reach RunMeta.
     """
 
     def factory(**_kwargs: object):
         from langchain_openai import ChatOpenAI
 
+        from domain.errors import ProviderError
+        from infrastructure.llm.openrouter import ChatConfigError, _require_chat_config
+
         if settings.provider == "ollama":
-            base = (settings.ollama.base_url or "").rstrip("/")
-            return ChatOpenAI(
-                model=settings.ollama.model,
-                api_key="ollama",
-                base_url=f"{base}/v1",
-                timeout=settings.ollama.timeout,
-            )
-        return ChatOpenAI(
-            model=settings.openrouter.model,
-            api_key=settings.openrouter.api_key,
-            base_url=settings.openrouter.base_url,
-            timeout=settings.openrouter.timeout,
+            if not settings.ollama.base_url:
+                raise ChatConfigError(
+                    "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
+                )
+            if not settings.ollama.model:
+                raise ChatConfigError(
+                    "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
+                )
+            base = settings.ollama.base_url.rstrip("/")
+            try:
+                inner = ChatOpenAI(
+                    model=settings.ollama.model,
+                    api_key="ollama",
+                    base_url=f"{base}/v1",
+                    timeout=settings.ollama.timeout,
+                )
+            except Exception as exc:
+                raise ProviderError(
+                    "The tool-calling agent provider could not be reached."
+                ) from exc
+            model_name = settings.ollama.model
+        else:
+            _require_chat_config(settings.openrouter)
+            try:
+                inner = ChatOpenAI(
+                    model=settings.openrouter.model,
+                    api_key=settings.openrouter.api_key,
+                    base_url=settings.openrouter.base_url,
+                    timeout=settings.openrouter.timeout,
+                )
+            except Exception as exc:
+                raise ProviderError(
+                    "The tool-calling agent provider could not be reached."
+                ) from exc
+            model_name = settings.openrouter.model
+
+        return _ObservingChatOpenAI(
+            inner, recorder=recorder, model_name=model_name
         )
 
     return factory
+
+
+class _ObservingChatOpenAI:
+    """Wrap a LangChain chat model so each invoke updates ``RecordingChatModel``."""
+
+    def __init__(
+        self,
+        inner: object,
+        *,
+        recorder: RecordingChatModel | None,
+        model_name: str | None,
+    ) -> None:
+        self._inner = inner
+        self._recorder = recorder
+        self._model_name = model_name
+
+    def bind_tools(self, tools: Sequence[object]) -> "_ObservingChatOpenAI":
+        bound = self._inner.bind_tools(tools)  # type: ignore[attr-defined]
+        return _ObservingChatOpenAI(
+            bound, recorder=self._recorder, model_name=self._model_name
+        )
+
+    def invoke(self, messages: object, **kwargs: object) -> object:
+        import time
+
+        from application.contracts import RunMeta
+        from domain.errors import ProviderError
+        from domain.models import Usage
+
+        started = time.perf_counter()
+        try:
+            result = self._inner.invoke(messages, **kwargs)  # type: ignore[attr-defined]
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                "The tool-calling agent provider could not be reached."
+            ) from exc
+        if self._recorder is not None:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            usage_meta = getattr(result, "usage_metadata", None)
+            usage = None
+            if isinstance(usage_meta, Mapping):
+                usage = Usage(
+                    prompt_tokens=usage_meta.get("input_tokens"),  # type: ignore[arg-type]
+                    completion_tokens=usage_meta.get("output_tokens"),  # type: ignore[arg-type]
+                    total_tokens=usage_meta.get("total_tokens"),  # type: ignore[arg-type]
+                    cost=usage_meta.get("cost"),  # type: ignore[arg-type]
+                )
+            self._recorder.record(
+                RunMeta(
+                    model=self._model_name,
+                    latency_ms=latency_ms,
+                    usage=usage,
+                    settings={},
+                )
+            )
+        return result
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
