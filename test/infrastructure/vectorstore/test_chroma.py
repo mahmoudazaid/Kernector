@@ -30,7 +30,7 @@ OPPOSING = (-1.0, 0.0, 0.0)
 def settings(path: Path, collection: str = COLLECTION) -> ChromaSettings:
     """Build settings directly, never through `load_settings()`.
 
-    `load_settings()` calls `load_dotenv(override=True)`, so a developer's local
+    `load_settings()` calls `load_dotenv(override=False)`, so a developer's local
     `.env` would beat anything the test sets and the store could land in their
     real data directory (§3.1).
     """
