@@ -19,6 +19,7 @@ import { UnavailableState } from "@/components/states/UnavailableState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DialogFrame } from "@/components/ui/DialogFrame";
+import { Loader } from "@/components/ui/Loader";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
@@ -214,6 +215,7 @@ export function DocumentsPanel({
     useState<CatalogDocumentResponse | null>(null);
   const [hubTab, setHubTab] = useState<"sources" | "documents">("sources");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] =
     useState<(typeof SOURCE_FILTERS)[number]>("All sources");
@@ -357,33 +359,36 @@ export function DocumentsPanel({
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();
-    if (!constraints) {
+    if (!constraints || !uploadFile) {
       return;
     }
-    const validated = validateUpload(uploadFile, constraints);
+    const file = uploadFile;
+    const validated = validateUpload(file, constraints);
     if (!validated.ok) {
       setFeedback({ kind: "error", message: validated.message });
       return;
     }
+    setUploadOpen(false);
+    clearUploadInput();
+    setUploading(true);
     setBusy(true);
     setFeedback({ kind: "idle" });
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
-        file: uploadFile!,
+        file,
       });
       setFeedback({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
       });
-      clearUploadInput();
-      setUploadOpen(false);
       setHubTab("documents");
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
     } finally {
+      setUploading(false);
       setBusy(false);
     }
   }
@@ -568,7 +573,15 @@ export function DocumentsPanel({
           <h2>Connected sources</h2>
         </div>
         <div className="kern-source-grid">
-          <article className="kern-source-card">
+          <article
+            className="kern-source-card"
+            aria-busy={uploading}
+          >
+            {uploading ? (
+              <div className="kern-source-busy-overlay">
+                <Loader label="Uploading files" size="sm" />
+              </div>
+            ) : null}
             <div className="kern-source-card-title">
               <div className="kern-source-name">
                 <span className="kern-source-icon">

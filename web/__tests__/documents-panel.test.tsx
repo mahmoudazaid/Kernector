@@ -254,6 +254,50 @@ describe("DocumentsPanel", () => {
     expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
   });
 
+  it("dismisses the upload dialog and shows a card loader while uploading", async () => {
+    const user = userEvent.setup();
+    let resolveUpload: (value: CatalogDocumentResponse) => void = () => {};
+    const upload = vi.fn(
+      () =>
+        new Promise<CatalogDocumentResponse>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openUploadModal(user);
+    const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
+    await user.upload(screen.getByLabelText(/document file/i), file);
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(
+      screen.queryByRole("heading", { name: /upload files/i }),
+    ).not.toBeInTheDocument();
+    const card = screen.getByRole("heading", { name: "File uploads" }).closest(
+      "article",
+    );
+    expect(card).toHaveAttribute("aria-busy", "true");
+    const overlay = screen
+      .getByText(/uploading files/i)
+      .closest(".kern-source-busy-overlay");
+    expect(overlay).toBeInTheDocument();
+    expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add files/i })).toBeDisabled();
+
+    resolveUpload(doc({ source_id: "new-id" }));
+    expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/uploading files/i)).not.toBeInTheDocument();
+    });
+  });
+
   it("replaces only the selected document's source id", async () => {
     const user = userEvent.setup();
     const list = vi.fn().mockResolvedValue(listResponse([doc()]));

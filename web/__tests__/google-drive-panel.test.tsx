@@ -339,7 +339,7 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByRole("button", { name: /^sync$/i })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /syncing/i })).not.toBeInTheDocument();
     const overlay = screen.getByText(/syncing google drive/i).closest(
-      ".kern-drive-sync-overlay",
+      ".kern-source-busy-overlay",
     );
     expect(overlay).toBeInTheDocument();
     expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
@@ -691,7 +691,7 @@ describe("GoogleDrivePanel", () => {
       screen.queryByRole("dialog", { name: /choose from google drive/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/syncing google drive/i).closest(".kern-drive-sync-overlay"),
+      screen.getByText(/syncing google drive/i).closest(".kern-source-busy-overlay"),
     ).toBeInTheDocument();
 
     resolveSave({
