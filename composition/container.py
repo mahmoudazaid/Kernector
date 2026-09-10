@@ -497,11 +497,19 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
         DocumentCatalog: ``SqlDocumentCatalog`` bound to the configured workspace.
 
     Raises:
+        ConfigurationError: ``DOCUMENT_CATALOG_WORKSPACE_ID`` is absent or
+            invalid.
         DocumentOperationError: The SQLite file or schema is unusable.
     """
     catalog = settings.document_catalog
+    if catalog.workspace_id is None:
+        raise ConfigurationError(
+            "DOCUMENT_CATALOG_WORKSPACE_ID is required"
+        )
     try:
         return SqlDocumentCatalog(catalog.sql_path, catalog.workspace_id)
+    except ValueError as error:
+        raise ConfigurationError(str(error)) from error
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
     except OSError as error:
@@ -1514,10 +1522,10 @@ def build_manage_uploaded_documents(
     """Wire create/replace/delete/list for uploaded documents.
 
     The store and the ingest pipeline are passed as factories the use case calls
-    only when it needs them. Listing then costs one JSON read — no Chroma client
-    and no embedding credentials — which matters because the documents list
-    path should stay cheap on every request, and because `list` and `delete`
-    never embed anything.
+    only when it needs them. Listing then costs one SQLite query against
+    ``catalog_documents`` — no Chroma client and no embedding credentials —
+    which matters because the documents list path should stay cheap on every
+    request, and because `list` and `delete` never embed anything.
     Each operation opens at most one store, and both paths open it through the
     same factory, so ingest and delete cannot drift onto different collections.
 

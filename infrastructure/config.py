@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pathlib import Path
 
-from infrastructure.catalog.workspace import require_workspace_id
+from infrastructure.catalog.workspace import _parse_workspace_id
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
@@ -55,11 +55,12 @@ class DocumentCatalogSettings:
 
     Args:
         sql_path (Path): SQLite file used by the SQL catalog adapter.
-        workspace_id (str): Bound SQL workspace identity (required).
+        workspace_id (str | None): Bound SQL workspace identity. Validated when
+            present; required when composition builds the catalog.
     """
 
     sql_path: Path
-    workspace_id: str
+    workspace_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,6 +308,16 @@ def _load_knowledge_settings() -> KnowledgeSettings:
 
 
 def _load_document_catalog_settings() -> DocumentCatalogSettings:
+    if os.getenv("DOCUMENT_CATALOG_BACKEND") is not None:
+        raise ValueError(
+            "DOCUMENT_CATALOG_BACKEND is retired; use "
+            "DOCUMENT_CATALOG_SQL_PATH and DOCUMENT_CATALOG_WORKSPACE_ID"
+        )
+    if os.getenv("DOCUMENT_CATALOG_PATH") is not None:
+        raise ValueError(
+            "DOCUMENT_CATALOG_PATH is retired; use "
+            "DOCUMENT_CATALOG_SQL_PATH and DOCUMENT_CATALOG_WORKSPACE_ID"
+        )
     sql_path = os.getenv(
         "DOCUMENT_CATALOG_SQL_PATH", "data/catalog/catalog.sqlite"
     )
@@ -315,7 +326,7 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
             f"DOCUMENT_CATALOG_SQL_PATH must be non-empty, got {sql_path!r}"
         )
     try:
-        workspace_id = require_workspace_id(
+        workspace_id = _parse_workspace_id(
             os.getenv("DOCUMENT_CATALOG_WORKSPACE_ID")
         )
     except ValueError as error:

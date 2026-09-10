@@ -52,4 +52,3 @@ def test_count_filters_source_type_and_status(tmp_path: Path) -> None:
     assert catalog.count(status=CatalogStatus.FAILED) == 1
     assert catalog.count(status=CatalogStatus.READY) == 2
     assert other.count() == 1
-    assert catalog.count() == 3

@@ -37,6 +37,8 @@ data into a shared document contract.
    sets that adapter’s file path. SQL uses `DOCUMENT_CATALOG_SQL_PATH` and a
    required `DOCUMENT_CATALOG_WORKSPACE_ID`. Scope identity is settled by
    [ADR 0006](0006-workspace-scope-identity.md).
+   **Superseded for the live runtime by [ADR 0007](0007-retire-json-document-catalog.md)
+   (SQL-only composition).**
 
 ## Consequences
 
@@ -63,16 +65,11 @@ data into a shared document contract.
 
 Parent: [EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68).
 
-## Implementation status (2026-09-10)
-
-[#261](https://github.com/mahmoudazaid/Kernector/issues/261) retires
-`JsonDocumentCatalog` and `DOCUMENT_CATALOG_PATH` / `DOCUMENT_CATALOG_BACKEND`.
-Composition wires only `SqlDocumentCatalog`. Historical Decision text above
-records the JSON/SQL selection era from #131; the live runtime is SQL-only.
-
 ## Related docs
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — layers and knowledge-foundation section
 - [data/knowledge/README.md](../../data/knowledge/README.md) — seed format and domain mapping
 - [ADR 0006](0006-workspace-scope-identity.md) — workspace scope identity for the
   SQL catalog (`#131`)
+- [ADR 0007](0007-retire-json-document-catalog.md) — retires JSON catalog; supersedes
+  Decision 4 for the live runtime

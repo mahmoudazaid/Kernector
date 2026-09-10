@@ -369,7 +369,6 @@ export function DocumentsPanel({
       return;
     }
     setUploadOpen(false);
-    clearUploadInput();
     setUploading(true);
     setBusy(true);
     setFeedback({ kind: "idle" });
@@ -378,6 +377,7 @@ export function DocumentsPanel({
         baseUrl: apiBaseUrl,
         file,
       });
+      clearUploadInput();
       setFeedback({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
@@ -387,6 +387,7 @@ export function DocumentsPanel({
       setSelectedId(document.source_id);
     } catch (error) {
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      setUploadOpen(true);
     } finally {
       setUploading(false);
       setBusy(false);
@@ -617,7 +618,7 @@ export function DocumentsPanel({
             <div className="kern-source-actions">
               <Button
                 type="button"
-                disabled={busy || !constraints}
+                disabled={!constraints || (busy && !uploading)}
                 onClick={() => setUploadOpen(true)}
               >
                 <UploadIcon />
@@ -908,6 +909,9 @@ export function DocumentsPanel({
                 setUploadFile(event.target.files?.[0] ?? null);
               }}
             />
+            {uploadFile ? (
+              <p className="kern-settings-hint">Selected: {uploadFile.name}</p>
+            ) : null}
           </label>
           <div className="kern-dialog-actions">
             <Button

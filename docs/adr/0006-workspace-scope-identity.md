@@ -91,19 +91,16 @@ backend switch.
   `load_settings()` must not require it while JSON is the wired catalog, but
   validates it whenever it is present. It becomes required only when SQL is
   selected or JSON→SQL migration runs — work that remains in #131.
-
-## Implementation status (2026-09-10)
-
-[#261](https://github.com/mahmoudazaid/Kernector/issues/261) removes the
-unscoped `JsonDocumentCatalog` adapter and JSON→SQL migrator.
-`DOCUMENT_CATALOG_WORKSPACE_ID` is always required at settings load.
-Historical decision text above about JSON remains for context; the live
-runtime is SQL-only.
+  **Superseded for the live runtime by [ADR 0007](0007-retire-json-document-catalog.md):**
+  JSON is retired; workspace is required when building the SQL catalog, not for
+  every settings load.
 
 ## Related docs
 
 - [ADR 0001](0001-domain-agnostic-knowledge-foundation.md) — catalog port and
   current JSON wiring
+- [ADR 0007](0007-retire-json-document-catalog.md) — retires JSON catalog and
+  updates workspace load rules
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — catalog adapter selection
 - [EPIC #257](https://github.com/mahmoudazaid/Kernector/issues/257) — Project
   Workspaces and Authorization

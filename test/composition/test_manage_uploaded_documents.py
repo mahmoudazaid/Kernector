@@ -90,6 +90,29 @@ def test_build_document_catalog_maps_oserror(
         composition_container.build_document_catalog(settings)
 
 
+def test_build_document_catalog_requires_workspace(settings: Settings) -> None:
+    missing = replace(
+        settings,
+        document_catalog=replace(
+            settings.document_catalog,
+            workspace_id=None,
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        composition_container.build_document_catalog(missing)
+
+
+def test_build_document_catalog_maps_invalid_workspace_value_error(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(_path: Path, _workspace_id: str) -> object:
+        raise ValueError("workspace_id must fullmatch [A-Za-z0-9_-]+")
+
+    monkeypatch.setattr(composition_container, "SqlDocumentCatalog", boom)
+    with pytest.raises(ConfigurationError, match="workspace_id"):
+        composition_container.build_document_catalog(settings)
+
+
 def test_list_create_replace_delete_round_trip(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

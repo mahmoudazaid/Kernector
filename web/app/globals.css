@@ -1178,8 +1178,7 @@ a {
   min-width: 0;
 }
 
-.kern-source-busy-overlay,
-.kern-drive-sync-overlay {
+.kern-source-busy-overlay {
   position: absolute;
   inset: 0;
   z-index: 1;

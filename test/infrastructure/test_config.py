@@ -20,9 +20,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_SQL_PATH", raising=False)
-    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
-    # SQL-only catalog requires a workspace; pin a valid default for non-catalog
-    # tests. Catalog tests that assert absence clear this explicitly.
+    # Suite pin from conftest; keep a valid default for non-catalog tests.
+    # Absence is only cleared in tests that assert the optional load path.
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
@@ -136,10 +135,9 @@ def test_blank_knowledge_corpus_path_is_rejected(
 
 
 def test_document_catalog_defaults(env: pytest.MonkeyPatch) -> None:
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
     catalog = load_settings().document_catalog
     assert catalog.sql_path == PROJECT_ROOT / "data" / "catalog" / "catalog.sqlite"
-    assert catalog.workspace_id == "ws-local"
+    assert catalog.workspace_id == "test-workspace"
     assert not hasattr(catalog, "path")
     assert not hasattr(catalog, "backend")
 
@@ -147,34 +145,30 @@ def test_document_catalog_defaults(env: pytest.MonkeyPatch) -> None:
 def test_document_catalog_absolute_sql_path_is_preserved(
     env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
     catalog = load_settings().document_catalog
     assert catalog.sql_path == tmp_path / "catalog.sqlite"
-    assert catalog.workspace_id == "ws-local"
+    assert catalog.workspace_id == "test-workspace"
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
 def test_blank_document_catalog_sql_path_is_rejected(
     env: pytest.MonkeyPatch, raw: str
 ) -> None:
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", raw)
     with pytest.raises(ValueError, match="DOCUMENT_CATALOG_SQL_PATH"):
         load_settings()
 
 
-def test_document_catalog_requires_workspace_id(env: pytest.MonkeyPatch) -> None:
+def test_absent_workspace_id_is_none(env: pytest.MonkeyPatch) -> None:
     env.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        load_settings()
+    assert load_settings().document_catalog.workspace_id is None
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
-def test_blank_workspace_id_is_rejected(env: pytest.MonkeyPatch, raw: str) -> None:
+def test_blank_workspace_id_is_absent(env: pytest.MonkeyPatch, raw: str) -> None:
     env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", raw)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        load_settings()
+    assert load_settings().document_catalog.workspace_id is None
 
 
 @pytest.mark.parametrize("raw", ["ws/id", "ws id", "ws.id", "ws@id"])
@@ -197,19 +191,17 @@ def test_workspace_id_is_stripped(env: pytest.MonkeyPatch) -> None:
     assert load_settings().document_catalog.workspace_id == "ws-trim"
 
 
-def test_leftover_backend_and_path_env_are_ignored(
+def test_retired_backend_and_path_env_are_rejected(
     env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
-    # Retired keys must not affect settings (concat avoids stale-string repo scan).
     env.setenv("DOCUMENT_CATALOG_" + "BACKEND", "json")
+    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_BACKEND is retired"):
+        load_settings()
+    env.delenv("DOCUMENT_CATALOG_" + "BACKEND", raising=False)
     env.setenv("DOCUMENT_CATALOG_" + "PATH", str(tmp_path / "uploads.json"))
-    catalog = load_settings().document_catalog
-    assert catalog.sql_path == tmp_path / "catalog.sqlite"
-    assert catalog.workspace_id == "ws-local"
-    assert not hasattr(catalog, "path")
-    assert not hasattr(catalog, "backend")
+    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_PATH is retired"):
+        load_settings()
 
 
 def test_prompt_packs_default_to_core(env: pytest.MonkeyPatch) -> None:
