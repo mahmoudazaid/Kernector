@@ -95,7 +95,7 @@ from domain.ports import (
 )
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
-from infrastructure.catalog.workspace import parse_workspace_id
+from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
 from infrastructure.config import Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
@@ -525,7 +525,8 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
     catalog = settings.document_catalog
     if catalog.sql_path is None:
         raise ConfigurationError(
-            "DOCUMENT_CATALOG_SQL_PATH must be non-empty, got ''"
+            "DOCUMENT_CATALOG_SQL_PATH is blank; unset it to use the "
+            "data/catalog/catalog.sqlite default"
         )
     try:
         workspace_id = parse_workspace_id(catalog.workspace_id)
@@ -535,8 +536,7 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
         ) from error
     if workspace_id is None:
         raise ConfigurationError(
-            "DOCUMENT_CATALOG_WORKSPACE_ID is required; it "
-            "must fullmatch [A-Za-z0-9_-]+ and be at most 64 characters"
+            f"DOCUMENT_CATALOG_WORKSPACE_ID is required; it {WORKSPACE_ID_CONTRACT}"
         )
     try:
         return SqlDocumentCatalog(catalog.sql_path, workspace_id)
@@ -1462,6 +1462,12 @@ def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
         ConfigurationError: Drive folder, credentials, or client extra is missing
             or unusable.
     """
+    folder_id = settings.google_drive.folder_id
+    if folder_id is not None and not re.fullmatch(r"[A-Za-z0-9_-]+", folder_id):
+        raise ConfigurationError(
+            "GOOGLE_DRIVE_FOLDER_ID must be a Drive folder ID "
+            "(letters, digits, `-`, `_`); it looks like you pasted a URL or path"
+        )
     try:
         from infrastructure.connectors.google_drive import (
             GoogleDriveConfigError,

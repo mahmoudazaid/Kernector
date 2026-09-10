@@ -365,7 +365,7 @@ describe("DocumentsPanel", () => {
     await user.click(
       within(deleteDialog).getByRole("button", { name: /^delete$/i }),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       /document operation failed/i,
     );
 
@@ -373,9 +373,7 @@ describe("DocumentsPanel", () => {
     await openUploadModal(user);
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelector('[role="alert"]')).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      /document operation failed/i,
-    );
+    expect(screen.queryByText(/document operation failed/i)).toBeNull();
   });
 
   it("replaces only the selected document's source id", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useId, useRef, type RefObject } from "react";
 import { Button } from "@/components/ui/Button";
 import { DialogFrame } from "@/components/ui/DialogFrame";
 
@@ -12,6 +12,7 @@ export type ConfirmDialogProps = {
   cancelLabel?: string;
   tone?: "default" | "danger";
   busy?: boolean;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   tone = "default",
   busy = false,
+  restoreFocusRef,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -37,6 +39,7 @@ export function ConfirmDialog({
       titleId={titleId}
       descriptionId={descriptionId}
       initialFocusRef={cancelRef}
+      restoreFocusRef={restoreFocusRef}
       onDismiss={onCancel}
     >
       <h2 id={titleId} className="kern-dialog-title">

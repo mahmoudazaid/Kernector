@@ -475,21 +475,21 @@ def test_blank_google_drive_folder_id_is_absent(env: pytest.MonkeyPatch) -> None
     assert load_settings().google_drive.folder_id is None
 
 
-def test_google_drive_folder_id_rejects_query_metacharacters(
+def test_google_drive_folder_id_stores_malformed_for_connector_build(
     env: pytest.MonkeyPatch,
 ) -> None:
     env.setenv("GOOGLE_DRIVE_FOLDER_ID", "x' in parents or '' = '")
-    with pytest.raises(ValueError, match="Drive folder ID"):
-        load_settings()
-
-
-def test_google_drive_folder_id_rejects_drive_url(env: pytest.MonkeyPatch) -> None:
-    env.setenv(
-        "GOOGLE_DRIVE_FOLDER_ID",
-        "https://drive.google.com/drive/folders/abc123",
+    assert (
+        load_settings().google_drive.folder_id == "x' in parents or '' = '"
     )
-    with pytest.raises(ValueError, match="Drive folder ID"):
-        load_settings()
+
+
+def test_google_drive_folder_id_stores_drive_url_for_connector_build(
+    env: pytest.MonkeyPatch,
+) -> None:
+    raw = "https://drive.google.com/drive/folders/abc123"
+    env.setenv("GOOGLE_DRIVE_FOLDER_ID", raw)
+    assert load_settings().google_drive.folder_id == raw
 
 
 def test_load_settings_does_not_read_credential_json(

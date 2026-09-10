@@ -107,7 +107,9 @@ def test_build_document_catalog_rejects_blank_sql_path(settings: Settings) -> No
         settings,
         document_catalog=replace(settings.document_catalog, sql_path=None),
     )
-    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_SQL_PATH"):
+    with pytest.raises(
+        ConfigurationError, match="DOCUMENT_CATALOG_SQL_PATH is blank"
+    ):
         composition_container.build_document_catalog(blank)
 
 

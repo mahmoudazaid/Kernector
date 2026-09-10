@@ -7,7 +7,7 @@ import re
 # fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
 _WORKSPACE_ID = re.compile(r"[A-Za-z0-9_-]+")
 _MAX_WORKSPACE_ID_LENGTH = 64
-_WORKSPACE_ID_CONTRACT = (
+WORKSPACE_ID_CONTRACT = (
     "must fullmatch [A-Za-z0-9_-]+ and be at most 64 characters"
 )
 
@@ -33,7 +33,7 @@ def parse_workspace_id(raw: str | None) -> str | None:
     if not value:
         return None
     if len(value) > _MAX_WORKSPACE_ID_LENGTH or not _WORKSPACE_ID.fullmatch(value):
-        raise ValueError(_WORKSPACE_ID_CONTRACT)
+        raise ValueError(WORKSPACE_ID_CONTRACT)
     return value
 
 
@@ -56,6 +56,6 @@ def require_workspace_id(raw: str | None) -> str:
         raise ValueError(f"workspace_id {error}") from error
     if parsed is None:
         raise ValueError(
-            f"workspace_id is required; it {_WORKSPACE_ID_CONTRACT}"
+            f"workspace_id is required; it {WORKSPACE_ID_CONTRACT}"
         )
     return parsed

@@ -1,7 +1,6 @@
 """Configuration loaded at the edge. Only the composition root calls load_settings()."""
 
 import os
-import re
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -9,9 +8,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
-_GOOGLE_DRIVE_FOLDER_ID = re.compile(r"[A-Za-z0-9_-]+")
-
 
 @dataclass(frozen=True, slots=True)
 class OpenRouterSettings:
@@ -308,9 +304,15 @@ def _load_knowledge_settings() -> KnowledgeSettings:
     )
 
 
-def _optional_env(name: str) -> str | None:
-    """Return a stripped env value, or ``None`` when absent or blank."""
-    raw = os.getenv(name)
+def _optional_env(name: str, default: str | None = None) -> str | None:
+    """Return a stripped env value, or ``None`` when absent or blank.
+
+    Args:
+        name: Environment variable name.
+        default: Fallback when the variable is unset. Blank values still
+            resolve to ``None`` (they do not fall through to ``default``).
+    """
+    raw = os.getenv(name) if default is None else os.getenv(name, default)
     if raw is None:
         return None
     value = raw.strip()
@@ -318,18 +320,13 @@ def _optional_env(name: str) -> str | None:
 
 
 def _load_document_catalog_settings() -> DocumentCatalogSettings:
-    raw_sql = os.getenv(
+    raw_sql = _optional_env(
         "DOCUMENT_CATALOG_SQL_PATH", "data/catalog/catalog.sqlite"
     )
     # Blank is stored as None — validated at catalog build so HTTP bootstrap
     # and OpenAPI export stay catalog-agnostic.
-    sql_path = (
-        _resolve_under_project_root(raw_sql.strip())
-        if raw_sql.strip()
-        else None
-    )
     return DocumentCatalogSettings(
-        sql_path=sql_path,
+        sql_path=_resolve_under_project_root(raw_sql) if raw_sql else None,
         workspace_id=_optional_env("DOCUMENT_CATALOG_WORKSPACE_ID"),
     )
 
@@ -449,12 +446,9 @@ def _load_google_drive_settings() -> GoogleDriveSettings:
     service_account_file = (
         _resolve_under_project_root(raw_file) if raw_file else None
     )
+    # Charset checks run when the connector is built so HTTP/OpenAPI bootstrap
+    # stays Drive-agnostic.
     folder_id = _optional_env("GOOGLE_DRIVE_FOLDER_ID")
-    if folder_id is not None and not _GOOGLE_DRIVE_FOLDER_ID.fullmatch(folder_id):
-        raise ValueError(
-            "GOOGLE_DRIVE_FOLDER_ID must be a Drive folder ID "
-            "(letters, digits, `-`, `_`); it looks like you pasted a URL or path"
-        )
     page_size = _env_int("GOOGLE_DRIVE_PAGE_SIZE", "100")
     if not 1 <= page_size <= 1000:
         raise ValueError(
@@ -478,46 +472,44 @@ def _require_absolute_http_url(name: str, raw: str) -> str:
 
 def _load_google_oauth_settings() -> GoogleOAuthSettings:
     """Parse user-OAuth env without reading stored refresh tokens."""
-    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
-    raw_redirect = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
-    raw_frontend = os.getenv("GOOGLE_OAUTH_FRONTEND_REDIRECT")
-    raw_token = os.getenv("GOOGLE_OAUTH_TOKEN_PATH")
-    raw_state = os.getenv("GOOGLE_OAUTH_STATE_PATH")
+    client_id = _optional_env("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = _optional_env("GOOGLE_OAUTH_CLIENT_SECRET")
+    raw_redirect = _optional_env("GOOGLE_OAUTH_REDIRECT_URI")
+    raw_frontend = _optional_env("GOOGLE_OAUTH_FRONTEND_REDIRECT")
+    raw_token = _optional_env("GOOGLE_OAUTH_TOKEN_PATH")
+    raw_state = _optional_env("GOOGLE_OAUTH_STATE_PATH")
     ttl = _env_int("GOOGLE_OAUTH_STATE_TTL_SECONDS", "600")
     if ttl < 30:
         raise ValueError("GOOGLE_OAUTH_STATE_TTL_SECONDS must be at least 30")
-    redirect_uri = None
-    if raw_redirect is not None and raw_redirect.strip():
-        redirect_uri = _require_absolute_http_url(
-            "GOOGLE_OAUTH_REDIRECT_URI", raw_redirect.strip()
-        )
-    frontend_redirect = None
-    if raw_frontend is not None and raw_frontend.strip():
-        frontend_redirect = _require_absolute_http_url(
-            "GOOGLE_OAUTH_FRONTEND_REDIRECT", raw_frontend.strip()
-        )
+    redirect_uri = (
+        _require_absolute_http_url("GOOGLE_OAUTH_REDIRECT_URI", raw_redirect)
+        if raw_redirect
+        else None
+    )
+    frontend_redirect = (
+        _require_absolute_http_url("GOOGLE_OAUTH_FRONTEND_REDIRECT", raw_frontend)
+        if raw_frontend
+        else None
+    )
     token_path = _require_google_oauth_json_path(
         (
-            _resolve_under_project_root(raw_token.strip())
-            if raw_token and raw_token.strip()
+            _resolve_under_project_root(raw_token)
+            if raw_token
             else _PROJECT_ROOT / "data" / "google-oauth-connection.json"
         ),
         "GOOGLE_OAUTH_TOKEN_PATH",
     )
     state_path = _require_google_oauth_json_path(
         (
-            _resolve_under_project_root(raw_state.strip())
-            if raw_state and raw_state.strip()
+            _resolve_under_project_root(raw_state)
+            if raw_state
             else _PROJECT_ROOT / "data" / "google-oauth-state.json"
         ),
         "GOOGLE_OAUTH_STATE_PATH",
     )
     return GoogleOAuthSettings(
-        client_id=client_id.strip() if client_id and client_id.strip() else None,
-        client_secret=(
-            client_secret.strip() if client_secret and client_secret.strip() else None
-        ),
+        client_id=client_id,
+        client_secret=client_secret,
         redirect_uri=redirect_uri,
         frontend_redirect=frontend_redirect,
         token_path=token_path,

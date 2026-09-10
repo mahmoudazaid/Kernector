@@ -228,23 +228,24 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorSeq, setUploadErrorSeq] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
-  const uploadCardRef = useRef<HTMLElement>(null);
   const uploadErrorRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
-  const focusFeedbackAfterUploadRef = useRef(false);
+  const focusFeedbackRef = useRef(false);
+  const deleteRestoreRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     captureDriveCallback();
   }, []);
 
   useEffect(() => {
-    if (!focusFeedbackAfterUploadRef.current || feedback.kind !== "success") {
+    if (!focusFeedbackRef.current || feedback.kind === "idle") {
       return;
     }
-    focusFeedbackAfterUploadRef.current = false;
+    focusFeedbackRef.current = false;
     feedbackRef.current?.focus();
   }, [feedback]);
 
@@ -252,7 +253,12 @@ export function DocumentsPanel({
     if (uploadOpen && uploadError) {
       uploadErrorRef.current?.focus();
     }
-  }, [uploadOpen, uploadError]);
+  }, [uploadOpen, uploadError, uploadErrorSeq]);
+
+  function announceUploadError(message: string) {
+    setUploadError(message);
+    setUploadErrorSeq((seq) => seq + 1);
+  }
 
   function retryAll() {
     if (settingsError) {
@@ -327,7 +333,7 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
-  const dialogOpen = pendingDelete !== null || uploadOpen;
+  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
@@ -382,12 +388,12 @@ export function DocumentsPanel({
       return;
     }
     const file = uploadFile;
+    setUploadError(null);
     const validated = validateUpload(file, constraints);
     if (!validated.ok) {
-      setUploadError(validated.message);
+      announceUploadError(validated.message);
       return;
     }
-    setUploadError(null);
     setUploadOpen(false);
     setUploading(true);
     setBusy(true);
@@ -398,7 +404,7 @@ export function DocumentsPanel({
         file,
       });
       clearUploadInput();
-      focusFeedbackAfterUploadRef.current = true;
+      focusFeedbackRef.current = true;
       setFeedback({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
@@ -407,7 +413,7 @@ export function DocumentsPanel({
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      setUploadError(actionErrorMessage(error));
+      announceUploadError(actionErrorMessage(error));
       setUploadOpen(true);
     } finally {
       setUploading(false);
@@ -422,6 +428,7 @@ export function DocumentsPanel({
     }
     const validated = validateUpload(replaceFile, constraints);
     if (!validated.ok) {
+      focusFeedbackRef.current = true;
       setFeedback({ kind: "error", message: validated.message });
       return;
     }
@@ -433,6 +440,7 @@ export function DocumentsPanel({
         sourceId: selected.source_id,
         file: replaceFile!,
       });
+      focusFeedbackRef.current = true;
       setFeedback({
         kind: "success",
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
@@ -440,6 +448,7 @@ export function DocumentsPanel({
       clearReplaceInput();
       await refresh();
     } catch (error) {
+      focusFeedbackRef.current = true;
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
     } finally {
       setBusy(false);
@@ -454,6 +463,7 @@ export function DocumentsPanel({
         baseUrl: apiBaseUrl,
         sourceId: document.source_id,
       });
+      focusFeedbackRef.current = true;
       setFeedback({
         kind: "success",
         message: `Deleted document ${document.source_id}.`,
@@ -466,6 +476,7 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
+      focusFeedbackRef.current = true;
       setFeedback({ kind: "error", message: actionErrorMessage(error) });
     } finally {
       setPendingDelete(null);
@@ -562,26 +573,24 @@ export function DocumentsPanel({
         </button>
       </div>
 
-      {catalog.kind === "error" || settingsError ? (
-        !uploadOpen ? (
-          <div
-            className="kern-settings-callout kern-settings-callout--error"
-            role="alert"
-          >
-            {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
-            {settingsError ? <p>{settingsError}</p> : null}
-            <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
-              {retryBusy ? "Checking…" : "Retry"}
-            </Button>
-          </div>
-        ) : null
+      {(catalog.kind === "error" || settingsError) && !dialogOpen ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
+          {settingsError ? <p>{settingsError}</p> : null}
+          <Button variant="secondary" disabled={retryBusy} onClick={retryAll}>
+            {retryBusy ? "Checking…" : "Retry"}
+          </Button>
+        </div>
       ) : null}
 
-      {feedback.kind !== "idle" ? (
+      {feedback.kind !== "idle" && !dialogOpen ? (
         <div
           ref={feedbackRef}
           className={`kern-settings-callout kern-settings-callout--${feedback.kind === "success" ? "ok" : "error"}`}
-          role="status"
+          role={feedback.kind === "error" ? "alert" : "status"}
           tabIndex={-1}
         >
           <p>{feedback.message}</p>
@@ -600,9 +609,7 @@ export function DocumentsPanel({
         </div>
         <div className="kern-source-grid">
           <article
-            ref={uploadCardRef}
             className="kern-source-card"
-            tabIndex={-1}
             aria-busy={uploading}
           >
             {uploading ? (
@@ -830,6 +837,7 @@ export function DocumentsPanel({
                           disabled={busy || dialogOpen}
                           onClick={(event) => {
                             event.stopPropagation();
+                            deleteRestoreRef.current = event.currentTarget;
                             setPendingDelete(doc);
                           }}
                         >
@@ -915,8 +923,6 @@ export function DocumentsPanel({
         titleId="hub-upload-title"
         descriptionId={uploadError ? "hub-upload-error" : undefined}
         panelClassName="kern-hub-upload-dialog"
-        initialFocusRef={uploadError ? uploadErrorRef : undefined}
-        restoreFocusRef={uploadCardRef}
         dismissDisabled={busy}
         onDismiss={() => {
           setUploadOpen(false);
@@ -933,6 +939,7 @@ export function DocumentsPanel({
         </p>
         {uploadError ? (
           <div
+            key={uploadErrorSeq}
             ref={uploadErrorRef}
             id="hub-upload-error"
             className="kern-settings-callout kern-settings-callout--error"
@@ -988,6 +995,7 @@ export function DocumentsPanel({
         confirmLabel="Delete"
         tone="danger"
         busy={busy}
+        restoreFocusRef={deleteRestoreRef}
         onCancel={() => {
           setPendingDelete(null);
         }}

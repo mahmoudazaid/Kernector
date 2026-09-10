@@ -49,6 +49,16 @@ def test_create_app_and_health_work_with_blank_sql_path(
     assert load_settings().document_catalog.sql_path is None
 
 
+def test_create_app_and_health_work_with_malformed_drive_folder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GOOGLE_DRIVE_FOLDER_ID", "bad id")
+    app = create_app()
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert load_settings().google_drive.folder_id == "bad id"
+
+
 def test_list_documents_reports_configuration_error_without_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

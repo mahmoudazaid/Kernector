@@ -144,6 +144,20 @@ def test_build_google_drive_connector_maps_config_error_without_path(
     assert isinstance(raised.value.__cause__, GoogleDriveConfigError)
 
 
+def test_build_google_drive_connector_rejects_malformed_folder_id(
+    settings: Settings,
+) -> None:
+    settings = replace(
+        settings,
+        google_drive=GoogleDriveSettings(
+            service_account_file=Path("/secret/sa.json"),
+            folder_id="bad id",
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="GOOGLE_DRIVE_FOLDER_ID"):
+        build_google_drive_connector(settings)
+
+
 def test_build_google_drive_connector_maps_missing_client_extra(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
