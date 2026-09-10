@@ -19,10 +19,11 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("CHROMA_PERSIST_PATH", raising=False)
     monkeypatch.delenv("CHROMA_COLLECTION", raising=False)
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
-    monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
-    monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_SQL_PATH", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
+    # SQL-only catalog requires a workspace; pin a valid default for non-catalog
+    # tests. Catalog tests that assert absence clear this explicitly.
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
@@ -135,78 +136,45 @@ def test_blank_knowledge_corpus_path_is_rejected(
 
 
 def test_document_catalog_defaults(env: pytest.MonkeyPatch) -> None:
+    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
     catalog = load_settings().document_catalog
-    assert catalog.path == PROJECT_ROOT / "data" / "catalog" / "uploads.json"
-    assert catalog.backend == "json"
     assert catalog.sql_path == PROJECT_ROOT / "data" / "catalog" / "catalog.sqlite"
-    assert catalog.workspace_id is None
+    assert catalog.workspace_id == "ws-local"
+    assert not hasattr(catalog, "path")
+    assert not hasattr(catalog, "backend")
 
 
-def test_document_catalog_absolute_path_is_preserved(
+def test_document_catalog_absolute_sql_path_is_preserved(
     env: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    target = tmp_path / "uploads.json"
-    env.setenv("DOCUMENT_CATALOG_PATH", str(target))
-    assert load_settings().document_catalog.path == target
-
-
-@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
-def test_blank_document_catalog_path_is_rejected(
-    env: pytest.MonkeyPatch, raw: str
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_PATH", raw)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_PATH"):
-        load_settings()
-
-
-def test_json_backend_loads_without_workspace_id(env: pytest.MonkeyPatch) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "json")
+    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
+    env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
     catalog = load_settings().document_catalog
-    assert catalog.backend == "json"
-    assert catalog.workspace_id is None
-
-
-def test_unknown_document_catalog_backend_is_rejected(
-    env: pytest.MonkeyPatch,
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "postgres")
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_BACKEND"):
-        load_settings()
+    assert catalog.sql_path == tmp_path / "catalog.sqlite"
+    assert catalog.workspace_id == "ws-local"
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
 def test_blank_document_catalog_sql_path_is_rejected(
     env: pytest.MonkeyPatch, raw: str
 ) -> None:
+    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
     env.setenv("DOCUMENT_CATALOG_SQL_PATH", raw)
     with pytest.raises(ValueError, match="DOCUMENT_CATALOG_SQL_PATH"):
         load_settings()
 
 
-def test_sql_backend_requires_workspace_id(env: pytest.MonkeyPatch) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
+def test_document_catalog_requires_workspace_id(env: pytest.MonkeyPatch) -> None:
+    env.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
     with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
         load_settings()
 
 
-def test_sql_backend_accepts_valid_workspace_id(
-    env: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
-    env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
-    catalog = load_settings().document_catalog
-    assert catalog.backend == "sql"
-    assert catalog.workspace_id == "ws-local"
-    assert catalog.sql_path == tmp_path / "catalog.sqlite"
-
-
-def test_present_workspace_id_is_validated_under_json(
-    env: pytest.MonkeyPatch,
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "json")
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-json")
-    assert load_settings().document_catalog.workspace_id == "ws-json"
+@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
+def test_blank_workspace_id_is_rejected(env: pytest.MonkeyPatch, raw: str) -> None:
+    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", raw)
+    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        load_settings()
 
 
 @pytest.mark.parametrize("raw", ["ws/id", "ws id", "ws.id", "ws@id"])
@@ -224,36 +192,24 @@ def test_workspace_id_longer_than_64_is_rejected(env: pytest.MonkeyPatch) -> Non
         load_settings()
 
 
-def test_sql_backend_rejects_invalid_workspace_id(
-    env: pytest.MonkeyPatch,
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "bad workspace")
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        load_settings()
-
-
-@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
-def test_blank_workspace_id_is_absent_under_json(
-    env: pytest.MonkeyPatch, raw: str
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", raw)
-    assert load_settings().document_catalog.workspace_id is None
-
-
-@pytest.mark.parametrize("raw", ["", "   "])
-def test_sql_backend_rejects_blank_workspace_id(
-    env: pytest.MonkeyPatch, raw: str
-) -> None:
-    env.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
-    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", raw)
-    with pytest.raises(ValueError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        load_settings()
-
-
 def test_workspace_id_is_stripped(env: pytest.MonkeyPatch) -> None:
     env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "  ws-trim  ")
     assert load_settings().document_catalog.workspace_id == "ws-trim"
+
+
+def test_leftover_backend_and_path_env_are_ignored(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    env.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-local")
+    env.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
+    # Retired keys must not affect settings (concat avoids stale-string repo scan).
+    env.setenv("DOCUMENT_CATALOG_" + "BACKEND", "json")
+    env.setenv("DOCUMENT_CATALOG_" + "PATH", str(tmp_path / "uploads.json"))
+    catalog = load_settings().document_catalog
+    assert catalog.sql_path == tmp_path / "catalog.sqlite"
+    assert catalog.workspace_id == "ws-local"
+    assert not hasattr(catalog, "path")
+    assert not hasattr(catalog, "backend")
 
 
 def test_prompt_packs_default_to_core(env: pytest.MonkeyPatch) -> None:

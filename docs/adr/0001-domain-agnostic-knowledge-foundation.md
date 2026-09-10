@@ -63,6 +63,13 @@ data into a shared document contract.
 
 Parent: [EPIC #68](https://github.com/mahmoudazaid/Kernector/issues/68).
 
+## Implementation status (2026-09-10)
+
+[#261](https://github.com/mahmoudazaid/Kernector/issues/261) retires
+`JsonDocumentCatalog` and `DOCUMENT_CATALOG_PATH` / `DOCUMENT_CATALOG_BACKEND`.
+Composition wires only `SqlDocumentCatalog`. Historical Decision text above
+records the JSON/SQL selection era from #131; the live runtime is SQL-only.
+
 ## Related docs
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — layers and knowledge-foundation section

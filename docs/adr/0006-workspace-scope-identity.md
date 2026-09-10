@@ -92,6 +92,14 @@ backend switch.
   validates it whenever it is present. It becomes required only when SQL is
   selected or JSON→SQL migration runs — work that remains in #131.
 
+## Implementation status (2026-09-10)
+
+[#261](https://github.com/mahmoudazaid/Kernector/issues/261) removes the
+unscoped `JsonDocumentCatalog` adapter and JSON→SQL migrator.
+`DOCUMENT_CATALOG_WORKSPACE_ID` is always required at settings load.
+Historical decision text above about JSON remains for context; the live
+runtime is SQL-only.
+
 ## Related docs
 
 - [ADR 0001](0001-domain-agnostic-knowledge-foundation.md) — catalog port and

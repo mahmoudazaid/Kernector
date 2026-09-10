@@ -1,14 +1,11 @@
-"""Catalog count filters across JSON and SQL backends."""
+"""Catalog count filters for the SQL adapter."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference, SourceType
-from infrastructure.catalog.json_catalog import JsonDocumentCatalog
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 
 
@@ -25,16 +22,10 @@ def _upload(source_id: str, *, status: CatalogStatus = CatalogStatus.READY) -> C
     )
 
 
-@pytest.mark.parametrize("backend", ["json", "sql"])
-def test_count_filters_source_type_and_status(tmp_path: Path, backend: str) -> None:
-    catalog = (
-        JsonDocumentCatalog(tmp_path / "uploads.json")
-        if backend == "json"
-        else SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-a")
-    )
-    if backend == "sql":
-        other = SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-b")
-        other.upsert(_upload("cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee"))
+def test_count_filters_source_type_and_status(tmp_path: Path) -> None:
+    catalog = SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-a")
+    other = SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-b")
+    other.upsert(_upload("cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee"))
     catalog.upsert(_upload("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
     catalog.upsert(
         _upload("bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee", status=CatalogStatus.FAILED)
@@ -60,6 +51,5 @@ def test_count_filters_source_type_and_status(tmp_path: Path, backend: str) -> N
     )
     assert catalog.count(status=CatalogStatus.FAILED) == 1
     assert catalog.count(status=CatalogStatus.READY) == 2
-    if backend == "sql":
-        assert other.count() == 1
-        assert catalog.count() == 3
+    assert other.count() == 1
+    assert catalog.count() == 3

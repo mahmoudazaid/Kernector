@@ -27,7 +27,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from infrastructure.catalog.json_catalog import CatalogError
+from infrastructure.catalog.errors import CatalogError
 from infrastructure.config import GoogleDriveSettings, Settings, load_settings
 from infrastructure.connectors.google_drive import GoogleDriveConfigError
 from test.document_doubles import InMemoryDocumentCatalog

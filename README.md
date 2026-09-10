@@ -170,25 +170,15 @@ same-host processes on a local filesystem.
 5. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.
 6. To remove a document, confirm and click **Delete** (vector chunks first, then the catalog row).
 
-Upload catalog metadata defaults to JSON at `data/catalog/uploads.json`
-(`DOCUMENT_CATALOG_BACKEND=json`, `DOCUMENT_CATALOG_PATH`). Use JSON for local
-single-process work. Set `DOCUMENT_CATALOG_BACKEND=sql`,
-`DOCUMENT_CATALOG_SQL_PATH` (default `data/catalog/catalog.sqlite`), and
-`DOCUMENT_CATALOG_WORKSPACE_ID` when you need transactional writes and
-versioned schema.
-
-To copy existing JSON rows into SQL (idempotent; source JSON unchanged):
-
-```bash
-uv run python -m presentation.cli.migrate_document_catalog
-```
+Upload catalog metadata uses SQLite at `data/catalog/catalog.sqlite` by default
+(`DOCUMENT_CATALOG_SQL_PATH`). Set required `DOCUMENT_CATALOG_WORKSPACE_ID` in
+`.env` (case-sensitive `fullmatch` `[A-Za-z0-9_-]+`, at most 64 characters).
 
 Verified official SQLite builds (3.51.3+, 3.50.7+ within 3.50, 3.44.6+ within
 3.44) use WAL; other builds use rollback-journal with `BEGIN IMMEDIATE`. WAL
 needs a local filesystem and same-host processes. To roll back a SQL catalog,
 stop writers and restore from a SQLite-produced backup (`VACUUM INTO` or
 `Connection.backup`) — do not splice a live `.sqlite` with WAL/SHM files.
-Keep the source JSON if you need to re-import.
 
 Seed-corpus documents remain separate and do not appear in this list.
 

@@ -402,27 +402,21 @@ pipeline. Names only (no implementation commitment in this document):
 - Seed JSON corpus adapter
 - Future: GitHub, Jira, Confluence, Google Drive
 
-### Catalog adapter selection
+### Catalog adapter
 
 Uploaded-document lifecycle metadata uses the `DocumentCatalog` port.
-Composition selects the adapter from `DOCUMENT_CATALOG_BACKEND` (`json` or
-`sql`). JSON remains the unscoped single-process default. SQL binds one
-`workspace_id` per adapter instance; uniqueness is
-`(workspace_id, source_type, source_id)` per
+Composition wires only `SqlDocumentCatalog`, bound to one `workspace_id` per
+adapter instance. Uniqueness is `(workspace_id, source_type, source_id)` per
 [ADR 0006](docs/adr/0006-workspace-scope-identity.md). The port stays
 unscoped. Application and presentation do not branch on adapter type.
 
-- **JSON** — `DOCUMENT_CATALOG_PATH` (default `data/catalog/uploads.json`).
-  Local / single-process use. Does not require `DOCUMENT_CATALOG_WORKSPACE_ID`.
-- **SQL** — `DOCUMENT_CATALOG_SQL_PATH` (default `data/catalog/catalog.sqlite`)
-  and required `DOCUMENT_CATALOG_WORKSPACE_ID`. Prefer this when more than one
-  process may write, or when you need transactional upserts and versioned
-  schema migrations. Selecting SQL, or running JSON→SQL migration, requires an
-  explicit workspace id. There is no reserved `"default"` workspace.
-
-When `DOCUMENT_CATALOG_WORKSPACE_ID` is present under either backend,
-`load_settings()` validates it (`fullmatch` `[A-Za-z0-9_-]+`, at most 64
-characters, stripped). Empty or whitespace-only values are absent.
+- **SQLite path** — `DOCUMENT_CATALOG_SQL_PATH` (default
+  `data/catalog/catalog.sqlite`).
+- **Workspace** — required `DOCUMENT_CATALOG_WORKSPACE_ID`. There is no
+  reserved `"default"` workspace. `load_settings()` validates the id
+  (`fullmatch` `[A-Za-z0-9_-]+`, at most 64 characters, stripped). Missing,
+  blank, or invalid values raise `ValueError` naming
+  `DOCUMENT_CATALOG_WORKSPACE_ID`.
 
 **Journal mode.** Official SQLite WAL-reset fixes are 3.51.3+, 3.50.7+ within
 3.50, and 3.44.6+ within 3.44. Verified fixed builds use `PRAGMA journal_mode=WAL`.
@@ -430,16 +424,6 @@ Affected or unverified builds use rollback-journal (`DELETE`) with
 `BEGIN IMMEDIATE`. WAL still requires a local filesystem and same-host
 processes — not NFS, network volumes, or distributed writers across hosts.
 SQL catalog startup does not refuse a journal mode.
-
-**JSON→SQL import.**
-
-```bash
-uv run python -m presentation.cli.migrate_document_catalog
-```
-
-Requires `DOCUMENT_CATALOG_BACKEND=sql` and a valid
-`DOCUMENT_CATALOG_WORKSPACE_ID`. Re-runs are idempotent. The source JSON file
-is left unchanged and remains the import origin if a re-import is needed.
 
 **Rollback.** Stop catalog writers, then restore from a SQLite-produced backup
 (`Connection.backup` or `VACUUM INTO`). Do not assemble a live `.sqlite` file
