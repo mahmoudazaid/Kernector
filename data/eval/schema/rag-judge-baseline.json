@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernector.local/schemas/rag-judge-baseline.json",
+  "title": "KernectorRagJudgeBaseline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "accepted",
+    "allowed_drop",
+    "means",
+    "fingerprints"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "kernector.rag-judge-baseline.v1"
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "allowed_drop": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Advisory only. The quality gate uses the caller/policy allowed_drop recorded on the Judge report; changing this baseline field does not change gate tolerance."
+    },
+    "means": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_relevance",
+        "faithfulness",
+        "answer_correctness",
+        "citation_accuracy",
+        "citation_completeness"
+      ],
+      "properties": {
+        "context_relevance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "faithfulness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "answer_correctness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "citation_accuracy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "citation_completeness": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "fingerprints": {
+      "$ref": "https://kernector.local/schemas/rag-judge-fingerprints.json"
+    }
+  }
+}

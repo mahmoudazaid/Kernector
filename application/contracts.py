@@ -412,12 +412,15 @@ class AskResponse:
         run (RunMeta | None): Safe execution metadata for the turn. May be set
             without a model call (insufficient evidence). ``None`` only when the
             caller did not attach metadata.
+        generation_hits (Sequence[ScoredChunk]): Hits that entered the
+            generation prompt. Not serialized on HTTP.
     """
 
     answer: str
     citations: Sequence[Citation] = ()
     tool_outputs: Sequence["InvokeToolResponse"] = ()
     run: RunMeta | None = None
+    generation_hits: Sequence[ScoredChunk] = ()
 
     def __post_init__(self) -> None:
         _require_text(self.answer, "answer")
@@ -441,6 +444,14 @@ class AskResponse:
                     f"got {type(item).__name__}"
                 )
         object.__setattr__(self, "tool_outputs", tuple(tool_outputs))
+        generation_hits = _require_sequence(self.generation_hits, "generation_hits")
+        for index, item in enumerate(generation_hits):
+            if not isinstance(item, ScoredChunk):
+                raise ApplicationValidationError(
+                    f"generation_hits[{index}] must be a ScoredChunk, "
+                    f"got {type(item).__name__}"
+                )
+        object.__setattr__(self, "generation_hits", tuple(generation_hits))
 
 
 @dataclass(frozen=True, slots=True)

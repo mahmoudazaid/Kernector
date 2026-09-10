@@ -34,5 +34,17 @@
     "source_type": "future-connector",
     "title": "Widget synchronizer handshake",
     "content": "Widget synchronizer handshake protocol uses nonce tokens."
+  },
+  {
+    "source_id": "password-reset-story",
+    "source_type": "user_story",
+    "title": "Password reset email code",
+    "content": "As a user I can reset my password using a one-time email code. The code is valid for 15 minutes."
+  },
+  {
+    "source_id": "password-reset-srs",
+    "source_type": "srs",
+    "title": "Password reset SRS",
+    "content": "The password reset email code expires 15 minutes after it is issued. Expired codes must be rejected."
   }
 ]

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernector.local/schemas/rag-judge-fingerprints.json",
+  "title": "KernectorRagJudgeFingerprints",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dataset_hash",
+    "corpus_hash",
+    "metric_set",
+    "judge_provider",
+    "judge_model",
+    "prompt_version",
+    "answer_provider",
+    "answer_model",
+    "embedding_model",
+    "retrieval_limit",
+    "relevance_threshold",
+    "hybrid_enabled",
+    "hybrid_alpha",
+    "rewriter"
+  ],
+  "properties": {
+    "dataset_hash": { "type": "string", "minLength": 1 },
+    "corpus_hash": { "type": "string", "minLength": 1 },
+    "metric_set": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "enum": [
+          "context_relevance",
+          "faithfulness",
+          "answer_correctness",
+          "citation_accuracy",
+          "citation_completeness"
+        ]
+      }
+    },
+    "judge_provider": { "type": "string", "minLength": 1 },
+    "judge_model": { "type": "string", "minLength": 1 },
+    "prompt_version": {
+      "type": "string",
+      "const": "kernector.rag-judge.prompts.v1"
+    },
+    "answer_provider": { "type": "string", "minLength": 1 },
+    "answer_model": { "type": "string", "minLength": 1 },
+    "embedding_model": { "type": "string", "minLength": 1 },
+    "retrieval_limit": { "type": "integer", "minimum": 1 },
+    "relevance_threshold": { "type": "number" },
+    "hybrid_enabled": { "type": "boolean" },
+    "hybrid_alpha": { "type": "number" },
+    "rewriter": { "type": "string", "minLength": 1 }
+  }
+}

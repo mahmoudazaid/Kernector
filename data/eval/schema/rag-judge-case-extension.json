@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernector.local/schemas/rag-judge-case-extension.json",
+  "title": "KernectorRagJudgeCaseExtension",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slice", "reference_answer"],
+  "properties": {
+    "slice": {
+      "type": "string",
+      "enum": ["core", "software_delivery"]
+    },
+    "reference_answer": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

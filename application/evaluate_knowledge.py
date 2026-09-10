@@ -15,6 +15,7 @@ from application.contracts import (
     RetrieveRequest,
     RetrieveResponse,
 )
+from application.errors import ApplicationValidationError
 from application.evaluation_contracts import (
     EVAL_MODE_OFFLINE,
     EVAL_SCHEMA_VERSION,
@@ -28,6 +29,7 @@ from application.evaluation_contracts import (
     EvalReport,
 )
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
+from application.observed_rag import RagObservation
 from domain.knowledge import ScoredChunk
 
 
@@ -39,6 +41,14 @@ class _RetrieveSeam(Protocol):
 
     def execute(self, request: RetrieveRequest) -> RetrieveResponse:
         """Return ranked hits for ``request``."""
+        ...
+
+
+class _ObservedRagSeam(Protocol):
+    """In-layer same-run ask observer; not a domain port."""
+
+    def execute(self, case: EvalCase) -> RagObservation:
+        """Return the observation for ``case`` after exactly one retrieve."""
         ...
 
 
@@ -72,30 +82,30 @@ class EvaluateKnowledge:
     identity-rewritten ask, a pack-disabled ToolAugmentedAsk, and optional
     InvokeTool.
 
-    ``ask`` must retrieve through the same ``retrieve`` seam with an identity
-    rewriter, or ``citation_hit_precision`` is meaningless. Ask cases record
-    ``shared_retrieve_hits`` when ``run.hit_count`` matches the retrieve seam's
-    hit count.
+    Ask scoring consumes ``ObservedRagRunner`` same-run hits. It does not
+    retrieve a second time. ``shared_retrieve_hits`` is true unless a populated
+    ``hit_count`` disagreed with generation hits.
 
     Args:
         retrieve (_RetrieveSeam): Seam returning ``RetrieveResponse``.
-        ask (_AskSeam): Grounded ask seam (packs irrelevant).
         ask_pack_off (_AskSeam): Ask seam that must fall through with ``path=rag``.
         invoke (_InvokeSeam | None): Optional tool invoke seam; ``None`` skips
             invoke_tool cases.
+        observed_rag (_ObservedRagSeam | None): Same-run ask observer. Required
+            for ``kind=ask`` cases.
     """
 
     def __init__(
         self,
         retrieve: _RetrieveSeam,
-        ask: _AskSeam,
         ask_pack_off: _AskSeam,
         invoke: _InvokeSeam | None = None,
+        observed_rag: _ObservedRagSeam | None = None,
     ) -> None:
         self._retrieve = retrieve
-        self._ask = ask
         self._ask_pack_off = ask_pack_off
         self._invoke = invoke
+        self._observed_rag = observed_rag
 
     def execute(self, cases: Sequence[EvalCase]) -> EvalReport:
         """Run every case, catch per-case failures, and return an offline report.
@@ -146,60 +156,51 @@ class EvaluateKnowledge:
         return _result_from_checks(case, metrics, checks)
 
     def _run_ask(self, case: EvalCase) -> EvalCaseResult:
-        retrieve_response: RetrieveResponse = self._retrieve.execute(
-            RetrieveRequest(query=case.query, retrieval_limit=case.k)
-        )
-        ask_response: AskResponse = self._ask.execute(
-            AskRequest(query=case.query, retrieval_limit=case.k)
-        )
+        if self._observed_rag is None:
+            raise ApplicationValidationError(
+                "observed RAG runner is required for ask cases"
+            )
+        observation: RagObservation = self._observed_rag.execute(case)
+        hits = observation.retrieved_contexts
         metrics: dict[str, int | float | bool] = {}
         checks: dict[str, bool] = {
-            "shared_retrieve_hits": (
-                ask_response.run is not None
-                and ask_response.run.hit_count == len(retrieve_response.hits)
-            )
+            "shared_retrieve_hits": observation.shared_retrieve_hits
         }
         if case.expected_source_ids:
-            retrieval_metrics, _ = _retrieval_scores(
-                retrieve_response.hits, case
-            )
+            retrieval_metrics, _ = _retrieval_scores(hits, case)
             metrics.update(retrieval_metrics)
         if case.expected_answer_mode == "insufficient":
             checks["answer_insufficient"] = (
-                ask_response.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
+                observation.answer == INSUFFICIENT_KNOWLEDGE_ANSWER
             )
-            checks["empty_citations"] = tuple(ask_response.citations) == ()
+            checks["empty_citations"] = tuple(observation.citations) == ()
             checks["outcome_insufficient"] = (
-                ask_response.run is not None
-                and ask_response.run.outcome == "insufficient"
+                observation.run is not None
+                and observation.run.outcome == "insufficient"
             )
             return _result_from_checks(case, metrics, checks)
 
         checks["answer_grounded"] = (
-            ask_response.answer != INSUFFICIENT_KNOWLEDGE_ANSWER
+            observation.answer != INSUFFICIENT_KNOWLEDGE_ANSWER
         )
         checks.update(
             _citation_checks(
-                ask_response.citations,
-                retrieve_response.hits,
+                observation.citations,
+                hits,
                 case.expected_citations or (),
             )
         )
         if case.case_class == "conflicting":
             expected = tuple(case.expected_source_ids or ())
-            checks["conflicting_sources_retrieved"] = _sources_in_hits(
-                expected, retrieve_response.hits
-            )
+            checks["conflicting_sources_retrieved"] = _sources_in_hits(expected, hits)
             checks["conflicting_sources_cited"] = _sources_in_citations(
-                expected, ask_response.citations
+                expected, observation.citations
             )
         if case.case_class == "unknown_source_kind":
             labels = tuple(case.expected_citations or ())
-            checks["unknown_source_type_retrieved"] = _labels_in_hits(
-                labels, retrieve_response.hits
-            )
+            checks["unknown_source_type_retrieved"] = _labels_in_hits(labels, hits)
             checks["unknown_source_type_cited"] = _labels_in_citations(
-                labels, ask_response.citations
+                labels, observation.citations
             )
         return _result_from_checks(case, metrics, checks)
 

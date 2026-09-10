@@ -24,7 +24,7 @@ from application.contracts import (
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from composition.tool_augmented_ask import ToolAugmentedAsk, ToolRunOutcome
-from domain.knowledge import SourceReference
+from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 from domain.models import Message
 from test.log_record import flatten_log_record, operation_payload, operation_records
 
@@ -331,6 +331,14 @@ def test_tool_turn_carries_retrieval_and_citation_counts_on_run_meta() -> None:
 
 
 def test_rag_turn_still_preserves_ask_knowledge_rag_metadata() -> None:
+    hit = ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(SourceReference("doc-a", "knowledge_document")),
+            index=0,
+            content="chunk",
+        ),
+        score=1.0,
+    )
     ask = _RecordingAsk()
     ask.response = AskResponse(
         answer="grounded answer",
@@ -340,6 +348,7 @@ def test_rag_turn_still_preserves_ask_knowledge_rag_metadata() -> None:
             query_rewritten=True,
             outcome="success",
         ),
+        generation_hits=(hit,),
     )
     wrapper = ToolAugmentedAsk(
         ask,
@@ -356,6 +365,7 @@ def test_rag_turn_still_preserves_ask_knowledge_rag_metadata() -> None:
     assert response.run.hit_count == 1
     assert response.run.citation_count == 1
     assert response.run.query_rewritten is True
+    assert response.generation_hits == (hit,)
 
 
 def test_analysis_cues_fall_through_to_grounded_rag() -> None:

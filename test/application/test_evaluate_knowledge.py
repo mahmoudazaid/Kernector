@@ -25,6 +25,7 @@ from application.evaluation_contracts import (
     EvalReport,
 )
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
+from application.observed_rag import AnswerModelMetadata, RagObservation
 from domain.knowledge import (
     DocumentChunk,
     ScoredChunk,
@@ -153,18 +154,53 @@ def _ask_case(
     )
 
 
+class _FakeObservedRag:
+    def __init__(self, observation: RagObservation | Mapping[str, RagObservation]) -> None:
+        self._observation = observation
+        self.calls: list[EvalCase] = []
+
+    def execute(self, case: EvalCase) -> RagObservation:
+        self.calls.append(case)
+        if isinstance(self._observation, Mapping):
+            return self._observation[case.query]
+        return self._observation
+
+
+def _answer_meta() -> AnswerModelMetadata:
+    return AnswerModelMetadata(provider="eval-offline", model="eval-offline")
+
+
+def _observation(
+    case: EvalCase,
+    response: AskResponse,
+    hits: Sequence[ScoredChunk] = (),
+    *,
+    shared_retrieve_hits: bool = True,
+) -> RagObservation:
+    return RagObservation(
+        case_id=case.id,
+        query=case.query or "",
+        answer=response.answer,
+        citations=response.citations,
+        retrieved_contexts=hits,
+        run=response.run,
+        answer_model=_answer_meta(),
+        shared_retrieve_hits=shared_retrieve_hits,
+    )
+
+
 def _evaluate(
     *,
     retrieve: object = None,
-    ask: object = None,
     ask_pack_off: object = None,
     invoke: object | None = None,
+    observed_rag: object | None = None,
 ) -> EvaluateKnowledge:
     return EvaluateKnowledge(
         retrieve=retrieve if retrieve is not None else _Unused(),
-        ask=ask if ask is not None else _Unused(),
         ask_pack_off=ask_pack_off if ask_pack_off is not None else _Unused(),
         invoke=invoke,
+        observed_rag=observed_rag,
     )
 
 
@@ -306,26 +342,23 @@ def test_retrieval_aggregates_exclude_skips_and_include_misses() -> None:
 
 def test_irrelevant_ask_requires_sentinel_empty_citations_and_insufficient_outcome() -> None:
     query = "xylophone nebula flamingo"
+    case = _ask_case(
+        "irr-1",
+        case_class="irrelevant",
+        query=query,
+        expected_answer_mode="insufficient",
+        expected_source_ids=None,
+        expected_citations=(),
+    )
     ask = AskResponse(
         answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
         citations=(),
         run=RunMeta(outcome="insufficient", hit_count=0),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve(()),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "irr-1",
-                case_class="irrelevant",
-                query=query,
-                expected_answer_mode="insufficient",
-                expected_source_ids=None,
-                expected_citations=(),
-            ),
-        )
-    )
+        retrieve=_Unused(),
+        observed_rag=_FakeObservedRag(_observation(case, ask, ())),
+    ).execute((case,))
 
     result = report.results[0]
     assert result.status == "pass"
@@ -340,24 +373,21 @@ def test_grounded_ask_requires_citation_precision_and_recall() -> None:
     query = "checkout retry"
     gold = EvalCitationLabel("doc-a", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
     hits = (_hit("doc-a"),)
+    case = _ask_case(
+        "cite-1",
+        case_class="citation_provenance",
+        query=query,
+        expected_citations=(gold,),
+    )
     ask = AskResponse(
         answer="Use exponential backoff.",
         citations=(_citation("doc-a"),),
         run=RunMeta(outcome="success", hit_count=1),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve(hits),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "cite-1",
-                case_class="citation_provenance",
-                query=query,
-                expected_citations=(gold,),
-            ),
-        )
-    )
+        retrieve=_Unused(),
+        observed_rag=_FakeObservedRag(_observation(case, ask, hits)),
+    ).execute((case,))
 
     result = report.results[0]
     assert result.status == "pass"
@@ -368,53 +398,72 @@ def test_grounded_ask_requires_citation_precision_and_recall() -> None:
     assert result.metrics["hit_at_k"] == 1.0
 
 
-def test_ask_fails_when_run_hit_count_does_not_match_retrieve_hits() -> None:
+def test_ask_does_not_call_retrieve_seam() -> None:
     gold = EvalCitationLabel("doc-a", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
+    case = _ask_case(
+        "cite-same-run",
+        case_class="citation_provenance",
+        query="checkout retry",
+        expected_citations=(gold,),
+    )
     ask = AskResponse(
         answer="Use exponential backoff.",
         citations=(_citation("doc-a"),),
-        run=RunMeta(outcome="success", hit_count=99),
+        run=RunMeta(outcome="success", hit_count=1),
+    )
+    retrieve = _Unused()
+    report = _evaluate(
+        retrieve=retrieve,
+        observed_rag=_FakeObservedRag(_observation(case, ask, (_hit("doc-a"),))),
+    ).execute((case,))
+
+    assert report.results[0].status == "pass"
+    assert report.results[0].checks["shared_retrieve_hits"] is True
+
+
+def test_shared_retrieve_hits_fails_when_hit_count_mismatches_contexts() -> None:
+    gold = EvalCitationLabel("doc-a", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
+    case = _ask_case(
+        "cite-mismatch",
+        case_class="citation_provenance",
+        query="checkout retry",
+        expected_citations=(gold,),
+    )
+    ask = AskResponse(
+        answer="Use exponential backoff.",
+        citations=(_citation("doc-a"),),
+        run=RunMeta(outcome="success", hit_count=2),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve((_hit("doc-a"),)),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "cite-mismatch",
-                case_class="citation_provenance",
-                query="checkout retry",
-                expected_citations=(gold,),
-            ),
-        )
-    )
+        retrieve=_Unused(),
+        observed_rag=_FakeObservedRag(
+            _observation(case, ask, (_hit("doc-a"),), shared_retrieve_hits=False)
+        ),
+    ).execute((case,))
 
     result = report.results[0]
-    assert result.status == "fail"
     assert result.checks["shared_retrieve_hits"] is False
-    assert "shared_retrieve_hits" in result.failed_checks
+    assert result.status == "fail"
 
 
 def test_unexpected_citation_versus_gold_fails_gold_precision() -> None:
     gold = EvalCitationLabel("doc-a", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
+    case = _ask_case(
+        "cite-2",
+        case_class="citation_provenance",
+        query="q",
+        expected_citations=(gold,),
+    )
     ask = AskResponse(
         answer="An answer.",
         citations=(_citation("doc-a"), _citation("doc-extra")),
         run=RunMeta(outcome="success", hit_count=2),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve((_hit("doc-a"), _hit("doc-extra"))),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "cite-2",
-                case_class="citation_provenance",
-                query="q",
-                expected_citations=(gold,),
-            ),
-        )
-    )
+        observed_rag=_FakeObservedRag(
+            _observation(case, ask, (_hit("doc-a"), _hit("doc-extra")))
+        ),
+    ).execute((case,))
 
     result = report.results[0]
     assert result.status == "fail"
@@ -424,25 +473,21 @@ def test_unexpected_citation_versus_gold_fails_gold_precision() -> None:
 
 def test_unexpected_citation_versus_retrieve_hits_fails_hit_precision() -> None:
     gold = EvalCitationLabel("ghost", SourceType.KNOWLEDGE_DOCUMENT, chunk_index=0)
+    case = _ask_case(
+        "cite-3",
+        case_class="citation_provenance",
+        query="q",
+        expected_source_ids=("doc-a",),
+        expected_citations=(gold,),
+    )
     ask = AskResponse(
         answer="An answer.",
         citations=(_citation("ghost"),),
         run=RunMeta(outcome="success", hit_count=1),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve((_hit("doc-a"),)),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "cite-3",
-                case_class="citation_provenance",
-                query="q",
-                expected_source_ids=("doc-a",),
-                expected_citations=(gold,),
-            ),
-        )
-    )
+        observed_rag=_FakeObservedRag(_observation(case, ask, (_hit("doc-a"),))),
+    ).execute((case,))
 
     result = report.results[0]
     assert result.status == "fail"
@@ -456,25 +501,23 @@ def test_conflicting_ask_requires_both_labeled_sources_retrieved_and_cited() -> 
         EvalCitationLabel("sla-fast", SourceType.KNOWLEDGE_DOCUMENT),
         EvalCitationLabel("sla-slow", SourceType.KNOWLEDGE_DOCUMENT),
     )
+    case = _ask_case(
+        "conf-1",
+        case_class="conflicting",
+        query=query,
+        expected_source_ids=("sla-fast", "sla-slow"),
+        expected_citations=labels,
+    )
     ask = AskResponse(
         answer="Sources disagree.",
         citations=(_citation("sla-fast", chunk_index=None), _citation("sla-slow", chunk_index=None)),
         run=RunMeta(outcome="success", hit_count=2),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve((_hit("sla-fast"), _hit("sla-slow"))),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "conf-1",
-                case_class="conflicting",
-                query=query,
-                expected_source_ids=("sla-fast", "sla-slow"),
-                expected_citations=labels,
-            ),
-        )
-    )
+        observed_rag=_FakeObservedRag(
+            _observation(case, ask, (_hit("sla-fast"), _hit("sla-slow")))
+        ),
+    ).execute((case,))
 
     result = report.results[0]
     assert result.status == "pass"
@@ -485,27 +528,27 @@ def test_conflicting_ask_requires_both_labeled_sources_retrieved_and_cited() -> 
 def test_unknown_source_kind_requires_labeled_type_retrieved_and_cited() -> None:
     query = "widget synchronizer"
     label = EvalCitationLabel("widget-sync", "future-connector", chunk_index=0)
+    case = _ask_case(
+        "unk-1",
+        case_class="unknown_source_kind",
+        query=query,
+        expected_source_ids=("widget-sync",),
+        expected_citations=(label,),
+    )
     ask = AskResponse(
         answer="Handshake uses nonce tokens.",
         citations=(_citation("widget-sync", source_type="future-connector"),),
         run=RunMeta(outcome="success", hit_count=1),
     )
     report = _evaluate(
-        retrieve=_FakeRetrieve(
-            (_hit("widget-sync", source_type="future-connector"),)
+        observed_rag=_FakeObservedRag(
+            _observation(
+                case,
+                ask,
+                (_hit("widget-sync", source_type="future-connector"),),
+            )
         ),
-        ask=_FakeAsk(ask),
-    ).execute(
-        (
-            _ask_case(
-                "unk-1",
-                case_class="unknown_source_kind",
-                query=query,
-                expected_source_ids=("widget-sync",),
-                expected_citations=(label,),
-            ),
-        )
-    )
+    ).execute((case,))
 
     result = report.results[0]
     assert result.status == "pass"
@@ -628,26 +671,21 @@ def test_case_exception_fails_with_execution_error_and_remaining_cases_run() -> 
                 raise RuntimeError("store down")
             return RetrieveResponse(hits=())
 
+    later = _ask_case(
+        "after",
+        case_class="irrelevant",
+        query="later",
+        expected_answer_mode="insufficient",
+        expected_source_ids=None,
+    )
+    ask = AskResponse(
+        answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+        run=RunMeta(outcome="insufficient", hit_count=0),
+    )
     report = _evaluate(
         retrieve=_BoomRetrieve(),
-        ask=_FakeAsk(
-            AskResponse(
-                answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
-                run=RunMeta(outcome="insufficient", hit_count=0),
-            )
-        ),
-    ).execute(
-        (
-            _retrieve_case("boom"),
-            _ask_case(
-                "after",
-                case_class="irrelevant",
-                query="later",
-                expected_answer_mode="insufficient",
-                expected_source_ids=None,
-            ),
-        )
-    )
+        observed_rag=_FakeObservedRag(_observation(later, ask, ())),
+    ).execute((_retrieve_case("boom"), later))
 
     assert report.results[0].status == "fail"
     assert report.results[0].failed_checks == ("execution_error",)

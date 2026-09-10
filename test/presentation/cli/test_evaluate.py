@@ -473,3 +473,113 @@ def test_cli_offline_dataset_writes_reports_to_tmp_path(
     assert "Traceback" not in captured.err
     assert str(json_path) in captured.out
     assert code == 0
+    assert not (output / "rag-judge-report.json").exists()
+    assert not (output / "rag-judge-report.csv").exists()
+
+
+def _judge_report(*, eligible: bool, passed: bool):
+    from test.fixtures.rag_judge import judge_report
+
+    return judge_report(eligible=eligible, passed=passed)
+
+
+def test_cli_fake_writes_additive_judge_reports_and_exits_two(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli, "run_rag_judge", lambda mode, cases: _judge_report(eligible=False, passed=False)
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "fake"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert (tmp_path / "eval-report.json").is_file()
+    assert (tmp_path / "eval-report.md").is_file()
+    assert (tmp_path / "rag-judge-report.json").is_file()
+    assert (tmp_path / "rag-judge-report.csv").is_file()
+    assert "Traceback" not in captured.err
+
+
+def test_cli_auto_skip_exits_two_without_judge_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from composition.evaluate import JudgeSkipped
+
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: (_ for _ in ()).throw(
+            JudgeSkipped("auto Judge skipped: refusing to substitute fake scores")
+        ),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "auto"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "refusing to substitute fake scores" in captured.err
+    assert (tmp_path / "eval-report.json").is_file()
+    assert not (tmp_path / "rag-judge-report.json").exists()
+
+
+def test_cli_live_pass_exits_zero(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: _judge_report(eligible=True, passed=True),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
+
+    assert code == 0
+    assert (tmp_path / "rag-judge-report.json").is_file()
+
+
+def test_cli_live_quality_failure_exits_one(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: _judge_report(eligible=True, passed=False),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
+
+    assert code == 1
+
+
+def test_cli_live_provider_error_exits_two_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from domain.errors import ProviderError
+
+    _patch_success(monkeypatch, _report())
+    monkeypatch.setattr(
+        evaluate_cli,
+        "run_rag_judge",
+        lambda mode, cases: (_ for _ in ()).throw(ProviderError("sk-secret-token")),
+    )
+
+    code = evaluate_cli.main(["--output", str(tmp_path), "--judge-mode", "live"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Traceback" not in captured.err
+    assert "sk-secret-token" not in captured.err
+    assert "live Judge answer path failed" in captured.err

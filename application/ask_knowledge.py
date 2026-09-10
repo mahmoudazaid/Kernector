@@ -187,6 +187,7 @@ class AskKnowledge:
                     citation_count=0,
                     prompt_key=request.prompt_key,
                 ),
+                generation_hits=(),
             )
 
         prelude = [*request.history, _context_message(hits)]
@@ -233,6 +234,7 @@ class AskKnowledge:
             answer=result.content,
             citations=citations,
             run=run,
+            generation_hits=hits,
         )
 
     def _relevant(self, hits: Sequence[ScoredChunk]) -> tuple[ScoredChunk, ...]:

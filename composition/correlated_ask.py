@@ -49,6 +49,7 @@ class CorrelatedAsk:
                 citations=response.citations,
                 tool_outputs=response.tool_outputs,
                 run=run,
+                generation_hits=response.generation_hits,
             )
         finally:
             reset_request_id(token)

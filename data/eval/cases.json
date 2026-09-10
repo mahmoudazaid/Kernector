@@ -24,7 +24,8 @@
       "query": "xylophone nebula flamingo quantum",
       "k": 5,
       "expected_answer_mode": "insufficient",
-      "expected_citations": []
+      "expected_citations": [],
+      "reference_answer": "The available knowledge is insufficient to answer this question."
     },
     {
       "id": "conflicting-ask",
@@ -43,7 +44,8 @@
           "source_id": "inventory-sla-slow",
           "source_type": "knowledge_document"
         }
-      ]
+      ],
+      "reference_answer": "The corpus contains conflicting inventory SLAs for stock reservation: forty seconds and four minutes."
     },
     {
       "id": "unknown-source-kind-ask",
@@ -59,7 +61,8 @@
           "source_type": "future-connector",
           "chunk_index": 0
         }
-      ]
+      ],
+      "reference_answer": "Widget synchronizer handshake protocol uses nonce tokens."
     },
     {
       "id": "citation-provenance-ask",
@@ -75,7 +78,51 @@
           "source_type": "knowledge_document",
           "chunk_index": 0
         }
-      ]
+      ],
+      "reference_answer": "Checkout retry uses exponential backoff with jitter on payment capture."
+    },
+    {
+      "id": "cross-source-ask",
+      "case_class": "cross_source",
+      "kind": "ask",
+      "query": "circuit breaker fallback queue",
+      "k": 5,
+      "expected_answer_mode": "grounded",
+      "expected_source_ids": ["payment-timeout-a", "payment-timeout-b"],
+      "expected_citations": [
+        {
+          "source_id": "payment-timeout-a",
+          "source_type": "knowledge_document"
+        },
+        {
+          "source_id": "payment-timeout-b",
+          "source_type": "knowledge_document"
+        }
+      ],
+      "reference_answer": "Payment timeout uses a circuit breaker after repeated capture failures and enqueues a fallback queue when the breaker opens."
+    },
+    {
+      "id": "sd-password-reset-ask",
+      "case_class": "single_source",
+      "kind": "ask",
+      "slice": "software_delivery",
+      "query": "one-time email code expires issued rejected",
+      "k": 5,
+      "expected_answer_mode": "grounded",
+      "expected_source_ids": ["password-reset-srs", "password-reset-story"],
+      "expected_citations": [
+        {
+          "source_id": "password-reset-srs",
+          "source_type": "srs",
+          "chunk_index": 0
+        },
+        {
+          "source_id": "password-reset-story",
+          "source_type": "user_story",
+          "chunk_index": 0
+        }
+      ],
+      "reference_answer": "The password reset email code is valid for 15 minutes after it is issued."
     },
     {
       "id": "pack-off-risk",

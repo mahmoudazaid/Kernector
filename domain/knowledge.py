@@ -17,6 +17,10 @@ class SourceType:
     GOOGLE_DRIVE = "google_drive"
 
 
+STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
+"""Source kinds treated as user stories by eval and software-delivery scoring."""
+
+
 class CatalogStatus(StrEnum):
     """Lifecycle status of a catalogued knowledge document."""
 
