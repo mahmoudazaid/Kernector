@@ -1966,6 +1966,7 @@ def build_tool_augmented_ask(
     if settings.domain_tools.agent_loop:
         from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
+        _require_agent_provider_config(settings)
         orchestrate = build_agent_orchestrate(
             LangGraphToolAgent(
                 model_factory=_software_delivery_agent_model_factory(
@@ -2025,6 +2026,30 @@ def build_tool_augmented_ask(
     )
 
 
+def _require_agent_provider_config(settings: Settings) -> None:
+    """Fail fast at composition time with actionable ConfigurationError.
+
+    Mirrors ``_build_openrouter`` / ``_build_ollama`` so a missing key is not
+    misdiagnosed later as a connectivity ``ProviderError`` inside the agent.
+    """
+    from infrastructure.llm.openrouter import _require_chat_config
+
+    if settings.provider == "ollama":
+        if not settings.ollama.base_url:
+            raise ConfigurationError(
+                "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
+            )
+        if not settings.ollama.model:
+            raise ConfigurationError(
+                "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
+            )
+        return
+    try:
+        _require_chat_config(settings.openrouter)
+    except ChatConfigError as exc:
+        raise ConfigurationError(str(exc)) from exc
+
+
 def _software_delivery_agent_model_factory(
     settings: Settings,
     *,
@@ -2032,27 +2057,18 @@ def _software_delivery_agent_model_factory(
 ):
     """Return a LangChain chat model factory with ``bind_tools`` for the agent.
 
-    Validates OpenRouter credentials the same way as ``OpenRouterChat`` before
-    constructing ``ChatOpenAI``. Wraps invoke so failures become ``ProviderError``
-    (a ``RuntimeError``) and optional ``recorder`` observations reach RunMeta.
+    Credentials are validated by ``_require_agent_provider_config`` before this
+    factory is wired. Invoke failures become ``ProviderError``; optional
+    ``recorder`` observations reach RunMeta (including failed turns' latency).
     """
 
     def factory(**_kwargs: object):
         from langchain_openai import ChatOpenAI
 
         from domain.errors import ProviderError
-        from infrastructure.llm.openrouter import ChatConfigError, _require_chat_config
 
         if settings.provider == "ollama":
-            if not settings.ollama.base_url:
-                raise ChatConfigError(
-                    "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
-                )
-            if not settings.ollama.model:
-                raise ChatConfigError(
-                    "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
-                )
-            base = settings.ollama.base_url.rstrip("/")
+            base = (settings.ollama.base_url or "").rstrip("/")
             try:
                 inner = ChatOpenAI(
                     model=settings.ollama.model,
@@ -2066,7 +2082,6 @@ def _software_delivery_agent_model_factory(
                 ) from exc
             model_name = settings.ollama.model
         else:
-            _require_chat_config(settings.openrouter)
             try:
                 inner = ChatOpenAI(
                     model=settings.openrouter.model,
@@ -2101,8 +2116,10 @@ class _ObservingChatOpenAI:
         self._recorder = recorder
         self._model_name = model_name
 
-    def bind_tools(self, tools: Sequence[object]) -> "_ObservingChatOpenAI":
-        bound = self._inner.bind_tools(tools)  # type: ignore[attr-defined]
+    def bind_tools(
+        self, tools: Sequence[object], *args: object, **kwargs: object
+    ) -> "_ObservingChatOpenAI":
+        bound = self._inner.bind_tools(tools, *args, **kwargs)  # type: ignore[attr-defined]
         return _ObservingChatOpenAI(
             bound, recorder=self._recorder, model_name=self._model_name
         )
@@ -2115,34 +2132,43 @@ class _ObservingChatOpenAI:
         from domain.models import Usage
 
         started = time.perf_counter()
+        result: object | None = None
+        error_type: str | None = None
         try:
             result = self._inner.invoke(messages, **kwargs)  # type: ignore[attr-defined]
+            return result
         except ProviderError:
+            error_type = "ProviderError"
             raise
         except Exception as exc:
+            error_type = type(exc).__name__
             raise ProviderError(
                 "The tool-calling agent provider could not be reached."
             ) from exc
-        if self._recorder is not None:
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            usage_meta = getattr(result, "usage_metadata", None)
-            usage = None
-            if isinstance(usage_meta, Mapping):
-                usage = Usage(
-                    prompt_tokens=usage_meta.get("input_tokens"),  # type: ignore[arg-type]
-                    completion_tokens=usage_meta.get("output_tokens"),  # type: ignore[arg-type]
-                    total_tokens=usage_meta.get("total_tokens"),  # type: ignore[arg-type]
-                    cost=usage_meta.get("cost"),  # type: ignore[arg-type]
+        finally:
+            if self._recorder is not None:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                usage = None
+                if result is not None:
+                    usage_meta = getattr(result, "usage_metadata", None)
+                    if isinstance(usage_meta, Mapping):
+                        usage = Usage(
+                            prompt_tokens=usage_meta.get("input_tokens"),  # type: ignore[arg-type]
+                            completion_tokens=usage_meta.get("output_tokens"),  # type: ignore[arg-type]
+                            total_tokens=usage_meta.get("total_tokens"),  # type: ignore[arg-type]
+                        )
+                self._recorder.record(
+                    RunMeta(
+                        model=self._model_name,
+                        latency_ms=latency_ms,
+                        usage=usage,
+                        settings={},
+                        error_type=error_type,
+                    )
                 )
-            self._recorder.record(
-                RunMeta(
-                    model=self._model_name,
-                    latency_ms=latency_ms,
-                    usage=usage,
-                    settings={},
-                )
-            )
-        return result
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

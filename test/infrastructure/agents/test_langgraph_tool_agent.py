@@ -130,13 +130,42 @@ def test_langgraph_tool_agent_raises_on_step_limit() -> None:
             _ai_tool_call(name=tool.name, call_id="1"),
             _ai_tool_call(name=tool.name, call_id="2"),
             _ai_tool_call(name=tool.name, call_id="3"),
-            _ai_tool_call(name=tool.name, call_id="4"),
         ]
     )
     agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
 
-    with pytest.raises(ProviderError, match="step limit"):
-        agent.run("goal", [tool], max_steps=3)
+    result = agent.run("goal", [tool], max_steps=3)
+
+    assert result.truncated is True
+    assert "step limit" in result.content
+    assert tool.calls  # partial work was kept at the tool layer
+
+
+def test_langgraph_tool_agent_normalises_tool_call_ids_on_assistant_message() -> None:
+    from infrastructure.agents.langgraph_tool_agent import (
+        LangGraphToolAgent,
+        _with_normalised_tool_call_ids,
+    )
+    from langchain_core.messages import AIMessage
+
+    message = AIMessage(
+        content="",
+        tool_calls=[{"name": "lookup", "args": {}, "id": None}],
+    )
+    normalised = _with_normalised_tool_call_ids(message)
+    assert normalised.tool_calls[0]["id"]  # type: ignore[index]
+    assert normalised.tool_calls[0]["id"] != None  # noqa: E711
+
+    tool = _RecordingTool()
+    chat = _ScriptedChat(
+        [
+            _ai_tool_call(name=tool.name, call_id=None),
+            _ai_text("ok"),
+        ]
+    )
+    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    result = agent.run("goal", [tool], max_steps=3)
+    assert result.content == "ok"
 
 
 def test_langgraph_tool_agent_unknown_tool_returns_tool_message() -> None:
@@ -173,6 +202,40 @@ def test_langgraph_tool_agent_synthesises_missing_tool_call_id() -> None:
 
     assert result.content == "ok"
     assert tool.calls == [{}]
+
+
+def test_langgraph_tool_agent_missing_tool_name_returns_tool_message() -> None:
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+    from langchain_core.messages import AIMessage
+
+    tool = _RecordingTool()
+    # Bypass AIMessage validation so we can exercise a blank/missing name.
+    bad = AIMessage.model_construct(
+        content="",
+        tool_calls=[{"args": {}, "id": "x"}],
+        type="ai",
+    )
+    chat = _ScriptedChat([bad, _ai_text("recovered")])
+    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+
+    result = agent.run("goal", [tool], max_steps=4)
+
+    assert result.content == "recovered"
+    assert tool.calls == []
+
+
+def test_langgraph_tool_agent_final_text_is_plain_str() -> None:
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    chat = _ScriptedChat(
+        [_ai_text([{"type": "text", "text": "final answer here"}])]
+    )
+    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+
+    result = agent.run("goal", [_RecordingTool()], max_steps=3)
+
+    assert result.content == "final answer here"
+    assert type(result.content) is str
 
 
 def test_langgraph_tool_agent_sanitises_dotted_tool_names_for_binding() -> None:

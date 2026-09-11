@@ -83,3 +83,17 @@ def test_agent_turn_result_rejects_bool_steps() -> None:
 
     with pytest.raises(DomainValidationError, match="steps"):
         AgentTurnResult(content="ok", steps=True)  # type: ignore[arg-type]
+
+
+def test_agent_turn_result_accepts_truncated_flag() -> None:
+    from domain.models import AgentTurnResult
+
+    result = AgentTurnResult(content="Stopped", truncated=True)
+    assert result.truncated is True
+
+
+def test_agent_turn_result_rejects_non_bool_truncated() -> None:
+    from domain.models import AgentTurnResult
+
+    with pytest.raises(DomainValidationError, match="truncated"):
+        AgentTurnResult(content="ok", truncated=1)  # type: ignore[arg-type]
