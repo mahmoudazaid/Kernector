@@ -91,6 +91,15 @@ async function openDocumentsTab(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("tab", { name: /documents/i }));
 }
 
+async function openChunkSheet(
+  user: ReturnType<typeof userEvent.setup>,
+  rowName: RegExp | string,
+) {
+  await openDocumentsTab(user);
+  await user.click(screen.getByRole("button", { name: rowName }));
+  return screen.findByRole("dialog");
+}
+
 async function openUploadModal(user: ReturnType<typeof userEvent.setup>) {
   const addFiles = await screen.findByRole("button", { name: /add files/i });
   await waitFor(() => expect(addFiles).toBeEnabled());
@@ -1409,7 +1418,7 @@ describe("DocumentsPanel", () => {
     await screen.findByText("spec.md");
     expect(listChunks).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: /ready\.md\s*src-ready/i }));
+    const dialog = await openChunkSheet(user, /ready\.md\s*src-ready/i);
 
     await waitFor(() => {
       expect(listChunks).toHaveBeenCalledWith(
@@ -1419,11 +1428,216 @@ describe("DocumentsPanel", () => {
         }),
       );
     });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(await screen.findByText("first body")).toBeInTheDocument();
-    expect(screen.getByText("Chunk 0")).toBeInTheDocument();
+    expect(screen.getByText("01")).toBeInTheDocument();
+    expect(screen.getByText(/showing 1 chunk$/i)).toBeInTheDocument();
   });
 
-  it("shows empty chunk state for a ready document with no chunks", async () => {
+  it("does not open the chunk sheet for failed or zero-chunk documents", async () => {
+    const listChunks = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              source_id: "src-failed",
+              file_name: "failed.md",
+              status: "failed",
+              chunk_count: 0,
+              has_error: true,
+              error_summary: "boom",
+            }),
+            doc({
+              source_id: "src-empty",
+              file_name: "empty.md",
+              status: "ready",
+              chunk_count: 0,
+            }),
+          ]),
+        )}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    await user.click(
+      screen.getByRole("button", { name: /failed\.md\s*src-failed/i }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /empty\.md\s*src-empty/i }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(listChunks).not.toHaveBeenCalled();
+  });
+
+  it("does not open the chunk sheet when the delete control is used", async () => {
+    const listChunks = vi.fn().mockResolvedValue({
+      chunks: [
+        {
+          index: 0,
+          content: "should not load",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        },
+      ],
+      has_more: false,
+    });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    await user.click(
+      screen.getByRole("button", { name: /delete spec\.md/i }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: /delete document/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /spec\.md/i })).toBeNull();
+    expect(listChunks).not.toHaveBeenCalled();
+  });
+
+  it("closes the chunk sheet on Escape and restores focus to the row", async () => {
+    const listChunks = vi.fn().mockResolvedValue({
+      chunks: [
+        {
+          index: 0,
+          content: "focus body",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        },
+      ],
+      has_more: false,
+    });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    const row = await openChunkSheet(user, /spec\.md\s*src-1/i);
+    expect(row).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /spec\.md\s*src-1/i }),
+    );
+  });
+
+  it("filters chunks locally and updates the live result count", async () => {
+    const listChunks = vi.fn().mockResolvedValue({
+      chunks: [
+        {
+          index: 0,
+          content: "alpha policy text",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: { page: "1" },
+        },
+        {
+          index: 1,
+          content: "beta recovery codes",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        },
+      ],
+      has_more: false,
+    });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 2 })]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
+    expect(await screen.findByText(/showing 2 chunks/i)).toBeInTheDocument();
+    expect(screen.getByText(/page 1/i)).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("searchbox", { name: /search chunks/i }),
+      "recovery",
+    );
+    expect(await screen.findByText(/showing 1 chunk$/i)).toBeInTheDocument();
+    expect(screen.getByText(/beta recovery codes/i)).toBeInTheDocument();
+    expect(screen.queryByText(/alpha policy text/i)).not.toBeInTheDocument();
+
+    await user.clear(
+      screen.getByRole("searchbox", { name: /search chunks/i }),
+    );
+    await user.type(
+      screen.getByRole("searchbox", { name: /search chunks/i }),
+      "zzzz",
+    );
+    expect(await screen.findByText(/no matching chunks/i)).toBeInTheDocument();
+  });
+
+  it("expands accordion items to reveal full content and chunk id", async () => {
+    const listChunks = vi.fn().mockResolvedValue({
+      chunks: [
+        {
+          index: 3,
+          content: "full accordion body",
+          source_id: "src-1",
+          source_type: "knowledge_document",
+          title: "Spec",
+          provider: "upload",
+          content_format: "markdown",
+          extra: {},
+        },
+      ],
+      has_more: false,
+    });
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc({ chunk_count: 1 })]))}
+        listChunks={listChunks}
+        loadSettings={loadSettings}
+      />,
+    );
+    const user = userEvent.setup();
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
+    expect(await screen.findByText("04")).toBeInTheDocument();
+    expect(screen.queryByText(/chunk id · 3/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /04/i }));
+    expect(await screen.findByText(/chunk id · 3/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^copy$/i })).toBeInTheDocument();
+  });
+
+  it("shows empty chunk state for a ready document with no stored chunks", async () => {
     const empty = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
     render(
       <DocumentsPanel
@@ -1434,7 +1648,7 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     expect(
       await screen.findByText(/no stored chunks for this document/i),
     ).toBeInTheDocument();
@@ -1470,7 +1684,7 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     expect(
       await screen.findByText(/document was not found in the catalog/i),
     ).toBeInTheDocument();
@@ -1501,11 +1715,14 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     expect(await screen.findByText("chunks boom")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^retry$/i }),
+    ).toBeInTheDocument();
   });
 
-  it("aborts in-flight chunk fetch when selection changes", async () => {
+  it("aborts in-flight chunk fetch when the sheet closes and another opens", async () => {
     let resolveFirst:
       | ((value: { chunks: []; has_more: boolean }) => void)
       | undefined;
@@ -1547,19 +1764,22 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     await waitFor(() => expect(listChunks).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: /other\.md\s*src-2/i }));
-
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
     await waitFor(() => {
       expect(firstSignal.current?.aborted).toBe(true);
     });
+    await user.click(screen.getByRole("button", { name: /other\.md\s*src-2/i }));
     expect(await screen.findByText("second doc chunk")).toBeInTheDocument();
     resolveFirst?.({ chunks: [], has_more: false });
     expect(screen.queryByText("first body")).not.toBeInTheDocument();
   });
 
-  it("refetches chunks after replace when selection stays ready", async () => {
+  it("refetches chunks after replace when the sheet is reopened", async () => {
     const listChunks = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
     const list = vi
       .fn()
@@ -1595,8 +1815,12 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(1));
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     const file = new File(["# v2"], "v2.md", { type: "text/markdown" });
     const input = screen.getByLabelText(/replacement file/i);
@@ -1604,6 +1828,7 @@ describe("DocumentsPanel", () => {
     await user.click(screen.getByRole("button", { name: /^replace$/i }));
 
     await waitFor(() => expect(replace).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: /spec\.md\s*src-1/i }));
     await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(2));
     expect(listChunks.mock.calls[1][0]).toEqual(
       expect.objectContaining({
@@ -1647,7 +1872,7 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     expect(await screen.findByText("body-0")).toBeInTheDocument();
     expect(screen.getByText(/showing 50 chunks \(more available\)/i)).toBeInTheDocument();
 
@@ -1685,7 +1910,7 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     expect(await screen.findByText("exact-0")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /load more chunks/i }),
@@ -1693,7 +1918,7 @@ describe("DocumentsPanel", () => {
     expect(listChunks).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores a stale load-more response after selection changes", async () => {
+  it("ignores a stale load-more response after the sheet switches documents", async () => {
     let resolveMore: ((value: { chunks: unknown[]; has_more: boolean }) => void) | undefined;
     const listChunks = vi.fn().mockImplementation(
       (options: { sourceId: string; offset?: number }) => {
@@ -1748,11 +1973,15 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /a\.md\s*src-1/i);
     expect(await screen.findByText("a-0")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /load more chunks/i }));
     await waitFor(() => expect(resolveMore).toBeDefined());
 
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
     await user.click(screen.getByRole("button", { name: /b\.md\s*src-2/i }));
     expect(await screen.findByText("b-only")).toBeInTheDocument();
 
@@ -1801,7 +2030,7 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     expect(await screen.findByText("keep-0")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /load more chunks/i }));
     expect(
@@ -1811,7 +2040,7 @@ describe("DocumentsPanel", () => {
     expect(screen.getByText(/showing 50 chunks \(more available\)/i)).toBeInTheDocument();
   });
 
-  it("refetches chunks when only chunk_count changes", async () => {
+  it("refetches chunks when only chunk_count changes after reopen", async () => {
     const listChunks = vi.fn().mockResolvedValue({ chunks: [], has_more: false });
     const list = vi
       .fn()
@@ -1847,8 +2076,12 @@ describe("DocumentsPanel", () => {
       />,
     );
     const user = userEvent.setup();
-    await openDocumentsTab(user);
+    await openChunkSheet(user, /spec\.md\s*src-1/i);
     await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(1));
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
 
     const file = new File(["# v2"], "v2.md", { type: "text/markdown" });
     const input = screen.getByLabelText(/replacement file/i);
@@ -1856,10 +2089,11 @@ describe("DocumentsPanel", () => {
     await user.click(screen.getByRole("button", { name: /^replace$/i }));
 
     await waitFor(() => expect(replace).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: /spec\.md\s*src-1/i }));
     await waitFor(() => expect(listChunks).toHaveBeenCalledTimes(2));
   });
 
-  it("does not fetch chunks for a filter-hidden selection", async () => {
+  it("does not fetch chunks until an eligible row opens the sheet", async () => {
     const listChunks = vi.fn().mockResolvedValue({
       chunks: [
         {
@@ -1894,8 +2128,7 @@ describe("DocumentsPanel", () => {
     );
     const user = userEvent.setup();
     await openDocumentsTab(user);
-    await waitFor(() => expect(listChunks).toHaveBeenCalled());
-    listChunks.mockClear();
+    expect(listChunks).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("combobox", { name: /^source$/i }));
     await user.click(screen.getByRole("option", { name: /google drive/i }));

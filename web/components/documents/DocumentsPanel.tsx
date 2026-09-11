@@ -10,6 +10,9 @@ import {
   type FormEvent,
 } from "react";
 import {
+  DocumentChunksSheet,
+} from "@/components/documents/DocumentChunksSheet";
+import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
@@ -185,6 +188,15 @@ function isDriveDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GOOGLE_DRIVE_SOURCE;
 }
 
+/** Ready documents with stored chunks may open the inspect sheet. */
+function canInspectChunks(doc: CatalogDocumentResponse): boolean {
+  return (
+    doc.status === "ready" &&
+    doc.chunk_count > 0 &&
+    isHubSourceType(doc.source_type)
+  );
+}
+
 function sourceLabel(sourceType: string): string {
   return sourceType === GOOGLE_DRIVE_SOURCE ? "Google Drive" : "File upload";
 }
@@ -300,6 +312,7 @@ export function DocumentsPanel({
   const constraints = runtimeCatalog?.constraints ?? null;
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chunksSheetOpen, setChunksSheetOpen] = useState(false);
   const [chunksView, setChunksView] = useState<ChunksView>({ kind: "idle" });
   const [chunksRetryToken, setChunksRetryToken] = useState(0);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -335,7 +348,12 @@ export function DocumentsPanel({
   const uploadErrorRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const deleteRestoreRef = useRef<HTMLElement | null>(null);
-  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
+  const chunksSheetRestoreRef = useRef<HTMLElement | null>(null);
+  const dialogOpen =
+    pendingDelete !== null ||
+    uploadOpen ||
+    drivePickerOpen ||
+    chunksSheetOpen;
 
   useEffect(() => {
     listChunksRef.current = listChunks;
@@ -497,12 +515,29 @@ export function DocumentsPanel({
   }, [selectedSourceId]);
 
   useEffect(() => {
+    if (hubTab !== "documents" && chunksSheetOpen) {
+      setChunksSheetOpen(false);
+    }
+  }, [hubTab, chunksSheetOpen]);
+
+  useEffect(() => {
+    if (
+      chunksSheetOpen &&
+      (!selected || !canInspectChunks(selected))
+    ) {
+      setChunksSheetOpen(false);
+    }
+  }, [chunksSheetOpen, selected]);
+
+  useEffect(() => {
     loadMoreAbortRef.current?.abort();
     loadMoreAbortRef.current = null;
     setChunksLoadingMore(false);
-    if (!selected || selectedStatus !== "ready") {
-      loadedChunksKeyRef.current = null;
-      setChunksView({ kind: "idle" });
+    if (!chunksSheetOpen || !selected || selectedStatus !== "ready") {
+      if (!chunksSheetOpen) {
+        loadedChunksKeyRef.current = null;
+        setChunksView({ kind: "idle" });
+      }
       return;
     }
     if (!isHubSourceType(selected.source_type)) {
@@ -592,6 +627,7 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed off catalog identity fields
   }, [
     apiBaseUrl,
+    chunksSheetOpen,
     hubTab,
     selectedSourceId,
     selectedSourceType,
@@ -705,6 +741,42 @@ export function DocumentsPanel({
       return;
     }
     setSelectedId(sourceId);
+  }
+
+  function closeChunksSheet() {
+    setChunksSheetOpen(false);
+  }
+
+  function openChunksSheet(
+    doc: CatalogDocumentResponse,
+    restoreTarget: HTMLElement | null,
+  ) {
+    if (
+      !canInspectChunks(doc) ||
+      pendingDelete !== null ||
+      uploadOpen ||
+      drivePickerOpen
+    ) {
+      return;
+    }
+    chunksSheetRestoreRef.current = restoreTarget;
+    setSelectedId(doc.source_id);
+    setChunksSheetOpen(true);
+  }
+
+  function onDocumentRowActivate(
+    doc: CatalogDocumentResponse,
+    restoreTarget: HTMLElement | null,
+  ) {
+    if (pendingDelete !== null || uploadOpen || drivePickerOpen || chunksSheetOpen) {
+      return;
+    }
+    selectDocument(doc.source_id);
+    if (canInspectChunks(doc)) {
+      openChunksSheet(doc, restoreTarget);
+    } else {
+      setChunksSheetOpen(false);
+    }
   }
 
   async function onUpload(event: FormEvent) {
@@ -1101,14 +1173,30 @@ export function DocumentsPanel({
               <tbody>
                 {visibleDocuments.map((doc) => {
                   const selectedRow = doc.source_id === selected?.source_id;
+                  const inspectable = canInspectChunks(doc);
                   return (
                     <tr
                       key={doc.source_id}
-                      className={selectedRow ? "is-selected" : undefined}
-                      onClick={() => {
-                        if (!dialogOpen) {
-                          selectDocument(doc.source_id);
+                      className={[
+                        selectedRow ? "is-selected" : undefined,
+                        inspectable ? "kern-documents-row--inspectable" : undefined,
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined}
+                      onClick={(event) => {
+                        if (
+                          (event.target as Element).closest(
+                            ".kern-documents-delete",
+                          )
+                        ) {
+                          return;
                         }
+                        const rowButton = (
+                          event.currentTarget as HTMLTableRowElement
+                        ).querySelector<HTMLElement>(
+                          ".kern-documents-row-button",
+                        );
+                        onDocumentRowActivate(doc, rowButton);
                       }}
                     >
                       <td>
@@ -1117,6 +1205,10 @@ export function DocumentsPanel({
                           className="kern-documents-row-button"
                           aria-pressed={selectedRow}
                           disabled={dialogOpen}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDocumentRowActivate(doc, event.currentTarget);
+                          }}
                         >
                           <span className="kern-doc-name">{doc.file_name}</span>
                           <span className="kern-doc-id">{doc.source_id}</span>
@@ -1197,102 +1289,10 @@ export function DocumentsPanel({
                 <p>{selected.error_summary}</p>
               </div>
             ) : null}
-            {selected.status === "ready" ? (
-              <div className="kern-documents-chunks">
-                <div aria-live="polite">
-                  {chunksView.kind === "loading" ? (
-                    <p className="kern-settings-hint">Loading stored chunks…</p>
-                  ) : null}
-                  {chunksView.kind === "empty" ? (
-                    <p className="kern-settings-hint">
-                      No stored chunks for this document.
-                    </p>
-                  ) : null}
-                  {chunksView.kind === "ready" ? (
-                    <p className="kern-settings-hint">
-                      Showing {chunksView.chunks.length} chunk
-                      {chunksView.chunks.length === 1 ? "" : "s"}
-                      {chunksView.hasMore ? " (more available)" : ""}
-                    </p>
-                  ) : null}
-                </div>
-                {chunksView.kind === "not_found" ? (
-                  <div
-                    className="kern-settings-callout kern-settings-callout--warn"
-                    role="status"
-                  >
-                    <p>Document was not found in the catalog.</p>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={retryChunksFetch}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : null}
-                {chunksView.kind === "error" ? (
-                  <div
-                    className="kern-settings-callout kern-settings-callout--warn"
-                    role="status"
-                  >
-                    <p>{chunksView.message}</p>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={retryChunksFetch}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : null}
-                {chunksView.kind === "ready" ? (
-                  <>
-                    <div
-                      className="kern-documents-chunk-list-scroll"
-                      role="region"
-                      aria-label="Stored chunks"
-                      tabIndex={0}
-                    >
-                      <ol className="kern-documents-chunk-list">
-                        {chunksView.chunks.map((chunk, position) => (
-                          <li
-                            key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}:${position}`}
-                          >
-                            <span className="kern-documents-chunk-index">
-                              Chunk {chunk.index}
-                            </span>
-                            <pre className="kern-documents-chunk-content">
-                              {chunk.content}
-                            </pre>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                    {chunksView.loadMoreError ? (
-                      <div
-                        className="kern-settings-callout kern-settings-callout--warn"
-                        role="status"
-                      >
-                        <p>{chunksView.loadMoreError}</p>
-                      </div>
-                    ) : null}
-                    {chunksView.hasMore ? (
-                      <Button
-                        type="button"
-                        disabled={chunksLoadingMore}
-                        onClick={() => {
-                          void loadMoreChunks();
-                        }}
-                      >
-                        {chunksLoadingMore
-                          ? "Loading…"
-                          : "Load more chunks"}
-                      </Button>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
+            {canInspectChunks(selected) ? (
+              <p className="kern-settings-hint">
+                Open the document row to inspect stored chunks.
+              </p>
             ) : null}
           </div>
         ) : visibleDocuments.length > 0 ? (
@@ -1331,6 +1331,19 @@ export function DocumentsPanel({
           </form>
         ) : null}
       </section>
+
+      <DocumentChunksSheet
+        open={chunksSheetOpen}
+        document={selected}
+        chunksView={chunksView}
+        loadingMore={chunksLoadingMore}
+        restoreFocusRef={chunksSheetRestoreRef}
+        onDismiss={closeChunksSheet}
+        onRetry={retryChunksFetch}
+        onLoadMore={() => {
+          void loadMoreChunks();
+        }}
+      />
 
       <DialogFrame
         open={uploadOpen}
