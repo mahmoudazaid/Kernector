@@ -10,7 +10,7 @@ _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/health": ("get", ("405",)),
     "/api/v1/settings": ("get", ("405", "500")),
     "/api/v1/ollama/status": ("get", ("405", "409", "500")),
-    "/api/v1/chat/ask": ("post", ("405", "422", "500", "502")),
+    "/api/v1/chat/ask": ("post", ("405", "409", "422", "500", "502")),
     "/api/v1/connectors/google-drive": ("get", ("405", "500")),
     "/api/v1/connectors/google-drive/sync": ("post", ("405", "409", "500", "502")),
     "/api/v1/connectors/google-drive/oauth/start": ("get", ("405", "500")),

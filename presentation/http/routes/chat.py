@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 @router.post(
     "/chat/ask",
-    responses=problem_responses(405, 422, 500, 502),
+    responses=problem_responses(405, 409, 422, 500, 502),
 )
 def chat_ask(
     body: ChatAskRequest,
