@@ -87,19 +87,24 @@ class FilesystemUploadBlobStore:
     def delete(self, reference: SourceReference) -> None:
         """Remove the stored payload for ``reference``. Missing blobs are a no-op.
 
-        Malformed source ids (outside the blob path charset) are a no-op so
-        catalog deletes stay idempotent for unknown catalog identities.
-        Path-escape attempts still raise ``UploadBlobValidationError``.
+        Malformed source ids are a no-op so catalog deletes stay idempotent.
+        When the resolved path escapes the upload root (e.g. a symlink), the
+        unresolved leaf under the root is unlinked so the catalog row can still
+        be removed — ``Path.unlink`` does not follow symlinks.
         """
-        if _SOURCE_ID_PATTERN.fullmatch(reference.source_id) is None:
-            return
-        path = self._path_for(reference)
+        try:
+            path = self._path_for(reference)
+        except UploadBlobValidationError:
+            if _SOURCE_ID_PATTERN.fullmatch(reference.source_id) is None:
+                return
+            path = self._root / reference.source_id
+        leaf = self._root / reference.source_id
         with self._path_lock(path):
             try:
-                path.unlink(missing_ok=True)
+                leaf.unlink(missing_ok=True)
             except OSError as error:
                 raise UploadBlobError(
-                    f"could not delete upload blob at {path}"
+                    f"could not delete upload blob at {leaf}"
                 ) from error
 
     @contextmanager

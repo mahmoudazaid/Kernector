@@ -56,7 +56,7 @@ describe("http boundary", () => {
     expect(hits).toEqual([]);
   });
 
-  it("pins the exact CSP policy string including the validated API origin", () => {
+  it("pins the exact CSP policy string including the validated API origin", async () => {
     const expected = [
       "default-src 'self'",
       "base-uri 'self'",
@@ -75,12 +75,27 @@ describe("http boundary", () => {
     expect(expected).not.toContain("*");
     expect(expected).not.toContain(" null");
 
-    const configText = readFileSync(NEXT_CONFIG, "utf8");
-    expect(configText).not.toContain("Content-Security-Policy");
-    expect(configText).toContain("X-Content-Type-Options");
-    expect(configText).toContain("nosniff");
-    expect(configText).toContain("Referrer-Policy");
-    expect(configText).toContain("no-referrer");
+    const nextConfig = (await import("../next.config")).default;
+    const headerEntries = await nextConfig.headers!();
+    expect(
+      headerEntries.some((entry) =>
+        entry.headers.some((header) => header.key === "Content-Security-Policy"),
+      ),
+    ).toBe(false);
+
+    const referrerSources = headerEntries
+      .filter((entry) =>
+        entry.headers.some((header) => header.key === "Referrer-Policy"),
+      )
+      .map((entry) => entry.source);
+    expect(referrerSources).toEqual(
+      expect.arrayContaining([
+        "/_next/static/:path*",
+        "/_next/image",
+        "/brand/:path*",
+      ]),
+    );
+    expect(referrerSources).not.toContain("/:path*");
   });
 
   it("ships middleware that nonces script-src and reuses shared CSP builder", () => {

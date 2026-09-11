@@ -985,7 +985,9 @@ export function DocumentsPanel({
                   </>
                 ) : (
                   <p className="kern-settings-hint" role="status">
-                    Original file is unavailable for preview or download.
+                    {selected.status === "pending"
+                      ? "Indexing in progress. Preview and download will be available when ready."
+                      : "Original file is unavailable for preview or download."}
                   </p>
                 )}
               </div>

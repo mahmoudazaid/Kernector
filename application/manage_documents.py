@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 MISSING_UPLOAD_BLOB_ERROR = (
     "document ingested but original bytes could not be stored"
 )
+_MAX_ERROR_SUMMARY = 500
 
 
 class DocumentManagementError(RuntimeError):
@@ -390,21 +391,29 @@ class ManageUploadedDocuments:
         originals when the put succeeds. A put failure still yields READY
         (searchable chunks) with ``MISSING_UPLOAD_BLOB_ERROR`` so the UI can
         distinguish "preview unavailable" from orphaned-chunk ``DEGRADED``.
-        On replace, a failed put also removes any previous blob so stale
-        bytes are not served under the new name/type. If that compensating
-        delete also fails, the new READY row still records the missing-blob
-        sentinel so catalog metadata matches the live chunks rather than
-        reverting to stale previous metadata.
+        Previous blob bytes are left in place on a transient put failure so a
+        retry can recover them; content serving refuses rows that carry the
+        missing-blob sentinel so stale bytes are never returned under the new
+        name or media type.
         """
         blob_ok = self._try_put_blob(
             ready.reference, payload, operation=operation
         )
         if not blob_ok:
-            self._try_delete_blob(ready.reference, operation=operation)
             ready = dataclasses.replace(
                 ready, error=MISSING_UPLOAD_BLOB_ERROR
             )
-        self._catalog.upsert(ready)
+        try:
+            self._catalog.upsert(ready)
+        except Exception as catalog_error:
+            if operation == "replace":
+                raise PartialReplaceFailure(
+                    "document was ingested but catalog could not record ready "
+                    "status; retry or delete required"
+                ) from catalog_error
+            raise PartialCreateFailure(
+                ingest_error=catalog_error
+            ) from catalog_error
         return ready
 
     def _try_put_blob(
@@ -429,23 +438,6 @@ class ManageUploadedDocuments:
                 source_type=reference.source_type,
             )
             return False
-
-    def _try_delete_blob(
-        self, reference: SourceReference, *, operation: str
-    ) -> None:
-        """Best-effort blob unlink so stale bytes are not served under a new name."""
-        try:
-            self._blob_store.delete(reference)
-        except Exception as error:
-            log_operation(
-                logger,
-                operation=operation,
-                outcome="error",
-                level=logging.WARNING,
-                error_type=type(error).__name__,
-                source_id=reference.source_id,
-                source_type=reference.source_type,
-            )
 
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)
@@ -510,15 +502,9 @@ class ManageUploadedDocuments:
             try:
                 self._catalog.upsert(annotated)
             except Exception as catalog_error:
-                log_operation(
-                    logger,
-                    operation="create",
-                    outcome="error",
-                    level=logging.WARNING,
-                    error_type=type(catalog_error).__name__,
-                    source_id=failed.reference.source_id,
-                    source_type=failed.reference.source_type,
-                )
+                raise PartialCreateFailure(
+                    ingest_error=error
+                ) from catalog_error
 
     def _recover_replace(
         self,
@@ -562,7 +548,6 @@ class ManageUploadedDocuments:
         if not self._try_put_blob(
             degraded.reference, payload, operation="replace"
         ):
-            self._try_delete_blob(degraded.reference, operation="replace")
             annotated = dataclasses.replace(
                 degraded,
                 error=_with_missing_blob_note(degraded.error),
@@ -570,15 +555,10 @@ class ManageUploadedDocuments:
             try:
                 self._catalog.upsert(annotated)
             except Exception as catalog_error:
-                log_operation(
-                    logger,
-                    operation="replace",
-                    outcome="error",
-                    level=logging.WARNING,
-                    error_type=type(catalog_error).__name__,
-                    source_id=degraded.reference.source_id,
-                    source_type=degraded.reference.source_type,
-                )
+                raise PartialReplaceFailure(
+                    "replace did not complete and catalog could not record "
+                    "missing original bytes; retry or delete required"
+                ) from catalog_error
 
 
 def _vector_mutation_started(error: BaseException) -> bool:
@@ -588,7 +568,7 @@ def _vector_mutation_started(error: BaseException) -> bool:
 
 def _safe_error_summary(error: BaseException) -> str:
     message = str(error).strip() or type(error).__name__
-    return message[:500]
+    return message[:_MAX_ERROR_SUMMARY]
 
 
 def _with_missing_blob_note(existing: str | None) -> str:
@@ -597,5 +577,7 @@ def _with_missing_blob_note(existing: str | None) -> str:
         return MISSING_UPLOAD_BLOB_ERROR
     if MISSING_UPLOAD_BLOB_ERROR in existing:
         return existing
-    head = existing[: 500 - len(MISSING_UPLOAD_BLOB_ERROR) - 2]
+    head = existing[
+        : _MAX_ERROR_SUMMARY - len(MISSING_UPLOAD_BLOB_ERROR) - 2
+    ]
     return f"{head}; {MISSING_UPLOAD_BLOB_ERROR}"

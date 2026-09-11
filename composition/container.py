@@ -33,6 +33,7 @@ from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.manage_documents import (
     DocumentManagementError,
+    MISSING_UPLOAD_BLOB_ERROR,
     ManageUploadedDocuments,
     PartialCreateFailure,
     PartialDeleteFailure,
@@ -1673,6 +1674,10 @@ def get_uploaded_document_content(
         row = ops.get_uploaded_row(source_id)
         if row is None:
             raise UnknownUploadedDocumentError("unknown document")
+        if MISSING_UPLOAD_BLOB_ERROR in (row.error or ""):
+            raise MissingUploadContentError(
+                "no stored content for this document"
+            )
         payload = ops.get_content(row.reference)
     except UploadBlobError as error:
         raise DocumentOperationError(str(error)) from error

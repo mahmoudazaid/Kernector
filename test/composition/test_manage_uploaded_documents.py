@@ -587,3 +587,50 @@ def test_partial_delete_is_translated(
     with pytest.raises(PartialDocumentOperationError) as raised:
         composition_container.delete_uploaded_document(settings, created.reference)
     assert isinstance(raised.value.__cause__, PartialDeleteFailure)
+
+
+def test_get_uploaded_document_content_refuses_missing_blob_sentinel(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
+    from composition.errors import MissingUploadContentError
+    from domain.knowledge import CatalogDocument
+    from infrastructure.documents.upload_blob_store import FilesystemUploadBlobStore
+    from test.document_doubles import InMemoryDocumentCatalog
+
+    monkeypatch.setenv("DOCUMENT_UPLOAD_BLOB_PATH", str(tmp_path / "blobs"))
+    settings = load_settings()
+    reference = SourceReference("src-1", SourceType.KNOWLEDGE_DOCUMENT)
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        CatalogDocument(
+            reference=reference,
+            file_name="report.pdf",
+            title="report",
+            content_format="pdf",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=MISSING_UPLOAD_BLOB_ERROR,
+        )
+    )
+    blob_store = FilesystemUploadBlobStore(tmp_path / "blobs")
+    blob_store.put(
+        reference,
+        UploadPayload(file_name="guide.md", content=b"# stale markdown"),
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_document_catalog",
+        lambda _settings: catalog,
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_upload_blob_store",
+        lambda _settings: blob_store,
+    )
+
+    with pytest.raises(MissingUploadContentError):
+        composition_container.get_uploaded_document_content(settings, "src-1")

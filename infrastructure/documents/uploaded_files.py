@@ -49,14 +49,19 @@ _MEDIA_TYPE_BY_FORMAT = {
     "markdown": "text/plain; charset=utf-8",
     "pdf": "application/pdf",
 }
-CONTENT_TYPE_BY_FORMAT: dict[str, str] = {
-    fmt: _MEDIA_TYPE_BY_FORMAT[fmt]
-    for fmt in dict.fromkeys(_FORMAT_BY_SUFFIX.values())
-}
-if set(CONTENT_TYPE_BY_FORMAT) != set(_MEDIA_TYPE_BY_FORMAT):
+CONTENT_TYPE_BY_FORMAT: dict[str, str] = {}
+for _fmt in dict.fromkeys(_FORMAT_BY_SUFFIX.values()):
+    try:
+        CONTENT_TYPE_BY_FORMAT[_fmt] = _MEDIA_TYPE_BY_FORMAT[_fmt]
+    except KeyError as error:
+        raise RuntimeError(
+            f"missing media type mapping for content_format {_fmt!r}"
+        ) from error
+_unused_media_types = set(_MEDIA_TYPE_BY_FORMAT) - set(CONTENT_TYPE_BY_FORMAT)
+if _unused_media_types:
     raise RuntimeError(
-        "CONTENT_TYPE_BY_FORMAT must cover exactly the media types in "
-        "_MEDIA_TYPE_BY_FORMAT"
+        "unused media type mappings with no matching content_format: "
+        f"{sorted(_unused_media_types)}"
     )
 
 # Separator between extracted PDF pages: a blank line, as between paragraphs.

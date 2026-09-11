@@ -1461,6 +1461,36 @@ describe("DocumentsPanel", () => {
     expect(download).not.toHaveBeenCalled();
   });
 
+  it("explains pending indexing instead of a permanent missing-file message", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              status: "pending",
+              has_stored_content: false,
+              chunk_count: 0,
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+
+    expect(
+      screen.getByText(/indexing in progress/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/original file is unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("loads a preview only after Preview and downloads through the injected helper", async () => {
     const user = userEvent.setup();
     const anchorClick = vi

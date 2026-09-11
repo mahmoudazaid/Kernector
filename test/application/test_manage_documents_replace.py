@@ -357,9 +357,9 @@ def test_oversized_replace_is_rejected_before_extract() -> None:
     assert current.file_name == original.file_name
 
 
-def test_replace_blob_put_and_delete_failure_keeps_ready_with_missing_blob_note() -> None:
-    """After successful ingest, catalog stays on the new READY row even if
-    both blob put and compensating delete fail — do not restore stale metadata.
+def test_replace_blob_put_failure_keeps_ready_with_missing_blob_note() -> None:
+    """After successful ingest, catalog stays on the new READY row with the
+    missing-blob sentinel; previous bytes may remain but must not be served.
     """
     from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
 
@@ -368,7 +368,6 @@ def test_replace_blob_put_and_delete_failure_keeps_ready_with_missing_blob_note(
     store = InMemoryVectorStore()
     original = _seed_ready(catalog, store, blob_store=blob_store)
     blob_store.fail_on_put = True
-    blob_store.fail_on_delete = True
 
     use_case = ManageUploadedDocuments(
         catalog=catalog,
@@ -390,14 +389,14 @@ def test_replace_blob_put_and_delete_failure_keeps_ready_with_missing_blob_note(
     assert replaced.status is CatalogStatus.READY
     assert replaced.file_name == "guide-v2.md"
     assert replaced.error == MISSING_UPLOAD_BLOB_ERROR
-    # Old bytes may remain on disk when delete also fails; catalog must still
-    # describe the new ingest (and mark preview unavailable).
+    # Transient put failure leaves the prior blob for recovery; the sentinel
+    # blocks serving those bytes under the new metadata.
     assert blob_store.get(original.reference) == UploadPayload(
         file_name="guide.md", content=b"v1"
     )
 
 
-def test_degraded_replace_clears_stale_blob_when_put_fails() -> None:
+def test_degraded_replace_keeps_prior_blob_when_put_fails() -> None:
     from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
 
     catalog = InMemoryDocumentCatalog()
@@ -441,4 +440,6 @@ def test_degraded_replace_clears_stale_blob_when_put_fails() -> None:
     assert current.status is CatalogStatus.DEGRADED
     assert current.file_name == "report.pdf"
     assert MISSING_UPLOAD_BLOB_ERROR in (current.error or "")
-    assert blob_store.get(reference) is None
+    assert blob_store.get(reference) == UploadPayload(
+        file_name="guide.md", content=b"v1"
+    )

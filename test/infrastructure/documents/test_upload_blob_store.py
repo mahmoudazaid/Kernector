@@ -101,8 +101,10 @@ def test_crafted_id_cannot_resolve_outside_root(tmp_path: Path) -> None:
     with pytest.raises(UploadBlobValidationError):
         store.get(_reference("safe_id"))
 
-    with pytest.raises(UploadBlobValidationError):
-        store.delete(_reference("safe_id"))
+    store.delete(_reference("safe_id"))
+
+    assert not (root / "safe_id").exists()
+    assert outside.read_bytes() == b"secret"
 
 
 def test_adapter_errors_share_one_public_base() -> None:
