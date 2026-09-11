@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — Decisions 2, 3, 6, and 8 superseded for the live runtime by
+[ADR 0007](0007-retire-json-document-catalog.md).
 
 ## Context
 
@@ -22,34 +23,31 @@ unblocks only #131’s scoped SQL catalog design and implementation. It does
 personalisation only. It explicitly excludes full organisation RBAC and is
 **not** delivery of the workspace authorization model.
 
-Composition currently wires `JsonDocumentCatalog` directly.
-`DOCUMENT_CATALOG_PATH` selects only that JSON file path; it does not choose
-among adapters. This ADR does not introduce SQL adapter selection or a catalog
-backend switch.
+> **Historical context (superseded by ADR 0007):** Composition formerly wired
+> `JsonDocumentCatalog` directly. `DOCUMENT_CATALOG_PATH` selected only that
+> JSON file path; it did not choose among adapters. This ADR did not introduce
+> SQL adapter selection or a catalog backend switch.
 
 ## Decision
 
 1. **Scope identity is `workspace_id`** — a case-sensitive identifier that
    `fullmatch`es `[A-Za-z0-9_-]+` and is at most 64 characters.
 
-2. **Server-side configuration only** — Resolve `workspace_id` only from
-   trusted server-side configuration (`DOCUMENT_CATALOG_WORKSPACE_ID`). Never
-   accept it from HTTP requests or any user-controlled input. After #131
-   introduces catalog selection, `load_settings()` **requires**
-   `DOCUMENT_CATALOG_WORKSPACE_ID` only when SQL is selected, but **validates
-   it whenever it is present** — under JSON too. Reject missing or
-   whitespace-only values (when SQL is selected), and any value that fails
-   the Decision 1 charset or length bound, at `load_settings()` time with a
-   `ValueError` naming the variable — never lazily at first catalog access.
-   The value is stripped before validation; an empty or whitespace-only
-   result is treated as absent, matching how the optional
-   `GOOGLE_DRIVE_FOLDER_ID` setting is handled. The current JSON runtime
-   must continue loading when the variable is absent.
+2. **~~Server-side configuration only~~** — **Superseded by
+   [ADR 0007](0007-retire-json-document-catalog.md).** Resolve `workspace_id`
+   only from trusted server-side configuration
+   (`DOCUMENT_CATALOG_WORKSPACE_ID`). Never accept it from HTTP requests or any
+   user-controlled input. Historical text required validation at
+   `load_settings()` whenever the value was present (including under JSON) and
+   required it only when SQL was selected. Live runtime: strip/store at load;
+   require and validate charset/length when building the SQL catalog.
 
-3. **No reserved default** — There is no reserved `"default"` workspace and no
-   implicit fallback. JSON is the currently wired catalog and does **not**
-   require `DOCUMENT_CATALOG_WORKSPACE_ID`. Selecting SQL, or running JSON→SQL
-   migration, **requires** an explicit `DOCUMENT_CATALOG_WORKSPACE_ID`.
+3. **~~No reserved default~~** — **Superseded by
+   [ADR 0007](0007-retire-json-document-catalog.md).** There is no reserved
+   `"default"` workspace and no implicit fallback. Historical text: JSON did
+   not require `DOCUMENT_CATALOG_WORKSPACE_ID`; selecting SQL or running
+   JSON→SQL migration did. Live runtime: SQL is the only catalog; workspace is
+   required at catalog build.
 
 4. **SQL uniqueness** is `(workspace_id, source_type, source_id)`. Never global
    `(source_type, source_id)`. `workspace_id` is always bound as a query
@@ -63,19 +61,19 @@ backend switch.
    at construction; `get` / `all` / `upsert` / `delete` see only that
    workspace.
 
-6. **JSON adapter is unscoped** — `JsonDocumentCatalog` remains an unscoped,
-   single-user local adapter and is not governed by `workspace_id`.
+6. **~~JSON adapter is unscoped~~** — **Superseded by
+   [ADR 0007](0007-retire-json-document-catalog.md).**
+   `JsonDocumentCatalog` is retired; it is no longer a live adapter.
 
-7. **Minimal authorization rule (SQL only)** — when SQL is selected, the
-   current trusted single-user deployment is authorized only for its configured
-   workspace. A bound `SqlDocumentCatalog` must not read, update, list, or
-   delete another workspace’s rows. Do not imply the current JSON runtime has
-   a configured workspace.
+7. **Minimal authorization rule (SQL)** — the current trusted single-user
+   deployment is authorized only for its configured workspace. A bound
+   `SqlDocumentCatalog` must not read, update, list, or delete another
+   workspace’s rows.
 
-8. **JSON→SQL importer** — takes an explicit target `workspace_id` (the same
-   trusted configured value). It does not invent a workspace. The migration
-   entry point validates `DOCUMENT_CATALOG_WORKSPACE_ID` against Decision 1
-   before performing database work.
+8. **~~JSON→SQL importer~~** — **Superseded by
+   [ADR 0007](0007-retire-json-document-catalog.md).** The migrator and migrate
+   CLI are removed. Operators with remaining JSON rows must migrate on a prior
+   release before upgrading.
 
 ## Consequences
 
@@ -91,11 +89,16 @@ backend switch.
   `load_settings()` must not require it while JSON is the wired catalog, but
   validates it whenever it is present. It becomes required only when SQL is
   selected or JSON→SQL migration runs — work that remains in #131.
+  **Superseded for the live runtime by [ADR 0007](0007-retire-json-document-catalog.md):**
+  JSON is retired; workspace is required when building the SQL catalog, not for
+  every settings load.
 
 ## Related docs
 
-- [ADR 0001](0001-domain-agnostic-knowledge-foundation.md) — catalog port and
-  current JSON wiring
+- [ADR 0001](0001-domain-agnostic-knowledge-foundation.md) — catalog port
+  (historical JSON wiring superseded by ADR 0007)
+- [ADR 0007](0007-retire-json-document-catalog.md) — retires JSON catalog and
+  updates workspace load rules
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — catalog adapter selection
 - [EPIC #257](https://github.com/mahmoudazaid/Kernector/issues/257) — Project
   Workspaces and Authorization

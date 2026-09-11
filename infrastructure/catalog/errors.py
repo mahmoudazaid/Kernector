@@ -1,4 +1,4 @@
-"""Catalog adapter errors shared across JSON and SQL implementations."""
+"""Catalog adapter errors for the SQL document catalog."""
 
 
 class CatalogError(RuntimeError):

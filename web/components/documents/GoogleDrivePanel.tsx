@@ -433,12 +433,9 @@ export function GoogleDrivePanel({
   const syncDisabled = busy || reauth;
   const cardBusy = busy && !pickerOpen;
   return (
-    <article
-      className="kern-source-card"
-      aria-busy={cardBusy}
-    >
+    <article className="kern-source-card" aria-busy={cardBusy}>
       {cardBusy ? (
-        <div className="kern-drive-sync-overlay">
+        <div className="kern-source-busy-overlay">
           <Loader label="Syncing Google Drive" size="sm" />
         </div>
       ) : null}
@@ -452,9 +449,7 @@ export function GoogleDrivePanel({
             <p className="kern-source-kind">Cloud connector</p>
           </div>
         </div>
-        <span
-          className={`kern-source-status${reauth ? " is-muted" : ""}`}
-        >
+        <span className={`kern-source-status${reauth ? " is-muted" : ""}`}>
           {statusLabel}
         </span>
       </div>

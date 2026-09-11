@@ -96,12 +96,6 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             state_path=tmp_path / "state.json",
             state_ttl_seconds=600,
         ),
-        document_catalog=replace(
-            loaded.document_catalog,
-            path=tmp_path / "catalog.json",
-            backend="json",
-            sql_path=tmp_path / "catalog.sqlite",
-        ),
     )
 
 

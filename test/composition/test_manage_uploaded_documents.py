@@ -33,54 +33,19 @@ from presentation.http.errors import problem_from_exception
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
-    monkeypatch.setenv("DOCUMENT_CATALOG_PATH", str(tmp_path / "catalog" / "uploads.json"))
-    monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
-    monkeypatch.delenv("DOCUMENT_CATALOG_SQL_PATH", raising=False)
-    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
+    monkeypatch.setenv(
+        "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog" / "catalog.sqlite")
+    )
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     return load_settings()
 
 
-def test_build_document_catalog_uses_json_path(settings: Settings) -> None:
-    from datetime import UTC, datetime
-
-    from domain.knowledge import CatalogDocument, CatalogStatus, SourceType
-    from infrastructure.catalog.json_catalog import JsonDocumentCatalog
-
-    catalog = composition_container.build_document_catalog(settings)
-    assert type(catalog) is JsonDocumentCatalog
-    document = CatalogDocument(
-        reference=SourceReference("id-json", SourceType.KNOWLEDGE_DOCUMENT),
-        file_name="guide.md",
-        title="Guide",
-        content_format="markdown",
-        status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
-        chunk_count=1,
-        error=None,
-    )
-    catalog.upsert(document)
-    persisted = JsonDocumentCatalog(settings.document_catalog.path)
-    assert persisted.get(document.reference) == document
-
-
-def test_build_document_catalog_uses_sql_path_and_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_build_document_catalog_persists_in_sql_workspace(settings: Settings) -> None:
     from datetime import UTC, datetime
 
     from domain.knowledge import CatalogDocument, CatalogStatus, SourceType
     from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
-
-    monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
-    monkeypatch.setenv("CHROMA_COLLECTION", "kernector_test")
-    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
-    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-a")
-    monkeypatch.setenv(
-        "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog" / "catalog.sqlite")
-    )
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    settings = load_settings()
 
     catalog = composition_container.build_document_catalog(settings)
     assert type(catalog) is SqlDocumentCatalog
@@ -96,8 +61,9 @@ def test_build_document_catalog_uses_sql_path_and_workspace(
     )
     catalog.upsert(document)
     sql_path = settings.document_catalog.sql_path
-    assert SqlDocumentCatalog(sql_path, "ws-a").get(document.reference) == document
-    assert SqlDocumentCatalog(sql_path, "ws-b").all() == ()
+    workspace_id = settings.document_catalog.workspace_id
+    assert SqlDocumentCatalog(sql_path, workspace_id).get(document.reference) == document
+    assert SqlDocumentCatalog(sql_path, "other-workspace").all() == ()
 
 
 def test_build_document_catalog_maps_catalog_error(
@@ -105,10 +71,10 @@ def test_build_document_catalog_maps_catalog_error(
 ) -> None:
     from infrastructure.catalog.errors import CatalogError
 
-    def boom(_path: Path) -> object:
+    def boom(_path: Path, _workspace_id: str) -> object:
         raise CatalogError("corrupt catalog")
 
-    monkeypatch.setattr(composition_container, "JsonDocumentCatalog", boom)
+    monkeypatch.setattr(composition_container, "SqlDocumentCatalog", boom)
     with pytest.raises(DocumentOperationError, match="corrupt catalog"):
         composition_container.build_document_catalog(settings)
 
@@ -116,26 +82,69 @@ def test_build_document_catalog_maps_catalog_error(
 def test_build_document_catalog_maps_oserror(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def boom(_path: Path) -> object:
+    def boom(_path: Path, _workspace_id: str) -> object:
         raise OSError("read-only catalog")
 
-    monkeypatch.setattr(composition_container, "JsonDocumentCatalog", boom)
+    monkeypatch.setattr(composition_container, "SqlDocumentCatalog", boom)
     with pytest.raises(DocumentOperationError, match="read-only catalog"):
         composition_container.build_document_catalog(settings)
 
 
-def test_build_document_catalog_requires_sql_workspace(settings: Settings) -> None:
-    sql_settings = replace(
+def test_build_document_catalog_requires_workspace(settings: Settings) -> None:
+    missing = replace(
         settings,
         document_catalog=replace(
             settings.document_catalog,
-            backend="sql",
             workspace_id=None,
-            sql_path=settings.document_catalog.sql_path,
         ),
     )
     with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
-        composition_container.build_document_catalog(sql_settings)
+        composition_container.build_document_catalog(missing)
+
+
+def test_build_document_catalog_rejects_blank_sql_path(settings: Settings) -> None:
+    blank = replace(
+        settings,
+        document_catalog=replace(settings.document_catalog, sql_path=None),
+    )
+    with pytest.raises(
+        ConfigurationError, match="DOCUMENT_CATALOG_SQL_PATH is blank"
+    ):
+        composition_container.build_document_catalog(blank)
+
+
+def test_build_document_catalog_maps_invalid_workspace_value_error(
+    settings: Settings,
+) -> None:
+    bad = replace(
+        settings,
+        document_catalog=replace(
+            settings.document_catalog,
+            workspace_id="bad id",
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        composition_container.build_document_catalog(bad)
+
+
+def test_build_document_catalog_rejects_retired_env_keys(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_BACKEND is retired"):
+        composition_container.build_document_catalog(settings)
+    monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
+    monkeypatch.setenv("DOCUMENT_CATALOG_PATH", "/tmp/uploads.json")
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_PATH is retired"):
+        composition_container.build_document_catalog(settings)
+
+
+def test_build_document_catalog_ignores_blank_retired_env_keys(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "")
+    monkeypatch.setenv("DOCUMENT_CATALOG_PATH", "   ")
+    assert composition_container.build_document_catalog(settings) is not None
 
 
 def test_list_create_replace_delete_round_trip(

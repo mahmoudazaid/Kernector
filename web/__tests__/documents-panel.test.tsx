@@ -254,6 +254,125 @@ describe("DocumentsPanel", () => {
     expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
   });
 
+  it("dismisses the upload dialog and shows a card loader while uploading", async () => {
+    const user = userEvent.setup();
+    let resolveUpload: (value: CatalogDocumentResponse) => void = () => {};
+    const upload = vi.fn(
+      () =>
+        new Promise<CatalogDocumentResponse>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openUploadModal(user);
+    const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
+    await user.upload(screen.getByLabelText(/document file/i), file);
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(
+      screen.queryByRole("heading", { name: /upload files/i }),
+    ).not.toBeInTheDocument();
+    const card = screen
+      .getByRole("heading", { name: "File uploads" })
+      .closest("article");
+    expect(card).toHaveAttribute("aria-busy", "true");
+    const overlay = screen
+      .getByText(/uploading files/i)
+      .closest(".kern-source-busy-overlay");
+    expect(overlay).toBeInTheDocument();
+    expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add files/i })).toBeDisabled();
+
+    resolveUpload(doc({ source_id: "new-id" }));
+    expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/uploading files/i)).not.toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("heading", { name: /upload files/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reopens the upload dialog with the same file after a failed upload", async () => {
+    const user = userEvent.setup();
+    const upload = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Upload failed",
+        detail: "The document upload failed.",
+        code: "document_upload_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openUploadModal(user);
+    const file = new File(["# hello"], "spec.md", { type: "text/markdown" });
+    await user.upload(screen.getByLabelText(/document file/i), file);
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    const alert = await screen.findByRole("alert");
+    expect(dialog.contains(alert)).toBe(true);
+    expect(alert).toHaveTextContent(/document upload failed/i);
+    expect(dialog).toHaveAttribute("aria-describedby", "hub-upload-error");
+    expect(screen.getByText(/selected: spec\.md/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^upload new$/i })).toBeEnabled();
+  });
+
+  it("does not show unrelated feedback errors inside the upload dialog", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Delete failed",
+        detail: "The document operation failed.",
+        code: "document_operation_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        remove={remove}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
+    const deleteDialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(
+      within(deleteDialog).getByRole("button", { name: /^delete$/i }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /document operation failed/i,
+    );
+
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await openUploadModal(user);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
+    expect(screen.queryByText(/document operation failed/i)).toBeNull();
+  });
+
   it("replaces only the selected document's source id", async () => {
     const user = userEvent.setup();
     const list = vi.fn().mockResolvedValue(listResponse([doc()]));
@@ -348,6 +467,155 @@ describe("DocumentsPanel", () => {
 
     expect(remove).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("clears stale page feedback when opening delete confirm, restores opener on Escape", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Delete failed",
+        detail: "The document operation failed.",
+        code: "document_operation_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        remove={remove}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    const deleteButton = screen.getByRole("button", {
+      name: /delete spec\.md/i,
+    });
+    await user.click(deleteButton);
+    const failDialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(
+      within(failDialog).getByRole("button", { name: /^delete$/i }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /document operation failed/i,
+    );
+
+    await user.click(deleteButton);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.activeElement).toBe(deleteButton);
+  });
+
+  it("focuses the page alert after a failed delete", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Delete failed",
+        detail: "The document operation failed.",
+        code: "document_operation_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        remove={remove}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
+    const failDialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(
+      within(failDialog).getByRole("button", { name: /^delete$/i }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/document operation failed/i);
+    expect(document.activeElement).toBe(alert);
+
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    const addFiles = screen.getByRole("button", { name: /add files/i });
+    await user.click(addFiles);
+    await screen.findByRole("dialog");
+    expect(screen.queryByText(/document operation failed/i)).toBeNull();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(addFiles);
+  });
+
+  it("clears stale page feedback when opening the Drive picker", async () => {
+    const user = userEvent.setup();
+    const remove = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 500,
+        title: "Delete failed",
+        detail: "The document operation failed.",
+        code: "document_operation_failed",
+      }),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        remove={remove}
+        loadSettings={loadSettings}
+        getDriveStatus={async () => ({
+          configured: false,
+          available: true,
+          connected: true,
+          oauth_ready: true,
+          account_email: "ada@example.com",
+          document_count: 0,
+          folder_count: 0,
+          last_sync: null,
+          reauthorization_required: false,
+          setup_required: false,
+          connection_state: "ready",
+          sync_scope: "1 folder",
+        })}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
+    const failDialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(
+      within(failDialog).getByRole("button", { name: /^delete$/i }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /document operation failed/i,
+    );
+
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await user.click(await screen.findByRole("button", { name: /^browse$/i }));
+
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/document operation failed/i)).toBeNull();
   });
 
   it("shows sanitized per-document warning from error_summary", async () => {
@@ -809,11 +1077,15 @@ describe("DocumentsPanel", () => {
 
     await openDocumentsTab(user);
     const table = await screen.findByRole("table");
-    expect(within(table).getByText("Mieterselbtstauskunft")).toBeInTheDocument();
+    expect(
+      within(table).getByText("Mieterselbtstauskunft"),
+    ).toBeInTheDocument();
     expect(within(table).getByText("Google Drive")).toBeInTheDocument();
     expect(within(table).getByText("File upload")).toBeInTheDocument();
     expect(
-      within(table).getByRole("button", { name: /delete mieterselbtstauskunft/i }),
+      within(table).getByRole("button", {
+        name: /delete mieterselbtstauskunft/i,
+      }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: /^source$/i }));
@@ -821,8 +1093,12 @@ describe("DocumentsPanel", () => {
     expect(screen.getByText("Mieterselbtstauskunft")).toBeInTheDocument();
     expect(screen.queryByText("spec.md")).not.toBeInTheDocument();
     await user.click(within(table).getByText("Mieterselbtstauskunft"));
-    expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^replace$/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/managed by google drive sync/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^replace$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("prompts to select a document when the current row is filtered out", async () => {
@@ -931,8 +1207,9 @@ describe("DocumentsPanel", () => {
       />,
     );
 
-    const card = (await screen.findByRole("heading", { name: "File uploads" }))
-      .closest("article");
+    const card = (
+      await screen.findByRole("heading", { name: "File uploads" })
+    ).closest("article");
     expect(card?.querySelector(".kern-source-metrics")).toHaveTextContent(
       /documents\s*1/i,
     );
@@ -940,7 +1217,9 @@ describe("DocumentsPanel", () => {
       "dateTime",
       "2026-09-05T09:12:44+00:00",
     );
-    expect(screen.getByRole("tab", { name: /documents/i })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /documents/i })).toHaveTextContent(
+      "2",
+    );
   });
 
   it("renders File uploads as a full-width connected source", async () => {

@@ -13,6 +13,7 @@ from application.errors import ConfigurationError
 from composition import (
     ConnectorSyncError,
     build_google_drive_connector,
+    google_drive_status,
     load_runtime_settings,
     sync_google_drive,
 )
@@ -27,7 +28,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from infrastructure.catalog.json_catalog import CatalogError
+from infrastructure.catalog.errors import CatalogError
 from infrastructure.config import GoogleDriveSettings, Settings, load_settings
 from infrastructure.connectors.google_drive import GoogleDriveConfigError
 from test.document_doubles import InMemoryDocumentCatalog
@@ -88,6 +89,14 @@ class RecordingStore:
 @pytest.fixture
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_TOKEN_PATH",
+        str(tmp_path / "google-oauth-connection.json"),
+    )
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_STATE_PATH",
+        str(tmp_path / "google-oauth-state.json"),
+    )
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
@@ -142,6 +151,67 @@ def test_build_google_drive_connector_maps_config_error_without_path(
         build_google_drive_connector(settings)
     assert "/secret/sa.json" not in str(raised.value)
     assert isinstance(raised.value.__cause__, GoogleDriveConfigError)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "bad id",
+        "x' in parents or '' = '",
+        "https://drive.google.com/drive/folders/abc123",
+        "w" * 129,
+    ],
+)
+def test_build_google_drive_connector_rejects_malformed_folder_id(
+    settings: Settings, raw: str
+) -> None:
+    settings = replace(
+        settings,
+        google_drive=GoogleDriveSettings(
+            service_account_file=Path("/secret/sa.json"),
+            folder_id=raw,
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="GOOGLE_DRIVE_FOLDER_ID"):
+        build_google_drive_connector(settings)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "bad id",
+        "x' in parents or '' = '",
+        "https://drive.google.com/drive/folders/abc123",
+        "w" * 129,
+    ],
+)
+def test_google_drive_status_configured_false_for_malformed_folder_id(
+    settings: Settings, raw: str
+) -> None:
+    settings = replace(
+        settings,
+        google_drive=GoogleDriveSettings(
+            service_account_file=Path("/secret/sa.json"),
+            folder_id=raw,
+        ),
+    )
+    assert google_drive_status(settings).configured is False
+
+
+def test_google_drive_status_configured_true_for_valid_folder_id(
+    settings: Settings,
+) -> None:
+    settings = replace(
+        settings,
+        google_drive=GoogleDriveSettings(
+            service_account_file=Path("/secret/sa.json"),
+            folder_id="1AbC_dEf-GhI",
+        ),
+    )
+    status = google_drive_status(settings)
+    assert status.configured is True
+    # Pin OAuth store isolation: a real grant file must not make this True.
+    assert status.connected is False
 
 
 def test_build_google_drive_connector_maps_missing_client_extra(

@@ -8,7 +8,7 @@ import pytest
 
 from composition import container as composition_container
 from domain.knowledge import CatalogStatus, UploadPayload
-from infrastructure.catalog.json_catalog import JsonDocumentCatalog
+from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.config import load_settings
 from infrastructure.vectorstore.chroma import ChromaVectorStore
 from test.doubles import StubEmbeddingModel, vector_for
@@ -32,10 +32,10 @@ def _source_ids(store: ChromaVectorStore) -> set[str]:
 def manage_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("CHROMA_PERSIST_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("CHROMA_COLLECTION", COLLECTION)
-    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "json")
     monkeypatch.setenv(
-        "DOCUMENT_CATALOG_PATH", str(tmp_path / "catalog" / "uploads.json")
+        "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog" / "catalog.sqlite")
     )
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
     monkeypatch.setenv("CHUNK_SIZE", str(CHUNK_SIZE))
     monkeypatch.setenv("CHUNK_OVERLAP", str(CHUNK_OVERLAP))
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
@@ -101,7 +101,10 @@ def test_create_same_filename_replace_delete_and_restart(
     }
 
     # Sequential process restart: new adapter instances, same durable paths.
-    reopened_catalog = JsonDocumentCatalog(manage_settings.document_catalog.path)
+    reopened_catalog = SqlDocumentCatalog(
+        manage_settings.document_catalog.sql_path,
+        manage_settings.document_catalog.workspace_id,
+    )
     reopened_ids = {row.reference.source_id for row in reopened_catalog.all()}
     assert first.reference.source_id in reopened_ids
     assert second.reference.source_id not in reopened_ids
