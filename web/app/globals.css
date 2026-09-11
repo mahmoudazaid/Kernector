@@ -1929,6 +1929,8 @@ a.kern-btn {
   word-break: break-word;
   font: inherit;
   color: var(--kern-ink);
+}
+
 .kern-documents-row--inspectable {
   cursor: pointer;
 }
