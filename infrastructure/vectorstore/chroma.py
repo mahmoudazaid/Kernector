@@ -263,15 +263,19 @@ def _require_mapping(metadata: object, record_id: str) -> Mapping[str, object]:
     return metadata
 
 
-def _chunk_index_from_metadata(metadata: object, record_id: str) -> int:
-    """Require a valid ``chunk_index``; fail fast on corrupt rows."""
-    mapping = _require_mapping(metadata, record_id)
+def _chunk_index_value(mapping: Mapping[str, object], record_id: str) -> int:
+    """Require a valid ``chunk_index`` on an already-narrowed metadata mapping."""
     index = mapping.get(_KEY_CHUNK_INDEX)
     if isinstance(index, bool) or not isinstance(index, int):
         raise ChromaStoreError(
             f"record {record_id}: {_KEY_CHUNK_INDEX} must be an integer, got {index!r}"
         )
     return index
+
+
+def _chunk_index_from_metadata(metadata: object, record_id: str) -> int:
+    """Require a valid ``chunk_index``; fail fast on corrupt rows."""
+    return _chunk_index_value(_require_mapping(metadata, record_id), record_id)
 
 
 def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
@@ -428,7 +432,7 @@ def _decode_chunk(record_id: str, document: object, metadata: object) -> Documen
         )
     metadata = _require_mapping(metadata, record_id)
     raw_type = _require_str(metadata, _KEY_SOURCE_TYPE, record_id)
-    index = _chunk_index_from_metadata(metadata, record_id)
+    index = _chunk_index_value(metadata, record_id)
     try:
         return DocumentChunk(
             metadata=SourceMetadata(

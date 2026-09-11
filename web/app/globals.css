@@ -1916,7 +1916,7 @@ a.kern-btn {
 
 .kern-documents-chunk-index {
   font-size: 0.85rem;
-  color: var(--kern-muted, inherit);
+  color: var(--kern-muted);
 }
 
 .kern-documents-chunk-content {

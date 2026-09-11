@@ -84,6 +84,8 @@ type ChunksView =
       kind: "ready";
       chunks: DocumentChunkResponse[];
       hasMore: boolean;
+      /** Next positional offset for the server (not merged chunk count). */
+      nextOffset: number;
       loadMoreError: string | null;
     }
   | { kind: "empty" }
@@ -407,6 +409,7 @@ export function DocumentsPanel({
           kind: "ready",
           chunks: response.chunks,
           hasMore: response.has_more,
+          nextOffset: DOCUMENT_CHUNKS_PAGE_SIZE,
           loadMoreError: null,
         });
       })
@@ -457,7 +460,7 @@ export function DocumentsPanel({
       return;
     }
     const targetType = selected.source_type;
-    const offset = chunksView.chunks.length;
+    const offset = chunksView.nextOffset;
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
@@ -490,6 +493,7 @@ export function DocumentsPanel({
           chunks,
           hasMore:
             response.chunks.length > 0 && response.has_more,
+          nextOffset: prev.nextOffset + DOCUMENT_CHUNKS_PAGE_SIZE,
           loadMoreError: null,
         };
       });
