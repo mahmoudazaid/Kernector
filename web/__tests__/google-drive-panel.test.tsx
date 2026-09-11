@@ -421,10 +421,6 @@ describe("GoogleDrivePanel", () => {
     await waitFor(() => {
       expect(disconnect).toHaveBeenCalledTimes(1);
     });
-    // Busy must clear before the confirm closes so restore can target the opener.
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
     expect(
       await screen.findByRole("link", { name: /^connect$/i }),
     ).toBeTruthy();

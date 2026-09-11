@@ -257,7 +257,7 @@ export function DocumentsPanel({
     }
     announcedSeqRef.current = feedbackSeq;
     feedbackRef.current?.focus();
-  }, [feedbackSeq, dialogOpen, feedback.kind, hubTab]);
+  }, [feedbackSeq, dialogOpen, feedback.kind]);
 
   useEffect(() => {
     if (uploadOpen && uploadError) {
@@ -280,10 +280,9 @@ export function DocumentsPanel({
   }
 
   const openUploadDialog = useCallback(() => {
-    clearFeedback();
     setUploadError(null);
     setUploadOpen(true);
-  }, [clearFeedback]);
+  }, []);
 
   const setPickerOpen = useCallback(
     (next: boolean) => {

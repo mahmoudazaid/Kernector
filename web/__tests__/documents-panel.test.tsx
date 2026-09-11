@@ -370,7 +370,10 @@ describe("DocumentsPanel", () => {
     await openUploadModal(user);
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelector('[role="alert"]')).toBeNull();
-    expect(screen.queryByText(/document operation failed/i)).toBeNull();
+    // Page-level banner may remain (hidden while the dialog is open); it must
+    // not be presented as an in-dialog upload error.
+    const pageBanner = screen.getByText(/document operation failed/i);
+    expect(pageBanner.closest("[hidden]")).not.toBeNull();
   });
 
   it("replaces only the selected document's source id", async () => {
@@ -518,7 +521,7 @@ describe("DocumentsPanel", () => {
     expect(document.activeElement).toBe(deleteButton);
   });
 
-  it("does not re-focus an already announced feedback banner on re-render", async () => {
+  it("does not re-focus an already announced feedback banner after a dialog closes", async () => {
     const user = userEvent.setup();
     const remove = vi.fn().mockRejectedValue(
       new ApiError({
@@ -546,27 +549,28 @@ describe("DocumentsPanel", () => {
     await user.click(
       within(failDialog).getByRole("button", { name: /^delete$/i }),
     );
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/document operation failed/i);
-
-    const deleteButton = screen.getByRole("button", {
-      name: /delete spec\.md/i,
-    });
-    deleteButton.focus();
-    expect(document.activeElement).toBe(deleteButton);
-
-    await user.click(screen.getByRole("tab", { name: /sources/i }));
-    await user.click(screen.getByRole("tab", { name: /documents/i }));
-
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /document operation failed/i,
     );
-    // Tab switch re-runs the announce effect; the seq guard must keep focus
-    // on the tab (not yank it back to the already-announced alert).
-    expect(document.activeElement).toBe(
-      screen.getByRole("tab", { name: /documents/i }),
+
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    const addFiles = screen.getByRole("button", { name: /add files/i });
+    await user.click(addFiles);
+    const uploadDialog = await screen.findByRole("dialog");
+    // Page feedback stays mounted (hidden) — dialogOpen flips without a new seq.
+    expect(screen.queryByText(/document operation failed/i)).not.toBeNull();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /document operation failed/i,
     );
+    // DialogFrame restores to Add files; announcedSeqRef must not yank focus back.
+    expect(document.activeElement).toBe(addFiles);
     expect(document.activeElement).not.toBe(screen.getByRole("alert"));
+    expect(uploadDialog).not.toBeInTheDocument();
   });
 
   it("clears stale page feedback when opening the Drive picker", async () => {
@@ -620,6 +624,7 @@ describe("DocumentsPanel", () => {
 
     await screen.findByRole("dialog");
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/document operation failed/i)).toBeNull();
   });
 
   it("shows sanitized per-document warning from error_summary", async () => {

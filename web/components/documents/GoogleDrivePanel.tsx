@@ -344,17 +344,9 @@ export function GoogleDrivePanel({
     setActionError(null);
     try {
       await disconnect({ baseUrl: apiBaseUrl });
-      // Clear busy before closing so DialogFrame can restore to the opener
-      // (still disabled while busy=true). Then yield so restore lands before
-      // loadStatus remounts this panel under Available connectors.
-      busyRef.current = false;
-      setBusy(false);
       setConfirmOpen(false);
       setPickerOpen(false);
       setSelection(EMPTY_SELECTION);
-      await new Promise<void>((resolve) => {
-        window.requestAnimationFrame(() => resolve());
-      });
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {

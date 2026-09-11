@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 const FOCUSABLE_SELECTOR = [
@@ -58,6 +64,7 @@ function isRestorable(
   );
 }
 
+/** Page-wide: any dialog chrome (for opener tracking). */
 function isDialogChrome(node: Element): boolean {
   return Boolean(node.closest(".kern-dialog-root, .kern-dialog-backdrop"));
 }
@@ -73,16 +80,23 @@ function restoreFocus(
   }
 }
 
+/**
+ * True when focus has moved outside *this* frame (e.g. into another modal or
+ * a fresh alert). Frame-scoped so a closing dialog cannot steal focus from a
+ * still-open sibling.
+ */
 function focusAlreadyMovedOn(panel: HTMLElement | null): boolean {
   const active = document.activeElement;
   if (!active || active === document.body) {
     return false;
   }
-  // Focus already moved on (a fresh alert, the user's own Tab): leave it.
   if (panel?.contains(active)) {
     return false;
   }
-  if (isDialogChrome(active)) {
+  if (panel?.closest(".kern-dialog-root")?.contains(active)) {
+    return false;
+  }
+  if (active.classList.contains("kern-dialog-backdrop")) {
     return false;
   }
   return true;
@@ -100,8 +114,6 @@ export function DialogFrame({
   children,
 }: DialogFrameProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  /** Survives cleanup timing: last non-null panel node while the dialog was open. */
-  const panelNodeRef = useRef<HTMLDivElement | null>(null);
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
   const dismissDisabledRef = useRef(dismissDisabled);
@@ -117,6 +129,29 @@ export function DialogFrame({
   const exitingPanelRef = useRef<HTMLElement | null>(null);
   const restoreFallbackTimerRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
+
+  const clearRestoreFallbackTimer = useCallback(() => {
+    if (restoreFallbackTimerRef.current != null) {
+      window.clearTimeout(restoreFallbackTimerRef.current);
+      restoreFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const consumePendingRestore = useCallback(
+    (panel: HTMLElement | null) => {
+      const pending = pendingRestoreRef.current;
+      if (!pending) {
+        return;
+      }
+      pendingRestoreRef.current = null;
+      exitingPanelRef.current = null;
+      clearRestoreFallbackTimer();
+      if (!focusAlreadyMovedOn(panel)) {
+        restoreFocus(...pending);
+      }
+    },
+    [clearRestoreFallbackTimer],
+  );
 
   useEffect(() => {
     function rememberOpener(event: Event) {
@@ -145,26 +180,6 @@ export function DialogFrame({
     };
   }, []);
 
-  // Clear a live fallback timer on unmount; restore immediately if still armed.
-  useEffect(() => {
-    return () => {
-      if (restoreFallbackTimerRef.current != null) {
-        window.clearTimeout(restoreFallbackTimerRef.current);
-        restoreFallbackTimerRef.current = null;
-      }
-      const pending = pendingRestoreRef.current;
-      if (!pending) {
-        return;
-      }
-      pendingRestoreRef.current = null;
-      const panel = exitingPanelRef.current;
-      exitingPanelRef.current = null;
-      if (!focusAlreadyMovedOn(panel)) {
-        restoreFocus(...pending);
-      }
-    };
-  }, []);
-
   useEffect(() => {
     if (!open) {
       return;
@@ -172,10 +187,7 @@ export function DialogFrame({
     // Cancel a restore still waiting on a previous exit animation.
     pendingRestoreRef.current = null;
     exitingPanelRef.current = null;
-    if (restoreFallbackTimerRef.current != null) {
-      window.clearTimeout(restoreFallbackTimerRef.current);
-      restoreFallbackTimerRef.current = null;
-    }
+    clearRestoreFallbackTimer();
     const previous =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -227,42 +239,29 @@ export function DialogFrame({
         openerRef.current,
         previous,
       ];
-      // Capture now: the timer may fire while the panel is still focused mid-exit.
-      const exitingPanel = panelNodeRef.current;
-      exitingPanelRef.current = exitingPanel;
-      // Interrupted exits (frame unmount mid-animation) skip onExitComplete.
+      // Capture at arm time: timer may fire while the panel is still focused.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mid-exit read
+      const panelAtArm = panelRef.current;
+      exitingPanelRef.current = panelAtArm;
       restoreFallbackTimerRef.current = window.setTimeout(() => {
         restoreFallbackTimerRef.current = null;
-        const pending = pendingRestoreRef.current;
-        if (!pending) {
-          return;
-        }
-        pendingRestoreRef.current = null;
-        exitingPanelRef.current = null;
-        if (!focusAlreadyMovedOn(exitingPanel)) {
-          restoreFocus(...pending);
-        }
+        consumePendingRestore(panelAtArm);
       }, RESTORE_FALLBACK_MS);
     };
-  }, [open]);
+  }, [open, clearRestoreFallbackTimer, consumePendingRestore]);
+
+  // Declared after the [open] effect so destroy order sees an armed restore
+  // when the frame unmounts while still open (e.g. Drive picker).
+  useEffect(() => {
+    return () => {
+      consumePendingRestore(exitingPanelRef.current);
+    };
+  }, [consumePendingRestore]);
 
   return (
     <AnimatePresence
       onExitComplete={() => {
-        const pending = pendingRestoreRef.current;
-        if (!pending) {
-          return;
-        }
-        pendingRestoreRef.current = null;
-        if (restoreFallbackTimerRef.current != null) {
-          window.clearTimeout(restoreFallbackTimerRef.current);
-          restoreFallbackTimerRef.current = null;
-        }
-        const panel = panelRef.current ?? exitingPanelRef.current;
-        exitingPanelRef.current = null;
-        if (!focusAlreadyMovedOn(panel)) {
-          restoreFocus(...pending);
-        }
+        consumePendingRestore(panelRef.current ?? exitingPanelRef.current);
       }}
     >
       {open ? (
@@ -293,12 +292,7 @@ export function DialogFrame({
           transition={reduceMotion ? FADE_ONLY : PANEL_SPRING}
         >
           <div
-            ref={(node) => {
-              panelRef.current = node;
-              if (node) {
-                panelNodeRef.current = node;
-              }
-            }}
+            ref={panelRef}
             className={["kern-dialog", panelClassName]
               .filter(Boolean)
               .join(" ")}

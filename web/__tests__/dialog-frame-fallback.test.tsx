@@ -1,17 +1,56 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("motion/react", () => {
+  function hasContent(node: ReactNode): boolean {
+    if (node == null || node === false || node === true) {
+      return false;
+    }
+    if (Array.isArray(node)) {
+      return node.some(hasContent);
+    }
+    return true;
+  }
+
+  function HeldAnimatePresence({
+    children,
+    onExitComplete,
+  }: {
+    children?: ReactNode;
+    onExitComplete?: () => void;
+  }) {
+    const [shown, setShown] = useState(children);
+    const exitTimer = useRef<number | null>(null);
+    useEffect(() => {
+      if (hasContent(children)) {
+        if (exitTimer.current != null) {
+          window.clearTimeout(exitTimer.current);
+          exitTimer.current = null;
+        }
+        setShown(children);
+        return;
+      }
+      // Keep the exiting panel mounted past RESTORE_FALLBACK_MS so the timer
+      // races while focus is still inside the panel.
+      exitTimer.current = window.setTimeout(() => {
+        exitTimer.current = null;
+        setShown(null);
+        onExitComplete?.();
+      }, 10_000);
+      return () => {
+        if (exitTimer.current != null) {
+          window.clearTimeout(exitTimer.current);
+        }
+      };
+    }, [children, onExitComplete]);
+    return <>{shown}</>;
+  }
+
   return {
     useReducedMotion: () => true,
-    AnimatePresence: ({
-      children,
-    }: {
-      children?: ReactNode;
-      onExitComplete?: () => void;
-    }) => <>{children}</>,
+    AnimatePresence: HeldAnimatePresence,
     motion: {
       button: ({
         children,
@@ -36,7 +75,7 @@ describe("DialogFrame restore fallback timer", () => {
     vi.useRealTimers();
   });
 
-  it("restores via the fallback timer using the panel captured at arm time", async () => {
+  it("restores via the fallback timer while the exiting panel still holds focus", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({
       advanceTimers: vi.advanceTimersByTime.bind(vi),
@@ -66,11 +105,16 @@ describe("DialogFrame restore fallback timer", () => {
     render(<Harness />);
     const openButton = screen.getByRole("button", { name: /^open$/i });
     await user.click(openButton);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^close$/i }));
+    const closeButton = screen.getByRole("button", { name: /^close$/i });
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+    await user.click(closeButton);
 
-    // AnimatePresence mock never fires onExitComplete — only the timer restores.
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Panel is still mounted (held AnimatePresence) with Close focused.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^close$/i }),
+    );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(RESTORE_FALLBACK_MS);
