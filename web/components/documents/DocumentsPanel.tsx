@@ -1275,26 +1275,23 @@ export function DocumentsPanel({
         )}
 
         {selected ? (
-          <div className="kern-documents-detail">
-            <p className="kern-settings-hint">
-              {isDriveDocument(selected)
-                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
-                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
-            </p>
-            {selected.error_summary ? (
-              <div
-                className="kern-settings-callout kern-settings-callout--warn"
-                role="status"
-              >
-                <p>{selected.error_summary}</p>
-              </div>
-            ) : null}
-            {canInspectChunks(selected) ? (
-              <p className="kern-settings-hint">
-                Open the document row to inspect stored chunks.
-              </p>
-            ) : null}
-          </div>
+          selected.error_summary || canInspectChunks(selected) ? (
+            <div className="kern-documents-detail">
+              {selected.error_summary ? (
+                <div
+                  className="kern-settings-callout kern-settings-callout--warn"
+                  role="status"
+                >
+                  <p>{selected.error_summary}</p>
+                </div>
+              ) : null}
+              {canInspectChunks(selected) ? (
+                <p className="kern-settings-hint">
+                  Open the document row to inspect stored chunks.
+                </p>
+              ) : null}
+            </div>
+          ) : null
         ) : visibleDocuments.length > 0 ? (
           <p className="kern-settings-hint">
             Select a document to see details or replace it
