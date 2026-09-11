@@ -1274,25 +1274,16 @@ export function DocumentsPanel({
           </div>
         )}
 
-        {selected ? (
-          selected.error_summary || canInspectChunks(selected) ? (
-            <div className="kern-documents-detail">
-              {selected.error_summary ? (
-                <div
-                  className="kern-settings-callout kern-settings-callout--warn"
-                  role="status"
-                >
-                  <p>{selected.error_summary}</p>
-                </div>
-              ) : null}
-              {canInspectChunks(selected) ? (
-                <p className="kern-settings-hint">
-                  Open the document row to inspect stored chunks.
-                </p>
-              ) : null}
+        {selected?.error_summary ? (
+          <div className="kern-documents-detail">
+            <div
+              className="kern-settings-callout kern-settings-callout--warn"
+              role="status"
+            >
+              <p>{selected.error_summary}</p>
             </div>
-          ) : null
-        ) : visibleDocuments.length > 0 ? (
+          </div>
+        ) : !selected && visibleDocuments.length > 0 ? (
           <p className="kern-settings-hint">
             Select a document to see details or replace it
           </p>
