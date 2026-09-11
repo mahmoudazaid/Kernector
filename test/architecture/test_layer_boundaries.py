@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Third-party packages that perform I/O. Only `infrastructure` may reach these.
 IO_PACKAGES = {
-    "langchain", "langchain_core", "langchain_openai", "openai", "ollama",
+    "langchain", "langchain_core", "langchain_openai", "langgraph", "openai", "ollama",
     "chromadb", "milvus", "pymilvus", "sqlalchemy", "psycopg",
     "requests", "httpx", "aiohttp",
     "pypdf",

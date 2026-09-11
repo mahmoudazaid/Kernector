@@ -4,7 +4,7 @@
 
 Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, and the Google Drive CLI connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. External provider connectors beyond Google Drive (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
-Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
+Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). JSON catalog retirement is recorded in [ADR 0007](docs/adr/0007-retire-json-document-catalog.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
 ## How the platform is structured
 
@@ -159,12 +159,10 @@ stays current without re-hydrating from Chroma on every request.
 
 ## Upload and manage documents
 
-Open Next.js `/documents` against FastAPI. Prefer a **single uvicorn worker**
-when using the JSON catalog — that lock is per process. SQL is safe for
+Open Next.js `/documents` against FastAPI. SQL catalog writes are safe for
 same-host processes on a local filesystem. Upload blobs
 (`DOCUMENT_UPLOAD_BLOB_PATH`, default `data/uploads`) use `os.replace` plus a
-per-path lock and are safe for same-host writers; still prefer one worker with
-JSON.
+per-path lock and are safe for same-host writers.
 
 1. Start the FastAPI + Next stack above and open **Documents**.
 2. Under **Upload new**, choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
@@ -172,27 +170,29 @@ JSON.
 4. Under **Uploaded documents**, select a row to inspect status, chunk count, and the diagnostic source ID.
 5. Use **Preview** for an inline viewer of the original upload bytes, or **Download** to save them.
 6. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.
-7. To remove a document, confirm and click **Delete** (vector chunks first, then the catalog row, then the upload blob).
+7. To remove a document, confirm and click **Delete** (vector chunks first, then the upload blob, then the catalog row).
 
-Upload catalog metadata defaults to JSON at `data/catalog/uploads.json`
-(`DOCUMENT_CATALOG_BACKEND=json`, `DOCUMENT_CATALOG_PATH`). Use JSON for local
-single-process work. Set `DOCUMENT_CATALOG_BACKEND=sql`,
-`DOCUMENT_CATALOG_SQL_PATH` (default `data/catalog/catalog.sqlite`), and
-`DOCUMENT_CATALOG_WORKSPACE_ID` when you need transactional writes and
-versioned schema.
+Upload catalog metadata uses SQLite at `data/catalog/catalog.sqlite` by default
+(`DOCUMENT_CATALOG_SQL_PATH`). Set `DOCUMENT_CATALOG_WORKSPACE_ID` in `.env`
+before opening the catalog (case-sensitive `fullmatch` `[A-Za-z0-9_-]+`, at most
+64 characters). `.env.example` ships `local` as a working default. Process
+environment variables win over `.env` (`load_dotenv(override=False)`).
 
-To copy existing JSON rows into SQL (idempotent; source JSON unchanged):
-
-```bash
-uv run python -m presentation.cli.migrate_document_catalog
-```
+**Upgrading from the JSON catalog.** [#261](https://github.com/mahmoudazaid/Kernector/issues/261)
+removes `JsonDocumentCatalog` and the migrate CLI. If you still have rows in
+`data/catalog/uploads.json`, run the migrator on the **previous** release first
+(`uv run python -m presentation.cli.migrate_document_catalog` with
+`DOCUMENT_CATALOG_BACKEND=sql` and a valid workspace id), then upgrade. Before
+starting the upgraded build, remove `DOCUMENT_CATALOG_BACKEND` and
+`DOCUMENT_CATALOG_PATH` from `.env` (and the process environment). Non-blank
+values fail when the catalog is built. Skipping migration leaves Chroma chunks
+without listable catalog rows.
 
 Verified official SQLite builds (3.51.3+, 3.50.7+ within 3.50, 3.44.6+ within
 3.44) use WAL; other builds use rollback-journal with `BEGIN IMMEDIATE`. WAL
 needs a local filesystem and same-host processes. To roll back a SQL catalog,
 stop writers and restore from a SQLite-produced backup (`VACUUM INTO` or
 `Connection.backup`) — do not splice a live `.sqlite` with WAL/SHM files.
-Keep the source JSON if you need to re-import.
 
 Seed-corpus documents remain separate and do not appear in this list.
 

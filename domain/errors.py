@@ -5,6 +5,19 @@ class DomainValidationError(ValueError):
     """A domain invariant was violated."""
 
 
+class ConfigurationBoundaryError(RuntimeError):
+    """Missing or invalid environment configuration at a composition boundary.
+
+    Marker base so infrastructure adapters can let typed config failures pass
+    through without importing ``application.errors``. Application
+    ``ConfigurationError`` (and subclasses) inherit this type.
+
+    Do not raise this marker directly from adapters — raise a concrete
+    application ``ConfigurationError`` subclass (or let composition map an
+    infrastructure config error onto one) so presentation can classify it.
+    """
+
+
 class ProviderError(RuntimeError):
     """An LLM, embedding, or query-rewrite provider call failed at runtime.
 

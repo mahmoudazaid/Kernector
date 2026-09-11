@@ -14,6 +14,7 @@ from application.errors import (
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
+    MissingProviderCredentialsError,
     OllamaNotConfiguredError,
     UploadTooLargeError,
 )
@@ -30,7 +31,9 @@ from composition.errors import (
     UnknownUploadedDocumentError,
     UnsupportedPreviewFormatError,
 )
+from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
+    ConfigurationBoundaryError,
     DomainValidationError,
     ProviderError,
     ToolFailureError,
@@ -43,6 +46,9 @@ from presentation.failure_messages import (
 )
 
 _CONFIGURATION_FAILURE_DETAIL = "The service is not configured correctly."
+_MISSING_PROVIDER_CREDENTIALS_DETAIL = (
+    "Required LLM provider credentials are missing. Check server configuration."
+)
 _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
 _INTERNAL_FAILURE_DETAIL = "An unexpected error occurred."
 _VALIDATION_TITLE = "Request validation failed"
@@ -341,7 +347,16 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
-    if isinstance(exc, ConfigurationError):
+    if isinstance(exc, MissingProviderCredentialsError):
+        return _problem(
+            code="missing_provider_credentials",
+            title="Missing provider credentials",
+            status=500,
+            detail=_MISSING_PROVIDER_CREDENTIALS_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, (ConfigurationError, ConfigurationBoundaryError)):
         return _problem(
             code="configuration_error",
             title="Configuration error",
@@ -359,7 +374,7 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
-    if isinstance(exc, ToolFailureError):
+    if isinstance(exc, (ToolRunFailedError, ToolFailureError)):
         return _problem(
             code="tool_failure",
             title="Tool failure",

@@ -15,7 +15,7 @@ from domain.knowledge import (
     UploadPayload,
     Vector,
 )
-from domain.models import AskResult, Message, PromptVariant
+from domain.models import AgentTurnResult, AskResult, Message, PromptVariant
 
 
 class ChatModel(Protocol):
@@ -187,6 +187,29 @@ class Tool(Protocol):
         Raises:
             ToolArgumentValidationError: Arguments were rejected before work.
             ToolFailureError: The tool invocation failed after valid arguments.
+        """
+        ...
+
+
+class ToolCallingAgent(Protocol):
+    """Plans and invokes bound tools in a multi-step loop until a final answer."""
+
+    def run(
+        self,
+        goal: str,
+        tools: Sequence[Tool],
+        *,
+        max_steps: int,
+    ) -> AgentTurnResult:
+        """Run the agent for ``goal`` with ``tools``, stopping by ``max_steps``.
+
+        Bound tools are plain ``Tool`` ports (name, description, invoke), not
+        vendor SDK objects.
+
+        Raises:
+            ProviderError: The model or agent runtime failed.
+            ToolArgumentValidationError: A tool rejected its arguments.
+            ToolFailureError: A tool failed after accepting arguments.
         """
         ...
 

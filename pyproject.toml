@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.128.0",
     "langchain-core>=1.5.4",
     "langchain-openai>=1.5.0",
+    "langgraph>=1.2.11",
     "numpy>=2.5.1",
     "pypdf>=6.16.2",
     "python-dotenv>=1.2.2",

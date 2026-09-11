@@ -14,7 +14,10 @@ import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
-import { captureDriveCallback, peekDriveCallback } from "@/lib/documents/drive-callback";
+import {
+  captureDriveCallback,
+  peekDriveCallback,
+} from "@/lib/documents/drive-callback";
 import { triggerBrowserDownload } from "@/lib/documents/download";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
@@ -22,6 +25,7 @@ import { UnavailableState } from "@/components/states/UnavailableState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DialogFrame } from "@/components/ui/DialogFrame";
+import { Loader } from "@/components/ui/Loader";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
@@ -228,6 +232,7 @@ export function DocumentsPanel({
     useState<CatalogDocumentResponse | null>(null);
   const [hubTab, setHubTab] = useState<"sources" | "documents">("sources");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] =
     useState<(typeof SOURCE_FILTERS)[number]>("All sources");
@@ -239,6 +244,9 @@ export function DocumentsPanel({
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+  const [feedbackSeq, setFeedbackSeq] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorSeq, setUploadErrorSeq] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
   const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
@@ -247,10 +255,57 @@ export function DocumentsPanel({
   );
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const uploadErrorRef = useRef<HTMLDivElement>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const deleteRestoreRef = useRef<HTMLElement | null>(null);
+  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
 
   useEffect(() => {
     captureDriveCallback();
   }, []);
+
+  useEffect(() => {
+    if (feedback.kind === "idle" || dialogOpen) {
+      return;
+    }
+    feedbackRef.current?.focus();
+  }, [feedbackSeq, dialogOpen, feedback.kind]);
+
+  useEffect(() => {
+    if (uploadOpen && uploadError) {
+      uploadErrorRef.current?.focus();
+    }
+  }, [uploadOpen, uploadError, uploadErrorSeq]);
+
+  function announce(next: Exclude<ActionFeedback, { kind: "idle" }>) {
+    setFeedback(next);
+    setFeedbackSeq((seq) => seq + 1);
+  }
+
+  const clearFeedback = useCallback(() => {
+    setFeedback({ kind: "idle" });
+  }, []);
+
+  function announceUploadError(message: string) {
+    setUploadError(message);
+    setUploadErrorSeq((seq) => seq + 1);
+  }
+
+  const openUploadDialog = useCallback(() => {
+    clearFeedback();
+    setUploadError(null);
+    setUploadOpen(true);
+  }, [clearFeedback]);
+
+  const setPickerOpen = useCallback(
+    (next: boolean) => {
+      if (next) {
+        clearFeedback();
+      }
+      setDrivePickerOpen(next);
+    },
+    [clearFeedback],
+  );
 
   function retryAll() {
     if (settingsError) {
@@ -325,7 +380,6 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
-  const dialogOpen = pendingDelete !== null || uploadOpen;
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
@@ -385,33 +439,42 @@ export function DocumentsPanel({
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();
-    if (!constraints) {
+    if (!constraints || !uploadFile) {
       return;
     }
-    const validated = validateUpload(uploadFile, constraints);
+    const file = uploadFile;
+    setUploadError(null);
+    const validated = validateUpload(file, constraints);
     if (!validated.ok) {
-      setFeedback({ kind: "error", message: validated.message });
+      announceUploadError(validated.message);
       return;
     }
+    setUploadOpen(false);
+    setUploading(true);
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    clearFeedback();
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
-        file: uploadFile!,
+        file,
       });
-      setFeedback({
+      clearUploadInput();
+      announce({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
       });
-      clearUploadInput();
-      setUploadOpen(false);
       setHubTab("documents");
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      setActionError(error);
+      announceUploadError(
+        isBackendUnavailable(error)
+          ? BACKEND_UNAVAILABLE_MESSAGE
+          : actionErrorMessage(error),
+      );
+      setUploadOpen(true);
     } finally {
+      setUploading(false);
       setBusy(false);
     }
   }
@@ -423,18 +486,18 @@ export function DocumentsPanel({
     }
     const validated = validateUpload(replaceFile, constraints);
     if (!validated.ok) {
-      setFeedback({ kind: "error", message: validated.message });
+      announce({ kind: "error", message: validated.message });
       return;
     }
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    clearFeedback();
     try {
       const document = await replace({
         baseUrl: apiBaseUrl,
         sourceId: selected.source_id,
         file: replaceFile!,
       });
-      setFeedback({
+      announce({
         kind: "success",
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
       });
@@ -442,7 +505,12 @@ export function DocumentsPanel({
       setPreviewRefreshToken((token) => token + 1);
       await refresh();
     } catch (error) {
-      setActionError(error);
+      announce({
+        kind: "error",
+        message: isBackendUnavailable(error)
+          ? BACKEND_UNAVAILABLE_MESSAGE
+          : actionErrorMessage(error),
+      });
     } finally {
       setBusy(false);
     }
@@ -450,13 +518,14 @@ export function DocumentsPanel({
 
   async function onDelete(document: CatalogDocumentResponse) {
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    clearFeedback();
     try {
       await remove({
         baseUrl: apiBaseUrl,
         sourceId: document.source_id,
       });
-      setFeedback({
+      setPendingDelete(null);
+      announce({
         kind: "success",
         message: `Deleted document ${document.source_id}.`,
       });
@@ -468,9 +537,14 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
-      setActionError(error);
-    } finally {
       setPendingDelete(null);
+      announce({
+        kind: "error",
+        message: isBackendUnavailable(error)
+          ? BACKEND_UNAVAILABLE_MESSAGE
+          : actionErrorMessage(error),
+      });
+    } finally {
       setBusy(false);
     }
   }
@@ -590,6 +664,7 @@ export function DocumentsPanel({
         <div
           className="kern-settings-callout kern-settings-callout--error"
           role="alert"
+          hidden={dialogOpen}
         >
           {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
           {settingsError ? <p>{settingsError}</p> : null}
@@ -601,8 +676,11 @@ export function DocumentsPanel({
 
       {feedback.kind !== "idle" ? (
         <div
+          ref={feedbackRef}
           className={`kern-settings-callout kern-settings-callout--${feedback.kind === "success" ? "ok" : "error"}`}
-          role="status"
+          role={feedback.kind === "error" ? "alert" : "status"}
+          tabIndex={-1}
+          hidden={dialogOpen}
         >
           <p>{feedback.message}</p>
         </div>
@@ -619,7 +697,12 @@ export function DocumentsPanel({
           <h2>Connected sources</h2>
         </div>
         <div className="kern-source-grid">
-          <article className="kern-source-card">
+          <article className="kern-source-card" aria-busy={uploading}>
+            {uploading ? (
+              <div className="kern-source-busy-overlay">
+                <Loader label="Uploading files" size="sm" />
+              </div>
+            ) : null}
             <div className="kern-source-card-title">
               <div className="kern-source-name">
                 <span className="kern-source-icon">
@@ -656,7 +739,7 @@ export function DocumentsPanel({
               <Button
                 type="button"
                 disabled={busy || !constraints}
-                onClick={() => setUploadOpen(true)}
+                onClick={openUploadDialog}
               >
                 <UploadIcon />
                 Add files
@@ -679,7 +762,7 @@ export function DocumentsPanel({
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
-              onPickerOpenChange={setDrivePickerOpen}
+              onPickerOpenChange={setPickerOpen}
             />
           ) : null}
         </div>
@@ -706,7 +789,7 @@ export function DocumentsPanel({
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
-              onPickerOpenChange={setDrivePickerOpen}
+              onPickerOpenChange={setPickerOpen}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
@@ -837,6 +920,8 @@ export function DocumentsPanel({
                           disabled={busy || dialogOpen}
                           onClick={(event) => {
                             event.stopPropagation();
+                            clearFeedback();
+                            deleteRestoreRef.current = event.currentTarget;
                             setPendingDelete(doc);
                           }}
                         >
@@ -960,10 +1045,12 @@ export function DocumentsPanel({
       <DialogFrame
         open={uploadOpen}
         titleId="hub-upload-title"
+        descriptionId={uploadError ? "hub-upload-error" : undefined}
         panelClassName="kern-hub-upload-dialog"
         dismissDisabled={busy}
         onDismiss={() => {
           setUploadOpen(false);
+          setUploadError(null);
           clearUploadInput();
         }}
       >
@@ -974,6 +1061,17 @@ export function DocumentsPanel({
           Files become part of the shared document catalog. A system-managed
           source ID is assigned automatically.
         </p>
+        {uploadError ? (
+          <div
+            ref={uploadErrorRef}
+            id="hub-upload-error"
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+            tabIndex={-1}
+          >
+            <p>{uploadError}</p>
+          </div>
+        ) : null}
         <form className="kern-documents-form" onSubmit={onUpload}>
           <label className="kern-settings-field">
             <span>Document file</span>
@@ -986,6 +1084,9 @@ export function DocumentsPanel({
                 setUploadFile(event.target.files?.[0] ?? null);
               }}
             />
+            {uploadFile ? (
+              <p className="kern-settings-hint">Selected: {uploadFile.name}</p>
+            ) : null}
           </label>
           <div className="kern-dialog-actions">
             <Button
@@ -993,6 +1094,7 @@ export function DocumentsPanel({
               disabled={busy}
               onClick={() => {
                 setUploadOpen(false);
+                setUploadError(null);
                 clearUploadInput();
               }}
             >
@@ -1016,6 +1118,7 @@ export function DocumentsPanel({
         confirmLabel="Delete"
         tone="danger"
         busy={busy}
+        restoreFocusRef={deleteRestoreRef}
         onCancel={() => {
           setPendingDelete(null);
         }}
