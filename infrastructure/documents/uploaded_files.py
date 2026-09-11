@@ -44,12 +44,14 @@ SUPPORTED_SUFFIXES: frozenset[str] = frozenset(_FORMAT_BY_SUFFIX)
 
 # Preview/download media types keyed by the canonical content_format values
 # above — derived from that set so the two cannot drift.
-CONTENT_TYPE_BY_FORMAT: dict[str, str] = {
+_MEDIA_TYPE_BY_FORMAT = {
     "txt": "text/plain; charset=utf-8",
     "markdown": "text/plain; charset=utf-8",
     "pdf": "application/pdf",
 }
-assert set(CONTENT_TYPE_BY_FORMAT) == set(_FORMAT_BY_SUFFIX.values())
+CONTENT_TYPE_BY_FORMAT: dict[str, str] = {
+    fmt: _MEDIA_TYPE_BY_FORMAT[fmt] for fmt in set(_FORMAT_BY_SUFFIX.values())
+}
 
 # Separator between extracted PDF pages: a blank line, as between paragraphs.
 _PAGE_SEPARATOR = "\n\n"

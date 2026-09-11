@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDocumentCsp } from "../next.config";
-import { loadPublicEnv } from "@/lib/env";
+import { API_ORIGIN, buildDocumentCsp } from "@/lib/csp";
 import { SCAN_DIRS, WEB_ROOT, walk } from "./support/scan";
 
 const CLIENT_SEAM = join(WEB_ROOT, "lib", "api", "client.ts");
@@ -58,41 +57,40 @@ describe("http boundary", () => {
   });
 
   it("pins the exact CSP policy string including the validated API origin", () => {
-    const apiOrigin = new URL(
-      loadPublicEnv().NEXT_PUBLIC_API_BASE_URL,
-    ).origin;
     const expected = [
       "default-src 'self'",
       "base-uri 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
       "object-src 'none'",
-      "frame-src 'self' blob:",
+      "frame-src 'none'",
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
-      `connect-src 'self' ${apiOrigin}`,
+      `connect-src 'self' ${API_ORIGIN}`,
     ].join("; ");
 
-    expect(buildDocumentCsp(apiOrigin)).toBe(expected);
+    expect(buildDocumentCsp({ scriptSrc: "'self' 'unsafe-inline'" })).toBe(
+      expected,
+    );
     expect(expected).not.toContain("*");
     expect(expected).not.toContain(" null");
 
     const configText = readFileSync(NEXT_CONFIG, "utf8");
-    expect(configText).toContain("buildDocumentCsp");
-    expect(configText).toContain("loadPublicEnv");
+    expect(configText).not.toContain("Content-Security-Policy");
     expect(configText).toContain("X-Content-Type-Options");
     expect(configText).toContain("nosniff");
-    expect(configText).toContain("Referrer-Policy");
   });
 
-  it("ships middleware that nonces script-src and reuses env validation", () => {
+  it("ships middleware that nonces script-src and reuses shared CSP builder", () => {
     const text = readFileSync(MIDDLEWARE, "utf8");
-    expect(text).toContain("loadPublicEnv");
-    expect(text).toContain("script-src 'self' 'nonce-${nonce}'");
-    expect(text).toContain("base-uri 'self'");
-    expect(text).toContain("form-action 'self'");
-    expect(text).toContain("frame-ancestors 'none'");
+    expect(text).toContain('from "@/lib/csp"');
+    expect(text).toContain("buildDocumentCsp");
+    expect(text).toContain("API_ORIGIN");
+    expect(text).toContain("scriptSrc: `'self' 'nonce-${nonce}'`");
+    expect(text).toContain('requestHeaders.set("content-security-policy", csp)');
     expect(text).toContain("x-nonce");
+    expect(text).toContain("Content-Security-Policy");
+    expect(text).toContain("Referrer-Policy");
   });
 
   it("does not build viewer media URLs by concatenating apiBaseUrl", () => {

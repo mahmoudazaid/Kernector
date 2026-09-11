@@ -130,3 +130,17 @@ def test_pending_document_is_not_reported_as_error() -> None:
     assert projected.has_error is False
     assert projected.error_summary is None
     assert projected.status == "pending"
+    assert projected.has_stored_content is False
+
+
+def test_failed_row_without_blob_sentinel_reports_no_stored_content() -> None:
+    from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
+
+    projected = catalog_document_response(
+        _doc(
+            status=CatalogStatus.FAILED,
+            error=f"extractor failed; {MISSING_UPLOAD_BLOB_ERROR}",
+        )
+    )
+
+    assert projected.has_stored_content is False

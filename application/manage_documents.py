@@ -292,7 +292,9 @@ class ManageUploadedDocuments:
             status=CatalogStatus.READY,
             chunk_count=response.chunk_count,
         )
-        return self._finalize_ready(ready, payload, operation="replace")
+        return self._finalize_ready(
+            ready, payload, operation="replace", previous=previous
+        )
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
         """Return the hub catalog row for ``source_id``, if one exists."""
@@ -319,12 +321,13 @@ class ManageUploadedDocuments:
         return self._blob_store.get(reference)
 
     def delete(self, reference: SourceReference) -> None:
-        """Delete vector chunks, then the blob, then the catalog row.
+        """Delete vector chunks, then the blob (uploads only), then the catalog row.
 
         Missing chunks or rows are no-ops so retry converges. Catalog failure
         after a successful vector delete raises ``PartialDeleteFailure``.
         Blob unlink failures also raise ``PartialDeleteFailure`` so the catalog
-        row remains and a retry can reclaim the orphan.
+        row remains and a retry can reclaim the orphan. Google Drive rows skip
+        the blob store entirely.
         """
         try:
             self._vector_store_factory().delete_source(reference)
@@ -342,22 +345,23 @@ class ManageUploadedDocuments:
                 source_type=failure.source_type,
             )
             raise failure from error
-        try:
-            self._blob_store.delete(reference)
-        except Exception as error:
-            failure = PartialDeleteFailure(
-                reference=reference, delete_error=error
-            )
-            log_operation(
-                logger,
-                operation="delete",
-                outcome="error",
-                level=logging.ERROR,
-                error_type=type(failure).__name__,
-                source_id=failure.source_id,
-                source_type=failure.source_type,
-            )
-            raise failure from error
+        if reference.source_type == SourceType.KNOWLEDGE_DOCUMENT:
+            try:
+                self._blob_store.delete(reference)
+            except Exception as error:
+                failure = PartialDeleteFailure(
+                    reference=reference, delete_error=error
+                )
+                log_operation(
+                    logger,
+                    operation="delete",
+                    outcome="error",
+                    level=logging.ERROR,
+                    error_type=type(failure).__name__,
+                    source_id=failure.source_id,
+                    source_type=failure.source_type,
+                )
+                raise failure from error
         try:
             self._catalog.delete(reference)
         except Exception as error:
@@ -381,6 +385,7 @@ class ManageUploadedDocuments:
         payload: UploadPayload,
         *,
         operation: str,
+        previous: CatalogDocument | None = None,
     ) -> CatalogDocument:
         """Persist the original bytes, then write the READY catalog row.
 
@@ -389,7 +394,9 @@ class ManageUploadedDocuments:
         (searchable chunks) with ``MISSING_UPLOAD_BLOB_ERROR`` so the UI can
         distinguish "preview unavailable" from orphaned-chunk ``DEGRADED``.
         On replace, a failed put also removes any previous blob so stale
-        bytes are not served under the new name/type.
+        bytes are not served under the new name/type. If that compensating
+        delete also fails, the previous catalog row is restored so metadata
+        still matches the bytes on disk.
         """
         blob_ok = self._try_put_blob(
             ready.reference, payload, operation=operation
@@ -407,6 +414,9 @@ class ManageUploadedDocuments:
                     source_id=ready.reference.source_id,
                     source_type=ready.reference.source_type,
                 )
+                if previous is not None:
+                    self._restore_previous(previous)
+                    return previous
             ready = dataclasses.replace(
                 ready, error=MISSING_UPLOAD_BLOB_ERROR
             )
@@ -491,7 +501,23 @@ class ManageUploadedDocuments:
             self._catalog.upsert(failed)
         except Exception as catalog_error:
             raise PartialCreateFailure(ingest_error=error) from catalog_error
-        self._try_put_blob(failed.reference, payload, operation="create")
+        if not self._try_put_blob(failed.reference, payload, operation="create"):
+            annotated = dataclasses.replace(
+                failed,
+                error=_with_missing_blob_note(failed.error),
+            )
+            try:
+                self._catalog.upsert(annotated)
+            except Exception:
+                log_operation(
+                    logger,
+                    operation="create",
+                    outcome="error",
+                    level=logging.WARNING,
+                    error_type="CatalogError",
+                    source_id=failed.reference.source_id,
+                    source_type=failed.reference.source_type,
+                )
 
     def _recover_replace(
         self,
@@ -532,7 +558,25 @@ class ManageUploadedDocuments:
                 "replace did not complete and catalog could not record degraded "
                 "status; retry or delete required"
             ) from catalog_error
-        self._try_put_blob(degraded.reference, payload, operation="replace")
+        if not self._try_put_blob(
+            degraded.reference, payload, operation="replace"
+        ):
+            annotated = dataclasses.replace(
+                degraded,
+                error=_with_missing_blob_note(degraded.error),
+            )
+            try:
+                self._catalog.upsert(annotated)
+            except Exception:
+                log_operation(
+                    logger,
+                    operation="replace",
+                    outcome="error",
+                    level=logging.WARNING,
+                    error_type="CatalogError",
+                    source_id=degraded.reference.source_id,
+                    source_type=degraded.reference.source_type,
+                )
 
 
 def _vector_mutation_started(error: BaseException) -> bool:
@@ -543,3 +587,13 @@ def _vector_mutation_started(error: BaseException) -> bool:
 def _safe_error_summary(error: BaseException) -> str:
     message = str(error).strip() or type(error).__name__
     return message[:500]
+
+
+def _with_missing_blob_note(existing: str | None) -> str:
+    """Append the missing-blob sentinel without dropping the ingest summary."""
+    if not existing:
+        return MISSING_UPLOAD_BLOB_ERROR
+    if MISSING_UPLOAD_BLOB_ERROR in existing:
+        return existing
+    combined = f"{existing}; {MISSING_UPLOAD_BLOB_ERROR}"
+    return combined[:500]

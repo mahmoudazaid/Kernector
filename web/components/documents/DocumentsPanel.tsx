@@ -192,6 +192,9 @@ function PlannedIcon({
   );
 }
 
+const BACKEND_UNAVAILABLE_MESSAGE =
+  "Backend unavailable. Start the FastAPI server and try again.";
+
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -199,8 +202,11 @@ function actionErrorMessage(error: unknown): string {
   return "The request failed. Please try again later.";
 }
 
-const BACKEND_UNAVAILABLE_MESSAGE =
-  "Backend unavailable. Start the FastAPI server and try again.";
+function actionErrorText(error: unknown): string {
+  return isBackendUnavailable(error)
+    ? BACKEND_UNAVAILABLE_MESSAGE
+    : actionErrorMessage(error);
+}
 
 export function DocumentsPanel({
   apiBaseUrl,
@@ -430,11 +436,10 @@ export function DocumentsPanel({
   }
 
   const setActionError = useCallback((error: unknown) => {
-    if (isBackendUnavailable(error)) {
-      setFeedback({ kind: "error", message: BACKEND_UNAVAILABLE_MESSAGE });
-      return;
-    }
-    setFeedback({ kind: "error", message: actionErrorMessage(error) });
+    announce({
+      kind: "error",
+      message: actionErrorText(error),
+    });
   }, []);
 
   async function onUpload(event: FormEvent) {
@@ -467,11 +472,7 @@ export function DocumentsPanel({
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      announceUploadError(
-        isBackendUnavailable(error)
-          ? BACKEND_UNAVAILABLE_MESSAGE
-          : actionErrorMessage(error),
-      );
+      announceUploadError(actionErrorText(error));
       setUploadOpen(true);
     } finally {
       setUploading(false);
@@ -505,12 +506,7 @@ export function DocumentsPanel({
       setPreviewRefreshToken((token) => token + 1);
       await refresh();
     } catch (error) {
-      announce({
-        kind: "error",
-        message: isBackendUnavailable(error)
-          ? BACKEND_UNAVAILABLE_MESSAGE
-          : actionErrorMessage(error),
-      });
+      setActionError(error);
     } finally {
       setBusy(false);
     }
@@ -538,12 +534,7 @@ export function DocumentsPanel({
       await refresh();
     } catch (error) {
       setPendingDelete(null);
-      announce({
-        kind: "error",
-        message: isBackendUnavailable(error)
-          ? BACKEND_UNAVAILABLE_MESSAGE
-          : actionErrorMessage(error),
-      });
+      setActionError(error);
     } finally {
       setBusy(false);
     }
@@ -958,31 +949,39 @@ export function DocumentsPanel({
             </p>
             {!isDriveDocument(selected) ? (
               <div className="kern-documents-detail-actions">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  aria-label={`Preview ${selected.file_name}`}
-                  disabled={dialogOpen}
-                  onClick={() => {
-                    setFeedback({ kind: "idle" });
-                    setPreviewSourceId(selected.source_id);
-                  }}
-                >
-                  Preview
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  aria-label={`Download ${selected.file_name}`}
-                  disabled={downloadPendingId !== null || dialogOpen}
-                  onClick={() => {
-                    void onDownloadDocument(selected);
-                  }}
-                >
-                  {downloadPendingId === selected.source_id
-                    ? "Downloading…"
-                    : "Download"}
-                </Button>
+                {selected.has_stored_content ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      aria-label={`Preview ${selected.file_name}`}
+                      disabled={dialogOpen}
+                      onClick={() => {
+                        setFeedback({ kind: "idle" });
+                        setPreviewSourceId(selected.source_id);
+                      }}
+                    >
+                      Preview
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      aria-label={`Download ${selected.file_name}`}
+                      disabled={downloadPendingId !== null || dialogOpen}
+                      onClick={() => {
+                        void onDownloadDocument(selected);
+                      }}
+                    >
+                      {downloadPendingId === selected.source_id
+                        ? "Downloading…"
+                        : "Download"}
+                    </Button>
+                  </>
+                ) : (
+                  <p className="kern-settings-hint" role="status">
+                    Original file is unavailable for preview or download.
+                  </p>
+                )}
               </div>
             ) : null}
             {selected.error_summary ? (
@@ -993,7 +992,9 @@ export function DocumentsPanel({
                 <p>{selected.error_summary}</p>
               </div>
             ) : null}
-            {previewSourceId === selected.source_id && !isDriveDocument(selected) ? (
+            {previewSourceId === selected.source_id &&
+            !isDriveDocument(selected) &&
+            selected.has_stored_content ? (
               <DocumentViewer
                 sourceId={selected.source_id}
                 fileName={selected.file_name}

@@ -34,10 +34,12 @@ _CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox"
 _DOWNLOAD_FALLBACK_TYPE = "application/octet-stream"
 
 
-def _content_success_response(description: str) -> dict:
-    media_types = set(UPLOAD_CONTENT_TYPE_BY_FORMAT.values()) | {
-        _DOWNLOAD_FALLBACK_TYPE
-    }
+def _content_success_response(
+    description: str, *, include_octet_stream: bool = False
+) -> dict:
+    media_types = set(UPLOAD_CONTENT_TYPE_BY_FORMAT.values())
+    if include_octet_stream:
+        media_types.add(_DOWNLOAD_FALLBACK_TYPE)
     return {
         "description": description,
         "content": {
@@ -118,9 +120,8 @@ def _document_content_response(
         "Content-Disposition": _content_disposition(
             disposition, row.file_name
         ),
+        "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
     }
-    if for_preview:
-        headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
     return Response(
         content=bytes(payload.content),
         media_type=media_type,
@@ -243,7 +244,9 @@ def get_document_content(source_id: str, ops: DocumentOperationsDep) -> Response
     "/documents/{source_id}/download",
     response_class=Response,
     responses={
-        200: _content_success_response("Original document download"),
+        200: _content_success_response(
+            "Original document download", include_octet_stream=True
+        ),
         **problem_responses(404, 405, 422, 500),
     },
 )

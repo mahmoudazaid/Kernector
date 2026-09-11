@@ -79,14 +79,13 @@ def test_get_rejects_invalid_source_id_before_filesystem_access(
 
 
 @pytest.mark.parametrize("bad_source_id", ["..", ".", "a b", "a" * 65])
-def test_delete_rejects_invalid_source_id_before_filesystem_access(
+def test_delete_invalid_source_id_is_noop_before_filesystem_access(
     tmp_path: Path, bad_source_id: str
 ) -> None:
     root = tmp_path / "missing-root"
     store = FilesystemUploadBlobStore(root)
 
-    with pytest.raises(UploadBlobValidationError):
-        store.delete(_reference(bad_source_id))
+    store.delete(_reference(bad_source_id))
 
     assert not root.exists()
 
@@ -190,15 +189,17 @@ def test_lock_registry_does_not_evict_a_held_lock(tmp_path: Path) -> None:
 
     store = FilesystemUploadBlobStore(tmp_path / "uploads")
     path = store._path_for(_reference("held"))
-    lock_a = store._lock_for(path)
+    lock_a = store._acquire_lock(path)
     lock_a.acquire()
     try:
         for index in range(module._MAX_PATH_LOCKS + 5):
             other = store._path_for(_reference(f"doc-{index}"))
-            store._lock_for(other)
-        lock_b = store._lock_for(path)
+            store._acquire_lock(other)
+            store._release_lock(other)
+        lock_b = store._acquire_lock(path)
         assert lock_b is lock_a
         assert lock_b.locked()
         assert not lock_b.acquire(blocking=False)
     finally:
         lock_a.release()
+        store._release_lock(path)

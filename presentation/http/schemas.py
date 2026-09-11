@@ -479,11 +479,10 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
     """Project a catalog row; never serialize raw adapter ``error`` text."""
     from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
 
-    missing_blob = document.error == MISSING_UPLOAD_BLOB_ERROR
-    if missing_blob:
+    missing_blob = MISSING_UPLOAD_BLOB_ERROR in (document.error or "")
+    if missing_blob and document.status is CatalogStatus.READY:
         summary: str | None = _MISSING_BLOB_SUMMARY
         has_error = True
-        has_stored_content = False
     else:
         summary = (
             _DRIVE_ERROR_SUMMARY_BY_STATUS.get(document.status)
@@ -494,11 +493,11 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
             CatalogStatus.FAILED,
             CatalogStatus.DEGRADED,
         }
-        # Upload rows without the missing-blob sentinel are assumed to have
-        # (or never needed) durable originals; Drive rows are sync-managed.
-        has_stored_content = (
-            document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
-        )
+    has_stored_content = (
+        document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+        and not missing_blob
+        and document.status is not CatalogStatus.PENDING
+    )
     return CatalogDocumentResponse(
         source_id=document.reference.source_id,
         source_type=document.reference.source_type,

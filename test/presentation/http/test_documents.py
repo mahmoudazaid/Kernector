@@ -509,13 +509,12 @@ def test_delete_accepts_non_blank_ids_without_blob_charset_rule(
     assert [ref.source_id for ref in ledger["deleted"]] == [".."]
 
 
-def test_filesystem_delete_rejects_dotdot_without_touching_blob_root(
+def test_filesystem_delete_dotdot_is_noop_without_touching_blob_root(
     tmp_path: Path,
 ) -> None:
     from domain.knowledge import SourceReference, SourceType, UploadPayload
     from infrastructure.documents.upload_blob_store import (
         FilesystemUploadBlobStore,
-        UploadBlobValidationError,
     )
 
     blob_root = tmp_path / "blobs"
@@ -528,8 +527,7 @@ def test_filesystem_delete_rejects_dotdot_without_touching_blob_root(
         UploadPayload(file_name="ok.md", content=b"# ok"),
     )
 
-    with pytest.raises(UploadBlobValidationError):
-        store.delete(SourceReference("..", SourceType.KNOWLEDGE_DOCUMENT))
+    store.delete(SourceReference("..", SourceType.KNOWLEDGE_DOCUMENT))
 
     assert marker.read_bytes() == b"still here"
     assert (blob_root / "safe-id").is_file()

@@ -50,6 +50,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Reading headers opts the root into dynamic rendering so next-themes can
+  // receive the per-request CSP nonce. Middleware owns the policy; this is
+  // only the ThemeProvider hand-off.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" suppressHydrationWarning>

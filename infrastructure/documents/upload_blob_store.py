@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from contextlib import contextmanager
 import json
 import os
 import re
 import struct
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
@@ -36,7 +38,7 @@ class UploadBlobValidationError(UploadBlobError):
 class FilesystemUploadBlobStore:
     """Persist upload payloads as atomic flat files under one root."""
 
-    _locks: ClassVar[OrderedDict[str, threading.Lock]] = OrderedDict()
+    _locks: ClassVar[OrderedDict[str, tuple[threading.Lock, int]]] = OrderedDict()
     _locks_guard: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self, root: Path) -> None:
@@ -50,11 +52,10 @@ class FilesystemUploadBlobStore:
     def put(self, reference: SourceReference, payload: UploadPayload) -> None:
         """Store ``payload`` under ``reference``, replacing any existing blob."""
         final = self._path_for(reference)
-        lock = self._lock_for(final)
         temporary = final.with_name(
             f".{final.name}.tmp.{os.getpid()}.{threading.get_ident()}"
         )
-        with lock:
+        with self._path_lock(final):
             try:
                 if not self._root.exists():
                     self._root.mkdir(parents=True, exist_ok=True)
@@ -72,7 +73,7 @@ class FilesystemUploadBlobStore:
     def get(self, reference: SourceReference) -> UploadPayload | None:
         """Return the stored payload for ``reference``, or ``None`` when absent."""
         path = self._path_for(reference)
-        with self._lock_for(path):
+        with self._path_lock(path):
             try:
                 blob = path.read_bytes()
             except FileNotFoundError:
@@ -84,9 +85,16 @@ class FilesystemUploadBlobStore:
         return _unpack_payload(blob, path=path)
 
     def delete(self, reference: SourceReference) -> None:
-        """Remove the stored payload for ``reference``. Missing blobs are a no-op."""
-        path = self._path_for(reference)
-        with self._lock_for(path):
+        """Remove the stored payload for ``reference``. Missing blobs are a no-op.
+
+        References that cannot be mapped to a safe path are also a no-op so
+        catalog deletes stay idempotent for unknown or Drive-shaped ids.
+        """
+        try:
+            path = self._path_for(reference)
+        except UploadBlobValidationError:
+            return
+        with self._path_lock(path):
             try:
                 path.unlink(missing_ok=True)
             except OSError as error:
@@ -94,27 +102,50 @@ class FilesystemUploadBlobStore:
                     f"could not delete upload blob at {path}"
                 ) from error
 
-    def _lock_for(self, path: Path) -> threading.Lock:
+    @contextmanager
+    def _path_lock(self, path: Path) -> Iterator[None]:
+        lock = self._acquire_lock(path)
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
+            self._release_lock(path)
+
+    def _acquire_lock(self, path: Path) -> threading.Lock:
         key = str(path)
         with self._locks_guard:
-            lock = self._locks.get(key)
-            if lock is None:
+            entry = self._locks.get(key)
+            if entry is None:
                 while len(self._locks) >= _MAX_PATH_LOCKS:
                     evicted = False
-                    for candidate_key, candidate in list(self._locks.items()):
-                        if not candidate.locked():
+                    for candidate_key, (_candidate, refs) in list(
+                        self._locks.items()
+                    ):
+                        if refs == 0:
                             del self._locks[candidate_key]
                             evicted = True
                             break
                     if not evicted:
-                        # Every cached lock is held; grow past the cap rather
-                        # than returning a second lock for an in-flight path.
                         break
                 lock = threading.Lock()
-                self._locks[key] = lock
-            else:
-                self._locks.move_to_end(key)
+                self._locks[key] = (lock, 1)
+                return lock
+            lock, refs = entry
+            self._locks[key] = (lock, refs + 1)
+            self._locks.move_to_end(key)
             return lock
+
+    def _release_lock(self, path: Path) -> None:
+        key = str(path)
+        with self._locks_guard:
+            entry = self._locks.get(key)
+            if entry is None:
+                return
+            lock, refs = entry
+            refs = max(0, refs - 1)
+            self._locks[key] = (lock, refs)
+            self._locks.move_to_end(key)
 
     def _path_for(self, reference: SourceReference) -> Path:
         source_id = reference.source_id
