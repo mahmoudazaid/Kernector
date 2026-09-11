@@ -24,6 +24,7 @@ from application.contracts import (
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    MissingProviderCredentialsError,
 )
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -568,6 +569,82 @@ def test_agent_loop_flag_on_wires_agent_orchestrate(
     assert len(wired) == 1
     assert isinstance(wired[0], LangGraphToolAgent)
     assert isinstance(ask._ask, ToolAugmentedAsk)
+
+
+def test_agent_loop_missing_openrouter_key_raises_missing_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Composition-time guard: missing key is MissingProviderCredentialsError."""
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
+        build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+
+
+def test_agent_loop_validates_runtime_provider_override_not_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama override must not fail for a missing OpenRouter key."""
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setenv("PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    wired: list[object] = []
+
+    def _fake_agent_orchestrate(agent: object, **kwargs: object):
+        wired.append(agent)
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("orchestrate body not under test")
+
+        return orchestrate
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _fake_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(
+        load_settings(),
+        chat_model=_StubChat(),
+        provider="ollama",
+        model="llama3",
+    )
+
+    assert len(wired) == 1
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+
+
+def test_observing_chat_bind_tools_forwards_extra_options() -> None:
+    from composition.container import _ObservingChatOpenAI
+
+    class _Inner:
+        def __init__(self) -> None:
+            self.seen: tuple[object, ...] | None = None
+
+        def bind_tools(self, tools, *args, **kwargs):
+            self.seen = (list(tools), args, kwargs)
+            return self
+
+    inner = _Inner()
+    wrapped = _ObservingChatOpenAI(inner, recorder=None, model_name="m")
+    bound = wrapped.bind_tools(["t"], "x", tool_choice="required")
+    assert isinstance(bound, _ObservingChatOpenAI)
+    assert inner.seen == (["t"], ("x",), {"tool_choice": "required"})
+    with pytest.raises(AttributeError):
+        wrapped.stream("hi")  # type: ignore[attr-defined]
 
 
 def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(

@@ -65,6 +65,10 @@ class ConfigurationError(RuntimeError):
     """
 
 
+class MissingProviderCredentialsError(ConfigurationError):
+    """LLM provider credentials or endpoint required for chat/agent are missing."""
+
+
 class OllamaNotConfiguredError(ConfigurationError):
     """``OLLAMA_BASE_URL`` is absent from runtime settings."""
 

@@ -1907,6 +1907,9 @@ def build_tool_augmented_ask(
     chat_model: ChatModel | None = None,
     vector_store: VectorStore | None = None,
     prompt_repository: PromptRepository | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ) -> GroundedAsk:
     """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
 
@@ -1926,13 +1929,18 @@ def build_tool_augmented_ask(
         chat_model (ChatModel | None): Shared chat adapter; built when absent.
         vector_store (VectorStore | None): Optional shared vector store client.
         prompt_repository (PromptRepository | None): Optional shared prompts.
+        provider (str | None): Per-request provider override (same as chat model).
+        model (str | None): Per-request model override.
+        base_url (str | None): Per-request Ollama base URL override.
 
     Returns:
         GroundedAsk: ``CorrelatedAsk`` around ``AskKnowledge`` or
         ``ToolAugmentedAsk``.
     """
     if chat_model is None:
-        chat_model = build_chat_model(settings)
+        chat_model = build_chat_model(
+            settings, provider=provider, model=model, base_url=base_url
+        )
     if not software_delivery_tools_enabled(settings):
         ask = build_ask_knowledge(
             settings,
@@ -1964,14 +1972,22 @@ def build_tool_augmented_ask(
     )
 
     if settings.domain_tools.agent_loop:
+        from application.untrusted_text import agent_tool_system_prompt
         from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
-        _require_agent_provider_config(settings)
+        _require_agent_provider_config(
+            settings, provider=provider, model=model, base_url=base_url
+        )
         orchestrate = build_agent_orchestrate(
             LangGraphToolAgent(
                 model_factory=_software_delivery_agent_model_factory(
-                    settings, recorder=model_calls
-                )
+                    settings,
+                    recorder=model_calls,
+                    provider=provider,
+                    model=model,
+                    base_url=base_url,
+                ),
+                system_prompt=agent_tool_system_prompt(),
             )
         )
     else:
@@ -2026,40 +2042,43 @@ def build_tool_augmented_ask(
     )
 
 
-def _require_agent_provider_config(settings: Settings) -> None:
-    """Fail fast at composition time with actionable ConfigurationError.
+def _require_agent_provider_config(
+    settings: Settings,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> None:
+    """Fail fast at composition time using the same builders as live chat.
 
-    Mirrors ``_build_openrouter`` / ``_build_ollama`` so a missing key is not
-    misdiagnosed later as a connectivity ``ProviderError`` inside the agent.
+    Validates the *effective* provider (per-request override when set), so an
+    Ollama-selected turn is not rejected for a missing OpenRouter key.
     """
-    from infrastructure.llm.openrouter import _require_chat_config
+    from application.errors import MissingProviderCredentialsError
 
-    if settings.provider == "ollama":
-        if not settings.ollama.base_url:
-            raise ConfigurationError(
-                "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
-            )
-        if not settings.ollama.model:
-            raise ConfigurationError(
-                "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
-            )
-        return
+    effective = (provider or settings.provider).lower()
     try:
-        _require_chat_config(settings.openrouter)
-    except ChatConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+        if effective == "ollama":
+            _build_ollama(settings, model, base_url)
+        else:
+            _build_openrouter(settings, model, None)
+    except ConfigurationError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
 
 
 def _software_delivery_agent_model_factory(
     settings: Settings,
     *,
     recorder: RecordingChatModel | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ):
     """Return a LangChain chat model factory with ``bind_tools`` for the agent.
 
     Credentials are validated by ``_require_agent_provider_config`` before this
-    factory is wired. Invoke failures become ``ProviderError``; optional
-    ``recorder`` observations reach RunMeta (including failed turns' latency).
+    factory is wired. Uses the same effective provider/model/base_url as the
+    request's ``ChatModel``.
     """
 
     def factory(**_kwargs: object):
@@ -2067,33 +2086,42 @@ def _software_delivery_agent_model_factory(
 
         from domain.errors import ProviderError
 
-        if settings.provider == "ollama":
-            base = (settings.ollama.base_url or "").rstrip("/")
+        effective = (provider or settings.provider).lower()
+        if effective == "ollama":
+            config = settings.ollama
+            if model:
+                config = replace(config, model=model)
+            if base_url:
+                config = replace(config, base_url=base_url)
+            base = (config.base_url or "").rstrip("/")
             try:
                 inner = ChatOpenAI(
-                    model=settings.ollama.model,
+                    model=config.model,
                     api_key="ollama",
                     base_url=f"{base}/v1",
-                    timeout=settings.ollama.timeout,
+                    timeout=config.timeout,
                 )
             except Exception as exc:
                 raise ProviderError(
                     "The tool-calling agent provider could not be reached."
                 ) from exc
-            model_name = settings.ollama.model
+            model_name = config.model
         else:
+            config = settings.openrouter
+            if model:
+                config = replace(config, model=model)
             try:
                 inner = ChatOpenAI(
-                    model=settings.openrouter.model,
-                    api_key=settings.openrouter.api_key,
-                    base_url=settings.openrouter.base_url,
-                    timeout=settings.openrouter.timeout,
+                    model=config.model,
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    timeout=config.timeout,
                 )
             except Exception as exc:
                 raise ProviderError(
                     "The tool-calling agent provider could not be reached."
                 ) from exc
-            model_name = settings.openrouter.model
+            model_name = config.model
 
         return _ObservingChatOpenAI(
             inner, recorder=recorder, model_name=model_name
@@ -2166,10 +2194,6 @@ class _ObservingChatOpenAI:
                         error_type=error_type,
                     )
                 )
-
-    def __getattr__(self, name: str) -> object:
-        return getattr(self._inner, name)
-
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
     """Reachability check, with the timeout taken from settings."""

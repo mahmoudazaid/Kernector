@@ -13,6 +13,7 @@ from application.errors import (
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
+    MissingProviderCredentialsError,
     UploadTooLargeError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
@@ -52,6 +53,13 @@ from presentation.http.errors import (
         (DomainValidationError("invariant"), 500, "operational_error"),
         (InsufficientEvidenceError("no hits"), 422, "insufficient_evidence"),
         (ConfigurationError("missing key"), 500, "configuration_error"),
+        (
+            MissingProviderCredentialsError(
+                "Missing OPENROUTER_API_KEY. Add it to .env before chatting."
+            ),
+            500,
+            "missing_provider_credentials",
+        ),
         (
             GoogleDriveNotConfiguredError("missing folder"),
             409,
@@ -285,6 +293,14 @@ def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> 
     assert "GOOGLE_DRIVE_FOLDER_ID" not in unconfigured.detail
     assert generic.status == 500
     assert generic.code == "configuration_error"
+
+
+def test_missing_provider_credentials_keeps_actionable_detail() -> None:
+    message = "Missing OPENROUTER_API_KEY. Add it to .env before chatting."
+    problem = problem_from_exception(MissingProviderCredentialsError(message))
+    assert problem.code == "missing_provider_credentials"
+    assert problem.detail == message
+    assert problem.status == 500
 
 
 def test_google_drive_oauth_errors_are_not_swallowed_by_configuration_error() -> None:

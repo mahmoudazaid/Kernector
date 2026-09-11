@@ -14,6 +14,7 @@ from application.errors import (
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
+    MissingProviderCredentialsError,
     OllamaNotConfiguredError,
     UploadTooLargeError,
 )
@@ -41,6 +42,9 @@ from presentation.failure_messages import (
 )
 
 _CONFIGURATION_FAILURE_DETAIL = "The service is not configured correctly."
+_MISSING_PROVIDER_CREDENTIALS_DETAIL = (
+    "Required LLM provider credentials are missing. Check server configuration."
+)
 _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
 _INTERNAL_FAILURE_DETAIL = "An unexpected error occurred."
 _VALIDATION_TITLE = "Request validation failed"
@@ -314,6 +318,16 @@ def problem_from_exception(
             title="Connector sync failed",
             status=502,
             detail="The Google Drive connector sync failed.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, MissingProviderCredentialsError):
+        detail = str(exc).strip() or _MISSING_PROVIDER_CREDENTIALS_DETAIL
+        return _problem(
+            code="missing_provider_credentials",
+            title="Missing provider credentials",
+            status=500,
+            detail=detail,
             instance=instance,
             request_id=request_id,
         )

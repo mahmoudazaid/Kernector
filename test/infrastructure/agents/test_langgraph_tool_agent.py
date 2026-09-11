@@ -40,8 +40,12 @@ class _ScriptedChat:
         self.bound_tools: list[object] | None = None
         self.invocations = 0
 
-    def bind_tools(self, tools: Sequence[object]) -> _ScriptedChat:
+    def bind_tools(
+        self, tools: Sequence[object], *args: object, **kwargs: object
+    ) -> _ScriptedChat:
         self.bound_tools = list(tools)
+        self.bind_args = args
+        self.bind_kwargs = kwargs
         return self
 
     def invoke(self, _messages: object, **_kwargs: object) -> object:
@@ -120,7 +124,7 @@ def test_langgraph_tool_agent_accepts_list_shaped_final_content() -> None:
     assert result.content == "final answer here"
 
 
-def test_langgraph_tool_agent_raises_on_step_limit() -> None:
+def test_langgraph_tool_agent_stops_and_reports_truncated_on_step_limit() -> None:
     from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
     tool = _RecordingTool()
@@ -137,6 +141,8 @@ def test_langgraph_tool_agent_raises_on_step_limit() -> None:
     result = agent.run("goal", [tool], max_steps=3)
 
     assert result.truncated is True
+    assert result.steps == 3
+    assert chat.invocations == 3
     assert "step limit" in result.content
     assert tool.calls  # partial work was kept at the tool layer
 
@@ -144,7 +150,7 @@ def test_langgraph_tool_agent_raises_on_step_limit() -> None:
 def test_langgraph_tool_agent_normalises_tool_call_ids_on_assistant_message() -> None:
     from infrastructure.agents.langgraph_tool_agent import (
         LangGraphToolAgent,
-        _with_normalised_tool_call_ids,
+        _with_normalised_tool_calls,
     )
     from langchain_core.messages import AIMessage
 
@@ -152,7 +158,7 @@ def test_langgraph_tool_agent_normalises_tool_call_ids_on_assistant_message() ->
         content="",
         tool_calls=[{"name": "lookup", "args": {}, "id": None}],
     )
-    normalised = _with_normalised_tool_call_ids(message)
+    normalised = _with_normalised_tool_calls(message)
     assert normalised.tool_calls[0]["id"]  # type: ignore[index]
     assert normalised.tool_calls[0]["id"] != None  # noqa: E711
 
@@ -166,6 +172,41 @@ def test_langgraph_tool_agent_normalises_tool_call_ids_on_assistant_message() ->
     agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
     result = agent.run("goal", [tool], max_steps=3)
     assert result.content == "ok"
+
+
+def test_langgraph_tool_agent_normalises_missing_tool_name_before_history() -> None:
+    from infrastructure.agents.langgraph_tool_agent import _with_normalised_tool_calls
+    from langchain_core.messages import AIMessage
+
+    bad = AIMessage.model_construct(
+        content="",
+        tool_calls=[{"args": {}, "id": "x"}],
+        type="ai",
+    )
+    normalised = _with_normalised_tool_calls(bad)
+    assert normalised.tool_calls[0]["name"] == "unknown"  # type: ignore[index]
+
+
+def test_scripted_chat_bind_tools_forwards_extra_options() -> None:
+    chat = _ScriptedChat([_ai_text("done")])
+    chat.bind_tools([], "extra", tool_choice="auto", parallel_tool_calls=False)
+    assert chat.bind_args == ("extra",)
+    assert chat.bind_kwargs == {
+        "tool_choice": "auto",
+        "parallel_tool_calls": False,
+    }
+
+
+def test_langgraph_tool_agent_blank_final_is_soft_truncated() -> None:
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    chat = _ScriptedChat([_ai_text("")])
+    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+
+    result = agent.run("goal", [_RecordingTool()], max_steps=3)
+
+    assert result.truncated is True
+    assert "without a final answer" in result.content
 
 
 def test_langgraph_tool_agent_unknown_tool_returns_tool_message() -> None:
