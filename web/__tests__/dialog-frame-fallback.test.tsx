@@ -25,17 +25,25 @@ vi.mock("motion/react", () => {
     const onExit = useRef(onExitComplete);
     onExit.current = onExitComplete;
     const exitTimer = useRef<number | null>(null);
+    const contentOpen = hasContent(children);
+
     useEffect(() => {
-      if (hasContent(children)) {
+      if (contentOpen) {
+        setShown(children);
+      }
+    }, [contentOpen, children]);
+
+    useEffect(() => {
+      if (contentOpen) {
         if (exitTimer.current != null) {
           window.clearTimeout(exitTimer.current);
           exitTimer.current = null;
         }
-        setShown(children);
         return;
       }
       // Keep the exiting panel mounted past RESTORE_FALLBACK_MS so the timer
-      // races while focus is still inside the panel.
+      // races while focus is still inside the panel. Keyed only on contentOpen
+      // so parent re-renders during exit do not re-arm the hold.
       exitTimer.current = window.setTimeout(() => {
         exitTimer.current = null;
         setShown(null);
@@ -46,7 +54,8 @@ vi.mock("motion/react", () => {
           window.clearTimeout(exitTimer.current);
         }
       };
-    }, [children]);
+    }, [contentOpen]);
+
     return <>{shown}</>;
   }
 

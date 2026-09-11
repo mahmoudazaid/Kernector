@@ -240,7 +240,6 @@ export function DocumentsPanel({
   const uploadErrorRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const deleteRestoreRef = useRef<HTMLElement | null>(null);
-  const announcedSeqRef = useRef(0);
   const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
 
   useEffect(() => {
@@ -248,14 +247,9 @@ export function DocumentsPanel({
   }, []);
 
   useEffect(() => {
-    if (
-      feedback.kind === "idle" ||
-      dialogOpen ||
-      announcedSeqRef.current === feedbackSeq
-    ) {
+    if (feedback.kind === "idle" || dialogOpen) {
       return;
     }
-    announcedSeqRef.current = feedbackSeq;
     feedbackRef.current?.focus();
   }, [feedbackSeq, dialogOpen, feedback.kind]);
 
@@ -506,11 +500,8 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
-      // Announce while the confirm is still open so dialogOpen stays in the
-      // announce-effect dependency graph; await breaks the React 18 batch.
-      announce({ kind: "error", message: actionErrorMessage(error) });
-      await Promise.resolve();
       setPendingDelete(null);
+      announce({ kind: "error", message: actionErrorMessage(error) });
     } finally {
       setBusy(false);
     }

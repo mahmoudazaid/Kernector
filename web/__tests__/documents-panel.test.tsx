@@ -518,7 +518,7 @@ describe("DocumentsPanel", () => {
     expect(document.activeElement).toBe(deleteButton);
   });
 
-  it("focuses feedback announced while a dialog was open once the dialog closes", async () => {
+  it("focuses the page alert after a failed delete", async () => {
     const user = userEvent.setup();
     const remove = vi.fn().mockRejectedValue(
       new ApiError({
@@ -547,16 +547,10 @@ describe("DocumentsPanel", () => {
       within(failDialog).getByRole("button", { name: /^delete$/i }),
     );
 
-    // announce-while-open + dialogOpen in the effect deps: without dialogOpen,
-    // focus never lands after the confirm closes.
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/document operation failed/i);
     expect(document.activeElement).toBe(alert);
 
-    // Second dialog cycle: clearFeedback on open removes the banner; restore
-    // lands on Add files. Without announcedSeqRef, a surviving banner at the
-    // same seq would steal focus on close — clearFeedback makes that N/A here,
-    // but dialogOpen is pinned by the assertion above.
     await user.click(screen.getByRole("tab", { name: /sources/i }));
     const addFiles = screen.getByRole("button", { name: /add files/i });
     await user.click(addFiles);

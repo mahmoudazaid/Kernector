@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { DialogFrame } from "@/components/ui/DialogFrame";
+import { DialogFrame, RESTORE_FALLBACK_MS } from "@/components/ui/DialogFrame";
 
 function Harness() {
   const [open, setOpen] = useState(true);
@@ -218,33 +218,54 @@ describe("DialogFrame", () => {
 
   it("clears the fallback timer when exit completes", async () => {
     const user = userEvent.setup();
+    const fallbackIds = new Set<number>();
+    const realSetTimeout = window.setTimeout.bind(window);
+    const setSpy = vi.spyOn(window, "setTimeout").mockImplementation(((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      const id = realSetTimeout(handler, delay, ...(args as []));
+      if (delay === RESTORE_FALLBACK_MS) {
+        fallbackIds.add(id as unknown as number);
+      }
+      return id;
+    }) as typeof setTimeout);
     const clearSpy = vi.spyOn(window, "clearTimeout");
-    function Harness() {
-      const [open, setOpen] = useState(false);
-      return (
-        <>
-          <button type="button" onClick={() => setOpen(true)}>
-            Open
-          </button>
-          <DialogFrame
-            open={open}
-            titleId="clear-title"
-            onDismiss={() => setOpen(false)}
-          >
-            <h2 id="clear-title">Panel</h2>
-          </DialogFrame>
-        </>
-      );
+    try {
+      function Harness() {
+        const [open, setOpen] = useState(false);
+        return (
+          <>
+            <button type="button" onClick={() => setOpen(true)}>
+              Open
+            </button>
+            <DialogFrame
+              open={open}
+              titleId="clear-title"
+              onDismiss={() => setOpen(false)}
+            >
+              <h2 id="clear-title">Panel</h2>
+            </DialogFrame>
+          </>
+        );
+      }
+      render(<Harness />);
+      await user.click(screen.getByRole("button", { name: /^open$/i }));
+      clearSpy.mockClear();
+      fallbackIds.clear();
+      await user.click(screen.getByRole("button", { name: /dismiss dialog/i }));
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      expect(fallbackIds.size).toBeGreaterThan(0);
+      for (const id of fallbackIds) {
+        expect(clearSpy).toHaveBeenCalledWith(id);
+      }
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
     }
-    render(<Harness />);
-    await user.click(screen.getByRole("button", { name: /^open$/i }));
-    clearSpy.mockClear();
-    await user.click(screen.getByRole("button", { name: /dismiss dialog/i }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(clearSpy).toHaveBeenCalled();
-    clearSpy.mockRestore();
   });
 
   it("restores focus when the frame unmounts before exit completes", async () => {

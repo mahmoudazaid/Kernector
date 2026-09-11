@@ -116,7 +116,10 @@ export function DialogFrame({
   children,
 }: DialogFrameProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  /** Survives host-ref detach on unmount; cleared when restore is consumed. */
+  /** Survives host-ref detach on unmount; cleared when restore is consumed.
+   * Defensive: outcome matches panelRef on every reachable path today (detached
+   * nodes are never document.activeElement), but keeps arm-time identity after
+   * React nulls the host ref and avoids an eslint-disable on the cleanup read. */
   const panelNodeRef = useRef<HTMLDivElement | null>(null);
   const backdropRef = useRef<HTMLButtonElement | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -134,6 +137,13 @@ export function DialogFrame({
   const exitingPanelRef = useRef<HTMLElement | null>(null);
   const restoreFallbackTimerRef = useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
+
+  const setPanelNode = useCallback((node: HTMLDivElement | null) => {
+    panelRef.current = node;
+    if (node) {
+      panelNodeRef.current = node;
+    }
+  }, []);
 
   const clearRestoreFallbackTimer = useCallback(() => {
     if (restoreFallbackTimerRef.current != null) {
@@ -298,12 +308,7 @@ export function DialogFrame({
           transition={reduceMotion ? FADE_ONLY : PANEL_SPRING}
         >
           <div
-            ref={(node) => {
-              panelRef.current = node;
-              if (node) {
-                panelNodeRef.current = node;
-              }
-            }}
+            ref={setPanelNode}
             className={["kern-dialog", panelClassName]
               .filter(Boolean)
               .join(" ")}
