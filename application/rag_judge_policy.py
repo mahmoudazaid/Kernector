@@ -10,8 +10,6 @@ from application.evaluation_contracts import EvalCase, EvalCitationLabel
 from application.observed_rag import RagObservation
 from application.untrusted_text import (
     EVAL_BOUNDARY,
-    UNTRUSTED_CLOSE,
-    UNTRUSTED_OPEN,
     wrap_untrusted,
 )
 from domain.knowledge import ScoredChunk
@@ -76,11 +74,6 @@ _METRIC_SYSTEM: dict[str, str] = {
 
 class JudgePayloadTooLargeError(ApplicationValidationError):
     """The composed Judge prompt exceeded the documented size bound."""
-
-
-def _defang_untrusted(text: str) -> str:
-    """Neutralise Judge delimiters so corpus text cannot close the block early."""
-    return EVAL_BOUNDARY.defang(text)
 
 
 def metric_system_prompt(metric_id: str) -> str:

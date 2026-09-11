@@ -58,6 +58,11 @@ def test_missing_base_url_raises_config_error() -> None:
         OllamaChat(_settings(base_url=None))
 
 
+def test_missing_model_raises_config_error() -> None:
+    with pytest.raises(OllamaConfigError, match="OLLAMA_MODEL"):
+        OllamaChat(_settings(model=None))
+
+
 def test_complete_returns_ask_result_from_injected_post() -> None:
     post = _RecordingPost(
         _FakeResponse(

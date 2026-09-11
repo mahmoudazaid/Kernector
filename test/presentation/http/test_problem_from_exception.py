@@ -295,12 +295,16 @@ def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> 
     assert generic.code == "configuration_error"
 
 
-def test_missing_provider_credentials_keeps_actionable_detail() -> None:
+def test_missing_provider_credentials_uses_fixed_safe_detail() -> None:
     message = "Missing OPENROUTER_API_KEY. Add it to .env before chatting."
     problem = problem_from_exception(MissingProviderCredentialsError(message))
     assert problem.code == "missing_provider_credentials"
-    assert problem.detail == message
+    assert problem.detail == (
+        "Required LLM provider credentials are missing. Check server configuration."
+    )
     assert problem.status == 500
+    assert "OPENROUTER_API_KEY" not in problem.detail
+    assert ".env" not in problem.detail
 
 
 def test_google_drive_oauth_errors_are_not_swallowed_by_configuration_error() -> None:

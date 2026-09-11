@@ -25,10 +25,6 @@ from domain.ports import Tool
 _CONNECTION_FAILURE_MESSAGE = "The tool-calling agent provider could not be reached."
 _STEP_LIMIT_CONTENT = "Stopped after reaching the step limit."
 _EMPTY_FINAL_MESSAGE = "The agent finished without a final answer."
-_DEFAULT_SYSTEM_PROMPT = (
-    "You are a tool-calling agent. Use the bound tools when needed, "
-    "then answer the goal with a concise final message."
-)
 
 
 class _ChatModelLike(Protocol):
@@ -66,22 +62,22 @@ class LangGraphToolAgent:
     """Minimal ReAct-style ``StateGraph`` behind ``ToolCallingAgent``.
 
     The graph is compiled per ``run`` with closures over that turn's model and
-    tools. Composition injects ``system_prompt`` so untrusted-marker wording stays
-    owned by application/composition, not hardcoded here.
+    tools. ``system_prompt`` is required so callers always supply trust-marker
+    wording (owned by application/composition).
 
     Args:
         model_factory (_ModelFactory | None): Injectable chat-model factory.
-        system_prompt (str | None): System message for the agent turn.
+        system_prompt (str): System message for the agent turn.
     """
 
     def __init__(
         self,
         *,
+        system_prompt: str,
         model_factory: _ModelFactory | None = None,
-        system_prompt: str | None = None,
     ) -> None:
         self._model_factory = model_factory or _default_model_factory
-        self._system_prompt = system_prompt or _DEFAULT_SYSTEM_PROMPT
+        self._system_prompt = system_prompt
 
     def run(
         self,
@@ -142,8 +138,19 @@ class LangGraphToolAgent:
                 bind_name = call.get("name")
                 if not isinstance(bind_name, str) or not bind_name.strip():
                     bind_name = "unknown"
-                args = call.get("args") or {}
                 call_id = _tool_call_id(call, index)
+                if call.get("error"):
+                    outputs.append(
+                        ToolMessage(
+                            content=(
+                                "Tool call was invalid and could not be parsed."
+                            ),
+                            name=bind_name,
+                            tool_call_id=call_id,
+                        )
+                    )
+                    continue
+                args = call.get("args") or {}
                 tool = tools_by_bind_name.get(bind_name)
                 if tool is None:
                     available = ", ".join(sorted(tools_by_bind_name))
@@ -213,21 +220,30 @@ class LangGraphToolAgent:
             )
         content = _final_text(final_state["messages"])
         if content is None:
+            # Soft stop so callers keep completed tool outcomes; not a step-limit.
             return AgentTurnResult(
-                content=_EMPTY_FINAL_MESSAGE, steps=steps, truncated=True
+                content=_EMPTY_FINAL_MESSAGE, steps=steps, truncated=False
             )
         return AgentTurnResult(content=content, steps=steps, truncated=False)
 
 
 def _with_normalised_tool_calls(message: object) -> object:
-    """Ensure assistant tool_calls are serialisable (name/args/id always set)."""
+    """Ensure assistant tool_calls are serialisable; fold invalid_tool_calls in.
+
+    LangChain routes unparseable tool arguments into ``invalid_tool_calls``, but
+    the OpenAI wire format still echoes those ids on the next turn. Fold them
+    into ``tool_calls`` (and clear ``invalid_tool_calls``) so ``call_tools``
+    always emits a matching ``ToolMessage``.
+    """
     if not isinstance(message, AIMessage):
         return message
-    tool_calls = getattr(message, "tool_calls", None) or ()
-    if not tool_calls:
+    tool_calls = list(getattr(message, "tool_calls", None) or ())
+    invalid_calls = list(getattr(message, "invalid_tool_calls", None) or ())
+    if not tool_calls and not invalid_calls:
         return message
+
     normalised: list[dict[str, object]] = []
-    changed = False
+    changed = bool(invalid_calls)
     for index, call in enumerate(tool_calls):
         if not isinstance(call, Mapping):
             normalised.append(
@@ -243,14 +259,52 @@ def _with_normalised_tool_calls(message: object) -> object:
         if "args" not in call_dict or call_dict["args"] is None:
             call_dict["args"] = {}
             changed = True
+        elif not isinstance(call_dict["args"], Mapping):
+            call_dict["args"] = {}
+            changed = True
         new_id = _tool_call_id(call_dict, index)
         if call_dict.get("id") != new_id:
             call_dict["id"] = new_id
             changed = True
         normalised.append(call_dict)
+
+    base_index = len(normalised)
+    for offset, call in enumerate(invalid_calls):
+        index = base_index + offset
+        if isinstance(call, Mapping):
+            raw_name = call.get("name")
+            name = (
+                raw_name.strip()
+                if isinstance(raw_name, str) and raw_name.strip()
+                else "unknown"
+            )
+            call_id = _tool_call_id(call, index)
+            error = call.get("error")
+            # Preserve id/name so call_tools can reply; args stay empty.
+            normalised.append(
+                {
+                    "name": name,
+                    "args": {},
+                    "id": call_id,
+                    "type": "tool_call",
+                    **({"error": error} if error else {}),
+                }
+            )
+        else:
+            normalised.append(
+                {
+                    "name": "unknown",
+                    "args": {},
+                    "id": _tool_call_id({}, index),
+                    "type": "tool_call",
+                }
+            )
+
     if not changed:
         return message
-    return message.model_copy(update={"tool_calls": normalised})
+    return message.model_copy(
+        update={"tool_calls": normalised, "invalid_tool_calls": []}
+    )
 
 
 def _tool_call_id(call: Mapping[str, object], index: int) -> str:

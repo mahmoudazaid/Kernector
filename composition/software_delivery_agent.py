@@ -29,9 +29,6 @@ _FIXED_ARGS_NOTE = (
 _EXPORT_BEFORE_GENERATE = (
     "Generate test cases first before exporting Markdown."
 )
-_COULD_NOT_GENERATE = (
-    "Could not generate test cases from the evidence bundle."
-)
 _TRUNCATED_NOTE = " The agent stopped early before completing the requested tools."
 
 
@@ -65,7 +62,15 @@ def build_agent_orchestrate(
     *,
     max_steps: int = _DEFAULT_MAX_STEPS,
 ) -> Orchestrate:
-    """Return an ``orchestrate`` callable backed by ``agent``."""
+    """Return an ``orchestrate`` callable backed by ``agent``.
+
+    Args:
+        agent (ToolCallingAgent): Port that runs the tool-calling loop.
+        max_steps (int): Hard model-step cap forwarded to the agent.
+
+    Returns:
+        Orchestrate: Callable matching the Software Delivery chat orchestrate seam.
+    """
     run_agent = RunToolAgent(agent)
 
     def orchestrate(
@@ -228,32 +233,23 @@ def _summary_from_outcomes(
                 "Scored software-delivery risk from the evidence bundle, "
                 "but could not generate test cases."
             )
-        elif not outcomes:
-            summary = "No software-delivery tools were invoked."
         else:
-            summary = _COULD_NOT_GENERATE
-        if truncated:
-            summary = summary + _TRUNCATED_NOTE
-        return summary
-
-    if has_risk and has_generate and has_export:
-        intent = SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+            summary = "No software-delivery tools were invoked."
+    elif has_risk and has_generate and has_export:
+        summary = orchestration_summary(
+            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+        )
     elif has_risk and has_generate:
-        intent = SoftwareDeliveryIntent.RISK_SCORE_GENERATE_TESTS
+        summary = orchestration_summary(
+            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_TESTS
+        )
     elif has_risk:
-        intent = SoftwareDeliveryIntent.RISK_SCORE
+        summary = orchestration_summary(SoftwareDeliveryIntent.RISK_SCORE)
     elif not outcomes:
         summary = "No software-delivery tools were invoked."
-        if truncated:
-            summary = summary + _TRUNCATED_NOTE
-        return summary
     else:
         summary = "Completed a partial software-delivery tool run."
-        if truncated:
-            summary = summary + _TRUNCATED_NOTE
-        return summary
 
-    summary = orchestration_summary(intent)
     if truncated:
         summary = summary + _TRUNCATED_NOTE
     return summary
@@ -272,7 +268,9 @@ def _agent_goal(
             f"[source_type={ref.source_type} source_id={ref.source_id}]\n"
             f"{hit.chunk.content[:400]}"
         )
-        snippets.append(AGENT_BOUNDARY.wrap("evidence", payload))
+        snippets.append(
+            AGENT_BOUNDARY.wrap("evidence", payload, include_notice=True)
+        )
     evidence_block = "\n".join(snippets) if snippets else "(no snippets)"
     if generate_tests:
         task = (
@@ -282,8 +280,7 @@ def _agent_goal(
     else:
         task = "Score software-delivery risk using the bound risk tool."
     return (
-        f"{AGENT_BOUNDARY.notice}\n\n"
-        f"{AGENT_BOUNDARY.wrap('target', target)}\n\n"
+        f"{AGENT_BOUNDARY.wrap('target', target, include_notice=True)}\n\n"
         f"Task: {task}\n\n"
         f"Evidence snippets:\n{evidence_block}"
     )

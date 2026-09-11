@@ -25,6 +25,8 @@ from application.errors import (
     GoogleDriveReauthorizationRequiredError,
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
+    MissingProviderCredentialsError,
+    OllamaNotConfiguredError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -143,7 +145,7 @@ def _build_openrouter(
     try:
         return OpenRouterChat(config)
     except ChatConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+        raise MissingProviderCredentialsError(str(exc)) from exc
 
 
 def _build_ollama(
@@ -157,7 +159,10 @@ def _build_ollama(
     try:
         return OllamaChat(config)
     except OllamaConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+        message = str(exc)
+        if "OLLAMA_BASE_URL" in message:
+            raise OllamaNotConfiguredError(message) from exc
+        raise MissingProviderCredentialsError(message) from exc
 
 
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {
@@ -1975,9 +1980,6 @@ def build_tool_augmented_ask(
         from application.untrusted_text import agent_tool_system_prompt
         from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
-        _require_agent_provider_config(
-            settings, provider=provider, model=model, base_url=base_url
-        )
         orchestrate = build_agent_orchestrate(
             LangGraphToolAgent(
                 model_factory=_software_delivery_agent_model_factory(
@@ -2042,30 +2044,6 @@ def build_tool_augmented_ask(
     )
 
 
-def _require_agent_provider_config(
-    settings: Settings,
-    *,
-    provider: str | None = None,
-    model: str | None = None,
-    base_url: str | None = None,
-) -> None:
-    """Fail fast at composition time using the same builders as live chat.
-
-    Validates the *effective* provider (per-request override when set), so an
-    Ollama-selected turn is not rejected for a missing OpenRouter key.
-    """
-    from application.errors import MissingProviderCredentialsError
-
-    effective = (provider or settings.provider).lower()
-    try:
-        if effective == "ollama":
-            _build_ollama(settings, model, base_url)
-        else:
-            _build_openrouter(settings, model, None)
-    except ConfigurationError as exc:
-        raise MissingProviderCredentialsError(str(exc)) from exc
-
-
 def _software_delivery_agent_model_factory(
     settings: Settings,
     *,
@@ -2076,9 +2054,20 @@ def _software_delivery_agent_model_factory(
 ):
     """Return a LangChain chat model factory with ``bind_tools`` for the agent.
 
-    Credentials are validated by ``_require_agent_provider_config`` before this
-    factory is wired. Uses the same effective provider/model/base_url as the
-    request's ``ChatModel``.
+    Uses the same effective provider/model/base_url as the request's ``ChatModel``.
+    Credentials are expected to have been validated by ``build_chat_model`` on the
+    HTTP path; this factory still requires a non-blank model before constructing
+    ``ChatOpenAI`` so a missing ``OLLAMA_MODEL`` is not misdiagnosed as connectivity.
+
+    Args:
+        settings (Settings): Process settings for provider defaults.
+        recorder (RecordingChatModel | None): Optional RunMeta accumulator.
+        provider (str | None): Per-request provider override.
+        model (str | None): Per-request model override.
+        base_url (str | None): Per-request Ollama base URL override.
+
+    Returns:
+        Callable: Zero-arg factory producing an observing chat model with tools.
     """
 
     def factory(**_kwargs: object):
@@ -2086,14 +2075,27 @@ def _software_delivery_agent_model_factory(
 
         from domain.errors import ProviderError
 
-        effective = (provider or settings.provider).lower()
+        effective = provider or settings.provider
+        if effective not in _CHAT_MODELS:
+            raise ValueError(
+                f"Unknown provider {effective!r}. "
+                f"Expected one of {sorted(_CHAT_MODELS)}."
+            )
         if effective == "ollama":
             config = settings.ollama
             if model:
                 config = replace(config, model=model)
             if base_url:
                 config = replace(config, base_url=base_url)
-            base = (config.base_url or "").rstrip("/")
+            if not config.base_url:
+                raise OllamaNotConfiguredError(
+                    "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
+                )
+            if not config.model:
+                raise MissingProviderCredentialsError(
+                    "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
+                )
+            base = config.base_url.rstrip("/")
             try:
                 inner = ChatOpenAI(
                     model=config.model,
@@ -2110,6 +2112,9 @@ def _software_delivery_agent_model_factory(
             config = settings.openrouter
             if model:
                 config = replace(config, model=model)
+            if not config.api_key or not config.base_url or not config.model:
+                # Mirror OpenRouterChat construction checks without a second adapter.
+                _build_openrouter(settings, model, None)
             try:
                 inner = ChatOpenAI(
                     model=config.model,
@@ -2131,7 +2136,12 @@ def _software_delivery_agent_model_factory(
 
 
 class _ObservingChatOpenAI:
-    """Wrap a LangChain chat model so each invoke updates ``RecordingChatModel``."""
+    """Wrap a LangChain chat model so each invoke updates ``RecordingChatModel``.
+
+    Only ``bind_tools`` and ``invoke`` are forwarded: those are the methods
+    ``LangGraphToolAgent`` uses. Other LangChain surfaces (``stream``, ``batch``)
+    raise ``AttributeError`` rather than silently bypassing the recorder.
+    """
 
     def __init__(
         self,
@@ -2194,6 +2204,7 @@ class _ObservingChatOpenAI:
                         error_type=error_type,
                     )
                 )
+
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:
     """Reachability check, with the timeout taken from settings."""

@@ -152,6 +152,7 @@ def test_build_chat_model_returns_the_provider_implementation(
     provider: str, expected: type, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _openrouter_chat_env(monkeypatch)
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
     settings = load_settings()
     model = build_chat_model(settings, provider=provider, base_url="http://h:11434")
     assert isinstance(model, expected)
@@ -162,6 +163,7 @@ def test_every_advertised_provider_is_buildable(
 ) -> None:
     """`available_providers()` must not advertise a factory that does not work."""
     _openrouter_chat_env(monkeypatch)
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
     settings = load_settings()
     for provider in available_providers():
         assert build_chat_model(
@@ -574,57 +576,52 @@ def test_agent_loop_flag_on_wires_agent_orchestrate(
 def test_agent_loop_missing_openrouter_key_raises_missing_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Composition-time guard: missing key is MissingProviderCredentialsError."""
-    _sd_env(monkeypatch)
-    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    """HTTP path: missing key is MissingProviderCredentialsError from build_chat_model."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
-    )
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
 
     with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
-        build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+        build_chat_model(load_settings(), provider="openrouter")
 
 
-def test_agent_loop_validates_runtime_provider_override_not_settings(
+def test_agent_model_factory_uses_runtime_provider_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ollama override must not fail for a missing OpenRouter key."""
+    """Agent ChatOpenAI follows provider/model/base_url overrides, not settings alone."""
+    from composition.container import _software_delivery_agent_model_factory
+
     _sd_env(monkeypatch)
-    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setenv("PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
-    )
-    wired: list[object] = []
+    monkeypatch.setenv("OLLAMA_MODEL", "settings-model")
 
-    def _fake_agent_orchestrate(agent: object, **kwargs: object):
-        wired.append(agent)
-
-        def orchestrate(**_kwargs: object):
-            raise AssertionError("orchestrate body not under test")
-
-        return orchestrate
-
-    monkeypatch.setattr(
-        "composition.container.build_agent_orchestrate",
-        _fake_agent_orchestrate,
-    )
-
-    ask = build_tool_augmented_ask(
+    factory = _software_delivery_agent_model_factory(
         load_settings(),
-        chat_model=_StubChat(),
         provider="ollama",
         model="llama3",
+        base_url="http://h:1234",
     )
+    observing = factory()
 
-    assert len(wired) == 1
-    assert isinstance(ask._ask, ToolAugmentedAsk)
+    assert observing._model_name == "llama3"
+    assert observing._inner.model_name == "llama3"
+    assert "http://h:1234/v1" in str(observing._inner.openai_api_base)
+
+
+def test_agent_model_factory_rejects_unknown_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from composition.container import _software_delivery_agent_model_factory
+
+    _sd_env(monkeypatch)
+    factory = _software_delivery_agent_model_factory(
+        load_settings(), provider="gemini"
+    )
+    with pytest.raises(ValueError, match="Unknown provider"):
+        factory()
 
 
 def test_observing_chat_bind_tools_forwards_extra_options() -> None:
@@ -1572,7 +1569,7 @@ def test_missing_embedding_configuration_surfaces_as_configuration_error(
         build_ingest_knowledge(settings)
 
 
-def test_missing_chat_configuration_surfaces_as_configuration_error(
+def test_missing_chat_configuration_surfaces_as_missing_provider_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Absent OpenRouter chat credentials fail at build_chat_model, typed."""
@@ -1580,19 +1577,33 @@ def test_missing_chat_configuration_surfaces_as_configuration_error(
     settings = load_settings()
     assert settings.openrouter.api_key is None
 
-    with pytest.raises(ConfigurationError, match="OPENROUTER_API_KEY"):
+    with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
         build_chat_model(settings, provider="openrouter")
 
 
-def test_build_chat_model_maps_missing_ollama_base_url_to_configuration_error(
+def test_build_chat_model_maps_missing_ollama_base_url_to_ollama_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ollama construction failures follow the same typed config path as OpenRouter."""
+    """Missing Ollama base URL is the typed 409 path, not a generic config error."""
+    from application.errors import OllamaNotConfiguredError
+
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     settings = load_settings()
     assert settings.ollama.base_url is None
 
-    with pytest.raises(ConfigurationError, match="OLLAMA_BASE_URL"):
+    with pytest.raises(OllamaNotConfiguredError, match="OLLAMA_BASE_URL"):
+        build_chat_model(settings, provider="ollama")
+
+
+def test_build_chat_model_maps_missing_ollama_model_to_missing_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    settings = load_settings()
+    assert settings.ollama.model is None
+
+    with pytest.raises(MissingProviderCredentialsError, match="OLLAMA_MODEL"):
         build_chat_model(settings, provider="ollama")
 
 

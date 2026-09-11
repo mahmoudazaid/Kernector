@@ -10,11 +10,10 @@ from application.observed_rag import AnswerModelMetadata, RagObservation
 from application.rag_judge_policy import (
     MAX_JUDGE_PAYLOAD_CHARS,
     METRIC_IDS,
-    UNTRUSTED_CLOSE,
-    UNTRUSTED_OPEN,
     JudgePayloadTooLargeError,
     build_metric_messages,
 )
+from application.untrusted_text import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 
 SENTINEL_ANSWER = "ZXANSWER_FORBIDDEN_9f3a"

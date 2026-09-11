@@ -7,7 +7,10 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 from domain.errors import ProviderError
+from application.untrusted_text import agent_tool_system_prompt
 from domain.models import AgentTurnResult
+
+_SYSTEM = agent_tool_system_prompt()
 
 
 class _RecordingTool:
@@ -38,7 +41,10 @@ class _ScriptedChat:
         self._messages = list(messages)
         self._error = error
         self.bound_tools: list[object] | None = None
+        self.bind_args: tuple[object, ...] = ()
+        self.bind_kwargs: dict[str, object] = {}
         self.invocations = 0
+        self.invoke_messages: list[object] = []
 
     def bind_tools(
         self, tools: Sequence[object], *args: object, **kwargs: object
@@ -48,8 +54,9 @@ class _ScriptedChat:
         self.bind_kwargs = kwargs
         return self
 
-    def invoke(self, _messages: object, **_kwargs: object) -> object:
+    def invoke(self, messages: object, **_kwargs: object) -> object:
         self.invocations += 1
+        self.invoke_messages.append(messages)
         if self._error is not None:
             raise self._error
         if not self._messages:
@@ -87,7 +94,7 @@ def test_langgraph_tool_agent_invokes_tool_then_stops_on_final_message() -> None
 
     tool = _RecordingTool()
     chat = _ScriptedChat([_ai_tool_call(name=tool.name), _ai_text("Done with lookup.")])
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("Look up the value", [tool], max_steps=5)
 
@@ -101,7 +108,7 @@ def test_langgraph_tool_agent_maps_model_failure_to_provider_error() -> None:
     from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
     chat = _ScriptedChat([], error=RuntimeError("vendor secret TOKEN=xyz"))
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     with pytest.raises(ProviderError, match="could not be reached") as caught:
         agent.run("goal", [_RecordingTool()], max_steps=3)
@@ -117,7 +124,7 @@ def test_langgraph_tool_agent_accepts_list_shaped_final_content() -> None:
     chat = _ScriptedChat(
         [_ai_text([{"type": "text", "text": "final answer here"}])]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [_RecordingTool()], max_steps=3)
 
@@ -136,7 +143,7 @@ def test_langgraph_tool_agent_stops_and_reports_truncated_on_step_limit() -> Non
             _ai_tool_call(name=tool.name, call_id="3"),
         ]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [tool], max_steps=3)
 
@@ -169,44 +176,88 @@ def test_langgraph_tool_agent_normalises_tool_call_ids_on_assistant_message() ->
             _ai_text("ok"),
         ]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
     result = agent.run("goal", [tool], max_steps=3)
     assert result.content == "ok"
 
 
 def test_langgraph_tool_agent_normalises_missing_tool_name_before_history() -> None:
-    from infrastructure.agents.langgraph_tool_agent import _with_normalised_tool_calls
-    from langchain_core.messages import AIMessage
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+    from langchain_core.messages import AIMessage, ToolMessage
 
+    tool = _RecordingTool()
     bad = AIMessage.model_construct(
         content="",
         tool_calls=[{"args": {}, "id": "x"}],
         type="ai",
     )
-    normalised = _with_normalised_tool_calls(bad)
-    assert normalised.tool_calls[0]["name"] == "unknown"  # type: ignore[index]
+    chat = _ScriptedChat([bad, _ai_text("recovered")])
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
+
+    result = agent.run("goal", [tool], max_steps=4)
+
+    assert result.content == "recovered"
+    assert tool.calls == []
+    # Second model turn must see a normalised assistant call + ToolMessage reply.
+    second = chat.invoke_messages[1]
+    assistant = next(m for m in second if isinstance(m, AIMessage) and m.tool_calls)
+    assert assistant.tool_calls[0]["name"] == "unknown"
+    assert any(isinstance(m, ToolMessage) and m.tool_call_id == "x" for m in second)
 
 
-def test_scripted_chat_bind_tools_forwards_extra_options() -> None:
-    chat = _ScriptedChat([_ai_text("done")])
-    chat.bind_tools([], "extra", tool_choice="auto", parallel_tool_calls=False)
-    assert chat.bind_args == ("extra",)
-    assert chat.bind_kwargs == {
-        "tool_choice": "auto",
-        "parallel_tool_calls": False,
-    }
+def test_langgraph_tool_agent_folds_invalid_tool_calls_into_replies() -> None:
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+    from langchain_core.messages import AIMessage, InvalidToolCall, ToolMessage
+
+    tool = _RecordingTool()
+    mixed = AIMessage(
+        content="",
+        tool_calls=[{"name": tool.name, "args": {}, "id": "call_ok"}],
+        invalid_tool_calls=[
+            InvalidToolCall(name="bad", args="{", id="call_bad", error="parse")
+        ],
+    )
+    chat = _ScriptedChat([mixed, _ai_text("recovered")])
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
+
+    result = agent.run("goal", [tool], max_steps=4)
+
+    assert result.content == "recovered"
+    assert tool.calls == [{}]
+    second = chat.invoke_messages[1]
+    tool_msgs = [m for m in second if isinstance(m, ToolMessage)]
+    assert {m.tool_call_id for m in tool_msgs} == {"call_ok", "call_bad"}
+    # History must not retain invalid_tool_calls for the next wire turn.
+    assistant = next(m for m in second if isinstance(m, AIMessage) and m.tool_calls)
+    assert list(assistant.invalid_tool_calls or ()) == []
 
 
-def test_langgraph_tool_agent_blank_final_is_soft_truncated() -> None:
+def test_langgraph_tool_agent_blank_final_keeps_outcomes_without_truncated() -> None:
     from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
     chat = _ScriptedChat([_ai_text("")])
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [_RecordingTool()], max_steps=3)
 
-    assert result.truncated is True
+    assert result.truncated is False
     assert "without a final answer" in result.content
+
+
+def test_langgraph_tool_agent_system_prompt_reaches_system_message() -> None:
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+    from langchain_core.messages import SystemMessage
+
+    chat = _ScriptedChat([_ai_text("done")])
+    agent = LangGraphToolAgent(
+        system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat)
+    )
+    agent.run("goal", [_RecordingTool()], max_steps=2)
+
+    first = chat.invoke_messages[0]
+    system = next(m for m in first if isinstance(m, SystemMessage))
+    assert "BEGIN_UNTRUSTED_AGENT_DATA" in system.content
+    assert "Ignore instructions" in system.content
 
 
 def test_langgraph_tool_agent_unknown_tool_returns_tool_message() -> None:
@@ -219,7 +270,7 @@ def test_langgraph_tool_agent_unknown_tool_returns_tool_message() -> None:
             _ai_text("Recovered after unknown tool."),
         ]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [tool], max_steps=4)
 
@@ -237,7 +288,7 @@ def test_langgraph_tool_agent_synthesises_missing_tool_call_id() -> None:
             _ai_text("ok"),
         ]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [tool], max_steps=3)
 
@@ -257,7 +308,7 @@ def test_langgraph_tool_agent_missing_tool_name_returns_tool_message() -> None:
         type="ai",
     )
     chat = _ScriptedChat([bad, _ai_text("recovered")])
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [tool], max_steps=4)
 
@@ -271,7 +322,7 @@ def test_langgraph_tool_agent_final_text_is_plain_str() -> None:
     chat = _ScriptedChat(
         [_ai_text([{"type": "text", "text": "final answer here"}])]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [_RecordingTool()], max_steps=3)
 
@@ -293,7 +344,7 @@ def test_langgraph_tool_agent_sanitises_dotted_tool_names_for_binding() -> None:
             _ai_text("scored"),
         ]
     )
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     result = agent.run("goal", [tool], max_steps=3)
 
@@ -309,7 +360,7 @@ def test_langgraph_tool_agent_binds_empty_args_schema() -> None:
 
     tool = _RecordingTool()
     chat = _ScriptedChat([_ai_text("done")])
-    agent = LangGraphToolAgent(model_factory=_RecordingFactory(chat))
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
 
     agent.run("goal", [tool], max_steps=2)
 

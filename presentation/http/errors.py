@@ -322,12 +322,11 @@ def problem_from_exception(
             request_id=request_id,
         )
     if isinstance(exc, MissingProviderCredentialsError):
-        detail = str(exc).strip() or _MISSING_PROVIDER_CREDENTIALS_DETAIL
         return _problem(
             code="missing_provider_credentials",
             title="Missing provider credentials",
             status=500,
-            detail=detail,
+            detail=_MISSING_PROVIDER_CREDENTIALS_DETAIL,
             instance=instance,
             request_id=request_id,
         )

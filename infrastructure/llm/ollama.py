@@ -37,6 +37,10 @@ class OllamaChat:
             raise OllamaConfigError(
                 "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
             )
+        if not config.model:
+            raise OllamaConfigError(
+                "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
+            )
         self._config = config
         self._base_url = config.base_url.rstrip("/")
         self._post = post or requests.post

@@ -8,6 +8,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+__all__ = (
+    "AGENT_BOUNDARY",
+    "EVAL_BOUNDARY",
+    "UNTRUSTED_CLOSE",
+    "UNTRUSTED_OPEN",
+    "UntrustedBoundary",
+    "agent_tool_system_prompt",
+    "wrap_untrusted",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class UntrustedBoundary:
@@ -31,12 +41,13 @@ class UntrustedBoundary:
         Args:
             label (str): Fixed field name shown outside the delimiters.
             text (str): Untrusted payload; delimiter substrings are defanged.
-            include_notice (bool): When true, emit ``notice`` once above markers.
+            include_notice (bool): When true, emit ``notice`` above the markers.
+
+        Returns:
+            str: Labelled block with open/close markers around defanged text.
         """
-        head = f"{label}:\n"
-        if include_notice:
-            head = f"{label}:\n{self.notice}\n"
-        return f"{head}{self.open}\n{self.defang(text)}\n{self.close}"
+        notice = f"{self.notice}\n" if include_notice else ""
+        return f"{label}:\n{notice}{self.open}\n{self.defang(text)}\n{self.close}"
 
     def trust_preamble(self) -> str:
         """Return the ignore-instructions sentence for system prompts."""
@@ -67,18 +78,30 @@ AGENT_BOUNDARY = UntrustedBoundary(
     ),
 )
 
-# Back-compat aliases for Judge callers / tests.
+# Canonical Judge marker names (also re-exported for existing test imports).
 UNTRUSTED_OPEN = EVAL_BOUNDARY.open
 UNTRUSTED_CLOSE = EVAL_BOUNDARY.close
 
 
 def wrap_untrusted(label: str, text: str) -> str:
-    """Wrap untrusted text with the Judge evaluation delimiters."""
+    """Wrap untrusted text with the Judge evaluation delimiters.
+
+    Args:
+        label (str): Fixed field name shown outside the delimiters.
+        text (str): Untrusted payload.
+
+    Returns:
+        str: Labelled Judge block with evaluation markers.
+    """
     return EVAL_BOUNDARY.wrap(label, text)
 
 
 def agent_tool_system_prompt() -> str:
-    """System prompt for the Software Delivery LangGraph tool agent."""
+    """System prompt for the Software Delivery LangGraph tool agent.
+
+    Returns:
+        str: Tool-calling instructions plus the agent trust preamble.
+    """
     return (
         "You are a tool-calling agent. Use the bound tools when needed, "
         "then answer the goal with a concise final message. "
