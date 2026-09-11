@@ -1583,6 +1583,7 @@ def build_manage_uploaded_documents(
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
+    list_vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
 
@@ -1591,14 +1592,16 @@ def build_manage_uploaded_documents(
     and no embedding credentials — which matters because the documents list
     path should stay cheap on every request, and because `list` and `delete`
     never embed anything.
-    Each operation opens at most one store, and both paths open it through the
+    Each operation opens at most one store, and mutate paths open it through the
     same factory, so ingest and delete cannot drift onto different collections.
 
     Pass ``vector_store`` to reuse a cached DualWrite/Chroma client (hybrid BM25
     stays in sync with uploads). Pass ``vector_store_factory`` alone to defer
-    opening until a mutating/read-that-needs-store path actually runs (e.g. list
-    chunks after the catalog gate). When both are passed, ``vector_store`` wins
-    and the factory is never called. When both are omitted, each call that needs
+    opening until a mutating path actually runs. Pass
+    ``list_vector_store_factory`` for a read-only list-chunks store (e.g. Chroma
+    without BM25 hydrate) without steering create/replace/delete onto that
+    client. When ``vector_store`` is passed, it wins over ``vector_store_factory``
+    for mutations. When both mutation sources are omitted, each call that needs
     a store builds one via ``build_vector_store``.
     """
     _vector_store = _lazy_vector_store(
@@ -1615,6 +1618,7 @@ def build_manage_uploaded_documents(
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
+        list_vector_store_factory=list_vector_store_factory,
         max_upload_bytes=settings.max_upload_bytes,
     )
 
@@ -1733,14 +1737,16 @@ def list_uploaded_document_chunks(
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
+    list_vector_store_factory: Callable[[], VectorStore] | None = None,
     limit: int | None = None,
     offset: int = 0,
 ) -> ChunkPage:
     """Return stored chunks for a catalogued document, ordered by index.
 
-    Prefer ``vector_store_factory`` alone when the store should open only after
-    the catalog gate. When both ``vector_store`` and ``vector_store_factory``
-    are passed, ``vector_store`` wins and the factory is never called.
+    Prefer ``list_vector_store_factory`` (or ``vector_store_factory``) alone when
+    the list store should open only after the catalog gate. Mutating paths on the
+    built use case still use ``vector_store`` / ``vector_store_factory`` /
+    ``build_vector_store`` so a Chroma-only list factory cannot starve BM25.
 
     Raises:
         UnknownUploadedDocumentError: ``reference`` is not in the catalog.
@@ -1752,6 +1758,8 @@ def list_uploaded_document_chunks(
             catalog=catalog,
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
+            list_vector_store_factory=list_vector_store_factory
+            or vector_store_factory,
         ).list_document_chunks(reference, limit=limit, offset=offset)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error

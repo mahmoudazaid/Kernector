@@ -22,6 +22,12 @@ from domain.knowledge import (
     SourceType,
 )
 
+HubSourceType = Literal[
+    SourceType.KNOWLEDGE_DOCUMENT,
+    SourceType.GOOGLE_DRIVE,
+]
+"""OpenAPI query type for hub chunk listing — mirrors ``HUB_SOURCE_TYPES``."""
+
 
 class HealthResponse(BaseModel):
     """Operational readiness payload for unversioned ``GET /health``."""

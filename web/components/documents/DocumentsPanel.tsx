@@ -379,7 +379,7 @@ export function DocumentsPanel({
     loadMoreAbortRef.current?.abort();
     loadMoreAbortRef.current = null;
     setChunksLoadingMore(false);
-    if (!selected || selectedStatus !== "ready") {
+    if (hubTab !== "documents" || !selected || selectedStatus !== "ready") {
       setChunksView({ kind: "idle" });
       return;
     }
@@ -401,7 +401,7 @@ export function DocumentsPanel({
         if (!active || controller.signal.aborted) {
           return;
         }
-        if (response.chunks.length === 0) {
+        if (response.chunks.length === 0 && !response.has_more) {
           setChunksView({ kind: "empty" });
           return;
         }
@@ -437,6 +437,7 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed off catalog identity fields
   }, [
     apiBaseUrl,
+    hubTab,
     selectedSourceId,
     selectedSourceType,
     selectedStatus,
@@ -481,18 +482,12 @@ export function DocumentsPanel({
         if (prev.kind !== "ready") {
           return prev;
         }
-        const byIndex = new Map(prev.chunks.map((chunk) => [chunk.index, chunk]));
-        for (const chunk of response.chunks) {
-          byIndex.set(chunk.index, chunk);
-        }
-        const chunks = [...byIndex.values()].sort(
-          (a, b) => a.index - b.index,
-        );
+        // Append by page order; do not merge on chunk.index (ties are allowed).
+        const chunks = [...prev.chunks, ...response.chunks];
         return {
           kind: "ready",
           chunks,
-          hasMore:
-            response.chunks.length > 0 && response.has_more,
+          hasMore: response.has_more,
           nextOffset: prev.nextOffset + DOCUMENT_CHUNKS_PAGE_SIZE,
           loadMoreError: null,
         };
@@ -1071,9 +1066,9 @@ export function DocumentsPanel({
                       tabIndex={0}
                     >
                       <ol className="kern-documents-chunk-list">
-                        {chunksView.chunks.map((chunk) => (
+                        {chunksView.chunks.map((chunk, position) => (
                           <li
-                            key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}`}
+                            key={`${chunk.source_type}:${chunk.source_id}:${chunk.index}:${position}`}
                           >
                             <span className="kern-documents-chunk-index">
                               Chunk {chunk.index}

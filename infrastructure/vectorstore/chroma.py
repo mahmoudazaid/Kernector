@@ -454,6 +454,81 @@ def _decode_chunk(record_id: str, document: object, metadata: object) -> Documen
         raise ChromaStoreError(f"record {record_id}: {exc}") from exc
 
 
+def _ordered_ids_cache_key(reference: SourceReference) -> tuple[str, str]:
+    """Cache key for one source's ordered record-id list."""
+    return (str(reference.source_type), reference.source_id)
+
+
+def _ordered_ids_from_metadata_rows(
+    ids: Sequence[str],
+    metadatas: Sequence[object],
+    reference: SourceReference,
+) -> list[str]:
+    """Sort source row ids by ``(chunk_index, record_id)``; skip corrupt rows."""
+    indexed: list[tuple[str, int]] = []
+    for record_id, metadata in zip(ids, metadatas, strict=True):
+        try:
+            indexed.append(
+                (record_id, _chunk_index_from_metadata(metadata, record_id))
+            )
+        except ChromaStoreError:
+            _logger.warning(
+                "skipping corrupt list row %s in source %s:%s",
+                record_id,
+                reference.source_type,
+                reference.source_id,
+            )
+    return [
+        record_id
+        for record_id, _ in sorted(indexed, key=lambda pair: (pair[1], pair[0]))
+    ]
+
+
+def _chunks_page_from_rows(
+    *,
+    page_ids: Sequence[str],
+    row_ids: Sequence[str],
+    documents: Sequence[object],
+    metadatas: Sequence[object],
+    reference: SourceReference,
+    has_more: bool,
+) -> ChunkPage:
+    """Decode hydrate rows into a ``ChunkPage`` in ``page_ids`` order.
+
+    Corrupt decode rows are skipped (and logged). Ids in ``page_ids`` that are
+    absent from the hydrate rows are omitted and logged.
+    """
+    by_id: dict[str, DocumentChunk] = {}
+    for record_id, document, metadata in zip(
+        row_ids, documents, metadatas, strict=True
+    ):
+        try:
+            by_id[record_id] = _decode_chunk(record_id, document, metadata)
+        except ChromaStoreError:
+            _logger.warning(
+                "skipping corrupt hydrate row %s in source %s:%s",
+                record_id,
+                reference.source_type,
+                reference.source_id,
+            )
+    missing = [record_id for record_id in page_ids if record_id not in by_id]
+    if missing:
+        _logger.warning(
+            "list_source_chunks dropped %s id(s) missing from hydrate for "
+            "source %s:%s: %s",
+            len(missing),
+            reference.source_type,
+            reference.source_id,
+            missing,
+        )
+    return ChunkPage(
+        chunks=tuple(
+            by_id[record_id] for record_id in page_ids if record_id in by_id
+        ),
+        has_more=has_more,
+    )
+
+
 def _decode_scored_chunk(
     record_id: str, document: object, metadata: object, distance: object
 ) -> ScoredChunk:
@@ -652,6 +727,7 @@ class ChromaVectorStore:
             ) from exc
         _require_cosine(collection, config.collection)
         self._collection = collection
+        self._ordered_ids_cache: dict[tuple[str, str], tuple[str, ...]] = {}
 
     def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
         """Insert or replace embedded chunks. See `domain.ports.VectorStore`.
@@ -717,6 +793,10 @@ class ChromaVectorStore:
                 f"{self._collection.name!r}"
             ),
         )
+        for key in {
+            _ordered_ids_cache_key(item.chunk.metadata.reference) for item in embedded
+        }:
+            self._ordered_ids_cache.pop(key, None)
 
     def delete_source(self, reference: SourceReference) -> None:
         """Delete one complete source. See `domain.ports.VectorStore`.
@@ -750,6 +830,7 @@ class ChromaVectorStore:
                 f"{reference.source_id} from collection "
                 f"{self._collection.name!r}: {exc}"
             ) from exc
+        self._ordered_ids_cache.pop(_ordered_ids_cache_key(reference), None)
 
     def list_source_chunks(
         self,
@@ -763,11 +844,12 @@ class ChromaVectorStore:
         Reads documents and metadatas only (no embeddings). Scoped by the same
         ``source_id`` + ``source_type`` filter as ``delete_source``. Paging is
         positional after sorting by ``(chunk_index, record_id)``. When
-        ``limit is None``, one get loads metadatas and documents. Otherwise a
-        metadata-only pass selects page ids, then a second get hydrates texts.
-        Corrupt ``chunk_index`` rows are skipped (and logged). Ids that vanish
-        between the two reads are omitted and logged. ``has_more`` uses the
-        ordered id set before hydrate drops.
+        ``limit is None``, one get loads metadatas and documents (and refreshes
+        the ordered-id cache). Otherwise a metadata-only pass selects page ids
+        on cache miss, then a second get hydrates texts; cache hits skip the
+        metadata scan. Corrupt ``chunk_index`` rows are skipped (and logged).
+        Ids that vanish between the two reads are omitted and logged.
+        ``has_more`` uses the ordered id set before hydrate drops.
         """
         if not isinstance(reference, SourceReference):
             raise ChromaStoreError(
@@ -790,88 +872,71 @@ class ChromaVectorStore:
                     f"{self._collection.name!r}: {exc}"
                 ) from exc
 
-        include = (
-            ["metadatas", "documents"] if limit is None else ["metadatas"]
-        )
-        index_result = get_or_store_error(
-            where=_source_where(reference),
-            include=include,
-        )
-        ids = index_result.get("ids") or []
-        if not ids:
-            return ChunkPage(chunks=(), has_more=False)
-        metadatas = index_result.get("metadatas") or []
-        documents_all = index_result.get("documents") or []
-        if len(metadatas) != len(ids):
-            raise ChromaStoreError(
-                f"collection {self._collection.name!r}: list_source_chunks "
-                f"get() returned mismatched lengths ids={len(ids)} "
-                f"metadatas={len(metadatas)}"
-            )
-        if limit is None and len(documents_all) != len(ids):
-            raise ChromaStoreError(
-                f"collection {self._collection.name!r}: list_source_chunks "
-                f"get() returned mismatched lengths ids={len(ids)} "
-                f"documents={len(documents_all)}"
-            )
-        indexed: list[tuple[str, int]] = []
-        for record_id, metadata in zip(ids, metadatas, strict=True):
-            try:
-                indexed.append(
-                    (record_id, _chunk_index_from_metadata(metadata, record_id))
-                )
-            except ChromaStoreError:
-                _logger.warning(
-                    "skipping corrupt list row %s in source %s:%s",
-                    record_id,
-                    reference.source_type,
-                    reference.source_id,
-                )
-        ordered_ids = [
-            record_id
-            for record_id, _ in sorted(
-                indexed, key=lambda pair: (pair[1], pair[0])
-            )
-        ]
-        has_more = limit is not None and len(ordered_ids) > offset + limit
-        page_ids = (
-            ordered_ids[offset:]
-            if limit is None
-            else ordered_ids[offset : offset + limit]
-        )
-        if not page_ids:
-            return ChunkPage(chunks=(), has_more=False)
+        cache_key = _ordered_ids_cache_key(reference)
 
         if limit is None:
-            by_id: dict[str, DocumentChunk] = {}
-            for record_id, document, metadata in zip(
-                ids, documents_all, metadatas, strict=True
-            ):
-                try:
-                    by_id[record_id] = _decode_chunk(record_id, document, metadata)
-                except ChromaStoreError:
-                    _logger.warning(
-                        "skipping corrupt hydrate row %s in source %s:%s",
-                        record_id,
-                        reference.source_type,
-                        reference.source_id,
-                    )
-            missing = [record_id for record_id in page_ids if record_id not in by_id]
-            if missing:
-                _logger.warning(
-                    "list_source_chunks dropped %s id(s) missing from hydrate for "
-                    "source %s:%s: %s",
-                    len(missing),
-                    reference.source_type,
-                    reference.source_id,
-                    missing,
+            index_result = get_or_store_error(
+                where=_source_where(reference),
+                include=["metadatas", "documents"],
+            )
+            ids = index_result.get("ids") or []
+            if not ids:
+                self._ordered_ids_cache[cache_key] = ()
+                return ChunkPage(chunks=(), has_more=False)
+            metadatas = index_result.get("metadatas") or []
+            documents_all = index_result.get("documents") or []
+            if len(metadatas) != len(ids):
+                raise ChromaStoreError(
+                    f"collection {self._collection.name!r}: list_source_chunks "
+                    f"get() returned mismatched lengths ids={len(ids)} "
+                    f"metadatas={len(metadatas)}"
                 )
-            return ChunkPage(
-                chunks=tuple(
-                    by_id[record_id] for record_id in page_ids if record_id in by_id
-                ),
+            if len(documents_all) != len(ids):
+                raise ChromaStoreError(
+                    f"collection {self._collection.name!r}: list_source_chunks "
+                    f"get() returned mismatched lengths ids={len(ids)} "
+                    f"documents={len(documents_all)}"
+                )
+            ordered_ids = _ordered_ids_from_metadata_rows(ids, metadatas, reference)
+            self._ordered_ids_cache[cache_key] = tuple(ordered_ids)
+            page_ids = ordered_ids[offset:]
+            if not page_ids:
+                return ChunkPage(chunks=(), has_more=False)
+            return _chunks_page_from_rows(
+                page_ids=page_ids,
+                row_ids=ids,
+                documents=documents_all,
+                metadatas=metadatas,
+                reference=reference,
                 has_more=False,
             )
+
+        cached = self._ordered_ids_cache.get(cache_key)
+        if cached is None:
+            index_result = get_or_store_error(
+                where=_source_where(reference),
+                include=["metadatas"],
+            )
+            ids = index_result.get("ids") or []
+            if not ids:
+                self._ordered_ids_cache[cache_key] = ()
+                return ChunkPage(chunks=(), has_more=False)
+            metadatas = index_result.get("metadatas") or []
+            if len(metadatas) != len(ids):
+                raise ChromaStoreError(
+                    f"collection {self._collection.name!r}: list_source_chunks "
+                    f"get() returned mismatched lengths ids={len(ids)} "
+                    f"metadatas={len(metadatas)}"
+                )
+            ordered_ids = _ordered_ids_from_metadata_rows(ids, metadatas, reference)
+            self._ordered_ids_cache[cache_key] = tuple(ordered_ids)
+        else:
+            ordered_ids = list(cached)
+
+        has_more = len(ordered_ids) > offset + limit
+        page_ids = ordered_ids[offset : offset + limit]
+        if not page_ids:
+            return ChunkPage(chunks=(), has_more=False)
 
         result = get_or_store_error(
             ids=list(page_ids),
@@ -890,33 +955,12 @@ class ChromaVectorStore:
                 f"ids={len(page_result_ids)} documents={len(documents)} "
                 f"metadatas={len(page_metadatas)}"
             )
-        by_id = {}
-        for record_id, document, metadata in zip(
-            page_result_ids, documents, page_metadatas, strict=True
-        ):
-            try:
-                by_id[record_id] = _decode_chunk(record_id, document, metadata)
-            except ChromaStoreError:
-                _logger.warning(
-                    "skipping corrupt hydrate row %s in source %s:%s",
-                    record_id,
-                    reference.source_type,
-                    reference.source_id,
-                )
-        missing = [record_id for record_id in page_ids if record_id not in by_id]
-        if missing:
-            _logger.warning(
-                "list_source_chunks dropped %s id(s) missing from hydrate for "
-                "source %s:%s: %s",
-                len(missing),
-                reference.source_type,
-                reference.source_id,
-                missing,
-            )
-        return ChunkPage(
-            chunks=tuple(
-                by_id[record_id] for record_id in page_ids if record_id in by_id
-            ),
+        return _chunks_page_from_rows(
+            page_ids=page_ids,
+            row_ids=page_result_ids,
+            documents=documents,
+            metadatas=page_metadatas,
+            reference=reference,
             has_more=has_more,
         )
 
@@ -1002,6 +1046,7 @@ class ChromaVectorStore:
                 f"{self._collection.name!r} during filter-metadata reindex"
             ),
         )
+        self._ordered_ids_cache.clear()
         return len(ids)
 
     def list_embedded_chunks(self) -> Sequence[EmbeddedChunk]:

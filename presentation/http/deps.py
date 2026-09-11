@@ -207,7 +207,7 @@ def get_document_operations(
             settings,
             reference,
             catalog=get_document_catalog(),
-            vector_store_factory=get_chroma_vector_store,
+            list_vector_store_factory=get_chroma_vector_store,
             limit=limit,
             offset=offset,
         )

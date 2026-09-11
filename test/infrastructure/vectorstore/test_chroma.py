@@ -713,6 +713,42 @@ def test_list_source_chunks_applies_limit_and_offset(
     assert page.has_more is True
 
 
+def test_list_source_chunks_caches_ordered_ids_across_paged_calls(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Second paged list must skip the metadata-only unbounded get."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=i, content=f"c{i}")
+            for i in range(5)
+        ]
+    )
+    real_get = store._collection.get
+    unbounded_metadata_gets = {"n": 0}
+
+    def spy_get(**kwargs: object) -> object:
+        include = kwargs.get("include")
+        if include == ["metadatas"] and kwargs.get("ids") is None:
+            unbounded_metadata_gets["n"] += 1
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", spy_get)
+
+    first = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    assert unbounded_metadata_gets["n"] == 1
+    assert [c.content for c in first.chunks] == ["c0", "c1"]
+    assert first.has_more is True
+
+    second = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    assert unbounded_metadata_gets["n"] == 1
+    assert [c.content for c in second.chunks] == ["c0", "c1"]
+
+    third = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=2)
+    assert unbounded_metadata_gets["n"] == 1
+    assert [c.content for c in third.chunks] == ["c2", "c3"]
+    assert third.has_more is True
+
+
 def test_list_source_chunks_pages_positionally_with_index_gaps(
     store: ChromaVectorStore,
 ) -> None:

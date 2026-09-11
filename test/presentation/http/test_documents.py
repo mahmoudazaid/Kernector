@@ -221,7 +221,7 @@ def test_create_rejects_unsupported_suffix(client_factory) -> None:
 def test_create_rejects_oversize_body(client_factory) -> None:
     ops = DocumentOperations(
         list=lambda: (),
-        list_chunks=lambda _r: (),
+        list_chunks=lambda _r, **_kwargs: ChunkPage(chunks=(), has_more=False),
         create=lambda _p: _document(),
         replace=lambda _r, _p: _document(),
         delete=lambda _r: None,

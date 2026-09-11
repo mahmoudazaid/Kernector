@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from presentation.http.deps import (
+    get_chroma_vector_store,
     get_document_catalog,
     get_prompt_repository,
     get_settings,
@@ -17,10 +18,12 @@ def _clear_http_process_caches() -> None:
     """Process-wide ``lru_cache`` deps; clear around every test."""
     get_settings.cache_clear()
     get_vector_store.cache_clear()
+    get_chroma_vector_store.cache_clear()
     get_prompt_repository.cache_clear()
     get_document_catalog.cache_clear()
     yield
     get_settings.cache_clear()
     get_vector_store.cache_clear()
+    get_chroma_vector_store.cache_clear()
     get_prompt_repository.cache_clear()
     get_document_catalog.cache_clear()

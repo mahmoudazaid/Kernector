@@ -1289,12 +1289,6 @@
         "title": "SourceReferenceResponse",
         "type": "object"
       },
-      "SourceType": {
-        "description": "Documented well-known source kinds.\n\nNot a closed validation set for ``SourceReference.source_type`` \u2014 connectors\nmay introduce other string kinds \u2014 but the members below are the stable hub\nand upload vocabulary.",
-        "enum": ["knowledge_document", "google_drive"],
-        "title": "SourceType",
-        "type": "string"
-      },
       "TestCaseResponse": {
         "description": "One generated test case.",
         "properties": {
@@ -2373,7 +2367,9 @@
             "name": "source_type",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/SourceType"
+              "enum": ["knowledge_document", "google_drive"],
+              "title": "Source Type",
+              "type": "string"
             }
           },
           {
