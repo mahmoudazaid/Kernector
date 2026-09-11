@@ -1461,7 +1461,7 @@ describe("DocumentsPanel", () => {
     expect(download).not.toHaveBeenCalled();
   });
 
-  it("explains pending indexing instead of a permanent missing-file message", async () => {
+  it("explains stranded pending rows instead of promising preview later", async () => {
     const user = userEvent.setup();
 
     render(
@@ -1484,7 +1484,10 @@ describe("DocumentsPanel", () => {
     await screen.findByText("spec.md");
 
     expect(
-      screen.getByText(/indexing in progress/i),
+      screen.getByText(/still pending/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/delete it and upload again/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/original file is unavailable/i),

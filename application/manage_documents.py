@@ -71,6 +71,33 @@ class PartialCreateFailure(DocumentManagementError):
         self.ingest_error = ingest_error
 
 
+class CatalogReadyWriteFailure(DocumentManagementError):
+    """Ingest finished, but the READY catalog write failed.
+
+    Chunks (and usually the blob) are already durable. The catalog still shows
+    ``pending``, so the operator must retry or delete the stranded row — this
+    is not an ingest failure.
+
+    Attributes:
+        catalog_error (BaseException): The catalog adapter failure.
+        source_id (str): Document that was ingested.
+        source_type (str): Catalog source type for that document.
+    """
+
+    MESSAGE = (
+        "Document was ingested but its ready status could not be saved; "
+        "retry, or delete any visible pending document."
+    )
+
+    def __init__(
+        self, *, catalog_error: BaseException, reference: SourceReference
+    ) -> None:
+        super().__init__(self.MESSAGE)
+        self.catalog_error = catalog_error
+        self.source_id = reference.source_id
+        self.source_type = reference.source_type
+
+
 class VectorDeleteFailure(DocumentManagementError):
     """Vector-store delete failed before the catalog row was touched.
 
@@ -221,6 +248,8 @@ class ManageUploadedDocuments:
                 the catalog, so the injected id factory is repeating.
             PartialCreateFailure: The ingest failed *and* its status could not
                 be written, leaving only the ``pending`` row on disk.
+            CatalogReadyWriteFailure: Ingest finished but the READY catalog
+                write failed, leaving a stranded ``pending`` row.
         """
         self._assert_upload_size(payload)
         source_id = self._new_source_id()
@@ -392,9 +421,9 @@ class ManageUploadedDocuments:
         (searchable chunks) with ``MISSING_UPLOAD_BLOB_ERROR`` so the UI can
         distinguish "preview unavailable" from orphaned-chunk ``DEGRADED``.
         Previous blob bytes are left in place on a transient put failure so a
-        retry can recover them; content serving refuses rows that carry the
-        missing-blob sentinel so stale bytes are never returned under the new
-        name or media type.
+        retry can recover them; content serving refuses ``pending`` rows and
+        rows that carry the missing-blob sentinel so stale bytes are never
+        returned under the new name or media type.
         """
         blob_ok = self._try_put_blob(
             ready.reference, payload, operation=operation
@@ -411,8 +440,8 @@ class ManageUploadedDocuments:
                     "document was ingested but catalog could not record ready "
                     "status; retry or delete required"
                 ) from catalog_error
-            raise PartialCreateFailure(
-                ingest_error=catalog_error
+            raise CatalogReadyWriteFailure(
+                catalog_error=catalog_error, reference=ready.reference
             ) from catalog_error
         return ready
 
@@ -479,32 +508,30 @@ class ManageUploadedDocuments:
         The summary stored in the row's ``error`` field is a catalog
         diagnostic, read back only by whoever is already looking at that
         document. It is deliberately not what ``PartialCreateFailure`` says.
+        Blob put runs before the outcome upsert so a missing original is
+        recorded in the same write as FAILED/DEGRADED (sentinel cannot be lost
+        by a second annotate upsert). Annotation write failures are logged and
+        the original ingest error still propagates from ``create``.
         """
         status = (
             CatalogStatus.DEGRADED
             if _vector_mutation_started(error)
             else CatalogStatus.FAILED
         )
+        summary = _safe_error_summary(error)
+        if not self._try_put_blob(
+            pending.reference, payload, operation="create"
+        ):
+            summary = _with_missing_blob_note(summary)
         failed = dataclasses.replace(
             pending,
             status=status,
-            error=_safe_error_summary(error),
+            error=summary,
         )
         try:
             self._catalog.upsert(failed)
         except Exception as catalog_error:
             raise PartialCreateFailure(ingest_error=error) from catalog_error
-        if not self._try_put_blob(failed.reference, payload, operation="create"):
-            annotated = dataclasses.replace(
-                failed,
-                error=_with_missing_blob_note(failed.error),
-            )
-            try:
-                self._catalog.upsert(annotated)
-            except Exception as catalog_error:
-                raise PartialCreateFailure(
-                    ingest_error=error
-                ) from catalog_error
 
     def _recover_replace(
         self,
@@ -533,10 +560,22 @@ class ManageUploadedDocuments:
         payload: UploadPayload,
         error: BaseException,
     ) -> None:
+        """Record DEGRADED after a mutation may have started.
+
+        Blob put runs before the catalog write so a missing original is folded
+        into the same DEGRADED row (sentinel cannot be lost by a follow-up
+        annotate). Prior blob bytes are left in place for recovery; content
+        serving refuses the sentinel and ``pending`` rows.
+        """
+        summary = _safe_error_summary(error)
+        if not self._try_put_blob(
+            pending.reference, payload, operation="replace"
+        ):
+            summary = _with_missing_blob_note(summary)
         degraded = dataclasses.replace(
             pending,
             status=CatalogStatus.DEGRADED,
-            error=_safe_error_summary(error),
+            error=summary,
         )
         try:
             self._catalog.upsert(degraded)
@@ -545,20 +584,6 @@ class ManageUploadedDocuments:
                 "replace did not complete and catalog could not record degraded "
                 "status; retry or delete required"
             ) from catalog_error
-        if not self._try_put_blob(
-            degraded.reference, payload, operation="replace"
-        ):
-            annotated = dataclasses.replace(
-                degraded,
-                error=_with_missing_blob_note(degraded.error),
-            )
-            try:
-                self._catalog.upsert(annotated)
-            except Exception as catalog_error:
-                raise PartialReplaceFailure(
-                    "replace did not complete and catalog could not record "
-                    "missing original bytes; retry or delete required"
-                ) from catalog_error
 
 
 def _vector_mutation_started(error: BaseException) -> bool:

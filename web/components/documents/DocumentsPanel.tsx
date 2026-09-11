@@ -986,7 +986,7 @@ export function DocumentsPanel({
                 ) : (
                   <p className="kern-settings-hint" role="status">
                     {selected.status === "pending"
-                      ? "Indexing in progress. Preview and download will be available when ready."
+                      ? "This document is still pending. If that does not change, delete it and upload again."
                       : "Original file is unavailable for preview or download."}
                   </p>
                 )}

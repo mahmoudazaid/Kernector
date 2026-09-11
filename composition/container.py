@@ -32,6 +32,7 @@ from application.errors import (
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.manage_documents import (
+    CatalogReadyWriteFailure,
     DocumentManagementError,
     MISSING_UPLOAD_BLOB_ERROR,
     ManageUploadedDocuments,
@@ -1674,6 +1675,12 @@ def get_uploaded_document_content(
         row = ops.get_uploaded_row(source_id)
         if row is None:
             raise UnknownUploadedDocumentError("unknown document")
+        # PENDING rows are mid-flight or stranded after a READY write failure;
+        # never serve prior-version bytes under the new pending metadata.
+        if row.status is CatalogStatus.PENDING:
+            raise MissingUploadContentError(
+                "no stored content for this document"
+            )
         if MISSING_UPLOAD_BLOB_ERROR in (row.error or ""):
             raise MissingUploadContentError(
                 "no stored content for this document"
@@ -1717,6 +1724,16 @@ def create_uploaded_document(
         raise DocumentUploadError(str(error)) from error
     except PartialCreateFailure as error:
         _log_partial_create(error)
+        raise PartialDocumentOperationError(
+            str(error), operation="create"
+        ) from error
+    except CatalogReadyWriteFailure as error:
+        logger.error(
+            "operation=document_create outcome=partial_failure "
+            "catalog_error=%s source_id=%s",
+            type(error.catalog_error).__name__,
+            error.source_id,
+        )
         raise PartialDocumentOperationError(
             str(error), operation="create"
         ) from error
