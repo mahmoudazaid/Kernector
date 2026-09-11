@@ -146,6 +146,9 @@ describe("documents api wrappers", () => {
           status: 404,
           detail: "no stored content for this document",
           code: "document_content_unavailable",
+          errors: null,
+          instance: null,
+          request_id: null,
         }),
       );
 
