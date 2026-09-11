@@ -1,5 +1,5 @@
 import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
-import type { components, paths } from "@/lib/api/generated/schema";
+import type { components } from "@/lib/api/generated/schema";
 
 export type CatalogDocumentResponse =
   components["schemas"]["CatalogDocumentResponse"];
