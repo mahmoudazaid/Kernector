@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { DialogFrame } from "@/components/ui/DialogFrame";
 import { Loader } from "@/components/ui/Loader";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, isAbortError } from "@/lib/api/errors";
 import {
   listGoogleDriveItems,
   GOOGLE_DRIVE_SELECTION_ITEM_MAX,
@@ -278,7 +278,7 @@ export function GoogleDrivePicker({
       if (seq !== loadSeqRef.current || signal?.aborted) {
         return;
       }
-      if (error instanceof ApiError && error.code === "aborted") {
+      if (isAbortError(error)) {
         return;
       }
       setView({ kind: "error", ...browseErrorMessage(error) });

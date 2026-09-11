@@ -32,7 +32,9 @@ from application.errors import (
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.manage_documents import (
+    CatalogReadyWriteFailure,
     DocumentManagementError,
+    MISSING_UPLOAD_BLOB_ERROR,
     ManageUploadedDocuments,
     PartialCreateFailure,
     PartialDeleteFailure,
@@ -55,6 +57,7 @@ from composition.errors import (
     DocumentUploadError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
+    MissingUploadContentError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
@@ -95,6 +98,7 @@ from domain.ports import (
     EmbeddingModel,
     KnowledgeConnector,
     PromptRepository,
+    UploadBlobStore,
     VectorStore,
 )
 from infrastructure.catalog.errors import CatalogError
@@ -111,7 +115,12 @@ from infrastructure.connectors.drive_folder import (
     is_drive_folder_id,
     require_drive_folder_id,
 )
+from infrastructure.documents.upload_blob_store import (
+    FilesystemUploadBlobStore,
+    UploadBlobError,
+)
 from infrastructure.documents.uploaded_files import (
+    CONTENT_TYPE_BY_FORMAT,
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
     UnreadableDocumentError,
@@ -145,6 +154,8 @@ SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
 # Re-export so presentation adapters share one unsupported-type sentence.
 unsupported_upload_type_detail = unsupported_document_type_detail
+# Same single source for preview/download Content-Type as upload suffixes.
+UPLOAD_CONTENT_TYPE_BY_FORMAT: dict[str, str] = CONTENT_TYPE_BY_FORMAT
 
 logger = logging.getLogger(__name__)
 
@@ -588,6 +599,11 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
         raise DocumentOperationError(str(error)) from error
     except OSError as error:
         raise DocumentOperationError(str(error)) from error
+
+
+def build_upload_blob_store(settings: Settings) -> UploadBlobStore:
+    """Build durable storage for original uploaded document payloads."""
+    return FilesystemUploadBlobStore(settings.upload_blobs.root)
 
 
 def _resolve_catalog(
@@ -1620,6 +1636,7 @@ def build_manage_uploaded_documents(
     settings: Settings,
     *,
     catalog: DocumentCatalog | None = None,
+    blob_store: UploadBlobStore | None = None,
     vector_store: VectorStore | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
@@ -1645,6 +1662,11 @@ def build_manage_uploaded_documents(
 
     return ManageUploadedDocuments(
         catalog=catalog if catalog is not None else build_document_catalog(settings),
+        blob_store=(
+            blob_store
+            if blob_store is not None
+            else build_upload_blob_store(settings)
+        ),
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
@@ -1662,6 +1684,40 @@ def list_uploaded_documents(
         )
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
+
+
+def get_uploaded_document_content(
+    settings: Settings,
+    source_id: str,
+    *,
+    catalog: DocumentCatalog | None = None,
+) -> tuple[CatalogDocument, UploadPayload]:
+    """Return catalog metadata and original bytes for an uploaded document."""
+    try:
+        ops = build_manage_uploaded_documents(settings, catalog=catalog)
+        row = ops.get_uploaded_row(source_id)
+        if row is None:
+            raise UnknownUploadedDocumentError("unknown document")
+        # PENDING rows are mid-flight or stranded after a READY write failure;
+        # never serve prior-version bytes under the new pending metadata.
+        if row.status is CatalogStatus.PENDING:
+            raise MissingUploadContentError(
+                "no stored content for this document"
+            )
+        if MISSING_UPLOAD_BLOB_ERROR in (row.error or ""):
+            raise MissingUploadContentError(
+                "no stored content for this document"
+            )
+        payload = ops.get_content(row.reference)
+    except UploadBlobError as error:
+        raise DocumentOperationError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    if payload is None:
+        raise MissingUploadContentError("no stored content for this document")
+    return row, payload
 
 
 def create_uploaded_document(
@@ -1691,6 +1747,16 @@ def create_uploaded_document(
         raise DocumentUploadError(str(error)) from error
     except PartialCreateFailure as error:
         _log_partial_create(error)
+        raise PartialDocumentOperationError(
+            str(error), operation="create"
+        ) from error
+    except CatalogReadyWriteFailure as error:
+        logger.error(
+            "operation=document_create outcome=partial_failure "
+            "catalog_error=%s source_id=%s",
+            type(error.catalog_error).__name__,
+            error.source_id,
+        )
         raise PartialDocumentOperationError(
             str(error), operation="create"
         ) from error

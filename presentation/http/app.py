@@ -135,6 +135,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],
+            expose_headers=["Content-Disposition"],
         )
 
     # Taxonomy failures are ValueError / RuntimeError subclasses. Registering

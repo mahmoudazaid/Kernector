@@ -77,6 +77,7 @@ function doc(
     chunk_count: 7,
     has_error: false,
     error_summary: null,
+    has_stored_content: true,
     ...overrides,
   };
 }
@@ -2146,5 +2147,279 @@ describe("DocumentsPanel", () => {
     });
     expect(listChunks).not.toHaveBeenCalled();
     expect(screen.queryByText("hidden-body")).not.toBeInTheDocument();
+  });
+
+  it("does not fetch content on mount or after upload, replace, or delete without Preview", async () => {
+    const user = userEvent.setup();
+    const getContent = vi.fn();
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce(listResponse([doc()]))
+      .mockResolvedValueOnce(listResponse([doc({ source_id: "new-id" })]))
+      .mockResolvedValueOnce(listResponse([doc({ source_id: "new-id" })]))
+      .mockResolvedValueOnce(listResponse([]));
+    const upload = vi.fn().mockResolvedValue(doc({ source_id: "new-id" }));
+    const replace = vi.fn().mockResolvedValue(doc({ source_id: "new-id" }));
+    const remove = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        upload={upload}
+        replace={replace}
+        remove={remove}
+        getContent={getContent}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    expect(getContent).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await openUploadModal(user);
+    await user.upload(
+      screen.getByLabelText(/document file/i),
+      new File(["# hello"], "spec.md", { type: "text/markdown" }),
+    );
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+    expect(await screen.findByText(/source id: new-id/i)).toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+
+    await openDocumentsTab(user);
+    await user.upload(
+      screen.getByLabelText(/replacement file/i),
+      new File(["# v2"], "spec.md", { type: "text/markdown" }),
+    );
+    await user.click(screen.getByRole("button", { name: /^replace$/i }));
+    expect(
+      await screen.findByText(/source id unchanged: new-id/i),
+    ).toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /delete spec\.md/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    expect(await screen.findByText(/deleted document new-id/i)).toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+  });
+
+  it("hides Preview and Download when the original file is unavailable", async () => {
+    const user = userEvent.setup();
+    const getContent = vi.fn();
+    const download = vi.fn();
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              has_stored_content: false,
+              has_error: true,
+              error_summary: "Original file unavailable for preview.",
+            }),
+          ]),
+        )}
+        getContent={getContent}
+        download={download}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+
+    expect(
+      screen.queryByRole("button", { name: /^preview spec\.md$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^download spec\.md$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/original file is unavailable for preview or download/i),
+    ).toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("explains stranded pending rows instead of promising preview later", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              status: "pending",
+              has_stored_content: false,
+              chunk_count: 0,
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+
+    expect(
+      screen.getByText(/still pending/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/delete it and upload again/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/original file is unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("loads a preview only after Preview and downloads through the injected helper", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const getContent = vi.fn().mockResolvedValue({
+      blob: new Blob(["# preview"]),
+      contentType: "text/html",
+      fileName: "ignored.html",
+    });
+    const download = vi.fn().mockResolvedValue({
+      blob: new Blob(["download"]),
+      contentType: "application/octet-stream",
+      fileName: null,
+    });
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        getContent={getContent}
+        download={download}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+    expect(getContent).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: /^download spec\.md$/i }),
+    );
+
+    await waitFor(() => {
+      expect(download).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: "http://api.test",
+          sourceId: "src-1",
+        }),
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: /^preview spec\.md$/i }));
+
+    expect(await screen.findByText("# preview")).toBeInTheDocument();
+    expect(getContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: "http://api.test",
+        sourceId: "src-1",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    anchorClick.mockRestore();
+  });
+
+  it("keeps abort timeouts distinct from backend-unavailable messaging", async () => {
+    const user = userEvent.setup();
+    const upload = vi.fn().mockRejectedValue(ApiError.aborted());
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await openUploadModal(user);
+    await user.upload(
+      screen.getByLabelText(/document file/i),
+      new File(["# hello"], "spec.md", { type: "text/markdown" }),
+    );
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(
+      await screen.findByText(/cancelled or timed out/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/backend unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it("exposes a single Download control while preview is open", async () => {
+    const user = userEvent.setup();
+    const getContent = vi.fn().mockResolvedValue({
+      blob: new Blob(["# preview"]),
+      contentType: "text/plain",
+      fileName: null,
+    });
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        getContent={getContent}
+        download={vi.fn().mockResolvedValue({
+          blob: new Blob(["download"]),
+          contentType: "application/octet-stream",
+          fileName: null,
+        })}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await user.click(screen.getByRole("button", { name: /^preview spec\.md$/i }));
+    expect(await screen.findByText("# preview")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /^download spec\.md$/i }),
+    ).toHaveLength(1);
+  });
+
+  it("does not show upload preview controls for Google Drive rows", async () => {
+    const user = userEvent.setup();
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              source_id: "drive-1",
+              source_type: "google_drive",
+              file_name: "drive-note.md",
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("drive-note.md");
+    expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^preview drive-note\.md$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/catalog identity is the source id/i),
+    ).not.toBeInTheDocument();
   });
 });

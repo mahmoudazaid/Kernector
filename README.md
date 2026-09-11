@@ -160,14 +160,17 @@ stays current without re-hydrating from Chroma on every request.
 ## Upload and manage documents
 
 Open Next.js `/documents` against FastAPI. SQL catalog writes are safe for
-same-host processes on a local filesystem.
+same-host processes on a local filesystem. Upload blobs
+(`DOCUMENT_UPLOAD_BLOB_PATH`, default `data/uploads`) use `os.replace` plus a
+per-path lock and are safe for same-host writers.
 
 1. Start the FastAPI + Next stack above and open **Documents**.
 2. Under **Upload new**, choose one supported file: `.txt`, `.md`, `.markdown`, or `.pdf`.
 3. Submit **Upload new**. The app assigns a system-managed UUID source ID (never derived from the file name). Matching filenames create separate documents.
 4. Under **Uploaded documents**, select a row to inspect status, chunk count, and the diagnostic source ID.
-5. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.
-6. To remove a document, confirm and click **Delete** (vector chunks first, then the catalog row).
+5. Use **Preview** for an inline viewer of the original upload bytes, or **Download** to save them.
+6. To overwrite content for a selected document, choose a replacement file and submit **Replace** (same source ID; old chunks are replaced). Filenames never trigger replacement by themselves.
+7. To remove a document, confirm and click **Delete** (vector chunks first, then the upload blob, then the catalog row).
 
 Upload catalog metadata uses SQLite at `data/catalog/catalog.sqlite` by default
 (`DOCUMENT_CATALOG_SQL_PATH`). Set `DOCUMENT_CATALOG_WORKSPACE_ID` in `.env`

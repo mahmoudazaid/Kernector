@@ -63,6 +63,18 @@ class DocumentCatalogSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class UploadBlobSettings:
+    """Filesystem root for original uploaded document bytes.
+
+    Args:
+        root (Path): Directory holding one flat file per ``source_id``.
+            Created on first ``put``, never at settings load.
+    """
+
+    root: Path
+
+
+@dataclass(frozen=True, slots=True)
 class PromptSettings:
     pack_paths: tuple[Path, ...]
     default_key: str | None = None
@@ -287,6 +299,7 @@ class Settings:
     chroma: ChromaSettings
     knowledge: KnowledgeSettings
     document_catalog: DocumentCatalogSettings
+    upload_blobs: UploadBlobSettings
     prompts: PromptSettings
     retrieval: RetrievalSettings
     domain_tools: DomainToolSettings
@@ -329,6 +342,7 @@ def load_settings() -> Settings:
         chroma=_load_chroma_settings(),
         knowledge=_load_knowledge_settings(),
         document_catalog=_load_document_catalog_settings(),
+        upload_blobs=_load_upload_blob_settings(),
         prompts=_load_prompt_settings(),
         retrieval=_load_retrieval_settings(),
         domain_tools=_load_domain_tool_settings(),
@@ -440,6 +454,15 @@ def _load_document_catalog_settings() -> DocumentCatalogSettings:
         sql_path=_resolve_under_project_root(raw_sql) if raw_sql else None,
         workspace_id=_optional_env("DOCUMENT_CATALOG_WORKSPACE_ID"),
     )
+
+
+def _load_upload_blob_settings() -> UploadBlobSettings:
+    root = os.getenv("DOCUMENT_UPLOAD_BLOB_PATH", "data/uploads")
+    if not root.strip():
+        raise ValueError(
+            f"DOCUMENT_UPLOAD_BLOB_PATH must be non-empty, got {root!r}"
+        )
+    return UploadBlobSettings(root=_resolve_under_project_root(root))
 
 
 def _env_bool(name: str, default: str) -> bool:

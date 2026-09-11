@@ -20,7 +20,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from test.document_doubles import InMemoryDocumentCatalog
+from test.document_doubles import InMemoryDocumentCatalog, InMemoryUploadBlobStore
 from test.doubles import InMemoryVectorStore, vector_for
 
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -73,6 +73,7 @@ def _use_case(
 
     return ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=object(),  # type: ignore[arg-type]
         ingest_factory=lambda: object(),  # type: ignore[arg-type, return-value]
         vector_store_factory=factory,

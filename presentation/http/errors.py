@@ -26,8 +26,10 @@ from composition.errors import (
     DocumentUploadError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
+    MissingUploadContentError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
+    UnsupportedPreviewFormatError,
 )
 from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
@@ -56,6 +58,10 @@ _DOCUMENT_PARTIAL_FALLBACK = (
 )
 
 DOCUMENT_NOT_FOUND_DETAIL = "The requested document was not found."
+DOCUMENT_CONTENT_UNAVAILABLE_DETAIL = "no stored content for this document"
+DOCUMENT_PREVIEW_UNSUPPORTED_DETAIL = (
+    "Preview is not available for this document format."
+)
 DOCUMENT_UNREADABLE_DETAIL = (
     "The uploaded file has no extractable text. "
     "Try a different file or export it as plain text or Markdown."
@@ -209,6 +215,24 @@ def problem_from_exception(
             title="Document not found",
             status=404,
             detail=DOCUMENT_NOT_FOUND_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, MissingUploadContentError):
+        return _problem(
+            code="document_content_unavailable",
+            title="Document content unavailable",
+            status=404,
+            detail=DOCUMENT_CONTENT_UNAVAILABLE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, UnsupportedPreviewFormatError):
+        return _problem(
+            code="document_preview_unsupported",
+            title="Document preview unsupported",
+            status=422,
+            detail=DOCUMENT_PREVIEW_UNSUPPORTED_DETAIL,
             instance=instance,
             request_id=request_id,
         )

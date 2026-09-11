@@ -21,6 +21,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("KNOWLEDGE_CORPUS_PATH", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_SQL_PATH", raising=False)
     # Workspace pin and retired-key clears live in test/conftest.py.
+    monkeypatch.delenv("DOCUMENT_UPLOAD_BLOB_PATH", raising=False)
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
@@ -138,6 +139,37 @@ def test_document_catalog_defaults(env: pytest.MonkeyPatch) -> None:
     assert catalog.workspace_id == "test-workspace"
     assert not hasattr(catalog, "path")
     assert not hasattr(catalog, "backend")
+
+
+def test_upload_blob_defaults(env: pytest.MonkeyPatch) -> None:
+    blobs = load_settings().upload_blobs
+    assert blobs.root == PROJECT_ROOT / "data" / "uploads"
+
+
+def test_upload_blob_absolute_path_is_preserved(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "blobs"
+    env.setenv("DOCUMENT_UPLOAD_BLOB_PATH", str(target))
+    assert load_settings().upload_blobs.root == target
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
+def test_blank_upload_blob_path_is_rejected(
+    env: pytest.MonkeyPatch, raw: str
+) -> None:
+    env.setenv("DOCUMENT_UPLOAD_BLOB_PATH", raw)
+    with pytest.raises(ValueError, match="DOCUMENT_UPLOAD_BLOB_PATH"):
+        load_settings()
+
+
+def test_loading_upload_blob_settings_creates_no_directories(
+    env: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "upload-blobs-not-yet"
+    env.setenv("DOCUMENT_UPLOAD_BLOB_PATH", str(target))
+    assert load_settings().upload_blobs.root == target
+    assert not target.exists()
 
 
 def test_document_catalog_absolute_sql_path_is_preserved(

@@ -3,7 +3,10 @@ import { ApiError } from "@/lib/api/errors";
 import {
   DOCUMENT_CHUNKS_TIMEOUT_MS,
   DOCUMENT_MUTATION_TIMEOUT_MS,
+  DOCUMENT_READ_TIMEOUT_MS,
   deleteDocument,
+  downloadDocument,
+  getDocumentContent,
   listDocumentChunks,
   listDocuments,
   replaceDocument,
@@ -124,5 +127,103 @@ describe("documents api wrappers", () => {
         method: "DELETE",
       }),
     );
+  });
+
+  it("fetches content via encoded /content path with 120s default", async () => {
+    const requestBlob = vi.fn().mockResolvedValue({
+      blob: new Blob(["hi"]),
+      contentType: "text/plain; charset=utf-8",
+      fileName: "notes.txt",
+    });
+
+    await getDocumentContent({
+      baseUrl: "http://api.test",
+      sourceId: "a/b",
+      requestBlob,
+    });
+
+    expect(requestBlob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/api/v1/documents/a%2Fb/content",
+        method: "GET",
+        timeoutMs: DOCUMENT_READ_TIMEOUT_MS,
+      }),
+    );
+    expect(DOCUMENT_READ_TIMEOUT_MS).toBe(120_000);
+  });
+
+  it("fetches download via encoded /download path", async () => {
+    const requestBlob = vi.fn().mockResolvedValue({
+      blob: new Blob(["pdf"]),
+      contentType: "application/pdf",
+      fileName: "doc.pdf",
+    });
+
+    await downloadDocument({
+      baseUrl: "http://api.test",
+      sourceId: "src-1",
+      requestBlob,
+    });
+
+    expect(requestBlob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/api/v1/documents/src-1/download",
+        method: "GET",
+        timeoutMs: DOCUMENT_READ_TIMEOUT_MS,
+      }),
+    );
+  });
+
+  it("rejects content problem+json 404 with ApiError detail", async () => {
+    const requestBlob = vi
+      .fn()
+      .mockRejectedValue(
+        ApiError.fromProblem({
+          type: "https://kernector.dev/problems/document_content_unavailable",
+          title: "Document content unavailable",
+          status: 404,
+          detail: "no stored content for this document",
+          code: "document_content_unavailable",
+          errors: null,
+          instance: null,
+          request_id: null,
+        }),
+      );
+
+    await expect(
+      getDocumentContent({
+        baseUrl: "http://api.test",
+        sourceId: "missing-blob",
+        requestBlob,
+      }),
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      detail: "no stored content for this document",
+    });
+  });
+
+  it("rejects aborted content requests as ApiError.aborted", async () => {
+    const requestBlob = vi.fn().mockRejectedValue(ApiError.aborted());
+
+    await expect(
+      downloadDocument({
+        baseUrl: "http://api.test",
+        sourceId: "src-1",
+        requestBlob,
+      }),
+    ).rejects.toMatchObject({ name: "ApiError", code: "aborted" });
+  });
+
+  it("rejects non-problem 5xx without leaking the body", async () => {
+    const requestBlob = vi.fn().mockRejectedValue(ApiError.generic(502));
+
+    await expect(
+      getDocumentContent({
+        baseUrl: "http://api.test",
+        sourceId: "src-1",
+        requestBlob,
+      }),
+    ).rejects.toMatchObject({ name: "ApiError", status: 502 });
   });
 });

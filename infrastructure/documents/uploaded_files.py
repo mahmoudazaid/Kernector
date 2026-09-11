@@ -42,6 +42,28 @@ _FORMAT_BY_SUFFIX = {
 # both what is accepted and what `content_format` it becomes.
 SUPPORTED_SUFFIXES: frozenset[str] = frozenset(_FORMAT_BY_SUFFIX)
 
+# Preview/download media types keyed by the canonical content_format values
+# above — derived from that set so the two cannot drift.
+_MEDIA_TYPE_BY_FORMAT = {
+    "txt": "text/plain; charset=utf-8",
+    "markdown": "text/plain; charset=utf-8",
+    "pdf": "application/pdf",
+}
+CONTENT_TYPE_BY_FORMAT: dict[str, str] = {}
+for _fmt in dict.fromkeys(_FORMAT_BY_SUFFIX.values()):
+    try:
+        CONTENT_TYPE_BY_FORMAT[_fmt] = _MEDIA_TYPE_BY_FORMAT[_fmt]
+    except KeyError as error:
+        raise RuntimeError(
+            f"missing media type mapping for content_format {_fmt!r}"
+        ) from error
+_unused_media_types = set(_MEDIA_TYPE_BY_FORMAT) - set(CONTENT_TYPE_BY_FORMAT)
+if _unused_media_types:
+    raise RuntimeError(
+        "unused media type mappings with no matching content_format: "
+        f"{sorted(_unused_media_types)}"
+    )
+
 # Separator between extracted PDF pages: a blank line, as between paragraphs.
 _PAGE_SEPARATOR = "\n\n"
 
