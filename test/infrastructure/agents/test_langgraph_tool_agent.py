@@ -41,17 +41,14 @@ class _ScriptedChat:
         self._messages = list(messages)
         self._error = error
         self.bound_tools: list[object] | None = None
-        self.bind_args: tuple[object, ...] = ()
-        self.bind_kwargs: dict[str, object] = {}
         self.invocations = 0
         self.invoke_messages: list[object] = []
 
     def bind_tools(
         self, tools: Sequence[object], *args: object, **kwargs: object
     ) -> _ScriptedChat:
+        del args, kwargs
         self.bound_tools = list(tools)
-        self.bind_args = args
-        self.bind_kwargs = kwargs
         return self
 
     def invoke(self, messages: object, **_kwargs: object) -> object:
@@ -214,7 +211,7 @@ def test_langgraph_tool_agent_folds_invalid_tool_calls_into_replies() -> None:
         content="",
         tool_calls=[{"name": tool.name, "args": {}, "id": "call_ok"}],
         invalid_tool_calls=[
-            InvalidToolCall(name="bad", args="{", id="call_bad", error="parse")
+            InvalidToolCall(name="bad", args="{", id="call_bad", error=None)
         ],
     )
     chat = _ScriptedChat([mixed, _ai_text("recovered")])
@@ -227,9 +224,30 @@ def test_langgraph_tool_agent_folds_invalid_tool_calls_into_replies() -> None:
     second = chat.invoke_messages[1]
     tool_msgs = [m for m in second if isinstance(m, ToolMessage)]
     assert {m.tool_call_id for m in tool_msgs} == {"call_ok", "call_bad"}
+    bad_reply = next(m for m in tool_msgs if m.tool_call_id == "call_bad")
+    assert "could not be parsed" in bad_reply.content
     # History must not retain invalid_tool_calls for the next wire turn.
     assistant = next(m for m in second if isinstance(m, AIMessage) and m.tool_calls)
     assert list(assistant.invalid_tool_calls or ()) == []
+
+
+def test_langgraph_tool_agent_rejects_non_mapping_tool_args() -> None:
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+    from langchain_core.messages import AIMessage
+
+    tool = _RecordingTool()
+    bad = AIMessage.model_construct(
+        content="",
+        tool_calls=[{"name": tool.name, "args": "{not-json", "id": "call_1"}],
+        type="ai",
+    )
+    chat = _ScriptedChat([bad, _ai_text("recovered")])
+    agent = LangGraphToolAgent(system_prompt=_SYSTEM, model_factory=_RecordingFactory(chat))
+
+    result = agent.run("goal", [tool], max_steps=4)
+
+    assert result.content == "recovered"
+    assert tool.calls == []
 
 
 def test_langgraph_tool_agent_blank_final_keeps_outcomes_without_truncated() -> None:

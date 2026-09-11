@@ -29,6 +29,10 @@ _FIXED_ARGS_NOTE = (
 _EXPORT_BEFORE_GENERATE = (
     "Generate test cases first before exporting Markdown."
 )
+_NO_TOOLS_INVOKED = "No software-delivery tools were invoked."
+_COULD_NOT_GENERATE = (
+    "Could not generate test cases from the evidence bundle."
+)
 _TRUNCATED_NOTE = " The agent stopped early before completing the requested tools."
 
 
@@ -233,8 +237,12 @@ def _summary_from_outcomes(
                 "Scored software-delivery risk from the evidence bundle, "
                 "but could not generate test cases."
             )
+        elif not outcomes:
+            summary = _NO_TOOLS_INVOKED
         else:
-            summary = "No software-delivery tools were invoked."
+            # Unreachable with today's LazyExportTool (export records only after
+            # generate); kept so a future outcome shape is not reported as idle.
+            summary = _COULD_NOT_GENERATE
     elif has_risk and has_generate and has_export:
         summary = orchestration_summary(
             SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
@@ -246,7 +254,7 @@ def _summary_from_outcomes(
     elif has_risk:
         summary = orchestration_summary(SoftwareDeliveryIntent.RISK_SCORE)
     elif not outcomes:
-        summary = "No software-delivery tools were invoked."
+        summary = _NO_TOOLS_INVOKED
     else:
         summary = "Completed a partial software-delivery tool run."
 

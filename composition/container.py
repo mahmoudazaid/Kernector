@@ -115,7 +115,12 @@ from infrastructure.embeddings.openrouter import (
     OpenRouterEmbeddings,
 )
 from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corpus
-from infrastructure.llm.ollama import OllamaChat, OllamaConfigError
+from infrastructure.llm.ollama import (
+    OllamaBaseUrlMissingError,
+    OllamaChat,
+    OllamaConfigError,
+    OllamaModelMissingError,
+)
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
 from infrastructure.llm.query_rewrite import (
@@ -158,11 +163,12 @@ def _build_ollama(
         config = replace(config, base_url=base_url)
     try:
         return OllamaChat(config)
+    except OllamaBaseUrlMissingError as exc:
+        raise OllamaNotConfiguredError(str(exc)) from exc
+    except OllamaModelMissingError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
     except OllamaConfigError as exc:
-        message = str(exc)
-        if "OLLAMA_BASE_URL" in message:
-            raise OllamaNotConfiguredError(message) from exc
-        raise MissingProviderCredentialsError(message) from exc
+        raise MissingProviderCredentialsError(str(exc)) from exc
 
 
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {
@@ -2076,26 +2082,22 @@ def _software_delivery_agent_model_factory(
         from domain.errors import ProviderError
 
         effective = provider or settings.provider
-        if effective not in _CHAT_MODELS:
+        builder = _CHAT_MODELS.get(effective)
+        if builder is None:
             raise ValueError(
                 f"Unknown provider {effective!r}. "
                 f"Expected one of {sorted(_CHAT_MODELS)}."
             )
+        # Same credential contract as live chat; typed config errors must surface.
+        builder(settings, model, base_url)
+
         if effective == "ollama":
             config = settings.ollama
             if model:
                 config = replace(config, model=model)
             if base_url:
                 config = replace(config, base_url=base_url)
-            if not config.base_url:
-                raise OllamaNotConfiguredError(
-                    "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
-                )
-            if not config.model:
-                raise MissingProviderCredentialsError(
-                    "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
-                )
-            base = config.base_url.rstrip("/")
+            base = (config.base_url or "").rstrip("/")
             try:
                 inner = ChatOpenAI(
                     model=config.model,
@@ -2112,9 +2114,6 @@ def _software_delivery_agent_model_factory(
             config = settings.openrouter
             if model:
                 config = replace(config, model=model)
-            if not config.api_key or not config.base_url or not config.model:
-                # Mirror OpenRouterChat construction checks without a second adapter.
-                _build_openrouter(settings, model, None)
             try:
                 inner = ChatOpenAI(
                     model=config.model,

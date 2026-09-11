@@ -25,6 +25,25 @@ from domain.ports import Tool
 _CONNECTION_FAILURE_MESSAGE = "The tool-calling agent provider could not be reached."
 _STEP_LIMIT_CONTENT = "Stopped after reaching the step limit."
 _EMPTY_FINAL_MESSAGE = "The agent finished without a final answer."
+_INVALID_TOOL_ARGS_MESSAGE = "Tool call arguments could not be parsed."
+
+
+def _is_configuration_error(exc: BaseException) -> bool:
+    """True when ``exc`` is application ``ConfigurationError`` (or a subclass).
+
+    Checked by MRO name so this infrastructure adapter does not import
+    ``application.errors`` while still letting typed config failures pass through.
+    """
+    return any(cls.__name__ == "ConfigurationError" for cls in type(exc).__mro__)
+
+
+def _provider_or_reraise(exc: BaseException) -> None:
+    """Re-raise config/ValueError as-is; otherwise raise connectivity ProviderError."""
+    if isinstance(exc, ProviderError) or _is_configuration_error(exc):
+        raise exc
+    if isinstance(exc, ValueError):
+        raise exc
+    raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
 
 
 class _ChatModelLike(Protocol):
@@ -100,7 +119,7 @@ class LangGraphToolAgent:
         except ProviderError:
             raise
         except Exception as exc:
-            raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
+            _provider_or_reraise(exc)
 
         def call_model(state: _AgentState) -> Mapping[str, object]:
             steps = int(state.get("steps", 0)) + 1
@@ -116,7 +135,7 @@ class LangGraphToolAgent:
             except ProviderError:
                 raise
             except Exception as exc:
-                raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
+                _provider_or_reraise(exc)
             response = _with_normalised_tool_calls(response)
             return {"messages": [response], "steps": steps, "truncated": False}
 
@@ -142,9 +161,7 @@ class LangGraphToolAgent:
                 if call.get("error"):
                     outputs.append(
                         ToolMessage(
-                            content=(
-                                "Tool call was invalid and could not be parsed."
-                            ),
+                            content=str(call["error"]),
                             name=bind_name,
                             tool_call_id=call_id,
                         )
@@ -165,7 +182,7 @@ class LangGraphToolAgent:
                         )
                     )
                     continue
-                result = tool.run(args if isinstance(args, Mapping) else {})
+                result = tool.run(args)  # type: ignore[arg-type]
                 outputs.append(
                     ToolMessage(
                         content=result,
@@ -210,7 +227,7 @@ class LangGraphToolAgent:
         except ProviderError:
             raise
         except Exception as exc:
-            raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
+            _provider_or_reraise(exc)
 
         truncated = bool(final_state.get("truncated"))
         steps = int(final_state.get("steps", 0))
@@ -247,7 +264,12 @@ def _with_normalised_tool_calls(message: object) -> object:
     for index, call in enumerate(tool_calls):
         if not isinstance(call, Mapping):
             normalised.append(
-                {"name": "unknown", "args": {}, "id": _tool_call_id({}, index)}
+                {
+                    "name": "unknown",
+                    "args": {},
+                    "id": _tool_call_id({}, index),
+                    "error": _INVALID_TOOL_ARGS_MESSAGE,
+                }
             )
             changed = True
             continue
@@ -261,6 +283,9 @@ def _with_normalised_tool_calls(message: object) -> object:
             changed = True
         elif not isinstance(call_dict["args"], Mapping):
             call_dict["args"] = {}
+            call_dict["error"] = (
+                call_dict.get("error") or _INVALID_TOOL_ARGS_MESSAGE
+            )
             changed = True
         new_id = _tool_call_id(call_dict, index)
         if call_dict.get("id") != new_id:
@@ -280,6 +305,8 @@ def _with_normalised_tool_calls(message: object) -> object:
             )
             call_id = _tool_call_id(call, index)
             error = call.get("error")
+            if not isinstance(error, str) or not error.strip():
+                error = _INVALID_TOOL_ARGS_MESSAGE
             # Preserve id/name so call_tools can reply; args stay empty.
             normalised.append(
                 {
@@ -287,7 +314,7 @@ def _with_normalised_tool_calls(message: object) -> object:
                     "args": {},
                     "id": call_id,
                     "type": "tool_call",
-                    **({"error": error} if error else {}),
+                    "error": error,
                 }
             )
         else:
@@ -297,6 +324,7 @@ def _with_normalised_tool_calls(message: object) -> object:
                     "args": {},
                     "id": _tool_call_id({}, index),
                     "type": "tool_call",
+                    "error": _INVALID_TOOL_ARGS_MESSAGE,
                 }
             )
 

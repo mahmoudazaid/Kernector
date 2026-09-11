@@ -9,7 +9,12 @@ import requests
 from domain.errors import ProviderError
 from domain.models import Message, Usage
 from infrastructure.config import OllamaSettings
-from infrastructure.llm.ollama import OllamaChat, OllamaConfigError
+from infrastructure.llm.ollama import (
+    OllamaBaseUrlMissingError,
+    OllamaChat,
+    OllamaConfigError,
+    OllamaModelMissingError,
+)
 
 
 def _settings(**overrides: object) -> OllamaSettings:
@@ -54,13 +59,18 @@ class _RecordingPost:
 
 
 def test_missing_base_url_raises_config_error() -> None:
-    with pytest.raises(OllamaConfigError, match="OLLAMA_BASE_URL"):
+    with pytest.raises(OllamaBaseUrlMissingError, match="OLLAMA_BASE_URL"):
         OllamaChat(_settings(base_url=None))
 
 
 def test_missing_model_raises_config_error() -> None:
-    with pytest.raises(OllamaConfigError, match="OLLAMA_MODEL"):
+    with pytest.raises(OllamaModelMissingError, match="OLLAMA_MODEL"):
         OllamaChat(_settings(model=None))
+
+
+def test_ollama_config_subclasses_share_base() -> None:
+    assert issubclass(OllamaBaseUrlMissingError, OllamaConfigError)
+    assert issubclass(OllamaModelMissingError, OllamaConfigError)
 
 
 def test_complete_returns_ask_result_from_injected_post() -> None:

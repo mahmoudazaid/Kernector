@@ -573,17 +573,62 @@ def test_agent_loop_flag_on_wires_agent_orchestrate(
     assert isinstance(ask._ask, ToolAugmentedAsk)
 
 
-def test_agent_loop_missing_openrouter_key_raises_missing_credentials(
+def test_agent_loop_runtime_override_wires_despite_missing_openrouter_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """HTTP path: missing key is MissingProviderCredentialsError from build_chat_model."""
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "")
-    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
-    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    """Agent loop + Ollama override: wire succeeds when OpenRouter key is absent."""
+    from application.untrusted_text import agent_tool_system_prompt
+    from composition.container import _software_delivery_agent_model_factory
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
-    with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
-        build_chat_model(load_settings(), provider="openrouter")
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "settings-model")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    wired: list[object] = []
+
+    def _fake_agent_orchestrate(agent: object, **kwargs: object):
+        wired.append(agent)
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("orchestrate body not under test")
+
+        return orchestrate
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _fake_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(
+        load_settings(),
+        chat_model=_StubChat(),
+        provider="ollama",
+        model="llama3",
+        base_url="http://h:1234",
+    )
+
+    assert len(wired) == 1
+    assert isinstance(wired[0], LangGraphToolAgent)
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+
+    factory = _software_delivery_agent_model_factory(
+        load_settings(),
+        provider="ollama",
+        model="llama3",
+        base_url="http://h:1234",
+    )
+    observing = factory()
+    assert observing._model_name == "llama3"
+    assert "http://h:1234/v1" in str(observing._inner.openai_api_base)
+    # Production system prompt is injected at the composition construction site.
+    assert "BEGIN_UNTRUSTED_AGENT_DATA" in agent_tool_system_prompt()
 
 
 def test_agent_model_factory_uses_runtime_provider_override(
@@ -593,7 +638,7 @@ def test_agent_model_factory_uses_runtime_provider_override(
     from composition.container import _software_delivery_agent_model_factory
 
     _sd_env(monkeypatch)
-    monkeypatch.setenv("PROVIDER", "openrouter")
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     monkeypatch.setenv("OLLAMA_MODEL", "settings-model")
@@ -622,6 +667,33 @@ def test_agent_model_factory_rejects_unknown_provider(
     )
     with pytest.raises(ValueError, match="Unknown provider"):
         factory()
+
+
+def test_agent_run_preserves_missing_credentials_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Config failures from the agent factory must not become ProviderError/502."""
+    from application.untrusted_text import agent_tool_system_prompt
+    from composition.container import _software_delivery_agent_model_factory
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    factory = _software_delivery_agent_model_factory(load_settings())
+    agent = LangGraphToolAgent(
+        system_prompt=agent_tool_system_prompt(),
+        model_factory=factory,
+    )
+
+    class _Tool:
+        name = "lookup"
+        description = "x"
+
+        def run(self, arguments: Mapping[str, object]) -> str:
+            return "ok"
+
+    with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
+        agent.run("goal", [_Tool()], max_steps=2)
 
 
 def test_observing_chat_bind_tools_forwards_extra_options() -> None:

@@ -12,12 +12,20 @@ from infrastructure.config import OllamaSettings
 
 
 class OllamaConfigError(RuntimeError):
-    """The Ollama base URL is missing or unusable.
+    """Ollama construction failed due to missing or unusable settings.
 
-    Named so the composition root can catch this specific failure narrowly and
-    map it to a typed ``ConfigurationError``. Raised only from construction,
-    never from ``complete()``.
+    Named so the composition root can catch this failure narrowly. Raised only
+    from construction, never from ``complete()``. Prefer the specific subclasses
+    below so composition can map by ``isinstance`` without sniffing message text.
     """
+
+
+class OllamaBaseUrlMissingError(OllamaConfigError):
+    """``OLLAMA_BASE_URL`` is absent."""
+
+
+class OllamaModelMissingError(OllamaConfigError):
+    """``OLLAMA_MODEL`` is absent."""
 
 
 class _HttpPost(Protocol):
@@ -34,11 +42,11 @@ class OllamaChat:
         post: _HttpPost | None = None,
     ) -> None:
         if not config.base_url:
-            raise OllamaConfigError(
+            raise OllamaBaseUrlMissingError(
                 "Missing OLLAMA_BASE_URL. Add it to .env before using Ollama."
             )
         if not config.model:
-            raise OllamaConfigError(
+            raise OllamaModelMissingError(
                 "Missing OLLAMA_MODEL. Add it to .env before using Ollama."
             )
         self._config = config

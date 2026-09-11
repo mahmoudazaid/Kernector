@@ -190,7 +190,10 @@ def test_agent_orchestrate_truncated_run_notes_early_stop() -> None:
 
 
 def test_agent_orchestrate_summary_follows_tools_that_ran() -> None:
-    from composition.software_delivery_agent import build_agent_orchestrate
+    from composition.software_delivery_agent import (
+        _NO_TOOLS_INVOKED,
+        build_agent_orchestrate,
+    )
 
     agent = _OrderedFakeAgent(())
     runner = PackSoftwareDeliveryChat(
@@ -202,7 +205,7 @@ def test_agent_orchestrate_summary_follows_tools_that_ran() -> None:
     outcome = runner.run("Create test cases for AUTH-101", generate_tests=True)
 
     assert outcome.tool_outputs == ()
-    assert outcome.answer == "No software-delivery tools were invoked."
+    assert outcome.answer == _NO_TOOLS_INVOKED
     assert "exported Markdown" not in outcome.answer
     assert outcome.run_view is not None
     assert outcome.run_view.calls == ()
