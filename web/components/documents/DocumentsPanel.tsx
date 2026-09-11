@@ -10,6 +10,9 @@ import {
   type FormEvent,
 } from "react";
 import {
+  DocumentChunksSheet,
+} from "@/components/documents/DocumentChunksSheet";
+import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
@@ -27,12 +30,19 @@ import { Loader } from "@/components/ui/Loader";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
+  DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS,
+  DOCUMENT_CHUNKS_PAGE_SIZE,
+  listDocumentChunks,
   listDocuments,
   replaceDocument,
   uploadDocument,
   type CatalogDocumentResponse,
   type DeleteDocumentOptions,
+  type DocumentChunkListResponse,
+  type DocumentChunkResponse,
   type DocumentListResponse,
+  type HubSourceType,
+  type ListDocumentChunksOptions,
   type ListDocumentsOptions,
   type ReplaceDocumentOptions,
   type UploadDocumentOptions,
@@ -48,6 +58,9 @@ import {
 export type DocumentsPanelProps = {
   apiBaseUrl: string;
   list?: (options: ListDocumentsOptions) => Promise<DocumentListResponse>;
+  listChunks?: (
+    options: ListDocumentChunksOptions,
+  ) => Promise<DocumentChunkListResponse>;
   upload?: (options: UploadDocumentOptions) => Promise<CatalogDocumentResponse>;
   replace?: (
     options: ReplaceDocumentOptions,
@@ -74,6 +87,21 @@ type CatalogView =
       documents: CatalogDocumentResponse[];
     };
 
+type ChunksView =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | {
+      kind: "ready";
+      chunks: DocumentChunkResponse[];
+      hasMore: boolean;
+      /** Next positional offset for the server (not merged chunk count). */
+      nextOffset: number;
+      loadMoreError: string | null;
+    }
+  | { kind: "empty" }
+  | { kind: "not_found" }
+  | { kind: "error"; message: string };
+
 type ActionFeedback =
   | { kind: "idle" }
   | { kind: "success"; message: string }
@@ -93,8 +121,80 @@ const PLANNED_CONNECTORS = [
 
 const SOURCE_FILTERS = ["All sources", "File uploads", "Google Drive"] as const;
 
+function isHubSourceType(value: string): value is HubSourceType {
+  return value === "knowledge_document" || value === "google_drive";
+}
+
+function maxEmptyWindowsForSelection(chunkCount: number | null | undefined): number {
+  if (typeof chunkCount === "number" && chunkCount > 0) {
+    return Math.max(
+      DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS,
+      Math.ceil(chunkCount / DOCUMENT_CHUNKS_PAGE_SIZE),
+    );
+  }
+  return DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS;
+}
+
+async function fetchNextNonEmptyPage(options: {
+  listChunks: (
+    options: ListDocumentChunksOptions,
+  ) => Promise<DocumentChunkListResponse>;
+  baseUrl: string;
+  sourceId: string;
+  sourceType: HubSourceType;
+  offset: number;
+  signal: AbortSignal;
+  maxEmptyWindows: number;
+}): Promise<{
+  chunks: DocumentChunkResponse[];
+  hasMore: boolean;
+  nextOffset: number;
+} | null> {
+  const listChunks = options.listChunks;
+  let offset = options.offset;
+  let emptyWindows = 0;
+  for (;;) {
+    const response = await listChunks({
+      baseUrl: options.baseUrl,
+      sourceId: options.sourceId,
+      sourceType: options.sourceType,
+      limit: DOCUMENT_CHUNKS_PAGE_SIZE,
+      offset,
+      signal: options.signal,
+    });
+    if (options.signal.aborted) {
+      return null;
+    }
+    const nextOffset = offset + DOCUMENT_CHUNKS_PAGE_SIZE;
+    if (response.chunks.length > 0) {
+      return {
+        chunks: response.chunks,
+        hasMore: response.has_more,
+        nextOffset,
+      };
+    }
+    if (!response.has_more) {
+      return { chunks: [], hasMore: false, nextOffset };
+    }
+    emptyWindows += 1;
+    if (emptyWindows >= options.maxEmptyWindows) {
+      return { chunks: [], hasMore: false, nextOffset };
+    }
+    offset = nextOffset;
+  }
+}
+
 function isDriveDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GOOGLE_DRIVE_SOURCE;
+}
+
+/** Ready documents with stored chunks may open the inspect sheet. */
+function canInspectChunks(doc: CatalogDocumentResponse): boolean {
+  return (
+    doc.status === "ready" &&
+    doc.chunk_count > 0 &&
+    isHubSourceType(doc.source_type)
+  );
 }
 
 function sourceLabel(sourceType: string): string {
@@ -194,6 +294,7 @@ function actionErrorMessage(error: unknown): string {
 export function DocumentsPanel({
   apiBaseUrl,
   list = listDocuments,
+  listChunks = listDocumentChunks,
   upload = uploadDocument,
   replace = replaceDocument,
   remove = deleteDocument,
@@ -211,6 +312,9 @@ export function DocumentsPanel({
   const constraints = runtimeCatalog?.constraints ?? null;
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chunksSheetOpen, setChunksSheetOpen] = useState(false);
+  const [chunksView, setChunksView] = useState<ChunksView>({ kind: "idle" });
+  const [chunksRetryToken, setChunksRetryToken] = useState(0);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [uploadInputKey, setUploadInputKey] = useState(0);
@@ -237,10 +341,23 @@ export function DocumentsPanel({
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const listChunksRef = useRef(listChunks);
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
+  const loadedChunksKeyRef = useRef<string | null>(null);
+  const [chunksLoadingMore, setChunksLoadingMore] = useState(false);
   const uploadErrorRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const deleteRestoreRef = useRef<HTMLElement | null>(null);
-  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
+  const chunksSheetRestoreRef = useRef<HTMLElement | null>(null);
+  const dialogOpen =
+    pendingDelete !== null ||
+    uploadOpen ||
+    drivePickerOpen ||
+    chunksSheetOpen;
+
+  useEffect(() => {
+    listChunksRef.current = listChunks;
+  });
 
   useEffect(() => {
     captureDriveCallback();
@@ -387,11 +504,227 @@ export function DocumentsPanel({
     visibleDocuments.find((doc) => doc.source_id === selectedId) ?? null;
   const accept = constraints?.supported_upload_suffixes.join(",");
   const selectedSourceId = selected?.source_id ?? null;
+  const selectedSourceType = selected?.source_type;
+  const selectedStatus = selected?.status;
+  const selectedChunkCount = selected?.chunk_count;
+  const selectedUploadedAt = selected?.uploaded_at;
 
   useEffect(() => {
     setReplaceFile(null);
     setReplaceInputKey((key) => key + 1);
   }, [selectedSourceId]);
+
+  useEffect(() => {
+    if (hubTab !== "documents" && chunksSheetOpen) {
+      setChunksSheetOpen(false);
+    }
+  }, [hubTab, chunksSheetOpen]);
+
+  useEffect(() => {
+    if (
+      chunksSheetOpen &&
+      (!selected || !canInspectChunks(selected))
+    ) {
+      setChunksSheetOpen(false);
+    }
+  }, [chunksSheetOpen, selected]);
+
+  useEffect(() => {
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = null;
+    setChunksLoadingMore(false);
+    if (!chunksSheetOpen || !selected || selectedStatus !== "ready") {
+      if (!chunksSheetOpen) {
+        loadedChunksKeyRef.current = null;
+        setChunksView({ kind: "idle" });
+      }
+      return;
+    }
+    if (!isHubSourceType(selected.source_type)) {
+      loadedChunksKeyRef.current = null;
+      setChunksView({ kind: "idle" });
+      return;
+    }
+    const sourceId = selected.source_id;
+    const sourceType = selected.source_type;
+    const identityKey = [
+      sourceId,
+      sourceType,
+      selectedStatus,
+      String(selectedChunkCount ?? ""),
+      selectedUploadedAt ?? "",
+    ].join("\0");
+    const selectionKey = `${identityKey}\0${String(chunksRetryToken)}`;
+    // Keep already-loaded pages when the Documents tab is hidden; only skip fetch.
+    // Drop pages that belong to a different selection identity.
+    if (hubTab !== "documents") {
+      if (
+        loadedChunksKeyRef.current !== null &&
+        !loadedChunksKeyRef.current.startsWith(`${identityKey}\0`)
+      ) {
+        loadedChunksKeyRef.current = null;
+        setChunksView({ kind: "idle" });
+      }
+      return;
+    }
+    if (loadedChunksKeyRef.current === selectionKey) {
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setChunksView({ kind: "loading" });
+
+    async function loadFirstPage() {
+      const page = await fetchNextNonEmptyPage({
+        listChunks: listChunksRef.current,
+        baseUrl: apiBaseUrl,
+        sourceId,
+        sourceType,
+        offset: 0,
+        signal: controller.signal,
+        maxEmptyWindows: maxEmptyWindowsForSelection(selectedChunkCount),
+      });
+      if (!active || controller.signal.aborted || page === null) {
+        return;
+      }
+      if (page.chunks.length === 0) {
+        loadedChunksKeyRef.current = selectionKey;
+        setChunksView({ kind: "empty" });
+        return;
+      }
+      loadedChunksKeyRef.current = selectionKey;
+      setChunksView({
+        kind: "ready",
+        chunks: page.chunks,
+        hasMore: page.hasMore,
+        nextOffset: page.nextOffset,
+        loadMoreError: null,
+      });
+    }
+
+    void loadFirstPage().catch((error: unknown) => {
+      if (!active || controller.signal.aborted) {
+        return;
+      }
+      loadedChunksKeyRef.current = null;
+      if (error instanceof ApiError && error.status === 404) {
+        setChunksView({ kind: "not_found" });
+        void refresh();
+        return;
+      }
+      setChunksView({
+        kind: "error",
+        message: actionErrorMessage(error),
+      });
+    });
+    return () => {
+      active = false;
+      controller.abort();
+      loadMoreAbortRef.current?.abort();
+    };
+    // refresh is stable enough for a post-404 catalog reconcile; omit from deps
+    // so a parent re-render does not re-download chunks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed off catalog identity fields
+  }, [
+    apiBaseUrl,
+    chunksSheetOpen,
+    hubTab,
+    selectedSourceId,
+    selectedSourceType,
+    selectedStatus,
+    selectedChunkCount,
+    selectedUploadedAt,
+    chunksRetryToken,
+  ]);
+
+  function retryChunksFetch() {
+    loadedChunksKeyRef.current = null;
+    setChunksRetryToken((token) => token + 1);
+  }
+
+  async function loadMoreChunks() {
+    if (
+      !selected ||
+      selected.status !== "ready" ||
+      chunksView.kind !== "ready" ||
+      !chunksView.hasMore ||
+      chunksLoadingMore ||
+      !isHubSourceType(selected.source_type)
+    ) {
+      return;
+    }
+    const targetType = selected.source_type;
+    const offset = chunksView.nextOffset;
+    loadMoreAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreAbortRef.current = controller;
+    setChunksLoadingMore(true);
+    try {
+      const page = await fetchNextNonEmptyPage({
+        listChunks: listChunksRef.current,
+        baseUrl: apiBaseUrl,
+        sourceId: selected.source_id,
+        sourceType: targetType,
+        offset,
+        signal: controller.signal,
+        maxEmptyWindows: maxEmptyWindowsForSelection(selected.chunk_count),
+      });
+      if (controller.signal.aborted || page === null) {
+        return;
+      }
+      setChunksView((prev) => {
+        if (prev.kind !== "ready") {
+          return prev;
+        }
+        // Dedup accidental re-delivery; index ties with different content stay.
+        const seen = new Set(
+          prev.chunks.map(
+            (chunk) =>
+              `${chunk.source_type}\0${chunk.source_id}\0${chunk.index}\0${chunk.content}`,
+          ),
+        );
+        const appended = page.chunks.filter((chunk) => {
+          const key = `${chunk.source_type}\0${chunk.source_id}\0${chunk.index}\0${chunk.content}`;
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+        return {
+          kind: "ready",
+          chunks: [...prev.chunks, ...appended],
+          hasMore: page.hasMore,
+          nextOffset: page.nextOffset,
+          loadMoreError: null,
+        };
+      });
+    } catch (error: unknown) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 404) {
+        loadedChunksKeyRef.current = null;
+        setChunksView({ kind: "not_found" });
+        void refresh();
+        return;
+      }
+      setChunksView((prev) => {
+        if (prev.kind !== "ready") {
+          return prev;
+        }
+        return {
+          ...prev,
+          loadMoreError: actionErrorMessage(error),
+        };
+      });
+    } finally {
+      if (loadMoreAbortRef.current === controller) {
+        loadMoreAbortRef.current = null;
+      }
+      setChunksLoadingMore(false);
+    }
+  }
 
   function clearUploadInput() {
     setUploadFile(null);
@@ -408,6 +741,42 @@ export function DocumentsPanel({
       return;
     }
     setSelectedId(sourceId);
+  }
+
+  function closeChunksSheet() {
+    setChunksSheetOpen(false);
+  }
+
+  function openChunksSheet(
+    doc: CatalogDocumentResponse,
+    restoreTarget: HTMLElement | null,
+  ) {
+    if (
+      !canInspectChunks(doc) ||
+      pendingDelete !== null ||
+      uploadOpen ||
+      drivePickerOpen
+    ) {
+      return;
+    }
+    chunksSheetRestoreRef.current = restoreTarget;
+    setSelectedId(doc.source_id);
+    setChunksSheetOpen(true);
+  }
+
+  function onDocumentRowActivate(
+    doc: CatalogDocumentResponse,
+    restoreTarget: HTMLElement | null,
+  ) {
+    if (pendingDelete !== null || uploadOpen || drivePickerOpen || chunksSheetOpen) {
+      return;
+    }
+    selectDocument(doc.source_id);
+    if (canInspectChunks(doc)) {
+      openChunksSheet(doc, restoreTarget);
+    } else {
+      setChunksSheetOpen(false);
+    }
   }
 
   async function onUpload(event: FormEvent) {
@@ -804,14 +1173,30 @@ export function DocumentsPanel({
               <tbody>
                 {visibleDocuments.map((doc) => {
                   const selectedRow = doc.source_id === selected?.source_id;
+                  const inspectable = canInspectChunks(doc);
                   return (
                     <tr
                       key={doc.source_id}
-                      className={selectedRow ? "is-selected" : undefined}
-                      onClick={() => {
-                        if (!dialogOpen) {
-                          selectDocument(doc.source_id);
+                      className={[
+                        selectedRow ? "is-selected" : undefined,
+                        inspectable ? "kern-documents-row--inspectable" : undefined,
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined}
+                      onClick={(event) => {
+                        if (
+                          (event.target as Element).closest(
+                            ".kern-documents-delete",
+                          )
+                        ) {
+                          return;
                         }
+                        const rowButton = (
+                          event.currentTarget as HTMLTableRowElement
+                        ).querySelector<HTMLElement>(
+                          ".kern-documents-row-button",
+                        );
+                        onDocumentRowActivate(doc, rowButton);
                       }}
                     >
                       <td>
@@ -820,6 +1205,10 @@ export function DocumentsPanel({
                           className="kern-documents-row-button"
                           aria-pressed={selectedRow}
                           disabled={dialogOpen}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDocumentRowActivate(doc, event.currentTarget);
+                          }}
                         >
                           <span className="kern-doc-name">{doc.file_name}</span>
                           <span className="kern-doc-id">{doc.source_id}</span>
@@ -885,23 +1274,16 @@ export function DocumentsPanel({
           </div>
         )}
 
-        {selected ? (
+        {selected?.error_summary ? (
           <div className="kern-documents-detail">
-            <p className="kern-settings-hint">
-              {isDriveDocument(selected)
-                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
-                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
-            </p>
-            {selected.error_summary ? (
-              <div
-                className="kern-settings-callout kern-settings-callout--warn"
-                role="status"
-              >
-                <p>{selected.error_summary}</p>
-              </div>
-            ) : null}
+            <div
+              className="kern-settings-callout kern-settings-callout--warn"
+              role="status"
+            >
+              <p>{selected.error_summary}</p>
+            </div>
           </div>
-        ) : visibleDocuments.length > 0 ? (
+        ) : !selected && visibleDocuments.length > 0 ? (
           <p className="kern-settings-hint">
             Select a document to see details or replace it
           </p>
@@ -937,6 +1319,19 @@ export function DocumentsPanel({
           </form>
         ) : null}
       </section>
+
+      <DocumentChunksSheet
+        open={chunksSheetOpen}
+        document={selected}
+        chunksView={chunksView}
+        loadingMore={chunksLoadingMore}
+        restoreFocusRef={chunksSheetRestoreRef}
+        onDismiss={closeChunksSheet}
+        onRetry={retryChunksFetch}
+        onLoadMore={() => {
+          void loadMoreChunks();
+        }}
+      />
 
       <DialogFrame
         open={uploadOpen}

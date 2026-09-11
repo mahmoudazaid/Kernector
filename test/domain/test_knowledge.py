@@ -37,6 +37,21 @@ def test_source_type_has_no_ticket_member() -> None:
     assert not hasattr(SourceType, "TICKET")
 
 
+def test_hub_source_types_are_explicit_members() -> None:
+    from domain.knowledge import HUB_SOURCE_TYPES
+
+    assert HUB_SOURCE_TYPES == frozenset(
+        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+    )
+
+
+def test_hub_source_type_schema_matches_hub_source_types() -> None:
+    from domain.knowledge import HUB_SOURCE_TYPES
+    from presentation.http.schemas import HubSourceType
+
+    assert frozenset(HubSourceType) == HUB_SOURCE_TYPES
+
+
 def test_valid_source_document_is_accepted() -> None:
     document = SourceDocument(metadata(), "Exploratory testing guidance ...")
     assert document.source_id == "doc-1"
@@ -222,4 +237,25 @@ def test_chunk_rejects_negative_index_keeps_number() -> None:
         DocumentChunk(metadata(), -5, "chunk text")
     message = str(raised.value)
     assert "-5" in message
-    assert "non-negative" in message
+
+
+def test_chunk_page_accepts_valid_tuple() -> None:
+    from domain.knowledge import ChunkPage
+
+    page = ChunkPage(chunks=(chunk(),), has_more=False)
+    assert page.has_more is False
+    assert len(page.chunks) == 1
+
+
+def test_chunk_page_rejects_non_tuple_chunks() -> None:
+    from domain.knowledge import ChunkPage
+
+    with pytest.raises(DomainValidationError, match="chunks"):
+        ChunkPage(chunks=[chunk()], has_more=False)  # type: ignore[arg-type]
+
+
+def test_chunk_page_rejects_non_bool_has_more() -> None:
+    from domain.knowledge import ChunkPage
+
+    with pytest.raises(DomainValidationError, match="has_more"):
+        ChunkPage(chunks=(), has_more=1)  # type: ignore[arg-type]

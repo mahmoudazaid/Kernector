@@ -10,8 +10,13 @@ from domain.errors import DomainValidationError
 
 
 
-class SourceType:
-    """Documented well-known source kinds. Not a closed validation set."""
+class SourceType(StrEnum):
+    """Documented well-known source kinds.
+
+    Not a closed validation set for ``SourceReference.source_type`` — connectors
+    may introduce other string kinds — but the members below are the stable hub
+    and upload vocabulary.
+    """
 
     KNOWLEDGE_DOCUMENT = "knowledge_document"
     GOOGLE_DRIVE = "google_drive"
@@ -19,6 +24,18 @@ class SourceType:
 
 STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
 """Source kinds treated as user stories by eval and software-delivery scoring."""
+
+HUB_SOURCE_TYPES = frozenset(
+    {
+        SourceType.KNOWLEDGE_DOCUMENT,
+        SourceType.GOOGLE_DRIVE,
+    }
+)
+"""Source kinds shown in the shared documents hub and chunk-inspect API.
+
+Explicit members — not ``frozenset(SourceType)`` — so adding a connector kind
+to the enum does not silently widen the hub.
+"""
 
 
 class CatalogStatus(StrEnum):
@@ -155,6 +172,36 @@ class DocumentChunk:
     def source_id(self) -> str:
         """The originating source identifier, preserved for traceability."""
         return self.metadata.source_id
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkPage:
+    """One page of stored chunks plus whether more rows exist after this page.
+
+    ``has_more`` is derived from the ordered id set before hydrate drops, so a
+    skipped corrupt or vanished row cannot collapse pagination.
+    """
+
+    chunks: tuple[DocumentChunk, ...]
+    has_more: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.chunks, tuple):
+            raise DomainValidationError(
+                f"chunks must be a tuple of DocumentChunk, "
+                f"got {type(self.chunks).__name__}"
+            )
+        for index, chunk in enumerate(self.chunks):
+            if not isinstance(chunk, DocumentChunk):
+                raise DomainValidationError(
+                    f"chunks[{index}] must be a DocumentChunk, "
+                    f"got {type(chunk).__name__}"
+                )
+        if type(self.has_more) is not bool:
+            raise DomainValidationError(
+                f"has_more must be a bool, got {type(self.has_more).__name__}"
+            )
+
 
 type Vector = Sequence[float]
 

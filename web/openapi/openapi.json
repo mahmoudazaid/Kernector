@@ -334,6 +334,89 @@
         "title": "ConnectorSyncOutcomeResponse",
         "type": "object"
       },
+      "DocumentChunkListResponse": {
+        "description": "Stored chunks for one catalogued document.",
+        "properties": {
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentChunkResponse"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          }
+        },
+        "required": ["chunks", "has_more"],
+        "title": "DocumentChunkListResponse",
+        "type": "object"
+      },
+      "DocumentChunkResponse": {
+        "description": "Wire projection of one stored chunk for the documents UI.\n\nScalar fields are an explicit allowlist. ``extra`` forwards connector\nmetadata from ``SourceMetadata.extra`` without a key filter \u2014 callers must\nnot treat it as a closed schema.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Format"
+          },
+          "extra": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Extra",
+            "type": "object"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": ["index", "content", "source_id", "source_type", "extra"],
+        "title": "DocumentChunkResponse",
+        "type": "object"
+      },
       "DocumentListResponse": {
         "description": "Uploaded-document catalog for the documents UI.",
         "properties": {
@@ -685,6 +768,12 @@
         "required": ["status"],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "HubSourceType": {
+        "description": "Hub catalog kinds accepted by chunk-inspect query params.\n\nMirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so\nthe wire contract stays documented and does not silently widen with\n``SourceType``.",
+        "enum": ["knowledge_document", "google_drive"],
+        "title": "HubSourceType",
+        "type": "string"
       },
       "ModelSettingDefResponse": {
         "description": "One generation setting for Settings UI controls.",
@@ -2272,6 +2361,108 @@
           }
         },
         "summary": "Replace Document",
+        "tags": ["documents"]
+      }
+    },
+    "/api/v1/documents/{source_id}/chunks": {
+      "get": {
+        "description": "Return a page of stored chunks for one catalogued source.",
+        "operationId": "list_document_chunks_api_v1_documents__source_id__chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_type",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/HubSourceType"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChunkListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "List Document Chunks",
         "tags": ["documents"]
       }
     },

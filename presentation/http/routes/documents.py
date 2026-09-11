@@ -1,10 +1,10 @@
-"""Uploaded-document HTTP routes (list / create / replace / delete)."""
+"""Uploaded-document HTTP routes (list / create / replace / delete / chunks)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
@@ -19,11 +19,17 @@ from presentation.http.errors import (
 )
 from presentation.http.schemas import (
     CatalogDocumentResponse,
+    DocumentChunkListResponse,
     DocumentListResponse,
+    HubSourceType,
     catalog_document_response,
+    document_chunk_response,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
+
+_DEFAULT_CHUNK_LIMIT = 50
+_MAX_CHUNK_LIMIT = 200
 
 
 def _require_source_id(source_id: str) -> str:
@@ -148,3 +154,31 @@ def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     source_id = _require_source_id(source_id)
     ops.delete(SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT))
     return Response(status_code=204)
+
+
+@router.get(
+    "/documents/{source_id}/chunks",
+    responses=problem_responses(404, 405, 422, 500),
+)
+def list_document_chunks(
+    source_id: str,
+    ops: DocumentOperationsDep,
+    source_type: HubSourceType = Query(...),
+    limit: int = Query(
+        default=_DEFAULT_CHUNK_LIMIT,
+        ge=1,
+        le=_MAX_CHUNK_LIMIT,
+    ),
+    offset: int = Query(default=0, ge=0),
+) -> DocumentChunkListResponse:
+    """Return a page of stored chunks for one catalogued source."""
+    source_id = _require_source_id(source_id)
+    page = ops.list_chunks(
+        SourceReference(source_id, source_type),
+        limit=limit,
+        offset=offset,
+    )
+    return DocumentChunkListResponse(
+        chunks=[document_chunk_response(chunk) for chunk in page.chunks],
+        has_more=page.has_more,
+    )

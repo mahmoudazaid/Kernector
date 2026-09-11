@@ -16,6 +16,8 @@ from application.observability import log_operation
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ChunkPage,
+    HUB_SOURCE_TYPES,
     SourceDocument,
     SourceReference,
     SourceType,
@@ -159,9 +161,7 @@ class ManageUploadedDocuments:
     operations that never read one.
     """
 
-    _HUB_SOURCE_TYPES = frozenset(
-        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
-    )
+    _HUB_SOURCE_TYPES = HUB_SOURCE_TYPES
 
     def __init__(
         self,
@@ -188,6 +188,45 @@ class ManageUploadedDocuments:
             row
             for row in self._catalog.all()
             if row.reference.source_type in self._HUB_SOURCE_TYPES
+        )
+
+    def _unknown(
+        self, reference: SourceReference, *, operation: str
+    ) -> UnknownDocumentError:
+        error = UnknownDocumentError(reference=reference)
+        log_operation(
+            logger,
+            operation=operation,
+            outcome="error",
+            level=logging.ERROR,
+            error_type=type(error).__name__,
+            source_id=error.source_id,
+            source_type=error.source_type,
+        )
+        return error
+
+    def list_document_chunks(
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ChunkPage:
+        """Return stored chunks for a catalogued source, ordered by index.
+
+        Looks up ``reference`` in the catalog first. An unknown reference raises
+        ``UnknownDocumentError`` without opening the vector store. Non-hub
+        ``source_type`` values are treated as unknown. A known row with no
+        stored chunks returns an empty page. Optional ``limit``/``offset``
+        are forwarded to the vector store (no post-fetch slice).
+        """
+        if (
+            reference.source_type not in self._HUB_SOURCE_TYPES
+            or self._catalog.get(reference) is None
+        ):
+            raise self._unknown(reference, operation="list_chunks")
+        return self._vector_store_factory().list_source_chunks(
+            reference, limit=limit, offset=offset
         )
 
     def create(self, payload: UploadPayload) -> CatalogDocument:
@@ -243,17 +282,7 @@ class ManageUploadedDocuments:
         """Replace content for an existing catalog source under the same ID."""
         previous = self._catalog.get(reference)
         if previous is None:
-            error = UnknownDocumentError(reference=reference)
-            log_operation(
-                logger,
-                operation="replace",
-                outcome="error",
-                level=logging.ERROR,
-                error_type=type(error).__name__,
-                source_id=error.source_id,
-                source_type=error.source_type,
-            )
-            raise error
+            raise self._unknown(reference, operation="replace")
         self._assert_upload_size(payload)
         document = self._extractor.extract(payload, reference=reference)
         pending = self._pending_row(reference, payload, document)

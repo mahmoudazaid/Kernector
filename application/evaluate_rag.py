@@ -35,13 +35,12 @@ from application.rag_judge_policy import (
     build_metric_messages,
 )
 from domain.errors import ProviderError
-from domain.knowledge import STORY_SOURCE_TYPES, SourceType
+from domain.knowledge import HUB_SOURCE_TYPES, STORY_SOURCE_TYPES
 from domain.ports import ChatModel
 
 _WELL_KNOWN_SOURCE_TYPES = frozenset(
     {
-        SourceType.KNOWLEDGE_DOCUMENT,
-        SourceType.GOOGLE_DRIVE,
+        *HUB_SOURCE_TYPES,
         *STORY_SOURCE_TYPES,
         "srs",
         "test",

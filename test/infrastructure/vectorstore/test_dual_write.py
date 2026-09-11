@@ -1,6 +1,9 @@
 """DualWriteVectorStore keeps VectorStore and LexicalIndex in sync."""
 
+import pytest
+
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -82,3 +85,67 @@ def test_dual_write_replace_updates_lexical_retrieval_immediately() -> None:
         "xyzzy" not in hit.chunk.content for hit in lexical.search("xyzzy", 5)
     )
     assert lexical.search("plugh", 1)[0].chunk.source_id == "doc"
+
+
+def test_dual_write_list_source_chunks_delegates_to_vector_only() -> None:
+    vector = InMemoryVectorStore()
+    lexical = InMemoryLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    chunk = _chunk("doc", "listed body", index=0)
+    store.upsert([_embed(chunk)])
+    # Lexical-only extra record must not appear in list results.
+    lexical.upsert(
+        [
+            _embed(
+                DocumentChunk(
+                    metadata=SourceMetadata(
+                        SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
+                    ),
+                    index=1,
+                    content="lexical-only",
+                )
+            )
+        ]
+    )
+
+    listed = store.list_source_chunks(
+        SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert [c.content for c in listed.chunks] == ["listed body"]
+    assert [c.index for c in listed.chunks] == [0]
+
+
+def test_dual_write_list_source_chunks_forwards_limit_and_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vector = InMemoryVectorStore()
+    lexical = InMemoryLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    captured: dict[str, object] = {}
+
+    def spy(
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ):
+        captured["reference"] = reference
+        captured["limit"] = limit
+        captured["offset"] = offset
+        return ChunkPage(chunks=(), has_more=False)
+
+    monkeypatch.setattr(vector, "list_source_chunks", spy)
+
+    listed = store.list_source_chunks(
+        SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT),
+        limit=2,
+        offset=1,
+    )
+
+    assert listed == ChunkPage(chunks=(), has_more=False)
+    assert captured == {
+        "reference": SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT),
+        "limit": 2,
+        "offset": 1,
+    }

@@ -6,6 +6,7 @@ from typing import Protocol
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ChunkPage,
     ConnectorDocument,
     EmbeddedChunk,
     ScoredChunk,
@@ -141,6 +142,31 @@ class VectorStore(Protocol):
 
         Raises:
             VectorStoreError: On any adapter-level failure.
+        """
+
+    def list_source_chunks(
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ChunkPage:
+        """Return a page of chunks for one complete source reference.
+
+        Scoped by the whole `SourceReference`, so the same `source_id` under a
+        different `source_type` is excluded. A reference matching no stored
+        record returns an empty page. Results are ordered by ascending
+        ``chunk.index``. Optional ``limit``/``offset`` page **positionally**
+        after that order (not by raw ``chunk.index`` values, which may have
+        gaps). ``offset`` must be ``>= 0``. A non-positive ``limit`` yields an
+        empty page. ``has_more`` is based on the ordered id set **before**
+        hydrate drops, so a skipped corrupt or vanished row cannot collapse
+        pagination. Does not return or compute embeddings.
+
+        Raises:
+            VectorStoreError: On any adapter-level failure, including a negative
+                ``offset`` or a non-int ``limit``/``offset`` where the adapter
+                validates types.
         """
 
 
