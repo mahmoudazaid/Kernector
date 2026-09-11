@@ -100,7 +100,16 @@ class FilesystemUploadBlobStore:
             lock = self._locks.get(key)
             if lock is None:
                 while len(self._locks) >= _MAX_PATH_LOCKS:
-                    self._locks.popitem(last=False)
+                    evicted = False
+                    for candidate_key, candidate in list(self._locks.items()):
+                        if not candidate.locked():
+                            del self._locks[candidate_key]
+                            evicted = True
+                            break
+                    if not evicted:
+                        # Every cached lock is held; grow past the cap rather
+                        # than returning a second lock for an in-flight path.
+                        break
                 lock = threading.Lock()
                 self._locks[key] = lock
             else:

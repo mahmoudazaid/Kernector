@@ -10,13 +10,8 @@ afterEach(() => {
 });
 
 describe("DocumentViewer", () => {
-  it("renders PDF previews in a sandboxed iframe without trusting response content type", async () => {
-    createObjectURL.mockReturnValue("blob:pdf-preview");
-    const getContent = vi.fn().mockResolvedValue({
-      blob: new Blob(["%PDF"], { type: "text/html" }),
-      contentType: "text/html",
-      fileName: "wrong.html",
-    });
+  it("does not fetch or iframe PDF content (download-only preview)", async () => {
+    const getContent = vi.fn();
 
     render(
       <DocumentViewer
@@ -29,17 +24,12 @@ describe("DocumentViewer", () => {
       />,
     );
 
-    const iframe = await screen.findByTitle("Preview of spec.pdf");
-    expect(iframe).toHaveAttribute("src", "blob:pdf-preview");
-    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
-    expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
-    expect(getContent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        baseUrl: "http://api.test",
-        sourceId: "src-1",
-        signal: expect.any(AbortSignal),
-      }),
-    );
+    expect(
+      await screen.findByText(/pdf preview is not shown inline/i),
+    ).toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it("renders text as text content", async () => {
@@ -62,37 +52,48 @@ describe("DocumentViewer", () => {
     expect(document.querySelector("strong")).toBeNull();
   });
 
-  it("revokes preview object URLs on source change and unmount", async () => {
-    createObjectURL
-      .mockReturnValueOnce("blob:first-preview")
-      .mockReturnValueOnce("blob:second-preview");
-    const getContent = vi.fn().mockResolvedValue({
-      blob: new Blob(["%PDF"]),
-      contentType: "application/octet-stream",
-      fileName: null,
-    });
-    const props = {
-      fileName: "spec.pdf",
-      contentFormat: "pdf",
-      baseUrl: "http://api.test",
-      getContent,
-      onError: vi.fn(),
-    };
+  it("reloads text preview when refreshToken changes", async () => {
+    const getContent = vi
+      .fn()
+      .mockResolvedValueOnce({
+        blob: new Blob(["v1"]),
+        contentType: "text/plain",
+        fileName: null,
+      })
+      .mockResolvedValueOnce({
+        blob: new Blob(["v2"]),
+        contentType: "text/plain",
+        fileName: null,
+      });
 
-    const { rerender, unmount } = render(
-      <DocumentViewer {...props} sourceId="src-1" />,
+    const { rerender } = render(
+      <DocumentViewer
+        sourceId="src-1"
+        fileName="spec.md"
+        contentFormat="markdown"
+        baseUrl="http://api.test"
+        refreshToken={0}
+        getContent={getContent}
+        onError={vi.fn()}
+      />,
     );
-    await screen.findByTitle("Preview of spec.pdf");
+    expect(await screen.findByText("v1")).toBeInTheDocument();
 
-    rerender(<DocumentViewer {...props} sourceId="src-2" />);
+    rerender(
+      <DocumentViewer
+        sourceId="src-1"
+        fileName="spec.md"
+        contentFormat="markdown"
+        baseUrl="http://api.test"
+        refreshToken={1}
+        getContent={getContent}
+        onError={vi.fn()}
+      />,
+    );
 
     await waitFor(() => {
-      expect(revokeObjectURL).toHaveBeenCalledWith("blob:first-preview");
+      expect(screen.getByText("v2")).toBeInTheDocument();
     });
-    await screen.findByTitle("Preview of spec.pdf");
-
-    unmount();
-
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:second-preview");
+    expect(revokeObjectURL).not.toHaveBeenCalled();
   });
 });

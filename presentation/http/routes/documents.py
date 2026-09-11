@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
 from composition import UnsupportedPreviewFormatError
+from composition import UPLOAD_CONTENT_TYPE_BY_FORMAT
 from composition import unsupported_upload_type_detail
 from domain.knowledge import SourceReference, SourceType, UploadPayload
 from presentation.http.deps import DocumentOperationsDep
@@ -29,20 +30,19 @@ from presentation.http.schemas import (
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
 _SOURCE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
-_CONTENT_TYPE_BY_FORMAT = {
-    "txt": "text/plain; charset=utf-8",
-    "markdown": "text/plain; charset=utf-8",
-    "pdf": "application/pdf",
-}
 _CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox"
+_DOWNLOAD_FALLBACK_TYPE = "application/octet-stream"
 
 
 def _content_success_response(description: str) -> dict:
+    media_types = set(UPLOAD_CONTENT_TYPE_BY_FORMAT.values()) | {
+        _DOWNLOAD_FALLBACK_TYPE
+    }
     return {
         "description": description,
         "content": {
             media_type: {"schema": {"type": "string", "format": "binary"}}
-            for media_type in set(_CONTENT_TYPE_BY_FORMAT.values())
+            for media_type in media_types
         },
     }
 
@@ -101,24 +101,30 @@ def _document_content_response(
     source_id: str,
     *,
     disposition: str,
+    for_preview: bool,
 ) -> Response:
-    row, payload = ops.get_content(_require_blob_source_id(source_id))
-    media_type = _CONTENT_TYPE_BY_FORMAT.get(row.content_format or "")
+    source_id = _require_blob_source_id(source_id)
+    row, payload = ops.get_content(source_id)
+    media_type = UPLOAD_CONTENT_TYPE_BY_FORMAT.get(row.content_format or "")
     if media_type is None:
-        raise UnsupportedPreviewFormatError(
-            "Preview is not available for this document format."
-        )
+        if for_preview:
+            raise UnsupportedPreviewFormatError(
+                "Preview is not available for this document format."
+            )
+        media_type = _DOWNLOAD_FALLBACK_TYPE
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": _content_disposition(
+            disposition, row.file_name
+        ),
+    }
+    if for_preview:
+        headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
     return Response(
         content=bytes(payload.content),
         media_type=media_type,
-        headers={
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": _content_disposition(
-                disposition, row.file_name
-            ),
-        },
+        headers=headers,
     )
 
 
@@ -228,7 +234,9 @@ def replace_document(
 )
 def get_document_content(source_id: str, ops: DocumentOperationsDep) -> Response:
     """Return original uploaded bytes for inline display."""
-    return _document_content_response(ops, source_id, disposition="inline")
+    return _document_content_response(
+        ops, source_id, disposition="inline", for_preview=True
+    )
 
 
 @router.get(
@@ -241,7 +249,9 @@ def get_document_content(source_id: str, ops: DocumentOperationsDep) -> Response
 )
 def download_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     """Return original uploaded bytes as an attachment."""
-    return _document_content_response(ops, source_id, disposition="attachment")
+    return _document_content_response(
+        ops, source_id, disposition="attachment", for_preview=False
+    )
 
 
 @router.delete(

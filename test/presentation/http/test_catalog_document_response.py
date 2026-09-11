@@ -40,9 +40,25 @@ def test_ready_document_projection_omits_error_text() -> None:
     assert projected.status == "ready"
     assert projected.chunk_count == 7
     assert projected.has_error is False
+    assert projected.has_stored_content is True
     assert projected.error_summary is None
     assert raw not in str(payload)
     assert "sk-live-secret" not in str(payload)
+
+
+def test_missing_blob_ready_row_is_not_degraded() -> None:
+    from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
+
+    projected = catalog_document_response(
+        _doc(status=CatalogStatus.READY, error=MISSING_UPLOAD_BLOB_ERROR)
+    )
+
+    assert projected.status == "ready"
+    assert projected.has_error is True
+    assert projected.has_stored_content is False
+    assert projected.error_summary is not None
+    assert "preview" in projected.error_summary.lower()
+    assert MISSING_UPLOAD_BLOB_ERROR not in (projected.error_summary or "")
 
 
 def test_failed_document_uses_fixed_summary_not_adapter_text() -> None:

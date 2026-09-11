@@ -69,6 +69,7 @@ function doc(
     chunk_count: 7,
     has_error: false,
     error_summary: null,
+    has_stored_content: true,
     ...overrides,
   };
 }

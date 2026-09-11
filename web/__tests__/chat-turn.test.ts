@@ -45,10 +45,17 @@ describe("classifyFailure", () => {
     ).toEqual({ kind: "rejected", message: "refused" });
   });
 
-  it("treats status 0 as unavailable", () => {
+  it("treats status 0 network failures as unavailable", () => {
     expect(classifyFailure(ApiError.generic(0))).toEqual({
       kind: "unavailable",
       message: ApiError.generic(0).detail,
+    });
+  });
+
+  it("treats aborted status 0 as operational, not unavailable", () => {
+    expect(classifyFailure(ApiError.aborted())).toEqual({
+      kind: "operational",
+      message: ApiError.aborted().detail,
     });
   });
 

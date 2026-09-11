@@ -74,6 +74,11 @@
             "title": "Has Error",
             "type": "boolean"
           },
+          "has_stored_content": {
+            "default": true,
+            "title": "Has Stored Content",
+            "type": "boolean"
+          },
           "source_id": {
             "title": "Source Id",
             "type": "string"
@@ -2283,6 +2288,12 @@
         "responses": {
           "200": {
             "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "application/pdf": {
                 "schema": {
                   "format": "binary",
@@ -2361,6 +2372,12 @@
         "responses": {
           "200": {
             "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "application/pdf": {
                 "schema": {
                   "format": "binary",

@@ -1,11 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildDocumentCsp } from "../next.config";
+import { loadPublicEnv } from "@/lib/env";
 import { SCAN_DIRS, WEB_ROOT, walk } from "./support/scan";
 
 const CLIENT_SEAM = join(WEB_ROOT, "lib", "api", "client.ts");
 const API_DIR = join(WEB_ROOT, "lib", "api");
 const NEXT_CONFIG = join(WEB_ROOT, "next.config.ts");
+const MIDDLEWARE = join(WEB_ROOT, "middleware.ts");
 
 const FORBIDDEN_TRANSPORT = [
   /\bfetch\s*\(/,
@@ -54,17 +57,42 @@ describe("http boundary", () => {
     expect(hits).toEqual([]);
   });
 
-  it("sets CSP and nosniff headers in next.config.ts", () => {
-    const text = readFileSync(NEXT_CONFIG, "utf8");
-    expect(text).toContain("default-src 'self'");
-    expect(text).toContain("object-src 'none'");
-    expect(text).toContain("frame-src 'self' blob:");
-    expect(text).toContain("script-src 'self' 'unsafe-inline'");
-    expect(text).toContain("style-src 'self' 'unsafe-inline'");
-    expect(text).toContain("connect-src 'self'");
-    expect(text).toContain("X-Content-Type-Options");
-    expect(text).toContain("nosniff");
-    expect(text).toContain("Referrer-Policy");
+  it("pins the exact CSP policy string including the validated API origin", () => {
+    const apiOrigin = new URL(
+      loadPublicEnv().NEXT_PUBLIC_API_BASE_URL,
+    ).origin;
+    const expected = [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "frame-src 'self' blob:",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      `connect-src 'self' ${apiOrigin}`,
+    ].join("; ");
+
+    expect(buildDocumentCsp(apiOrigin)).toBe(expected);
+    expect(expected).not.toContain("*");
+    expect(expected).not.toContain(" null");
+
+    const configText = readFileSync(NEXT_CONFIG, "utf8");
+    expect(configText).toContain("buildDocumentCsp");
+    expect(configText).toContain("loadPublicEnv");
+    expect(configText).toContain("X-Content-Type-Options");
+    expect(configText).toContain("nosniff");
+    expect(configText).toContain("Referrer-Policy");
+  });
+
+  it("ships middleware that nonces script-src and reuses env validation", () => {
+    const text = readFileSync(MIDDLEWARE, "utf8");
+    expect(text).toContain("loadPublicEnv");
+    expect(text).toContain("script-src 'self' 'nonce-${nonce}'");
+    expect(text).toContain("base-uri 'self'");
+    expect(text).toContain("form-action 'self'");
+    expect(text).toContain("frame-ancestors 'none'");
+    expect(text).toContain("x-nonce");
   });
 
   it("does not build viewer media URLs by concatenating apiBaseUrl", () => {

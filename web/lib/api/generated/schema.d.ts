@@ -329,6 +329,11 @@ export interface components {
       file_name: string;
       /** Has Error */
       has_error: boolean;
+      /**
+       * Has Stored Content
+       * @default true
+       */
+      has_stored_content: boolean;
       /** Source Id */
       source_id: string;
       /** Source Type */
@@ -1609,6 +1614,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+          "application/octet-stream": string;
           "application/pdf": string;
           "text/plain; charset=utf-8": string;
         };
@@ -1668,6 +1674,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+          "application/octet-stream": string;
           "application/pdf": string;
           "text/plain; charset=utf-8": string;
         };

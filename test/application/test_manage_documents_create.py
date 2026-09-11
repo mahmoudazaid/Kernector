@@ -243,7 +243,7 @@ def test_create_ready_blob_put_failure_degrades_without_raising() -> None:
         UploadPayload(file_name="guide.md", content=b"# Guide\n")
     )
 
-    assert created.status is CatalogStatus.DEGRADED
-    assert "original bytes" in (created.error or "")
+    assert created.status is CatalogStatus.READY
+    assert created.error == "document ingested but original bytes could not be stored"
     assert store.records
     assert blob_store.get(created.reference) is None

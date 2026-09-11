@@ -1,14 +1,25 @@
 import type { NextConfig } from "next";
+import { loadPublicEnv } from "./lib/env";
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+const publicEnv = loadPublicEnv();
+const API_ORIGIN = new URL(publicEnv.NEXT_PUBLIC_API_BASE_URL).origin;
 
-function apiConnectSrc(): string {
-  const raw = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return DEFAULT_API_BASE_URL;
-  }
+/** CSP directives shared by next.config headers and middleware tests. */
+export function buildDocumentCsp(apiOrigin: string = API_ORIGIN): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "frame-src 'self' blob:",
+    // Nonce is injected per-request in middleware; config keeps a build-time
+    // fallback that still allows App Router + next-themes until middleware runs.
+    "script-src 'self' 'unsafe-inline'",
+    // motion / next/font still emit inline styles without nonces.
+    "style-src 'self' 'unsafe-inline'",
+    `connect-src 'self' ${apiOrigin}`,
+  ].join("; ");
 }
 
 const nextConfig: NextConfig = {
@@ -29,7 +40,6 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
-    const connectSrc = apiConnectSrc();
     return [
       {
         source:
@@ -55,17 +65,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            // 'unsafe-inline' for script/style is required until a nonce
-            // pipeline exists: App Router RSC bootstrap and next-themes
-            // inject inline scripts; motion/next-font emit inline styles.
-            value: [
-              "default-src 'self'",
-              "object-src 'none'",
-              "frame-src 'self' blob:",
-              "script-src 'self' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline'",
-              `connect-src 'self' ${connectSrc}`,
-            ].join("; "),
+            value: buildDocumentCsp(),
           },
           {
             key: "X-Content-Type-Options",

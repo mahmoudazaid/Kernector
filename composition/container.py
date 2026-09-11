@@ -106,6 +106,7 @@ from infrastructure.documents.upload_blob_store import (
     UploadBlobError,
 )
 from infrastructure.documents.uploaded_files import (
+    CONTENT_TYPE_BY_FORMAT,
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
     UnreadableDocumentError,
@@ -134,6 +135,8 @@ SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
 # Re-export so presentation adapters share one unsupported-type sentence.
 unsupported_upload_type_detail = unsupported_document_type_detail
+# Same single source for preview/download Content-Type as upload suffixes.
+UPLOAD_CONTENT_TYPE_BY_FORMAT: dict[str, str] = CONTENT_TYPE_BY_FORMAT
 
 logger = logging.getLogger(__name__)
 

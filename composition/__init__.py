@@ -3,6 +3,7 @@
 from composition.container import (
     SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
+    UPLOAD_CONTENT_TYPE_BY_FORMAT,
     GoogleDriveBrowsePage,
     GoogleDriveLastSync,
     GoogleDriveSelection,
@@ -101,6 +102,7 @@ __all__ = [
     "SOFTWARE_DELIVERY_TEST_STYLES",
     "SUPPORTED_DOMAIN_TOOL_PACKS",
     "SUPPORTED_UPLOAD_SUFFIXES",
+    "UPLOAD_CONTENT_TYPE_BY_FORMAT",
     "unsupported_upload_type_detail",
     "GroundedAsk",
     "Settings",

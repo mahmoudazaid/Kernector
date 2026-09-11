@@ -183,3 +183,22 @@ def test_get_during_put_returns_only_complete_old_or_new_blob(
     assert errors == []
     assert observed == [new_payload.content]
     assert store.get(reference) == new_payload
+
+
+def test_lock_registry_does_not_evict_a_held_lock(tmp_path: Path) -> None:
+    from infrastructure.documents import upload_blob_store as module
+
+    store = FilesystemUploadBlobStore(tmp_path / "uploads")
+    path = store._path_for(_reference("held"))
+    lock_a = store._lock_for(path)
+    lock_a.acquire()
+    try:
+        for index in range(module._MAX_PATH_LOCKS + 5):
+            other = store._path_for(_reference(f"doc-{index}"))
+            store._lock_for(other)
+        lock_b = store._lock_for(path)
+        assert lock_b is lock_a
+        assert lock_b.locked()
+        assert not lock_b.acquire(blocking=False)
+    finally:
+        lock_a.release()

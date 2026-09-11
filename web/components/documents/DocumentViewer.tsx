@@ -14,9 +14,9 @@ type DocumentBlobLoader = (
 
 type ViewerState =
   | { kind: "loading" }
-  | { kind: "pdf"; url: string }
   | { kind: "text"; text: string }
-  | { kind: "unsupported" };
+  | { kind: "unsupported" }
+  | { kind: "download_only" };
 
 export type DocumentViewerProps = {
   sourceId: string;
@@ -29,13 +29,14 @@ export type DocumentViewerProps = {
   onError: (error: ApiError) => void;
 };
 
+/** Keep in sync with `UPLOAD_CONTENT_TYPE_BY_FORMAT` / uploaded_files.py. */
 function mimeTypeForFormat(contentFormat: string): string | null {
   const normalized = contentFormat.toLowerCase();
   if (normalized === "pdf") {
     return "application/pdf";
   }
   if (normalized === "txt" || normalized === "markdown") {
-    return "text/plain";
+    return "text/plain; charset=utf-8";
   }
   return null;
 }
@@ -62,10 +63,16 @@ export function DocumentViewer({
       setState({ kind: "unsupported" });
       return;
     }
+    // PDF bytes in a sandboxed blob iframe either need allow-scripts (which
+    // inherits the page CSP and weakens isolation) or render blank in Chrome.
+    // Prefer an honest download-only path over a script-enabled frame.
+    if (mimeType === "application/pdf") {
+      setState({ kind: "download_only" });
+      return;
+    }
 
     const controller = new AbortController();
     const sequence = ++sequenceRef.current;
-    let objectUrl: string | null = null;
     setState({ kind: "loading" });
 
     getContent({
@@ -78,11 +85,6 @@ export function DocumentViewer({
           return;
         }
         const displayBlob = new Blob([blob], { type: mimeType });
-        if (mimeType === "application/pdf") {
-          objectUrl = URL.createObjectURL(displayBlob);
-          setState({ kind: "pdf", url: objectUrl });
-          return;
-        }
         const text = await displayBlob.text();
         if (sequence !== sequenceRef.current || controller.signal.aborted) {
           return;
@@ -99,9 +101,6 @@ export function DocumentViewer({
     return () => {
       controller.abort();
       sequenceRef.current += 1;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
   }, [baseUrl, contentFormat, getContent, onError, refreshToken, sourceId]);
 
@@ -115,16 +114,14 @@ export function DocumentViewer({
           Loading preview…
         </p>
       ) : null}
-      {state.kind === "pdf" ? (
-        <iframe
-          className="kern-document-viewer-frame"
-          title={`Preview of ${fileName}`}
-          src={state.url}
-          sandbox="allow-scripts"
-        />
-      ) : null}
       {state.kind === "text" ? (
         <pre className="kern-document-viewer-text">{state.text}</pre>
+      ) : null}
+      {state.kind === "download_only" ? (
+        <p className="kern-settings-hint" role="status">
+          PDF preview is not shown inline. Use Download to open the original
+          file.
+        </p>
       ) : null}
       {state.kind === "unsupported" ? (
         <p className="kern-settings-hint" role="status">

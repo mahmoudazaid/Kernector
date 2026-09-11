@@ -438,6 +438,11 @@ _ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
     ),
 }
 
+_MISSING_BLOB_SUMMARY = (
+    "Original file bytes are not stored; preview and download are unavailable. "
+    "Replace the document to restore them."
+)
+
 _DRIVE_ERROR_SUMMARY_BY_STATUS: dict[CatalogStatus, str] = {
     CatalogStatus.FAILED: (
         "This Google Drive file could not be indexed. Sync again or remove it in Browse."
@@ -461,6 +466,7 @@ class CatalogDocumentResponse(BaseModel):
     chunk_count: int
     has_error: bool
     error_summary: str | None = None
+    has_stored_content: bool = True
 
 
 class DocumentListResponse(BaseModel):
@@ -471,11 +477,28 @@ class DocumentListResponse(BaseModel):
 
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
     """Project a catalog row; never serialize raw adapter ``error`` text."""
-    summary = (
-        _DRIVE_ERROR_SUMMARY_BY_STATUS.get(document.status)
-        if document.reference.source_type == SourceType.GOOGLE_DRIVE
-        else _ERROR_SUMMARY_BY_STATUS.get(document.status)
-    )
+    from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
+
+    missing_blob = document.error == MISSING_UPLOAD_BLOB_ERROR
+    if missing_blob:
+        summary: str | None = _MISSING_BLOB_SUMMARY
+        has_error = True
+        has_stored_content = False
+    else:
+        summary = (
+            _DRIVE_ERROR_SUMMARY_BY_STATUS.get(document.status)
+            if document.reference.source_type == SourceType.GOOGLE_DRIVE
+            else _ERROR_SUMMARY_BY_STATUS.get(document.status)
+        )
+        has_error = document.status in {
+            CatalogStatus.FAILED,
+            CatalogStatus.DEGRADED,
+        }
+        # Upload rows without the missing-blob sentinel are assumed to have
+        # (or never needed) durable originals; Drive rows are sync-managed.
+        has_stored_content = (
+            document.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+        )
     return CatalogDocumentResponse(
         source_id=document.reference.source_id,
         source_type=document.reference.source_type,
@@ -485,8 +508,8 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
         status=document.status.value,
         uploaded_at=document.uploaded_at.isoformat(),
         chunk_count=document.chunk_count,
-        has_error=document.status
-        in {CatalogStatus.FAILED, CatalogStatus.DEGRADED},
+        has_error=has_error,
         error_summary=summary,
+        has_stored_content=has_stored_content,
     )
 

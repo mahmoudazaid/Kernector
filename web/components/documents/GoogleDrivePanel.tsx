@@ -23,7 +23,7 @@ import {
   type PutGoogleDriveSelectionOptions,
   type SyncGoogleDriveOptions,
 } from "@/lib/api/connectors";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, isAbortError } from "@/lib/api/errors";
 import { formatTimestamp } from "@/lib/format/timestamp";
 import { consumeDriveCallback } from "@/lib/documents/drive-callback";
 
@@ -285,7 +285,7 @@ export function GoogleDrivePanel({
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {
-      if (error instanceof ApiError && error.code === "aborted") {
+      if (isAbortError(error)) {
         setActionError(ABORT_COPY);
         void loadStatus();
         onCatalogChangeRef.current?.();
@@ -322,7 +322,7 @@ export function GoogleDrivePanel({
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {
-      if (error instanceof ApiError && error.code === "aborted") {
+      if (isAbortError(error)) {
         setActionError(ABORT_COPY);
         void loadStatus();
         onCatalogChangeRef.current?.();

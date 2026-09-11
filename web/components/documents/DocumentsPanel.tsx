@@ -39,7 +39,7 @@ import {
   type UploadDocumentOptions,
 } from "@/lib/api/documents";
 import type { ApiBlobResult } from "@/lib/api/client";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, isBackendUnavailable } from "@/lib/api/errors";
 import { validateUpload } from "@/lib/documents/upload";
 import { formatTimestamp } from "@/lib/format/timestamp";
 import {
@@ -294,11 +294,7 @@ export function DocumentsPanel({
       if (seq !== refreshSeqRef.current || controller.signal.aborted) {
         return;
       }
-      if (
-        error instanceof ApiError &&
-        error.status === 0 &&
-        error.code !== "aborted"
-      ) {
+      if (isBackendUnavailable(error)) {
         startTransition(() => setCatalog({ kind: "unavailable" }));
         return;
       }
@@ -380,11 +376,7 @@ export function DocumentsPanel({
   }
 
   const setActionError = useCallback((error: unknown) => {
-    if (
-      error instanceof ApiError &&
-      error.status === 0 &&
-      error.code !== "aborted"
-    ) {
+    if (isBackendUnavailable(error)) {
       setFeedback({ kind: "error", message: BACKEND_UNAVAILABLE_MESSAGE });
       return;
     }

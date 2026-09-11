@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -506,6 +507,44 @@ def test_delete_accepts_non_blank_ids_without_blob_charset_rule(
 
     assert response.status_code == 204
     assert [ref.source_id for ref in ledger["deleted"]] == [".."]
+
+
+def test_filesystem_delete_rejects_dotdot_without_touching_blob_root(
+    tmp_path: Path,
+) -> None:
+    from domain.knowledge import SourceReference, SourceType, UploadPayload
+    from infrastructure.documents.upload_blob_store import (
+        FilesystemUploadBlobStore,
+        UploadBlobValidationError,
+    )
+
+    blob_root = tmp_path / "blobs"
+    blob_root.mkdir()
+    marker = blob_root / "keep"
+    marker.write_bytes(b"still here")
+    store = FilesystemUploadBlobStore(blob_root)
+    store.put(
+        SourceReference("safe-id", SourceType.KNOWLEDGE_DOCUMENT),
+        UploadPayload(file_name="ok.md", content=b"# ok"),
+    )
+
+    with pytest.raises(UploadBlobValidationError):
+        store.delete(SourceReference("..", SourceType.KNOWLEDGE_DOCUMENT))
+
+    assert marker.read_bytes() == b"still here"
+    assert (blob_root / "safe-id").is_file()
+
+
+def test_download_unmapped_format_falls_back_to_octet_stream(client_factory) -> None:
+    document = _document(content_format="rst", file_name="notes.rst")
+    ops, _ledger = _stub_ops(documents=(document,))
+    client = client_factory(ops)
+
+    response = client.get("/api/v1/documents/src-1/download")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.content == b"# stored content"
 
 
 def test_download_exposes_content_disposition_for_cors(client_factory) -> None:

@@ -30,6 +30,13 @@ from domain.ports import (
 
 logger = logging.getLogger(__name__)
 
+# Catalog ``error`` sentinel when ingest succeeded but the durable original
+# could not be written. Status stays READY so operators do not delete a
+# searchable document to "fix" a missing preview.
+MISSING_UPLOAD_BLOB_ERROR = (
+    "document ingested but original bytes could not be stored"
+)
+
 
 class DocumentManagementError(RuntimeError):
     """Base error for uploaded-document management failures."""
@@ -241,28 +248,7 @@ class ManageUploadedDocuments:
             status=CatalogStatus.READY,
             chunk_count=response.chunk_count,
         )
-        self._catalog.upsert(ready)
-        if not self._try_put_blob(ready.reference, payload, operation="create"):
-            degraded = dataclasses.replace(
-                ready,
-                status=CatalogStatus.DEGRADED,
-                error="document ingested but original bytes could not be stored",
-            )
-            try:
-                self._catalog.upsert(degraded)
-            except Exception:
-                log_operation(
-                    logger,
-                    operation="create",
-                    outcome="error",
-                    level=logging.WARNING,
-                    error_type="CatalogError",
-                    source_id=ready.reference.source_id,
-                    source_type=ready.reference.source_type,
-                )
-                return ready
-            return degraded
-        return ready
+        return self._finalize_ready(ready, payload, operation="create")
 
     def replace(
         self, reference: SourceReference, payload: UploadPayload
@@ -306,28 +292,7 @@ class ManageUploadedDocuments:
             status=CatalogStatus.READY,
             chunk_count=response.chunk_count,
         )
-        self._catalog.upsert(ready)
-        if not self._try_put_blob(ready.reference, payload, operation="replace"):
-            degraded = dataclasses.replace(
-                ready,
-                status=CatalogStatus.DEGRADED,
-                error="document ingested but original bytes could not be stored",
-            )
-            try:
-                self._catalog.upsert(degraded)
-            except Exception:
-                log_operation(
-                    logger,
-                    operation="replace",
-                    outcome="error",
-                    level=logging.WARNING,
-                    error_type="CatalogError",
-                    source_id=ready.reference.source_id,
-                    source_type=ready.reference.source_type,
-                )
-                return ready
-            return degraded
-        return ready
+        return self._finalize_ready(ready, payload, operation="replace")
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
         """Return the hub catalog row for ``source_id``, if one exists."""
@@ -358,7 +323,8 @@ class ManageUploadedDocuments:
 
         Missing chunks or rows are no-ops so retry converges. Catalog failure
         after a successful vector delete raises ``PartialDeleteFailure``.
-        Blob unlink failures are logged and do not block catalog removal.
+        Blob unlink failures also raise ``PartialDeleteFailure`` so the catalog
+        row remains and a retry can reclaim the orphan.
         """
         try:
             self._vector_store_factory().delete_source(reference)
@@ -379,15 +345,19 @@ class ManageUploadedDocuments:
         try:
             self._blob_store.delete(reference)
         except Exception as error:
+            failure = PartialDeleteFailure(
+                reference=reference, delete_error=error
+            )
             log_operation(
                 logger,
                 operation="delete",
                 outcome="error",
-                level=logging.WARNING,
-                error_type=type(error).__name__,
-                source_id=reference.source_id,
-                source_type=reference.source_type,
+                level=logging.ERROR,
+                error_type=type(failure).__name__,
+                source_id=failure.source_id,
+                source_type=failure.source_type,
             )
+            raise failure from error
         try:
             self._catalog.delete(reference)
         except Exception as error:
@@ -404,6 +374,44 @@ class ManageUploadedDocuments:
                 source_type=failure.source_type,
             )
             raise failure from error
+
+    def _finalize_ready(
+        self,
+        ready: CatalogDocument,
+        payload: UploadPayload,
+        *,
+        operation: str,
+    ) -> CatalogDocument:
+        """Persist the original bytes, then write the READY catalog row.
+
+        Blob-before-READY keeps ``status == ready`` aligned with durable
+        originals when the put succeeds. A put failure still yields READY
+        (searchable chunks) with ``MISSING_UPLOAD_BLOB_ERROR`` so the UI can
+        distinguish "preview unavailable" from orphaned-chunk ``DEGRADED``.
+        On replace, a failed put also removes any previous blob so stale
+        bytes are not served under the new name/type.
+        """
+        blob_ok = self._try_put_blob(
+            ready.reference, payload, operation=operation
+        )
+        if not blob_ok:
+            try:
+                self._blob_store.delete(ready.reference)
+            except Exception as error:
+                log_operation(
+                    logger,
+                    operation=operation,
+                    outcome="error",
+                    level=logging.WARNING,
+                    error_type=type(error).__name__,
+                    source_id=ready.reference.source_id,
+                    source_type=ready.reference.source_type,
+                )
+            ready = dataclasses.replace(
+                ready, error=MISSING_UPLOAD_BLOB_ERROR
+            )
+        self._catalog.upsert(ready)
+        return ready
 
     def _try_put_blob(
         self,

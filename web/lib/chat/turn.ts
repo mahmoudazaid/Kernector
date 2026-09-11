@@ -1,5 +1,9 @@
 import type { ChatAskResponse } from "@/lib/api/chat";
-import { ApiError } from "@/lib/api/errors";
+import {
+  ApiError,
+  isAbortError,
+  isBackendUnavailable,
+} from "@/lib/api/errors";
 import type { components } from "@/lib/api/generated/schema";
 import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
 
@@ -80,8 +84,11 @@ export function classifyFailure(error: ApiError): TurnFailure {
   if (error.status === 422) {
     return { kind: "rejected", message: error.detail };
   }
-  if (error.status === 0) {
+  if (isBackendUnavailable(error)) {
     return { kind: "unavailable", message: error.detail };
+  }
+  if (isAbortError(error)) {
+    return { kind: "operational", message: error.detail };
   }
   return { kind: "operational", message: error.detail };
 }

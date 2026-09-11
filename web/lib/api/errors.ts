@@ -62,9 +62,25 @@ export class ApiError extends Error {
       status: 0,
       title: "Request aborted",
       detail: "The request was cancelled or timed out.",
-      code: "aborted",
+      code: ABORTED_CODE,
     });
   }
+}
+
+const ABORTED_CODE = "aborted";
+
+/** True when the failure is a caller abort or request timeout. */
+export function isAbortError(error: unknown): boolean {
+  return error instanceof ApiError && error.code === ABORTED_CODE;
+}
+
+/** True when the API host could not be reached (not an abort/timeout). */
+export function isBackendUnavailable(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 0 &&
+    error.code !== ABORTED_CODE
+  );
 }
 
 export function isProblemPayload(value: unknown): value is Problem {
