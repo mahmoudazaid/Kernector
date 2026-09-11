@@ -512,57 +512,26 @@ def test_list_source_chunks_rejects_a_non_reference(
 def test_list_source_chunks_mismatched_index_lengths_raise_store_error(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Legacy scan: ids/metadatas mismatch on the metadata-only get."""
-    from infrastructure.vectorstore.chroma import _derive_id
-
-    chunk = make_chunk(source_id="legacy", index=0, content="L0")
-    store._collection.add(
-        ids=[_derive_id(chunk)],
-        embeddings=[list(ALIGNED)],
-        documents=[chunk.content],
-        metadatas=[
-            {
-                "source_id": "legacy",
-                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
-                "chunk_index": 0,
-                "extra_json": "{}",
-            }
-        ],
-    )
-    real_get = store._collection.get
+    """Ids/metadatas mismatch on the metadata-only get."""
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
 
     def bad_get(**kwargs: object) -> dict[str, object]:
         include = kwargs.get("include")
         if include == ["metadatas"]:
-            return {"ids": ["a", "b"], "metadatas": [{"source_id": "legacy"}]}
-        return real_get(**kwargs)
+            return {"ids": ["a", "b"], "metadatas": [{"source_id": "doc-1"}]}
+        raise AssertionError(f"unexpected get kwargs: {kwargs!r}")
 
     monkeypatch.setattr(store._collection, "get", bad_get)
 
     with pytest.raises(ChromaStoreError, match=r"get\(\) returned mismatched"):
-        store.list_source_chunks(make_reference("legacy"))
+        store.list_source_chunks(make_reference("doc-1"))
 
 
 def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Legacy scan: hydrate get returns inconsistent parallel arrays."""
-    from infrastructure.vectorstore.chroma import _derive_id
-
-    chunk = make_chunk(source_id="legacy", index=0, content="L0")
-    store._collection.add(
-        ids=[_derive_id(chunk)],
-        embeddings=[list(ALIGNED)],
-        documents=[chunk.content],
-        metadatas=[
-            {
-                "source_id": "legacy",
-                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
-                "chunk_index": 0,
-                "extra_json": "{}",
-            }
-        ],
-    )
+    """Hydrate get returns inconsistent parallel arrays."""
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
     real_get = store._collection.get
 
     def bad_get(**kwargs: object) -> dict[str, object]:
@@ -573,7 +542,7 @@ def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
                 "documents": ["only-one", "extra"],
                 "metadatas": [
                     {
-                        "source_id": "legacy",
+                        "source_id": "doc-1",
                         "source_type": SourceType.KNOWLEDGE_DOCUMENT,
                         "chunk_index": 0,
                         "extra_json": "{}",
@@ -587,44 +556,33 @@ def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
     with pytest.raises(
         ChromaStoreError, match="page hydrate returned mismatched lengths"
     ):
-        store.list_source_chunks(make_reference("legacy"))
+        store.list_source_chunks(make_reference("doc-1"))
 
 
 def test_list_source_chunks_drops_ids_missing_from_hydrate(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Legacy scan: ids that vanish between reads are omitted, not a 500."""
-    from infrastructure.vectorstore.chroma import _derive_id
-
-    chunks = [
-        make_chunk(source_id="legacy", index=i, content=f"L{i}") for i in range(2)
-    ]
-    ids = [_derive_id(chunk) for chunk in chunks]
-    store._collection.add(
-        ids=ids,
-        embeddings=[list(ALIGNED) for _ in chunks],
-        documents=[chunk.content for chunk in chunks],
-        metadatas=[
-            {
-                "source_id": "legacy",
-                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
-                "chunk_index": chunk.index,
-                "extra_json": "{}",
-            }
-            for chunk in chunks
-        ],
+    """Ids that vanish between reads are omitted, not a 500."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0, content="c0"),
+            make_embedded(source_id="doc-1", index=1, content="c1"),
+        ]
     )
     real_get = store._collection.get
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    kept_id = _derive_id(make_chunk(source_id="doc-1", index=0, content="c0"))
 
     def partial_hydrate(**kwargs: object) -> object:
         include = kwargs.get("include")
         if include == ["metadatas", "documents"] and kwargs.get("ids") is not None:
             return {
-                "ids": [ids[0]],
-                "documents": ["L0"],
+                "ids": [kept_id],
+                "documents": ["c0"],
                 "metadatas": [
                     {
-                        "source_id": "legacy",
+                        "source_id": "doc-1",
                         "source_type": SourceType.KNOWLEDGE_DOCUMENT,
                         "chunk_index": 0,
                         "extra_json": "{}",
@@ -635,36 +593,36 @@ def test_list_source_chunks_drops_ids_missing_from_hydrate(
 
     monkeypatch.setattr(store._collection, "get", partial_hydrate)
 
-    listed = store.list_source_chunks(make_reference("legacy"))
-    assert [c.content for c in listed] == ["L0"]
+    listed = store.list_source_chunks(make_reference("doc-1"))
+    assert [c.content for c in listed] == ["c0"]
 
 
-def test_list_source_chunks_skips_corrupt_chunk_index_on_legacy_scan(
+def test_list_source_chunks_skips_corrupt_chunk_index(
     store: ChromaVectorStore,
 ) -> None:
     from infrastructure.vectorstore.chroma import _derive_id
 
-    good = make_chunk(source_id="legacy", index=0, content="ok")
+    good = make_chunk(source_id="doc-1", index=0, content="ok")
     store._collection.add(
-        ids=[_derive_id(good), "corrupt-legacy-row"],
+        ids=[_derive_id(good), "corrupt-row"],
         embeddings=[list(ALIGNED), list(ALIGNED)],
         documents=["ok", "bad"],
         metadatas=[
             {
-                "source_id": "legacy",
+                "source_id": "doc-1",
                 "source_type": SourceType.KNOWLEDGE_DOCUMENT,
                 "chunk_index": 0,
                 "extra_json": "{}",
             },
             {
-                "source_id": "legacy",
+                "source_id": "doc-1",
                 "source_type": SourceType.KNOWLEDGE_DOCUMENT,
                 "extra_json": "{}",
             },
         ],
     )
 
-    listed = store.list_source_chunks(make_reference("legacy"))
+    listed = store.list_source_chunks(make_reference("doc-1"))
     assert [c.content for c in listed] == ["ok"]
 
 
@@ -727,69 +685,15 @@ def test_list_source_chunks_does_not_request_embeddings(
     listed = store.list_source_chunks(make_reference("doc-1"))
 
     assert [c.content for c in listed] == ["body"]
-    assert len(captured) == 3
-    assert captured[0] == []
-    assert captured[1] == []
-    assert captured[2] == ["metadatas", "documents"]
     assert all(
         isinstance(include, list) and "embeddings" not in include
         for include in captured
     )
 
 
-def test_upsert_writes_dense_chunk_position(store: ChromaVectorStore) -> None:
-    store.upsert(
-        [
-            make_embedded(source_id="doc-1", index=10, content="a"),
-            make_embedded(source_id="doc-1", index=20, content="b"),
-        ]
-    )
-
-    result = store._collection.get(include=["metadatas"])
-    positions = sorted(
-        meta["chunk_position"] for meta in (result.get("metadatas") or [])
-    )
-    assert positions == [0, 1]
-
-
-def test_list_source_chunks_pages_legacy_rows_without_chunk_position(
-    store: ChromaVectorStore,
-) -> None:
-    """Pre-position records must still page when limit/offset are set."""
-    from infrastructure.vectorstore.chroma import _derive_id
-
-    chunks = [
-        make_chunk(source_id="legacy", index=i, content=f"L{i}") for i in range(3)
-    ]
-    store._collection.add(
-        ids=[_derive_id(chunk) for chunk in chunks],
-        embeddings=[list(ALIGNED) for _ in chunks],
-        documents=[chunk.content for chunk in chunks],
-        metadatas=[
-            {
-                "source_id": "legacy",
-                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
-                "chunk_index": chunk.index,
-                "extra_json": "{}",
-            }
-            for chunk in chunks
-        ],
-    )
-
-    page = store.list_source_chunks(
-        make_reference("legacy"), limit=2, offset=0
-    )
-    assert [c.content for c in page] == ["L0", "L1"]
-    page2 = store.list_source_chunks(
-        make_reference("legacy"), limit=2, offset=2
-    )
-    assert [c.content for c in page2] == ["L2"]
-
-
 def test_list_source_chunks_pages_after_partial_upserts(
     store: ChromaVectorStore,
 ) -> None:
-    """Partial upserts densify positions across the whole source."""
     store.upsert([make_embedded(source_id="doc-1", index=0, content="c0")])
     store.upsert(
         [
@@ -797,17 +701,6 @@ def test_list_source_chunks_pages_after_partial_upserts(
             make_embedded(source_id="doc-1", index=2, content="c2"),
         ]
     )
-
-    result = store._collection.get(include=["metadatas", "documents"])
-    by_content = {
-        doc: meta["chunk_position"]
-        for doc, meta in zip(
-            result.get("documents") or [],
-            result.get("metadatas") or [],
-            strict=True,
-        )
-    }
-    assert by_content == {"c0": 0, "c1": 1, "c2": 2}
 
     page1 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
     page2 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=2)

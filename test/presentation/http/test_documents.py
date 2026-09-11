@@ -647,10 +647,19 @@ def test_list_chunks_reports_has_more_from_limit_plus_one(client_factory) -> Non
     assert body["has_more"] is True
 
 
-def test_hub_source_types_match_source_type_enum() -> None:
-    from domain.knowledge import HUB_SOURCE_TYPES, SourceType
+@pytest.mark.parametrize("source_type", list(SourceType))
+def test_list_chunks_accepts_each_source_type_member(
+    client_factory, source_type: SourceType
+) -> None:
+    ops, _ledger = _stub_ops()
+    client = client_factory(ops)
 
-    assert HUB_SOURCE_TYPES == frozenset(SourceType)
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": source_type},
+    )
+
+    assert response.status_code != 422
 
 
 def test_list_chunks_has_more_false_when_store_returns_exact_limit(

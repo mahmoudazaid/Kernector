@@ -48,16 +48,9 @@ _ID_SCHEME_VERSION = 1
 # against them returns zero hits until `reindex_filter_metadata` (or a full
 # re-ingest that rewrites through `upsert`) promotes those keys — the same
 # recoverability model as bumping `_ID_SCHEME_VERSION` above.
-#
-# `chunk_position` is a dense 0-based order within each source, written on
-# upsert (merged with siblings so partial upserts stay dense) and on
-# `reindex_filter_metadata`. List paging filters on it server-side; sources
-# that still have rows missing the key fall back to a full scan sorted by
-# `chunk_index`. Run `reindex_filter_metadata` to backfill positions.
 _KEY_SOURCE_ID = "source_id"
 _KEY_SOURCE_TYPE = "source_type"
 _KEY_CHUNK_INDEX = "chunk_index"
-_KEY_POSITION = "chunk_position"
 _KEY_TITLE = "title"
 _KEY_PROVIDER = "provider"
 _KEY_CONTENT_FORMAT = "content_format"
@@ -250,112 +243,17 @@ def _promote_extra_key(key: str) -> str:
     return f"{_EXTRA_KEY_PREFIX}{key}"
 
 
+def _source_clauses(reference: SourceReference) -> list[dict[str, object]]:
+    """Exact-match clauses for one complete source (delete + list share this)."""
+    return [
+        {_KEY_SOURCE_ID: reference.source_id},
+        {_KEY_SOURCE_TYPE: str(reference.source_type)},
+    ]
+
+
 def _source_where(reference: SourceReference) -> dict[str, object]:
-    """Exact-match filter for one complete source (delete + list share this)."""
-    return {
-        "$and": [
-            {_KEY_SOURCE_ID: reference.source_id},
-            {_KEY_SOURCE_TYPE: str(reference.source_type)},
-        ]
-    }
-
-
-def _positions_for_chunks(chunks: Sequence[DocumentChunk]) -> list[int]:
-    """Dense 0..n-1 positions per source, ordered by ascending ``chunk.index``.
-
-    Used when the batch is the full post-write set for each source (reindex).
-    """
-    groups: dict[tuple[str, str], list[tuple[int, int]]] = {}
-    for batch_index, chunk in enumerate(chunks):
-        reference = chunk.reference
-        key = (str(reference.source_type), reference.source_id)
-        groups.setdefault(key, []).append((batch_index, chunk.index))
-    positions = [0] * len(chunks)
-    for members in groups.values():
-        ordered = sorted(members, key=lambda pair: pair[1])
-        for position, (batch_index, _) in enumerate(ordered):
-            positions[batch_index] = position
-    return positions
-
-
-def _dense_positions_by_index(
-    indexed_ids: Sequence[tuple[str, int]],
-) -> dict[str, int]:
-    """Map record id → dense position from ``(id, chunk_index)`` pairs."""
-    ordered = sorted(indexed_ids, key=lambda pair: pair[1])
-    return {
-        record_id: position for position, (record_id, _) in enumerate(ordered)
-    }
-
-
-def _positions_for_upsert(
-    collection: Collection,
-    chunks: Sequence[DocumentChunk],
-    batch_ids: Sequence[str],
-) -> tuple[list[int], list[tuple[str, dict[str, str | int]]]]:
-    """Dense positions for an upsert batch relative to the post-write source.
-
-    Merges each batch item with siblings that remain after the batch ids are
-    replaced, so partial upserts keep a globally dense ``chunk_position``.
-    Returns batch-aligned positions plus sibling metadata updates for rows
-    whose stored position must change.
-    """
-    if len(chunks) != len(batch_ids):
-        raise ChromaStoreError(
-            "upsert position assignment requires one id per chunk, got "
-            f"chunks={len(chunks)} ids={len(batch_ids)}"
-        )
-    positions = [0] * len(chunks)
-    sibling_updates: list[tuple[str, dict[str, str | int]]] = []
-    by_source: dict[tuple[str, str], list[int]] = {}
-    for batch_index, chunk in enumerate(chunks):
-        reference = chunk.reference
-        key = (str(reference.source_type), reference.source_id)
-        by_source.setdefault(key, []).append(batch_index)
-    batch_id_set = set(batch_ids)
-    for indices in by_source.values():
-        reference = chunks[indices[0]].reference
-        try:
-            existing = collection.get(
-                where=_source_where(reference),
-                include=["metadatas"],
-            )
-        except (ChromaError, ValueError) as exc:
-            raise ChromaStoreError(
-                f"could not read source {reference.source_type}:"
-                f"{reference.source_id} from collection "
-                f"{collection.name!r} to assign chunk positions: {exc}"
-            ) from exc
-        existing_ids = existing.get("ids") or []
-        existing_metas = existing.get("metadatas") or []
-        if len(existing_metas) != len(existing_ids):
-            raise ChromaStoreError(
-                f"collection {collection.name!r}: position assignment get() "
-                f"returned mismatched lengths ids={len(existing_ids)} "
-                f"metadatas={len(existing_metas)}"
-            )
-        inventory: list[tuple[str, int]] = []
-        remaining_meta: dict[str, dict[str, str | int]] = {}
-        for record_id, metadata in zip(existing_ids, existing_metas, strict=True):
-            if record_id in batch_id_set:
-                continue
-            inventory.append(
-                (record_id, _chunk_index_from_metadata(metadata, record_id))
-            )
-            remaining_meta[record_id] = dict(metadata)
-        for batch_index in indices:
-            inventory.append((batch_ids[batch_index], chunks[batch_index].index))
-        dense = _dense_positions_by_index(inventory)
-        for batch_index in indices:
-            positions[batch_index] = dense[batch_ids[batch_index]]
-        for record_id, metadata in remaining_meta.items():
-            new_position = dense[record_id]
-            if metadata.get(_KEY_POSITION) == new_position:
-                continue
-            updated = dict(metadata)
-            updated[_KEY_POSITION] = new_position
-            sibling_updates.append((record_id, updated))
-    return positions, sibling_updates
+    """Exact-match filter for one complete source."""
+    return {"$and": _source_clauses(reference)}
 
 
 def _require_mapping(metadata: object, record_id: str) -> Mapping[str, object]:
@@ -378,9 +276,7 @@ def _chunk_index_from_metadata(metadata: object, record_id: str) -> int:
     return index
 
 
-def _encode_metadata(
-    chunk: DocumentChunk, *, position: int
-) -> dict[str, str | int]:
+def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
     """Flatten a chunk's provenance into Chroma's scalar metadata namespace.
 
     Optional fields are omitted rather than written as None, because Chroma
@@ -390,20 +286,14 @@ def _encode_metadata(
 
     Each `extra` entry is duplicated under `_EXTRA_KEY_PREFIX` for filterable
     `where` clauses; decode still rebuilds `extra` only from `_KEY_EXTRA_JSON`.
-    ``position`` is a dense 0-based order within the source (gaps in
-    ``chunk.index`` do not create holes) and is what list paging filters on.
+    List paging sorts by ``chunk_index`` (the authoritative order key).
     """
     where = _describe(chunk)
-    if isinstance(position, bool) or not isinstance(position, int) or position < 0:
-        raise ChromaStoreError(
-            f"{where}: position must be a non-negative int, got {position!r}"
-        )
     metadata = chunk.metadata
     encoded: dict[str, str | int] = {
         _KEY_SOURCE_ID: metadata.reference.source_id,
         _KEY_SOURCE_TYPE: str(metadata.reference.source_type),
         _KEY_CHUNK_INDEX: chunk.index,
-        _KEY_POSITION: position,
         _KEY_EXTRA_JSON: _encode_extra(metadata.extra, where),
     }
     for key, value in (
@@ -780,7 +670,6 @@ class ChromaVectorStore:
         metadatas: list[dict[str, str | int]] = []
         seen: dict[str, str] = {}
         dimension: int | None = None
-        chunks: list[DocumentChunk] = []
         for batch_index, item in enumerate(embedded):
             if not isinstance(item, EmbeddedChunk):
                 raise ChromaStoreError(
@@ -805,12 +694,7 @@ class ChromaVectorStore:
             ids.append(record_id)
             vectors.append(vector)
             documents.append(item.chunk.content)
-            chunks.append(item.chunk)
-        positions, sibling_updates = _positions_for_upsert(
-            self._collection, chunks, ids
-        )
-        for chunk, position in zip(chunks, positions, strict=True):
-            metadatas.append(_encode_metadata(chunk, position=position))
+            metadatas.append(_encode_metadata(item.chunk))
         snapshot = _snapshot_records(self._collection, ids)
 
         def write() -> None:
@@ -831,18 +715,6 @@ class ChromaVectorStore:
                 f"{self._collection.name!r}"
             ),
         )
-        if sibling_updates:
-            try:
-                self._collection.update(
-                    ids=[record_id for record_id, _ in sibling_updates],
-                    metadatas=[metadata for _, metadata in sibling_updates],
-                )
-            except (ChromaError, ValueError) as exc:
-                raise ChromaStoreError(
-                    f"could not densify chunk_position for {len(sibling_updates)} "
-                    f"sibling record(s) in collection {self._collection.name!r}: "
-                    f"{exc}"
-                ) from exc
 
     def delete_source(self, reference: SourceReference) -> None:
         """Delete one complete source. See `domain.ports.VectorStore`.
@@ -887,12 +759,11 @@ class ChromaVectorStore:
         """Return chunks for one source. See `domain.ports.VectorStore`.
 
         Reads documents and metadatas only (no embeddings). Scoped by the same
-        ``source_id`` + ``source_type`` filter as ``delete_source``. When every
-        row for the source carries ``chunk_position``, paging is pushed into
-        Chroma via ``$gte`` / ``$lt``. Sources with any legacy row missing the
-        key fall back to a metadata scan sorted by ``chunk_index`` (corrupt
-        index rows are skipped). Concurrent deletes that remove page ids mid-
-        hydrate drop those ids rather than failing the request.
+        ``source_id`` + ``source_type`` filter as ``delete_source``. Paging is
+        positional after sorting by ``chunk_index``: a metadata-only pass
+        selects page ids, then a second get loads texts. Corrupt rows whose
+        ``chunk_index`` is missing or non-int are skipped (and logged). Ids that
+        vanish between the two reads are omitted and logged rather than raising.
         """
         if not isinstance(reference, SourceReference):
             raise ChromaStoreError(
@@ -915,86 +786,6 @@ class ChromaVectorStore:
                     f"{self._collection.name!r}: {exc}"
                 ) from exc
 
-        base_where = _source_where(reference)
-        all_ids = list(get_or_store_error(where=base_where, include=[]).get("ids") or [])
-        if not all_ids:
-            return ()
-        positioned_ids = list(
-            get_or_store_error(
-                where={
-                    "$and": [
-                        {_KEY_SOURCE_ID: reference.source_id},
-                        {_KEY_SOURCE_TYPE: str(reference.source_type)},
-                        {_KEY_POSITION: {"$gte": 0}},
-                    ]
-                },
-                include=[],
-            ).get("ids")
-            or []
-        )
-        if len(positioned_ids) == len(all_ids):
-            return self._list_source_chunks_by_position(
-                reference,
-                limit=limit,
-                offset=offset,
-                get_or_store_error=get_or_store_error,
-            )
-        return self._list_source_chunks_legacy_scan(
-            reference,
-            limit=limit,
-            offset=offset,
-            get_or_store_error=get_or_store_error,
-        )
-
-    def _list_source_chunks_by_position(
-        self,
-        reference: SourceReference,
-        *,
-        limit: int | None,
-        offset: int,
-        get_or_store_error: Callable[..., Mapping[str, object]],
-    ) -> Sequence[DocumentChunk]:
-        """Server-side page via dense ``chunk_position``."""
-        clauses: list[dict[str, object]] = [
-            {_KEY_SOURCE_ID: reference.source_id},
-            {_KEY_SOURCE_TYPE: str(reference.source_type)},
-        ]
-        if offset > 0:
-            clauses.append({_KEY_POSITION: {"$gte": offset}})
-        if limit is not None:
-            clauses.append({_KEY_POSITION: {"$lt": offset + limit}})
-        result = get_or_store_error(
-            where={"$and": clauses},
-            include=["metadatas", "documents"],
-        )
-        ids = result.get("ids") or []
-        if not ids:
-            return ()
-        documents = result.get("documents") or []
-        metadatas = result.get("metadatas") or []
-        if not (len(documents) == len(ids) and len(metadatas) == len(ids)):
-            raise ChromaStoreError(
-                f"collection {self._collection.name!r}: list_source_chunks "
-                f"get() returned mismatched lengths ids={len(ids)} "
-                f"documents={len(documents)} metadatas={len(metadatas)}"
-            )
-        chunks = [
-            _decode_chunk(record_id, document, metadata)
-            for record_id, document, metadata in zip(
-                ids, documents, metadatas, strict=True
-            )
-        ]
-        return tuple(sorted(chunks, key=lambda chunk: chunk.index))
-
-    def _list_source_chunks_legacy_scan(
-        self,
-        reference: SourceReference,
-        *,
-        limit: int | None,
-        offset: int,
-        get_or_store_error: Callable[..., Mapping[str, object]],
-    ) -> Sequence[DocumentChunk]:
-        """Full-source scan for rows that predate ``chunk_position``."""
         index_result = get_or_store_error(
             where=_source_where(reference),
             include=["metadatas"],
@@ -1050,12 +841,29 @@ class ChromaVectorStore:
                 f"ids={len(page_result_ids)} documents={len(documents)} "
                 f"metadatas={len(page_metadatas)}"
             )
-        by_id = {
-            record_id: _decode_chunk(record_id, document, metadata)
-            for record_id, document, metadata in zip(
-                page_result_ids, documents, page_metadatas, strict=True
+        by_id: dict[str, DocumentChunk] = {}
+        for record_id, document, metadata in zip(
+            page_result_ids, documents, page_metadatas, strict=True
+        ):
+            try:
+                by_id[record_id] = _decode_chunk(record_id, document, metadata)
+            except ChromaStoreError:
+                _logger.warning(
+                    "skipping corrupt hydrate row %s in source %s:%s",
+                    record_id,
+                    reference.source_type,
+                    reference.source_id,
+                )
+        missing = [record_id for record_id in page_ids if record_id not in by_id]
+        if missing:
+            _logger.warning(
+                "list_source_chunks dropped %s id(s) missing from hydrate for "
+                "source %s:%s: %s",
+                len(missing),
+                reference.source_type,
+                reference.source_id,
+                missing,
             )
-        }
         return tuple(
             by_id[record_id] for record_id in page_ids if record_id in by_id
         )
@@ -1122,9 +930,8 @@ class ChromaVectorStore:
             chunk = _decode_chunk(record_id, document, metadata)
             vectors.append(_validate_vector(list(embedding), f"record {record_id}"))
             decoded.append(chunk)
-        positions = _positions_for_chunks(decoded)
-        for chunk, position in zip(decoded, positions, strict=True):
-            rewritten.append(_encode_metadata(chunk, position=position))
+        for chunk in decoded:
+            rewritten.append(_encode_metadata(chunk))
 
         def write() -> None:
             self._collection.add(
