@@ -79,9 +79,7 @@
             "type": "string"
           },
           "source_type": {
-            "enum": ["knowledge_document", "google_drive"],
-            "title": "Source Type",
-            "type": "string"
+            "$ref": "#/components/schemas/SourceType"
           },
           "status": {
             "enum": ["pending", "ready", "failed", "degraded"],
@@ -399,9 +397,7 @@
             "type": "string"
           },
           "source_type": {
-            "enum": ["knowledge_document", "google_drive"],
-            "title": "Source Type",
-            "type": "string"
+            "$ref": "#/components/schemas/SourceType"
           },
           "title": {
             "anyOf": [
@@ -1290,6 +1286,12 @@
         "required": ["source_id", "source_type"],
         "title": "SourceReferenceResponse",
         "type": "object"
+      },
+      "SourceType": {
+        "description": "Documented well-known source kinds.\n\nNot a closed validation set for ``SourceReference.source_type`` \u2014 connectors\nmay introduce other string kinds \u2014 but the members below are the stable hub\nand upload vocabulary.",
+        "enum": ["knowledge_document", "google_drive"],
+        "title": "SourceType",
+        "type": "string"
       },
       "TestCaseResponse": {
         "description": "One generated test case.",
@@ -2369,9 +2371,7 @@
             "name": "source_type",
             "required": true,
             "schema": {
-              "enum": ["knowledge_document", "google_drive"],
-              "title": "Source Type",
-              "type": "string"
+              "$ref": "#/components/schemas/SourceType"
             }
           },
           {

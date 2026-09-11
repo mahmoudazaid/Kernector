@@ -21,7 +21,6 @@ from presentation.http.schemas import (
     CatalogDocumentResponse,
     DocumentChunkListResponse,
     DocumentListResponse,
-    HubSourceType,
     catalog_document_response,
     document_chunk_response,
 )
@@ -163,7 +162,7 @@ def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
 def list_document_chunks(
     source_id: str,
     ops: DocumentOperationsDep,
-    source_type: HubSourceType = Query(...),
+    source_type: SourceType = Query(...),
     limit: int = Query(
         default=_DEFAULT_CHUNK_LIMIT,
         ge=1,

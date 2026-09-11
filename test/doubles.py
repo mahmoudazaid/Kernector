@@ -17,7 +17,7 @@ from domain.knowledge import (
     SourceReference,
     Vector,
 )
-from domain.errors import QueryRewriterError
+from domain.errors import QueryRewriterError, VectorStoreError
 
 _DIMENSION = 4
 
@@ -198,8 +198,6 @@ class InMemoryVectorStore:
         limit: int | None = None,
         offset: int = 0,
     ) -> Sequence[DocumentChunk]:
-        from domain.errors import VectorStoreError
-
         if isinstance(limit, bool) or (limit is not None and not isinstance(limit, int)):
             raise VectorStoreError(f"limit must be an int or None, got {limit!r}")
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:

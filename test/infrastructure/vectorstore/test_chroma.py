@@ -515,10 +515,30 @@ def test_list_source_chunks_mismatched_lengths_raise_store_error(
     store.upsert([make_embedded(source_id="doc-1", index=0)])
 
     def bad_get(**kwargs: object) -> dict[str, object]:
+        include = kwargs.get("include") or []
+        if include == ["metadatas"]:
+            return {
+                "ids": ["a"],
+                "metadatas": [
+                    {
+                        "source_id": "doc-1",
+                        "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                        "chunk_index": 0,
+                        "extra_json": "{}",
+                    }
+                ],
+            }
         return {
-            "ids": ["a", "b"],
-            "documents": ["only-one"],
-            "metadatas": [{"source_id": "doc-1"}, {"source_id": "doc-1"}],
+            "ids": ["a"],
+            "documents": ["only-one", "extra"],
+            "metadatas": [
+                {
+                    "source_id": "doc-1",
+                    "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                    "chunk_index": 0,
+                    "extra_json": "{}",
+                }
+            ],
         }
 
     monkeypatch.setattr(store._collection, "get", bad_get)
@@ -586,8 +606,80 @@ def test_list_source_chunks_does_not_request_embeddings(
     listed = store.list_source_chunks(make_reference("doc-1"))
 
     assert [c.content for c in listed] == ["body"]
-    assert captured == [["metadatas", "documents"]]
-    assert "embeddings" not in captured[0]
+    assert captured[0] == ["metadatas"]
+    assert captured[1] == ["metadatas", "documents"]
+    assert all(
+        isinstance(include, list) and "embeddings" not in include
+        for include in captured
+    )
+
+
+def test_upsert_writes_dense_chunk_position(store: ChromaVectorStore) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=10, content="a"),
+            make_embedded(source_id="doc-1", index=20, content="b"),
+        ]
+    )
+
+    result = store._collection.get(include=["metadatas"])
+    positions = sorted(
+        meta["chunk_position"] for meta in (result.get("metadatas") or [])
+    )
+    assert positions == [0, 1]
+
+
+def test_list_source_chunks_pages_legacy_rows_without_chunk_position(
+    store: ChromaVectorStore,
+) -> None:
+    """Pre-position records must still page when limit/offset are set."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    chunks = [
+        make_chunk(source_id="legacy", index=i, content=f"L{i}") for i in range(3)
+    ]
+    store._collection.add(
+        ids=[_derive_id(chunk) for chunk in chunks],
+        embeddings=[list(ALIGNED) for _ in chunks],
+        documents=[chunk.content for chunk in chunks],
+        metadatas=[
+            {
+                "source_id": "legacy",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": chunk.index,
+                "extra_json": "{}",
+            }
+            for chunk in chunks
+        ],
+    )
+
+    page = store.list_source_chunks(
+        make_reference("legacy"), limit=2, offset=0
+    )
+    assert [c.content for c in page] == ["L0", "L1"]
+    page2 = store.list_source_chunks(
+        make_reference("legacy"), limit=2, offset=2
+    )
+    assert [c.content for c in page2] == ["L2"]
+
+
+def test_list_source_chunks_pages_after_partial_upserts(
+    store: ChromaVectorStore,
+) -> None:
+    """Batch-local positions may collide; paging still follows chunk.index order."""
+    store.upsert([make_embedded(source_id="doc-1", index=0, content="c0")])
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=1, content="c1"),
+            make_embedded(source_id="doc-1", index=2, content="c2"),
+        ]
+    )
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=2)
+
+    assert [c.content for c in page1] == ["c0", "c1"]
+    assert [c.content for c in page2] == ["c2"]
 
 
 def test_list_source_chunks_get_failure_stays_a_store_error(

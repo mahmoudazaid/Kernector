@@ -311,11 +311,7 @@ export interface components {
       has_error: boolean;
       /** Source Id */
       source_id: string;
-      /**
-       * Source Type
-       * @enum {string}
-       */
-      source_type: "knowledge_document" | "google_drive";
+      source_type: components["schemas"]["SourceType"];
       /**
        * Status
        * @enum {string}
@@ -440,11 +436,7 @@ export interface components {
       provider?: string | null;
       /** Source Id */
       source_id: string;
-      /**
-       * Source Type
-       * @enum {string}
-       */
-      source_type: "knowledge_document" | "google_drive";
+      source_type: components["schemas"]["SourceType"];
       /** Title */
       title?: string | null;
     };
@@ -807,6 +799,16 @@ export interface components {
       /** Source Type */
       source_type: string;
     };
+    /**
+     * SourceType
+     * @description Documented well-known source kinds.
+     *
+     *     Not a closed validation set for ``SourceReference.source_type`` — connectors
+     *     may introduce other string kinds — but the members below are the stable hub
+     *     and upload vocabulary.
+     * @enum {string}
+     */
+    SourceType: "knowledge_document" | "google_drive";
     /**
      * TestCaseResponse
      * @description One generated test case.
@@ -1615,7 +1617,7 @@ export interface operations {
   list_document_chunks_api_v1_documents__source_id__chunks_get: {
     parameters: {
       query: {
-        source_type: "knowledge_document" | "google_drive";
+        source_type: components["schemas"]["SourceType"];
         limit?: number;
         offset?: number;
       };

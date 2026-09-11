@@ -18,12 +18,9 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     DocumentChunk,
-    HUB_SOURCE_TYPES,
     SourceReference,
     SourceType,
 )
-
-HubSourceType = Literal[SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE]
 
 
 class HealthResponse(BaseModel):
@@ -461,7 +458,7 @@ class CatalogDocumentResponse(BaseModel):
     """Wire projection of one uploaded catalog row (sanitized diagnostics)."""
 
     source_id: str
-    source_type: HubSourceType
+    source_type: SourceType
     file_name: str
     title: str | None = None
     content_format: str | None = None
@@ -484,7 +481,7 @@ class DocumentChunkResponse(BaseModel):
     index: int
     content: str
     source_id: str
-    source_type: HubSourceType
+    source_type: SourceType
     title: str | None = None
     provider: str | None = None
     content_format: str | None = None
@@ -500,17 +497,14 @@ class DocumentChunkListResponse(BaseModel):
 
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
     """Project a catalog row; never serialize raw adapter ``error`` text."""
-    source_type = document.reference.source_type
-    if source_type not in HUB_SOURCE_TYPES:
-        raise ValueError("catalog response requires a hub source_type")
     summary = (
         _DRIVE_ERROR_SUMMARY_BY_STATUS.get(document.status)
-        if source_type == SourceType.GOOGLE_DRIVE
+        if document.reference.source_type == SourceType.GOOGLE_DRIVE
         else _ERROR_SUMMARY_BY_STATUS.get(document.status)
     )
     return CatalogDocumentResponse(
         source_id=document.reference.source_id,
-        source_type=source_type,  # type: ignore[arg-type]
+        source_type=SourceType(document.reference.source_type),
         file_name=document.file_name,
         title=document.title,
         content_format=document.content_format,
@@ -525,14 +519,11 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
 
 def document_chunk_response(chunk: DocumentChunk) -> DocumentChunkResponse:
     """Project a stored chunk to the allowlisted wire fields only."""
-    source_type = chunk.reference.source_type
-    if source_type not in HUB_SOURCE_TYPES:
-        raise ValueError("chunk response requires a hub source_type")
     return DocumentChunkResponse(
         index=chunk.index,
         content=chunk.content,
         source_id=chunk.reference.source_id,
-        source_type=source_type,  # type: ignore[arg-type]
+        source_type=SourceType(chunk.reference.source_type),
         title=chunk.metadata.title,
         provider=chunk.metadata.provider,
         content_format=chunk.metadata.content_format,
