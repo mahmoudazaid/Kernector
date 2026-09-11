@@ -645,30 +645,32 @@ def test_list_uploaded_document_chunks_known_empty(
     assert chunks == ChunkPage(chunks=(), has_more=False)
 
 
-def test_list_uploaded_document_chunks_factory_defers_store_open(
-    settings: Settings,
+def test_list_uploaded_document_chunks_defers_lazy_store_for_unknown(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """With vector_store=None, unknown refs must not call build_vector_store."""
     from composition.errors import UnknownUploadedDocumentError
 
     calls: list[object] = []
 
-    def factory():
+    def boom(_settings: Settings) -> object:
         calls.append(object())
         raise AssertionError("vector store must not open for unknown refs")
+
+    monkeypatch.setattr(composition_container, "build_vector_store", boom)
 
     with pytest.raises(UnknownUploadedDocumentError):
         composition_container.list_uploaded_document_chunks(
             settings,
             SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
-            vector_store_factory=factory,
         )
     assert calls == []
 
 
-def test_list_uploaded_document_chunks_vector_store_wins_over_factory(
-    settings: Settings,
+def test_list_uploaded_document_chunks_uses_passed_vector_store(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When vector_store is passed, list must not invoke vector_store_factory."""
+    """When vector_store is passed, list must not call build_vector_store."""
     from datetime import UTC, datetime
 
     from domain.knowledge import CatalogDocument
@@ -692,16 +694,17 @@ def test_list_uploaded_document_chunks_vector_store_wins_over_factory(
 
     calls: list[object] = []
 
-    def factory():
+    def boom(_settings: Settings) -> object:
         calls.append(object())
-        raise AssertionError("factory must not run when vector_store is passed")
+        raise AssertionError("build_vector_store must not run when vector_store is passed")
+
+    monkeypatch.setattr(composition_container, "build_vector_store", boom)
 
     chunks = composition_container.list_uploaded_document_chunks(
         settings,
         reference,
         catalog=catalog,
         vector_store=store,
-        vector_store_factory=factory,
     )
 
     assert chunks == ChunkPage(chunks=(), has_more=False)

@@ -9,6 +9,7 @@ export type DocumentChunkResponse =
   components["schemas"]["DocumentChunkResponse"];
 export type DocumentChunkListResponse =
   components["schemas"]["DocumentChunkListResponse"];
+export type HubSourceType = components["schemas"]["HubSourceType"];
 
 /** Uploads that embed every chunk routinely exceed the default 10s timeout. */
 export const DOCUMENT_MUTATION_TIMEOUT_MS = 120_000;
@@ -18,6 +19,9 @@ export const DOCUMENT_CHUNKS_TIMEOUT_MS = 60_000;
 
 /** Default page size for ``GET .../chunks`` (matches the HTTP default). */
 export const DOCUMENT_CHUNKS_PAGE_SIZE = 50;
+
+/** Cap empty-window auto-advance so corrupt sources cannot spin unbounded. */
+export const DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS = 5;
 
 export type ListDocumentsOptions = {
   baseUrl: string;
@@ -29,8 +33,8 @@ export type ListDocumentsOptions = {
 export type ListDocumentChunksOptions = {
   baseUrl: string;
   sourceId: string;
-  /** Hub catalog ``source_type`` (query still validated server-side). */
-  sourceType: string;
+  /** Hub catalog ``source_type`` (validated server-side as HubSourceType). */
+  sourceType: HubSourceType;
   limit?: number;
   offset?: number;
   signal?: AbortSignal;

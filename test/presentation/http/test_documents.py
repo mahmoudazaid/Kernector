@@ -705,3 +705,23 @@ def test_list_chunks_has_more_false_when_store_returns_exact_limit(
     body = response.json()
     assert [c["content"] for c in body["chunks"]] == ["c0", "c1"]
     assert body["has_more"] is False
+
+
+@pytest.mark.parametrize(
+    ("params",),
+    [
+        ({"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 0},),
+        ({"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 201},),
+        ({"source_type": SourceType.KNOWLEDGE_DOCUMENT, "offset": -1},),
+    ],
+)
+def test_list_chunks_rejects_out_of_range_paging(
+    client_factory, params: dict[str, object]
+) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get("/api/v1/documents/src-1/chunks", params=params)
+
+    assert response.status_code == 422
+    assert ledger["listed_chunks"] == []

@@ -354,7 +354,7 @@
         "type": "object"
       },
       "DocumentChunkResponse": {
-        "description": "Allowlisted projection of one stored chunk for the documents UI.",
+        "description": "Wire projection of one stored chunk for the documents UI.\n\nScalar fields are an explicit allowlist. ``extra`` forwards connector\nmetadata from ``SourceMetadata.extra`` without a key filter \u2014 callers must\nnot treat it as a closed schema.",
         "properties": {
           "content": {
             "title": "Content",

@@ -185,6 +185,23 @@ class ChunkPage:
     chunks: tuple[DocumentChunk, ...]
     has_more: bool
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.chunks, tuple):
+            raise DomainValidationError(
+                f"chunks must be a tuple of DocumentChunk, "
+                f"got {type(self.chunks).__name__}"
+            )
+        for index, chunk in enumerate(self.chunks):
+            if not isinstance(chunk, DocumentChunk):
+                raise DomainValidationError(
+                    f"chunks[{index}] must be a DocumentChunk, "
+                    f"got {type(chunk).__name__}"
+                )
+        if type(self.has_more) is not bool:
+            raise DomainValidationError(
+                f"has_more must be a bool, got {type(self.has_more).__name__}"
+            )
+
 
 type Vector = Sequence[float]
 

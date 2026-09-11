@@ -4,9 +4,11 @@ import hashlib
 import json
 import logging
 import re
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from math import isfinite
+from pathlib import Path
 
 import chromadb
 from chromadb.api.models.Collection import Collection
@@ -32,6 +34,53 @@ _MIN_NAME_LENGTH = 3
 _MAX_NAME_LENGTH = 63
 _NAME_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]")
 _IPV4_PATTERN = re.compile(r"(?:[0-9]{1,3}\.){3}[0-9]{1,3}")
+
+# Process-wide LRU of ordered source ids for paged ``list_source_chunks``.
+# Invalidated on upsert / delete_source / reindex_filter_metadata.
+_ORDERED_IDS_CACHE_MAX = 128
+_OrderedIdsCacheKey = tuple[str, str, str, str]
+_ordered_ids_cache: OrderedDict[_OrderedIdsCacheKey, tuple[str, ...]] = OrderedDict()
+
+
+def _ordered_ids_cache_key(
+    persist_path: Path | str,
+    collection: str,
+    reference: SourceReference,
+) -> _OrderedIdsCacheKey:
+    """Build the process-wide cache key for one source's ordered ids."""
+    return (
+        str(persist_path),
+        collection,
+        str(reference.source_type),
+        reference.source_id,
+    )
+
+
+def _ordered_ids_cache_get(key: _OrderedIdsCacheKey) -> tuple[str, ...] | None:
+    """Return cached ordered ids, marking the key as most-recently used."""
+    ordered = _ordered_ids_cache.get(key)
+    if ordered is None:
+        return None
+    _ordered_ids_cache.move_to_end(key)
+    return ordered
+
+
+def _ordered_ids_cache_put(
+    key: _OrderedIdsCacheKey, ordered_ids: Sequence[str]
+) -> None:
+    """Store ordered ids, evicting the oldest entry when over capacity."""
+    _ordered_ids_cache[key] = tuple(ordered_ids)
+    _ordered_ids_cache.move_to_end(key)
+    while len(_ordered_ids_cache) > _ORDERED_IDS_CACHE_MAX:
+        _ordered_ids_cache.popitem(last=False)
+
+
+def _ordered_ids_cache_invalidate(key: _OrderedIdsCacheKey | None = None) -> None:
+    """Drop one cache entry, or clear the entire process-wide cache."""
+    if key is None:
+        _ordered_ids_cache.clear()
+        return
+    _ordered_ids_cache.pop(key, None)
 
 # Bumping this re-derives every record ID at once, orphaning the entire existing
 # collection. That is now reconcilable: `delete_source` scopes removal by the
@@ -270,6 +319,11 @@ def _chunk_index_value(mapping: Mapping[str, object], record_id: str) -> int:
         raise ChromaStoreError(
             f"record {record_id}: {_KEY_CHUNK_INDEX} must be an integer, got {index!r}"
         )
+    if index < 0:
+        raise ChromaStoreError(
+            f"record {record_id}: {_KEY_CHUNK_INDEX} must be a non-negative "
+            f"integer, got {index}"
+        )
     return index
 
 
@@ -426,11 +480,11 @@ def _decode_chunk(record_id: str, document: object, metadata: object) -> Documen
     and `extra` are therefore validated here. Every failure — vendor, stdlib, or
     domain — leaves this function as a ChromaStoreError naming the record.
     """
+    metadata = _require_mapping(metadata, record_id)
     if not isinstance(document, str):
         raise ChromaStoreError(
             f"record {record_id}: document must be a string, got {document!r}"
         )
-    metadata = _require_mapping(metadata, record_id)
     raw_type = _require_str(metadata, _KEY_SOURCE_TYPE, record_id)
     index = _chunk_index_value(metadata, record_id)
     try:
@@ -721,6 +775,7 @@ class ChromaVectorStore:
                 f"{config.persist_path}: {exc}"
             ) from exc
         _require_cosine(collection, config.collection)
+        self._config = config
         self._collection = collection
 
     def upsert(self, embedded: Sequence[EmbeddedChunk]) -> None:
@@ -787,6 +842,15 @@ class ChromaVectorStore:
                 f"{self._collection.name!r}"
             ),
         )
+        for item in embedded:
+            reference = item.chunk.metadata.reference
+            _ordered_ids_cache_invalidate(
+                _ordered_ids_cache_key(
+                    self._config.persist_path,
+                    self._config.collection,
+                    reference,
+                )
+            )
 
     def delete_source(self, reference: SourceReference) -> None:
         """Delete one complete source. See `domain.ports.VectorStore`.
@@ -820,6 +884,13 @@ class ChromaVectorStore:
                 f"{reference.source_id} from collection "
                 f"{self._collection.name!r}: {exc}"
             ) from exc
+        _ordered_ids_cache_invalidate(
+            _ordered_ids_cache_key(
+                self._config.persist_path,
+                self._config.collection,
+                reference,
+            )
+        )
 
     def list_source_chunks(
         self,
@@ -833,11 +904,15 @@ class ChromaVectorStore:
         Reads documents and metadatas only (no embeddings). Scoped by the same
         ``source_id`` + ``source_type`` filter as ``delete_source``. Paging is
         positional after sorting by ``(chunk_index, record_id)``. When
-        ``limit is None``, one get loads metadatas and documents. Otherwise a
-        metadata-only pass selects page ids, then a second get hydrates texts.
-        Corrupt ``chunk_index`` rows are skipped (and logged). Ids that vanish
-        between the two reads are omitted and logged. ``has_more`` uses the
-        ordered id set before hydrate drops.
+        ``limit is None``, one get loads metadatas and documents; only the
+        offset page rows are decoded. Otherwise a metadata-only pass selects
+        page ids (served from a process-wide LRU of ordered ids when warm),
+        then a second get hydrates texts. The LRU is keyed by persist path,
+        collection, and source reference, and is invalidated on upsert,
+        ``delete_source``, and ``reindex_filter_metadata``. Corrupt
+        ``chunk_index`` rows are skipped (and logged). Ids that vanish between
+        the two reads are omitted and logged. ``has_more`` uses the ordered id
+        set before hydrate drops.
         """
         if not isinstance(reference, SourceReference):
             raise ChromaStoreError(
@@ -886,30 +961,52 @@ class ChromaVectorStore:
             page_ids = ordered_ids[offset:]
             if not page_ids:
                 return ChunkPage(chunks=(), has_more=False)
+            by_pos = {rid: i for i, rid in enumerate(ids)}
+            page_row_ids: list[str] = []
+            page_docs: list[object] = []
+            page_metas: list[object] = []
+            for rid in page_ids:
+                i = by_pos.get(rid)
+                if i is None:
+                    continue
+                page_row_ids.append(ids[i])
+                page_docs.append(documents_all[i])
+                page_metas.append(metadatas[i])
             return _chunks_page_from_rows(
                 page_ids=page_ids,
-                row_ids=ids,
-                documents=documents_all,
-                metadatas=metadatas,
+                row_ids=page_row_ids,
+                documents=page_docs,
+                metadatas=page_metas,
                 reference=reference,
                 has_more=False,
             )
 
-        index_result = get_or_store_error(
-            where=_source_where(reference),
-            include=["metadatas"],
+        cache_key = _ordered_ids_cache_key(
+            self._config.persist_path,
+            self._config.collection,
+            reference,
         )
-        ids = index_result.get("ids") or []
-        if not ids:
-            return ChunkPage(chunks=(), has_more=False)
-        metadatas = index_result.get("metadatas") or []
-        if len(metadatas) != len(ids):
-            raise ChromaStoreError(
-                f"collection {self._collection.name!r}: list_source_chunks "
-                f"get() returned mismatched lengths ids={len(ids)} "
-                f"metadatas={len(metadatas)}"
+        ordered_ids = _ordered_ids_cache_get(cache_key)
+        if ordered_ids is None:
+            index_result = get_or_store_error(
+                where=_source_where(reference),
+                include=["metadatas"],
             )
-        ordered_ids = _ordered_ids_from_metadata_rows(ids, metadatas, reference)
+            ids = index_result.get("ids") or []
+            if not ids:
+                _ordered_ids_cache_put(cache_key, ())
+                return ChunkPage(chunks=(), has_more=False)
+            metadatas = index_result.get("metadatas") or []
+            if len(metadatas) != len(ids):
+                raise ChromaStoreError(
+                    f"collection {self._collection.name!r}: list_source_chunks "
+                    f"get() returned mismatched lengths ids={len(ids)} "
+                    f"metadatas={len(metadatas)}"
+                )
+            ordered_ids = tuple(
+                _ordered_ids_from_metadata_rows(ids, metadatas, reference)
+            )
+            _ordered_ids_cache_put(cache_key, ordered_ids)
 
         has_more = len(ordered_ids) > offset + limit
         page_ids = ordered_ids[offset : offset + limit]
@@ -1024,6 +1121,7 @@ class ChromaVectorStore:
                 f"{self._collection.name!r} during filter-metadata reindex"
             ),
         )
+        _ordered_ids_cache_invalidate()
         return len(ids)
 
     def list_embedded_chunks(self) -> Sequence[EmbeddedChunk]:

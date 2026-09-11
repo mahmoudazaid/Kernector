@@ -237,4 +237,25 @@ def test_chunk_rejects_negative_index_keeps_number() -> None:
         DocumentChunk(metadata(), -5, "chunk text")
     message = str(raised.value)
     assert "-5" in message
-    assert "non-negative" in message
+
+
+def test_chunk_page_accepts_valid_tuple() -> None:
+    from domain.knowledge import ChunkPage
+
+    page = ChunkPage(chunks=(chunk(),), has_more=False)
+    assert page.has_more is False
+    assert len(page.chunks) == 1
+
+
+def test_chunk_page_rejects_non_tuple_chunks() -> None:
+    from domain.knowledge import ChunkPage
+
+    with pytest.raises(DomainValidationError, match="chunks"):
+        ChunkPage(chunks=[chunk()], has_more=False)  # type: ignore[arg-type]
+
+
+def test_chunk_page_rejects_non_bool_has_more() -> None:
+    from domain.knowledge import ChunkPage
+
+    with pytest.raises(DomainValidationError, match="has_more"):
+        ChunkPage(chunks=(), has_more=1)  # type: ignore[arg-type]

@@ -303,7 +303,7 @@ def build_chroma_vector_store(settings: Settings) -> VectorStore:
 
 
 def build_vector_store(settings: Settings) -> VectorStore:
-    chroma = ChromaVectorStore(settings.chroma)
+    chroma = build_chroma_vector_store(settings)
     if not settings.retrieval.hybrid_enabled:
         return chroma
     if settings.retrieval.hybrid_alpha == 0.0:
@@ -1621,35 +1621,24 @@ def build_manage_uploaded_documents(
     *,
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
-    vector_store_factory: Callable[[], VectorStore] | None = None,
-    list_vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
 
     The store and the ingest pipeline are passed as factories the use case calls
-    only when it needs them. Listing then costs one SQLite query against
+    only when it needs them. Catalog listing then costs one SQLite query against
     ``catalog_documents`` — no Chroma client and no embedding credentials —
     which matters because the documents list path should stay cheap on every
     request, and because `list` and `delete` never embed anything.
-    Each operation opens at most one store, and mutate paths open it through the
-    same factory, so ingest and delete cannot drift onto different collections.
+    Each operation opens at most one store, and list-chunks / mutate paths share
+    the same factory, so ingest, delete, and chunk listing cannot drift onto
+    different collections.
 
     Pass ``vector_store`` to reuse a cached DualWrite/Chroma client (hybrid BM25
-    stays in sync with uploads). Pass ``vector_store_factory`` alone to defer
-    opening until a mutating path actually runs. Pass
-    ``list_vector_store_factory`` for a read-only list-chunks store (e.g. Chroma
-    without BM25 hydrate) without steering create/replace/delete onto that
-    client; it is wrapped with the same memoization as the mutation factory.
-    When ``list_vector_store_factory`` is omitted, list-chunks falls back to the
-    memoized mutation store (``vector_store`` wins over ``vector_store_factory``).
-    When both mutation sources are omitted, each call that needs a store builds
+    stays in sync with uploads; ``DualWrite.list_source_chunks`` forwards to
+    Chroma without BM25). When omitted, the first call that needs a store builds
     one via ``build_vector_store``.
     """
-    _vector_store = _lazy_vector_store(
-        settings,
-        vector_store=vector_store,
-        vector_store_factory=vector_store_factory,
-    )
+    _vector_store = _lazy_vector_store(settings, vector_store=vector_store)
 
     def _ingest() -> IngestKnowledge:
         return build_ingest_knowledge(settings, vector_store=_vector_store())
@@ -1659,13 +1648,6 @@ def build_manage_uploaded_documents(
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
-        list_vector_store_factory=(
-            None
-            if list_vector_store_factory is None
-            else _lazy_vector_store(
-                settings, vector_store_factory=list_vector_store_factory
-            )
-        ),
         max_upload_bytes=settings.max_upload_bytes,
     )
 
@@ -1783,18 +1765,14 @@ def list_uploaded_document_chunks(
     *,
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
-    vector_store_factory: Callable[[], VectorStore] | None = None,
-    list_vector_store_factory: Callable[[], VectorStore] | None = None,
     limit: int | None = None,
     offset: int = 0,
 ) -> ChunkPage:
     """Return stored chunks for a catalogued document, ordered by index.
 
-    Prefer ``list_vector_store_factory`` alone when the list store should open
-    only after the catalog gate (and stay off the mutation DualWrite path).
-    When it is omitted, list-chunks uses the same memoized mutation store as
-    create/replace/delete: ``vector_store`` wins over ``vector_store_factory``,
-    so a passed store is reused and the factory is not invoked for list.
+    Uses the same memoized store as create/replace/delete. Pass ``vector_store``
+    to reuse a process-cached client; when omitted, the store opens only after
+    the catalog gate via ``build_vector_store``.
 
     Raises:
         UnknownUploadedDocumentError: ``reference`` is not in the catalog.
@@ -1805,8 +1783,6 @@ def list_uploaded_document_chunks(
             settings,
             catalog=catalog,
             vector_store=vector_store,
-            vector_store_factory=vector_store_factory,
-            list_vector_store_factory=list_vector_store_factory,
         ).list_document_chunks(reference, limit=limit, offset=offset)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error

@@ -489,7 +489,12 @@ class DocumentListResponse(BaseModel):
 
 
 class DocumentChunkResponse(BaseModel):
-    """Allowlisted projection of one stored chunk for the documents UI."""
+    """Wire projection of one stored chunk for the documents UI.
+
+    Scalar fields are an explicit allowlist. ``extra`` forwards connector
+    metadata from ``SourceMetadata.extra`` without a key filter — callers must
+    not treat it as a closed schema.
+    """
 
     index: int
     content: str
@@ -531,7 +536,7 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
 
 
 def document_chunk_response(chunk: DocumentChunk) -> DocumentChunkResponse:
-    """Project a stored chunk to the allowlisted wire fields only."""
+    """Project a stored chunk to the wire fields used by the documents UI."""
     return DocumentChunkResponse(
         index=chunk.index,
         content=chunk.content,

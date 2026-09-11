@@ -27,6 +27,7 @@ import { Loader } from "@/components/ui/Loader";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
+  DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS,
   DOCUMENT_CHUNKS_PAGE_SIZE,
   listDocumentChunks,
   listDocuments,
@@ -37,6 +38,7 @@ import {
   type DocumentChunkListResponse,
   type DocumentChunkResponse,
   type DocumentListResponse,
+  type HubSourceType,
   type ListDocumentChunksOptions,
   type ListDocumentsOptions,
   type ReplaceDocumentOptions,
@@ -115,6 +117,69 @@ const PLANNED_CONNECTORS = [
 ] as const;
 
 const SOURCE_FILTERS = ["All sources", "File uploads", "Google Drive"] as const;
+
+function isHubSourceType(value: string): value is HubSourceType {
+  return value === "knowledge_document" || value === "google_drive";
+}
+
+function maxEmptyWindowsForSelection(chunkCount: number | null | undefined): number {
+  if (typeof chunkCount === "number" && chunkCount > 0) {
+    return Math.max(
+      DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS,
+      Math.ceil(chunkCount / DOCUMENT_CHUNKS_PAGE_SIZE),
+    );
+  }
+  return DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS;
+}
+
+async function fetchNextNonEmptyPage(options: {
+  listChunks: (
+    options: ListDocumentChunksOptions,
+  ) => Promise<DocumentChunkListResponse>;
+  baseUrl: string;
+  sourceId: string;
+  sourceType: HubSourceType;
+  offset: number;
+  signal: AbortSignal;
+  maxEmptyWindows: number;
+}): Promise<{
+  chunks: DocumentChunkResponse[];
+  hasMore: boolean;
+  nextOffset: number;
+} | null> {
+  const listChunks = options.listChunks;
+  let offset = options.offset;
+  let emptyWindows = 0;
+  for (;;) {
+    const response = await listChunks({
+      baseUrl: options.baseUrl,
+      sourceId: options.sourceId,
+      sourceType: options.sourceType,
+      limit: DOCUMENT_CHUNKS_PAGE_SIZE,
+      offset,
+      signal: options.signal,
+    });
+    if (options.signal.aborted) {
+      return null;
+    }
+    const nextOffset = offset + DOCUMENT_CHUNKS_PAGE_SIZE;
+    if (response.chunks.length > 0) {
+      return {
+        chunks: response.chunks,
+        hasMore: response.has_more,
+        nextOffset,
+      };
+    }
+    if (!response.has_more) {
+      return { chunks: [], hasMore: false, nextOffset };
+    }
+    emptyWindows += 1;
+    if (emptyWindows >= options.maxEmptyWindows) {
+      return { chunks: [], hasMore: false, nextOffset };
+    }
+    offset = nextOffset;
+  }
+}
 
 function isDriveDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GOOGLE_DRIVE_SOURCE;
@@ -440,6 +505,11 @@ export function DocumentsPanel({
       setChunksView({ kind: "idle" });
       return;
     }
+    if (!isHubSourceType(selected.source_type)) {
+      loadedChunksKeyRef.current = null;
+      setChunksView({ kind: "idle" });
+      return;
+    }
     const sourceId = selected.source_id;
     const sourceType = selected.source_type;
     const identityKey = [
@@ -470,36 +540,19 @@ export function DocumentsPanel({
     setChunksView({ kind: "loading" });
 
     async function loadFirstPage() {
-      let offset = 0;
-      let chunks: DocumentChunkResponse[] = [];
-      let hasMore = false;
-      // Auto-advance past empty hydrate windows that still report has_more.
-      for (;;) {
-        const response = await listChunksRef.current({
-          baseUrl: apiBaseUrl,
-          sourceId,
-          sourceType,
-          limit: DOCUMENT_CHUNKS_PAGE_SIZE,
-          offset,
-          signal: controller.signal,
-        });
-        if (!active || controller.signal.aborted) {
-          return;
-        }
-        hasMore = response.has_more;
-        offset += DOCUMENT_CHUNKS_PAGE_SIZE;
-        if (response.chunks.length > 0) {
-          chunks = response.chunks;
-          break;
-        }
-        if (!hasMore) {
-          break;
-        }
-      }
-      if (!active || controller.signal.aborted) {
+      const page = await fetchNextNonEmptyPage({
+        listChunks: listChunksRef.current,
+        baseUrl: apiBaseUrl,
+        sourceId,
+        sourceType,
+        offset: 0,
+        signal: controller.signal,
+        maxEmptyWindows: maxEmptyWindowsForSelection(selectedChunkCount),
+      });
+      if (!active || controller.signal.aborted || page === null) {
         return;
       }
-      if (chunks.length === 0) {
+      if (page.chunks.length === 0) {
         loadedChunksKeyRef.current = selectionKey;
         setChunksView({ kind: "empty" });
         return;
@@ -507,9 +560,9 @@ export function DocumentsPanel({
       loadedChunksKeyRef.current = selectionKey;
       setChunksView({
         kind: "ready",
-        chunks,
-        hasMore,
-        nextOffset: offset,
+        chunks: page.chunks,
+        hasMore: page.hasMore,
+        nextOffset: page.nextOffset,
         loadMoreError: null,
       });
     }
@@ -559,42 +612,29 @@ export function DocumentsPanel({
       selected.status !== "ready" ||
       chunksView.kind !== "ready" ||
       !chunksView.hasMore ||
-      chunksLoadingMore
+      chunksLoadingMore ||
+      !isHubSourceType(selected.source_type)
     ) {
       return;
     }
     const targetType = selected.source_type;
-    let offset = chunksView.nextOffset;
+    const offset = chunksView.nextOffset;
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
     setChunksLoadingMore(true);
     try {
-      let pageChunks: DocumentChunkResponse[] = [];
-      let hasMore = false;
-      let nextOffset = offset;
-      for (;;) {
-        const response = await listChunksRef.current({
-          baseUrl: apiBaseUrl,
-          sourceId: selected.source_id,
-          sourceType: targetType,
-          limit: DOCUMENT_CHUNKS_PAGE_SIZE,
-          offset,
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) {
-          return;
-        }
-        hasMore = response.has_more;
-        nextOffset = offset + DOCUMENT_CHUNKS_PAGE_SIZE;
-        offset = nextOffset;
-        if (response.chunks.length > 0) {
-          pageChunks = response.chunks;
-          break;
-        }
-        if (!hasMore) {
-          break;
-        }
+      const page = await fetchNextNonEmptyPage({
+        listChunks: listChunksRef.current,
+        baseUrl: apiBaseUrl,
+        sourceId: selected.source_id,
+        sourceType: targetType,
+        offset,
+        signal: controller.signal,
+        maxEmptyWindows: maxEmptyWindowsForSelection(selected.chunk_count),
+      });
+      if (controller.signal.aborted || page === null) {
+        return;
       }
       setChunksView((prev) => {
         if (prev.kind !== "ready") {
@@ -607,7 +647,7 @@ export function DocumentsPanel({
               `${chunk.source_type}\0${chunk.source_id}\0${chunk.index}\0${chunk.content}`,
           ),
         );
-        const appended = pageChunks.filter((chunk) => {
+        const appended = page.chunks.filter((chunk) => {
           const key = `${chunk.source_type}\0${chunk.source_id}\0${chunk.index}\0${chunk.content}`;
           if (seen.has(key)) {
             return false;
@@ -618,8 +658,8 @@ export function DocumentsPanel({
         return {
           kind: "ready",
           chunks: [...prev.chunks, ...appended],
-          hasMore,
-          nextOffset,
+          hasMore: page.hasMore,
+          nextOffset: page.nextOffset,
           loadMoreError: null,
         };
       });
@@ -628,6 +668,7 @@ export function DocumentsPanel({
         return;
       }
       if (error instanceof ApiError && error.status === 404) {
+        loadedChunksKeyRef.current = null;
         setChunksView({ kind: "not_found" });
         void refresh();
         return;

@@ -420,7 +420,11 @@ export interface components {
     };
     /**
      * DocumentChunkResponse
-     * @description Allowlisted projection of one stored chunk for the documents UI.
+     * @description Wire projection of one stored chunk for the documents UI.
+     *
+     *     Scalar fields are an explicit allowlist. ``extra`` forwards connector
+     *     metadata from ``SourceMetadata.extra`` without a key filter — callers must
+     *     not treat it as a closed schema.
      */
     DocumentChunkResponse: {
       /** Content */

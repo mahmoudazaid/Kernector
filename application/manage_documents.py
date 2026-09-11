@@ -170,7 +170,6 @@ class ManageUploadedDocuments:
         extractor: DocumentExtractor,
         ingest_factory: Callable[[], IngestKnowledge],
         vector_store_factory: Callable[[], VectorStore],
-        list_vector_store_factory: Callable[[], VectorStore] | None = None,
         new_source_id: Callable[[], str] | None = None,
         now: Callable[[], datetime] | None = None,
         max_upload_bytes: int,
@@ -179,9 +178,6 @@ class ManageUploadedDocuments:
         self._extractor = extractor
         self._ingest_factory = ingest_factory
         self._vector_store_factory = vector_store_factory
-        self._list_vector_store_factory = (
-            list_vector_store_factory or vector_store_factory
-        )
         self._new_source_id = new_source_id or (lambda: str(uuid.uuid4()))
         self._now = now or (lambda: datetime.now(UTC))
         self._max_upload_bytes = max_upload_bytes
@@ -229,7 +225,7 @@ class ManageUploadedDocuments:
             or self._catalog.get(reference) is None
         ):
             raise self._unknown(reference, operation="list_chunks")
-        return self._list_vector_store_factory().list_source_chunks(
+        return self._vector_store_factory().list_source_chunks(
             reference, limit=limit, offset=offset
         )
 
