@@ -1277,21 +1277,19 @@ export function DocumentsPanel({
                         <p>{chunksView.loadMoreError}</p>
                       </div>
                     ) : null}
-                    <Button
-                      type="button"
-                      disabled={
-                        chunksLoadingMore || !chunksView.hasMore
-                      }
-                      onClick={() => {
-                        void loadMoreChunks();
-                      }}
-                    >
-                      {chunksLoadingMore
-                        ? "Loading…"
-                        : chunksView.hasMore
-                          ? "Load more chunks"
-                          : "All chunks loaded"}
-                    </Button>
+                    {chunksView.hasMore ? (
+                      <Button
+                        type="button"
+                        disabled={chunksLoadingMore}
+                        onClick={() => {
+                          void loadMoreChunks();
+                        }}
+                      >
+                        {chunksLoadingMore
+                          ? "Loading…"
+                          : "Load more chunks"}
+                      </Button>
+                    ) : null}
                   </>
                 ) : null}
               </div>

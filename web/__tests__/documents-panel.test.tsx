@@ -1660,8 +1660,8 @@ describe("DocumentsPanel", () => {
     expect(await screen.findByText("body-59")).toBeInTheDocument();
     expect(screen.getByText(/^showing 60 chunks$/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /all chunks loaded/i }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /load more chunks/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not show load more when chunk_count equals the first page size", async () => {
@@ -1688,8 +1688,8 @@ describe("DocumentsPanel", () => {
     await openDocumentsTab(user);
     expect(await screen.findByText("exact-0")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /all chunks loaded/i }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /load more chunks/i }),
+    ).not.toBeInTheDocument();
     expect(listChunks).toHaveBeenCalledTimes(1);
   });
 
