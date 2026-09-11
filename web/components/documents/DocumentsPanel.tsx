@@ -362,11 +362,10 @@ export function DocumentsPanel({
     visibleDocuments.find((doc) => doc.source_id === selectedId) ?? null;
   const accept = constraints?.supported_upload_suffixes.join(",");
   const selectedSourceId = selected?.source_id ?? null;
-  const chunksTarget = selected;
-  const chunksTargetSourceType = chunksTarget?.source_type;
-  const chunksTargetStatus = chunksTarget?.status;
-  const chunksTargetChunkCount = chunksTarget?.chunk_count;
-  const chunksTargetUploadedAt = chunksTarget?.uploaded_at;
+  const selectedSourceType = selected?.source_type;
+  const selectedStatus = selected?.status;
+  const selectedChunkCount = selected?.chunk_count;
+  const selectedUploadedAt = selected?.uploaded_at;
 
   useEffect(() => {
     setReplaceFile(null);
@@ -377,14 +376,14 @@ export function DocumentsPanel({
     loadMoreAbortRef.current?.abort();
     loadMoreAbortRef.current = null;
     setChunksLoadingMore(false);
-    if (!chunksTarget || chunksTargetStatus !== "ready") {
+    if (!selected || selectedStatus !== "ready") {
       setChunksView({ kind: "idle" });
       return;
     }
     const controller = new AbortController();
     let active = true;
-    const sourceId = chunksTarget.source_id;
-    const sourceType = chunksTarget.source_type;
+    const sourceId = selected.source_id;
+    const sourceType = selected.source_type;
     setChunksView({ kind: "loading" });
     void listChunksRef
       .current({
@@ -435,23 +434,23 @@ export function DocumentsPanel({
   }, [
     apiBaseUrl,
     selectedSourceId,
-    chunksTargetSourceType,
-    chunksTargetStatus,
-    chunksTargetChunkCount,
-    chunksTargetUploadedAt,
+    selectedSourceType,
+    selectedStatus,
+    selectedChunkCount,
+    selectedUploadedAt,
   ]);
 
   async function loadMoreChunks() {
     if (
-      !chunksTarget ||
-      chunksTarget.status !== "ready" ||
+      !selected ||
+      selected.status !== "ready" ||
       chunksView.kind !== "ready" ||
       !chunksView.hasMore ||
       chunksLoadingMore
     ) {
       return;
     }
-    const targetType = chunksTarget.source_type;
+    const targetType = selected.source_type;
     const offset = chunksView.chunks.length;
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
@@ -460,7 +459,7 @@ export function DocumentsPanel({
     try {
       const response = await listChunksRef.current({
         baseUrl: apiBaseUrl,
-        sourceId: chunksTarget.source_id,
+        sourceId: selected.source_id,
         sourceType: targetType,
         limit: DOCUMENT_CHUNKS_PAGE_SIZE,
         offset,
@@ -477,7 +476,7 @@ export function DocumentsPanel({
         for (const chunk of response.chunks) {
           byIndex.set(chunk.index, chunk);
         }
-        const chunks = [...byIndex.values()].toSorted(
+        const chunks = [...byIndex.values()].sort(
           (a, b) => a.index - b.index,
         );
         return {

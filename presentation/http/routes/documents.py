@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -22,13 +21,13 @@ from presentation.http.schemas import (
     CatalogDocumentResponse,
     DocumentChunkListResponse,
     DocumentListResponse,
+    HubSourceType,
     catalog_document_response,
     document_chunk_response,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
-HubSourceType = Literal[SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE]
 _DEFAULT_CHUNK_LIMIT = 50
 _MAX_CHUNK_LIMIT = 200
 
@@ -180,7 +179,7 @@ def list_document_chunks(
         offset=offset,
     )
     has_more = len(fetched) > limit
-    page = fetched[:limit] if has_more else fetched
+    page = fetched[:limit]
     return DocumentChunkListResponse(
         chunks=[document_chunk_response(chunk) for chunk in page],
         has_more=has_more,

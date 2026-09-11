@@ -10,8 +10,13 @@ from domain.errors import DomainValidationError
 
 
 
-class SourceType:
-    """Documented well-known source kinds. Not a closed validation set."""
+class SourceType(StrEnum):
+    """Documented well-known source kinds.
+
+    Not a closed validation set for ``SourceReference.source_type`` — connectors
+    may introduce other string kinds — but the members below are the stable hub
+    and upload vocabulary.
+    """
 
     KNOWLEDGE_DOCUMENT = "knowledge_document"
     GOOGLE_DRIVE = "google_drive"
@@ -20,9 +25,7 @@ class SourceType:
 STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
 """Source kinds treated as user stories by eval and software-delivery scoring."""
 
-HUB_SOURCE_TYPES = frozenset(
-    {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
-)
+HUB_SOURCE_TYPES = frozenset(SourceType)
 """Source kinds shown in the shared documents hub and chunk-inspect API."""
 
 

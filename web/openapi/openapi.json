@@ -79,6 +79,7 @@
             "type": "string"
           },
           "source_type": {
+            "enum": ["knowledge_document", "google_drive"],
             "title": "Source Type",
             "type": "string"
           },
@@ -398,6 +399,7 @@
             "type": "string"
           },
           "source_type": {
+            "enum": ["knowledge_document", "google_drive"],
             "title": "Source Type",
             "type": "string"
           },

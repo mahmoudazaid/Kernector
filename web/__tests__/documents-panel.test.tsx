@@ -1227,12 +1227,14 @@ describe("DocumentsPanel", () => {
   });
 
   it("aborts in-flight chunk fetch when selection changes", async () => {
-    let resolveFirst: ((value: { chunks: [] }) => void) | undefined;
+    let resolveFirst:
+      | ((value: { chunks: []; has_more: boolean }) => void)
+      | undefined;
     const firstSignal = { current: null as AbortSignal | null };
     const listChunks = vi.fn().mockImplementation((options: { signal?: AbortSignal; sourceId: string }) => {
       if (options.sourceId === "src-1") {
         firstSignal.current = options.signal ?? null;
-        return new Promise<{ chunks: [] }>((resolve) => {
+        return new Promise<{ chunks: []; has_more: boolean }>((resolve) => {
           resolveFirst = resolve;
         });
       }

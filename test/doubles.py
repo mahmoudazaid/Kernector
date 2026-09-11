@@ -198,10 +198,12 @@ class InMemoryVectorStore:
         limit: int | None = None,
         offset: int = 0,
     ) -> Sequence[DocumentChunk]:
-        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
-            raise ValueError(f"offset must be a non-negative int, got {offset!r}")
+        from domain.errors import VectorStoreError
+
         if isinstance(limit, bool) or (limit is not None and not isinstance(limit, int)):
-            raise ValueError(f"limit must be an int or None, got {limit!r}")
+            raise VectorStoreError(f"limit must be an int or None, got {limit!r}")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise VectorStoreError(f"offset must be a non-negative int, got {offset!r}")
         scope = (str(reference.source_type), reference.source_id)
         matched = [
             item.chunk

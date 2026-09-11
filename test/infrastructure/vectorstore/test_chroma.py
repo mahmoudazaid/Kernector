@@ -586,8 +586,8 @@ def test_list_source_chunks_does_not_request_embeddings(
     listed = store.list_source_chunks(make_reference("doc-1"))
 
     assert [c.content for c in listed] == ["body"]
-    assert captured == [["metadatas"], ["metadatas", "documents"]]
-    assert all("embeddings" not in include for include in captured)
+    assert captured == [["metadatas", "documents"]]
+    assert "embeddings" not in captured[0]
 
 
 def test_list_source_chunks_get_failure_stays_a_store_error(

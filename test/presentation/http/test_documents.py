@@ -651,6 +651,31 @@ def test_hub_source_type_literal_matches_domain_allowlist() -> None:
     from typing import get_args
 
     from domain.knowledge import HUB_SOURCE_TYPES
-    from presentation.http.routes.documents import HubSourceType
+    from presentation.http.schemas import HubSourceType
 
     assert set(get_args(HubSourceType)) == HUB_SOURCE_TYPES
+
+
+def test_list_chunks_has_more_false_when_store_returns_exact_limit(
+    client_factory,
+) -> None:
+    def _list_chunks(
+        _reference: SourceReference, *, limit: int | None = None, offset: int = 0
+    ) -> tuple[DocumentChunk, ...]:
+        assert limit == 3
+        return tuple(
+            _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(2)
+        )
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["content"] for c in body["chunks"]] == ["c0", "c1"]
+    assert body["has_more"] is False

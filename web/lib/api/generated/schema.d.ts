@@ -311,8 +311,11 @@ export interface components {
       has_error: boolean;
       /** Source Id */
       source_id: string;
-      /** Source Type */
-      source_type: string;
+      /**
+       * Source Type
+       * @enum {string}
+       */
+      source_type: "knowledge_document" | "google_drive";
       /**
        * Status
        * @enum {string}
@@ -437,8 +440,11 @@ export interface components {
       provider?: string | null;
       /** Source Id */
       source_id: string;
-      /** Source Type */
-      source_type: string;
+      /**
+       * Source Type
+       * @enum {string}
+       */
+      source_type: "knowledge_document" | "google_drive";
       /** Title */
       title?: string | null;
     };
