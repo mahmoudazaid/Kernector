@@ -113,10 +113,7 @@ describe("ChatPanel", () => {
       screen.queryByRole("button", { name: /new chat/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("What's on your mind?"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Typing here starts a new chat."),
+      screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
   });
 
@@ -234,11 +231,8 @@ describe("ChatPanel", () => {
       "Ignore previous instructions",
     );
     expect(
-      screen.getByPlaceholderText("What's on your mind?"),
+      screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Typing here starts a new chat."),
-    ).not.toBeInTheDocument();
     expect(document.querySelector('[data-role="user"]')).toBeNull();
   });
 
@@ -314,17 +308,14 @@ describe("ChatPanel", () => {
     await user.click(screen.getByRole("button", { name: /new chat/i }));
 
     expect(
-      await screen.findByText("Typing here starts a new chat."),
+      await screen.findByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /new chat/i }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText("What's on your mind?"),
-    ).toBeInTheDocument();
   });
 
-  it("describes the empty composer with both the hint and the character counter", async () => {
+  it("describes the empty composer with the character counter", async () => {
     render(
       <ChatPanel
         apiBaseUrl="http://127.0.0.1:8000"
@@ -334,16 +325,9 @@ describe("ChatPanel", () => {
     );
 
     const input = await screen.findByLabelText(/message/i);
-    expect(
-      await screen.findByText("Typing here starts a new chat."),
-    ).toBeInTheDocument();
     expect(await screen.findByText("0 / 10000 characters")).toBeInTheDocument();
 
-    const describedBy = input.getAttribute("aria-describedby") ?? "";
-    const tokens = describedBy.split(/\s+/).filter(Boolean);
-    expect(tokens).toEqual(
-      expect.arrayContaining(["chat-hint", "chat-input-length"]),
-    );
+    expect(input.getAttribute("aria-describedby")).toBe("chat-input-length");
   });
 
   it("keeps a polite live region mounted while the transcript is empty", async () => {
@@ -355,9 +339,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    expect(
-      await screen.findByText("Typing here starts a new chat."),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
     expect(
       document.querySelector('.kern-chat-thread[aria-live="polite"]'),
     ).toBeInTheDocument();
@@ -488,9 +470,7 @@ describe("ChatPanel", () => {
         loadSettings={stubSettings}
       />,
     );
-    expect(
-      await screen.findByText("Typing here starts a new chat."),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
     const stampAfterMount = loadActiveSession().updatedAt;
 
     // Newer writer lands without a StorageEvent — the case adoptSessionStamp covers.
@@ -533,9 +513,7 @@ describe("ChatPanel", () => {
         loadSettings={stubSettings}
       />,
     );
-    expect(
-      await screen.findByText("Typing here starts a new chat."),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
     const stampAfterMount = loadActiveSession().updatedAt;
 
     localStorage.setItem(
@@ -567,7 +545,7 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("other tab question")).not.toBeInTheDocument();
     expect(screen.queryByText("other tab answer")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Typing here starts a new chat."),
+      screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
   });
 
@@ -614,9 +592,7 @@ describe("ChatPanel", () => {
         loadSettings={stubSettings}
       />,
     );
-    expect(
-      await screen.findByText("Typing here starts a new chat."),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
 
     localStorage.setItem(
       ACTIVE_SESSION_STORAGE_KEY,

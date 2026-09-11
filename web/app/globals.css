@@ -2320,20 +2320,13 @@ a.kern-btn {
 }
 
 .kern-chat--empty .kern-chat-composer-bar {
-  min-height: 64px;
-  padding: 12px 12px 12px var(--kern-space-5);
+  min-height: 88px;
+  padding: 16px 14px 16px var(--kern-space-5);
 }
 
 .kern-chat--empty .kern-chat-input {
-  min-height: 48px;
+  min-height: 64px;
   padding: var(--kern-space-3) var(--kern-space-1);
-}
-
-.kern-chat-hint {
-  margin: var(--kern-space-2) 0 0;
-  padding-inline: var(--kern-space-5);
-  color: var(--kern-muted);
-  font-size: var(--kern-text-sm);
 }
 
 .kern-chat-header {
@@ -2671,11 +2664,11 @@ a.kern-btn {
 
 .kern-chat-composer-bar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--kern-space-2);
   width: 100%;
-  min-height: 52px;
-  padding: 8px 8px 8px var(--kern-space-5);
+  min-height: 64px;
+  padding: 12px 10px 12px var(--kern-space-5);
   border: 1px solid color-mix(in srgb, var(--kern-line) 90%, transparent);
   /* Fixed radius — pill (999px) becomes a circle when the bar grows multi-line. */
   border-radius: 24px;

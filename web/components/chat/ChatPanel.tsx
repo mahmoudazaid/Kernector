@@ -571,7 +571,6 @@ export function ChatPanel({
 
   const isEmptyHero =
     hydrated && !unavailable && messages.length === 0 && !sending;
-  const showHint = isEmptyHero && !inlineError && !draft.trim();
   // Option (a): keep New chat when transcript/unavailable, or when storage
   // still holds a concurrent writer's session (stale-session escape).
   const showNewChat =
@@ -579,12 +578,8 @@ export function ChatPanel({
     unavailable ||
     messages.length > 0 ||
     loadActiveSession().messages.length > 0;
-  const describedByIds = [
-    showHint ? "chat-hint" : null,
-    lengthFeedback || statusGuidance ? "chat-input-length" : null,
-  ]
-    .filter((id): id is string => id != null)
-    .join(" ");
+  const describedByIds =
+    lengthFeedback || statusGuidance ? "chat-input-length" : "";
 
   return (
     <section className={`kern-chat${isEmptyHero ? " kern-chat--empty" : ""}`}>
@@ -650,7 +645,7 @@ export function ChatPanel({
             id="chat-input"
             className="kern-chat-input"
             rows={1}
-            placeholder="What's on your mind?"
+            placeholder="What's on your mind!"
             value={draft}
             disabled={sending || historyBlocked}
             aria-invalid={sendBlocked || undefined}
@@ -670,11 +665,6 @@ export function ChatPanel({
             {SEND_ICON}
           </button>
         </div>
-        {showHint ? (
-          <p id="chat-hint" className="kern-chat-hint">
-            Typing here starts a new chat.
-          </p>
-        ) : null}
         {lengthFeedback || statusGuidance ? (
           <div id="chat-input-length" className="kern-chat-counter-block">
             {lengthFeedback ? (
