@@ -87,13 +87,13 @@ class FilesystemUploadBlobStore:
     def delete(self, reference: SourceReference) -> None:
         """Remove the stored payload for ``reference``. Missing blobs are a no-op.
 
-        References that cannot be mapped to a safe path are also a no-op so
-        catalog deletes stay idempotent for unknown or Drive-shaped ids.
+        Malformed source ids (outside the blob path charset) are a no-op so
+        catalog deletes stay idempotent for unknown catalog identities.
+        Path-escape attempts still raise ``UploadBlobValidationError``.
         """
-        try:
-            path = self._path_for(reference)
-        except UploadBlobValidationError:
+        if _SOURCE_ID_PATTERN.fullmatch(reference.source_id) is None:
             return
+        path = self._path_for(reference)
         with self._path_lock(path):
             try:
                 path.unlink(missing_ok=True)

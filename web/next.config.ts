@@ -38,14 +38,19 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // Document CSP / nosniff / referrer are owned exclusively by middleware
-      // so browsers do not intersect two independent security policy headers.
+      // CSP is owned exclusively by middleware so browsers do not intersect
+      // two independent policy headers. nosniff / referrer remain here for
+      // paths the middleware matcher excludes.
       {
-        source: "/_next/static/:path*",
+        source: "/:path*",
         headers: [
           {
             key: "X-Content-Type-Options",
             value: "nosniff",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "no-referrer",
           },
         ],
       },

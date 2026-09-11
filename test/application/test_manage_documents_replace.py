@@ -355,3 +355,90 @@ def test_oversized_replace_is_rejected_before_extract() -> None:
     assert current is not None
     assert current.status is CatalogStatus.READY
     assert current.file_name == original.file_name
+
+
+def test_replace_blob_put_and_delete_failure_keeps_ready_with_missing_blob_note() -> None:
+    """After successful ingest, catalog stays on the new READY row even if
+    both blob put and compensating delete fail — do not restore stale metadata.
+    """
+    from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
+
+    catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
+    store = InMemoryVectorStore()
+    original = _seed_ready(catalog, store, blob_store=blob_store)
+    blob_store.fail_on_put = True
+    blob_store.fail_on_delete = True
+
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=blob_store,
+        extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("unused"),
+        now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+    )
+    replaced = use_case.replace(
+        original.reference,
+        UploadPayload(file_name="guide-v2.md", content=b"v2"),
+    )
+
+    assert replaced.status is CatalogStatus.READY
+    assert replaced.file_name == "guide-v2.md"
+    assert replaced.error == MISSING_UPLOAD_BLOB_ERROR
+    # Old bytes may remain on disk when delete also fails; catalog must still
+    # describe the new ingest (and mark preview unavailable).
+    assert blob_store.get(original.reference) == UploadPayload(
+        file_name="guide.md", content=b"v1"
+    )
+
+
+def test_degraded_replace_clears_stale_blob_when_put_fails() -> None:
+    from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
+
+    catalog = InMemoryDocumentCatalog()
+    store = FailingUpsertStore()
+    reference = _reference("id-1")
+    previous = CatalogDocument(
+        reference=reference,
+        file_name="guide.md",
+        title="guide",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        chunk_count=3,
+        error=None,
+    )
+    catalog.upsert(previous)
+    blob_store = InMemoryUploadBlobStore()
+    blob_store.put(reference, UploadPayload(file_name="guide.md", content=b"v1"))
+    blob_store.fail_on_put = True
+
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=blob_store,
+        extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("unused"),
+        now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+    )
+    with pytest.raises(IngestFailure):
+        use_case.replace(
+            reference,
+            UploadPayload(file_name="report.pdf", content=b"%PDF"),
+        )
+
+    current = catalog.get(reference)
+    assert current is not None
+    assert current.status is CatalogStatus.DEGRADED
+    assert current.file_name == "report.pdf"
+    assert MISSING_UPLOAD_BLOB_ERROR in (current.error or "")
+    assert blob_store.get(reference) is None

@@ -283,10 +283,13 @@ export function DocumentsPanel({
     }
   }, [uploadOpen, uploadError, uploadErrorSeq]);
 
-  function announce(next: Exclude<ActionFeedback, { kind: "idle" }>) {
-    setFeedback(next);
-    setFeedbackSeq((seq) => seq + 1);
-  }
+  const announce = useCallback(
+    (next: Exclude<ActionFeedback, { kind: "idle" }>) => {
+      setFeedback(next);
+      setFeedbackSeq((seq) => seq + 1);
+    },
+    [],
+  );
 
   const clearFeedback = useCallback(() => {
     setFeedback({ kind: "idle" });
@@ -435,12 +438,15 @@ export function DocumentsPanel({
     setPreviewSourceId(null);
   }
 
-  const setActionError = useCallback((error: unknown) => {
-    announce({
-      kind: "error",
-      message: actionErrorText(error),
-    });
-  }, []);
+  const setActionError = useCallback(
+    (error: unknown) => {
+      announce({
+        kind: "error",
+        message: actionErrorText(error),
+      });
+    },
+    [announce],
+  );
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();

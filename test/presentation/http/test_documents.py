@@ -473,6 +473,7 @@ def test_content_security_headers_and_download_attachment(client_factory) -> Non
     assert inline.headers["cache-control"] == "private, no-store"
     assert inline.headers["content-disposition"].startswith("inline;")
     assert download.status_code == 200
+    assert download.headers["content-security-policy"] == "default-src 'none'"
     assert download.headers["content-disposition"].startswith("attachment;")
     assert '"' in download.headers["content-disposition"]
     assert 'bad"name' not in download.headers["content-disposition"]

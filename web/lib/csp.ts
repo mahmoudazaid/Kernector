@@ -8,7 +8,7 @@ export type CspScriptSrc = `'self' 'unsafe-inline'` | `'self' 'nonce-${string}'`
 /** Shared CSP directive list for middleware, next.config, and boundary tests. */
 export function buildDocumentCsp(options: {
   apiOrigin?: string;
-  scriptSrc: CspScriptSrc | string;
+  scriptSrc: CspScriptSrc;
 }): string {
   const apiOrigin = options.apiOrigin ?? API_ORIGIN;
   return [

@@ -50,8 +50,14 @@ _MEDIA_TYPE_BY_FORMAT = {
     "pdf": "application/pdf",
 }
 CONTENT_TYPE_BY_FORMAT: dict[str, str] = {
-    fmt: _MEDIA_TYPE_BY_FORMAT[fmt] for fmt in set(_FORMAT_BY_SUFFIX.values())
+    fmt: _MEDIA_TYPE_BY_FORMAT[fmt]
+    for fmt in dict.fromkeys(_FORMAT_BY_SUFFIX.values())
 }
+if set(CONTENT_TYPE_BY_FORMAT) != set(_MEDIA_TYPE_BY_FORMAT):
+    raise RuntimeError(
+        "CONTENT_TYPE_BY_FORMAT must cover exactly the media types in "
+        "_MEDIA_TYPE_BY_FORMAT"
+    )
 
 # Separator between extracted PDF pages: a blank line, as between paragraphs.
 _PAGE_SEPARATOR = "\n\n"

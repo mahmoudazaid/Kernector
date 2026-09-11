@@ -30,7 +30,8 @@ from presentation.http.schemas import (
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
 _SOURCE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
-_CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox"
+_PREVIEW_CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox"
+_DOWNLOAD_CONTENT_SECURITY_POLICY = "default-src 'none'"
 _DOWNLOAD_FALLBACK_TYPE = "application/octet-stream"
 
 
@@ -120,7 +121,11 @@ def _document_content_response(
         "Content-Disposition": _content_disposition(
             disposition, row.file_name
         ),
-        "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
+        "Content-Security-Policy": (
+            _PREVIEW_CONTENT_SECURITY_POLICY
+            if for_preview
+            else _DOWNLOAD_CONTENT_SECURITY_POLICY
+        ),
     }
     return Response(
         content=bytes(payload.content),

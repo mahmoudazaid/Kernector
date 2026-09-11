@@ -187,6 +187,9 @@ def test_create_ingest_failure_survives_blob_put_failure() -> None:
     assert len(rows) == 1
     assert rows[0].status is CatalogStatus.FAILED
     assert blob_store.get(rows[0].reference) is None
+    assert "document ingested but original bytes could not be stored" in (
+        rows[0].error or ""
+    )
 
 
 def test_create_records_degraded_when_mutation_may_have_started() -> None:
@@ -418,3 +421,17 @@ def test_create_rejects_colliding_generated_source_id_without_echoing_it(
     assert payload["outcome"] == "error"
     assert payload["error_type"] == "SourceIdCollisionError"
     assert payload["source_id"] == colliding_id
+
+
+def test_with_missing_blob_note_keeps_sentinel_when_summary_is_long() -> None:
+    from application.manage_documents import (
+        MISSING_UPLOAD_BLOB_ERROR,
+        _with_missing_blob_note,
+    )
+
+    existing = "x" * 500
+    note = _with_missing_blob_note(existing)
+
+    assert MISSING_UPLOAD_BLOB_ERROR in note
+    assert note.endswith(MISSING_UPLOAD_BLOB_ERROR)
+    assert len(note) <= 500

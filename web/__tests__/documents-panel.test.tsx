@@ -1422,6 +1422,45 @@ describe("DocumentsPanel", () => {
     expect(getContent).not.toHaveBeenCalled();
   });
 
+  it("hides Preview and Download when the original file is unavailable", async () => {
+    const user = userEvent.setup();
+    const getContent = vi.fn();
+    const download = vi.fn();
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              has_stored_content: false,
+              has_error: true,
+              error_summary: "Original file unavailable for preview.",
+            }),
+          ]),
+        )}
+        getContent={getContent}
+        download={download}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await screen.findByText("spec.md");
+
+    expect(
+      screen.queryByRole("button", { name: /^preview spec\.md$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^download spec\.md$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/original file is unavailable for preview or download/i),
+    ).toBeInTheDocument();
+    expect(getContent).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
   it("loads a preview only after Preview and downloads through the injected helper", async () => {
     const user = userEvent.setup();
     const anchorClick = vi

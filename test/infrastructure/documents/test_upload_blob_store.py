@@ -101,6 +101,9 @@ def test_crafted_id_cannot_resolve_outside_root(tmp_path: Path) -> None:
     with pytest.raises(UploadBlobValidationError):
         store.get(_reference("safe_id"))
 
+    with pytest.raises(UploadBlobValidationError):
+        store.delete(_reference("safe_id"))
+
 
 def test_adapter_errors_share_one_public_base() -> None:
     assert issubclass(UploadBlobValidationError, UploadBlobError)
@@ -200,6 +203,7 @@ def test_lock_registry_does_not_evict_a_held_lock(tmp_path: Path) -> None:
         assert lock_b is lock_a
         assert lock_b.locked()
         assert not lock_b.acquire(blocking=False)
+        store._release_lock(path)
     finally:
         lock_a.release()
         store._release_lock(path)

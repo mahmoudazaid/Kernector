@@ -79,6 +79,8 @@ describe("http boundary", () => {
     expect(configText).not.toContain("Content-Security-Policy");
     expect(configText).toContain("X-Content-Type-Options");
     expect(configText).toContain("nosniff");
+    expect(configText).toContain("Referrer-Policy");
+    expect(configText).toContain("no-referrer");
   });
 
   it("ships middleware that nonces script-src and reuses shared CSP builder", () => {

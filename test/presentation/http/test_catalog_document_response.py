@@ -133,7 +133,7 @@ def test_pending_document_is_not_reported_as_error() -> None:
     assert projected.has_stored_content is False
 
 
-def test_failed_row_without_blob_sentinel_reports_no_stored_content() -> None:
+def test_failed_row_with_blob_sentinel_reports_no_stored_content() -> None:
     from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
 
     projected = catalog_document_response(
