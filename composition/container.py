@@ -2,6 +2,7 @@
 
 import importlib.util
 import logging
+import os
 import re
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -25,6 +26,8 @@ from application.errors import (
     GoogleDriveReauthorizationRequiredError,
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
+    MissingProviderCredentialsError,
+    OllamaNotConfiguredError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -58,6 +61,7 @@ from composition.errors import (
 from composition.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
 from composition.recording_chat import RecordingChatModel
+from composition.software_delivery_agent import build_agent_orchestrate
 from composition.software_delivery_chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -94,12 +98,19 @@ from domain.ports import (
     VectorStore,
 )
 from infrastructure.catalog.errors import CatalogError
-from infrastructure.catalog.json_catalog import JsonDocumentCatalog
-from infrastructure.catalog.migrate_json import (
-    migrate_json_catalog_to_sql as _migrate_json_catalog_to_sql,
-)
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
-from infrastructure.config import Settings, load_settings
+from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
+from infrastructure.config import (
+    OllamaSettings,
+    OpenRouterSettings,
+    Settings,
+    load_settings,
+)
+from infrastructure.connectors.drive_folder import (
+    DRIVE_ID_BODY,
+    is_drive_folder_id,
+    require_drive_folder_id,
+)
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
@@ -113,7 +124,12 @@ from infrastructure.embeddings.openrouter import (
     OpenRouterEmbeddings,
 )
 from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corpus
-from infrastructure.llm.ollama import OllamaChat, OllamaConfigError
+from infrastructure.llm.ollama import (
+    OllamaBaseUrlMissingError,
+    OllamaChat,
+    OllamaConfigError,
+    OllamaModelMissingError,
+)
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
 from infrastructure.llm.query_rewrite import (
@@ -137,27 +153,47 @@ logger = logging.getLogger(__name__)
 def _build_openrouter(
     settings: Settings, model: str | None, base_url: str | None
 ) -> ChatModel:
-    config = settings.openrouter
-    if model:
-        config = replace(config, model=model)
+    del base_url  # OpenRouter ignores per-request base URL overrides.
+    config = _openrouter_runtime_config(settings, model=model)
     try:
         return OpenRouterChat(config)
     except ChatConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+        raise MissingProviderCredentialsError(str(exc)) from exc
 
 
 def _build_ollama(
     settings: Settings, model: str | None, base_url: str | None
 ) -> ChatModel:
+    config = _ollama_runtime_config(settings, model=model, base_url=base_url)
+    try:
+        return OllamaChat(config)
+    except OllamaBaseUrlMissingError as exc:
+        raise OllamaNotConfiguredError(str(exc)) from exc
+    except OllamaModelMissingError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
+    except OllamaConfigError as exc:
+        # Future/unclassified Ollama construction failures: treat as credentials.
+        raise MissingProviderCredentialsError(str(exc)) from exc
+
+
+def _openrouter_runtime_config(
+    settings: Settings, *, model: str | None
+) -> OpenRouterSettings:
+    config = settings.openrouter
+    if model:
+        config = replace(config, model=model)
+    return config
+
+
+def _ollama_runtime_config(
+    settings: Settings, *, model: str | None, base_url: str | None
+) -> OllamaSettings:
     config = settings.ollama
     if model:
         config = replace(config, model=model)
     if base_url:
         config = replace(config, base_url=base_url)
-    try:
-        return OllamaChat(config)
-    except OllamaConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+    return config
 
 
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {
@@ -496,32 +532,58 @@ def ingest_uploaded_document(
         raise _upload_error_from_ingest_failure(settings, error) from error
 
 
-def build_document_catalog(settings: Settings) -> DocumentCatalog:
-    """Build the configured catalog adapter.
+_RETIRED_CATALOG_ENV = (
+    "DOCUMENT_CATALOG_BACKEND",
+    "DOCUMENT_CATALOG_PATH",
+)
 
-    JSON stays the unscoped single-process default. SQL is bound to the
-    configured workspace and SQLite path.
+
+def _reject_retired_catalog_env() -> None:
+    """Fail when a non-blank retired catalog key is still configured."""
+    for key in _RETIRED_CATALOG_ENV:
+        value = os.getenv(key)
+        if value is not None and value.strip():
+            raise ConfigurationError(
+                f"{key} is retired; use DOCUMENT_CATALOG_SQL_PATH and "
+                "DOCUMENT_CATALOG_WORKSPACE_ID"
+            )
+
+
+def build_document_catalog(settings: Settings) -> DocumentCatalog:
+    """Build the workspace-bound SQL catalog adapter.
 
     Args:
-        settings (Settings): Runtime catalog configuration.
+        settings (Settings): Runtime catalog configuration with a
+            ``sql_path`` and optional ``workspace_id`` (validated here).
 
     Returns:
-        DocumentCatalog: JSON or SQL adapter selected by ``backend``.
+        DocumentCatalog: ``SqlDocumentCatalog`` bound to the configured workspace.
 
     Raises:
-        ConfigurationError: SQL is selected without a workspace id.
-        DocumentOperationError: The catalog file or SQLite schema is unusable.
+        ConfigurationError: ``DOCUMENT_CATALOG_SQL_PATH`` or
+            ``DOCUMENT_CATALOG_WORKSPACE_ID`` is absent or invalid, or a retired
+            catalog env key is still set.
+        DocumentOperationError: The SQLite file or schema is unusable.
     """
+    _reject_retired_catalog_env()
     catalog = settings.document_catalog
+    if catalog.sql_path is None:
+        raise ConfigurationError(
+            "DOCUMENT_CATALOG_SQL_PATH is blank; unset it to use the "
+            "data/catalog/catalog.sqlite default"
+        )
     try:
-        if catalog.backend == "sql":
-            if catalog.workspace_id is None:
-                raise ConfigurationError(
-                    "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
-                    "DOCUMENT_CATALOG_BACKEND=sql"
-                )
-            return SqlDocumentCatalog(catalog.sql_path, catalog.workspace_id)
-        return JsonDocumentCatalog(catalog.path)
+        workspace_id = parse_workspace_id(catalog.workspace_id)
+    except ValueError as error:
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
+        ) from error
+    if workspace_id is None:
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID is required; it {WORKSPACE_ID_CONTRACT}"
+        )
+    try:
+        return SqlDocumentCatalog(catalog.sql_path, workspace_id)
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
     except OSError as error:
@@ -567,45 +629,14 @@ def _lazy_vector_store(
     return get_store
 
 
-def migrate_document_catalog(settings: Settings) -> None:
-    """Import the JSON catalog into the configured SQL workspace.
-
-    Requires ``backend=sql`` and a valid ``workspace_id`` before opening
-    SQLite.
-
-    Args:
-        settings (Settings): Runtime catalog configuration.
-
-    Raises:
-        ConfigurationError: Backend is not SQL or workspace id is missing.
-        DocumentOperationError: Migration or import failed.
-    """
-    catalog = settings.document_catalog
-    if catalog.backend != "sql":
-        raise ConfigurationError(
-            "DOCUMENT_CATALOG_BACKEND must be 'sql' to migrate the catalog"
-        )
-    if catalog.workspace_id is None:
-        raise ConfigurationError(
-            "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
-            "DOCUMENT_CATALOG_BACKEND=sql"
-        )
-    try:
-        _migrate_json_catalog_to_sql(
-            catalog.path, catalog.sql_path, catalog.workspace_id
-        )
-    except CatalogError as error:
-        raise DocumentOperationError(str(error)) from error
-
-
 _DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
 _DRIVE_SYNC_MESSAGE = "The Google Drive connector sync failed."
 _DRIVE_REQUEST_MESSAGE = "The Google Drive request failed."
 _DRIVE_CLIENT_MISSING_MESSAGE = (
     "Google Drive client is not installed; run uv sync --extra google-drive."
 )
-_DRIVE_ITEM_ID = re.compile(r"^(root|[A-Za-z0-9_-]{1,128})$")
-_DRIVE_SELECTION_ID = re.compile(r"^(?!root$)[A-Za-z0-9_-]{1,128}$")
+_DRIVE_ITEM_ID = re.compile(rf"^(root|{DRIVE_ID_BODY})$")
+_DRIVE_SELECTION_ID = re.compile(rf"^(?!root$){DRIVE_ID_BODY}$")
 _DRIVE_ITEM_NAME_MAX = 256
 _DRIVE_QUERY_MAX = 200
 _DRIVE_SELECTION_VALIDATE_WORKERS = 16
@@ -753,7 +784,9 @@ def google_drive_status(
     """
     drive = settings.google_drive
     configured = (
-        drive.folder_id is not None and drive.service_account_file is not None
+        drive.folder_id is not None
+        and is_drive_folder_id(drive.folder_id)
+        and drive.service_account_file is not None
     )
     available = importlib.util.find_spec("googleapiclient") is not None
     connection = _connection_store(settings).load()
@@ -1501,6 +1534,12 @@ def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
         ConfigurationError: Drive folder, credentials, or client extra is missing
             or unusable.
     """
+    folder_id = settings.google_drive.folder_id
+    if folder_id is not None:
+        try:
+            require_drive_folder_id(folder_id)
+        except ValueError as error:
+            raise ConfigurationError(str(error)) from error
     try:
         from infrastructure.connectors.google_drive import (
             GoogleDriveConfigError,
@@ -1588,10 +1627,10 @@ def build_manage_uploaded_documents(
     """Wire create/replace/delete/list for uploaded documents.
 
     The store and the ingest pipeline are passed as factories the use case calls
-    only when it needs them. Listing then costs one JSON read — no Chroma client
-    and no embedding credentials — which matters because the documents list
-    path should stay cheap on every request, and because `list` and `delete`
-    never embed anything.
+    only when it needs them. Listing then costs one SQLite query against
+    ``catalog_documents`` — no Chroma client and no embedding credentials —
+    which matters because the documents list path should stay cheap on every
+    request, and because `list` and `delete` never embed anything.
     Each operation opens at most one store, and mutate paths open it through the
     same factory, so ingest and delete cannot drift onto different collections.
 
@@ -1600,9 +1639,11 @@ def build_manage_uploaded_documents(
     opening until a mutating path actually runs. Pass
     ``list_vector_store_factory`` for a read-only list-chunks store (e.g. Chroma
     without BM25 hydrate) without steering create/replace/delete onto that
-    client. When ``vector_store`` is passed, it wins over ``vector_store_factory``
-    for mutations. When both mutation sources are omitted, each call that needs
-    a store builds one via ``build_vector_store``.
+    client; it is wrapped with the same memoization as the mutation factory.
+    When ``list_vector_store_factory`` is omitted, list-chunks falls back to the
+    memoized mutation store (``vector_store`` wins over ``vector_store_factory``).
+    When both mutation sources are omitted, each call that needs a store builds
+    one via ``build_vector_store``.
     """
     _vector_store = _lazy_vector_store(
         settings,
@@ -1618,7 +1659,13 @@ def build_manage_uploaded_documents(
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
-        list_vector_store_factory=list_vector_store_factory,
+        list_vector_store_factory=(
+            None
+            if list_vector_store_factory is None
+            else _lazy_vector_store(
+                settings, vector_store_factory=list_vector_store_factory
+            )
+        ),
         max_upload_bytes=settings.max_upload_bytes,
     )
 
@@ -1743,10 +1790,11 @@ def list_uploaded_document_chunks(
 ) -> ChunkPage:
     """Return stored chunks for a catalogued document, ordered by index.
 
-    Prefer ``list_vector_store_factory`` (or ``vector_store_factory``) alone when
-    the list store should open only after the catalog gate. Mutating paths on the
-    built use case still use ``vector_store`` / ``vector_store_factory`` /
-    ``build_vector_store`` so a Chroma-only list factory cannot starve BM25.
+    Prefer ``list_vector_store_factory`` alone when the list store should open
+    only after the catalog gate (and stay off the mutation DualWrite path).
+    When it is omitted, list-chunks uses the same memoized mutation store as
+    create/replace/delete: ``vector_store`` wins over ``vector_store_factory``,
+    so a passed store is reused and the factory is not invoked for list.
 
     Raises:
         UnknownUploadedDocumentError: ``reference`` is not in the catalog.
@@ -1758,8 +1806,7 @@ def list_uploaded_document_chunks(
             catalog=catalog,
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
-            list_vector_store_factory=list_vector_store_factory
-            or vector_store_factory,
+            list_vector_store_factory=list_vector_store_factory,
         ).list_document_chunks(reference, limit=limit, offset=offset)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error
@@ -1982,6 +2029,9 @@ def build_tool_augmented_ask(
     chat_model: ChatModel | None = None,
     vector_store: VectorStore | None = None,
     prompt_repository: PromptRepository | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ) -> GroundedAsk:
     """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
 
@@ -2001,13 +2051,18 @@ def build_tool_augmented_ask(
         chat_model (ChatModel | None): Shared chat adapter; built when absent.
         vector_store (VectorStore | None): Optional shared vector store client.
         prompt_repository (PromptRepository | None): Optional shared prompts.
+        provider (str | None): Per-request provider override (same as chat model).
+        model (str | None): Per-request model override.
+        base_url (str | None): Per-request Ollama base URL override.
 
     Returns:
         GroundedAsk: ``CorrelatedAsk`` around ``AskKnowledge`` or
         ``ToolAugmentedAsk``.
     """
     if chat_model is None:
-        chat_model = build_chat_model(settings)
+        chat_model = build_chat_model(
+            settings, provider=provider, model=model, base_url=base_url
+        )
     if not software_delivery_tools_enabled(settings):
         ask = build_ask_knowledge(
             settings,
@@ -2033,40 +2088,61 @@ def build_tool_augmented_ask(
     registration = importlib.import_module("packs.software_delivery.registration")
     # Tools invoke ChatModel through the opaque boundary; record safe RunMeta so
     # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
-    model_calls = RecordingChatModel(chat_model)
+    # Agent loop accumulates ReAct model turns plus any tool ChatModel calls.
+    model_calls = RecordingChatModel(
+        chat_model, accumulate=settings.domain_tools.agent_loop
+    )
 
-    def orchestrate(
-        *,
-        target: str,
-        hits: Sequence[ScoredChunk],
-        generate_tests: bool,
-        output_style: str,
-        invoke: OpaqueInvoke,
-    ):
-        from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
-        from packs.software_delivery.orchestration_contracts import (
-            OrchestrateSoftwareDeliveryRequest,
-        )
-        from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+    if settings.domain_tools.agent_loop:
+        from application.untrusted_text import agent_tool_system_prompt
+        from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
-        # Pass the recording wrapper so any future path that builds tools from
-        # chat_model (when invoke is absent) still contributes to RunMeta.
-        orchestrator = build_orchestrate_software_delivery(
-            settings, chat_model=model_calls, invoke=invoke
-        )
-        intent = (
-            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
-            if generate_tests
-            else SoftwareDeliveryIntent.RISK_SCORE
-        )
-        return orchestrator.execute(
-            OrchestrateSoftwareDeliveryRequest(
-                intent=intent,
-                target=target,
-                evidence=evidence_bundle_from_hits(hits),
-                output_style=output_style,
+        orchestrate = build_agent_orchestrate(
+            LangGraphToolAgent(
+                model_factory=_software_delivery_agent_model_factory(
+                    settings,
+                    recorder=model_calls,
+                    provider=provider,
+                    model=model,
+                    base_url=base_url,
+                ),
+                system_prompt=agent_tool_system_prompt(),
             )
         )
+    else:
+
+        def orchestrate(
+            *,
+            target: str,
+            hits: Sequence[ScoredChunk],
+            generate_tests: bool,
+            output_style: str,
+            invoke: OpaqueInvoke,
+        ):
+            from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
+            from packs.software_delivery.orchestration_contracts import (
+                OrchestrateSoftwareDeliveryRequest,
+            )
+            from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+
+            # Pass the recording wrapper so any future path that builds tools from
+            # chat_model (when invoke is absent) still contributes to RunMeta.
+            orchestrator = build_orchestrate_software_delivery(
+                settings, chat_model=model_calls, invoke=invoke
+            )
+            intent = (
+                SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+                if generate_tests
+                else SoftwareDeliveryIntent.RISK_SCORE
+            )
+            return orchestrator.execute(
+                OrchestrateSoftwareDeliveryRequest(
+                    intent=intent,
+                    target=target,
+                    evidence=evidence_bundle_from_hits(hits),
+                    output_style=output_style,
+                )
+            )
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_relevant_retrieve(settings, vector_store=vector_store),
@@ -2083,6 +2159,161 @@ def build_tool_augmented_ask(
             pack_id="software-delivery",
         )
     )
+
+
+def _software_delivery_agent_model_factory(
+    settings: Settings,
+    *,
+    recorder: RecordingChatModel | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+):
+    """Return a LangChain chat model factory with ``bind_tools`` for the agent.
+
+    Validates the full provider credential contract via the same ``_build_*``
+    helpers as live chat (typed ``ConfigurationError`` subclasses), then builds
+    a LangChain ``ChatOpenAI`` from the same resolved runtime config.
+
+    Args:
+        settings (Settings): Process settings for provider defaults.
+        recorder (RecordingChatModel | None): Optional RunMeta accumulator.
+        provider (str | None): Per-request provider override.
+        model (str | None): Per-request model override.
+        base_url (str | None): Per-request Ollama base URL override.
+
+    Returns:
+        Callable: Zero-arg factory producing an observing chat model with tools.
+    """
+
+    def factory(**_kwargs: object):
+        from langchain_openai import ChatOpenAI
+
+        from domain.errors import ProviderError
+
+        effective = provider or settings.provider
+        builder = _CHAT_MODELS.get(effective)
+        if builder is None:
+            raise ValueError(
+                f"Unknown provider {effective!r}. "
+                f"Expected one of {sorted(_CHAT_MODELS)}."
+            )
+        # Validate via chat builders (discard adapter; keep typed config errors).
+        _ = builder(settings, model, base_url)
+
+        if effective == "ollama":
+            config = _ollama_runtime_config(
+                settings, model=model, base_url=base_url
+            )
+            if not config.base_url or not config.model:
+                # builder() already validated; keep a local guard for the checker.
+                raise MissingProviderCredentialsError(
+                    "Missing OLLAMA_BASE_URL or OLLAMA_MODEL."
+                )
+            base = config.base_url.rstrip("/")
+            try:
+                inner = ChatOpenAI(
+                    model=config.model,
+                    api_key="ollama",
+                    base_url=f"{base}/v1",
+                    timeout=config.timeout,
+                )
+            except Exception as exc:
+                raise ProviderError(
+                    "The tool-calling agent provider could not be reached."
+                ) from exc
+            model_name = config.model
+        else:
+            config = _openrouter_runtime_config(settings, model=model)
+            try:
+                inner = ChatOpenAI(
+                    model=config.model,
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    timeout=config.timeout,
+                )
+            except Exception as exc:
+                raise ProviderError(
+                    "The tool-calling agent provider could not be reached."
+                ) from exc
+            model_name = config.model
+
+        return _ObservingChatOpenAI(
+            inner, recorder=recorder, model_name=model_name
+        )
+
+    return factory
+
+
+class _ObservingChatOpenAI:
+    """Wrap a LangChain chat model so each invoke updates ``RecordingChatModel``.
+
+    Only ``bind_tools`` and ``invoke`` are forwarded: those are the methods
+    ``LangGraphToolAgent`` uses. Other LangChain surfaces (``stream``, ``batch``)
+    raise ``AttributeError`` rather than silently bypassing the recorder.
+    """
+
+    def __init__(
+        self,
+        inner: object,
+        *,
+        recorder: RecordingChatModel | None,
+        model_name: str | None,
+    ) -> None:
+        self._inner = inner
+        self._recorder = recorder
+        self._model_name = model_name
+
+    def bind_tools(
+        self, tools: Sequence[object], *args: object, **kwargs: object
+    ) -> "_ObservingChatOpenAI":
+        bound = self._inner.bind_tools(tools, *args, **kwargs)  # type: ignore[attr-defined]
+        return _ObservingChatOpenAI(
+            bound, recorder=self._recorder, model_name=self._model_name
+        )
+
+    def invoke(self, messages: object, **kwargs: object) -> object:
+        import time
+
+        from application.contracts import RunMeta
+        from domain.errors import ProviderError
+        from domain.models import Usage
+
+        started = time.perf_counter()
+        result: object | None = None
+        error_type: str | None = None
+        try:
+            result = self._inner.invoke(messages, **kwargs)  # type: ignore[attr-defined]
+            return result
+        except ProviderError:
+            error_type = "ProviderError"
+            raise
+        except Exception as exc:
+            error_type = type(exc).__name__
+            raise ProviderError(
+                "The tool-calling agent provider could not be reached."
+            ) from exc
+        finally:
+            if self._recorder is not None:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                usage = None
+                if result is not None:
+                    usage_meta = getattr(result, "usage_metadata", None)
+                    if isinstance(usage_meta, Mapping):
+                        usage = Usage(
+                            prompt_tokens=usage_meta.get("input_tokens"),  # type: ignore[arg-type]
+                            completion_tokens=usage_meta.get("output_tokens"),  # type: ignore[arg-type]
+                            total_tokens=usage_meta.get("total_tokens"),  # type: ignore[arg-type]
+                        )
+                self._recorder.record(
+                    RunMeta(
+                        model=self._model_name,
+                        latency_ms=latency_ms,
+                        usage=usage,
+                        settings={},
+                        error_type=error_type,
+                    )
+                )
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

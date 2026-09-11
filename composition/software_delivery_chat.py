@@ -15,7 +15,11 @@ from typing import Protocol
 
 from application.citations import build_citations
 from application.contracts import Citation, InvokeToolResponse, RunMeta
-from application.errors import ApplicationValidationError, InsufficientEvidenceError
+from application.errors import (
+    ApplicationValidationError,
+    ConfigurationError,
+    InsufficientEvidenceError,
+)
 from composition.software_delivery_tools import (
     RiskFactorView,
     RiskScoreView,
@@ -329,6 +333,8 @@ class PackSoftwareDeliveryChat:
                     output_style=output_style,
                     invoke=recorder,
                 )
+            except ConfigurationError:
+                raise
             except (DomainValidationError, RuntimeError) as error:
                 raise ToolRunFailedError(
                     _TOOL_RUN_FAILED_MESSAGE, tool_outputs=recorder.tool_outputs

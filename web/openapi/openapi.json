@@ -769,6 +769,12 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HubSourceType": {
+        "description": "Hub catalog kinds accepted by chunk-inspect query params.\n\nMirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so\nthe wire contract stays documented and does not silently widen with\n``SourceType``.",
+        "enum": ["knowledge_document", "google_drive"],
+        "title": "HubSourceType",
+        "type": "string"
+      },
       "ModelSettingDefResponse": {
         "description": "One generation setting for Settings UI controls.",
         "properties": {
@@ -1498,6 +1504,16 @@
               }
             },
             "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -2367,9 +2383,7 @@
             "name": "source_type",
             "required": true,
             "schema": {
-              "enum": ["knowledge_document", "google_drive"],
-              "title": "Source Type",
-              "type": "string"
+              "$ref": "#/components/schemas/HubSourceType"
             }
           },
           {

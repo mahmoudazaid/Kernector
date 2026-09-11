@@ -179,9 +179,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    expect(
-      await screen.findByRole("button", { name: /Sync/i }),
-    ).toBeEnabled();
+    expect(await screen.findByRole("button", { name: /Sync/i })).toBeEnabled();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
@@ -237,9 +235,7 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByText(/^connected$/i)).toBeInTheDocument();
     expect(screen.queryByText(/setup required/i)).toBeNull();
     expect(screen.getByRole("button", { name: /Sync/i })).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeEnabled();
     expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
     expect(screen.queryByText(/^sync scope$/i)).toBeNull();
     expect(screen.queryByText(/^new$/i)).toBeNull();
@@ -337,10 +333,12 @@ describe("GoogleDrivePanel", () => {
     await user.click(button);
     expect(syncNow).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /^sync$/i })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: /syncing/i })).not.toBeInTheDocument();
-    const overlay = screen.getByText(/syncing google drive/i).closest(
-      ".kern-drive-sync-overlay",
-    );
+    expect(
+      screen.queryByRole("button", { name: /syncing/i }),
+    ).not.toBeInTheDocument();
+    const overlay = screen
+      .getByText(/syncing google drive/i)
+      .closest(".kern-source-busy-overlay");
     expect(overlay).toBeInTheDocument();
     expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
     resolveSync({});
@@ -429,6 +427,49 @@ describe("GoogleDrivePanel", () => {
     expect(
       screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps Disconnect disabled while status refresh is in flight after confirm", async () => {
+    const user = userEvent.setup();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    let releaseStatus!: () => void;
+    const getStatus = vi
+      .fn()
+      .mockResolvedValueOnce(CONNECTED)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseStatus = () => resolve(status());
+          }),
+      );
+
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={getStatus}
+        loadSelection={emptySelection}
+        disconnect={disconnect}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: /disconnect/i }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /disconnect/i,
+      }),
+    );
+
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+    const cardBtn = screen
+      .getAllByRole("button", { name: /^disconnect$/i })
+      .find((b) => !b.closest('[role="dialog"]'));
+    expect(cardBtn).toBeDisabled();
+    releaseStatus();
+    expect(
+      await screen.findByRole("link", { name: /^connect$/i }),
+    ).toBeTruthy();
   });
 
   it("offers Connect again when reauthorization is required", async () => {
@@ -679,9 +720,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", { name: /Browse/i }),
-    );
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
@@ -691,7 +730,9 @@ describe("GoogleDrivePanel", () => {
       screen.queryByRole("dialog", { name: /choose from google drive/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/syncing google drive/i).closest(".kern-drive-sync-overlay"),
+      screen
+        .getByText(/syncing google drive/i)
+        .closest(".kern-source-busy-overlay"),
     ).toBeInTheDocument();
 
     resolveSave({
@@ -711,12 +752,8 @@ describe("GoogleDrivePanel", () => {
       }),
     );
     expect(syncNow).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByRole("button", { name: /Sync/i }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Sync/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
   });
 
   it("saves an empty Drive selection without starting a sync", async () => {
@@ -744,7 +781,9 @@ describe("GoogleDrivePanel", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
-    await user.click(await within(dialog).findByRole("checkbox", { name: /specs/i }));
+    await user.click(
+      await within(dialog).findByRole("checkbox", { name: /specs/i }),
+    );
     await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => {
@@ -772,9 +811,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", { name: /Browse/i }),
-    );
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
@@ -827,9 +864,7 @@ describe("GoogleDrivePanel", () => {
     );
 
     expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
     unmount();
 
     render(
@@ -846,9 +881,7 @@ describe("GoogleDrivePanel", () => {
       "dateTime",
       "2026-09-08T12:00:00+00:00",
     );
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
     expect(getStatus).toHaveBeenCalledTimes(2);
     expect(loadSelection).toHaveBeenCalledTimes(2);
   });

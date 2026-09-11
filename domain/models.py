@@ -51,6 +51,42 @@ class AskResult:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentTurnResult:
+    """Final text from a tool-calling agent turn, plus optional step count.
+
+    Attributes:
+        content (str): Final assistant text for the turn.
+        steps (int | None): Model steps completed, when known.
+        truncated (bool): True when the hard step limit stopped the loop.
+    """
+
+    content: str
+    steps: int | None = None
+    truncated: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.content, str):
+            raise DomainValidationError(
+                f"content must be a non-empty string, got {type(self.content).__name__}"
+            )
+        if not self.content.strip():
+            raise DomainValidationError("content must be non-empty")
+        if self.steps is not None:
+            if not isinstance(self.steps, int) or isinstance(self.steps, bool):
+                raise DomainValidationError(
+                    f"steps must be a non-negative integer, got {type(self.steps).__name__}"
+                )
+            if self.steps < 0:
+                raise DomainValidationError(
+                    f"steps must be a non-negative integer, got {self.steps}"
+                )
+        if not isinstance(self.truncated, bool):
+            raise DomainValidationError(
+                f"truncated must be a bool, got {type(self.truncated).__name__}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class PromptVariant:
     key: str
     name: str

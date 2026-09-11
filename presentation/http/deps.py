@@ -55,7 +55,7 @@ def get_settings() -> Settings:
     """Resolve runtime settings once per process through composition.
 
     Process-cached settings load: avoids re-running ``configure_logging`` /
-    ``load_dotenv(override=True)`` on every FastAPI request.
+    ``load_dotenv(override=False)`` on every FastAPI request.
     """
     return load_runtime_settings()
 
@@ -126,6 +126,9 @@ def get_ask_factory(
             chat_model=chat_model,
             vector_store=vector_store,
             prompt_repository=prompt_repository,
+            provider=provider,
+            model=model,
+            base_url=base_url,
         )
 
     return factory

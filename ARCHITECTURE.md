@@ -192,6 +192,9 @@ enabled prompt packs.
 `DOMAIN_TOOL_PACKS=software-delivery` (CSV; default empty). Composition loads
 packs through an explicit allowlist manifest and `importlib` only for configured
 IDs — a disabled pack is neither imported nor registered.
+``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) optionally replaces the
+deterministic Software Delivery orchestrate with a LangGraph agent; #170 remains
+the default.
 
 #### Multi-source tool flow
 
@@ -292,6 +295,15 @@ band and rationale — never from a second model call. The same typed outcomes a
 projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
 (#178); that view is **not** placed on ``AskResponse``.
 
+**Agent loop (#43), opt-in:** ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default
+**false**) swaps only the pack ``orchestrate`` callable for a LangGraph-backed
+``ToolCallingAgent`` adapter (``infrastructure/agents/langgraph_tool_agent.py``)
+wired through ``composition/software_delivery_agent.py``. Intent selection,
+retrieve → recorder → ordered ``tool_outputs``, stop handling, and sanitized
+``ToolRunFailedError`` stay on the #170 path. Domain and application must not
+import LangGraph; ``langgraph`` is an infrastructure I/O package. Keep the
+deterministic chain as the default until the agent path is proven.
+
 Two properties are worth naming because they are easy to lose:
 
 - **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it
@@ -309,7 +321,7 @@ details**. ``ToolAugmentedAsk.consume_tool_run_view`` (forwarded by
 to the HTTP chat mapping; the Next.js chat UI renders projected results without
 importing pack-named modules or ``packs``.
 
-#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178)
+#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178 vs #43)
 
 - **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
   ``InvokeTool`` that treats arguments and results as opaque strings.
@@ -318,11 +330,14 @@ importing pack-named modules or ``packs``.
   testable with fixtures.
 - **#170** — chat intent → retrieve/orchestrate → populate
   ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
-  (delivered).
+  (delivered; **default** orchestrate path).
 - **#178** — composition projects typed pack outcomes into
   ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Next.js chat
   renders #161 panels from the projected view without putting views on
   ``AskResponse`` (delivered).
+- **#43** — optional LangGraph agent orchestrate behind
+  ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default off); same runner ledger and error
+  taxonomy.
 
 ### Grounded ask: system policy vs optional task prompts
 
@@ -402,27 +417,33 @@ pipeline. Names only (no implementation commitment in this document):
 - Seed JSON corpus adapter
 - Future: GitHub, Jira, Confluence, Google Drive
 
-### Catalog adapter selection
+### Catalog adapter
 
 Uploaded-document lifecycle metadata uses the `DocumentCatalog` port.
-Composition selects the adapter from `DOCUMENT_CATALOG_BACKEND` (`json` or
-`sql`). JSON remains the unscoped single-process default. SQL binds one
-`workspace_id` per adapter instance; uniqueness is
-`(workspace_id, source_type, source_id)` per
+Composition wires only `SqlDocumentCatalog`, bound to one `workspace_id` per
+adapter instance. Uniqueness is `(workspace_id, source_type, source_id)` per
 [ADR 0006](docs/adr/0006-workspace-scope-identity.md). The port stays
 unscoped. Application and presentation do not branch on adapter type.
 
-- **JSON** — `DOCUMENT_CATALOG_PATH` (default `data/catalog/uploads.json`).
-  Local / single-process use. Does not require `DOCUMENT_CATALOG_WORKSPACE_ID`.
-- **SQL** — `DOCUMENT_CATALOG_SQL_PATH` (default `data/catalog/catalog.sqlite`)
-  and required `DOCUMENT_CATALOG_WORKSPACE_ID`. Prefer this when more than one
-  process may write, or when you need transactional upserts and versioned
-  schema migrations. Selecting SQL, or running JSON→SQL migration, requires an
-  explicit workspace id. There is no reserved `"default"` workspace.
+- **SQLite path** — `DOCUMENT_CATALOG_SQL_PATH` (default
+  `data/catalog/catalog.sqlite`). Blank values are stored as absent and fail at
+  catalog build, not process bootstrap.
+- **Workspace** — `DOCUMENT_CATALOG_WORKSPACE_ID`. There is no reserved
+  `"default"` workspace. `load_settings()` stores the stripped value when
+  present (blank is absent) and does not validate charset or length.
+  Composition requires a valid workspace when building `SqlDocumentCatalog`
+  and maps absence/malformation to `ConfigurationError`.
+- **Retired keys** — Non-blank `DOCUMENT_CATALOG_BACKEND` or
+  `DOCUMENT_CATALOG_PATH` fail at catalog build with `ConfigurationError`
+  (not at process bootstrap). Remove them after migrating from JSON.
 
-When `DOCUMENT_CATALOG_WORKSPACE_ID` is present under either backend,
-`load_settings()` validates it (`fullmatch` `[A-Za-z0-9_-]+`, at most 64
-characters, stripped). Empty or whitespace-only values are absent.
+**Upgrading from JSON.** Before upgrading past the release that removed the
+JSON adapter ([#261](https://github.com/mahmoudazaid/Kernector/issues/261)),
+operators with rows in `data/catalog/uploads.json` must run the migrator on
+that prior release, then remove `DOCUMENT_CATALOG_BACKEND` and
+`DOCUMENT_CATALOG_PATH` before starting the upgraded build. See
+[README.md](README.md) and
+[ADR 0007](docs/adr/0007-retire-json-document-catalog.md).
 
 **Journal mode.** Official SQLite WAL-reset fixes are 3.51.3+, 3.50.7+ within
 3.50, and 3.44.6+ within 3.44. Verified fixed builds use `PRAGMA journal_mode=WAL`.
@@ -430,16 +451,6 @@ Affected or unverified builds use rollback-journal (`DELETE`) with
 `BEGIN IMMEDIATE`. WAL still requires a local filesystem and same-host
 processes — not NFS, network volumes, or distributed writers across hosts.
 SQL catalog startup does not refuse a journal mode.
-
-**JSON→SQL import.**
-
-```bash
-uv run python -m presentation.cli.migrate_document_catalog
-```
-
-Requires `DOCUMENT_CATALOG_BACKEND=sql` and a valid
-`DOCUMENT_CATALOG_WORKSPACE_ID`. Re-runs are idempotent. The source JSON file
-is left unchanged and remains the import origin if a re-import is needed.
 
 **Rollback.** Stop catalog writers, then restore from a SQLite-produced backup
 (`Connection.backup` or `VACUUM INTO`). Do not assemble a live `.sqlite` file
@@ -464,7 +475,11 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 | `DomainValidationError` | 500 | `operational_error` | fixed operational sentence |
 | `InsufficientEvidenceError` | 422 | `insufficient_evidence` | fixed sentence |
 | `ConfigurationError` | 500 | `configuration_error` | fixed sentence |
-| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence |
+| `ConfigurationBoundaryError` | 500 | `configuration_error` | fixed sentence (marker; prefer concrete subclasses) |
+| `MissingProviderCredentialsError` | 500 | `missing_provider_credentials` | fixed sentence |
+| `OllamaNotConfiguredError` | 409 | `ollama_unconfigured` | fixed sentence |
+| `ToolRunFailedError` | 500 | `tool_failure` | fixed tool sentence |
+| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence; on Software Delivery tool-run paths, `PackSoftwareDeliveryChat` re-wraps into `ToolRunFailedError` (500 `tool_failure`) so vendor text never reaches the chat bubble |
 | `ToolFailureError` | 500 | `tool_failure` | fixed tool sentence |
 | `VectorStoreError` | 500 | `store_error` | fixed operational sentence |
 | `KnowledgeLoadError` / document wraps | 500 | `operational_error` | fixed operational sentence |
@@ -485,7 +500,8 @@ to 4xx with boundary-authored (or class-composed) detail.
 | outcome | `InsufficientEvidenceError` | application | Grounded use case; no retrieval hits cleared the relevance threshold |
 | validation | `DomainValidationError` | domain | Domain invariant violation |
 | config | `ConfigurationError` | application | Missing/invalid environment at composition |
-| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` |
+| config | `ConfigurationBoundaryError` | domain | Marker base for typed config failures; prefer concrete application subclasses |
+| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` / `MissingProviderCredentialsError` / `OllamaNotConfiguredError` |
 | provider | `ProviderError` | domain | LLM / embedding / rewrite runtime failure |
 | provider | `QueryRewriterError` | domain | Subclass of `ProviderError` from the rewrite port |
 | provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping rewrite failures |

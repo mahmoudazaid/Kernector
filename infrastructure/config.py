@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from pathlib import Path
 
-from infrastructure.catalog.workspace import parse_workspace_id
-
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# fullmatch is load-bearing: .match()/.search() would accept injection prefixes.
-_GOOGLE_DRIVE_FOLDER_ID = re.compile(r"[A-Za-z0-9_-]+")
-
 
 @dataclass(frozen=True, slots=True)
 class OpenRouterSettings:
@@ -56,18 +50,15 @@ class DocumentCatalogSettings:
     """Uploaded-document catalog adapter configuration.
 
     Args:
-        path (Path): JSON catalog file used by the JSON adapter and as the
-            importer source.
-        backend (str): Selected adapter, ``json`` or ``sql``.
-        sql_path (Path): SQLite file used by the SQL adapter.
-        workspace_id (str | None): Bound SQL workspace. Required when
-            ``backend`` is ``sql``; optional and validated when present under
-            JSON.
+        sql_path (Path | None): SQLite file used by the SQL catalog adapter.
+            ``None`` when ``DOCUMENT_CATALOG_SQL_PATH`` is blank; rejected when
+            composition builds the catalog.
+        workspace_id (str | None): Bound SQL workspace identity. Stored as the
+            stripped env value when present (including malformed values);
+            validated when composition builds the catalog.
     """
 
-    path: Path
-    backend: str
-    sql_path: Path
+    sql_path: Path | None
     workspace_id: str | None
 
 
@@ -106,9 +97,17 @@ class RetrievalSettings:
 
 @dataclass(frozen=True, slots=True)
 class DomainToolSettings:
-    """Optional executable domain tool packs enabled at composition time."""
+    """Optional executable domain tool packs enabled at composition time.
+
+    Args:
+        enabled_packs (tuple[str, ...]): Pack ids from ``DOMAIN_TOOL_PACKS``.
+        agent_loop (bool): When true, Software Delivery chat uses the LangGraph
+            agent orchestrator instead of the deterministic #170 chain. Default
+            false — do not flip until the agent path is proven.
+    """
 
     enabled_packs: tuple[str, ...]
+    agent_loop: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,7 +297,7 @@ class Settings:
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
-    load_dotenv(override=True)
+    load_dotenv(override=False)
     max_input_length = _env_int("MAX_INPUT_LENGTH", "10000")
     if max_input_length <= 0:
         raise ValueError(f"MAX_INPUT_LENGTH must be > 0, got {max_input_length}")
@@ -416,44 +415,30 @@ def _load_knowledge_settings() -> KnowledgeSettings:
     )
 
 
+def _optional_env(name: str, default: str | None = None) -> str | None:
+    """Return a stripped env value, or ``None`` when absent or blank.
+
+    Args:
+        name: Environment variable name.
+        default: Fallback when the variable is unset. Blank values still
+            resolve to ``None`` (they do not fall through to ``default``).
+    """
+    raw = os.getenv(name, default)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
 def _load_document_catalog_settings() -> DocumentCatalogSettings:
-    catalog_path = os.getenv(
-        "DOCUMENT_CATALOG_PATH", "data/catalog/uploads.json"
-    )
-    if not catalog_path.strip():
-        raise ValueError(
-            f"DOCUMENT_CATALOG_PATH must be non-empty, got {catalog_path!r}"
-        )
-    backend = os.getenv("DOCUMENT_CATALOG_BACKEND", "json").strip().lower()
-    if backend not in {"json", "sql"}:
-        raise ValueError(
-            f"DOCUMENT_CATALOG_BACKEND must be 'json' or 'sql', got {backend!r}"
-        )
-    sql_path = os.getenv(
+    raw_sql = _optional_env(
         "DOCUMENT_CATALOG_SQL_PATH", "data/catalog/catalog.sqlite"
     )
-    if not sql_path.strip():
-        raise ValueError(
-            f"DOCUMENT_CATALOG_SQL_PATH must be non-empty, got {sql_path!r}"
-        )
-    try:
-        workspace_id = parse_workspace_id(
-            os.getenv("DOCUMENT_CATALOG_WORKSPACE_ID")
-        )
-    except ValueError as error:
-        raise ValueError(
-            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
-        ) from error
-    if backend == "sql" and workspace_id is None:
-        raise ValueError(
-            "DOCUMENT_CATALOG_WORKSPACE_ID is required when "
-            "DOCUMENT_CATALOG_BACKEND=sql"
-        )
+    # Blank is stored as None — validated at catalog build so HTTP bootstrap
+    # and OpenAPI export stay catalog-agnostic.
     return DocumentCatalogSettings(
-        path=_resolve_under_project_root(catalog_path),
-        backend=backend,
-        sql_path=_resolve_under_project_root(sql_path),
-        workspace_id=workspace_id,
+        sql_path=_resolve_under_project_root(raw_sql) if raw_sql else None,
+        workspace_id=_optional_env("DOCUMENT_CATALOG_WORKSPACE_ID"),
     )
 
 
@@ -537,7 +522,10 @@ def _load_domain_tool_settings() -> DomainToolSettings:
             )
         seen.add(name)
         ordered.append(name)
-    return DomainToolSettings(enabled_packs=tuple(ordered))
+    return DomainToolSettings(
+        enabled_packs=tuple(ordered),
+        agent_loop=_env_bool("SOFTWARE_DELIVERY_AGENT_LOOP", "false"),
+    )
 
 
 def _env_truthy(name: str, default: str = "") -> bool:
@@ -568,23 +556,13 @@ def _load_http_adapter_settings() -> HttpAdapterSettings:
 
 def _load_google_drive_settings() -> GoogleDriveSettings:
     """Parse optional Drive connector env vars without reading credential JSON."""
-    raw_file = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
-    service_account_file: Path | None
-    if raw_file is None or not raw_file.strip():
-        service_account_file = None
-    else:
-        service_account_file = _resolve_under_project_root(raw_file.strip())
-    raw_folder = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
-    folder_id: str | None
-    if raw_folder is None or not raw_folder.strip():
-        folder_id = None
-    else:
-        folder_id = raw_folder.strip()
-        if not _GOOGLE_DRIVE_FOLDER_ID.fullmatch(folder_id):
-            raise ValueError(
-                "GOOGLE_DRIVE_FOLDER_ID must be a Drive folder ID "
-                "(letters, digits, `-`, `_`); it looks like you pasted a URL or path"
-            )
+    raw_file = _optional_env("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
+    service_account_file = (
+        _resolve_under_project_root(raw_file) if raw_file else None
+    )
+    # Charset checks run when the connector is built so HTTP/OpenAPI bootstrap
+    # stays Drive-agnostic.
+    folder_id = _optional_env("GOOGLE_DRIVE_FOLDER_ID")
     page_size = _env_int("GOOGLE_DRIVE_PAGE_SIZE", "100")
     if not 1 <= page_size <= 1000:
         raise ValueError(
@@ -639,46 +617,44 @@ def _require_absolute_http_url(name: str, raw: str) -> str:
 
 def _load_google_oauth_settings() -> GoogleOAuthSettings:
     """Parse user-OAuth env without reading stored refresh tokens."""
-    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
-    raw_redirect = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
-    raw_frontend = os.getenv("GOOGLE_OAUTH_FRONTEND_REDIRECT")
-    raw_token = os.getenv("GOOGLE_OAUTH_TOKEN_PATH")
-    raw_state = os.getenv("GOOGLE_OAUTH_STATE_PATH")
+    client_id = _optional_env("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = _optional_env("GOOGLE_OAUTH_CLIENT_SECRET")
+    raw_redirect = _optional_env("GOOGLE_OAUTH_REDIRECT_URI")
+    raw_frontend = _optional_env("GOOGLE_OAUTH_FRONTEND_REDIRECT")
+    raw_token = _optional_env("GOOGLE_OAUTH_TOKEN_PATH")
+    raw_state = _optional_env("GOOGLE_OAUTH_STATE_PATH")
     ttl = _env_int("GOOGLE_OAUTH_STATE_TTL_SECONDS", "600")
     if ttl < 30:
         raise ValueError("GOOGLE_OAUTH_STATE_TTL_SECONDS must be at least 30")
-    redirect_uri = None
-    if raw_redirect is not None and raw_redirect.strip():
-        redirect_uri = _require_absolute_http_url(
-            "GOOGLE_OAUTH_REDIRECT_URI", raw_redirect.strip()
-        )
-    frontend_redirect = None
-    if raw_frontend is not None and raw_frontend.strip():
-        frontend_redirect = _require_absolute_http_url(
-            "GOOGLE_OAUTH_FRONTEND_REDIRECT", raw_frontend.strip()
-        )
+    redirect_uri = (
+        _require_absolute_http_url("GOOGLE_OAUTH_REDIRECT_URI", raw_redirect)
+        if raw_redirect
+        else None
+    )
+    frontend_redirect = (
+        _require_absolute_http_url("GOOGLE_OAUTH_FRONTEND_REDIRECT", raw_frontend)
+        if raw_frontend
+        else None
+    )
     token_path = _require_google_oauth_json_path(
         (
-            _resolve_under_project_root(raw_token.strip())
-            if raw_token and raw_token.strip()
+            _resolve_under_project_root(raw_token)
+            if raw_token
             else _PROJECT_ROOT / "data" / "google-oauth-connection.json"
         ),
         "GOOGLE_OAUTH_TOKEN_PATH",
     )
     state_path = _require_google_oauth_json_path(
         (
-            _resolve_under_project_root(raw_state.strip())
-            if raw_state and raw_state.strip()
+            _resolve_under_project_root(raw_state)
+            if raw_state
             else _PROJECT_ROOT / "data" / "google-oauth-state.json"
         ),
         "GOOGLE_OAUTH_STATE_PATH",
     )
     return GoogleOAuthSettings(
-        client_id=client_id.strip() if client_id and client_id.strip() else None,
-        client_secret=(
-            client_secret.strip() if client_secret and client_secret.strip() else None
-        ),
+        client_id=client_id,
+        client_secret=client_secret,
         redirect_uri=redirect_uri,
         frontend_redirect=frontend_redirect,
         token_path=token_path,

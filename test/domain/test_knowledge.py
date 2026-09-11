@@ -45,6 +45,13 @@ def test_hub_source_types_are_explicit_members() -> None:
     )
 
 
+def test_hub_source_type_schema_matches_hub_source_types() -> None:
+    from domain.knowledge import HUB_SOURCE_TYPES
+    from presentation.http.schemas import HubSourceType
+
+    assert frozenset(HubSourceType) == HUB_SOURCE_TYPES
+
+
 def test_valid_source_document_is_accepted() -> None:
     document = SourceDocument(metadata(), "Exploratory testing guidance ...")
     assert document.source_id == "doc-1"

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -12,13 +13,17 @@ import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
-import { captureDriveCallback, peekDriveCallback } from "@/lib/documents/drive-callback";
+import {
+  captureDriveCallback,
+  peekDriveCallback,
+} from "@/lib/documents/drive-callback";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DialogFrame } from "@/components/ui/DialogFrame";
+import { Loader } from "@/components/ui/Loader";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
@@ -240,6 +245,7 @@ export function DocumentsPanel({
     useState<CatalogDocumentResponse | null>(null);
   const [hubTab, setHubTab] = useState<"sources" | "documents">("sources");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] =
     useState<(typeof SOURCE_FILTERS)[number]>("All sources");
@@ -251,12 +257,20 @@ export function DocumentsPanel({
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
+  const [feedbackSeq, setFeedbackSeq] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorSeq, setUploadErrorSeq] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const listChunksRef = useRef(listChunks);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
+  const loadedChunksKeyRef = useRef<string | null>(null);
   const [chunksLoadingMore, setChunksLoadingMore] = useState(false);
+  const uploadErrorRef = useRef<HTMLDivElement>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const deleteRestoreRef = useRef<HTMLElement | null>(null);
+  const dialogOpen = pendingDelete !== null || uploadOpen || drivePickerOpen;
 
   useEffect(() => {
     listChunksRef.current = listChunks;
@@ -265,6 +279,49 @@ export function DocumentsPanel({
   useEffect(() => {
     captureDriveCallback();
   }, []);
+
+  useEffect(() => {
+    if (feedback.kind === "idle" || dialogOpen) {
+      return;
+    }
+    feedbackRef.current?.focus();
+  }, [feedbackSeq, dialogOpen, feedback.kind]);
+
+  useEffect(() => {
+    if (uploadOpen && uploadError) {
+      uploadErrorRef.current?.focus();
+    }
+  }, [uploadOpen, uploadError, uploadErrorSeq]);
+
+  function announce(next: Exclude<ActionFeedback, { kind: "idle" }>) {
+    setFeedback(next);
+    setFeedbackSeq((seq) => seq + 1);
+  }
+
+  const clearFeedback = useCallback(() => {
+    setFeedback({ kind: "idle" });
+  }, []);
+
+  function announceUploadError(message: string) {
+    setUploadError(message);
+    setUploadErrorSeq((seq) => seq + 1);
+  }
+
+  const openUploadDialog = useCallback(() => {
+    clearFeedback();
+    setUploadError(null);
+    setUploadOpen(true);
+  }, [clearFeedback]);
+
+  const setPickerOpen = useCallback(
+    (next: boolean) => {
+      if (next) {
+        clearFeedback();
+      }
+      setDrivePickerOpen(next);
+    },
+    [clearFeedback],
+  );
 
   function retryAll() {
     if (settingsError) {
@@ -339,7 +396,6 @@ export function DocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
-  const dialogOpen = pendingDelete !== null || uploadOpen;
   const documents =
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
@@ -379,54 +435,100 @@ export function DocumentsPanel({
     loadMoreAbortRef.current?.abort();
     loadMoreAbortRef.current = null;
     setChunksLoadingMore(false);
-    if (hubTab !== "documents" || !selected || selectedStatus !== "ready") {
+    if (!selected || selectedStatus !== "ready") {
+      loadedChunksKeyRef.current = null;
       setChunksView({ kind: "idle" });
+      return;
+    }
+    const sourceId = selected.source_id;
+    const sourceType = selected.source_type;
+    const identityKey = [
+      sourceId,
+      sourceType,
+      selectedStatus,
+      String(selectedChunkCount ?? ""),
+      selectedUploadedAt ?? "",
+    ].join("\0");
+    const selectionKey = `${identityKey}\0${String(chunksRetryToken)}`;
+    // Keep already-loaded pages when the Documents tab is hidden; only skip fetch.
+    // Drop pages that belong to a different selection identity.
+    if (hubTab !== "documents") {
+      if (
+        loadedChunksKeyRef.current !== null &&
+        !loadedChunksKeyRef.current.startsWith(`${identityKey}\0`)
+      ) {
+        loadedChunksKeyRef.current = null;
+        setChunksView({ kind: "idle" });
+      }
+      return;
+    }
+    if (loadedChunksKeyRef.current === selectionKey) {
       return;
     }
     const controller = new AbortController();
     let active = true;
-    const sourceId = selected.source_id;
-    const sourceType = selected.source_type;
     setChunksView({ kind: "loading" });
-    void listChunksRef
-      .current({
-        baseUrl: apiBaseUrl,
-        sourceId,
-        sourceType,
-        limit: DOCUMENT_CHUNKS_PAGE_SIZE,
-        offset: 0,
-        signal: controller.signal,
-      })
-      .then((response) => {
+
+    async function loadFirstPage() {
+      let offset = 0;
+      let chunks: DocumentChunkResponse[] = [];
+      let hasMore = false;
+      // Auto-advance past empty hydrate windows that still report has_more.
+      for (;;) {
+        const response = await listChunksRef.current({
+          baseUrl: apiBaseUrl,
+          sourceId,
+          sourceType,
+          limit: DOCUMENT_CHUNKS_PAGE_SIZE,
+          offset,
+          signal: controller.signal,
+        });
         if (!active || controller.signal.aborted) {
           return;
         }
-        if (response.chunks.length === 0 && !response.has_more) {
-          setChunksView({ kind: "empty" });
-          return;
+        hasMore = response.has_more;
+        offset += DOCUMENT_CHUNKS_PAGE_SIZE;
+        if (response.chunks.length > 0) {
+          chunks = response.chunks;
+          break;
         }
-        setChunksView({
-          kind: "ready",
-          chunks: response.chunks,
-          hasMore: response.has_more,
-          nextOffset: DOCUMENT_CHUNKS_PAGE_SIZE,
-          loadMoreError: null,
-        });
-      })
-      .catch((error: unknown) => {
-        if (!active || controller.signal.aborted) {
-          return;
+        if (!hasMore) {
+          break;
         }
-        if (error instanceof ApiError && error.status === 404) {
-          setChunksView({ kind: "not_found" });
-          void refresh();
-          return;
-        }
-        setChunksView({
-          kind: "error",
-          message: actionErrorMessage(error),
-        });
+      }
+      if (!active || controller.signal.aborted) {
+        return;
+      }
+      if (chunks.length === 0) {
+        loadedChunksKeyRef.current = selectionKey;
+        setChunksView({ kind: "empty" });
+        return;
+      }
+      loadedChunksKeyRef.current = selectionKey;
+      setChunksView({
+        kind: "ready",
+        chunks,
+        hasMore,
+        nextOffset: offset,
+        loadMoreError: null,
       });
+    }
+
+    void loadFirstPage().catch((error: unknown) => {
+      if (!active || controller.signal.aborted) {
+        return;
+      }
+      loadedChunksKeyRef.current = null;
+      if (error instanceof ApiError && error.status === 404) {
+        setChunksView({ kind: "not_found" });
+        void refresh();
+        return;
+      }
+      setChunksView({
+        kind: "error",
+        message: actionErrorMessage(error),
+      });
+    });
     return () => {
       active = false;
       controller.abort();
@@ -447,6 +549,7 @@ export function DocumentsPanel({
   ]);
 
   function retryChunksFetch() {
+    loadedChunksKeyRef.current = null;
     setChunksRetryToken((token) => token + 1);
   }
 
@@ -461,34 +564,62 @@ export function DocumentsPanel({
       return;
     }
     const targetType = selected.source_type;
-    const offset = chunksView.nextOffset;
+    let offset = chunksView.nextOffset;
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
     setChunksLoadingMore(true);
     try {
-      const response = await listChunksRef.current({
-        baseUrl: apiBaseUrl,
-        sourceId: selected.source_id,
-        sourceType: targetType,
-        limit: DOCUMENT_CHUNKS_PAGE_SIZE,
-        offset,
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) {
-        return;
+      let pageChunks: DocumentChunkResponse[] = [];
+      let hasMore = false;
+      let nextOffset = offset;
+      for (;;) {
+        const response = await listChunksRef.current({
+          baseUrl: apiBaseUrl,
+          sourceId: selected.source_id,
+          sourceType: targetType,
+          limit: DOCUMENT_CHUNKS_PAGE_SIZE,
+          offset,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) {
+          return;
+        }
+        hasMore = response.has_more;
+        nextOffset = offset + DOCUMENT_CHUNKS_PAGE_SIZE;
+        offset = nextOffset;
+        if (response.chunks.length > 0) {
+          pageChunks = response.chunks;
+          break;
+        }
+        if (!hasMore) {
+          break;
+        }
       }
       setChunksView((prev) => {
         if (prev.kind !== "ready") {
           return prev;
         }
-        // Append by page order; do not merge on chunk.index (ties are allowed).
-        const chunks = [...prev.chunks, ...response.chunks];
+        // Dedup accidental re-delivery; index ties with different content stay.
+        const seen = new Set(
+          prev.chunks.map(
+            (chunk) =>
+              `${chunk.source_type}\0${chunk.source_id}\0${chunk.index}\0${chunk.content}`,
+          ),
+        );
+        const appended = pageChunks.filter((chunk) => {
+          const key = `${chunk.source_type}\0${chunk.source_id}\0${chunk.index}\0${chunk.content}`;
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
         return {
           kind: "ready",
-          chunks,
-          hasMore: response.has_more,
-          nextOffset: prev.nextOffset + DOCUMENT_CHUNKS_PAGE_SIZE,
+          chunks: [...prev.chunks, ...appended],
+          hasMore,
+          nextOffset,
           loadMoreError: null,
         };
       });
@@ -537,33 +668,38 @@ export function DocumentsPanel({
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();
-    if (!constraints) {
+    if (!constraints || !uploadFile) {
       return;
     }
-    const validated = validateUpload(uploadFile, constraints);
+    const file = uploadFile;
+    setUploadError(null);
+    const validated = validateUpload(file, constraints);
     if (!validated.ok) {
-      setFeedback({ kind: "error", message: validated.message });
+      announceUploadError(validated.message);
       return;
     }
+    setUploadOpen(false);
+    setUploading(true);
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    clearFeedback();
     try {
       const document = await upload({
         baseUrl: apiBaseUrl,
-        file: uploadFile!,
+        file,
       });
-      setFeedback({
+      clearUploadInput();
+      announce({
         kind: "success",
         message: `Uploaded ${document.file_name} (${document.chunk_count} chunk(s)). Source ID: ${document.source_id}`,
       });
-      clearUploadInput();
-      setUploadOpen(false);
       setHubTab("documents");
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      announceUploadError(actionErrorMessage(error));
+      setUploadOpen(true);
     } finally {
+      setUploading(false);
       setBusy(false);
     }
   }
@@ -575,25 +711,25 @@ export function DocumentsPanel({
     }
     const validated = validateUpload(replaceFile, constraints);
     if (!validated.ok) {
-      setFeedback({ kind: "error", message: validated.message });
+      announce({ kind: "error", message: validated.message });
       return;
     }
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    clearFeedback();
     try {
       const document = await replace({
         baseUrl: apiBaseUrl,
         sourceId: selected.source_id,
         file: replaceFile!,
       });
-      setFeedback({
+      announce({
         kind: "success",
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
       });
       clearReplaceInput();
       await refresh();
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      announce({ kind: "error", message: actionErrorMessage(error) });
     } finally {
       setBusy(false);
     }
@@ -601,13 +737,14 @@ export function DocumentsPanel({
 
   async function onDelete(document: CatalogDocumentResponse) {
     setBusy(true);
-    setFeedback({ kind: "idle" });
+    clearFeedback();
     try {
       await remove({
         baseUrl: apiBaseUrl,
         sourceId: document.source_id,
       });
-      setFeedback({
+      setPendingDelete(null);
+      announce({
         kind: "success",
         message: `Deleted document ${document.source_id}.`,
       });
@@ -619,9 +756,9 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
-    } finally {
       setPendingDelete(null);
+      announce({ kind: "error", message: actionErrorMessage(error) });
+    } finally {
       setBusy(false);
     }
   }
@@ -719,6 +856,7 @@ export function DocumentsPanel({
         <div
           className="kern-settings-callout kern-settings-callout--error"
           role="alert"
+          hidden={dialogOpen}
         >
           {catalog.kind === "error" ? <p>{catalog.message}</p> : null}
           {settingsError ? <p>{settingsError}</p> : null}
@@ -730,8 +868,11 @@ export function DocumentsPanel({
 
       {feedback.kind !== "idle" ? (
         <div
+          ref={feedbackRef}
           className={`kern-settings-callout kern-settings-callout--${feedback.kind === "success" ? "ok" : "error"}`}
-          role="status"
+          role={feedback.kind === "error" ? "alert" : "status"}
+          tabIndex={-1}
+          hidden={dialogOpen}
         >
           <p>{feedback.message}</p>
         </div>
@@ -748,7 +889,12 @@ export function DocumentsPanel({
           <h2>Connected sources</h2>
         </div>
         <div className="kern-source-grid">
-          <article className="kern-source-card">
+          <article className="kern-source-card" aria-busy={uploading}>
+            {uploading ? (
+              <div className="kern-source-busy-overlay">
+                <Loader label="Uploading files" size="sm" />
+              </div>
+            ) : null}
             <div className="kern-source-card-title">
               <div className="kern-source-name">
                 <span className="kern-source-icon">
@@ -785,7 +931,7 @@ export function DocumentsPanel({
               <Button
                 type="button"
                 disabled={busy || !constraints}
-                onClick={() => setUploadOpen(true)}
+                onClick={openUploadDialog}
               >
                 <UploadIcon />
                 Add files
@@ -808,7 +954,7 @@ export function DocumentsPanel({
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
-              onPickerOpenChange={setDrivePickerOpen}
+              onPickerOpenChange={setPickerOpen}
             />
           ) : null}
         </div>
@@ -835,7 +981,7 @@ export function DocumentsPanel({
                 setOauthCallback(null);
               }}
               pickerOpen={drivePickerOpen}
-              onPickerOpenChange={setDrivePickerOpen}
+              onPickerOpenChange={setPickerOpen}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
@@ -966,6 +1112,8 @@ export function DocumentsPanel({
                           disabled={busy || dialogOpen}
                           onClick={(event) => {
                             event.stopPropagation();
+                            clearFeedback();
+                            deleteRestoreRef.current = event.currentTarget;
                             setPendingDelete(doc);
                           }}
                         >
@@ -1148,10 +1296,12 @@ export function DocumentsPanel({
       <DialogFrame
         open={uploadOpen}
         titleId="hub-upload-title"
+        descriptionId={uploadError ? "hub-upload-error" : undefined}
         panelClassName="kern-hub-upload-dialog"
         dismissDisabled={busy}
         onDismiss={() => {
           setUploadOpen(false);
+          setUploadError(null);
           clearUploadInput();
         }}
       >
@@ -1162,6 +1312,17 @@ export function DocumentsPanel({
           Files become part of the shared document catalog. A system-managed
           source ID is assigned automatically.
         </p>
+        {uploadError ? (
+          <div
+            ref={uploadErrorRef}
+            id="hub-upload-error"
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+            tabIndex={-1}
+          >
+            <p>{uploadError}</p>
+          </div>
+        ) : null}
         <form className="kern-documents-form" onSubmit={onUpload}>
           <label className="kern-settings-field">
             <span>Document file</span>
@@ -1174,6 +1335,9 @@ export function DocumentsPanel({
                 setUploadFile(event.target.files?.[0] ?? null);
               }}
             />
+            {uploadFile ? (
+              <p className="kern-settings-hint">Selected: {uploadFile.name}</p>
+            ) : null}
           </label>
           <div className="kern-dialog-actions">
             <Button
@@ -1181,6 +1345,7 @@ export function DocumentsPanel({
               disabled={busy}
               onClick={() => {
                 setUploadOpen(false);
+                setUploadError(null);
                 clearUploadInput();
               }}
             >
@@ -1204,6 +1369,7 @@ export function DocumentsPanel({
         confirmLabel="Delete"
         tone="danger"
         busy={busy}
+        restoreFocusRef={deleteRestoreRef}
         onCancel={() => {
           setPendingDelete(null);
         }}

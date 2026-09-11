@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -22,11 +23,17 @@ from domain.knowledge import (
     SourceType,
 )
 
-HubSourceType = Literal[
-    SourceType.KNOWLEDGE_DOCUMENT,
-    SourceType.GOOGLE_DRIVE,
-]
-"""OpenAPI query type for hub chunk listing — mirrors ``HUB_SOURCE_TYPES``."""
+
+class HubSourceType(StrEnum):
+    """Hub catalog kinds accepted by chunk-inspect query params.
+
+    Mirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so
+    the wire contract stays documented and does not silently widen with
+    ``SourceType``.
+    """
+
+    KNOWLEDGE_DOCUMENT = SourceType.KNOWLEDGE_DOCUMENT
+    GOOGLE_DRIVE = SourceType.GOOGLE_DRIVE
 
 
 class HealthResponse(BaseModel):

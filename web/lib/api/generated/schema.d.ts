@@ -612,6 +612,16 @@ export interface components {
       status: string;
     };
     /**
+     * HubSourceType
+     * @description Hub catalog kinds accepted by chunk-inspect query params.
+     *
+     *     Mirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so
+     *     the wire contract stays documented and does not silently widen with
+     *     ``SourceType``.
+     * @enum {string}
+     */
+    HubSourceType: "knowledge_document" | "google_drive";
+    /**
      * ModelSettingDefResponse
      * @description One generation setting for Settings UI controls.
      */
@@ -913,6 +923,15 @@ export interface operations {
       };
       /** @description Method not allowed */
       405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -1609,7 +1628,7 @@ export interface operations {
   list_document_chunks_api_v1_documents__source_id__chunks_get: {
     parameters: {
       query: {
-        source_type: "knowledge_document" | "google_drive";
+        source_type: components["schemas"]["HubSourceType"];
         limit?: number;
         offset?: number;
       };
