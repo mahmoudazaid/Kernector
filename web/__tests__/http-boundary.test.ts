@@ -6,7 +6,6 @@ import { SCAN_DIRS, WEB_ROOT, walk } from "./support/scan";
 
 const CLIENT_SEAM = join(WEB_ROOT, "lib", "api", "client.ts");
 const API_DIR = join(WEB_ROOT, "lib", "api");
-const NEXT_CONFIG = join(WEB_ROOT, "next.config.ts");
 const MIDDLEWARE = join(WEB_ROOT, "middleware.ts");
 
 const FORBIDDEN_TRANSPORT = [
