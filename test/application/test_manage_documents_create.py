@@ -215,4 +215,35 @@ def test_create_ready_stores_blob() -> None:
     created = use_case.create(payload)
 
     assert blob_store.get(created.reference) == payload
-    assert use_case.get_content(created.reference.source_id) == payload
+    assert use_case.get_content(created.reference) == payload
+
+
+def test_create_ready_blob_put_failure_degrades_without_raising() -> None:
+    catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
+    blob_store.fail_on_put = True
+    store = InMemoryVectorStore()
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=blob_store,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(),
+            store,
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("blob-put-fail"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+    )
+
+    created = use_case.create(
+        UploadPayload(file_name="guide.md", content=b"# Guide\n")
+    )
+
+    assert created.status is CatalogStatus.DEGRADED
+    assert "original bytes" in (created.error or "")
+    assert store.records
+    assert blob_store.get(created.reference) is None

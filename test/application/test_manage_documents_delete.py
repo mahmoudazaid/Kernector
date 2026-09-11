@@ -134,6 +134,25 @@ def test_delete_removes_blob_catalog_and_vectors() -> None:
     assert blob_store.get(reference) is None
 
 
+def test_delete_continues_when_blob_delete_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    blob_store = InMemoryUploadBlobStore()
+    reference = _seed(catalog, store, blob_store=blob_store)
+    blob_store.fail_on_delete = True
+
+    with caplog.at_level(logging.WARNING, logger="application.manage_documents"):
+        _use_case(catalog, store, blob_store).delete(reference)
+
+    assert catalog.get(reference) is None
+    assert store.records == {}
+    assert blob_store.get(reference) is not None
+    records = operation_records(caplog.records, operation="delete")
+    assert any(operation_payload(r)["outcome"] == "error" for r in records)
+
+
 def test_vector_delete_failure_leaves_catalog_unchanged() -> None:
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()

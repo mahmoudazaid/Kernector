@@ -242,7 +242,26 @@ class ManageUploadedDocuments:
             chunk_count=response.chunk_count,
         )
         self._catalog.upsert(ready)
-        self._blob_store.put(ready.reference, payload)
+        if not self._try_put_blob(ready.reference, payload, operation="create"):
+            degraded = dataclasses.replace(
+                ready,
+                status=CatalogStatus.DEGRADED,
+                error="document ingested but original bytes could not be stored",
+            )
+            try:
+                self._catalog.upsert(degraded)
+            except Exception:
+                log_operation(
+                    logger,
+                    operation="create",
+                    outcome="error",
+                    level=logging.WARNING,
+                    error_type="CatalogError",
+                    source_id=ready.reference.source_id,
+                    source_type=ready.reference.source_type,
+                )
+                return ready
+            return degraded
         return ready
 
     def replace(
@@ -288,7 +307,26 @@ class ManageUploadedDocuments:
             chunk_count=response.chunk_count,
         )
         self._catalog.upsert(ready)
-        self._blob_store.put(ready.reference, payload)
+        if not self._try_put_blob(ready.reference, payload, operation="replace"):
+            degraded = dataclasses.replace(
+                ready,
+                status=CatalogStatus.DEGRADED,
+                error="document ingested but original bytes could not be stored",
+            )
+            try:
+                self._catalog.upsert(degraded)
+            except Exception:
+                log_operation(
+                    logger,
+                    operation="replace",
+                    outcome="error",
+                    level=logging.WARNING,
+                    error_type="CatalogError",
+                    source_id=ready.reference.source_id,
+                    source_type=ready.reference.source_type,
+                )
+                return ready
+            return degraded
         return ready
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
@@ -301,19 +339,26 @@ class ManageUploadedDocuments:
                 return row
         return None
 
-    def get_content(self, source_id: str) -> UploadPayload | None:
-        """Return original upload bytes only for uploaded catalog rows."""
-        row = self.resolve(source_id)
-        if row is None or row.reference.source_type != SourceType.KNOWLEDGE_DOCUMENT:
+    def get_uploaded_row(self, source_id: str) -> CatalogDocument | None:
+        """Return the upload catalog row for ``source_id`` via a keyed lookup."""
+        return self._catalog.get(
+            SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT)
+        )
+
+    def get_content(
+        self, reference: SourceReference
+    ) -> UploadPayload | None:
+        """Return original upload bytes for an uploaded-document reference."""
+        if reference.source_type != SourceType.KNOWLEDGE_DOCUMENT:
             return None
-        return self._blob_store.get(row.reference)
+        return self._blob_store.get(reference)
 
     def delete(self, reference: SourceReference) -> None:
-        """Delete vector chunks first, then the catalog row.
+        """Delete vector chunks, then the blob, then the catalog row.
 
         Missing chunks or rows are no-ops so retry converges. Catalog failure
         after a successful vector delete raises ``PartialDeleteFailure``.
-        A missing row is a no-op so retry converges.
+        Blob unlink failures are logged and do not block catalog removal.
         """
         try:
             self._vector_store_factory().delete_source(reference)
@@ -332,6 +377,18 @@ class ManageUploadedDocuments:
             )
             raise failure from error
         try:
+            self._blob_store.delete(reference)
+        except Exception as error:
+            log_operation(
+                logger,
+                operation="delete",
+                outcome="error",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+                source_id=reference.source_id,
+                source_type=reference.source_type,
+            )
+        try:
             self._catalog.delete(reference)
         except Exception as error:
             failure = PartialDeleteFailure(
@@ -347,10 +404,29 @@ class ManageUploadedDocuments:
                 source_type=failure.source_type,
             )
             raise failure from error
+
+    def _try_put_blob(
+        self,
+        reference: SourceReference,
+        payload: UploadPayload,
+        *,
+        operation: str,
+    ) -> bool:
+        """Persist ``payload``; log and return False on failure."""
         try:
-            self._blob_store.delete(reference)
-        except Exception:
-            logger.warning("Upload blob delete failed", exc_info=True)
+            self._blob_store.put(reference, payload)
+            return True
+        except Exception as error:
+            log_operation(
+                logger,
+                operation=operation,
+                outcome="error",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+                source_id=reference.source_id,
+                source_type=reference.source_type,
+            )
+            return False
 
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)
@@ -407,7 +483,7 @@ class ManageUploadedDocuments:
             self._catalog.upsert(failed)
         except Exception as catalog_error:
             raise PartialCreateFailure(ingest_error=error) from catalog_error
-        self._blob_store.put(failed.reference, payload)
+        self._try_put_blob(failed.reference, payload, operation="create")
 
     def _recover_replace(
         self,
@@ -448,7 +524,7 @@ class ManageUploadedDocuments:
                 "replace did not complete and catalog could not record degraded "
                 "status; retry or delete required"
             ) from catalog_error
-        self._blob_store.put(degraded.reference, payload)
+        self._try_put_blob(degraded.reference, payload, operation="replace")
 
 
 def _vector_mutation_started(error: BaseException) -> bool:

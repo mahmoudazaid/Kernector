@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
 import type { ApiBlobResult } from "@/lib/api/client";
 import {
-  downloadDocument,
   getDocumentContent,
   type DocumentBlobOptions,
 } from "@/lib/api/documents";
@@ -25,8 +23,9 @@ export type DocumentViewerProps = {
   fileName: string;
   contentFormat: string;
   baseUrl: string;
+  /** Bumped by the parent after replace so the same source_id reloads. */
+  refreshToken?: number;
   getContent?: DocumentBlobLoader;
-  download?: DocumentBlobLoader;
   onError: (error: ApiError) => void;
 };
 
@@ -45,29 +44,16 @@ function asApiError(error: unknown): ApiError {
   return error instanceof ApiError ? error : ApiError.generic(0);
 }
 
-function triggerBrowserDownload(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = "noopener";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
 export function DocumentViewer({
   sourceId,
   fileName,
   contentFormat,
   baseUrl,
+  refreshToken = 0,
   getContent = getDocumentContent,
-  download = downloadDocument,
   onError,
 }: DocumentViewerProps) {
   const [state, setState] = useState<ViewerState>({ kind: "loading" });
-  const [downloadPending, setDownloadPending] = useState(false);
   const sequenceRef = useRef(0);
 
   useEffect(() => {
@@ -117,35 +103,12 @@ export function DocumentViewer({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [baseUrl, contentFormat, getContent, onError, sourceId]);
-
-  async function onDownload() {
-    if (downloadPending) {
-      return;
-    }
-    setDownloadPending(true);
-    try {
-      const response = await download({ baseUrl, sourceId });
-      triggerBrowserDownload(response.blob, response.fileName ?? fileName);
-    } catch (error) {
-      onError(asApiError(error));
-    } finally {
-      setDownloadPending(false);
-    }
-  }
+  }, [baseUrl, contentFormat, getContent, onError, refreshToken, sourceId]);
 
   return (
     <section className="kern-document-viewer" aria-label={`Preview ${fileName}`}>
       <div className="kern-document-viewer-head">
         <h3>{fileName}</h3>
-        <Button
-          variant="secondary"
-          disabled={downloadPending}
-          aria-label={`Download ${fileName}`}
-          onClick={onDownload}
-        >
-          {downloadPending ? "Downloading…" : "Download"}
-        </Button>
       </div>
       {state.kind === "loading" ? (
         <p className="kern-settings-hint" role="status">
@@ -157,7 +120,7 @@ export function DocumentViewer({
           className="kern-document-viewer-frame"
           title={`Preview of ${fileName}`}
           src={state.url}
-          sandbox=""
+          sandbox="allow-scripts"
         />
       ) : null}
       {state.kind === "text" ? (

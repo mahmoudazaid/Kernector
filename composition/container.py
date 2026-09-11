@@ -1628,13 +1628,10 @@ def get_uploaded_document_content(
     """Return catalog metadata and original bytes for an uploaded document."""
     try:
         ops = build_manage_uploaded_documents(settings, catalog=catalog)
-        row = ops.resolve(source_id)
-        if (
-            row is None
-            or row.reference.source_type != SourceType.KNOWLEDGE_DOCUMENT
-        ):
+        row = ops.get_uploaded_row(source_id)
+        if row is None:
             raise UnknownUploadedDocumentError("unknown document")
-        payload = ops.get_content(source_id)
+        payload = ops.get_content(row.reference)
     except UploadBlobError as error:
         raise DocumentOperationError(str(error)) from error
     except CatalogError as error:

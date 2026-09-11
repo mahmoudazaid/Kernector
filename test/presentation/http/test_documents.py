@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -407,6 +406,19 @@ def test_content_missing_blob_is_distinct_404(client_factory) -> None:
     assert body["detail"] == "no stored content for this document"
 
 
+def test_content_unmapped_format_is_422_not_missing(client_factory) -> None:
+    document = _document(content_format="rst", file_name="notes.rst")
+    ops, _ledger = _stub_ops(documents=(document,))
+    client = client_factory(ops)
+
+    response = client.get("/api/v1/documents/src-1/content")
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "document_preview_unsupported"
+    assert "preview" in body["detail"].lower()
+
+
 def test_failed_row_still_serves_content(client_factory) -> None:
     failed = _document(status=CatalogStatus.FAILED, error="embedding failed")
     ops, _ledger = _stub_ops(documents=(failed,))
@@ -483,21 +495,17 @@ def test_content_paths_reject_dot_segments(client_factory, path: str) -> None:
     assert ledger["content"] == []
 
 
-def test_delete_dotdot_leaves_blob_root_intact(
-    client_factory, tmp_path: Path
+def test_delete_accepts_non_blank_ids_without_blob_charset_rule(
+    client_factory,
 ) -> None:
-    blob_root = tmp_path / "blobs"
-    blob_root.mkdir()
-    marker = blob_root / "keep"
-    marker.write_bytes(b"still here")
+    """Delete stays catalog-identity based; charset rules are content/download only."""
     ops, ledger = _stub_ops()
     client = client_factory(ops)
 
     response = client.delete("/api/v1/documents/%2E%2E")
 
-    assert response.status_code == 422
-    assert ledger["deleted"] == []
-    assert marker.read_bytes() == b"still here"
+    assert response.status_code == 204
+    assert [ref.source_id for ref in ledger["deleted"]] == [".."]
 
 
 def test_download_exposes_content_disposition_for_cors(client_factory) -> None:

@@ -77,6 +77,7 @@ from composition.errors import (
     MissingUploadContentError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
+    UnsupportedPreviewFormatError,
 )
 from composition.evaluate import build_evaluate_knowledge, load_eval_cases
 from infrastructure.config import Settings
@@ -95,6 +96,7 @@ __all__ = [
     "MissingUploadContentError",
     "PartialDocumentOperationError",
     "UnknownUploadedDocumentError",
+    "UnsupportedPreviewFormatError",
     "MAX_TOOL_CALL_SUMMARY_CHARS",
     "SOFTWARE_DELIVERY_TEST_STYLES",
     "SUPPORTED_DOMAIN_TOOL_PACKS",

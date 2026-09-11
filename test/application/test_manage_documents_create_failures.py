@@ -158,6 +158,37 @@ def test_create_ingest_failure_stores_blob_alongside_failed_row() -> None:
     )
 
 
+def test_create_ingest_failure_survives_blob_put_failure() -> None:
+    """A durable-copy failure must not mask the original ingest error."""
+    catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
+    blob_store.fail_on_put = True
+    store = InMemoryVectorStore()
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=blob_store,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: IngestKnowledge(
+            FailingEmbeddingModel(),
+            store,
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("id-fail-blob"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+    )
+
+    with pytest.raises(IngestFailure):
+        use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
+
+    rows = catalog.all()
+    assert len(rows) == 1
+    assert rows[0].status is CatalogStatus.FAILED
+    assert blob_store.get(rows[0].reference) is None
+
+
 def test_create_records_degraded_when_mutation_may_have_started() -> None:
     """Orphaned chunks must stay visible as state that Delete has to clear."""
     catalog = InMemoryDocumentCatalog()

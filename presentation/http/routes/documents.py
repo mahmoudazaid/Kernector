@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
-from composition import MissingUploadContentError
+from composition import UnsupportedPreviewFormatError
 from composition import unsupported_upload_type_detail
 from domain.knowledge import SourceReference, SourceType, UploadPayload
 from presentation.http.deps import DocumentOperationsDep
@@ -48,7 +48,23 @@ def _content_success_response(description: str) -> dict:
 
 
 def _require_source_id(source_id: str) -> str:
-    """Reject unsafe path IDs before domain construction or blob lookup."""
+    """Reject blank/whitespace path segments before domain construction."""
+    if not source_id.strip():
+        raise RequestValidationError(
+            [
+                {
+                    "type": "string_too_short",
+                    "loc": ("path", "source_id"),
+                    "msg": "source_id must not be blank",
+                    "input": source_id,
+                }
+            ]
+        )
+    return source_id
+
+
+def _require_blob_source_id(source_id: str) -> str:
+    """Reject IDs that cannot be used as a blob-store path segment."""
     if _SOURCE_ID_PATTERN.fullmatch(source_id) is None:
         raise RequestValidationError(
             [
@@ -86,10 +102,12 @@ def _document_content_response(
     *,
     disposition: str,
 ) -> Response:
-    row, payload = ops.get_content(_require_source_id(source_id))
+    row, payload = ops.get_content(_require_blob_source_id(source_id))
     media_type = _CONTENT_TYPE_BY_FORMAT.get(row.content_format or "")
     if media_type is None:
-        raise MissingUploadContentError("no stored content for this document")
+        raise UnsupportedPreviewFormatError(
+            "Preview is not available for this document format."
+        )
     return Response(
         content=bytes(payload.content),
         media_type=media_type,

@@ -35,7 +35,6 @@ _LOG = logging.getLogger("presentation.http")
 _MULTIPART_OVERHEAD_BYTES = 64_000
 _DOCUMENT_UPLOAD_METHODS = frozenset({"POST", "PUT"})
 _DOCUMENT_UPLOAD_PREFIX = "/api/v1/documents"
-_DOCUMENTS_DOT_SEGMENT_MARKERS = (b"/../", b"/./", b"/..", b"/.")
 
 
 def cors_origins_from_settings(settings: Settings) -> tuple[str, ...]:
@@ -105,25 +104,6 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     ) -> Response:
         """Reject oversized document uploads before multipart buffering."""
         path = request.url.path
-        raw_path = request.scope.get("raw_path", b"")
-        if (
-            request.method in {"GET", "DELETE", "PUT"}
-            and raw_path.startswith(_DOCUMENT_UPLOAD_PREFIX.encode())
-            and any(marker in raw_path for marker in _DOCUMENTS_DOT_SEGMENT_MARKERS)
-        ):
-            problem = problem_from_validation_errors(
-                [
-                    ProblemError(
-                        pointer="#/source_id",
-                        detail=(
-                            "source_id must be 1-64 URL-safe identifier "
-                            "characters"
-                        ),
-                    )
-                ],
-                instance=path,
-            )
-            return _problem_response(problem)
         if (
             request.method in _DOCUMENT_UPLOAD_METHODS
             and (

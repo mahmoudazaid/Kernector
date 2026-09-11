@@ -56,9 +56,12 @@ describe("http boundary", () => {
 
   it("sets CSP and nosniff headers in next.config.ts", () => {
     const text = readFileSync(NEXT_CONFIG, "utf8");
-    expect(text).toContain(
-      "default-src 'self'; object-src 'none'; frame-src 'self' blob:; script-src 'self'",
-    );
+    expect(text).toContain("default-src 'self'");
+    expect(text).toContain("object-src 'none'");
+    expect(text).toContain("frame-src 'self' blob:");
+    expect(text).toContain("script-src 'self' 'unsafe-inline'");
+    expect(text).toContain("style-src 'self' 'unsafe-inline'");
+    expect(text).toContain("connect-src 'self'");
     expect(text).toContain("X-Content-Type-Options");
     expect(text).toContain("nosniff");
     expect(text).toContain("Referrer-Policy");

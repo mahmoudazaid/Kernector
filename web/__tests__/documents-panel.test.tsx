@@ -1198,6 +1198,64 @@ describe("DocumentsPanel", () => {
     anchorClick.mockRestore();
   });
 
+  it("keeps abort timeouts distinct from backend-unavailable messaging", async () => {
+    const user = userEvent.setup();
+    const upload = vi.fn().mockRejectedValue(ApiError.aborted());
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([]))}
+        upload={upload}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await user.click(screen.getByRole("tab", { name: /sources/i }));
+    await openUploadModal(user);
+    await user.upload(
+      screen.getByLabelText(/document file/i),
+      new File(["# hello"], "spec.md", { type: "text/markdown" }),
+    );
+    await user.click(screen.getByRole("button", { name: /^upload new$/i }));
+
+    expect(
+      await screen.findByText(/cancelled or timed out/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/backend unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it("exposes a single Download control while preview is open", async () => {
+    const user = userEvent.setup();
+    const getContent = vi.fn().mockResolvedValue({
+      blob: new Blob(["# preview"]),
+      contentType: "text/plain",
+      fileName: null,
+    });
+
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(listResponse([doc()]))}
+        getContent={getContent}
+        download={vi.fn().mockResolvedValue({
+          blob: new Blob(["download"]),
+          contentType: "application/octet-stream",
+          fileName: null,
+        })}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    await user.click(screen.getByRole("button", { name: /^preview spec\.md$/i }));
+    expect(await screen.findByText("# preview")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /^download spec\.md$/i }),
+    ).toHaveLength(1);
+  });
+
   it("does not show upload preview controls for Google Drive rows", async () => {
     const user = userEvent.setup();
     render(

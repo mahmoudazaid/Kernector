@@ -15,6 +15,7 @@ import {
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
 import { captureDriveCallback, peekDriveCallback } from "@/lib/documents/drive-callback";
+import { triggerBrowserDownload } from "@/lib/documents/download";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
@@ -194,21 +195,8 @@ function actionErrorMessage(error: unknown): string {
   return "The request failed. Please try again later.";
 }
 
-function backendUnavailableMessage(): string {
-  return "Backend unavailable. Start the FastAPI server and try again.";
-}
-
-function triggerBrowserDownload(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = "noopener";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
+const BACKEND_UNAVAILABLE_MESSAGE =
+  "Backend unavailable. Start the FastAPI server and try again.";
 
 export function DocumentsPanel({
   apiBaseUrl,
@@ -253,6 +241,7 @@ export function DocumentsPanel({
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
   const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
+  const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
   const [downloadPendingId, setDownloadPendingId] = useState<string | null>(
     null,
   );
@@ -305,7 +294,11 @@ export function DocumentsPanel({
       if (seq !== refreshSeqRef.current || controller.signal.aborted) {
         return;
       }
-      if (error instanceof ApiError && error.status === 0) {
+      if (
+        error instanceof ApiError &&
+        error.status === 0 &&
+        error.code !== "aborted"
+      ) {
         startTransition(() => setCatalog({ kind: "unavailable" }));
         return;
       }
@@ -387,8 +380,12 @@ export function DocumentsPanel({
   }
 
   const setActionError = useCallback((error: unknown) => {
-    if (error instanceof ApiError && error.status === 0) {
-      setFeedback({ kind: "error", message: backendUnavailableMessage() });
+    if (
+      error instanceof ApiError &&
+      error.status === 0 &&
+      error.code !== "aborted"
+    ) {
+      setFeedback({ kind: "error", message: BACKEND_UNAVAILABLE_MESSAGE });
       return;
     }
     setFeedback({ kind: "error", message: actionErrorMessage(error) });
@@ -450,6 +447,7 @@ export function DocumentsPanel({
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
       });
       clearReplaceInput();
+      setPreviewRefreshToken((token) => token + 1);
       await refresh();
     } catch (error) {
       setActionError(error);
@@ -924,8 +922,8 @@ export function DocumentsPanel({
                 fileName={selected.file_name}
                 contentFormat={selected.content_format ?? ""}
                 baseUrl={apiBaseUrl}
+                refreshToken={previewRefreshToken}
                 getContent={getContent}
-                download={download}
                 onError={setActionError}
               />
             ) : null}

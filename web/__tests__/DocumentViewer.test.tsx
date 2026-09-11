@@ -25,14 +25,13 @@ describe("DocumentViewer", () => {
         contentFormat="pdf"
         baseUrl="http://api.test"
         getContent={getContent}
-        download={vi.fn()}
         onError={vi.fn()}
       />,
     );
 
     const iframe = await screen.findByTitle("Preview of spec.pdf");
     expect(iframe).toHaveAttribute("src", "blob:pdf-preview");
-    expect(iframe).toHaveAttribute("sandbox", "");
+    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
     expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
     expect(getContent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -55,7 +54,6 @@ describe("DocumentViewer", () => {
           contentType: "text/html",
           fileName: null,
         })}
-        download={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -78,7 +76,6 @@ describe("DocumentViewer", () => {
       contentFormat: "pdf",
       baseUrl: "http://api.test",
       getContent,
-      download: vi.fn(),
       onError: vi.fn(),
     };
 

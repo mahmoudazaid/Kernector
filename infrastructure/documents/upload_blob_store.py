@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import json
 import os
 import re
@@ -21,6 +22,7 @@ __all__ = [
 _SOURCE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _MAGIC = b"KUPLOAD1"
 _HEADER_LENGTH = struct.Struct(">I")
+_MAX_PATH_LOCKS = 256
 
 
 class UploadBlobError(RuntimeError):
@@ -34,7 +36,7 @@ class UploadBlobValidationError(UploadBlobError):
 class FilesystemUploadBlobStore:
     """Persist upload payloads as atomic flat files under one root."""
 
-    _locks: ClassVar[dict[str, threading.Lock]] = {}
+    _locks: ClassVar[OrderedDict[str, threading.Lock]] = OrderedDict()
     _locks_guard: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self, root: Path) -> None:
@@ -97,8 +99,12 @@ class FilesystemUploadBlobStore:
         with self._locks_guard:
             lock = self._locks.get(key)
             if lock is None:
+                while len(self._locks) >= _MAX_PATH_LOCKS:
+                    self._locks.popitem(last=False)
                 lock = threading.Lock()
                 self._locks[key] = lock
+            else:
+                self._locks.move_to_end(key)
             return lock
 
     def _path_for(self, reference: SourceReference) -> Path:

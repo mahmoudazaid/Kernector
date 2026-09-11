@@ -51,6 +51,10 @@ class MissingUploadContentError(DocumentOperationError):
     """An uploaded-document row has no stored original upload payload."""
 
 
+class UnsupportedPreviewFormatError(DocumentOperationError):
+    """Stored bytes exist but the catalog content_format has no preview media type."""
+
+
 class PartialDocumentOperationError(DocumentOperationError):
     """The operation stopped midway and left catalog/vector state to reconcile.
 
