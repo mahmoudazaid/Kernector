@@ -589,12 +589,7 @@ export function ChatPanel({
   return (
     <section className={`kern-chat${isEmptyHero ? " kern-chat--empty" : ""}`}>
       <header className="kern-chat-header">
-        <div>
-          <h1>Chat</h1>
-          <p className="kern-chat-lead">
-            General grounded chat over ingested documents.
-          </p>
-        </div>
+        <h1>Chat</h1>
         {showNewChat ? (
           <Button variant="secondary" type="button" onClick={handleNewChat}>
             New chat
