@@ -17,6 +17,7 @@ from composition.errors import (
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ChunkPage,
     DocumentChunk,
     SourceMetadata,
     SourceReference,
@@ -102,11 +103,11 @@ def _stub_ops(
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> tuple[DocumentChunk, ...]:
+    ) -> ChunkPage:
         ledger["listed_chunks"].append((reference, limit, offset))
         if list_chunks_impl is not None:
             return list_chunks_impl(reference, limit=limit, offset=offset)
-        return ()
+        return ChunkPage(chunks=(), has_more=False)
 
     ops = DocumentOperations(
         list=list_docs,
@@ -453,7 +454,7 @@ def _chunk(
 
 
 def test_list_chunks_unknown_is_sanitized_404(client_factory) -> None:
-    def _list_chunks(_ref: SourceReference, **_kwargs: object) -> tuple[DocumentChunk, ...]:
+    def _list_chunks(_ref: SourceReference, **_kwargs: object) -> ChunkPage:
         raise UnknownUploadedDocumentError("missing src-leak")
 
     ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
@@ -472,7 +473,9 @@ def test_list_chunks_unknown_is_sanitized_404(client_factory) -> None:
 
 
 def test_list_chunks_known_empty_returns_200_empty_list(client_factory) -> None:
-    ops, ledger = _stub_ops(list_chunks_impl=lambda _ref, **_kwargs: ())
+    ops, ledger = _stub_ops(
+        list_chunks_impl=lambda _ref, **_kwargs: ChunkPage(chunks=(), has_more=False)
+    )
     client = client_factory(ops)
 
     response = client.get(
@@ -485,17 +488,20 @@ def test_list_chunks_known_empty_returns_200_empty_list(client_factory) -> None:
     assert ledger["listed_chunks"][0][0] == SourceReference(
         "src-1", SourceType.KNOWLEDGE_DOCUMENT
     )
-    assert ledger["listed_chunks"][0][1] == 51
+    assert ledger["listed_chunks"][0][1] == 50
     assert ledger["listed_chunks"][0][2] == 0
 
 
 def test_list_chunks_returns_ordered_allowlisted_payload(client_factory) -> None:
     def _list_chunks(
         reference: SourceReference, **_kwargs: object
-    ) -> tuple[DocumentChunk, ...]:
-        return (
-            _chunk(source_id=reference.source_id, index=0, content="first"),
-            _chunk(source_id=reference.source_id, index=1, content="second"),
+    ) -> ChunkPage:
+        return ChunkPage(
+            chunks=(
+                _chunk(source_id=reference.source_id, index=0, content="first"),
+                _chunk(source_id=reference.source_id, index=1, content="second"),
+            ),
+            has_more=False,
         )
 
     ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
@@ -554,9 +560,17 @@ def test_list_chunks_isolates_equal_ids_under_different_source_types(
 
     def _list_chunks(
         reference: SourceReference, **_kwargs: object
-    ) -> tuple[DocumentChunk, ...]:
+    ) -> ChunkPage:
         seen.append(reference)
-        return (_chunk(source_id=reference.source_id, source_type=reference.source_type),)
+        return ChunkPage(
+            chunks=(
+                _chunk(
+                    source_id=reference.source_id,
+                    source_type=reference.source_type,
+                ),
+            ),
+            has_more=False,
+        )
 
     ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
     client = client_factory(ops)
@@ -620,17 +634,20 @@ def test_list_chunks_forwards_limit_and_offset(client_factory) -> None:
     )
 
     assert response.status_code == 200
-    assert ledger["listed_chunks"][0][1:] == (11, 20)
+    assert ledger["listed_chunks"][0][1:] == (10, 20)
 
 
 def test_list_chunks_reports_has_more_from_limit_plus_one(client_factory) -> None:
     def _list_chunks(
         _reference: SourceReference, *, limit: int | None = None, offset: int = 0
-    ) -> tuple[DocumentChunk, ...]:
-        assert limit == 3
+    ) -> ChunkPage:
+        assert limit == 2
         assert offset == 0
-        return tuple(
-            _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(3)
+        return ChunkPage(
+            chunks=tuple(
+                _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(2)
+            ),
+            has_more=True,
         )
 
     ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
@@ -667,10 +684,13 @@ def test_list_chunks_has_more_false_when_store_returns_exact_limit(
 ) -> None:
     def _list_chunks(
         _reference: SourceReference, *, limit: int | None = None, offset: int = 0
-    ) -> tuple[DocumentChunk, ...]:
-        assert limit == 3
-        return tuple(
-            _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(2)
+    ) -> ChunkPage:
+        assert limit == 2
+        return ChunkPage(
+            chunks=tuple(
+                _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(2)
+            ),
+            has_more=False,
         )
 
     ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)

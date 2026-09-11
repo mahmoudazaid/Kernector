@@ -1,6 +1,7 @@
 """Filter-then-limit contract for the InMemoryVectorStore double."""
 
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -168,10 +169,11 @@ def test_list_source_chunks_isolates_same_source_id_under_different_types() -> N
         SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
     )
 
-    assert len(listed) == 1
-    assert listed[0].content == "knowledge body"
-    assert listed[0].metadata.title == "KD"
-    assert listed[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    assert len(listed.chunks) == 1
+    assert listed.chunks[0].content == "knowledge body"
+    assert listed.chunks[0].metadata.title == "KD"
+    assert listed.chunks[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    assert listed.has_more is False
 
 
 def test_list_source_chunks_returns_deterministic_index_order_with_provenance() -> None:
@@ -217,12 +219,12 @@ def test_list_source_chunks_returns_deterministic_index_order_with_provenance() 
         SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
     )
 
-    assert [c.index for c in listed] == [0, 1, 2]
-    assert [c.content for c in listed] == ["first", "second", "third"]
-    assert listed[0].metadata.title == "Report"
-    assert listed[0].metadata.provider == "upload"
-    assert listed[0].metadata.content_format == "text/plain"
-    assert dict(listed[1].metadata.extra) == {"page": "1"}
+    assert [c.index for c in listed.chunks] == [0, 1, 2]
+    assert [c.content for c in listed.chunks] == ["first", "second", "third"]
+    assert listed.chunks[0].metadata.title == "Report"
+    assert listed.chunks[0].metadata.provider == "upload"
+    assert listed.chunks[0].metadata.content_format == "text/plain"
+    assert dict(listed.chunks[1].metadata.extra) == {"page": "1"}
 
 
 def test_list_source_chunks_missing_reference_returns_empty() -> None:
@@ -233,7 +235,7 @@ def test_list_source_chunks_missing_reference_returns_empty() -> None:
         SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT)
     )
 
-    assert listed == ()
+    assert listed == ChunkPage(chunks=(), has_more=False)
 
 
 def test_list_source_chunks_applies_limit_and_offset() -> None:
@@ -244,4 +246,5 @@ def test_list_source_chunks_applies_limit_and_offset() -> None:
 
     page = store.list_source_chunks(reference, limit=2, offset=1)
 
-    assert [c.content for c in page] == ["c1", "c2"]
+    assert [c.content for c in page.chunks] == ["c1", "c2"]
+    assert page.has_more is True

@@ -172,14 +172,12 @@ def list_document_chunks(
 ) -> DocumentChunkListResponse:
     """Return a page of stored chunks for one catalogued source."""
     source_id = _require_source_id(source_id)
-    fetched = ops.list_chunks(
+    page = ops.list_chunks(
         SourceReference(source_id, source_type),
-        limit=limit + 1,
+        limit=limit,
         offset=offset,
     )
-    has_more = len(fetched) > limit
-    page = fetched[:limit]
     return DocumentChunkListResponse(
-        chunks=[document_chunk_response(chunk) for chunk in page],
-        has_more=has_more,
+        chunks=[document_chunk_response(chunk) for chunk in page.chunks],
+        has_more=page.has_more,
     )

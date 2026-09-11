@@ -21,6 +21,7 @@ from composition.errors import (
 )
 from domain.knowledge import (
     CatalogStatus,
+    ChunkPage,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -632,7 +633,7 @@ def test_list_uploaded_document_chunks_known_empty(
         settings, reference, catalog=catalog, vector_store=store
     )
 
-    assert chunks == ()
+    assert chunks == ChunkPage(chunks=(), has_more=False)
 
 
 def test_list_uploaded_document_chunks_factory_defers_store_open(

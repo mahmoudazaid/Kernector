@@ -13,6 +13,7 @@ from application.manage_documents import (
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -134,7 +135,9 @@ def test_list_document_chunks_known_empty_returns_empty() -> None:
     catalog.upsert(_catalog_row(reference))
     use_case = _use_case(catalog, store)
 
-    assert use_case.list_document_chunks(reference) == ()
+    assert use_case.list_document_chunks(reference) == ChunkPage(
+        chunks=(), has_more=False
+    )
 
 
 def test_list_document_chunks_returns_ordered_chunks() -> None:
@@ -162,8 +165,9 @@ def test_list_document_chunks_returns_ordered_chunks() -> None:
 
     listed = use_case.list_document_chunks(reference)
 
-    assert [c.index for c in listed] == [0, 1, 2]
-    assert [c.content for c in listed] == ["first", "second", "third"]
+    assert [c.index for c in listed.chunks] == [0, 1, 2]
+    assert [c.content for c in listed.chunks] == ["first", "second", "third"]
+    assert listed.has_more is False
 
 
 def test_list_document_chunks_isolates_same_id_under_different_types() -> None:
@@ -189,8 +193,8 @@ def test_list_document_chunks_isolates_same_id_under_different_types() -> None:
 
     listed = use_case.list_document_chunks(kd_ref)
 
-    assert [c.content for c in listed] == ["kd"]
-    assert listed[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    assert [c.content for c in listed.chunks] == ["kd"]
+    assert listed.chunks[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
 
 def test_list_document_chunks_applies_limit_and_offset() -> None:
@@ -211,4 +215,5 @@ def test_list_document_chunks_applies_limit_and_offset() -> None:
 
     page = use_case.list_document_chunks(reference, limit=2, offset=1)
 
-    assert [c.content for c in page] == ["c1", "c2"]
+    assert [c.content for c in page.chunks] == ["c1", "c2"]
+    assert page.has_more is True

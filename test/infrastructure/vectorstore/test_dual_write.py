@@ -3,6 +3,7 @@
 import pytest
 
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -111,8 +112,8 @@ def test_dual_write_list_source_chunks_delegates_to_vector_only() -> None:
         SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
     )
 
-    assert [c.content for c in listed] == ["listed body"]
-    assert [c.index for c in listed] == [0]
+    assert [c.content for c in listed.chunks] == ["listed body"]
+    assert [c.index for c in listed.chunks] == [0]
 
 
 def test_dual_write_list_source_chunks_forwards_limit_and_offset(
@@ -132,7 +133,7 @@ def test_dual_write_list_source_chunks_forwards_limit_and_offset(
         captured["reference"] = reference
         captured["limit"] = limit
         captured["offset"] = offset
-        return ()
+        return ChunkPage(chunks=(), has_more=False)
 
     monkeypatch.setattr(vector, "list_source_chunks", spy)
 
@@ -142,7 +143,7 @@ def test_dual_write_list_source_chunks_forwards_limit_and_offset(
         offset=1,
     )
 
-    assert listed == ()
+    assert listed == ChunkPage(chunks=(), has_more=False)
     assert captured == {
         "reference": SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT),
         "limit": 2,

@@ -229,6 +229,7 @@ export function DocumentsPanel({
   const [catalog, setCatalog] = useState<CatalogView>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [chunksView, setChunksView] = useState<ChunksView>({ kind: "idle" });
+  const [chunksRetryToken, setChunksRetryToken] = useState(0);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [uploadInputKey, setUploadInputKey] = useState(0);
@@ -438,7 +439,12 @@ export function DocumentsPanel({
     selectedStatus,
     selectedChunkCount,
     selectedUploadedAt,
+    chunksRetryToken,
   ]);
+
+  function retryChunksFetch() {
+    setChunksRetryToken((token) => token + 1);
+  }
 
   async function loadMoreChunks() {
     if (
@@ -1028,6 +1034,13 @@ export function DocumentsPanel({
                     role="status"
                   >
                     <p>Document was not found in the catalog.</p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={retryChunksFetch}
+                    >
+                      Retry
+                    </Button>
                   </div>
                 ) : null}
                 {chunksView.kind === "error" ? (
@@ -1036,6 +1049,13 @@ export function DocumentsPanel({
                     role="status"
                   >
                     <p>{chunksView.message}</p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={retryChunksFetch}
+                    >
+                      Retry
+                    </Button>
                   </div>
                 ) : null}
                 {chunksView.kind === "ready" ? (

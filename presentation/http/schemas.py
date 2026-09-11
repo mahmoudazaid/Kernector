@@ -458,7 +458,7 @@ class CatalogDocumentResponse(BaseModel):
     """Wire projection of one uploaded catalog row (sanitized diagnostics)."""
 
     source_id: str
-    source_type: SourceType
+    source_type: str
     file_name: str
     title: str | None = None
     content_format: str | None = None
@@ -481,7 +481,7 @@ class DocumentChunkResponse(BaseModel):
     index: int
     content: str
     source_id: str
-    source_type: SourceType
+    source_type: str
     title: str | None = None
     provider: str | None = None
     content_format: str | None = None
@@ -504,7 +504,7 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
     )
     return CatalogDocumentResponse(
         source_id=document.reference.source_id,
-        source_type=SourceType(document.reference.source_type),
+        source_type=document.reference.source_type,
         file_name=document.file_name,
         title=document.title,
         content_format=document.content_format,
@@ -523,7 +523,7 @@ def document_chunk_response(chunk: DocumentChunk) -> DocumentChunkResponse:
         index=chunk.index,
         content=chunk.content,
         source_id=chunk.reference.source_id,
-        source_type=SourceType(chunk.reference.source_type),
+        source_type=chunk.reference.source_type,
         title=chunk.metadata.title,
         provider=chunk.metadata.provider,
         content_format=chunk.metadata.content_format,

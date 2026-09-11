@@ -78,7 +78,7 @@ from domain.errors import (
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
-    DocumentChunk,
+    ChunkPage,
     ScoredChunk,
     SourceDocument,
     SourceReference,
@@ -259,6 +259,11 @@ def build_chat_model(
 
 def build_embedding_model(settings: Settings) -> EmbeddingModel:
     return OpenRouterEmbeddings(settings.openrouter)
+
+
+def build_chroma_vector_store(settings: Settings) -> VectorStore:
+    """Return Chroma only (no BM25 hydrate). For chunk listing and similar reads."""
+    return ChromaVectorStore(settings.chroma)
 
 
 def build_vector_store(settings: Settings) -> VectorStore:
@@ -1730,7 +1735,7 @@ def list_uploaded_document_chunks(
     vector_store_factory: Callable[[], VectorStore] | None = None,
     limit: int | None = None,
     offset: int = 0,
-) -> tuple[DocumentChunk, ...]:
+) -> ChunkPage:
     """Return stored chunks for a catalogued document, ordered by index.
 
     Prefer ``vector_store_factory`` alone when the store should open only after
@@ -1742,14 +1747,12 @@ def list_uploaded_document_chunks(
         DocumentOperationError: The catalog or vector store could not be read.
     """
     try:
-        return tuple(
-            build_manage_uploaded_documents(
-                settings,
-                catalog=catalog,
-                vector_store=vector_store,
-                vector_store_factory=vector_store_factory,
-            ).list_document_chunks(reference, limit=limit, offset=offset)
-        )
+        return build_manage_uploaded_documents(
+            settings,
+            catalog=catalog,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        ).list_document_chunks(reference, limit=limit, offset=offset)
     except UnknownDocumentError as error:
         raise UnknownUploadedDocumentError(str(error)) from error
     except CatalogError as error:

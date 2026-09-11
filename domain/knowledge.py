@@ -25,8 +25,17 @@ class SourceType(StrEnum):
 STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
 """Source kinds treated as user stories by eval and software-delivery scoring."""
 
-HUB_SOURCE_TYPES = frozenset(SourceType)
-"""Source kinds shown in the shared documents hub and chunk-inspect API."""
+HUB_SOURCE_TYPES = frozenset(
+    {
+        SourceType.KNOWLEDGE_DOCUMENT,
+        SourceType.GOOGLE_DRIVE,
+    }
+)
+"""Source kinds shown in the shared documents hub and chunk-inspect API.
+
+Explicit members — not ``frozenset(SourceType)`` — so adding a connector kind
+to the enum does not silently widen the hub.
+"""
 
 
 class CatalogStatus(StrEnum):
@@ -163,6 +172,19 @@ class DocumentChunk:
     def source_id(self) -> str:
         """The originating source identifier, preserved for traceability."""
         return self.metadata.source_id
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkPage:
+    """One page of stored chunks plus whether more rows exist after this page.
+
+    ``has_more`` is derived from the ordered id set before hydrate drops, so a
+    skipped corrupt or vanished row cannot collapse pagination.
+    """
+
+    chunks: tuple[DocumentChunk, ...]
+    has_more: bool
+
 
 type Vector = Sequence[float]
 

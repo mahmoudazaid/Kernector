@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 
 from domain.knowledge import (
-    DocumentChunk,
+    ChunkPage,
     EmbeddedChunk,
     ScoredChunk,
     SourceReference,
@@ -44,7 +44,7 @@ class DualWriteVectorStore:
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> Sequence[DocumentChunk]:
+    ) -> ChunkPage:
         return self._vector.list_source_chunks(
             reference, limit=limit, offset=offset
         )

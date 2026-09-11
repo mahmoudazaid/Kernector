@@ -19,6 +19,7 @@ from composition import (
     Settings,
     browse_google_drive_items,
     build_chat_model,
+    build_chroma_vector_store,
     build_document_catalog,
     build_prompt_repository,
     build_probe_ollama_status,
@@ -41,7 +42,7 @@ from composition import (
 )
 from domain.knowledge import (
     CatalogDocument,
-    DocumentChunk,
+    ChunkPage,
     SourceReference,
     UploadPayload,
 )
@@ -63,6 +64,12 @@ def get_settings() -> Settings:
 def get_vector_store() -> VectorStore:
     """Process-cached vector store (hybrid BM25 hydrate once per process)."""
     return build_vector_store(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_chroma_vector_store() -> VectorStore:
+    """Process-cached Chroma store without BM25 hydrate (chunk listing)."""
+    return build_chroma_vector_store(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -133,7 +140,7 @@ class ListDocumentChunks(Protocol):
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> tuple[DocumentChunk, ...]: ...
+    ) -> ChunkPage: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,8 +166,8 @@ def get_document_operations(
     process-wide ``get_vector_store`` cache. The process-cached catalog is
     resolved on first use so a missing catalog still maps to
     ``DocumentOperationError`` instead of failing dependency resolution.
-    ``list_chunks`` passes ``get_vector_store`` as a factory so unknown
-    catalog references never open Chroma/BM25.
+    ``list_chunks`` passes ``get_chroma_vector_store`` as a factory so unknown
+    catalog references never open Chroma, and listing skips BM25 hydrate.
     """
 
     def create(payload: UploadPayload) -> CatalogDocument:
@@ -195,12 +202,12 @@ def get_document_operations(
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> tuple[DocumentChunk, ...]:
+    ) -> ChunkPage:
         return list_uploaded_document_chunks(
             settings,
             reference,
             catalog=get_document_catalog(),
-            vector_store_factory=get_vector_store,
+            vector_store_factory=get_chroma_vector_store,
             limit=limit,
             offset=offset,
         )

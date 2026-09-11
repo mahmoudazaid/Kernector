@@ -311,7 +311,8 @@ export interface components {
       has_error: boolean;
       /** Source Id */
       source_id: string;
-      source_type: components["schemas"]["SourceType"];
+      /** Source Type */
+      source_type: string;
       /**
        * Status
        * @enum {string}
@@ -436,7 +437,8 @@ export interface components {
       provider?: string | null;
       /** Source Id */
       source_id: string;
-      source_type: components["schemas"]["SourceType"];
+      /** Source Type */
+      source_type: string;
       /** Title */
       title?: string | null;
     };

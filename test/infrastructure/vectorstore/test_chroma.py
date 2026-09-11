@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -461,10 +462,11 @@ def test_list_source_chunks_isolates_same_id_under_different_types(
         make_reference("shared", source_type=SourceType.KNOWLEDGE_DOCUMENT)
     )
 
-    assert len(listed) == 1
-    assert listed[0].content == "kd"
-    assert listed[0].metadata.title == "KD"
-    assert listed[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    assert len(listed.chunks) == 1
+    assert listed.chunks[0].content == "kd"
+    assert listed.chunks[0].metadata.title == "KD"
+    assert listed.chunks[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    assert listed.has_more is False
 
 
 def test_list_source_chunks_returns_deterministic_index_order(
@@ -480,8 +482,9 @@ def test_list_source_chunks_returns_deterministic_index_order(
 
     listed = store.list_source_chunks(make_reference("doc-1"))
 
-    assert [c.index for c in listed] == [0, 1, 2]
-    assert [c.content for c in listed] == ["first", "second", "third"]
+    assert [c.index for c in listed.chunks] == [0, 1, 2]
+    assert [c.content for c in listed.chunks] == ["first", "second", "third"]
+    assert listed.has_more is False
 
 
 def test_list_source_chunks_unknown_reference_returns_empty(
@@ -491,7 +494,7 @@ def test_list_source_chunks_unknown_reference_returns_empty(
 
     listed = store.list_source_chunks(make_reference("missing"))
 
-    assert listed == ()
+    assert listed == ChunkPage(chunks=(), has_more=False)
 
 
 def test_list_source_chunks_empty_store_returns_empty(
@@ -499,7 +502,7 @@ def test_list_source_chunks_empty_store_returns_empty(
 ) -> None:
     listed = store.list_source_chunks(make_reference("doc-1"))
 
-    assert listed == ()
+    assert listed == ChunkPage(chunks=(), has_more=False)
 
 
 def test_list_source_chunks_rejects_a_non_reference(
@@ -524,7 +527,7 @@ def test_list_source_chunks_mismatched_index_lengths_raise_store_error(
     monkeypatch.setattr(store._collection, "get", bad_get)
 
     with pytest.raises(ChromaStoreError, match=r"get\(\) returned mismatched"):
-        store.list_source_chunks(make_reference("doc-1"))
+        store.list_source_chunks(make_reference("doc-1"), limit=10)
 
 
 def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
@@ -556,7 +559,7 @@ def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
     with pytest.raises(
         ChromaStoreError, match="page hydrate returned mismatched lengths"
     ):
-        store.list_source_chunks(make_reference("doc-1"))
+        store.list_source_chunks(make_reference("doc-1"), limit=10)
 
 
 def test_list_source_chunks_drops_ids_missing_from_hydrate(
@@ -593,8 +596,8 @@ def test_list_source_chunks_drops_ids_missing_from_hydrate(
 
     monkeypatch.setattr(store._collection, "get", partial_hydrate)
 
-    listed = store.list_source_chunks(make_reference("doc-1"))
-    assert [c.content for c in listed] == ["c0"]
+    listed = store.list_source_chunks(make_reference("doc-1"), limit=10)
+    assert [c.content for c in listed.chunks] == ["c0"]
 
 
 def test_list_source_chunks_skips_corrupt_chunk_index(
@@ -623,7 +626,73 @@ def test_list_source_chunks_skips_corrupt_chunk_index(
     )
 
     listed = store.list_source_chunks(make_reference("doc-1"))
-    assert [c.content for c in listed] == ["ok"]
+    assert [c.content for c in listed.chunks] == ["ok"]
+    assert listed.has_more is False
+
+
+def test_list_source_chunks_has_more_ignores_skipped_rows(
+    store: ChromaVectorStore,
+) -> None:
+    """Corrupt rows must not collapse has_more when valid rows remain."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    goods = [
+        make_chunk(source_id="doc-1", index=i, content=f"c{i}") for i in range(5)
+    ]
+    store._collection.add(
+        ids=[_derive_id(chunk) for chunk in goods] + ["corrupt-mid"],
+        embeddings=[list(ALIGNED) for _ in range(6)],
+        documents=[chunk.content for chunk in goods] + ["bad"],
+        metadatas=[
+            *[
+                {
+                    "source_id": "doc-1",
+                    "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                    "chunk_index": chunk.index,
+                    "extra_json": "{}",
+                }
+                for chunk in goods
+            ],
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    page = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    assert [c.content for c in page.chunks] == ["c0", "c1"]
+    assert page.has_more is True
+
+
+def test_list_source_chunks_sort_is_stable_on_index_ties(
+    store: ChromaVectorStore,
+) -> None:
+    store._collection.add(
+        ids=["id-b", "id-a"],
+        embeddings=[list(ALIGNED), list(ALIGNED)],
+        documents=["B", "A"],
+        metadatas=[
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            },
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=1, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=1, offset=1)
+    assert [c.content for c in page1.chunks] == ["A"]
+    assert [c.content for c in page2.chunks] == ["B"]
 
 
 def test_list_source_chunks_applies_limit_and_offset(
@@ -640,7 +709,8 @@ def test_list_source_chunks_applies_limit_and_offset(
         make_reference("doc-1"), limit=2, offset=1
     )
 
-    assert [c.content for c in page] == ["c1", "c2"]
+    assert [c.content for c in page.chunks] == ["c1", "c2"]
+    assert page.has_more is True
 
 
 def test_list_source_chunks_pages_positionally_with_index_gaps(
@@ -657,8 +727,10 @@ def test_list_source_chunks_pages_positionally_with_index_gaps(
     page1 = store.list_source_chunks(make_reference("doc-1"), limit=3, offset=0)
     page2 = store.list_source_chunks(make_reference("doc-1"), limit=3, offset=3)
 
-    assert [c.index for c in page1] == [10, 11, 12]
-    assert [c.index for c in page2] == [40, 41]
+    assert [c.index for c in page1.chunks] == [10, 11, 12]
+    assert page1.has_more is True
+    assert [c.index for c in page2.chunks] == [40, 41]
+    assert page2.has_more is False
 
 
 def test_list_source_chunks_rejects_negative_offset(
@@ -684,7 +756,7 @@ def test_list_source_chunks_does_not_request_embeddings(
 
     listed = store.list_source_chunks(make_reference("doc-1"))
 
-    assert [c.content for c in listed] == ["body"]
+    assert [c.content for c in listed.chunks] == ["body"]
     assert all(
         isinstance(include, list) and "embeddings" not in include
         for include in captured
@@ -705,8 +777,10 @@ def test_list_source_chunks_pages_after_partial_upserts(
     page1 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
     page2 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=2)
 
-    assert [c.content for c in page1] == ["c0", "c1"]
-    assert [c.content for c in page2] == ["c2"]
+    assert [c.content for c in page1.chunks] == ["c0", "c1"]
+    assert page1.has_more is True
+    assert [c.content for c in page2.chunks] == ["c2"]
+    assert page2.has_more is False
 
 
 def test_list_source_chunks_get_failure_stays_a_store_error(

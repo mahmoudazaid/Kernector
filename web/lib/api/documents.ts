@@ -29,9 +29,8 @@ export type ListDocumentsOptions = {
 export type ListDocumentChunksOptions = {
   baseUrl: string;
   sourceId: string;
-  sourceType: NonNullable<
-    paths["/api/v1/documents/{source_id}/chunks"]["get"]["parameters"]["query"]
-  >["source_type"];
+  /** Hub catalog ``source_type`` (query still validated server-side). */
+  sourceType: string;
   limit?: number;
   offset?: number;
   signal?: AbortSignal;

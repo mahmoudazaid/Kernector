@@ -37,6 +37,14 @@ def test_source_type_has_no_ticket_member() -> None:
     assert not hasattr(SourceType, "TICKET")
 
 
+def test_hub_source_types_are_explicit_members() -> None:
+    from domain.knowledge import HUB_SOURCE_TYPES
+
+    assert HUB_SOURCE_TYPES == frozenset(
+        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+    )
+
+
 def test_valid_source_document_is_accepted() -> None:
     document = SourceDocument(metadata(), "Exploratory testing guidance ...")
     assert document.source_id == "doc-1"

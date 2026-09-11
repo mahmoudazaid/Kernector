@@ -11,6 +11,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     ScoredChunk,
@@ -197,7 +198,7 @@ class InMemoryVectorStore:
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> Sequence[DocumentChunk]:
+    ) -> ChunkPage:
         if isinstance(limit, bool) or (limit is not None and not isinstance(limit, int)):
             raise VectorStoreError(f"limit must be an int or None, got {limit!r}")
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
@@ -210,10 +211,15 @@ class InMemoryVectorStore:
         ]
         ordered = sorted(matched, key=lambda chunk: chunk.index)
         if limit is None:
-            return tuple(ordered[offset:])
+            page = ordered[offset:]
+            return ChunkPage(chunks=tuple(page), has_more=False)
         if limit <= 0:
-            return ()
-        return tuple(ordered[offset : offset + limit])
+            return ChunkPage(chunks=(), has_more=False)
+        page = ordered[offset : offset + limit]
+        return ChunkPage(
+            chunks=tuple(page),
+            has_more=len(ordered) > offset + limit,
+        )
 
 
 class InMemoryLexicalIndex:
