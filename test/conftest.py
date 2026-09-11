@@ -24,3 +24,4 @@ def _isolate_settings_from_dotenv(
         "DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite")
     )
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
+    monkeypatch.setenv("DOCUMENT_UPLOAD_BLOB_PATH", str(tmp_path / "upload-blobs"))

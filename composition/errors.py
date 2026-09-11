@@ -47,6 +47,10 @@ class UnknownUploadedDocumentError(DocumentOperationError):
     """Replace targeted a source ID that is not in the uploaded-document catalog."""
 
 
+class MissingUploadContentError(DocumentOperationError):
+    """An uploaded-document row has no stored original upload payload."""
+
+
 class PartialDocumentOperationError(DocumentOperationError):
     """The operation stopped midway and left catalog/vector state to reconcile.
 

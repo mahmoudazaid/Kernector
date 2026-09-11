@@ -52,6 +52,7 @@ from composition.errors import (
     DocumentUploadError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
+    MissingUploadContentError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
@@ -90,6 +91,7 @@ from domain.ports import (
     EmbeddingModel,
     KnowledgeConnector,
     PromptRepository,
+    UploadBlobStore,
     VectorStore,
 )
 from infrastructure.catalog.errors import CatalogError
@@ -99,6 +101,10 @@ from infrastructure.catalog.migrate_json import (
 )
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.config import Settings, load_settings
+from infrastructure.documents.upload_blob_store import (
+    FilesystemUploadBlobStore,
+    UploadBlobError,
+)
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
@@ -520,6 +526,11 @@ def build_document_catalog(settings: Settings) -> DocumentCatalog:
         raise DocumentOperationError(str(error)) from error
     except OSError as error:
         raise DocumentOperationError(str(error)) from error
+
+
+def build_upload_blob_store(settings: Settings) -> UploadBlobStore:
+    """Build durable storage for original uploaded document payloads."""
+    return FilesystemUploadBlobStore(settings.upload_blobs.root)
 
 
 def _resolve_catalog(
@@ -1554,6 +1565,7 @@ def build_manage_uploaded_documents(
     settings: Settings,
     *,
     catalog: DocumentCatalog | None = None,
+    blob_store: UploadBlobStore | None = None,
     vector_store: VectorStore | None = None,
 ) -> ManageUploadedDocuments:
     """Wire create/replace/delete/list for uploaded documents.
@@ -1583,6 +1595,11 @@ def build_manage_uploaded_documents(
 
     return ManageUploadedDocuments(
         catalog=catalog if catalog is not None else build_document_catalog(settings),
+        blob_store=(
+            blob_store
+            if blob_store is not None
+            else build_upload_blob_store(settings)
+        ),
         extractor=build_document_extractor(),
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
@@ -1600,6 +1617,33 @@ def list_uploaded_documents(
         )
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
+
+
+def get_uploaded_document_content(
+    settings: Settings,
+    source_id: str,
+    *,
+    catalog: DocumentCatalog | None = None,
+) -> tuple[CatalogDocument, UploadPayload]:
+    """Return catalog metadata and original bytes for an uploaded document."""
+    try:
+        ops = build_manage_uploaded_documents(settings, catalog=catalog)
+        row = ops.resolve(source_id)
+        if (
+            row is None
+            or row.reference.source_type != SourceType.KNOWLEDGE_DOCUMENT
+        ):
+            raise UnknownUploadedDocumentError("unknown document")
+        payload = ops.get_content(source_id)
+    except UploadBlobError as error:
+        raise DocumentOperationError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    if payload is None:
+        raise MissingUploadContentError("no stored content for this document")
+    return row, payload
 
 
 def create_uploaded_document(

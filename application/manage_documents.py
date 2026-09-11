@@ -21,7 +21,12 @@ from domain.knowledge import (
     SourceType,
     UploadPayload,
 )
-from domain.ports import DocumentCatalog, DocumentExtractor, VectorStore
+from domain.ports import (
+    DocumentCatalog,
+    DocumentExtractor,
+    UploadBlobStore,
+    VectorStore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +172,7 @@ class ManageUploadedDocuments:
         self,
         *,
         catalog: DocumentCatalog,
+        blob_store: UploadBlobStore,
         extractor: DocumentExtractor,
         ingest_factory: Callable[[], IngestKnowledge],
         vector_store_factory: Callable[[], VectorStore],
@@ -175,6 +181,7 @@ class ManageUploadedDocuments:
         max_upload_bytes: int,
     ) -> None:
         self._catalog = catalog
+        self._blob_store = blob_store
         self._extractor = extractor
         self._ingest_factory = ingest_factory
         self._vector_store_factory = vector_store_factory
@@ -227,7 +234,7 @@ class ManageUploadedDocuments:
         try:
             response = self._run_ingest(document)
         except Exception as error:
-            self._record_create_failure(pending, error)
+            self._record_create_failure(pending, payload, error)
             raise
         ready = dataclasses.replace(
             pending,
@@ -235,6 +242,7 @@ class ManageUploadedDocuments:
             chunk_count=response.chunk_count,
         )
         self._catalog.upsert(ready)
+        self._blob_store.put(ready.reference, payload)
         return ready
 
     def replace(
@@ -261,7 +269,7 @@ class ManageUploadedDocuments:
         try:
             response = self._run_ingest(document)
         except IngestFailure as error:
-            self._recover_replace(previous, pending, error)
+            self._recover_replace(previous, pending, payload, error)
             raise
         except ApplicationValidationError:
             # `IngestKnowledge` validates the whole request before its first
@@ -272,7 +280,7 @@ class ManageUploadedDocuments:
             raise
         except Exception as error:
             # Unknown failure outside the typed ingest boundary: assume mutation.
-            self._write_degraded(pending, error)
+            self._write_degraded(pending, payload, error)
             raise
         ready = dataclasses.replace(
             pending,
@@ -280,6 +288,7 @@ class ManageUploadedDocuments:
             chunk_count=response.chunk_count,
         )
         self._catalog.upsert(ready)
+        self._blob_store.put(ready.reference, payload)
         return ready
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
@@ -291,6 +300,13 @@ class ManageUploadedDocuments:
             ):
                 return row
         return None
+
+    def get_content(self, source_id: str) -> UploadPayload | None:
+        """Return original upload bytes only for uploaded catalog rows."""
+        row = self.resolve(source_id)
+        if row is None or row.reference.source_type != SourceType.KNOWLEDGE_DOCUMENT:
+            return None
+        return self._blob_store.get(row.reference)
 
     def delete(self, reference: SourceReference) -> None:
         """Delete vector chunks first, then the catalog row.
@@ -331,6 +347,10 @@ class ManageUploadedDocuments:
                 source_type=failure.source_type,
             )
             raise failure from error
+        try:
+            self._blob_store.delete(reference)
+        except Exception:
+            logger.warning("Upload blob delete failed", exc_info=True)
 
     def _assert_upload_size(self, payload: UploadPayload) -> None:
         size = len(payload.content)
@@ -362,7 +382,10 @@ class ManageUploadedDocuments:
         return self._ingest_factory().execute(IngestRequest(documents=(document,)))
 
     def _record_create_failure(
-        self, pending: CatalogDocument, error: BaseException
+        self,
+        pending: CatalogDocument,
+        payload: UploadPayload,
+        error: BaseException,
     ) -> None:
         """Write the outcome status, or report that both writes failed.
 
@@ -375,27 +398,28 @@ class ManageUploadedDocuments:
             if _vector_mutation_started(error)
             else CatalogStatus.FAILED
         )
+        failed = dataclasses.replace(
+            pending,
+            status=status,
+            error=_safe_error_summary(error),
+        )
         try:
-            self._catalog.upsert(
-                dataclasses.replace(
-                    pending,
-                    status=status,
-                    error=_safe_error_summary(error),
-                )
-            )
+            self._catalog.upsert(failed)
         except Exception as catalog_error:
             raise PartialCreateFailure(ingest_error=error) from catalog_error
+        self._blob_store.put(failed.reference, payload)
 
     def _recover_replace(
         self,
         previous: CatalogDocument,
         pending: CatalogDocument,
+        payload: UploadPayload,
         error: IngestFailure,
     ) -> None:
         if not error.vector_mutation_started:
             self._restore_previous(previous)
             return
-        self._write_degraded(pending, error)
+        self._write_degraded(pending, payload, error)
 
     def _restore_previous(self, previous: CatalogDocument) -> None:
         try:
@@ -407,7 +431,10 @@ class ManageUploadedDocuments:
             ) from catalog_error
 
     def _write_degraded(
-        self, pending: CatalogDocument, error: BaseException
+        self,
+        pending: CatalogDocument,
+        payload: UploadPayload,
+        error: BaseException,
     ) -> None:
         degraded = dataclasses.replace(
             pending,
@@ -421,6 +448,7 @@ class ManageUploadedDocuments:
                 "replace did not complete and catalog could not record degraded "
                 "status; retry or delete required"
             ) from catalog_error
+        self._blob_store.put(degraded.reference, payload)
 
 
 def _vector_mutation_started(error: BaseException) -> bool:

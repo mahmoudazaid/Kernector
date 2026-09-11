@@ -1,4 +1,8 @@
-import { apiRequest, type ApiRequestOptions } from "@/lib/api/client";
+import {
+  apiRequest,
+  apiRequestBlob,
+  type ApiRequestOptions,
+} from "@/lib/api/client";
 import type { components } from "@/lib/api/generated/schema";
 
 export type CatalogDocumentResponse =
@@ -6,8 +10,10 @@ export type CatalogDocumentResponse =
 export type DocumentListResponse =
   components["schemas"]["DocumentListResponse"];
 
-/** Uploads that embed every chunk routinely exceed the default 10s timeout. */
+/** Uploads and document byte reads routinely exceed the default 10s timeout. */
 export const DOCUMENT_MUTATION_TIMEOUT_MS = 120_000;
+/** Alias kept honest for preview/download transfers of non-trivial PDFs. */
+export const DOCUMENT_READ_TIMEOUT_MS = DOCUMENT_MUTATION_TIMEOUT_MS;
 
 export type ListDocumentsOptions = {
   baseUrl: string;
@@ -35,6 +41,14 @@ export type DeleteDocumentOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
   request?: typeof apiRequest;
+};
+
+export type DocumentBlobOptions = {
+  baseUrl: string;
+  sourceId: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  requestBlob?: typeof apiRequestBlob;
 };
 
 function filePart(
@@ -121,4 +135,32 @@ export async function deleteDocument(
     signal: options.signal,
     timeoutMs: options.timeoutMs ?? DOCUMENT_MUTATION_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
+}
+
+/**
+ * Fetch original upload bytes for inline preview.
+ */
+export async function getDocumentContent(options: DocumentBlobOptions) {
+  const requestBlob = options.requestBlob ?? apiRequestBlob;
+  return requestBlob({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/documents/${encodeURIComponent(options.sourceId)}/content`,
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? DOCUMENT_READ_TIMEOUT_MS,
+  });
+}
+
+/**
+ * Fetch original upload bytes for download (attachment disposition).
+ */
+export async function downloadDocument(options: DocumentBlobOptions) {
+  const requestBlob = options.requestBlob ?? apiRequestBlob;
+  return requestBlob({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/documents/${encodeURIComponent(options.sourceId)}/download`,
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? DOCUMENT_READ_TIMEOUT_MS,
+  });
 }

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 
+from composition import MissingUploadContentError
 from composition import unsupported_upload_type_detail
 from domain.knowledge import SourceReference, SourceType, UploadPayload
 from presentation.http.deps import DocumentOperationsDep
@@ -25,21 +28,80 @@ from presentation.http.schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
+_SOURCE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_CONTENT_TYPE_BY_FORMAT = {
+    "txt": "text/plain; charset=utf-8",
+    "markdown": "text/plain; charset=utf-8",
+    "pdf": "application/pdf",
+}
+_CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox"
+
+
+def _content_success_response(description: str) -> dict:
+    return {
+        "description": description,
+        "content": {
+            media_type: {"schema": {"type": "string", "format": "binary"}}
+            for media_type in set(_CONTENT_TYPE_BY_FORMAT.values())
+        },
+    }
+
 
 def _require_source_id(source_id: str) -> str:
-    """Reject blank/whitespace path segments before domain construction."""
-    if not source_id.strip():
+    """Reject unsafe path IDs before domain construction or blob lookup."""
+    if _SOURCE_ID_PATTERN.fullmatch(source_id) is None:
         raise RequestValidationError(
             [
                 {
-                    "type": "string_too_short",
+                    "type": "string_pattern_mismatch",
                     "loc": ("path", "source_id"),
-                    "msg": "source_id must not be blank",
+                    "msg": "source_id must be 1-64 URL-safe identifier characters",
                     "input": source_id,
                 }
             ]
         )
     return source_id
+
+
+def _download_filename(file_name: str) -> str:
+    basename = Path(file_name).name.strip()
+    if not basename:
+        basename = "document"
+    return basename.replace('"', "_").replace("\r", "_").replace("\n", "_")
+
+
+def _content_disposition(disposition: str, file_name: str) -> str:
+    filename = _download_filename(file_name)
+    ascii_name = "".join(char if ord(char) < 128 else "_" for char in filename)
+    escaped = ascii_name.replace("\\", "_")
+    value = f'{disposition}; filename="{escaped}"'
+    if ascii_name != filename:
+        value += f"; filename*=UTF-8''{quote(filename, safe='')}"
+    return value
+
+
+def _document_content_response(
+    ops: DocumentOperationsDep,
+    source_id: str,
+    *,
+    disposition: str,
+) -> Response:
+    row, payload = ops.get_content(_require_source_id(source_id))
+    media_type = _CONTENT_TYPE_BY_FORMAT.get(row.content_format or "")
+    if media_type is None:
+        raise MissingUploadContentError("no stored content for this document")
+    return Response(
+        content=bytes(payload.content),
+        media_type=media_type,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": _content_disposition(
+                disposition, row.file_name
+            ),
+        },
+    )
 
 
 def _read_upload(
@@ -136,6 +198,32 @@ def replace_document(
         payload,
     )
     return catalog_document_response(document)
+
+
+@router.get(
+    "/documents/{source_id}/content",
+    response_class=Response,
+    responses={
+        200: _content_success_response("Original document content"),
+        **problem_responses(404, 405, 422, 500),
+    },
+)
+def get_document_content(source_id: str, ops: DocumentOperationsDep) -> Response:
+    """Return original uploaded bytes for inline display."""
+    return _document_content_response(ops, source_id, disposition="inline")
+
+
+@router.get(
+    "/documents/{source_id}/download",
+    response_class=Response,
+    responses={
+        200: _content_success_response("Original document download"),
+        **problem_responses(404, 405, 422, 500),
+    },
+)
+def download_document(source_id: str, ops: DocumentOperationsDep) -> Response:
+    """Return original uploaded bytes as an attachment."""
+    return _document_content_response(ops, source_id, disposition="attachment")
 
 
 @router.delete(

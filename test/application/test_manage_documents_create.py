@@ -22,6 +22,7 @@ from test.document_doubles import (
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
+    InMemoryUploadBlobStore,
     RecordingExtractor,
 )
 from test.doubles import InMemoryVectorStore, StubEmbeddingModel
@@ -62,6 +63,7 @@ def _use_case(
     )
     return ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=extractor
         or RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: ingest,
@@ -132,6 +134,7 @@ def test_oversized_create_is_rejected_before_extract_or_catalog() -> None:
     limit = 16
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=extractor,
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
@@ -186,3 +189,30 @@ def test_list_includes_google_drive_catalog_rows() -> None:
     catalog.upsert(seed)
     listed = _use_case(catalog).list()
     assert listed == (uploaded, drive)
+
+
+def test_create_ready_stores_blob() -> None:
+    catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
+    store = InMemoryVectorStore()
+    payload = UploadPayload(file_name="guide.md", content=b"# Guide\n")
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=blob_store,
+        extractor=RecordingExtractor(document_factory=_document_factory),
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(),
+            store,
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("blob-ready"),
+        now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+    )
+
+    created = use_case.create(payload)
+
+    assert blob_store.get(created.reference) == payload
+    assert use_case.get_content(created.reference.source_id) == payload

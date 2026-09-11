@@ -27,6 +27,7 @@ from test.document_doubles import (
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
+    InMemoryUploadBlobStore,
     RecordingExtractor,
 )
 from test.doubles import InMemoryVectorStore, StubEmbeddingModel
@@ -77,10 +78,13 @@ def _seed(
     catalog: InMemoryDocumentCatalog,
     store: InMemoryVectorStore,
     *,
+    blob_store: InMemoryUploadBlobStore | None = None,
     source_id: str = "id-1",
 ) -> SourceReference:
+    blob_store = blob_store or InMemoryUploadBlobStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -98,9 +102,11 @@ def _seed(
 def _use_case(
     catalog: InMemoryDocumentCatalog,
     store: InMemoryVectorStore,
+    blob_store: InMemoryUploadBlobStore | None = None,
 ) -> ManageUploadedDocuments:
     return ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store or InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -110,17 +116,22 @@ def _use_case(
     )
 
 
-def test_delete_removes_chunks_then_catalog_row() -> None:
+def test_delete_removes_blob_catalog_and_vectors() -> None:
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()
-    reference = _seed(catalog, store)
+    blob_store = InMemoryUploadBlobStore()
+    reference = _seed(catalog, store, blob_store=blob_store)
     assert catalog.get(reference) is not None
     assert store.records
+    assert blob_store.get(reference) == UploadPayload(
+        file_name="guide.md", content=b"x"
+    )
 
-    _use_case(catalog, store).delete(reference)
+    _use_case(catalog, store, blob_store).delete(reference)
 
     assert catalog.get(reference) is None
     assert store.records == {}
+    assert blob_store.get(reference) is None
 
 
 def test_vector_delete_failure_leaves_catalog_unchanged() -> None:

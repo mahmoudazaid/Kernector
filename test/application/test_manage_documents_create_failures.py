@@ -27,6 +27,7 @@ from test.document_doubles import (
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
+    InMemoryUploadBlobStore,
     RecordingExtractor,
 )
 from test.doubles import (
@@ -92,11 +93,13 @@ def _document_factory(
     )
 
 
-def test_create_extraction_failure_leaves_no_catalog_row() -> None:
+def test_extraction_failure_writes_no_blob() -> None:
     catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
     extractor = RecordingExtractor(error=RuntimeError("unreadable upload"))
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=extractor,
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
@@ -114,13 +117,16 @@ def test_create_extraction_failure_leaves_no_catalog_row() -> None:
         use_case.create(UploadPayload(file_name="guide.md", content=b"x"))
 
     assert catalog.all() == ()
+    assert blob_store.records == {}
 
 
-def test_create_ingest_failure_leaves_failed_row_and_propagates_cause() -> None:
+def test_create_ingest_failure_stores_blob_alongside_failed_row() -> None:
     catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
     store = InMemoryVectorStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             FailingEmbeddingModel(),
@@ -147,14 +153,19 @@ def test_create_ingest_failure_leaves_failed_row_and_propagates_cause() -> None:
     assert rows[0].reference.source_id == "id-fail"
     assert rows[0].error
     assert store.records == {}
+    assert blob_store.get(rows[0].reference) == UploadPayload(
+        file_name="guide.md", content=b"x"
+    )
 
 
 def test_create_records_degraded_when_mutation_may_have_started() -> None:
     """Orphaned chunks must stay visible as state that Delete has to clear."""
     catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
     store = FailingUpsertStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
@@ -176,6 +187,9 @@ def test_create_records_degraded_when_mutation_may_have_started() -> None:
     assert len(rows) == 1
     assert rows[0].status is CatalogStatus.DEGRADED
     assert rows[0].error
+    assert blob_store.get(rows[0].reference) == UploadPayload(
+        file_name="guide.md", content=b"x"
+    )
 
 
 def test_create_recovery_write_failure_keeps_both_failures() -> None:
@@ -184,6 +198,7 @@ def test_create_recovery_write_failure_keeps_both_failures() -> None:
     store = InMemoryVectorStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             FailingEmbeddingModel(),
@@ -216,6 +231,7 @@ def test_create_recovery_write_failure_after_vector_mutation_keeps_both() -> Non
     store = FailingUpsertStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
@@ -259,6 +275,7 @@ def _use_case_with_both_failures(
 ) -> ManageUploadedDocuments:
     return ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: _ExplodingIngest(LEAKY_INGEST_ERROR),
         vector_store_factory=InMemoryVectorStore,
@@ -303,6 +320,7 @@ def test_partial_create_failure_message_is_fixed_across_causes() -> None:
     catalog = RecoveryRefusingCatalog(RuntimeError("disk full on /mnt/data"))
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: _ExplodingIngest(
             IngestFailure("other", vector_mutation_started=True)
@@ -340,6 +358,7 @@ def test_create_rejects_colliding_generated_source_id_without_echoing_it(
     )
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -8,6 +9,7 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
+import { DocumentViewer } from "@/components/documents/DocumentViewer";
 import {
   GoogleDrivePanel,
   type GoogleDrivePanelProps,
@@ -22,16 +24,20 @@ import { DialogFrame } from "@/components/ui/DialogFrame";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
+  downloadDocument,
+  getDocumentContent,
   listDocuments,
   replaceDocument,
   uploadDocument,
   type CatalogDocumentResponse,
   type DeleteDocumentOptions,
+  type DocumentBlobOptions,
   type DocumentListResponse,
   type ListDocumentsOptions,
   type ReplaceDocumentOptions,
   type UploadDocumentOptions,
 } from "@/lib/api/documents";
+import type { ApiBlobResult } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import { validateUpload } from "@/lib/documents/upload";
 import { formatTimestamp } from "@/lib/format/timestamp";
@@ -48,6 +54,8 @@ export type DocumentsPanelProps = {
     options: ReplaceDocumentOptions,
   ) => Promise<CatalogDocumentResponse>;
   remove?: (options: DeleteDocumentOptions) => Promise<void>;
+  getContent?: (options: DocumentBlobOptions) => Promise<ApiBlobResult>;
+  download?: (options: DocumentBlobOptions) => Promise<ApiBlobResult>;
   loadSettings?: RuntimeCatalogLoader;
   getDriveStatus?: GoogleDrivePanelProps["getStatus"];
   syncDrive?: GoogleDrivePanelProps["syncNow"];
@@ -186,12 +194,30 @@ function actionErrorMessage(error: unknown): string {
   return "The request failed. Please try again later.";
 }
 
+function backendUnavailableMessage(): string {
+  return "Backend unavailable. Start the FastAPI server and try again.";
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = "noopener";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function DocumentsPanel({
   apiBaseUrl,
   list = listDocuments,
   upload = uploadDocument,
   replace = replaceDocument,
   remove = deleteDocument,
+  getContent = getDocumentContent,
+  download = downloadDocument,
   loadSettings,
   getDriveStatus,
   syncDrive,
@@ -226,6 +252,10 @@ export function DocumentsPanel({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback>({ kind: "idle" });
   const [refreshing, setRefreshing] = useState(false);
+  const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
+  const [downloadPendingId, setDownloadPendingId] = useState<string | null>(
+    null,
+  );
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
 
@@ -353,7 +383,16 @@ export function DocumentsPanel({
       return;
     }
     setSelectedId(sourceId);
+    setPreviewSourceId(null);
   }
+
+  const setActionError = useCallback((error: unknown) => {
+    if (error instanceof ApiError && error.status === 0) {
+      setFeedback({ kind: "error", message: backendUnavailableMessage() });
+      return;
+    }
+    setFeedback({ kind: "error", message: actionErrorMessage(error) });
+  }, []);
 
   async function onUpload(event: FormEvent) {
     event.preventDefault();
@@ -382,7 +421,7 @@ export function DocumentsPanel({
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      setActionError(error);
     } finally {
       setBusy(false);
     }
@@ -413,7 +452,7 @@ export function DocumentsPanel({
       clearReplaceInput();
       await refresh();
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      setActionError(error);
     } finally {
       setBusy(false);
     }
@@ -439,10 +478,32 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
-      setFeedback({ kind: "error", message: actionErrorMessage(error) });
+      setActionError(error);
     } finally {
       setPendingDelete(null);
       setBusy(false);
+    }
+  }
+
+  async function onDownloadDocument(document: CatalogDocumentResponse) {
+    if (downloadPendingId !== null) {
+      return;
+    }
+    setDownloadPendingId(document.source_id);
+    setFeedback({ kind: "idle" });
+    try {
+      const response = await download({
+        baseUrl: apiBaseUrl,
+        sourceId: document.source_id,
+      });
+      triggerBrowserDownload(
+        response.blob,
+        response.fileName ?? document.file_name,
+      );
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setDownloadPendingId(null);
     }
   }
 
@@ -820,6 +881,35 @@ export function DocumentsPanel({
                 ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
                 : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
             </p>
+            {!isDriveDocument(selected) ? (
+              <div className="kern-documents-detail-actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label={`Preview ${selected.file_name}`}
+                  disabled={dialogOpen}
+                  onClick={() => {
+                    setFeedback({ kind: "idle" });
+                    setPreviewSourceId(selected.source_id);
+                  }}
+                >
+                  Preview
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label={`Download ${selected.file_name}`}
+                  disabled={downloadPendingId !== null || dialogOpen}
+                  onClick={() => {
+                    void onDownloadDocument(selected);
+                  }}
+                >
+                  {downloadPendingId === selected.source_id
+                    ? "Downloading…"
+                    : "Download"}
+                </Button>
+              </div>
+            ) : null}
             {selected.error_summary ? (
               <div
                 className="kern-settings-callout kern-settings-callout--warn"
@@ -827,6 +917,17 @@ export function DocumentsPanel({
               >
                 <p>{selected.error_summary}</p>
               </div>
+            ) : null}
+            {previewSourceId === selected.source_id && !isDriveDocument(selected) ? (
+              <DocumentViewer
+                sourceId={selected.source_id}
+                fileName={selected.file_name}
+                contentFormat={selected.content_format ?? ""}
+                baseUrl={apiBaseUrl}
+                getContent={getContent}
+                download={download}
+                onError={setActionError}
+              />
             ) : null}
           </div>
         ) : visibleDocuments.length > 0 ? (

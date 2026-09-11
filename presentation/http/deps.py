@@ -30,6 +30,7 @@ from composition import (
     complete_google_drive_oauth,
     disconnect_google_drive_oauth,
     get_google_drive_selection,
+    get_uploaded_document_content,
     google_drive_status,
     list_uploaded_documents,
     load_runtime_settings,
@@ -126,6 +127,7 @@ class DocumentOperations:
     create: Callable[[UploadPayload], CatalogDocument]
     replace: Callable[[SourceReference, UploadPayload], CatalogDocument]
     delete: Callable[[SourceReference], None]
+    get_content: Callable[[str], tuple[CatalogDocument, UploadPayload]]
     supported_suffixes: frozenset[str]
     max_upload_bytes: int
 
@@ -169,6 +171,13 @@ def get_document_operations(
             vector_store=get_vector_store(),
         )
 
+    def content(source_id: str) -> tuple[CatalogDocument, UploadPayload]:
+        return get_uploaded_document_content(
+            settings,
+            source_id,
+            catalog=get_document_catalog(),
+        )
+
     return DocumentOperations(
         list=lambda: list_uploaded_documents(
             settings, catalog=get_document_catalog()
@@ -176,6 +185,7 @@ def get_document_operations(
         create=create,
         replace=replace,
         delete=delete,
+        get_content=content,
         supported_suffixes=SUPPORTED_UPLOAD_SUFFIXES,
         max_upload_bytes=settings.max_upload_bytes,
     )

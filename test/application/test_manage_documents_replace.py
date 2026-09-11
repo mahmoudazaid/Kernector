@@ -28,6 +28,7 @@ from test.document_doubles import (
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
+    InMemoryUploadBlobStore,
     RecordingExtractor,
 )
 from test.doubles import (
@@ -77,11 +78,14 @@ def _seed_ready(
     catalog: InMemoryDocumentCatalog,
     store: InMemoryVectorStore,
     *,
+    blob_store: InMemoryUploadBlobStore | None = None,
     source_id: str = "id-1",
     file_name: str = "guide.md",
 ) -> CatalogDocument:
+    blob_store = blob_store or InMemoryUploadBlobStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V1)),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(),
@@ -103,6 +107,7 @@ def test_replace_rejects_unknown_id(caplog: pytest.LogCaptureFixture) -> None:
     store = InMemoryVectorStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -133,12 +138,14 @@ def test_replace_rejects_unknown_id(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_replace_preserves_source_id_and_updates_metadata() -> None:
     catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
     store = InMemoryVectorStore()
-    original = _seed_ready(catalog, store)
+    original = _seed_ready(catalog, store, blob_store=blob_store)
     before_count = len(store.records)
 
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -158,18 +165,24 @@ def test_replace_preserves_source_id_and_updates_metadata() -> None:
     assert replaced.status is CatalogStatus.READY
     assert replaced.chunk_count == 3
     assert len(store.records) == before_count
+    assert blob_store.get(original.reference) == UploadPayload(
+        file_name="guide-v2.md", content=b"v2"
+    )
     stored_text = {record.chunk.content for record in store.records.values()}
     assert "ABCDEFGHIJ" in stored_text
     assert "abcdefghij" not in stored_text
 
 
-def test_replace_restores_previous_row_when_mutation_did_not_start() -> None:
+def test_replace_failure_before_vector_mutation_leaves_previous_blob_and_previous_row() -> None:
     catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
     store = InMemoryVectorStore()
-    original = _seed_ready(catalog, store)
+    original = _seed_ready(catalog, store, blob_store=blob_store)
+    previous_blob = blob_store.get(original.reference)
 
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
         ingest_factory=lambda: IngestKnowledge(
             FailingEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -192,16 +205,20 @@ def test_replace_restores_previous_row_when_mutation_did_not_start() -> None:
     assert restored.status is CatalogStatus.READY
     assert restored.file_name == original.file_name
     assert restored.chunk_count == original.chunk_count
+    assert blob_store.get(original.reference) == previous_blob
 
 
-def test_replace_restores_previous_row_on_validation_failure() -> None:
+def test_replace_validation_failure_leaves_previous_blob() -> None:
     """A pre-mutation validation error must not overwrite a working ready row."""
     catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
     store = InMemoryVectorStore()
-    original = _seed_ready(catalog, store)
+    original = _seed_ready(catalog, store, blob_store=blob_store)
+    previous_blob = blob_store.get(original.reference)
 
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
         # One vector short of the chunk count: `IngestKnowledge` rejects the
         # batch before its first `delete_source`, so nothing was mutated.
@@ -227,9 +244,10 @@ def test_replace_restores_previous_row_on_validation_failure() -> None:
     assert restored.error is None
     # The previous version's chunks were never touched, so the row is truthful.
     assert len(store.records) == original.chunk_count
+    assert blob_store.get(original.reference) == previous_blob
 
 
-def test_replace_records_degraded_when_mutation_may_have_started() -> None:
+def test_degraded_replace_stores_new_blob() -> None:
     catalog = InMemoryDocumentCatalog()
     store = FailingUpsertStore()
     # Seed via catalog only — store upserts will fail during replace.
@@ -245,9 +263,12 @@ def test_replace_records_degraded_when_mutation_may_have_started() -> None:
         error=None,
     )
     catalog.upsert(previous)
+    blob_store = InMemoryUploadBlobStore()
+    blob_store.put(reference, UploadPayload(file_name="guide.md", content=b"v1"))
 
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -269,6 +290,9 @@ def test_replace_records_degraded_when_mutation_may_have_started() -> None:
     assert current.status is CatalogStatus.DEGRADED
     assert current.file_name == "guide-v2.md"
     assert current.error
+    assert blob_store.get(reference) == UploadPayload(
+        file_name="guide-v2.md", content=b"v2"
+    )
 
 
 def test_replace_unknown_document_wins_over_oversize() -> None:
@@ -278,6 +302,7 @@ def test_replace_unknown_document_wins_over_oversize() -> None:
     extractor = RecordingExtractor(document_factory=_document_factory(CONTENT_V2))
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=extractor,
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -306,6 +331,7 @@ def test_oversized_replace_is_rejected_before_extract() -> None:
     limit = 16
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
         extractor=extractor,
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2

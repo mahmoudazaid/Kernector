@@ -25,7 +25,7 @@ explicit product decision. Those criteria are met:
 | Grounded chat | [#235](https://github.com/mahmoudazaid/Kernector/issues/235) — `/chat`, `POST /api/v1/chat/ask` |
 | Document upload / ingest | [#236](https://github.com/mahmoudazaid/Kernector/issues/236) — `/documents`, `/api/v1/documents` |
 | Provider / model settings | [#237](https://github.com/mahmoudazaid/Kernector/issues/237) — `/settings`, `GET /api/v1/settings` |
-| Test-case MD / JSON / CSV / PDF export | **NONE** — owned by follow-up [#243](https://github.com/mahmoudazaid/Kernector/issues/243) |
+| Test-case MD / JSON / CSV / PDF export | **NONE** — owned by follow-up [#280](https://github.com/mahmoudazaid/Kernector/issues/280) |
 
 ## Decision
 
@@ -40,14 +40,18 @@ explicit product decision. Those criteria are met:
    `infrastructure/export/`, and the `fpdf2` dependency. That stack was
    misnamed: it never exported conversations; it only ever faked test-case PDF
    download via Streamlit `cases_export`. Client-side test-case export under
-   [#243](https://github.com/mahmoudazaid/Kernector/issues/243) is the correct
+   [#280](https://github.com/mahmoudazaid/Kernector/issues/280) is the correct
    home. **`pypdf` stays** for PDF ingest.
 
 ## Consequences
 
 - **Knowingly dropped capability** — test-case MD/JSON/CSV/PDF export has no
   Next.js owner yet; track recovery in
-  [#243](https://github.com/mahmoudazaid/Kernector/issues/243).
+  [#280](https://github.com/mahmoudazaid/Kernector/issues/280).
+- **2026-09-11 note** — [#243](https://github.com/mahmoudazaid/Kernector/issues/243)
+  was rescoped to the Documents inline viewer / download for uploaded files;
+  the chat test-case export capability moved to
+  [#280](https://github.com/mahmoudazaid/Kernector/issues/280).
 - **Not a loss** — “conversation export” never existed as a real product
   feature and is not wanted; deleting the misnamed export modules does not
   remove a shipped conversation-transcript path.
@@ -64,5 +68,7 @@ explicit product decision. Those criteria are met:
   migration guidance
 - [#228](https://github.com/mahmoudazaid/Kernector/issues/228) — retire
   Streamlit implementation ticket
-- [#243](https://github.com/mahmoudazaid/Kernector/issues/243) — test-case
+- [#280](https://github.com/mahmoudazaid/Kernector/issues/280) — test-case
   export follow-up
+- [#243](https://github.com/mahmoudazaid/Kernector/issues/243) — Documents
+  inline viewer / download (rescoped; no longer owns export)

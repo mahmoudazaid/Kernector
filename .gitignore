@@ -46,6 +46,7 @@ learning/
 output/
 data/chroma/
 data/catalog/
+data/uploads/
 data/secrets/
 **/google-oauth-*.json
 
