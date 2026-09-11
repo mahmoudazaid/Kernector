@@ -30,12 +30,16 @@ a {
 
 .kern-app {
   min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: var(--kern-bg);
   color: var(--kern-ink);
 }
 
 .kern-header {
   height: 64px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: var(--kern-space-3);
@@ -173,7 +177,9 @@ a {
   position: relative;
   display: grid;
   grid-template-columns: var(--kern-sidebar-width) minmax(0, 1fr);
-  min-height: calc(100vh - 64px);
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 64px);
 }
 
 .kern-sidebar {
@@ -253,7 +259,8 @@ a {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: calc(100vh - 64px);
+  min-height: 0;
+  height: 100%;
   padding: var(--kern-space-6) var(--kern-space-7) var(--kern-space-4);
 }
 
@@ -1952,6 +1959,40 @@ a.kern-btn {
   height: 100%;
 }
 
+.kern-chat--empty .kern-chat-body {
+  flex: 0 0 auto;
+  overflow: visible;
+  justify-content: center;
+}
+
+.kern-chat--empty .kern-chat-thread {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: 0;
+}
+
+.kern-chat--empty .kern-chat-composer {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.kern-chat--empty .kern-chat-composer-bar {
+  min-height: 64px;
+  padding: 12px 12px 12px var(--kern-space-5);
+}
+
+.kern-chat--empty .kern-chat-input {
+  min-height: 48px;
+  padding: var(--kern-space-3) var(--kern-space-1);
+}
+
+.kern-chat-hint {
+  margin: var(--kern-space-2) 0 0;
+  padding-inline: var(--kern-space-5);
+  color: var(--kern-muted);
+  font-size: var(--kern-text-sm);
+}
+
 .kern-chat-header {
   display: flex;
   align-items: flex-start;
@@ -2441,6 +2482,9 @@ a.kern-btn {
 
   .kern-body {
     display: block;
+    height: calc(100vh - 64px);
+    min-height: 0;
+    overflow: auto;
   }
 
   .kern-sidebar {
@@ -2460,7 +2504,8 @@ a.kern-btn {
   }
 
   .kern-main {
-    min-height: calc(100vh - 64px);
+    min-height: 0;
+    height: 100%;
     padding: var(--kern-space-5) var(--kern-space-4) var(--kern-space-4);
   }
 
@@ -2475,11 +2520,13 @@ a.kern-btn {
   .kern-btn,
   .kern-btn-secondary,
   .kern-btn-danger,
-  .kern-documents-delete {
+  .kern-documents-delete,
+  .kern-chat-send {
     min-height: 44px;
   }
 
-  .kern-documents-delete {
+  .kern-documents-delete,
+  .kern-chat-send {
     min-width: 44px;
   }
 }

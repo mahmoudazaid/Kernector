@@ -8,7 +8,6 @@ import {
   type SubmitEvent,
 } from "react";
 import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/states/EmptyState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
@@ -570,8 +569,25 @@ export function ChatPanel({
     }
   }
 
+  const isEmptyHero =
+    hydrated && !unavailable && messages.length === 0 && !sending;
+  const showHint = isEmptyHero && !inlineError && !draft.trim();
+  // Option (a): keep New chat when transcript/unavailable, or when storage
+  // still holds a concurrent writer's session (stale-session escape).
+  const showNewChat =
+    !hydrated ||
+    unavailable ||
+    messages.length > 0 ||
+    loadActiveSession().messages.length > 0;
+  const describedByIds = [
+    showHint ? "chat-hint" : null,
+    lengthFeedback || statusGuidance ? "chat-input-length" : null,
+  ]
+    .filter((id): id is string => id != null)
+    .join(" ");
+
   return (
-    <section className="kern-chat">
+    <section className={`kern-chat${isEmptyHero ? " kern-chat--empty" : ""}`}>
       <header className="kern-chat-header">
         <div>
           <h1>Chat</h1>
@@ -579,9 +595,11 @@ export function ChatPanel({
             General grounded chat over ingested documents.
           </p>
         </div>
-        <Button variant="secondary" type="button" onClick={handleNewChat}>
-          New chat
-        </Button>
+        {showNewChat ? (
+          <Button variant="secondary" type="button" onClick={handleNewChat}>
+            New chat
+          </Button>
+        ) : null}
       </header>
 
       <div className="kern-chat-body">
@@ -609,24 +627,17 @@ export function ChatPanel({
           />
         ) : null}
 
-        {messages.length === 0 && hydrated && !unavailable ? (
-          <EmptyState
-            title="Start a conversation"
-            description="Ask a question grounded in your ingested documents."
-          />
-        ) : (
-          <div className="kern-chat-thread" aria-live="polite">
-            {messages.map((message) => (
-              <MessageRow key={message.id} message={message} />
-            ))}
-            {sending ? (
-              <p className="kern-chat-thinking" role="status">
-                <KernectorThinkingMark className="kern-chat-thinking-mark" />
-                <span className="visually-hidden">Thinking…</span>
-              </p>
-            ) : null}
-          </div>
-        )}
+        <div className="kern-chat-thread" aria-live="polite">
+          {messages.map((message) => (
+            <MessageRow key={message.id} message={message} />
+          ))}
+          {sending ? (
+            <p className="kern-chat-thinking" role="status">
+              <KernectorThinkingMark className="kern-chat-thinking-mark" />
+              <span className="visually-hidden">Thinking…</span>
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {inlineError ? (
@@ -644,13 +655,11 @@ export function ChatPanel({
             id="chat-input"
             className="kern-chat-input"
             rows={1}
-            placeholder="What's in your mind!"
+            placeholder="What's on your mind?"
             value={draft}
             disabled={sending || historyBlocked}
             aria-invalid={sendBlocked || undefined}
-            aria-describedby={
-              lengthFeedback || statusGuidance ? "chat-input-length" : undefined
-            }
+            aria-describedby={describedByIds || undefined}
             onChange={(event) => {
               composerTouchedRef.current = true;
               setDraft(event.target.value);
@@ -666,6 +675,11 @@ export function ChatPanel({
             {SEND_ICON}
           </button>
         </div>
+        {showHint ? (
+          <p id="chat-hint" className="kern-chat-hint">
+            Typing here starts a new chat.
+          </p>
+        ) : null}
         {lengthFeedback || statusGuidance ? (
           <div id="chat-input-length" className="kern-chat-counter-block">
             {lengthFeedback ? (
