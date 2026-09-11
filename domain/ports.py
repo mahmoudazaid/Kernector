@@ -273,6 +273,16 @@ class DocumentCatalog(Protocol):
         ...
 
 
+class UploadBlobStore(Protocol):
+    """Durable storage for raw upload payloads."""
+
+    def put(self, reference: SourceReference, payload: UploadPayload) -> None: ...
+
+    def get(self, reference: SourceReference) -> UploadPayload | None: ...
+
+    def delete(self, reference: SourceReference) -> None: ...
+
+
 class DocumentExtractor(Protocol):
     """Turns an upload payload into a normalized source document."""
 

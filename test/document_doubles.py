@@ -55,6 +55,32 @@ class InMemoryDocumentCatalog:
         return total
 
 
+class InMemoryUploadBlobStore:
+    """Dict-backed UploadBlobStore for application tests."""
+
+    def __init__(self) -> None:
+        self._records: dict[SourceReference, UploadPayload] = {}
+        self.fail_on_put: bool = False
+        self.fail_on_delete: bool = False
+
+    @property
+    def records(self) -> dict[SourceReference, UploadPayload]:
+        return self._records
+
+    def put(self, reference: SourceReference, payload: UploadPayload) -> None:
+        if self.fail_on_put:
+            raise RuntimeError("blob put failed")
+        self._records[reference] = payload
+
+    def get(self, reference: SourceReference) -> UploadPayload | None:
+        return self._records.get(reference)
+
+    def delete(self, reference: SourceReference) -> None:
+        if self.fail_on_delete:
+            raise RuntimeError("blob delete failed")
+        self._records.pop(reference, None)
+
+
 class RecordingExtractor:
     """DocumentExtractor that returns a prepared document or raises."""
 

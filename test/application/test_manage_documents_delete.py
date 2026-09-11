@@ -27,6 +27,7 @@ from test.document_doubles import (
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
+    InMemoryUploadBlobStore,
     RecordingExtractor,
 )
 from test.doubles import InMemoryVectorStore, StubEmbeddingModel
@@ -77,10 +78,13 @@ def _seed(
     catalog: InMemoryDocumentCatalog,
     store: InMemoryVectorStore,
     *,
+    blob_store: InMemoryUploadBlobStore | None = None,
     source_id: str = "id-1",
 ) -> SourceReference:
+    blob_store = blob_store or InMemoryUploadBlobStore()
     use_case = ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store,
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -98,9 +102,11 @@ def _seed(
 def _use_case(
     catalog: InMemoryDocumentCatalog,
     store: InMemoryVectorStore,
+    blob_store: InMemoryUploadBlobStore | None = None,
 ) -> ManageUploadedDocuments:
     return ManageUploadedDocuments(
         catalog=catalog,
+        blob_store=blob_store or InMemoryUploadBlobStore(),
         extractor=RecordingExtractor(document_factory=_document_factory),
         ingest_factory=lambda: IngestKnowledge(
             StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
@@ -110,17 +116,42 @@ def _use_case(
     )
 
 
-def test_delete_removes_chunks_then_catalog_row() -> None:
+def test_delete_removes_blob_catalog_and_vectors() -> None:
     catalog = InMemoryDocumentCatalog()
     store = InMemoryVectorStore()
-    reference = _seed(catalog, store)
+    blob_store = InMemoryUploadBlobStore()
+    reference = _seed(catalog, store, blob_store=blob_store)
     assert catalog.get(reference) is not None
     assert store.records
+    assert blob_store.get(reference) == UploadPayload(
+        file_name="guide.md", content=b"x"
+    )
 
-    _use_case(catalog, store).delete(reference)
+    _use_case(catalog, store, blob_store).delete(reference)
 
     assert catalog.get(reference) is None
     assert store.records == {}
+    assert blob_store.get(reference) is None
+
+
+def test_delete_continues_when_blob_delete_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    blob_store = InMemoryUploadBlobStore()
+    reference = _seed(catalog, store, blob_store=blob_store)
+    blob_store.fail_on_delete = True
+
+    with caplog.at_level(logging.ERROR, logger="application.manage_documents"):
+        with pytest.raises(PartialDeleteFailure):
+            _use_case(catalog, store, blob_store).delete(reference)
+
+    assert catalog.get(reference) is not None
+    assert store.records == {}
+    assert blob_store.get(reference) is not None
+    records = operation_records(caplog.records, operation="delete")
+    assert any(operation_payload(r)["outcome"] == "error" for r in records)
 
 
 def test_vector_delete_failure_leaves_catalog_unchanged() -> None:

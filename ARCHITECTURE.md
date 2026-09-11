@@ -452,6 +452,14 @@ Affected or unverified builds use rollback-journal (`DELETE`) with
 processes — not NFS, network volumes, or distributed writers across hosts.
 SQL catalog startup does not refuse a journal mode.
 
+**Upload blob store.** Original upload bytes live under
+`DOCUMENT_UPLOAD_BLOB_PATH` (default `data/uploads`) as flat files keyed by
+`source_id` only — not by workspace. Preview and download
+(`GET /api/v1/documents/{source_id}/content` and `/download`) resolve the
+catalog row first, then read the blob. The store is last-write-wins with no
+point-in-time recovery: restoring a catalog backup does not restore blobs.
+Same-host concurrent writers are safe via `os.replace` plus a per-path lock.
+
 **Rollback.** Stop catalog writers, then restore from a SQLite-produced backup
 (`Connection.backup` or `VACUUM INTO`). Do not assemble a live `.sqlite` file
 together with WAL/SHM files by hand.

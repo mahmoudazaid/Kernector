@@ -9,6 +9,7 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
+import { DocumentViewer } from "@/components/documents/DocumentViewer";
 import {
   DocumentChunksSheet,
 } from "@/components/documents/DocumentChunksSheet";
@@ -20,6 +21,7 @@ import {
   captureDriveCallback,
   peekDriveCallback,
 } from "@/lib/documents/drive-callback";
+import { triggerBrowserDownload } from "@/lib/documents/download";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
@@ -30,6 +32,8 @@ import { Loader } from "@/components/ui/Loader";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   deleteDocument,
+  downloadDocument,
+  getDocumentContent,
   DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS,
   DOCUMENT_CHUNKS_PAGE_SIZE,
   listDocumentChunks,
@@ -38,6 +42,7 @@ import {
   uploadDocument,
   type CatalogDocumentResponse,
   type DeleteDocumentOptions,
+  type DocumentBlobOptions,
   type DocumentChunkListResponse,
   type DocumentChunkResponse,
   type DocumentListResponse,
@@ -47,7 +52,8 @@ import {
   type ReplaceDocumentOptions,
   type UploadDocumentOptions,
 } from "@/lib/api/documents";
-import { ApiError } from "@/lib/api/errors";
+import type { ApiBlobResult } from "@/lib/api/client";
+import { ApiError, isBackendUnavailable } from "@/lib/api/errors";
 import { validateUpload } from "@/lib/documents/upload";
 import { formatTimestamp } from "@/lib/format/timestamp";
 import {
@@ -66,6 +72,8 @@ export type DocumentsPanelProps = {
     options: ReplaceDocumentOptions,
   ) => Promise<CatalogDocumentResponse>;
   remove?: (options: DeleteDocumentOptions) => Promise<void>;
+  getContent?: (options: DocumentBlobOptions) => Promise<ApiBlobResult>;
+  download?: (options: DocumentBlobOptions) => Promise<ApiBlobResult>;
   loadSettings?: RuntimeCatalogLoader;
   getDriveStatus?: GoogleDrivePanelProps["getStatus"];
   syncDrive?: GoogleDrivePanelProps["syncNow"];
@@ -284,11 +292,20 @@ function PlannedIcon({
   );
 }
 
+const BACKEND_UNAVAILABLE_MESSAGE =
+  "Backend unavailable. Start the FastAPI server and try again.";
+
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
   }
   return "The request failed. Please try again later.";
+}
+
+function actionErrorText(error: unknown): string {
+  return isBackendUnavailable(error)
+    ? BACKEND_UNAVAILABLE_MESSAGE
+    : actionErrorMessage(error);
 }
 
 export function DocumentsPanel({
@@ -298,6 +315,8 @@ export function DocumentsPanel({
   upload = uploadDocument,
   replace = replaceDocument,
   remove = deleteDocument,
+  getContent = getDocumentContent,
+  download = downloadDocument,
   loadSettings,
   getDriveStatus,
   syncDrive,
@@ -339,6 +358,11 @@ export function DocumentsPanel({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadErrorSeq, setUploadErrorSeq] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
+  const [previewRefreshToken, setPreviewRefreshToken] = useState(0);
+  const [downloadPendingId, setDownloadPendingId] = useState<string | null>(
+    null,
+  );
   const refreshSeqRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const listChunksRef = useRef(listChunks);
@@ -376,10 +400,13 @@ export function DocumentsPanel({
     }
   }, [uploadOpen, uploadError, uploadErrorSeq]);
 
-  function announce(next: Exclude<ActionFeedback, { kind: "idle" }>) {
-    setFeedback(next);
-    setFeedbackSeq((seq) => seq + 1);
-  }
+  const announce = useCallback(
+    (next: Exclude<ActionFeedback, { kind: "idle" }>) => {
+      setFeedback(next);
+      setFeedbackSeq((seq) => seq + 1);
+    },
+    [],
+  );
 
   const clearFeedback = useCallback(() => {
     setFeedback({ kind: "idle" });
@@ -448,7 +475,7 @@ export function DocumentsPanel({
       if (seq !== refreshSeqRef.current || controller.signal.aborted) {
         return;
       }
-      if (error instanceof ApiError && error.status === 0) {
+      if (isBackendUnavailable(error)) {
         startTransition(() => setCatalog({ kind: "unavailable" }));
         return;
       }
@@ -741,7 +768,18 @@ export function DocumentsPanel({
       return;
     }
     setSelectedId(sourceId);
+    setPreviewSourceId(null);
   }
+
+  const setActionError = useCallback(
+    (error: unknown) => {
+      announce({
+        kind: "error",
+        message: actionErrorText(error),
+      });
+    },
+    [announce],
+  );
 
   function closeChunksSheet() {
     setChunksSheetOpen(false);
@@ -809,7 +847,7 @@ export function DocumentsPanel({
       await refresh();
       setSelectedId(document.source_id);
     } catch (error) {
-      announceUploadError(actionErrorMessage(error));
+      announceUploadError(actionErrorText(error));
       setUploadOpen(true);
     } finally {
       setUploading(false);
@@ -840,9 +878,10 @@ export function DocumentsPanel({
         message: `Replaced ${document.file_name} (${document.chunk_count} chunk(s)). Source ID unchanged: ${document.source_id}`,
       });
       clearReplaceInput();
+      setPreviewRefreshToken((token) => token + 1);
       await refresh();
     } catch (error) {
-      announce({ kind: "error", message: actionErrorMessage(error) });
+      setActionError(error);
     } finally {
       setBusy(false);
     }
@@ -870,9 +909,31 @@ export function DocumentsPanel({
       await refresh();
     } catch (error) {
       setPendingDelete(null);
-      announce({ kind: "error", message: actionErrorMessage(error) });
+      setActionError(error);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onDownloadDocument(document: CatalogDocumentResponse) {
+    if (downloadPendingId !== null) {
+      return;
+    }
+    setDownloadPendingId(document.source_id);
+    setFeedback({ kind: "idle" });
+    try {
+      const response = await download({
+        baseUrl: apiBaseUrl,
+        sourceId: document.source_id,
+      });
+      triggerBrowserDownload(
+        response.blob,
+        response.fileName ?? document.file_name,
+      );
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setDownloadPendingId(null);
     }
   }
 
@@ -1274,16 +1335,75 @@ export function DocumentsPanel({
           </div>
         )}
 
-        {selected?.error_summary ? (
+        {selected ? (
           <div className="kern-documents-detail">
-            <div
-              className="kern-settings-callout kern-settings-callout--warn"
-              role="status"
-            >
-              <p>{selected.error_summary}</p>
-            </div>
+            <p className="kern-settings-hint">
+              {isDriveDocument(selected)
+                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
+                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
+            </p>
+            {!isDriveDocument(selected) ? (
+              <div className="kern-documents-detail-actions">
+                {selected.has_stored_content ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      aria-label={`Preview ${selected.file_name}`}
+                      disabled={dialogOpen}
+                      onClick={() => {
+                        setFeedback({ kind: "idle" });
+                        setPreviewSourceId(selected.source_id);
+                      }}
+                    >
+                      Preview
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      aria-label={`Download ${selected.file_name}`}
+                      disabled={downloadPendingId !== null || dialogOpen}
+                      onClick={() => {
+                        void onDownloadDocument(selected);
+                      }}
+                    >
+                      {downloadPendingId === selected.source_id
+                        ? "Downloading…"
+                        : "Download"}
+                    </Button>
+                  </>
+                ) : (
+                  <p className="kern-settings-hint" role="status">
+                    {selected.status === "pending"
+                      ? "This document is still pending. If that does not change, delete it and upload again."
+                      : "Original file is unavailable for preview or download."}
+                  </p>
+                )}
+              </div>
+            ) : null}
+            {selected.error_summary ? (
+              <div
+                className="kern-settings-callout kern-settings-callout--warn"
+                role="status"
+              >
+                <p>{selected.error_summary}</p>
+              </div>
+            ) : null}
+            {previewSourceId === selected.source_id &&
+            !isDriveDocument(selected) &&
+            selected.has_stored_content ? (
+              <DocumentViewer
+                sourceId={selected.source_id}
+                fileName={selected.file_name}
+                contentFormat={selected.content_format ?? ""}
+                baseUrl={apiBaseUrl}
+                refreshToken={previewRefreshToken}
+                getContent={getContent}
+                onError={setActionError}
+              />
+            ) : null}
           </div>
-        ) : !selected && visibleDocuments.length > 0 ? (
+        ) : visibleDocuments.length > 0 ? (
           <p className="kern-settings-hint">
             Select a document to see details or replace it
           </p>

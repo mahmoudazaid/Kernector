@@ -30,6 +30,18 @@ _DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
         "500",
     ),
     ("/api/v1/documents/{source_id}", "delete"): ("405", "409", "422", "500"),
+    ("/api/v1/documents/{source_id}/content", "get"): (
+        "404",
+        "405",
+        "422",
+        "500",
+    ),
+    ("/api/v1/documents/{source_id}/download", "get"): (
+        "404",
+        "405",
+        "422",
+        "500",
+    ),
     ("/api/v1/documents/{source_id}/chunks", "get"): ("404", "405", "422", "500"),
 }
 

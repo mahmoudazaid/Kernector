@@ -45,7 +45,7 @@ results, run details, rejected/operational/unavailable states). Transcript
 persistence uses `kernector:chat-messages:v1`.
 
 **Known gap:** test-case MD/JSON/CSV/PDF export did not reach Next.js parity
-and is tracked in [#243](https://github.com/mahmoudazaid/Kernector/issues/243)
+and is tracked in [#280](https://github.com/mahmoudazaid/Kernector/issues/280)
 (client-side export).
 
 ### Document upload/ingest (#236)
@@ -57,6 +57,18 @@ delete-with-confirm, empty catalog, list-load failure banner, unavailable).
 Upload size/suffix validation is enforced in the HTTP route (413/422) with
 client pre-flight for UX. Run a single uvicorn worker until the catalog store
 is multi-process safe.
+
+### Documents preview/download (#243)
+
+Satisfied for original-byte persistence (`UploadBlobStore` /
+`DOCUMENT_UPLOAD_BLOB_PATH`), `GET /api/v1/documents/{source_id}/content` and
+`/download` (upload source only; catalog resolve before blob read; security
+headers; CORS `Content-Disposition` expose), typed blob client helpers, and
+Next Documents inline Preview/Download behind an explicit Preview affordance.
+Documents uploaded before this change have no stored bytes (honest
+unavailable 404). Chat test-case export remains a Known gap under #280. The
+blob store uses `os.replace` plus a per-path lock for same-host writers; still
+prefer a single uvicorn worker with the JSON catalog.
 
 ## Out of scope for readiness alone
 
