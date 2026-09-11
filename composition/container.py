@@ -101,7 +101,7 @@ from infrastructure.catalog.migrate_json import (
     migrate_json_catalog_to_sql as _migrate_json_catalog_to_sql,
 )
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
-from infrastructure.config import Settings, load_settings
+from infrastructure.config import OllamaSettings, OpenRouterSettings, Settings, load_settings
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
@@ -118,6 +118,7 @@ from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corp
 from infrastructure.llm.ollama import (
     OllamaBaseUrlMissingError,
     OllamaChat,
+    OllamaConfigError,
     OllamaModelMissingError,
 )
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
@@ -161,11 +162,14 @@ def _build_ollama(
         raise OllamaNotConfiguredError(str(exc)) from exc
     except OllamaModelMissingError as exc:
         raise MissingProviderCredentialsError(str(exc)) from exc
+    except OllamaConfigError as exc:
+        # Future/unclassified Ollama construction failures: treat as credentials.
+        raise MissingProviderCredentialsError(str(exc)) from exc
 
 
 def _openrouter_runtime_config(
     settings: Settings, *, model: str | None
-):
+) -> OpenRouterSettings:
     config = settings.openrouter
     if model:
         config = replace(config, model=model)
@@ -174,7 +178,7 @@ def _openrouter_runtime_config(
 
 def _ollama_runtime_config(
     settings: Settings, *, model: str | None, base_url: str | None
-):
+) -> OllamaSettings:
     config = settings.ollama
     if model:
         config = replace(config, model=model)
@@ -2106,7 +2110,12 @@ def _software_delivery_agent_model_factory(
             config = _ollama_runtime_config(
                 settings, model=model, base_url=base_url
             )
-            base = config.base_url.rstrip("/")  # type: ignore[union-attr]
+            if not config.base_url or not config.model:
+                # builder() already validated; keep a local guard for the checker.
+                raise MissingProviderCredentialsError(
+                    "Missing OLLAMA_BASE_URL or OLLAMA_MODEL."
+                )
+            base = config.base_url.rstrip("/")
             try:
                 inner = ChatOpenAI(
                     model=config.model,

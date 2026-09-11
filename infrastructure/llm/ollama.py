@@ -14,9 +14,11 @@ from infrastructure.config import OllamaSettings
 class OllamaConfigError(RuntimeError):
     """Ollama construction failed due to missing or unusable settings.
 
-    Named so the composition root can catch this failure narrowly. Raised only
-    from construction, never from ``complete()``. Prefer the specific subclasses
-    below so composition can map by ``isinstance`` without sniffing message text.
+    Named so the composition root can catch this failure narrowly via a base
+    ``except OllamaConfigError`` arm (after the specific subclass arms). Raised
+    only from construction, never from ``complete()``. Prefer the specific
+    subclasses below so composition can map by ``isinstance`` without sniffing
+    message text.
     """
 
 

@@ -11,6 +11,10 @@ class ConfigurationBoundaryError(RuntimeError):
     Marker base so infrastructure adapters can let typed config failures pass
     through without importing ``application.errors``. Application
     ``ConfigurationError`` (and subclasses) inherit this type.
+
+    Do not raise this marker directly from adapters — raise a concrete
+    application ``ConfigurationError`` subclass (or let composition map an
+    infrastructure config error onto one) so presentation can classify it.
     """
 
 

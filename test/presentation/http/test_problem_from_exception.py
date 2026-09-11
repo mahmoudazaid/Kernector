@@ -284,6 +284,18 @@ def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
     assert "UploadPayload(" not in body
 
 
+def test_configuration_boundary_error_maps_like_configuration_error() -> None:
+    from domain.errors import ConfigurationBoundaryError
+
+    problem = problem_from_exception(
+        ConfigurationBoundaryError("adapter config missing")
+    )
+    assert problem.status == 500
+    assert problem.code == "configuration_error"
+    assert problem.detail == "The service is not configured correctly."
+    assert "adapter config" not in problem.detail
+
+
 def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> None:
     """Subclass must map to 409; ConfigurationError remains 500."""
     unconfigured = problem_from_exception(

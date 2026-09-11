@@ -165,22 +165,15 @@ class LangGraphToolAgent:
                     )
                     continue
                 args = call.get("args") or {}
-                if not isinstance(args, Mapping):
-                    outputs.append(
-                        ToolMessage(
-                            content=_INVALID_TOOL_ARGS_MESSAGE,
-                            name=bind_name,
-                            tool_call_id=call_id,
-                        )
-                    )
-                    continue
+                # Normalisation always leaves Mapping args (or sets error above).
+                assert isinstance(args, Mapping)
                 tool = tools_by_bind_name.get(bind_name)
                 if tool is None:
                     available = ", ".join(sorted(tools_by_bind_name))
                     outputs.append(
                         ToolMessage(
                             content=(
-                                f"Unknown tool {bind_name!r}. "
+                                "Unknown tool name. "
                                 f"Available tools: {available or '(none)'}."
                             ),
                             name=bind_name,

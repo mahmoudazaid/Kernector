@@ -479,10 +479,11 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 | `DomainValidationError` | 500 | `operational_error` | fixed operational sentence |
 | `InsufficientEvidenceError` | 422 | `insufficient_evidence` | fixed sentence |
 | `ConfigurationError` | 500 | `configuration_error` | fixed sentence |
+| `ConfigurationBoundaryError` | 500 | `configuration_error` | fixed sentence (marker; prefer concrete subclasses) |
 | `MissingProviderCredentialsError` | 500 | `missing_provider_credentials` | fixed sentence |
 | `OllamaNotConfiguredError` | 409 | `ollama_unconfigured` | fixed sentence |
 | `ToolRunFailedError` | 500 | `tool_failure` | fixed tool sentence |
-| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence |
+| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence; on Software Delivery tool-run paths, `PackSoftwareDeliveryChat` re-wraps into `ToolRunFailedError` (500 `tool_failure`) so vendor text never reaches the chat bubble |
 | `ToolFailureError` | 500 | `tool_failure` | fixed tool sentence |
 | `VectorStoreError` | 500 | `store_error` | fixed operational sentence |
 | `KnowledgeLoadError` / document wraps | 500 | `operational_error` | fixed operational sentence |
@@ -503,7 +504,8 @@ to 4xx with boundary-authored (or class-composed) detail.
 | outcome | `InsufficientEvidenceError` | application | Grounded use case; no retrieval hits cleared the relevance threshold |
 | validation | `DomainValidationError` | domain | Domain invariant violation |
 | config | `ConfigurationError` | application | Missing/invalid environment at composition |
-| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` |
+| config | `ConfigurationBoundaryError` | domain | Marker base for typed config failures; prefer concrete application subclasses |
+| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` / `MissingProviderCredentialsError` / `OllamaNotConfiguredError` |
 | provider | `ProviderError` | domain | LLM / embedding / rewrite runtime failure |
 | provider | `QueryRewriterError` | domain | Subclass of `ProviderError` from the rewrite port |
 | provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping rewrite failures |

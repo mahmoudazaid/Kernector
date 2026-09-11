@@ -31,6 +31,7 @@ from composition.errors import (
 )
 from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
+    ConfigurationBoundaryError,
     DomainValidationError,
     ProviderError,
     ToolFailureError,
@@ -331,7 +332,7 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
-    if isinstance(exc, ConfigurationError):
+    if isinstance(exc, (ConfigurationError, ConfigurationBoundaryError)):
         return _problem(
             code="configuration_error",
             title="Configuration error",
@@ -349,16 +350,7 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
-    if isinstance(exc, ToolRunFailedError):
-        return _problem(
-            code="tool_failure",
-            title="Tool failure",
-            status=500,
-            detail=TOOL_FAILURE_MESSAGE,
-            instance=instance,
-            request_id=request_id,
-        )
-    if isinstance(exc, ToolFailureError):
+    if isinstance(exc, (ToolRunFailedError, ToolFailureError)):
         return _problem(
             code="tool_failure",
             title="Tool failure",

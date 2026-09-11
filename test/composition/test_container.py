@@ -785,9 +785,9 @@ def test_agent_loop_e2e_scripted_tool_run_answers(
 
     monkeypatch.setattr(
         "composition.container._software_delivery_agent_model_factory",
-        lambda *a, **k: (
+        lambda settings, *, recorder=None, **_kwargs: (
             lambda **_kw: _ObservingChatOpenAI(
-                _Scripted(), recorder=None, model_name="scripted"
+                _Scripted(), recorder=recorder, model_name="scripted"
             )
         ),
     )
@@ -806,6 +806,17 @@ def test_agent_loop_e2e_scripted_tool_run_answers(
         "Scored risk, generated test cases, and exported Markdown."
     )
     assert "# Test Cases" in response.answer
+    assert response.run is not None
+    assert response.run.model == "scripted"
+    assert response.run.latency_ms is not None
+    assert response.run.latency_ms >= 0
+    assert response.run.hit_count == 1
+    assert response.run.path == "tools"
+    assert list(response.run.tools) == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
 
 
 def test_observing_chat_bind_tools_forwards_extra_options() -> None:
