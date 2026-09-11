@@ -2299,6 +2299,16 @@ a.kern-btn {
   width: 100%;
   min-height: 0;
   height: 100%;
+  --kern-chat-col: 48rem;
+}
+
+.kern-chat-header,
+.kern-chat-thread,
+.kern-chat-inline-error,
+.kern-chat-composer {
+  width: 100%;
+  max-width: var(--kern-chat-col);
+  margin-inline: auto;
 }
 
 .kern-chat--empty .kern-chat-body {
@@ -2316,7 +2326,6 @@ a.kern-btn {
 .kern-chat--empty .kern-chat-composer {
   margin-top: auto;
   margin-bottom: auto;
-  margin-inline: auto;
 }
 
 .kern-chat--empty .kern-chat-composer-bar {
@@ -2341,11 +2350,6 @@ a.kern-btn {
   margin: 0;
   font-size: var(--kern-text-xl);
   font-weight: 500;
-}
-
-.kern-chat-lead {
-  margin: var(--kern-space-1) 0 0;
-  color: var(--kern-muted);
 }
 
 .kern-chat-body {
@@ -2390,10 +2394,6 @@ a.kern-btn {
   background:
     var(--kern-control-sheen),
     color-mix(in srgb, var(--kern-accent) 10%, var(--kern-surface));
-}
-
-.kern-chat-msg--assistant {
-  max-width: min(100%, 48rem);
 }
 
 .kern-chat-msg--error {
@@ -2646,19 +2646,13 @@ a.kern-btn {
 }
 
 .kern-chat-inline-error {
-  margin: 0 auto;
-  width: 100%;
-  max-width: 48rem;
   color: var(--kern-danger, #b42318);
   flex-shrink: 0;
 }
 
 .kern-chat-composer {
   flex-shrink: 0;
-  width: 100%;
-  max-width: 48rem;
   margin-top: auto;
-  margin-inline: auto;
   padding-top: var(--kern-space-2);
 }
 
