@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DialogFrame } from "@/components/ui/DialogFrame";
 
 function Harness() {
@@ -216,6 +216,37 @@ describe("DialogFrame", () => {
     });
   });
 
+  it("clears the fallback timer when exit completes", async () => {
+    const user = userEvent.setup();
+    const clearSpy = vi.spyOn(window, "clearTimeout");
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          <DialogFrame
+            open={open}
+            titleId="clear-title"
+            onDismiss={() => setOpen(false)}
+          >
+            <h2 id="clear-title">Panel</h2>
+          </DialogFrame>
+        </>
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: /^open$/i }));
+    clearSpy.mockClear();
+    await user.click(screen.getByRole("button", { name: /dismiss dialog/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
+
   it("restores focus when the frame unmounts before exit completes", async () => {
     const user = userEvent.setup();
     function UnmountHarness() {
@@ -247,11 +278,8 @@ describe("DialogFrame", () => {
     await user.click(openButton);
     await user.click(screen.getByRole("button", { name: /dismiss dialog/i }));
 
-    await waitFor(
-      () => {
-        expect(document.activeElement).toBe(openButton);
-      },
-      { timeout: 1000 },
-    );
+    // No waitFor: the restore must not depend on RESTORE_FALLBACK_MS.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(openButton);
   });
 });

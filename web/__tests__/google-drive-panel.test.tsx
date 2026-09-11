@@ -429,6 +429,49 @@ describe("GoogleDrivePanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps Disconnect disabled while status refresh is in flight after confirm", async () => {
+    const user = userEvent.setup();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    let releaseStatus!: () => void;
+    const getStatus = vi
+      .fn()
+      .mockResolvedValueOnce(CONNECTED)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseStatus = () => resolve(status());
+          }),
+      );
+
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={getStatus}
+        loadSelection={emptySelection}
+        disconnect={disconnect}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: /disconnect/i }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /disconnect/i,
+      }),
+    );
+
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+    const cardBtn = screen
+      .getAllByRole("button", { name: /^disconnect$/i })
+      .find((b) => !b.closest('[role="dialog"]'));
+    expect(cardBtn).toBeDisabled();
+    releaseStatus();
+    expect(
+      await screen.findByRole("link", { name: /^connect$/i }),
+    ).toBeTruthy();
+  });
+
   it("offers Connect again when reauthorization is required", async () => {
     render(
       <GoogleDrivePanel

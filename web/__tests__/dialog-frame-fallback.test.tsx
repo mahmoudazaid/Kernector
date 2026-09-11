@@ -22,6 +22,8 @@ vi.mock("motion/react", () => {
     onExitComplete?: () => void;
   }) {
     const [shown, setShown] = useState(children);
+    const onExit = useRef(onExitComplete);
+    onExit.current = onExitComplete;
     const exitTimer = useRef<number | null>(null);
     useEffect(() => {
       if (hasContent(children)) {
@@ -37,14 +39,14 @@ vi.mock("motion/react", () => {
       exitTimer.current = window.setTimeout(() => {
         exitTimer.current = null;
         setShown(null);
-        onExitComplete?.();
+        onExit.current?.();
       }, 10_000);
       return () => {
         if (exitTimer.current != null) {
           window.clearTimeout(exitTimer.current);
         }
       };
-    }, [children, onExitComplete]);
+    }, [children]);
     return <>{shown}</>;
   }
 
@@ -110,7 +112,6 @@ describe("DialogFrame restore fallback timer", () => {
     expect(document.activeElement).toBe(closeButton);
     await user.click(closeButton);
 
-    // Panel is still mounted (held AnimatePresence) with Close focused.
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: /^close$/i }),

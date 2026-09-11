@@ -85,18 +85,20 @@ function restoreFocus(
  * a fresh alert). Frame-scoped so a closing dialog cannot steal focus from a
  * still-open sibling.
  */
-function focusAlreadyMovedOn(panel: HTMLElement | null): boolean {
+function focusAlreadyMovedOn(
+  panel: HTMLElement | null,
+  backdrop: HTMLElement | null,
+): boolean {
   const active = document.activeElement;
   if (!active || active === document.body) {
     return false;
   }
-  if (panel?.contains(active)) {
-    return false;
-  }
+  // Still on this frame's root (panel or its motion wrapper).
   if (panel?.closest(".kern-dialog-root")?.contains(active)) {
     return false;
   }
-  if (active.classList.contains("kern-dialog-backdrop")) {
+  // Still on this frame's backdrop (identity, not class — avoids sibling theft).
+  if (backdrop && active === backdrop) {
     return false;
   }
   return true;
@@ -114,6 +116,9 @@ export function DialogFrame({
   children,
 }: DialogFrameProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  /** Survives host-ref detach on unmount; cleared when restore is consumed. */
+  const panelNodeRef = useRef<HTMLDivElement | null>(null);
+  const backdropRef = useRef<HTMLButtonElement | null>(null);
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
   const dismissDisabledRef = useRef(dismissDisabled);
@@ -145,8 +150,9 @@ export function DialogFrame({
       }
       pendingRestoreRef.current = null;
       exitingPanelRef.current = null;
+      panelNodeRef.current = null;
       clearRestoreFallbackTimer();
-      if (!focusAlreadyMovedOn(panel)) {
+      if (!focusAlreadyMovedOn(panel, backdropRef.current)) {
         restoreFocus(...pending);
       }
     },
@@ -239,9 +245,8 @@ export function DialogFrame({
         openerRef.current,
         previous,
       ];
-      // Capture at arm time: timer may fire while the panel is still focused.
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mid-exit read
-      const panelAtArm = panelRef.current;
+      // Prefer panelNodeRef: panelRef is already null on the unmount path.
+      const panelAtArm = panelNodeRef.current ?? panelRef.current;
       exitingPanelRef.current = panelAtArm;
       restoreFallbackTimerRef.current = window.setTimeout(() => {
         restoreFallbackTimerRef.current = null;
@@ -268,6 +273,7 @@ export function DialogFrame({
         <motion.button
           key="kern-dialog-backdrop"
           type="button"
+          ref={backdropRef}
           className="kern-dialog-backdrop"
           aria-label="Dismiss dialog"
           disabled={dismissDisabled}
@@ -292,7 +298,12 @@ export function DialogFrame({
           transition={reduceMotion ? FADE_ONLY : PANEL_SPRING}
         >
           <div
-            ref={panelRef}
+            ref={(node) => {
+              panelRef.current = node;
+              if (node) {
+                panelNodeRef.current = node;
+              }
+            }}
             className={["kern-dialog", panelClassName]
               .filter(Boolean)
               .join(" ")}

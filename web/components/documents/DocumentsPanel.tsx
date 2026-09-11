@@ -280,9 +280,10 @@ export function DocumentsPanel({
   }
 
   const openUploadDialog = useCallback(() => {
+    clearFeedback();
     setUploadError(null);
     setUploadOpen(true);
-  }, []);
+  }, [clearFeedback]);
 
   const setPickerOpen = useCallback(
     (next: boolean) => {
@@ -505,8 +506,11 @@ export function DocumentsPanel({
       }
       await refresh();
     } catch (error) {
-      setPendingDelete(null);
+      // Announce while the confirm is still open so dialogOpen stays in the
+      // announce-effect dependency graph; await breaks the React 18 batch.
       announce({ kind: "error", message: actionErrorMessage(error) });
+      await Promise.resolve();
+      setPendingDelete(null);
     } finally {
       setBusy(false);
     }
