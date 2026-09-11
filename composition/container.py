@@ -118,7 +118,6 @@ from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corp
 from infrastructure.llm.ollama import (
     OllamaBaseUrlMissingError,
     OllamaChat,
-    OllamaConfigError,
     OllamaModelMissingError,
 )
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
@@ -144,9 +143,8 @@ logger = logging.getLogger(__name__)
 def _build_openrouter(
     settings: Settings, model: str | None, base_url: str | None
 ) -> ChatModel:
-    config = settings.openrouter
-    if model:
-        config = replace(config, model=model)
+    del base_url  # OpenRouter ignores per-request base URL overrides.
+    config = _openrouter_runtime_config(settings, model=model)
     try:
         return OpenRouterChat(config)
     except ChatConfigError as exc:
@@ -156,19 +154,33 @@ def _build_openrouter(
 def _build_ollama(
     settings: Settings, model: str | None, base_url: str | None
 ) -> ChatModel:
-    config = settings.ollama
-    if model:
-        config = replace(config, model=model)
-    if base_url:
-        config = replace(config, base_url=base_url)
+    config = _ollama_runtime_config(settings, model=model, base_url=base_url)
     try:
         return OllamaChat(config)
     except OllamaBaseUrlMissingError as exc:
         raise OllamaNotConfiguredError(str(exc)) from exc
     except OllamaModelMissingError as exc:
         raise MissingProviderCredentialsError(str(exc)) from exc
-    except OllamaConfigError as exc:
-        raise MissingProviderCredentialsError(str(exc)) from exc
+
+
+def _openrouter_runtime_config(
+    settings: Settings, *, model: str | None
+):
+    config = settings.openrouter
+    if model:
+        config = replace(config, model=model)
+    return config
+
+
+def _ollama_runtime_config(
+    settings: Settings, *, model: str | None, base_url: str | None
+):
+    config = settings.ollama
+    if model:
+        config = replace(config, model=model)
+    if base_url:
+        config = replace(config, base_url=base_url)
+    return config
 
 
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {
@@ -2060,10 +2072,9 @@ def _software_delivery_agent_model_factory(
 ):
     """Return a LangChain chat model factory with ``bind_tools`` for the agent.
 
-    Uses the same effective provider/model/base_url as the request's ``ChatModel``.
-    Credentials are expected to have been validated by ``build_chat_model`` on the
-    HTTP path; this factory still requires a non-blank model before constructing
-    ``ChatOpenAI`` so a missing ``OLLAMA_MODEL`` is not misdiagnosed as connectivity.
+    Validates the full provider credential contract via the same ``_build_*``
+    helpers as live chat (typed ``ConfigurationError`` subclasses), then builds
+    a LangChain ``ChatOpenAI`` from the same resolved runtime config.
 
     Args:
         settings (Settings): Process settings for provider defaults.
@@ -2088,16 +2099,14 @@ def _software_delivery_agent_model_factory(
                 f"Unknown provider {effective!r}. "
                 f"Expected one of {sorted(_CHAT_MODELS)}."
             )
-        # Same credential contract as live chat; typed config errors must surface.
-        builder(settings, model, base_url)
+        # Validate via chat builders (discard adapter; keep typed config errors).
+        _ = builder(settings, model, base_url)
 
         if effective == "ollama":
-            config = settings.ollama
-            if model:
-                config = replace(config, model=model)
-            if base_url:
-                config = replace(config, base_url=base_url)
-            base = (config.base_url or "").rstrip("/")
+            config = _ollama_runtime_config(
+                settings, model=model, base_url=base_url
+            )
+            base = config.base_url.rstrip("/")  # type: ignore[union-attr]
             try:
                 inner = ChatOpenAI(
                     model=config.model,
@@ -2111,9 +2120,7 @@ def _software_delivery_agent_model_factory(
                 ) from exc
             model_name = config.model
         else:
-            config = settings.openrouter
-            if model:
-                config = replace(config, model=model)
+            config = _openrouter_runtime_config(settings, model=model)
             try:
                 inner = ChatOpenAI(
                     model=config.model,

@@ -29,6 +29,7 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
+from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
     DomainValidationError,
     ProviderError,
@@ -345,6 +346,15 @@ def problem_from_exception(
             title="Provider error",
             status=502,
             detail=PROVIDER_FAILURE_MESSAGE,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ToolRunFailedError):
+        return _problem(
+            code="tool_failure",
+            title="Tool failure",
+            status=500,
+            detail=TOOL_FAILURE_MESSAGE,
             instance=instance,
             request_id=request_id,
         )

@@ -577,8 +577,6 @@ def test_agent_loop_runtime_override_wires_despite_missing_openrouter_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Agent loop + Ollama override: wire succeeds when OpenRouter key is absent."""
-    from application.untrusted_text import agent_tool_system_prompt
-    from composition.container import _software_delivery_agent_model_factory
     from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
     _sd_env(monkeypatch)
@@ -617,18 +615,8 @@ def test_agent_loop_runtime_override_wires_despite_missing_openrouter_key(
     assert len(wired) == 1
     assert isinstance(wired[0], LangGraphToolAgent)
     assert isinstance(ask._ask, ToolAugmentedAsk)
-
-    factory = _software_delivery_agent_model_factory(
-        load_settings(),
-        provider="ollama",
-        model="llama3",
-        base_url="http://h:1234",
-    )
-    observing = factory()
-    assert observing._model_name == "llama3"
-    assert "http://h:1234/v1" in str(observing._inner.openai_api_base)
     # Production system prompt is injected at the composition construction site.
-    assert "BEGIN_UNTRUSTED_AGENT_DATA" in agent_tool_system_prompt()
+    assert "BEGIN_UNTRUSTED_AGENT_DATA" in wired[0]._system_prompt
 
 
 def test_agent_model_factory_uses_runtime_provider_override(
@@ -669,31 +657,155 @@ def test_agent_model_factory_rejects_unknown_provider(
         factory()
 
 
-def test_agent_run_preserves_missing_credentials_error(
+def test_agent_loop_e2e_missing_credentials_maps_to_problem(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Config failures from the agent factory must not become ProviderError/502."""
-    from application.untrusted_text import agent_tool_system_prompt
-    from composition.container import _software_delivery_agent_model_factory
-    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+    """Composed agent loop: missing credentials stay typed through ask → Problem."""
+    from presentation.http.errors import problem_from_exception
 
     _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
-    factory = _software_delivery_agent_model_factory(load_settings())
-    agent = LangGraphToolAgent(
-        system_prompt=agent_tool_system_prompt(),
-        model_factory=factory,
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
     )
 
-    class _Tool:
-        name = "lookup"
-        description = "x"
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
 
-        def run(self, arguments: Mapping[str, object]) -> str:
-            return "ok"
+    with pytest.raises(MissingProviderCredentialsError) as caught:
+        ask.execute(AskRequest(query="Create test cases for AUTH-101"))
 
-    with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
-        agent.run("goal", [_Tool()], max_steps=2)
+    problem = problem_from_exception(caught.value)
+    assert problem.status == 500
+    assert problem.code == "missing_provider_credentials"
+    assert "OPENROUTER_API_KEY" not in problem.detail
+
+
+def test_agent_loop_e2e_scripted_tool_run_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Composed agent loop runs a real LangGraphToolAgent with a scripted model."""
+    from langchain_core.messages import AIMessage
+
+    from composition.container import _ObservingChatOpenAI
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    risk = json.dumps(
+        {
+            "score": 62,
+            "level": "high",
+            "rationale": "Acceptance criteria are absent from a complete story.",
+            "factors": [
+                {
+                    "factor_id": "missing_acceptance_criteria",
+                    "weight": 30,
+                    "references": [
+                        {"source_id": "US-1", "source_type": "user_story"}
+                    ],
+                }
+            ],
+        }
+    )
+    generated = json.dumps(
+        {
+            "output_style": "steps",
+            "test_cases": [
+                {
+                    "title": "Lock the account after five failed MFA attempts",
+                    "steps": ["Sign in with a valid password.", "Fail MFA five times."],
+                    "expected": "The account is locked.",
+                    "references": [
+                        {"source_id": "US-1", "source_type": "user_story"}
+                    ],
+                }
+            ],
+        }
+    )
+    invoke_tool = _ScriptedInvokeTool(
+        {
+            RISK_SCORE_TOOL: risk,
+            GENERATE_TEST_CASES_TOOL: generated,
+            EXPORT_TEST_CASES_MARKDOWN_TOOL: "# Test Cases\n",
+        }
+    )
+    monkeypatch.setattr(
+        "composition.container.build_invoke_tool",
+        lambda settings, chat_model=None: invoke_tool,
+    )
+
+    class _Scripted:
+        def __init__(self) -> None:
+            self._queue = [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "software_delivery__risk_score",
+                            "args": {},
+                            "id": "1",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "software_delivery__generate_test_cases",
+                            "args": {},
+                            "id": "2",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "software_delivery__export_test_cases_markdown",
+                            "args": {},
+                            "id": "3",
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+
+        def bind_tools(self, tools, *args, **kwargs):
+            del tools, args, kwargs
+            return self
+
+        def invoke(self, _messages, **_kwargs):
+            return self._queue.pop(0)
+
+    monkeypatch.setattr(
+        "composition.container._software_delivery_agent_model_factory",
+        lambda *a, **k: (
+            lambda **_kw: _ObservingChatOpenAI(
+                _Scripted(), recorder=None, model_name="scripted"
+            )
+        ),
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+
+    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+
+    assert invoke_tool.invoked == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+    assert response.answer.startswith(
+        "Scored risk, generated test cases, and exported Markdown."
+    )
+    assert "# Test Cases" in response.answer
 
 
 def test_observing_chat_bind_tools_forwards_extra_options() -> None:

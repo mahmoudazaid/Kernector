@@ -35,6 +35,8 @@ class RunToolAgent:
         Raises:
             ApplicationValidationError: ``goal`` is blank or ``max_steps`` invalid.
             ProviderError: Propagated from the agent.
+            ConfigurationError: Propagated typed config failure from composition.
+            ValueError: Propagated when the agent factory rejects a provider.
             ToolArgumentValidationError: Propagated from a tool.
             ToolFailureError: Propagated from a tool.
         """

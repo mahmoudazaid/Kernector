@@ -26,6 +26,7 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
+from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
     DomainValidationError,
     ProviderError,
@@ -33,7 +34,7 @@ from domain.errors import (
     VectorStoreError,
 )
 from domain.models import Message
-from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE
+from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE, TOOL_FAILURE_MESSAGE
 from presentation.http.errors import (
     DOCUMENT_NOT_FOUND_DETAIL,
     DOCUMENT_PARTIAL_DETAILS,
@@ -83,6 +84,11 @@ from presentation.http.errors import (
         (ConnectorSyncError("vendor body"), 502, "connector_sync_failed"),
         (ProviderError("upstream"), 502, "provider_error"),
         (ToolFailureError("tool broke"), 500, "tool_failure"),
+        (
+            ToolRunFailedError("A tool failed during the run."),
+            500,
+            "tool_failure",
+        ),
         (VectorStoreError("chroma down"), 500, "store_error"),
         (KnowledgeLoadError("corpus"), 500, "operational_error"),
         (RuntimeError("mystery"), 500, "internal_error"),

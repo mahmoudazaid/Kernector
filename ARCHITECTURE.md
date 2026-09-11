@@ -481,6 +481,7 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 | `ConfigurationError` | 500 | `configuration_error` | fixed sentence |
 | `MissingProviderCredentialsError` | 500 | `missing_provider_credentials` | fixed sentence |
 | `OllamaNotConfiguredError` | 409 | `ollama_unconfigured` | fixed sentence |
+| `ToolRunFailedError` | 500 | `tool_failure` | fixed tool sentence |
 | `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence |
 | `ToolFailureError` | 500 | `tool_failure` | fixed tool sentence |
 | `VectorStoreError` | 500 | `store_error` | fixed operational sentence |

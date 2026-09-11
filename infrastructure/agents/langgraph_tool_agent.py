@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, Protocol, TypedDict
+from typing import Annotated, Any, NoReturn, Protocol, TypedDict
 from uuid import uuid4
 
 from langchain_core.messages import (
@@ -18,7 +18,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, ConfigDict
 
-from domain.errors import ProviderError, ToolArgumentValidationError, ToolFailureError
+from domain.errors import (
+    ConfigurationBoundaryError,
+    ProviderError,
+    ToolArgumentValidationError,
+    ToolFailureError,
+)
 from domain.models import AgentTurnResult
 from domain.ports import Tool
 
@@ -28,20 +33,9 @@ _EMPTY_FINAL_MESSAGE = "The agent finished without a final answer."
 _INVALID_TOOL_ARGS_MESSAGE = "Tool call arguments could not be parsed."
 
 
-def _is_configuration_error(exc: BaseException) -> bool:
-    """True when ``exc`` is application ``ConfigurationError`` (or a subclass).
-
-    Checked by MRO name so this infrastructure adapter does not import
-    ``application.errors`` while still letting typed config failures pass through.
-    """
-    return any(cls.__name__ == "ConfigurationError" for cls in type(exc).__mro__)
-
-
-def _provider_or_reraise(exc: BaseException) -> None:
+def _provider_or_reraise(exc: BaseException) -> NoReturn:
     """Re-raise config/ValueError as-is; otherwise raise connectivity ProviderError."""
-    if isinstance(exc, ProviderError) or _is_configuration_error(exc):
-        raise exc
-    if isinstance(exc, ValueError):
+    if isinstance(exc, (ProviderError, ConfigurationBoundaryError, ValueError)):
         raise exc
     raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
 
@@ -109,6 +103,9 @@ class LangGraphToolAgent:
 
         Raises:
             ProviderError: Model or graph runtime failure (fixed message).
+            ConfigurationBoundaryError: Propagated typed config failure from the
+                model factory (application ``ConfigurationError`` subclasses).
+            ValueError: Propagated when the factory rejects an unknown provider.
             ToolArgumentValidationError: Propagated from a bound tool.
             ToolFailureError: Propagated from a bound tool.
         """
@@ -161,13 +158,22 @@ class LangGraphToolAgent:
                 if call.get("error"):
                     outputs.append(
                         ToolMessage(
-                            content=str(call["error"]),
+                            content=_INVALID_TOOL_ARGS_MESSAGE,
                             name=bind_name,
                             tool_call_id=call_id,
                         )
                     )
                     continue
                 args = call.get("args") or {}
+                if not isinstance(args, Mapping):
+                    outputs.append(
+                        ToolMessage(
+                            content=_INVALID_TOOL_ARGS_MESSAGE,
+                            name=bind_name,
+                            tool_call_id=call_id,
+                        )
+                    )
+                    continue
                 tool = tools_by_bind_name.get(bind_name)
                 if tool is None:
                     available = ", ".join(sorted(tools_by_bind_name))
@@ -182,7 +188,7 @@ class LangGraphToolAgent:
                         )
                     )
                     continue
-                result = tool.run(args)  # type: ignore[arg-type]
+                result = tool.run(args)
                 outputs.append(
                     ToolMessage(
                         content=result,
