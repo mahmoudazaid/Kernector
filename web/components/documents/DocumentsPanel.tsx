@@ -257,7 +257,7 @@ export function DocumentsPanel({
     }
     announcedSeqRef.current = feedbackSeq;
     feedbackRef.current?.focus();
-  }, [feedbackSeq, dialogOpen, feedback.kind]);
+  }, [feedbackSeq, dialogOpen, feedback.kind, hubTab]);
 
   useEffect(() => {
     if (uploadOpen && uploadError) {

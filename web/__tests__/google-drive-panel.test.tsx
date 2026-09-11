@@ -179,9 +179,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    expect(
-      await screen.findByRole("button", { name: /Sync/i }),
-    ).toBeEnabled();
+    expect(await screen.findByRole("button", { name: /Sync/i })).toBeEnabled();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
@@ -237,9 +235,7 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByText(/^connected$/i)).toBeInTheDocument();
     expect(screen.queryByText(/setup required/i)).toBeNull();
     expect(screen.getByRole("button", { name: /Sync/i })).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeEnabled();
     expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
     expect(screen.queryByText(/^sync scope$/i)).toBeNull();
     expect(screen.queryByText(/^new$/i)).toBeNull();
@@ -337,10 +333,12 @@ describe("GoogleDrivePanel", () => {
     await user.click(button);
     expect(syncNow).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /^sync$/i })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: /syncing/i })).not.toBeInTheDocument();
-    const overlay = screen.getByText(/syncing google drive/i).closest(
-      ".kern-source-busy-overlay",
-    );
+    expect(
+      screen.queryByRole("button", { name: /syncing/i }),
+    ).not.toBeInTheDocument();
+    const overlay = screen
+      .getByText(/syncing google drive/i)
+      .closest(".kern-source-busy-overlay");
     expect(overlay).toBeInTheDocument();
     expect(overlay?.querySelector(".kern-loader-mark")).toBeInTheDocument();
     resolveSync({});
@@ -422,6 +420,10 @@ describe("GoogleDrivePanel", () => {
 
     await waitFor(() => {
       expect(disconnect).toHaveBeenCalledTimes(1);
+    });
+    // Busy must clear before the confirm closes so restore can target the opener.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(
       await screen.findByRole("link", { name: /^connect$/i }),
@@ -679,9 +681,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", { name: /Browse/i }),
-    );
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
@@ -691,7 +691,9 @@ describe("GoogleDrivePanel", () => {
       screen.queryByRole("dialog", { name: /choose from google drive/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/syncing google drive/i).closest(".kern-source-busy-overlay"),
+      screen
+        .getByText(/syncing google drive/i)
+        .closest(".kern-source-busy-overlay"),
     ).toBeInTheDocument();
 
     resolveSave({
@@ -711,12 +713,8 @@ describe("GoogleDrivePanel", () => {
       }),
     );
     expect(syncNow).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByRole("button", { name: /Sync/i }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Sync/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
   });
 
   it("saves an empty Drive selection without starting a sync", async () => {
@@ -744,7 +742,9 @@ describe("GoogleDrivePanel", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
-    await user.click(await within(dialog).findByRole("checkbox", { name: /specs/i }));
+    await user.click(
+      await within(dialog).findByRole("checkbox", { name: /specs/i }),
+    );
     await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => {
@@ -772,9 +772,7 @@ describe("GoogleDrivePanel", () => {
       />,
     );
 
-    await user.click(
-      await screen.findByRole("button", { name: /Browse/i }),
-    );
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
     const dialog = await screen.findByRole("dialog", {
       name: /choose from google drive/i,
     });
@@ -827,9 +825,7 @@ describe("GoogleDrivePanel", () => {
     );
 
     expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
     unmount();
 
     render(
@@ -846,9 +842,7 @@ describe("GoogleDrivePanel", () => {
       "dateTime",
       "2026-09-08T12:00:00+00:00",
     );
-    expect(
-      screen.getByRole("button", { name: /Browse/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
     expect(getStatus).toHaveBeenCalledTimes(2);
     expect(loadSelection).toHaveBeenCalledTimes(2);
   });

@@ -208,7 +208,10 @@ def test_google_drive_status_configured_true_for_valid_folder_id(
             folder_id="1AbC_dEf-GhI",
         ),
     )
-    assert google_drive_status(settings).configured is True
+    status = google_drive_status(settings)
+    assert status.configured is True
+    # Pin OAuth store isolation: a real grant file must not make this True.
+    assert status.connected is False
 
 
 def test_build_google_drive_connector_maps_missing_client_extra(
