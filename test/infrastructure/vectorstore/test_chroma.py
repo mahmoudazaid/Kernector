@@ -509,42 +509,163 @@ def test_list_source_chunks_rejects_a_non_reference(
         store.list_source_chunks("doc-1")  # type: ignore[arg-type]
 
 
-def test_list_source_chunks_mismatched_lengths_raise_store_error(
+def test_list_source_chunks_mismatched_index_lengths_raise_store_error(
     store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store.upsert([make_embedded(source_id="doc-1", index=0)])
+    """Legacy scan: ids/metadatas mismatch on the metadata-only get."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    chunk = make_chunk(source_id="legacy", index=0, content="L0")
+    store._collection.add(
+        ids=[_derive_id(chunk)],
+        embeddings=[list(ALIGNED)],
+        documents=[chunk.content],
+        metadatas=[
+            {
+                "source_id": "legacy",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            }
+        ],
+    )
+    real_get = store._collection.get
 
     def bad_get(**kwargs: object) -> dict[str, object]:
-        include = kwargs.get("include") or []
+        include = kwargs.get("include")
         if include == ["metadatas"]:
+            return {"ids": ["a", "b"], "metadatas": [{"source_id": "legacy"}]}
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", bad_get)
+
+    with pytest.raises(ChromaStoreError, match=r"get\(\) returned mismatched"):
+        store.list_source_chunks(make_reference("legacy"))
+
+
+def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy scan: hydrate get returns inconsistent parallel arrays."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    chunk = make_chunk(source_id="legacy", index=0, content="L0")
+    store._collection.add(
+        ids=[_derive_id(chunk)],
+        embeddings=[list(ALIGNED)],
+        documents=[chunk.content],
+        metadatas=[
+            {
+                "source_id": "legacy",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            }
+        ],
+    )
+    real_get = store._collection.get
+
+    def bad_get(**kwargs: object) -> dict[str, object]:
+        include = kwargs.get("include")
+        if include == ["metadatas", "documents"] and kwargs.get("ids") is not None:
             return {
                 "ids": ["a"],
+                "documents": ["only-one", "extra"],
                 "metadatas": [
                     {
-                        "source_id": "doc-1",
+                        "source_id": "legacy",
                         "source_type": SourceType.KNOWLEDGE_DOCUMENT,
                         "chunk_index": 0,
                         "extra_json": "{}",
                     }
                 ],
             }
-        return {
-            "ids": ["a"],
-            "documents": ["only-one", "extra"],
-            "metadatas": [
-                {
-                    "source_id": "doc-1",
-                    "source_type": SourceType.KNOWLEDGE_DOCUMENT,
-                    "chunk_index": 0,
-                    "extra_json": "{}",
-                }
-            ],
-        }
+        return real_get(**kwargs)
 
     monkeypatch.setattr(store._collection, "get", bad_get)
 
-    with pytest.raises(ChromaStoreError, match="mismatched lengths"):
-        store.list_source_chunks(make_reference("doc-1"))
+    with pytest.raises(
+        ChromaStoreError, match="page hydrate returned mismatched lengths"
+    ):
+        store.list_source_chunks(make_reference("legacy"))
+
+
+def test_list_source_chunks_drops_ids_missing_from_hydrate(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy scan: ids that vanish between reads are omitted, not a 500."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    chunks = [
+        make_chunk(source_id="legacy", index=i, content=f"L{i}") for i in range(2)
+    ]
+    ids = [_derive_id(chunk) for chunk in chunks]
+    store._collection.add(
+        ids=ids,
+        embeddings=[list(ALIGNED) for _ in chunks],
+        documents=[chunk.content for chunk in chunks],
+        metadatas=[
+            {
+                "source_id": "legacy",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": chunk.index,
+                "extra_json": "{}",
+            }
+            for chunk in chunks
+        ],
+    )
+    real_get = store._collection.get
+
+    def partial_hydrate(**kwargs: object) -> object:
+        include = kwargs.get("include")
+        if include == ["metadatas", "documents"] and kwargs.get("ids") is not None:
+            return {
+                "ids": [ids[0]],
+                "documents": ["L0"],
+                "metadatas": [
+                    {
+                        "source_id": "legacy",
+                        "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                        "chunk_index": 0,
+                        "extra_json": "{}",
+                    }
+                ],
+            }
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", partial_hydrate)
+
+    listed = store.list_source_chunks(make_reference("legacy"))
+    assert [c.content for c in listed] == ["L0"]
+
+
+def test_list_source_chunks_skips_corrupt_chunk_index_on_legacy_scan(
+    store: ChromaVectorStore,
+) -> None:
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    good = make_chunk(source_id="legacy", index=0, content="ok")
+    store._collection.add(
+        ids=[_derive_id(good), "corrupt-legacy-row"],
+        embeddings=[list(ALIGNED), list(ALIGNED)],
+        documents=["ok", "bad"],
+        metadatas=[
+            {
+                "source_id": "legacy",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            },
+            {
+                "source_id": "legacy",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    listed = store.list_source_chunks(make_reference("legacy"))
+    assert [c.content for c in listed] == ["ok"]
 
 
 def test_list_source_chunks_applies_limit_and_offset(
@@ -606,8 +727,10 @@ def test_list_source_chunks_does_not_request_embeddings(
     listed = store.list_source_chunks(make_reference("doc-1"))
 
     assert [c.content for c in listed] == ["body"]
-    assert captured[0] == ["metadatas"]
-    assert captured[1] == ["metadatas", "documents"]
+    assert len(captured) == 3
+    assert captured[0] == []
+    assert captured[1] == []
+    assert captured[2] == ["metadatas", "documents"]
     assert all(
         isinstance(include, list) and "embeddings" not in include
         for include in captured
@@ -666,7 +789,7 @@ def test_list_source_chunks_pages_legacy_rows_without_chunk_position(
 def test_list_source_chunks_pages_after_partial_upserts(
     store: ChromaVectorStore,
 ) -> None:
-    """Batch-local positions may collide; paging still follows chunk.index order."""
+    """Partial upserts densify positions across the whole source."""
     store.upsert([make_embedded(source_id="doc-1", index=0, content="c0")])
     store.upsert(
         [
@@ -674,6 +797,17 @@ def test_list_source_chunks_pages_after_partial_upserts(
             make_embedded(source_id="doc-1", index=2, content="c2"),
         ]
     )
+
+    result = store._collection.get(include=["metadatas", "documents"])
+    by_content = {
+        doc: meta["chunk_position"]
+        for doc, meta in zip(
+            result.get("documents") or [],
+            result.get("metadatas") or [],
+            strict=True,
+        )
+    }
+    assert by_content == {"c0": 0, "c1": 1, "c2": 2}
 
     page1 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
     page2 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=2)

@@ -647,6 +647,12 @@ def test_list_chunks_reports_has_more_from_limit_plus_one(client_factory) -> Non
     assert body["has_more"] is True
 
 
+def test_hub_source_types_match_source_type_enum() -> None:
+    from domain.knowledge import HUB_SOURCE_TYPES, SourceType
+
+    assert HUB_SOURCE_TYPES == frozenset(SourceType)
+
+
 def test_list_chunks_has_more_false_when_store_returns_exact_limit(
     client_factory,
 ) -> None:
