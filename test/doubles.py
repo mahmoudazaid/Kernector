@@ -11,13 +11,14 @@ import hashlib
 from collections.abc import Mapping, Sequence
 
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     ScoredChunk,
     SourceReference,
     Vector,
 )
-from domain.errors import QueryRewriterError
+from domain.errors import QueryRewriterError, VectorStoreError
 
 _DIMENSION = 4
 
@@ -190,6 +191,35 @@ class InMemoryVectorStore:
         scope = (str(reference.source_type), reference.source_id)
         for key in [key for key in self.records if key[:2] == scope]:
             del self.records[key]
+
+    def list_source_chunks(
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ChunkPage:
+        if isinstance(limit, bool) or (limit is not None and not isinstance(limit, int)):
+            raise VectorStoreError(f"limit must be an int or None, got {limit!r}")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise VectorStoreError(f"offset must be a non-negative int, got {offset!r}")
+        scope = (str(reference.source_type), reference.source_id)
+        matched = [
+            item.chunk
+            for key, item in self.records.items()
+            if key[:2] == scope
+        ]
+        ordered = sorted(matched, key=lambda chunk: chunk.index)
+        if limit is None:
+            page = ordered[offset:]
+            return ChunkPage(chunks=tuple(page), has_more=False)
+        if limit <= 0:
+            return ChunkPage(chunks=(), has_more=False)
+        page = ordered[offset : offset + limit]
+        return ChunkPage(
+            chunks=tuple(page),
+            has_more=len(ordered) > offset + limit,
+        )
 
 
 class InMemoryLexicalIndex:

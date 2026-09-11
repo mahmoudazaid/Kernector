@@ -85,6 +85,7 @@ from domain.errors import (
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ChunkPage,
     ScoredChunk,
     SourceDocument,
     SourceReference,
@@ -307,8 +308,13 @@ def build_embedding_model(settings: Settings) -> EmbeddingModel:
     return OpenRouterEmbeddings(settings.openrouter)
 
 
+def build_chroma_vector_store(settings: Settings) -> VectorStore:
+    """Return Chroma only (no BM25 hydrate). For chunk listing and similar reads."""
+    return ChromaVectorStore(settings.chroma)
+
+
 def build_vector_store(settings: Settings) -> VectorStore:
-    chroma = ChromaVectorStore(settings.chroma)
+    chroma = build_chroma_vector_store(settings)
     if not settings.retrieval.hybrid_enabled:
         return chroma
     if settings.retrieval.hybrid_alpha == 0.0:
@@ -611,6 +617,32 @@ def _resolve_catalog(
     if catalog_factory is not None:
         return catalog_factory()
     return build_document_catalog(settings)
+
+
+def _lazy_vector_store(
+    settings: Settings,
+    *,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> Callable[[], VectorStore]:
+    """Memoize one store: ``vector_store`` wins; else factory; else build.
+
+    When both ``vector_store`` and ``vector_store_factory`` are passed,
+    ``vector_store`` wins and the factory is never called. Pass only the
+    factory to defer opening until the first call.
+    """
+    shared_store = vector_store
+
+    def get_store() -> VectorStore:
+        nonlocal shared_store
+        if shared_store is None:
+            if vector_store_factory is not None:
+                shared_store = vector_store_factory()
+            else:
+                shared_store = build_vector_store(settings)
+        return shared_store
+
+    return get_store
 
 
 _DRIVE_CONFIG_MESSAGE = "Google Drive connector configuration is invalid."
@@ -1573,16 +1605,11 @@ def sync_google_drive(
             connector = build_google_drive_connector(settings)
         if catalog is None:
             catalog = build_document_catalog(settings)
-        shared_store = vector_store
-
-        def get_store() -> VectorStore:
-            nonlocal shared_store
-            if shared_store is None:
-                if vector_store_factory is not None:
-                    shared_store = vector_store_factory()
-                else:
-                    shared_store = build_vector_store(settings)
-            return shared_store
+        get_store = _lazy_vector_store(
+            settings,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
 
         return SyncConnectorDocuments(
             connector=connector,
@@ -1615,24 +1642,20 @@ def build_manage_uploaded_documents(
     """Wire create/replace/delete/list for uploaded documents.
 
     The store and the ingest pipeline are passed as factories the use case calls
-    only when it needs them. Listing then costs one SQLite query against
+    only when it needs them. Catalog listing then costs one SQLite query against
     ``catalog_documents`` — no Chroma client and no embedding credentials —
     which matters because the documents list path should stay cheap on every
     request, and because `list` and `delete` never embed anything.
-    Each operation opens at most one store, and both paths open it through the
-    same factory, so ingest and delete cannot drift onto different collections.
+    Each operation opens at most one store, and list-chunks / mutate paths share
+    the same factory, so ingest, delete, and chunk listing cannot drift onto
+    different collections.
 
     Pass ``vector_store`` to reuse a cached DualWrite/Chroma client (hybrid BM25
-    stays in sync with uploads). When omitted, each mutating call builds a fresh
-    store via ``build_vector_store``.
+    stays in sync with uploads; ``DualWrite.list_source_chunks`` forwards to
+    Chroma without BM25). When omitted, the first call that needs a store builds
+    one via ``build_vector_store``.
     """
-    shared = vector_store
-
-    def _vector_store() -> VectorStore:
-        nonlocal shared
-        if shared is None:
-            shared = build_vector_store(settings)
-        return shared
+    _vector_store = _lazy_vector_store(settings, vector_store=vector_store)
 
     def _ingest() -> IngestKnowledge:
         return build_ingest_knowledge(settings, vector_store=_vector_store())
@@ -1800,6 +1823,43 @@ def replace_uploaded_document(
         raise
     except Exception as error:
         raise DocumentUploadError(str(error)) from error
+
+
+def list_uploaded_document_chunks(
+    settings: Settings,
+    reference: SourceReference,
+    *,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> ChunkPage:
+    """Return stored chunks for a catalogued document, ordered by index.
+
+    Uses the same memoized store as create/replace/delete. Pass ``vector_store``
+    to reuse a process-cached client; when omitted, the store opens only after
+    the catalog gate via ``build_vector_store``.
+
+    Raises:
+        UnknownUploadedDocumentError: ``reference`` is not in the catalog.
+        DocumentOperationError: The catalog or vector store could not be read.
+    """
+    try:
+        return build_manage_uploaded_documents(
+            settings,
+            catalog=catalog,
+            vector_store=vector_store,
+        ).list_document_chunks(reference, limit=limit, offset=offset)
+    except UnknownDocumentError as error:
+        raise UnknownUploadedDocumentError(str(error)) from error
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except DocumentManagementError as error:
+        raise DocumentOperationError(str(error)) from error
+    except (ApplicationValidationError, ConfigurationError):
+        raise
+    except Exception as error:
+        raise DocumentOperationError(str(error)) from error
 
 
 def delete_uploaded_document(

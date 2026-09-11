@@ -19,6 +19,9 @@ from composition.errors import (
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ChunkPage,
+    DocumentChunk,
+    SourceMetadata,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -65,12 +68,14 @@ def _stub_ops(
     replace_impl: Any = None,
     delete_impl: Any = None,
     get_content_impl: Any = None,
+    list_chunks_impl: Any = None,
 ) -> tuple[DocumentOperations, dict[str, list[Any]]]:
     ledger: dict[str, list[Any]] = {
         "created": [],
         "replaced": [],
         "deleted": [],
         "content": [],
+        "listed_chunks": [],
     }
 
     def list_docs() -> tuple[CatalogDocument, ...]:
@@ -114,8 +119,20 @@ def _stub_ops(
             content=b"# stored content",
         )
 
+    def list_chunks(
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ChunkPage:
+        ledger["listed_chunks"].append((reference, limit, offset))
+        if list_chunks_impl is not None:
+            return list_chunks_impl(reference, limit=limit, offset=offset)
+        return ChunkPage(chunks=(), has_more=False)
+
     ops = DocumentOperations(
         list=list_docs,
+        list_chunks=list_chunks,
         create=create,
         replace=replace,
         delete=delete,
@@ -226,6 +243,7 @@ def test_create_rejects_unsupported_suffix(client_factory) -> None:
 def test_create_rejects_oversize_body(client_factory) -> None:
     ops = DocumentOperations(
         list=lambda: (),
+        list_chunks=lambda _r, **_kwargs: ChunkPage(chunks=(), has_more=False),
         create=lambda _p: _document(),
         replace=lambda _r, _p: _document(),
         delete=lambda _r: None,
@@ -625,7 +643,7 @@ def test_document_operations_reuse_the_process_catalog(
     def record(name: str):
         def _fn(*_args, catalog=None, **_kwargs):
             seen.append((name, catalog))
-            if name == "list":
+            if name in {"list", "list_chunks"}:
                 return ()
             if name == "delete":
                 return None
@@ -634,20 +652,319 @@ def test_document_operations_reuse_the_process_catalog(
         return _fn
 
     monkeypatch.setattr(http_deps, "list_uploaded_documents", record("list"))
+    monkeypatch.setattr(
+        http_deps, "list_uploaded_document_chunks", record("list_chunks")
+    )
     monkeypatch.setattr(http_deps, "create_uploaded_document", record("create"))
     monkeypatch.setattr(http_deps, "replace_uploaded_document", record("replace"))
     monkeypatch.setattr(http_deps, "delete_uploaded_document", record("delete"))
     monkeypatch.setattr(http_deps, "get_uploaded_document_content", record("content"))
     ops = http_deps.get_document_operations(SimpleNamespace(max_upload_bytes=1))
     ops.list()
+    ops.list_chunks(object())
     ops.create(object())
     ops.replace(object(), object())
     ops.delete(object())
     ops.get_content("src-1")
     assert seen == [
         ("list", catalog),
+        ("list_chunks", catalog),
         ("create", catalog),
         ("replace", catalog),
         ("delete", catalog),
         ("content", catalog),
     ]
+
+
+def _chunk(
+    *,
+    source_id: str = "src-1",
+    source_type: str = SourceType.KNOWLEDGE_DOCUMENT,
+    index: int = 0,
+    content: str = "body",
+) -> DocumentChunk:
+    return DocumentChunk(
+        metadata=SourceMetadata(
+            SourceReference(source_id, source_type),
+            title="Spec",
+            provider="upload",
+            content_format="markdown",
+            extra={"page": "1"},
+        ),
+        index=index,
+        content=content,
+    )
+
+
+def test_list_chunks_unknown_is_sanitized_404(client_factory) -> None:
+    def _list_chunks(_ref: SourceReference, **_kwargs: object) -> ChunkPage:
+        raise UnknownUploadedDocumentError("missing src-leak")
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/missing/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT},
+    )
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["code"] == "document_not_found"
+    assert "src-leak" not in body["detail"]
+    assert "missing" not in body["detail"]
+
+
+def test_list_chunks_known_empty_returns_200_empty_list(client_factory) -> None:
+    ops, ledger = _stub_ops(
+        list_chunks_impl=lambda _ref, **_kwargs: ChunkPage(chunks=(), has_more=False)
+    )
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"chunks": [], "has_more": False}
+    assert ledger["listed_chunks"][0][0] == SourceReference(
+        "src-1", SourceType.KNOWLEDGE_DOCUMENT
+    )
+    assert ledger["listed_chunks"][0][1] == 50
+    assert ledger["listed_chunks"][0][2] == 0
+
+
+def test_list_chunks_returns_ordered_allowlisted_payload(client_factory) -> None:
+    def _list_chunks(
+        reference: SourceReference, **_kwargs: object
+    ) -> ChunkPage:
+        return ChunkPage(
+            chunks=(
+                _chunk(source_id=reference.source_id, index=0, content="first"),
+                _chunk(source_id=reference.source_id, index=1, content="second"),
+            ),
+            has_more=False,
+        )
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_more"] is False
+    assert [c["index"] for c in body["chunks"]] == [0, 1]
+    assert [c["content"] for c in body["chunks"]] == ["first", "second"]
+    first = body["chunks"][0]
+    assert set(first) == {
+        "index",
+        "content",
+        "source_id",
+        "source_type",
+        "title",
+        "provider",
+        "content_format",
+        "extra",
+    }
+    assert first["source_id"] == "src-1"
+    assert first["source_type"] == SourceType.KNOWLEDGE_DOCUMENT
+    assert first["title"] == "Spec"
+    assert first["provider"] == "upload"
+    assert first["content_format"] == "markdown"
+    assert first["extra"] == {"page": "1"}
+
+
+def test_list_chunks_encodes_source_id_and_source_type(client_factory) -> None:
+    from urllib.parse import quote
+
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+    source_id = "doc:1 with spaces"
+    source_type = SourceType.GOOGLE_DRIVE
+
+    response = client.get(
+        f"/api/v1/documents/{quote(source_id, safe='')}/chunks",
+        params={"source_type": source_type},
+    )
+
+    assert response.status_code == 200
+    assert ledger["listed_chunks"][0][0] == SourceReference(source_id, source_type)
+
+
+def test_list_chunks_isolates_equal_ids_under_different_source_types(
+    client_factory,
+) -> None:
+    seen: list[SourceReference] = []
+
+    def _list_chunks(
+        reference: SourceReference, **_kwargs: object
+    ) -> ChunkPage:
+        seen.append(reference)
+        return ChunkPage(
+            chunks=(
+                _chunk(
+                    source_id=reference.source_id,
+                    source_type=reference.source_type,
+                ),
+            ),
+            has_more=False,
+        )
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    kd = client.get(
+        "/api/v1/documents/shared/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT},
+    )
+    gd = client.get(
+        "/api/v1/documents/shared/chunks",
+        params={"source_type": SourceType.GOOGLE_DRIVE},
+    )
+
+    assert kd.status_code == 200
+    assert gd.status_code == 200
+    assert kd.json()["chunks"][0]["source_type"] == SourceType.KNOWLEDGE_DOCUMENT
+    assert gd.json()["chunks"][0]["source_type"] == SourceType.GOOGLE_DRIVE
+    assert seen == [
+        SourceReference("shared", SourceType.KNOWLEDGE_DOCUMENT),
+        SourceReference("shared", SourceType.GOOGLE_DRIVE),
+    ]
+
+
+def test_list_chunks_rejects_blank_source_type(client_factory) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": "   "},
+    )
+
+    assert response.status_code == 422
+    assert ledger["listed_chunks"] == []
+
+
+def test_list_chunks_rejects_non_hub_source_type(client_factory) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": "story"},
+    )
+
+    assert response.status_code == 422
+    assert ledger["listed_chunks"] == []
+
+
+def test_list_chunks_forwards_limit_and_offset(client_factory) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={
+            "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+            "limit": 10,
+            "offset": 20,
+        },
+    )
+
+    assert response.status_code == 200
+    assert ledger["listed_chunks"][0][1:] == (10, 20)
+
+
+def test_list_chunks_reports_has_more_from_limit_plus_one(client_factory) -> None:
+    def _list_chunks(
+        _reference: SourceReference, *, limit: int | None = None, offset: int = 0
+    ) -> ChunkPage:
+        assert limit == 2
+        assert offset == 0
+        return ChunkPage(
+            chunks=tuple(
+                _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(2)
+            ),
+            has_more=True,
+        )
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["content"] for c in body["chunks"]] == ["c0", "c1"]
+    assert body["has_more"] is True
+
+
+@pytest.mark.parametrize("source_type", list(SourceType))
+def test_list_chunks_accepts_each_source_type_member(
+    client_factory, source_type: SourceType
+) -> None:
+    ops, _ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": source_type},
+    )
+
+    assert response.status_code != 422
+
+
+def test_list_chunks_has_more_false_when_store_returns_exact_limit(
+    client_factory,
+) -> None:
+    def _list_chunks(
+        _reference: SourceReference, *, limit: int | None = None, offset: int = 0
+    ) -> ChunkPage:
+        assert limit == 2
+        return ChunkPage(
+            chunks=tuple(
+                _chunk(source_id="src-1", index=i, content=f"c{i}") for i in range(2)
+            ),
+            has_more=False,
+        )
+
+    ops, _ledger = _stub_ops(list_chunks_impl=_list_chunks)
+    client = client_factory(ops)
+
+    response = client.get(
+        "/api/v1/documents/src-1/chunks",
+        params={"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["content"] for c in body["chunks"]] == ["c0", "c1"]
+    assert body["has_more"] is False
+
+
+@pytest.mark.parametrize(
+    ("params",),
+    [
+        ({"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 0},),
+        ({"source_type": SourceType.KNOWLEDGE_DOCUMENT, "limit": 201},),
+        ({"source_type": SourceType.KNOWLEDGE_DOCUMENT, "offset": -1},),
+    ],
+)
+def test_list_chunks_rejects_out_of_range_paging(
+    client_factory, params: dict[str, object]
+) -> None:
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+
+    response = client.get("/api/v1/documents/src-1/chunks", params=params)
+
+    assert response.status_code == 422
+    assert ledger["listed_chunks"] == []

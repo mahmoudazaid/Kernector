@@ -32,6 +32,7 @@ from composition import (
     get_google_drive_selection,
     get_uploaded_document_content,
     google_drive_status,
+    list_uploaded_document_chunks,
     list_uploaded_documents,
     load_runtime_settings,
     put_google_drive_selection,
@@ -39,7 +40,12 @@ from composition import (
     start_google_drive_oauth,
     sync_google_drive_oauth,
 )
-from domain.knowledge import CatalogDocument, SourceReference, UploadPayload
+from domain.knowledge import (
+    CatalogDocument,
+    ChunkPage,
+    SourceReference,
+    UploadPayload,
+)
 from domain.ports import DocumentCatalog, PromptRepository, VectorStore
 from presentation.http.schemas import ChatRuntimeRequest
 
@@ -122,11 +128,24 @@ def get_ask_factory(
     return factory
 
 
+class ListDocumentChunks(Protocol):
+    """List stored chunks for one catalogued source reference."""
+
+    def __call__(
+        self,
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ChunkPage: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DocumentOperations:
     """The composition document seam, bound to this process's settings."""
 
     list: Callable[[], tuple[CatalogDocument, ...]]
+    list_chunks: ListDocumentChunks
     create: Callable[[UploadPayload], CatalogDocument]
     replace: Callable[[SourceReference, UploadPayload], CatalogDocument]
     delete: Callable[[SourceReference], None]
@@ -140,11 +159,12 @@ def get_document_operations(
 ) -> DocumentOperations:
     """Bind list/create/replace/delete to settings and a lazy vector store.
 
-    The store is not built here — ``list`` must work without embedding
-    credentials. Mutating operations resolve it on first use via the
-    process-wide ``get_vector_store`` cache. The process-cached catalog is
-    resolved on first use so a missing catalog still maps to
-    ``DocumentOperationError`` instead of failing dependency resolution.
+    The store is not built here — catalog ``list`` must work without embedding
+    credentials. Mutating operations and ``list_chunks`` resolve the process-wide
+    ``get_vector_store`` cache on first use (DualWrite forwards chunk listing to
+    Chroma without BM25). The process-cached catalog is resolved on first use so
+    a missing catalog still maps to ``DocumentOperationError`` instead of failing
+    dependency resolution.
     """
 
     def create(payload: UploadPayload) -> CatalogDocument:
@@ -181,10 +201,26 @@ def get_document_operations(
             catalog=get_document_catalog(),
         )
 
+    def list_chunks(
+        reference: SourceReference,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> ChunkPage:
+        return list_uploaded_document_chunks(
+            settings,
+            reference,
+            catalog=get_document_catalog(),
+            vector_store=get_vector_store(),
+            limit=limit,
+            offset=offset,
+        )
+
     return DocumentOperations(
         list=lambda: list_uploaded_documents(
             settings, catalog=get_document_catalog()
         ),
+        list_chunks=list_chunks,
         create=create,
         replace=replace,
         delete=delete,

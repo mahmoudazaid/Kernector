@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from domain.knowledge import (
+    ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -431,6 +432,486 @@ def test_a_delete_failure_stays_a_store_error(tmp_path: Path) -> None:
 
     with pytest.raises(ChromaStoreError, match="could not delete source"):
         store.delete_source(make_reference("doc-1"))
+
+
+# --------------------------------------------------------------------------
+# List source chunks
+# --------------------------------------------------------------------------
+
+
+def test_list_source_chunks_isolates_same_id_under_different_types(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(
+                source_id="shared",
+                source_type=SourceType.KNOWLEDGE_DOCUMENT,
+                content="kd",
+                title="KD",
+            ),
+            make_embedded(
+                source_id="shared",
+                source_type=SourceType.GOOGLE_DRIVE,
+                content="gd",
+                title="GD",
+            ),
+        ]
+    )
+
+    listed = store.list_source_chunks(
+        make_reference("shared", source_type=SourceType.KNOWLEDGE_DOCUMENT)
+    )
+
+    assert len(listed.chunks) == 1
+    assert listed.chunks[0].content == "kd"
+    assert listed.chunks[0].metadata.title == "KD"
+    assert listed.chunks[0].reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
+    assert listed.has_more is False
+
+
+def test_list_source_chunks_returns_deterministic_index_order(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=2, content="third"),
+            make_embedded(source_id="doc-1", index=0, content="first"),
+            make_embedded(source_id="doc-1", index=1, content="second"),
+        ]
+    )
+
+    listed = store.list_source_chunks(make_reference("doc-1"))
+
+    assert [c.index for c in listed.chunks] == [0, 1, 2]
+    assert [c.content for c in listed.chunks] == ["first", "second", "third"]
+    assert listed.has_more is False
+
+
+def test_list_source_chunks_unknown_reference_returns_empty(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+
+    listed = store.list_source_chunks(make_reference("missing"))
+
+    assert listed == ChunkPage(chunks=(), has_more=False)
+
+
+def test_list_source_chunks_empty_store_returns_empty(
+    store: ChromaVectorStore,
+) -> None:
+    listed = store.list_source_chunks(make_reference("doc-1"))
+
+    assert listed == ChunkPage(chunks=(), has_more=False)
+
+
+def test_list_source_chunks_rejects_a_non_reference(
+    store: ChromaVectorStore,
+) -> None:
+    with pytest.raises(ChromaStoreError, match="reference"):
+        store.list_source_chunks("doc-1")  # type: ignore[arg-type]
+
+
+def test_list_source_chunks_mismatched_index_lengths_raise_store_error(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ids/metadatas mismatch on the metadata-only get."""
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+
+    def bad_get(**kwargs: object) -> dict[str, object]:
+        include = kwargs.get("include")
+        if include == ["metadatas"]:
+            return {"ids": ["a", "b"], "metadatas": [{"source_id": "doc-1"}]}
+        raise AssertionError(f"unexpected get kwargs: {kwargs!r}")
+
+    monkeypatch.setattr(store._collection, "get", bad_get)
+
+    with pytest.raises(ChromaStoreError, match=r"get\(\) returned mismatched"):
+        store.list_source_chunks(make_reference("doc-1"), limit=10)
+
+
+def test_list_source_chunks_mismatched_hydrate_lengths_raise_store_error(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hydrate get returns inconsistent parallel arrays."""
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+    real_get = store._collection.get
+
+    def bad_get(**kwargs: object) -> dict[str, object]:
+        include = kwargs.get("include")
+        if include == ["metadatas", "documents"] and kwargs.get("ids") is not None:
+            return {
+                "ids": ["a"],
+                "documents": ["only-one", "extra"],
+                "metadatas": [
+                    {
+                        "source_id": "doc-1",
+                        "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                        "chunk_index": 0,
+                        "extra_json": "{}",
+                    }
+                ],
+            }
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", bad_get)
+
+    with pytest.raises(
+        ChromaStoreError, match="page hydrate returned mismatched lengths"
+    ):
+        store.list_source_chunks(make_reference("doc-1"), limit=10)
+
+
+def test_list_source_chunks_drops_ids_missing_from_hydrate(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ids that vanish between reads are omitted, not a 500."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0, content="c0"),
+            make_embedded(source_id="doc-1", index=1, content="c1"),
+        ]
+    )
+    real_get = store._collection.get
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    kept_id = _derive_id(make_chunk(source_id="doc-1", index=0, content="c0"))
+
+    def partial_hydrate(**kwargs: object) -> object:
+        include = kwargs.get("include")
+        if include == ["metadatas", "documents"] and kwargs.get("ids") is not None:
+            return {
+                "ids": [kept_id],
+                "documents": ["c0"],
+                "metadatas": [
+                    {
+                        "source_id": "doc-1",
+                        "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                        "chunk_index": 0,
+                        "extra_json": "{}",
+                    }
+                ],
+            }
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", partial_hydrate)
+
+    listed = store.list_source_chunks(make_reference("doc-1"), limit=10)
+    assert [c.content for c in listed.chunks] == ["c0"]
+
+
+def test_list_source_chunks_skips_corrupt_chunk_index(
+    store: ChromaVectorStore,
+) -> None:
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    good = make_chunk(source_id="doc-1", index=0, content="ok")
+    store._collection.add(
+        ids=[_derive_id(good), "corrupt-row"],
+        embeddings=[list(ALIGNED), list(ALIGNED)],
+        documents=["ok", "bad"],
+        metadatas=[
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            },
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    listed = store.list_source_chunks(make_reference("doc-1"))
+    assert [c.content for c in listed.chunks] == ["ok"]
+    assert listed.has_more is False
+
+
+def test_list_source_chunks_skips_negative_chunk_index(
+    store: ChromaVectorStore,
+) -> None:
+    """Negative chunk_index rows are skipped in ordering, not page slots."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    goods = [
+        make_chunk(source_id="doc-1", index=i, content=f"c{i}") for i in range(3)
+    ]
+    store._collection.add(
+        ids=[_derive_id(chunk) for chunk in goods] + ["negative-index"],
+        embeddings=[list(ALIGNED) for _ in range(4)],
+        documents=[chunk.content for chunk in goods] + ["neg"],
+        metadatas=[
+            *[
+                {
+                    "source_id": "doc-1",
+                    "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                    "chunk_index": chunk.index,
+                    "extra_json": "{}",
+                }
+                for chunk in goods
+            ],
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": -1,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    page = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    assert [c.content for c in page.chunks] == ["c0", "c1"]
+    assert page.has_more is True
+
+
+def test_list_source_chunks_has_more_ignores_skipped_rows(
+    store: ChromaVectorStore,
+) -> None:
+    """Corrupt rows must not collapse has_more when valid rows remain."""
+    from infrastructure.vectorstore.chroma import _derive_id
+
+    goods = [
+        make_chunk(source_id="doc-1", index=i, content=f"c{i}") for i in range(5)
+    ]
+    store._collection.add(
+        ids=[_derive_id(chunk) for chunk in goods] + ["corrupt-mid"],
+        embeddings=[list(ALIGNED) for _ in range(6)],
+        documents=[chunk.content for chunk in goods] + ["bad"],
+        metadatas=[
+            *[
+                {
+                    "source_id": "doc-1",
+                    "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                    "chunk_index": chunk.index,
+                    "extra_json": "{}",
+                }
+                for chunk in goods
+            ],
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    page = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    assert [c.content for c in page.chunks] == ["c0", "c1"]
+    assert page.has_more is True
+
+
+def test_list_source_chunks_sort_is_stable_on_index_ties(
+    store: ChromaVectorStore,
+) -> None:
+    store._collection.add(
+        ids=["id-b", "id-a"],
+        embeddings=[list(ALIGNED), list(ALIGNED)],
+        documents=["B", "A"],
+        metadatas=[
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            },
+            {
+                "source_id": "doc-1",
+                "source_type": SourceType.KNOWLEDGE_DOCUMENT,
+                "chunk_index": 0,
+                "extra_json": "{}",
+            },
+        ],
+    )
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=1, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=1, offset=1)
+    assert [c.content for c in page1.chunks] == ["A"]
+    assert [c.content for c in page2.chunks] == ["B"]
+
+
+def test_list_source_chunks_applies_limit_and_offset(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=i, content=f"c{i}")
+            for i in range(5)
+        ]
+    )
+
+    page = store.list_source_chunks(
+        make_reference("doc-1"), limit=2, offset=1
+    )
+
+    assert [c.content for c in page.chunks] == ["c1", "c2"]
+    assert page.has_more is True
+
+
+def test_list_source_chunks_pages_positionally_with_index_gaps(
+    store: ChromaVectorStore,
+) -> None:
+    """Blank-window gaps in chunk_index must not skew limit/offset pages."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=index, content=f"c{index}")
+            for index in (10, 11, 12, 40, 41)
+        ]
+    )
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=3, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=3, offset=3)
+
+    assert [c.index for c in page1.chunks] == [10, 11, 12]
+    assert page1.has_more is True
+    assert [c.index for c in page2.chunks] == [40, 41]
+    assert page2.has_more is False
+
+
+def test_list_source_chunks_rejects_negative_offset(
+    store: ChromaVectorStore,
+) -> None:
+    with pytest.raises(ChromaStoreError, match="offset"):
+        store.list_source_chunks(make_reference("doc-1"), offset=-1)
+
+
+def test_list_source_chunks_does_not_request_embeddings(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0, content="body")])
+    captured: list[object] = []
+
+    real_get = store._collection.get
+
+    def spy_get(**kwargs: object) -> object:
+        captured.append(kwargs.get("include"))
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", spy_get)
+
+    listed = store.list_source_chunks(make_reference("doc-1"))
+
+    assert [c.content for c in listed.chunks] == ["body"]
+    assert all(
+        isinstance(include, list) and "embeddings" not in include
+        for include in captured
+    )
+
+
+def test_list_source_chunks_pages_after_partial_upserts(
+    store: ChromaVectorStore,
+) -> None:
+    store.upsert([make_embedded(source_id="doc-1", index=0, content="c0")])
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=1, content="c1"),
+            make_embedded(source_id="doc-1", index=2, content="c2"),
+        ]
+    )
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=2, offset=2)
+
+    assert [c.content for c in page1.chunks] == ["c0", "c1"]
+    assert page1.has_more is True
+    assert [c.content for c in page2.chunks] == ["c2"]
+    assert page2.has_more is False
+
+
+def test_list_source_chunks_get_failure_stays_a_store_error(
+    tmp_path: Path,
+) -> None:
+    store = ChromaVectorStore(settings(tmp_path / "chroma"))
+    store.upsert([make_embedded(source_id="doc-1", index=0)])
+    store._client.delete_collection(COLLECTION)
+
+    with pytest.raises(ChromaStoreError, match="could not list source"):
+        store.list_source_chunks(make_reference("doc-1"))
+
+
+def test_list_source_chunks_paged_cache_skips_metadata_rescan(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Second paged list on the same instance must not rescan all metadatas."""
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=i, content=f"c{i}")
+            for i in range(3)
+        ]
+    )
+    metadata_scans: list[object] = []
+    real_get = store._collection.get
+
+    def spy_get(**kwargs: object) -> object:
+        include = kwargs.get("include")
+        if include == ["metadatas"] and kwargs.get("ids") is None:
+            metadata_scans.append(kwargs)
+        return real_get(**kwargs)
+
+    monkeypatch.setattr(store._collection, "get", spy_get)
+
+    page1 = store.list_source_chunks(make_reference("doc-1"), limit=1, offset=0)
+    page2 = store.list_source_chunks(make_reference("doc-1"), limit=1, offset=1)
+
+    assert [c.content for c in page1.chunks] == ["c0"]
+    assert [c.content for c in page2.chunks] == ["c1"]
+    assert len(metadata_scans) == 1
+
+
+def test_list_source_chunks_ordered_ids_cache_shared_across_instances(
+    tmp_path: Path,
+) -> None:
+    """Mutating via a second store instance invalidates the shared LRU."""
+    cfg = settings(tmp_path / "chroma")
+    store_a = ChromaVectorStore(cfg)
+    store_a.upsert(
+        [
+            make_embedded(source_id="doc-1", index=0, content="c0"),
+            make_embedded(source_id="doc-1", index=1, content="c1"),
+        ]
+    )
+    first = store_a.list_source_chunks(make_reference("doc-1"), limit=10, offset=0)
+    assert [c.content for c in first.chunks] == ["c0", "c1"]
+
+    store_b = ChromaVectorStore(cfg)
+    store_b.upsert([make_embedded(source_id="doc-1", index=2, content="c2")])
+
+    refreshed = store_a.list_source_chunks(
+        make_reference("doc-1"), limit=10, offset=0
+    )
+    assert [c.content for c in refreshed.chunks] == ["c0", "c1", "c2"]
+
+
+def test_list_source_chunks_unlimited_offset_skips_pre_offset_decode(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """limit=None with offset must not decode rows before the page."""
+    import infrastructure.vectorstore.chroma as chroma_mod
+
+    store.upsert(
+        [
+            make_embedded(source_id="doc-1", index=i, content=f"c{i}")
+            for i in range(3)
+        ]
+    )
+    decoded_ids: list[str] = []
+    real_decode = chroma_mod._decode_chunk
+
+    def spy_decode(
+        record_id: str, document: object, metadata: object
+    ) -> DocumentChunk:
+        decoded_ids.append(record_id)
+        return real_decode(record_id, document, metadata)
+
+    monkeypatch.setattr(chroma_mod, "_decode_chunk", spy_decode)
+
+    page = store.list_source_chunks(make_reference("doc-1"), offset=1)
+
+    assert [c.content for c in page.chunks] == ["c1", "c2"]
+    assert len(decoded_ids) == 2
 
 
 # --------------------------------------------------------------------------

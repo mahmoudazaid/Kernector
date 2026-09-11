@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -14,7 +15,25 @@ from application.contracts import (
     RunMeta,
 )
 from composition.software_delivery_tools import SoftwareDeliveryRunView
-from domain.knowledge import CatalogDocument, CatalogStatus, SourceReference, SourceType
+from domain.knowledge import (
+    CatalogDocument,
+    CatalogStatus,
+    DocumentChunk,
+    SourceReference,
+    SourceType,
+)
+
+
+class HubSourceType(StrEnum):
+    """Hub catalog kinds accepted by chunk-inspect query params.
+
+    Mirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so
+    the wire contract stays documented and does not silently widen with
+    ``SourceType``.
+    """
+
+    KNOWLEDGE_DOCUMENT = SourceType.KNOWLEDGE_DOCUMENT
+    GOOGLE_DRIVE = SourceType.GOOGLE_DRIVE
 
 
 class HealthResponse(BaseModel):
@@ -475,6 +494,31 @@ class DocumentListResponse(BaseModel):
     documents: list[CatalogDocumentResponse]
 
 
+class DocumentChunkResponse(BaseModel):
+    """Wire projection of one stored chunk for the documents UI.
+
+    Scalar fields are an explicit allowlist. ``extra`` forwards connector
+    metadata from ``SourceMetadata.extra`` without a key filter — callers must
+    not treat it as a closed schema.
+    """
+
+    index: int
+    content: str
+    source_id: str
+    source_type: str
+    title: str | None = None
+    provider: str | None = None
+    content_format: str | None = None
+    extra: dict[str, str]
+
+
+class DocumentChunkListResponse(BaseModel):
+    """Stored chunks for one catalogued document."""
+
+    chunks: list[DocumentChunkResponse]
+    has_more: bool
+
+
 def catalog_document_response(document: CatalogDocument) -> CatalogDocumentResponse:
     """Project a catalog row; never serialize raw adapter ``error`` text."""
     from application.manage_documents import MISSING_UPLOAD_BLOB_ERROR
@@ -510,5 +554,19 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
         has_error=has_error,
         error_summary=summary,
         has_stored_content=has_stored_content,
+    )
+
+
+def document_chunk_response(chunk: DocumentChunk) -> DocumentChunkResponse:
+    """Project a stored chunk to the wire fields used by the documents UI."""
+    return DocumentChunkResponse(
+        index=chunk.index,
+        content=chunk.content,
+        source_id=chunk.reference.source_id,
+        source_type=chunk.reference.source_type,
+        title=chunk.metadata.title,
+        provider=chunk.metadata.provider,
+        content_format=chunk.metadata.content_format,
+        extra=dict(chunk.metadata.extra),
     )
 

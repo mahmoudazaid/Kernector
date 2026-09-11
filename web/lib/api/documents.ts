@@ -9,14 +9,40 @@ export type CatalogDocumentResponse =
   components["schemas"]["CatalogDocumentResponse"];
 export type DocumentListResponse =
   components["schemas"]["DocumentListResponse"];
+export type DocumentChunkResponse =
+  components["schemas"]["DocumentChunkResponse"];
+export type DocumentChunkListResponse =
+  components["schemas"]["DocumentChunkListResponse"];
+export type HubSourceType = components["schemas"]["HubSourceType"];
 
 /** Uploads and document byte reads routinely exceed the default 10s timeout. */
 export const DOCUMENT_MUTATION_TIMEOUT_MS = 120_000;
 /** Alias kept honest for preview/download transfers of non-trivial PDFs. */
 export const DOCUMENT_READ_TIMEOUT_MS = DOCUMENT_MUTATION_TIMEOUT_MS;
 
+/** Chunk inspect can page many records; allow longer than the default 10s. */
+export const DOCUMENT_CHUNKS_TIMEOUT_MS = 60_000;
+
+/** Default page size for ``GET .../chunks`` (matches the HTTP default). */
+export const DOCUMENT_CHUNKS_PAGE_SIZE = 50;
+
+/** Cap empty-window auto-advance so corrupt sources cannot spin unbounded. */
+export const DOCUMENT_CHUNKS_MAX_EMPTY_WINDOWS = 5;
+
 export type ListDocumentsOptions = {
   baseUrl: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  request?: typeof apiRequest;
+};
+
+export type ListDocumentChunksOptions = {
+  baseUrl: string;
+  sourceId: string;
+  /** Hub catalog ``source_type`` (validated server-side as HubSourceType). */
+  sourceType: HubSourceType;
+  limit?: number;
+  offset?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
   request?: typeof apiRequest;
@@ -74,6 +100,30 @@ export async function listDocuments(
     method: "GET",
     signal: options.signal,
     timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * List stored chunks for one document via
+ * ``GET /api/v1/documents/{source_id}/chunks?source_type=``.
+ */
+export async function listDocumentChunks(
+  options: ListDocumentChunksOptions,
+): Promise<DocumentChunkListResponse> {
+  const request = options.request ?? apiRequest;
+  const params = new URLSearchParams({ source_type: options.sourceType });
+  if (options.limit != null) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset != null) {
+    params.set("offset", String(options.offset));
+  }
+  return request<DocumentChunkListResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/documents/${encodeURIComponent(options.sourceId)}/chunks?${params.toString()}`,
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? DOCUMENT_CHUNKS_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
 

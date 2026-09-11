@@ -21,6 +21,7 @@ from composition.errors import (
 )
 from domain.knowledge import (
     CatalogStatus,
+    ChunkPage,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -588,7 +589,6 @@ def test_partial_delete_is_translated(
         composition_container.delete_uploaded_document(settings, created.reference)
     assert isinstance(raised.value.__cause__, PartialDeleteFailure)
 
-
 def test_get_uploaded_document_content_refuses_missing_blob_sentinel(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -682,3 +682,123 @@ def test_get_uploaded_document_content_refuses_pending_rows(
         composition_container.get_uploaded_document_content(
             settings, "src-pending"
         )
+
+def test_list_uploaded_document_chunks_unknown_is_unknown_uploaded(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from composition.errors import UnknownUploadedDocumentError
+    from test.doubles import InMemoryVectorStore
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_vector_store",
+        lambda _settings: InMemoryVectorStore(),
+    )
+    with pytest.raises(UnknownUploadedDocumentError) as raised:
+        composition_container.list_uploaded_document_chunks(
+            settings,
+            SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
+        )
+    assert isinstance(raised.value.__cause__, UnknownDocumentError)
+
+
+def test_list_uploaded_document_chunks_known_empty(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument
+    from test.doubles import InMemoryVectorStore
+
+    store = InMemoryVectorStore()
+    monkeypatch.setattr(
+        composition_container,
+        "build_vector_store",
+        lambda _settings: store,
+    )
+    catalog = composition_container.build_document_catalog(settings)
+    reference = SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    catalog.upsert(
+        CatalogDocument(
+            reference=reference,
+            file_name="doc.md",
+            title="Doc",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            chunk_count=0,
+            error=None,
+        )
+    )
+
+    chunks = composition_container.list_uploaded_document_chunks(
+        settings, reference, catalog=catalog, vector_store=store
+    )
+
+    assert chunks == ChunkPage(chunks=(), has_more=False)
+
+
+def test_list_uploaded_document_chunks_defers_lazy_store_for_unknown(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With vector_store=None, unknown refs must not call build_vector_store."""
+    from composition.errors import UnknownUploadedDocumentError
+
+    calls: list[object] = []
+
+    def boom(_settings: Settings) -> object:
+        calls.append(object())
+        raise AssertionError("vector store must not open for unknown refs")
+
+    monkeypatch.setattr(composition_container, "build_vector_store", boom)
+
+    with pytest.raises(UnknownUploadedDocumentError):
+        composition_container.list_uploaded_document_chunks(
+            settings,
+            SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
+        )
+    assert calls == []
+
+
+def test_list_uploaded_document_chunks_uses_passed_vector_store(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When vector_store is passed, list must not call build_vector_store."""
+    from datetime import UTC, datetime
+
+    from domain.knowledge import CatalogDocument
+    from test.doubles import InMemoryVectorStore
+
+    store = InMemoryVectorStore()
+    catalog = composition_container.build_document_catalog(settings)
+    reference = SourceReference("doc-1", SourceType.KNOWLEDGE_DOCUMENT)
+    catalog.upsert(
+        CatalogDocument(
+            reference=reference,
+            file_name="doc.md",
+            title="Doc",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            chunk_count=0,
+            error=None,
+        )
+    )
+
+    calls: list[object] = []
+
+    def boom(_settings: Settings) -> object:
+        calls.append(object())
+        raise AssertionError("build_vector_store must not run when vector_store is passed")
+
+    monkeypatch.setattr(composition_container, "build_vector_store", boom)
+
+    chunks = composition_container.list_uploaded_document_chunks(
+        settings,
+        reference,
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    assert chunks == ChunkPage(chunks=(), has_more=False)
+    assert calls == []

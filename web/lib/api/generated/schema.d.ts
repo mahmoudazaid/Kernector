@@ -200,6 +200,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/documents/{source_id}/chunks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Document Chunks
+     * @description Return a page of stored chunks for one catalogued source.
+     */
+    get: operations["list_document_chunks_api_v1_documents__source_id__chunks_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/documents/{source_id}/content": {
     parameters: {
       query?: never;
@@ -434,6 +454,44 @@ export interface components {
       status: "ingested" | "skipped" | "failed";
     };
     /**
+     * DocumentChunkListResponse
+     * @description Stored chunks for one catalogued document.
+     */
+    DocumentChunkListResponse: {
+      /** Chunks */
+      chunks: components["schemas"]["DocumentChunkResponse"][];
+      /** Has More */
+      has_more: boolean;
+    };
+    /**
+     * DocumentChunkResponse
+     * @description Wire projection of one stored chunk for the documents UI.
+     *
+     *     Scalar fields are an explicit allowlist. ``extra`` forwards connector
+     *     metadata from ``SourceMetadata.extra`` without a key filter — callers must
+     *     not treat it as a closed schema.
+     */
+    DocumentChunkResponse: {
+      /** Content */
+      content: string;
+      /** Content Format */
+      content_format?: string | null;
+      /** Extra */
+      extra: {
+        [key: string]: string;
+      };
+      /** Index */
+      index: number;
+      /** Provider */
+      provider?: string | null;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+      /** Title */
+      title?: string | null;
+    };
+    /**
      * DocumentListResponse
      * @description Uploaded-document catalog for the documents UI.
      */
@@ -602,6 +660,16 @@ export interface components {
        */
       status: string;
     };
+    /**
+     * HubSourceType
+     * @description Hub catalog kinds accepted by chunk-inspect query params.
+     *
+     *     Mirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so
+     *     the wire contract stays documented and does not silently widen with
+     *     ``SourceType``.
+     * @enum {string}
+     */
+    HubSourceType: "knowledge_document" | "google_drive";
     /**
      * ModelSettingDefResponse
      * @description One generation setting for Settings UI controls.
@@ -1579,6 +1647,68 @@ export interface operations {
       };
       /** @description Conflict */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_document_chunks_api_v1_documents__source_id__chunks_get: {
+    parameters: {
+      query: {
+        source_type: components["schemas"]["HubSourceType"];
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentChunkListResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
         headers: {
           [name: string]: unknown;
         };

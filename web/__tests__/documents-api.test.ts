@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import {
+  DOCUMENT_CHUNKS_TIMEOUT_MS,
   DOCUMENT_MUTATION_TIMEOUT_MS,
   DOCUMENT_READ_TIMEOUT_MS,
   deleteDocument,
   downloadDocument,
   getDocumentContent,
+  listDocumentChunks,
   listDocuments,
   replaceDocument,
   uploadDocument,
@@ -26,6 +28,42 @@ describe("documents api wrappers", () => {
         method: "GET",
       }),
     );
+  });
+
+  it("lists chunks with encoded source id and source_type query", async () => {
+    const request = vi.fn().mockResolvedValue({ chunks: [] });
+
+    await listDocumentChunks({
+      baseUrl: "http://api.test",
+      sourceId: "doc:1 with spaces",
+      sourceType: "google_drive",
+      limit: 10,
+      offset: 5,
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/api/v1/documents/doc%3A1%20with%20spaces/chunks?source_type=google_drive&limit=10&offset=5",
+        method: "GET",
+        timeoutMs: DOCUMENT_CHUNKS_TIMEOUT_MS,
+      }),
+    );
+  });
+
+  it("propagates ApiError from listDocumentChunks", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValue(ApiError.generic(404));
+
+    await expect(
+      listDocumentChunks({
+        baseUrl: "http://api.test",
+        sourceId: "missing",
+        sourceType: "knowledge_document",
+        request,
+      }),
+    ).rejects.toMatchObject({ name: "ApiError", status: 404 });
   });
 
   it("uploads with FormData and a long timeout", async () => {

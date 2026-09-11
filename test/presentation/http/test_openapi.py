@@ -42,6 +42,7 @@ _DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
         "422",
         "500",
     ),
+    ("/api/v1/documents/{source_id}/chunks", "get"): ("404", "405", "422", "500"),
 }
 
 
@@ -85,6 +86,23 @@ def test_openapi_includes_problem_schema() -> None:
     assert "Problem" in components
     props = components["Problem"]["properties"]
     assert {"type", "title", "status", "detail", "code"} <= set(props)
+
+
+def test_openapi_hub_source_type_is_named_component() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    components = schema["components"]["schemas"]
+    assert "HubSourceType" in components
+    assert set(components["HubSourceType"]["enum"]) == {
+        "knowledge_document",
+        "google_drive",
+    }
+    chunks = schema["paths"]["/api/v1/documents/{source_id}/chunks"]["get"]
+    source_type = next(
+        param
+        for param in chunks["parameters"]
+        if param["name"] == "source_type"
+    )
+    assert source_type["schema"] == {"$ref": "#/components/schemas/HubSourceType"}
 
 
 def test_openapi_error_responses_use_problem_json_only() -> None:
