@@ -113,6 +113,9 @@ def get_ask_factory(
             chat_model=chat_model,
             vector_store=vector_store,
             prompt_repository=prompt_repository,
+            provider=provider,
+            model=model,
+            base_url=base_url,
         )
 
     return factory

@@ -24,6 +24,7 @@ from application.contracts import (
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    MissingProviderCredentialsError,
 )
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -151,6 +152,7 @@ def test_build_chat_model_returns_the_provider_implementation(
     provider: str, expected: type, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _openrouter_chat_env(monkeypatch)
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
     settings = load_settings()
     model = build_chat_model(settings, provider=provider, base_url="http://h:11434")
     assert isinstance(model, expected)
@@ -161,6 +163,7 @@ def test_every_advertised_provider_is_buildable(
 ) -> None:
     """`available_providers()` must not advertise a factory that does not work."""
     _openrouter_chat_env(monkeypatch)
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
     settings = load_settings()
     for provider in available_providers():
         assert build_chat_model(
@@ -497,6 +500,343 @@ def test_build_tool_augmented_ask_adds_tool_selection_when_the_pack_is_enabled(
     assert isinstance(ask, CorrelatedAsk)
     assert isinstance(ask._ask, ToolAugmentedAsk)
     assert isinstance(ask._ask._ask, AskKnowledge)
+
+
+def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default #170 path: deterministic orchestrate, agent builder unused."""
+    _sd_env(monkeypatch)
+    monkeypatch.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    agent_builds: list[object] = []
+
+    def _capture_agent_orchestrate(agent: object, **kwargs: object) -> object:
+        agent_builds.append((agent, kwargs))
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("agent orchestrate must not run when flag is off")
+
+        return orchestrate
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _capture_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+
+    assert agent_builds == []
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+    # Provenance: wired callable came from the local else-branch, not the
+    # agent builder (which was never invoked and would have returned the
+    # capturing closure above).
+    assert ask._ask._runner._orchestrate.__module__ == "composition.container"
+    assert ask._ask._runner._orchestrate.__qualname__.endswith(".orchestrate")
+    assert "build_agent_orchestrate" not in ask._ask._runner._orchestrate.__qualname__
+
+
+def test_agent_loop_flag_on_wires_agent_orchestrate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flag on: composition injects agent-backed orchestrate."""
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    wired: list[object] = []
+
+    def _fake_agent_orchestrate(agent: object, **kwargs: object):
+        wired.append(agent)
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("orchestrate body not under test")
+
+        return orchestrate
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _fake_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    assert len(wired) == 1
+    assert isinstance(wired[0], LangGraphToolAgent)
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+
+
+def test_agent_loop_runtime_override_wires_despite_missing_openrouter_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Agent loop + Ollama override: wire succeeds when OpenRouter key is absent."""
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "settings-model")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    wired: list[object] = []
+
+    def _fake_agent_orchestrate(agent: object, **kwargs: object):
+        wired.append(agent)
+
+        def orchestrate(**_kwargs: object):
+            raise AssertionError("orchestrate body not under test")
+
+        return orchestrate
+
+    monkeypatch.setattr(
+        "composition.container.build_agent_orchestrate",
+        _fake_agent_orchestrate,
+    )
+
+    ask = build_tool_augmented_ask(
+        load_settings(),
+        chat_model=_StubChat(),
+        provider="ollama",
+        model="llama3",
+        base_url="http://h:1234",
+    )
+
+    assert len(wired) == 1
+    assert isinstance(wired[0], LangGraphToolAgent)
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+    # Production system prompt is injected at the composition construction site.
+    assert "BEGIN_UNTRUSTED_AGENT_DATA" in wired[0]._system_prompt
+
+
+def test_agent_model_factory_uses_runtime_provider_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Agent ChatOpenAI follows provider/model/base_url overrides, not settings alone."""
+    from composition.container import _software_delivery_agent_model_factory
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "settings-model")
+
+    factory = _software_delivery_agent_model_factory(
+        load_settings(),
+        provider="ollama",
+        model="llama3",
+        base_url="http://h:1234",
+    )
+    observing = factory()
+
+    assert observing._model_name == "llama3"
+    assert observing._inner.model_name == "llama3"
+    assert "http://h:1234/v1" in str(observing._inner.openai_api_base)
+
+
+def test_agent_model_factory_rejects_unknown_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from composition.container import _software_delivery_agent_model_factory
+
+    _sd_env(monkeypatch)
+    factory = _software_delivery_agent_model_factory(
+        load_settings(), provider="gemini"
+    )
+    with pytest.raises(ValueError, match="Unknown provider"):
+        factory()
+
+
+def test_agent_loop_e2e_missing_credentials_maps_to_problem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Composed agent loop: missing credentials stay typed through ask → Problem."""
+    from presentation.http.errors import problem_from_exception
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+
+    with pytest.raises(MissingProviderCredentialsError) as caught:
+        ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+
+    problem = problem_from_exception(caught.value)
+    assert problem.status == 500
+    assert problem.code == "missing_provider_credentials"
+    assert "OPENROUTER_API_KEY" not in problem.detail
+
+
+def test_agent_loop_e2e_scripted_tool_run_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Composed agent loop runs a real LangGraphToolAgent with a scripted model."""
+    from langchain_core.messages import AIMessage
+
+    from composition.container import _ObservingChatOpenAI
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+
+    risk = json.dumps(
+        {
+            "score": 62,
+            "level": "high",
+            "rationale": "Acceptance criteria are absent from a complete story.",
+            "factors": [
+                {
+                    "factor_id": "missing_acceptance_criteria",
+                    "weight": 30,
+                    "references": [
+                        {"source_id": "US-1", "source_type": "user_story"}
+                    ],
+                }
+            ],
+        }
+    )
+    generated = json.dumps(
+        {
+            "output_style": "steps",
+            "test_cases": [
+                {
+                    "title": "Lock the account after five failed MFA attempts",
+                    "steps": ["Sign in with a valid password.", "Fail MFA five times."],
+                    "expected": "The account is locked.",
+                    "references": [
+                        {"source_id": "US-1", "source_type": "user_story"}
+                    ],
+                }
+            ],
+        }
+    )
+    invoke_tool = _ScriptedInvokeTool(
+        {
+            RISK_SCORE_TOOL: risk,
+            GENERATE_TEST_CASES_TOOL: generated,
+            EXPORT_TEST_CASES_MARKDOWN_TOOL: "# Test Cases\n",
+        }
+    )
+    monkeypatch.setattr(
+        "composition.container.build_invoke_tool",
+        lambda settings, chat_model=None: invoke_tool,
+    )
+
+    class _Scripted:
+        def __init__(self) -> None:
+            self._queue = [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "software_delivery__risk_score",
+                            "args": {},
+                            "id": "1",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "software_delivery__generate_test_cases",
+                            "args": {},
+                            "id": "2",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "software_delivery__export_test_cases_markdown",
+                            "args": {},
+                            "id": "3",
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+
+        def bind_tools(self, tools, *args, **kwargs):
+            del tools, args, kwargs
+            return self
+
+        def invoke(self, _messages, **_kwargs):
+            return self._queue.pop(0)
+
+    monkeypatch.setattr(
+        "composition.container._software_delivery_agent_model_factory",
+        lambda settings, *, recorder=None, **_kwargs: (
+            lambda **_kw: _ObservingChatOpenAI(
+                _Scripted(), recorder=recorder, model_name="scripted"
+            )
+        ),
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+
+    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+
+    assert invoke_tool.invoked == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+    assert response.answer.startswith(
+        "Scored risk, generated test cases, and exported Markdown."
+    )
+    assert "# Test Cases" in response.answer
+    assert response.run is not None
+    assert response.run.model == "scripted"
+    assert response.run.latency_ms is not None
+    assert response.run.latency_ms >= 0
+    assert response.run.hit_count == 1
+    assert response.run.path == "tools"
+    assert list(response.run.tools) == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+
+
+def test_observing_chat_bind_tools_forwards_extra_options() -> None:
+    from composition.container import _ObservingChatOpenAI
+
+    class _Inner:
+        def __init__(self) -> None:
+            self.seen: tuple[object, ...] | None = None
+
+        def bind_tools(self, tools, *args, **kwargs):
+            self.seen = (list(tools), args, kwargs)
+            return self
+
+    inner = _Inner()
+    wrapped = _ObservingChatOpenAI(inner, recorder=None, model_name="m")
+    bound = wrapped.bind_tools(["t"], "x", tool_choice="required")
+    assert isinstance(bound, _ObservingChatOpenAI)
+    assert inner.seen == (["t"], ("x",), {"tool_choice": "required"})
+    with pytest.raises(AttributeError):
+        wrapped.stream("hi")  # type: ignore[attr-defined]
 
 
 def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
@@ -1424,7 +1764,7 @@ def test_missing_embedding_configuration_surfaces_as_configuration_error(
         build_ingest_knowledge(settings)
 
 
-def test_missing_chat_configuration_surfaces_as_configuration_error(
+def test_missing_chat_configuration_surfaces_as_missing_provider_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Absent OpenRouter chat credentials fail at build_chat_model, typed."""
@@ -1432,19 +1772,33 @@ def test_missing_chat_configuration_surfaces_as_configuration_error(
     settings = load_settings()
     assert settings.openrouter.api_key is None
 
-    with pytest.raises(ConfigurationError, match="OPENROUTER_API_KEY"):
+    with pytest.raises(MissingProviderCredentialsError, match="OPENROUTER_API_KEY"):
         build_chat_model(settings, provider="openrouter")
 
 
-def test_build_chat_model_maps_missing_ollama_base_url_to_configuration_error(
+def test_build_chat_model_maps_missing_ollama_base_url_to_ollama_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ollama construction failures follow the same typed config path as OpenRouter."""
+    """Missing Ollama base URL is the typed 409 path, not a generic config error."""
+    from application.errors import OllamaNotConfiguredError
+
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     settings = load_settings()
     assert settings.ollama.base_url is None
 
-    with pytest.raises(ConfigurationError, match="OLLAMA_BASE_URL"):
+    with pytest.raises(OllamaNotConfiguredError, match="OLLAMA_BASE_URL"):
+        build_chat_model(settings, provider="ollama")
+
+
+def test_build_chat_model_maps_missing_ollama_model_to_missing_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    settings = load_settings()
+    assert settings.ollama.model is None
+
+    with pytest.raises(MissingProviderCredentialsError, match="OLLAMA_MODEL"):
         build_chat_model(settings, provider="ollama")
 
 

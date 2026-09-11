@@ -66,6 +66,30 @@ def test_second_model_call_before_consume_fails_clearly() -> None:
         recording.complete("sys", (Message(role="user", content="b"),), {})
 
 
+def test_accumulate_merges_successive_model_calls() -> None:
+    recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
+    recording.complete("sys", (Message(role="user", content="a"),), {})
+    recording.complete("sys", (Message(role="user", content="b"),), {})
+    meta = recording.consume()
+    assert meta is not None
+    assert meta.latency_ms == 21  # 7 + 14
+    assert meta.usage is not None
+    assert meta.usage.total_tokens == 9  # 3 + 6
+
+
+def test_record_observation_merges_when_accumulating() -> None:
+    recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
+    recording.record(RunMeta(model="agent", latency_ms=10, usage=Usage(total_tokens=2)))
+    recording.record(RunMeta(model="agent", latency_ms=5, usage=Usage(total_tokens=4)))
+    meta = recording.consume()
+    assert meta == RunMeta(
+        model="agent",
+        latency_ms=15,
+        usage=Usage(total_tokens=6),
+        settings={},
+    )
+
+
 def test_clear_discards_recording_without_returning_it() -> None:
     recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
     recording.complete("sys", (Message(role="user", content="a"),), {})
