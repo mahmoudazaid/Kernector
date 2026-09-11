@@ -101,10 +101,21 @@ def test_correlated_ask_stamps_request_id_when_inner_run_is_missing() -> None:
 
 
 def test_correlated_ask_preserves_inner_run_fields_when_stamping() -> None:
+    from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
+
+    hit = ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(SourceReference("doc-a", "knowledge_document")),
+            index=0,
+            content="chunk",
+        ),
+        score=1.0,
+    )
     inner = _AskCapturingRequestId(
         AskResponse(
             answer="ok",
             run=RunMeta(outcome="success", hit_count=2, model="m"),
+            generation_hits=(hit,),
         )
     )
     ask = CorrelatedAsk(inner)
@@ -116,6 +127,7 @@ def test_correlated_ask_preserves_inner_run_fields_when_stamping() -> None:
     assert response.run.outcome == "success"
     assert response.run.hit_count == 2
     assert response.run.model == "m"
+    assert response.generation_hits == (hit,)
 
 
 def test_correlated_ask_reuses_prebound_outer_id_and_leaves_it_bound() -> None:

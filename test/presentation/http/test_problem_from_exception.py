@@ -13,6 +13,7 @@ from application.errors import (
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
+    MissingProviderCredentialsError,
     UploadTooLargeError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
@@ -25,6 +26,7 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
+from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
     DomainValidationError,
     ProviderError,
@@ -32,7 +34,7 @@ from domain.errors import (
     VectorStoreError,
 )
 from domain.models import Message
-from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE
+from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE, TOOL_FAILURE_MESSAGE
 from presentation.http.errors import (
     DOCUMENT_NOT_FOUND_DETAIL,
     DOCUMENT_PARTIAL_DETAILS,
@@ -52,6 +54,13 @@ from presentation.http.errors import (
         (DomainValidationError("invariant"), 500, "operational_error"),
         (InsufficientEvidenceError("no hits"), 422, "insufficient_evidence"),
         (ConfigurationError("missing key"), 500, "configuration_error"),
+        (
+            MissingProviderCredentialsError(
+                "Missing OPENROUTER_API_KEY. Add it to .env before chatting."
+            ),
+            500,
+            "missing_provider_credentials",
+        ),
         (
             GoogleDriveNotConfiguredError("missing folder"),
             409,
@@ -75,6 +84,11 @@ from presentation.http.errors import (
         (ConnectorSyncError("vendor body"), 502, "connector_sync_failed"),
         (ProviderError("upstream"), 502, "provider_error"),
         (ToolFailureError("tool broke"), 500, "tool_failure"),
+        (
+            ToolRunFailedError("A tool failed during the run."),
+            500,
+            "tool_failure",
+        ),
         (VectorStoreError("chroma down"), 500, "store_error"),
         (KnowledgeLoadError("corpus"), 500, "operational_error"),
         (RuntimeError("mystery"), 500, "internal_error"),
@@ -270,6 +284,18 @@ def test_upload_too_large_detail_names_limit_without_caller_repr() -> None:
     assert "UploadPayload(" not in body
 
 
+def test_configuration_boundary_error_maps_like_configuration_error() -> None:
+    from domain.errors import ConfigurationBoundaryError
+
+    problem = problem_from_exception(
+        ConfigurationBoundaryError("adapter config missing")
+    )
+    assert problem.status == 500
+    assert problem.code == "configuration_error"
+    assert problem.detail == "The service is not configured correctly."
+    assert "adapter config" not in problem.detail
+
+
 def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> None:
     """Subclass must map to 409; ConfigurationError remains 500."""
     unconfigured = problem_from_exception(
@@ -285,6 +311,18 @@ def test_google_drive_unconfigured_is_not_swallowed_by_configuration_error() -> 
     assert "GOOGLE_DRIVE_FOLDER_ID" not in unconfigured.detail
     assert generic.status == 500
     assert generic.code == "configuration_error"
+
+
+def test_missing_provider_credentials_uses_fixed_safe_detail() -> None:
+    message = "Missing OPENROUTER_API_KEY. Add it to .env before chatting."
+    problem = problem_from_exception(MissingProviderCredentialsError(message))
+    assert problem.code == "missing_provider_credentials"
+    assert problem.detail == (
+        "Required LLM provider credentials are missing. Check server configuration."
+    )
+    assert problem.status == 500
+    assert "OPENROUTER_API_KEY" not in problem.detail
+    assert ".env" not in problem.detail
 
 
 def test_google_drive_oauth_errors_are_not_swallowed_by_configuration_error() -> None:

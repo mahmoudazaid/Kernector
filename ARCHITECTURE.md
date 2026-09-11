@@ -192,6 +192,9 @@ enabled prompt packs.
 `DOMAIN_TOOL_PACKS=software-delivery` (CSV; default empty). Composition loads
 packs through an explicit allowlist manifest and `importlib` only for configured
 IDs — a disabled pack is neither imported nor registered.
+``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) optionally replaces the
+deterministic Software Delivery orchestrate with a LangGraph agent; #170 remains
+the default.
 
 #### Multi-source tool flow
 
@@ -292,6 +295,15 @@ band and rationale — never from a second model call. The same typed outcomes a
 projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
 (#178); that view is **not** placed on ``AskResponse``.
 
+**Agent loop (#43), opt-in:** ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default
+**false**) swaps only the pack ``orchestrate`` callable for a LangGraph-backed
+``ToolCallingAgent`` adapter (``infrastructure/agents/langgraph_tool_agent.py``)
+wired through ``composition/software_delivery_agent.py``. Intent selection,
+retrieve → recorder → ordered ``tool_outputs``, stop handling, and sanitized
+``ToolRunFailedError`` stay on the #170 path. Domain and application must not
+import LangGraph; ``langgraph`` is an infrastructure I/O package. Keep the
+deterministic chain as the default until the agent path is proven.
+
 Two properties are worth naming because they are easy to lose:
 
 - **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it
@@ -309,7 +321,7 @@ details**. ``ToolAugmentedAsk.consume_tool_run_view`` (forwarded by
 to the HTTP chat mapping; the Next.js chat UI renders projected results without
 importing pack-named modules or ``packs``.
 
-#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178)
+#### Tool invocation boundary (#92 vs #95 vs #161 vs #170 vs #178 vs #43)
 
 - **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
   ``InvokeTool`` that treats arguments and results as opaque strings.
@@ -318,11 +330,14 @@ importing pack-named modules or ``packs``.
   testable with fixtures.
 - **#170** — chat intent → retrieve/orchestrate → populate
   ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
-  (delivered).
+  (delivered; **default** orchestrate path).
 - **#178** — composition projects typed pack outcomes into
   ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Next.js chat
   renders #161 panels from the projected view without putting views on
   ``AskResponse`` (delivered).
+- **#43** — optional LangGraph agent orchestrate behind
+  ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default off); same runner ledger and error
+  taxonomy.
 
 ### Grounded ask: system policy vs optional task prompts
 
@@ -460,7 +475,11 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 | `DomainValidationError` | 500 | `operational_error` | fixed operational sentence |
 | `InsufficientEvidenceError` | 422 | `insufficient_evidence` | fixed sentence |
 | `ConfigurationError` | 500 | `configuration_error` | fixed sentence |
-| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence |
+| `ConfigurationBoundaryError` | 500 | `configuration_error` | fixed sentence (marker; prefer concrete subclasses) |
+| `MissingProviderCredentialsError` | 500 | `missing_provider_credentials` | fixed sentence |
+| `OllamaNotConfiguredError` | 409 | `ollama_unconfigured` | fixed sentence |
+| `ToolRunFailedError` | 500 | `tool_failure` | fixed tool sentence |
+| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence; on Software Delivery tool-run paths, `PackSoftwareDeliveryChat` re-wraps into `ToolRunFailedError` (500 `tool_failure`) so vendor text never reaches the chat bubble |
 | `ToolFailureError` | 500 | `tool_failure` | fixed tool sentence |
 | `VectorStoreError` | 500 | `store_error` | fixed operational sentence |
 | `KnowledgeLoadError` / document wraps | 500 | `operational_error` | fixed operational sentence |
@@ -481,7 +500,8 @@ to 4xx with boundary-authored (or class-composed) detail.
 | outcome | `InsufficientEvidenceError` | application | Grounded use case; no retrieval hits cleared the relevance threshold |
 | validation | `DomainValidationError` | domain | Domain invariant violation |
 | config | `ConfigurationError` | application | Missing/invalid environment at composition |
-| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` |
+| config | `ConfigurationBoundaryError` | domain | Marker base for typed config failures; prefer concrete application subclasses |
+| config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` / `MissingProviderCredentialsError` / `OllamaNotConfiguredError` |
 | provider | `ProviderError` | domain | LLM / embedding / rewrite runtime failure |
 | provider | `QueryRewriterError` | domain | Subclass of `ProviderError` from the rewrite port |
 | provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping rewrite failures |
@@ -503,7 +523,9 @@ category sentences in `presentation/failure_messages.py`; Next.js
 proof that `str(error)` is safe. When execution starts, failures also set
 sanitized `RunMeta` on the response (`request_id`, `outcome="error"`,
 `error_type` only — never exception text). Pre-execute construction failures
-leave `run=None`.
+leave `run=None`. Structured operation logs may use `error_type` for a
+sanitized category and `exception_type` for the exception class name when both
+are needed (see README observability).
 
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|

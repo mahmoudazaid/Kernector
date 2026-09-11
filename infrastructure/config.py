@@ -1,5 +1,7 @@
 """Configuration loaded at the edge. Only the composition root calls load_settings()."""
 
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -95,9 +97,17 @@ class RetrievalSettings:
 
 @dataclass(frozen=True, slots=True)
 class DomainToolSettings:
-    """Optional executable domain tool packs enabled at composition time."""
+    """Optional executable domain tool packs enabled at composition time.
+
+    Args:
+        enabled_packs (tuple[str, ...]): Pack ids from ``DOMAIN_TOOL_PACKS``.
+        agent_loop (bool): When true, Software Delivery chat uses the LangGraph
+            agent orchestrator instead of the deterministic #170 chain. Default
+            false — do not flip until the agent path is proven.
+    """
 
     enabled_packs: tuple[str, ...]
+    agent_loop: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +134,106 @@ class GoogleDriveSettings:
     service_account_file: Path | None = None
     folder_id: str | None = None
     page_size: int = 100
+
+
+@dataclass(frozen=True, slots=True)
+class RagJudgeSettings:
+    """Independent Judge model configuration. Never defaulted from LLM_PROVIDER.
+
+    Args:
+        provider (str | None): ``openrouter`` or ``ollama``. Required for live Judge.
+        model (str | None): Judge model id. Required for live Judge.
+        base_url (str | None): Optional provider-specific override.
+        seed (int | None): Optional seed; sent only when the provider allows it.
+    """
+
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    seed: int | None = None
+
+
+JUDGE_SEED_CAPABLE_PROVIDERS = frozenset({"openrouter"})
+
+
+def judge_config_ready(settings: Settings) -> bool:
+    """Return whether independent Judge env is enough to construct a Judge model.
+
+    Args:
+        settings (Settings): Loaded process settings.
+
+    Returns:
+        bool: True when provider, model, and provider-specific credentials exist.
+        Never infers provider from ``LLM_PROVIDER``.
+    """
+    judge = settings.rag_judge
+    if not judge.provider or not judge.model:
+        return False
+    if judge.provider == "openrouter":
+        base = judge.base_url or settings.openrouter.base_url
+        return bool(settings.openrouter.api_key and base)
+    if judge.provider == "ollama":
+        base = judge.base_url or settings.ollama.base_url
+        return bool(base)
+    return False
+
+
+def live_answer_config_ready(settings: Settings) -> bool:
+    """Return whether live RAG (answer model, embeddings, rewrite) can be built.
+
+    Args:
+        settings (Settings): Loaded process settings.
+
+    Returns:
+        bool: True when answer provider credentials, embeddings, and rewrite
+        config are present.
+    """
+    if settings.provider == "openrouter":
+        answer_ok = bool(
+            settings.openrouter.api_key
+            and settings.openrouter.base_url
+            and settings.openrouter.model
+        )
+    elif settings.provider == "ollama":
+        answer_ok = bool(settings.ollama.base_url and settings.ollama.model)
+    else:
+        return False
+    embeddings_ok = bool(
+        settings.openrouter.api_key
+        and settings.openrouter.base_url
+        and settings.openrouter.embedding_model
+    )
+    rewrite_ok = bool(
+        settings.openrouter.api_key
+        and settings.openrouter.base_url
+        and settings.openrouter.rewrite_model
+    )
+    return answer_ok and embeddings_ok and rewrite_ok
+
+
+def judge_complete_kwargs(settings: Settings) -> tuple[dict[str, object], int | None]:
+    """Build ``ChatModel.complete`` settings for the Judge.
+
+    Always requests ``temperature=0``. Sends ``seed`` only when the Judge
+    provider is on ``JUDGE_SEED_CAPABLE_PROVIDERS``.
+
+    Args:
+        settings (Settings): Loaded process settings.
+
+    Returns:
+        tuple[dict[str, object], int | None]: Complete kwargs and the seed
+        actually applied (``None`` when dropped).
+    """
+    payload: dict[str, object] = {"temperature": 0}
+    seed = settings.rag_judge.seed
+    applied: int | None = None
+    if (
+        seed is not None
+        and settings.rag_judge.provider in JUDGE_SEED_CAPABLE_PROVIDERS
+    ):
+        payload["seed"] = seed
+        applied = seed
+    return payload, applied
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,8 +292,8 @@ class Settings:
     domain_tools: DomainToolSettings
     http: HttpAdapterSettings
     google_drive: GoogleDriveSettings = field(default_factory=GoogleDriveSettings)
+    rag_judge: RagJudgeSettings = field(default_factory=RagJudgeSettings)
     google_oauth: GoogleOAuthSettings = field(default_factory=GoogleOAuthSettings)
-
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
@@ -224,6 +334,7 @@ def load_settings() -> Settings:
         domain_tools=_load_domain_tool_settings(),
         http=_load_http_adapter_settings(),
         google_drive=_load_google_drive_settings(),
+        rag_judge=_load_rag_judge_settings(),
         google_oauth=_load_google_oauth_settings(),
     )
 
@@ -411,7 +522,10 @@ def _load_domain_tool_settings() -> DomainToolSettings:
             )
         seen.add(name)
         ordered.append(name)
-    return DomainToolSettings(enabled_packs=tuple(ordered))
+    return DomainToolSettings(
+        enabled_packs=tuple(ordered),
+        agent_loop=_env_bool("SOFTWARE_DELIVERY_AGENT_LOOP", "false"),
+    )
 
 
 def _env_truthy(name: str, default: str = "") -> bool:
@@ -459,6 +573,37 @@ def _load_google_drive_settings() -> GoogleDriveSettings:
         service_account_file=service_account_file,
         folder_id=folder_id,
         page_size=page_size,
+    )
+
+
+def _load_rag_judge_settings() -> RagJudgeSettings:
+    """Parse independent Judge env vars. Never default from LLM_PROVIDER."""
+    provider_raw = os.getenv("RAG_JUDGE_PROVIDER")
+    provider = provider_raw.strip().lower() if provider_raw and provider_raw.strip() else None
+    model_raw = os.getenv("RAG_JUDGE_MODEL")
+    model = model_raw.strip() if model_raw and model_raw.strip() else None
+    base_raw = os.getenv("RAG_JUDGE_BASE_URL")
+    base_url = base_raw.strip() if base_raw and base_raw.strip() else None
+    seed_raw = os.getenv("RAG_JUDGE_SEED")
+    seed: int | None
+    if seed_raw is None or not seed_raw.strip():
+        seed = None
+    else:
+        try:
+            seed = int(seed_raw.strip())
+        except ValueError as exc:
+            raise ValueError(
+                f"RAG_JUDGE_SEED must be an integer, got {seed_raw!r}"
+            ) from exc
+    if provider is not None and provider not in {"openrouter", "ollama"}:
+        raise ValueError(
+            f"RAG_JUDGE_PROVIDER must be openrouter or ollama, got {provider!r}"
+        )
+    return RagJudgeSettings(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        seed=seed,
     )
 
 

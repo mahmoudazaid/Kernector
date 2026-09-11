@@ -395,6 +395,16 @@ def test_domain_tool_packs_rejects_duplicates(env: pytest.MonkeyPatch) -> None:
         load_settings()
 
 
+def test_software_delivery_agent_loop_defaults_false(env: pytest.MonkeyPatch) -> None:
+    env.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
+    assert load_settings().domain_tools.agent_loop is False
+
+
+def test_software_delivery_agent_loop_parses_true(env: pytest.MonkeyPatch) -> None:
+    env.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    assert load_settings().domain_tools.agent_loop is True
+
+
 def test_http_cors_origins_rejects_star(env: pytest.MonkeyPatch) -> None:
     """``*`` is rejected at Settings load — intentional CLI/non-HTTP blast radius.
 

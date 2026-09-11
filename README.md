@@ -315,7 +315,13 @@ one call cannot forge additional log lines or alternate `operation` events.
 
 **Do not expect logs to contain:** document or chunk text, prompts, secrets or
 API keys, raw provider bodies, tool arguments/results, or exception *messages*
-(only exception type names such as `"error_type":"ProviderError"`).
+(only exception type names). Structured error fields:
+
+- `error_type` — sanitized category when the operation maps failures that way
+  (for example `judge_error` / `observation_integrity` on `judge_observe`), or
+  the exception type name when no category is recorded
+- `exception_type` — optional exception type name when `error_type` holds a
+  category (for example `"ProviderError"`) so logs stay correlatable with reports
 
 Workspace/tenant correlation is deferred until an authorized identity exists;
 storage details such as the Chroma collection name are not logged as a

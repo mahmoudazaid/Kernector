@@ -26,6 +26,8 @@ from application.errors import (
     GoogleDriveReauthorizationRequiredError,
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
+    MissingProviderCredentialsError,
+    OllamaNotConfiguredError,
 )
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.invoke_tool import InvokeTool
@@ -59,6 +61,7 @@ from composition.errors import (
 from composition.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
 from composition.recording_chat import RecordingChatModel
+from composition.software_delivery_agent import build_agent_orchestrate
 from composition.software_delivery_chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -96,7 +99,12 @@ from domain.ports import (
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
-from infrastructure.config import Settings, load_settings
+from infrastructure.config import (
+    OllamaSettings,
+    OpenRouterSettings,
+    Settings,
+    load_settings,
+)
 from infrastructure.connectors.drive_folder import (
     DRIVE_ID_BODY,
     is_drive_folder_id,
@@ -115,7 +123,12 @@ from infrastructure.embeddings.openrouter import (
     OpenRouterEmbeddings,
 )
 from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corpus
-from infrastructure.llm.ollama import OllamaChat, OllamaConfigError
+from infrastructure.llm.ollama import (
+    OllamaBaseUrlMissingError,
+    OllamaChat,
+    OllamaConfigError,
+    OllamaModelMissingError,
+)
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
 from infrastructure.llm.query_rewrite import (
@@ -139,27 +152,47 @@ logger = logging.getLogger(__name__)
 def _build_openrouter(
     settings: Settings, model: str | None, base_url: str | None
 ) -> ChatModel:
-    config = settings.openrouter
-    if model:
-        config = replace(config, model=model)
+    del base_url  # OpenRouter ignores per-request base URL overrides.
+    config = _openrouter_runtime_config(settings, model=model)
     try:
         return OpenRouterChat(config)
     except ChatConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+        raise MissingProviderCredentialsError(str(exc)) from exc
 
 
 def _build_ollama(
     settings: Settings, model: str | None, base_url: str | None
 ) -> ChatModel:
+    config = _ollama_runtime_config(settings, model=model, base_url=base_url)
+    try:
+        return OllamaChat(config)
+    except OllamaBaseUrlMissingError as exc:
+        raise OllamaNotConfiguredError(str(exc)) from exc
+    except OllamaModelMissingError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
+    except OllamaConfigError as exc:
+        # Future/unclassified Ollama construction failures: treat as credentials.
+        raise MissingProviderCredentialsError(str(exc)) from exc
+
+
+def _openrouter_runtime_config(
+    settings: Settings, *, model: str | None
+) -> OpenRouterSettings:
+    config = settings.openrouter
+    if model:
+        config = replace(config, model=model)
+    return config
+
+
+def _ollama_runtime_config(
+    settings: Settings, *, model: str | None, base_url: str | None
+) -> OllamaSettings:
     config = settings.ollama
     if model:
         config = replace(config, model=model)
     if base_url:
         config = replace(config, base_url=base_url)
-    try:
-        return OllamaChat(config)
-    except OllamaConfigError as exc:
-        raise ConfigurationError(str(exc)) from exc
+    return config
 
 
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {
@@ -1912,6 +1945,9 @@ def build_tool_augmented_ask(
     chat_model: ChatModel | None = None,
     vector_store: VectorStore | None = None,
     prompt_repository: PromptRepository | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ) -> GroundedAsk:
     """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
 
@@ -1931,13 +1967,18 @@ def build_tool_augmented_ask(
         chat_model (ChatModel | None): Shared chat adapter; built when absent.
         vector_store (VectorStore | None): Optional shared vector store client.
         prompt_repository (PromptRepository | None): Optional shared prompts.
+        provider (str | None): Per-request provider override (same as chat model).
+        model (str | None): Per-request model override.
+        base_url (str | None): Per-request Ollama base URL override.
 
     Returns:
         GroundedAsk: ``CorrelatedAsk`` around ``AskKnowledge`` or
         ``ToolAugmentedAsk``.
     """
     if chat_model is None:
-        chat_model = build_chat_model(settings)
+        chat_model = build_chat_model(
+            settings, provider=provider, model=model, base_url=base_url
+        )
     if not software_delivery_tools_enabled(settings):
         ask = build_ask_knowledge(
             settings,
@@ -1963,40 +2004,61 @@ def build_tool_augmented_ask(
     registration = importlib.import_module("packs.software_delivery.registration")
     # Tools invoke ChatModel through the opaque boundary; record safe RunMeta so
     # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
-    model_calls = RecordingChatModel(chat_model)
+    # Agent loop accumulates ReAct model turns plus any tool ChatModel calls.
+    model_calls = RecordingChatModel(
+        chat_model, accumulate=settings.domain_tools.agent_loop
+    )
 
-    def orchestrate(
-        *,
-        target: str,
-        hits: Sequence[ScoredChunk],
-        generate_tests: bool,
-        output_style: str,
-        invoke: OpaqueInvoke,
-    ):
-        from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
-        from packs.software_delivery.orchestration_contracts import (
-            OrchestrateSoftwareDeliveryRequest,
-        )
-        from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+    if settings.domain_tools.agent_loop:
+        from application.untrusted_text import agent_tool_system_prompt
+        from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
-        # Pass the recording wrapper so any future path that builds tools from
-        # chat_model (when invoke is absent) still contributes to RunMeta.
-        orchestrator = build_orchestrate_software_delivery(
-            settings, chat_model=model_calls, invoke=invoke
-        )
-        intent = (
-            SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
-            if generate_tests
-            else SoftwareDeliveryIntent.RISK_SCORE
-        )
-        return orchestrator.execute(
-            OrchestrateSoftwareDeliveryRequest(
-                intent=intent,
-                target=target,
-                evidence=evidence_bundle_from_hits(hits),
-                output_style=output_style,
+        orchestrate = build_agent_orchestrate(
+            LangGraphToolAgent(
+                model_factory=_software_delivery_agent_model_factory(
+                    settings,
+                    recorder=model_calls,
+                    provider=provider,
+                    model=model,
+                    base_url=base_url,
+                ),
+                system_prompt=agent_tool_system_prompt(),
             )
         )
+    else:
+
+        def orchestrate(
+            *,
+            target: str,
+            hits: Sequence[ScoredChunk],
+            generate_tests: bool,
+            output_style: str,
+            invoke: OpaqueInvoke,
+        ):
+            from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
+            from packs.software_delivery.orchestration_contracts import (
+                OrchestrateSoftwareDeliveryRequest,
+            )
+            from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
+
+            # Pass the recording wrapper so any future path that builds tools from
+            # chat_model (when invoke is absent) still contributes to RunMeta.
+            orchestrator = build_orchestrate_software_delivery(
+                settings, chat_model=model_calls, invoke=invoke
+            )
+            intent = (
+                SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
+                if generate_tests
+                else SoftwareDeliveryIntent.RISK_SCORE
+            )
+            return orchestrator.execute(
+                OrchestrateSoftwareDeliveryRequest(
+                    intent=intent,
+                    target=target,
+                    evidence=evidence_bundle_from_hits(hits),
+                    output_style=output_style,
+                )
+            )
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_relevant_retrieve(settings, vector_store=vector_store),
@@ -2013,6 +2075,161 @@ def build_tool_augmented_ask(
             pack_id="software-delivery",
         )
     )
+
+
+def _software_delivery_agent_model_factory(
+    settings: Settings,
+    *,
+    recorder: RecordingChatModel | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+):
+    """Return a LangChain chat model factory with ``bind_tools`` for the agent.
+
+    Validates the full provider credential contract via the same ``_build_*``
+    helpers as live chat (typed ``ConfigurationError`` subclasses), then builds
+    a LangChain ``ChatOpenAI`` from the same resolved runtime config.
+
+    Args:
+        settings (Settings): Process settings for provider defaults.
+        recorder (RecordingChatModel | None): Optional RunMeta accumulator.
+        provider (str | None): Per-request provider override.
+        model (str | None): Per-request model override.
+        base_url (str | None): Per-request Ollama base URL override.
+
+    Returns:
+        Callable: Zero-arg factory producing an observing chat model with tools.
+    """
+
+    def factory(**_kwargs: object):
+        from langchain_openai import ChatOpenAI
+
+        from domain.errors import ProviderError
+
+        effective = provider or settings.provider
+        builder = _CHAT_MODELS.get(effective)
+        if builder is None:
+            raise ValueError(
+                f"Unknown provider {effective!r}. "
+                f"Expected one of {sorted(_CHAT_MODELS)}."
+            )
+        # Validate via chat builders (discard adapter; keep typed config errors).
+        _ = builder(settings, model, base_url)
+
+        if effective == "ollama":
+            config = _ollama_runtime_config(
+                settings, model=model, base_url=base_url
+            )
+            if not config.base_url or not config.model:
+                # builder() already validated; keep a local guard for the checker.
+                raise MissingProviderCredentialsError(
+                    "Missing OLLAMA_BASE_URL or OLLAMA_MODEL."
+                )
+            base = config.base_url.rstrip("/")
+            try:
+                inner = ChatOpenAI(
+                    model=config.model,
+                    api_key="ollama",
+                    base_url=f"{base}/v1",
+                    timeout=config.timeout,
+                )
+            except Exception as exc:
+                raise ProviderError(
+                    "The tool-calling agent provider could not be reached."
+                ) from exc
+            model_name = config.model
+        else:
+            config = _openrouter_runtime_config(settings, model=model)
+            try:
+                inner = ChatOpenAI(
+                    model=config.model,
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    timeout=config.timeout,
+                )
+            except Exception as exc:
+                raise ProviderError(
+                    "The tool-calling agent provider could not be reached."
+                ) from exc
+            model_name = config.model
+
+        return _ObservingChatOpenAI(
+            inner, recorder=recorder, model_name=model_name
+        )
+
+    return factory
+
+
+class _ObservingChatOpenAI:
+    """Wrap a LangChain chat model so each invoke updates ``RecordingChatModel``.
+
+    Only ``bind_tools`` and ``invoke`` are forwarded: those are the methods
+    ``LangGraphToolAgent`` uses. Other LangChain surfaces (``stream``, ``batch``)
+    raise ``AttributeError`` rather than silently bypassing the recorder.
+    """
+
+    def __init__(
+        self,
+        inner: object,
+        *,
+        recorder: RecordingChatModel | None,
+        model_name: str | None,
+    ) -> None:
+        self._inner = inner
+        self._recorder = recorder
+        self._model_name = model_name
+
+    def bind_tools(
+        self, tools: Sequence[object], *args: object, **kwargs: object
+    ) -> "_ObservingChatOpenAI":
+        bound = self._inner.bind_tools(tools, *args, **kwargs)  # type: ignore[attr-defined]
+        return _ObservingChatOpenAI(
+            bound, recorder=self._recorder, model_name=self._model_name
+        )
+
+    def invoke(self, messages: object, **kwargs: object) -> object:
+        import time
+
+        from application.contracts import RunMeta
+        from domain.errors import ProviderError
+        from domain.models import Usage
+
+        started = time.perf_counter()
+        result: object | None = None
+        error_type: str | None = None
+        try:
+            result = self._inner.invoke(messages, **kwargs)  # type: ignore[attr-defined]
+            return result
+        except ProviderError:
+            error_type = "ProviderError"
+            raise
+        except Exception as exc:
+            error_type = type(exc).__name__
+            raise ProviderError(
+                "The tool-calling agent provider could not be reached."
+            ) from exc
+        finally:
+            if self._recorder is not None:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                usage = None
+                if result is not None:
+                    usage_meta = getattr(result, "usage_metadata", None)
+                    if isinstance(usage_meta, Mapping):
+                        usage = Usage(
+                            prompt_tokens=usage_meta.get("input_tokens"),  # type: ignore[arg-type]
+                            completion_tokens=usage_meta.get("output_tokens"),  # type: ignore[arg-type]
+                            total_tokens=usage_meta.get("total_tokens"),  # type: ignore[arg-type]
+                        )
+                self._recorder.record(
+                    RunMeta(
+                        model=self._model_name,
+                        latency_ms=latency_ms,
+                        usage=usage,
+                        settings={},
+                        error_type=error_type,
+                    )
+                )
 
 
 def probe_ollama(settings: Settings, base_url: str) -> dict:

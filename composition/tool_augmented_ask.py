@@ -198,6 +198,7 @@ class ToolAugmentedAsk:
                 answer=response.answer,
                 citations=response.citations,
                 tool_outputs=response.tool_outputs,
+                generation_hits=response.generation_hits,
                 run=_merge_run(
                     response.run,
                     outcome=response.run.outcome if response.run and response.run.outcome else "success",
@@ -215,6 +216,7 @@ class ToolAugmentedAsk:
                 answer=response.answer,
                 citations=response.citations,
                 tool_outputs=response.tool_outputs,
+                generation_hits=response.generation_hits,
                 run=_merge_run(
                     response.run,
                     outcome=response.run.outcome if response.run and response.run.outcome else "success",
@@ -238,6 +240,7 @@ class ToolAugmentedAsk:
             )
             return AskResponse(
                 answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+                generation_hits=(),
                 run=_merge_run(
                     None,
                     outcome="insufficient",
@@ -259,6 +262,7 @@ class ToolAugmentedAsk:
             answer=outcome.answer,
             citations=outcome.citations,
             tool_outputs=outcome.tool_outputs,
+            generation_hits=(),
             run=_merge_run(
                 outcome.run,
                 outcome="success",
