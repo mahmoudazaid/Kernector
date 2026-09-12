@@ -2303,11 +2303,11 @@ a.kern-btn {
 }
 
 .kern-chat-header,
-.kern-chat-thread,
+.kern-chat-body,
 .kern-chat-inline-error,
 .kern-chat-composer {
   width: 100%;
-  max-width: var(--kern-chat-col);
+  max-width: var(--kern-chat-col, 48rem);
   margin-inline: auto;
 }
 
@@ -2371,6 +2371,7 @@ a.kern-btn {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: var(--kern-space-2) 0;
 }
 
