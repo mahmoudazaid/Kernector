@@ -30,12 +30,16 @@ a {
 
 .kern-app {
   min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: var(--kern-bg);
   color: var(--kern-ink);
 }
 
 .kern-header {
   height: 64px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: var(--kern-space-3);
@@ -173,7 +177,9 @@ a {
   position: relative;
   display: grid;
   grid-template-columns: var(--kern-sidebar-width) minmax(0, 1fr);
-  min-height: calc(100vh - 64px);
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 64px);
 }
 
 .kern-sidebar {
@@ -253,7 +259,8 @@ a {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: calc(100vh - 64px);
+  min-height: 0;
+  height: 100%;
   padding: var(--kern-space-6) var(--kern-space-7) var(--kern-space-4);
 }
 
@@ -2337,6 +2344,42 @@ a.kern-btn {
   width: 100%;
   min-height: 0;
   height: 100%;
+  --kern-chat-col: 48rem;
+}
+
+.kern-chat :is(.kern-chat-header, .kern-chat-body, .kern-chat-inline-error, .kern-chat-composer) {
+  width: 100%;
+  max-width: var(--kern-chat-col);
+  margin-inline: auto;
+}
+
+.kern-chat--empty .kern-chat-body {
+  flex: 0 0 auto;
+  overflow: visible;
+  justify-content: center;
+}
+
+.kern-chat--empty .kern-chat-thread {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: 0;
+}
+
+/* Longhands only — a `margin` shorthand here would reset the
+   inline centering from the .kern-chat column rule above. */
+.kern-chat--empty .kern-chat-composer {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.kern-chat--empty .kern-chat-composer-bar {
+  min-height: 88px;
+  padding: 16px 14px 16px var(--kern-space-5);
+}
+
+.kern-chat--empty .kern-chat-input {
+  min-height: 64px;
+  padding: var(--kern-space-3) var(--kern-space-1);
 }
 
 .kern-chat-header {
@@ -2351,11 +2394,6 @@ a.kern-btn {
   margin: 0;
   font-size: var(--kern-text-xl);
   font-weight: 500;
-}
-
-.kern-chat-lead {
-  margin: var(--kern-space-1) 0 0;
-  color: var(--kern-muted);
 }
 
 .kern-chat-body {
@@ -2377,6 +2415,7 @@ a.kern-btn {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable both-edges;
   padding: var(--kern-space-2) 0;
 }
 
@@ -2400,10 +2439,6 @@ a.kern-btn {
   background:
     var(--kern-control-sheen),
     color-mix(in srgb, var(--kern-accent) 10%, var(--kern-surface));
-}
-
-.kern-chat-msg--assistant {
-  max-width: min(100%, 48rem);
 }
 
 .kern-chat-msg--error {
@@ -2656,7 +2691,6 @@ a.kern-btn {
 }
 
 .kern-chat-inline-error {
-  margin: 0;
   color: var(--kern-danger, #b42318);
   flex-shrink: 0;
 }
@@ -2669,11 +2703,11 @@ a.kern-btn {
 
 .kern-chat-composer-bar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--kern-space-2);
   width: 100%;
-  min-height: 52px;
-  padding: 8px 8px 8px var(--kern-space-5);
+  min-height: 64px;
+  padding: 12px 10px 12px var(--kern-space-5);
   border: 1px solid color-mix(in srgb, var(--kern-line) 90%, transparent);
   /* Fixed radius — pill (999px) becomes a circle when the bar grows multi-line. */
   border-radius: 24px;
@@ -2828,6 +2862,9 @@ a.kern-btn {
 
   .kern-body {
     display: block;
+    height: calc(100vh - 64px);
+    min-height: 0;
+    overflow: auto;
   }
 
   .kern-sidebar {
@@ -2847,7 +2884,8 @@ a.kern-btn {
   }
 
   .kern-main {
-    min-height: calc(100vh - 64px);
+    min-height: 0;
+    height: 100%;
     padding: var(--kern-space-5) var(--kern-space-4) var(--kern-space-4);
   }
 
@@ -2862,11 +2900,13 @@ a.kern-btn {
   .kern-btn,
   .kern-btn-secondary,
   .kern-btn-danger,
-  .kern-documents-delete {
+  .kern-documents-delete,
+  .kern-chat-send {
     min-height: 44px;
   }
 
-  .kern-documents-delete {
+  .kern-documents-delete,
+  .kern-chat-send {
     min-width: 44px;
   }
 }

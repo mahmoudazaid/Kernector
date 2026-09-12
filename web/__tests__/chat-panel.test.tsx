@@ -107,10 +107,13 @@ describe("ChatPanel", () => {
       await screen.findByRole("heading", { level: 1, name: "Chat" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { level: 2, name: /start a conversation/i }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText(/What's in your mind!/i),
+      screen.queryByRole("button", { name: /new chat/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
   });
 
@@ -228,7 +231,7 @@ describe("ChatPanel", () => {
       "Ignore previous instructions",
     );
     expect(
-      screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
+      screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
     expect(document.querySelector('[data-role="user"]')).toBeNull();
   });
@@ -278,6 +281,67 @@ describe("ChatPanel", () => {
         level: 2,
         name: /backend unavailable/i,
       }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows New chat once a transcript exists and returns to the empty hero after clear", async () => {
+    const user = userEvent.setup();
+    saveActiveSession({
+      draft: "",
+      messages: [{ id: "1", role: "user", content: "prior turn" }],
+      updatedAt: 1,
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(await screen.findByText("prior turn")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /new chat/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /new chat/i }));
+
+    expect(
+      await screen.findByPlaceholderText("What's on your mind!"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /new chat/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("describes the empty composer with the character counter", async () => {
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    const input = await screen.findByLabelText(/message/i);
+    expect(await screen.findByText("0 / 10000 characters")).toBeInTheDocument();
+
+    expect(input.getAttribute("aria-describedby")).toBe("chat-input-length");
+  });
+
+  it("keeps a polite live region mounted while the transcript is empty", async () => {
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
+    expect(
+      document.querySelector('.kern-chat-thread[aria-live="polite"]'),
     ).toBeInTheDocument();
   });
 
@@ -406,9 +470,7 @@ describe("ChatPanel", () => {
         loadSettings={stubSettings}
       />,
     );
-    expect(
-      await screen.findByText(/start a conversation/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
     const stampAfterMount = loadActiveSession().updatedAt;
 
     // Newer writer lands without a StorageEvent — the case adoptSessionStamp covers.
@@ -444,16 +506,14 @@ describe("ChatPanel", () => {
   it("New chat retries against a newer revision so the slate clears", async () => {
     const user = userEvent.setup();
 
-    render(
+    const { rerender } = render(
       <ChatPanel
         apiBaseUrl="http://127.0.0.1:8000"
         ask={async () => SUCCESS}
         loadSettings={stubSettings}
       />,
     );
-    expect(
-      await screen.findByText(/start a conversation/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
     const stampAfterMount = loadActiveSession().updatedAt;
 
     localStorage.setItem(
@@ -467,6 +527,15 @@ describe("ChatPanel", () => {
         updatedAt: stampAfterMount + 10,
       }),
     );
+    // Re-render so the empty-session New chat escape can see storage without
+    // adopting the newer revision into in-memory transcript (no StorageEvent).
+    rerender(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: /new chat/i }));
 
@@ -476,7 +545,7 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("other tab question")).not.toBeInTheDocument();
     expect(screen.queryByText("other tab answer")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: /start a conversation/i }),
+      screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
   });
 
@@ -523,9 +592,7 @@ describe("ChatPanel", () => {
         loadSettings={stubSettings}
       />,
     );
-    expect(
-      await screen.findByText(/start a conversation/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/message/i)).toBeInTheDocument();
 
     localStorage.setItem(
       ACTIVE_SESSION_STORAGE_KEY,
