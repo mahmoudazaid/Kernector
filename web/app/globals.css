@@ -2320,6 +2320,8 @@ a.kern-btn {
   padding: 0;
 }
 
+/* Longhands only — a `margin` shorthand here would reset the
+   inline centering from the .kern-chat column rule above. */
 .kern-chat--empty .kern-chat-composer {
   margin-top: auto;
   margin-bottom: auto;
