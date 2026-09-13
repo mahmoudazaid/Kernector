@@ -465,8 +465,8 @@ def get_github_selection_write(
 
     def save(
         *,
-        owner: str,
-        repo: str,
+        owner: str | None = None,
+        repo: str | None = None,
         project_owner: str | None = None,
         project_number: int | None = None,
     ) -> GitHubSelection:

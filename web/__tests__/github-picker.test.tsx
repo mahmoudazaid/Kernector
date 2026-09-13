@@ -77,7 +77,7 @@ describe("GitHubPicker", () => {
     ).toBeInTheDocument();
   });
 
-  it("requires a repository and reports one or two sources in the footer", async () => {
+  it("allows project-only selection and reports source counts in the footer", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(
@@ -99,17 +99,20 @@ describe("GitHubPicker", () => {
     const save = within(dialog).getByRole("button", { name: /^save$/i });
     expect(save).toBeDisabled();
     expect(within(dialog).getByText(/0 sources selected/i)).toBeInTheDocument();
-
-    await user.click(
-      await within(dialog).findByRole("radio", { name: /acme\/docs/i }),
-    );
-    expect(within(dialog).getByText(/1 source selected/i)).toBeInTheDocument();
-    expect(save).toBeEnabled();
+    expect(
+      within(dialog).getAllByText(/optional · zero or one/i),
+    ).toHaveLength(2);
 
     await user.click(
       await within(dialog).findByRole("radio", {
         name: /#19 ai course lessons/i,
       }),
+    );
+    expect(within(dialog).getByText(/1 source selected/i)).toBeInTheDocument();
+    expect(save).toBeEnabled();
+
+    await user.click(
+      await within(dialog).findByRole("radio", { name: /acme\/docs/i }),
     );
     expect(within(dialog).getByText(/2 sources selected/i)).toBeInTheDocument();
 
@@ -119,6 +122,53 @@ describe("GitHubPicker", () => {
       repo: "docs",
       project_owner: "octocat",
       project_number: 19,
+    });
+  });
+
+  it("clears the repository without closing and restores existing selection", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(
+      <GitHubPicker
+        open
+        apiBaseUrl="http://api"
+        accountLogin="octocat"
+        initialSelection={{
+          owner: "acme",
+          repo: "api",
+          project_owner: "octocat",
+          project_number: 18,
+        }}
+        listRepos={async () => repos}
+        listProjects={async () => projects}
+        onConfirm={onConfirm}
+        onCancel={() => {}}
+      />,
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /choose github sources/i,
+    });
+    expect(
+      await within(dialog).findByRole("radio", { name: /acme\/api/i }),
+    ).toBeChecked();
+
+    await user.click(
+      within(dialog).getByRole("radio", { name: /acme\/api/i }),
+    );
+    expect(
+      within(dialog).getByRole("radio", { name: /acme\/api/i }),
+    ).not.toBeChecked();
+    expect(within(dialog).getByText(/1 source selected/i)).toBeInTheDocument();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /^save$/i }),
+    );
+    expect(onConfirm).toHaveBeenCalledWith({
+      owner: null,
+      repo: null,
+      project_owner: "octocat",
+      project_number: 18,
     });
   });
 

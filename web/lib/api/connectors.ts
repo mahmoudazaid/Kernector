@@ -275,8 +275,8 @@ export type ListGitHubProjectsOptions = GetGitHubStatusOptions & {
 };
 export type PutGitHubSelectionOptions = GetGitHubStatusOptions & {
   selection: {
-    owner: string;
-    repo: string;
+    owner?: string | null;
+    repo?: string | null;
     project_owner?: string | null;
     project_number?: number | null;
   };

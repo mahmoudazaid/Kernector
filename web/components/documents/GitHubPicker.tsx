@@ -32,8 +32,8 @@ export type GitHubPickerProps = {
     next_cursor: string | null;
   }>;
   onConfirm: (selection: {
-    owner: string;
-    repo: string;
+    owner: string | null;
+    repo: string | null;
     project_owner?: string | null;
     project_number?: number | null;
   }) => void;
@@ -293,7 +293,7 @@ export function GitHubPicker({
   }, [projects, projectQuery]);
 
   const listLoading = view.kind === "loading" || selectionLoading;
-  const canConfirm = Boolean(selectedOwner && selectedRepo) && !busy;
+  const canConfirm = !busy;
   const selectedKey =
     selectedOwner && selectedRepo ? `${selectedOwner}/${selectedRepo}` : null;
   const hasProject =
@@ -321,8 +321,8 @@ export function GitHubPicker({
               Choose GitHub sources
             </h2>
             <p id={descriptionId} className="kern-dialog-body">
-              Pick one repository. Optionally add one Project for Issues —
-              Projects are independent of the repository.
+              Optionally pick one repository and/or one Project for Issues —
+              they are independent.
             </p>
           </div>
           <Button
@@ -353,7 +353,7 @@ export function GitHubPicker({
           <div className="kern-github-source-panel-head">
             <h3 id="github-repo-panel-title" className="kern-picker-crumbs">
               <strong>Repository code</strong>
-              <span>Required · exactly one</span>
+              <span>Optional · zero or one</span>
             </h3>
             <div className="kern-picker-search">
               <label htmlFor={repoSearchId} className="visually-hidden">
@@ -421,6 +421,13 @@ export function GitHubPicker({
                           onChange={() => {
                             setSelectedOwner(repo.owner);
                             setSelectedRepo(repo.name);
+                          }}
+                          onClick={() => {
+                            if (!checked || busy) {
+                              return;
+                            }
+                            setSelectedOwner(null);
+                            setSelectedRepo(null);
                           }}
                         />
                         <span className="kern-drive-item-icon">
@@ -575,9 +582,6 @@ export function GitHubPicker({
           <Button
             disabled={!canConfirm || selectionLoading || selectionUnchanged}
             onClick={() => {
-              if (!selectedOwner || !selectedRepo) {
-                return;
-              }
               onConfirm({
                 owner: selectedOwner,
                 repo: selectedRepo,

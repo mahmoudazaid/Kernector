@@ -201,8 +201,8 @@ class GitHubSelectionResponse(BaseModel):
 class GitHubSelectionRequest(BaseModel):
     """Replace the saved GitHub sync selection."""
 
-    owner: str
-    repo: str
+    owner: str | None = None
+    repo: str | None = None
     project_owner: str | None = None
     project_number: int | None = None
 

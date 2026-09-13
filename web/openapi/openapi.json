@@ -576,8 +576,15 @@
         "description": "Replace the saved GitHub sync selection.",
         "properties": {
           "owner": {
-            "title": "Owner",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
           },
           "project_number": {
             "anyOf": [
@@ -602,11 +609,17 @@
             "title": "Project Owner"
           },
           "repo": {
-            "title": "Repo",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
           }
         },
-        "required": ["owner", "repo"],
         "title": "GitHubSelectionRequest",
         "type": "object"
       },

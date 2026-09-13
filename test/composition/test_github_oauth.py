@@ -487,3 +487,98 @@ def test_put_github_selection_persists_validated_repo(settings) -> None:
     stored_again = tokens.load()
     assert stored_again is not None
     assert stored_again.connector_id == selection.connector_id
+
+
+def test_put_github_selection_allows_project_only(settings) -> None:
+    from composition import put_github_selection
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner="acme",
+            repo="docs",
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    class FakeClient:
+        def get_repository(self, owner: str, repo: str):
+            raise AssertionError("repository should not be validated")
+
+        def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+            assert owner_login == "octocat"
+            assert number == 19
+            return "PVT_19"
+
+    selection = put_github_selection(
+        settings,
+        owner=None,
+        repo=None,
+        project_owner="octocat",
+        project_number=19,
+        connection_store=tokens,
+        client_factory=lambda _token: FakeClient(),
+    )
+    assert selection.owner is None
+    assert selection.repo is None
+    assert selection.project_owner == "octocat"
+    assert selection.project_number == 19
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.owner is None
+    assert stored.repo is None
+    assert stored.project_number == 19
+
+
+def test_github_status_setup_required_until_repo_or_project(settings) -> None:
+    bare = replace(
+        settings,
+        github=replace(settings.github, owner=None, repo=None, project_owner=None, project_number=None),
+    )
+    tokens = GitHubOAuthConnectionStore(bare.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    status = github_status(bare)
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
+
+    tokens.mutate(
+        lambda current: None
+        if current is None
+        else replace(
+            current,
+            project_owner="octocat",
+            project_number=19,
+        )
+    )
+    ready = github_status(bare)
+    assert ready.setup_required is False
+    assert ready.connection_state == "ready"
+    assert ready.sync_scope == "octocat#19"

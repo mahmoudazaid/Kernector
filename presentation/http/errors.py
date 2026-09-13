@@ -368,7 +368,7 @@ def problem_from_exception(
             code="github_selection_required",
             title="GitHub selection required",
             status=409,
-            detail="Select a GitHub repository before syncing.",
+            detail="Select a GitHub repository or project before syncing.",
             instance=instance,
             request_id=request_id,
         )

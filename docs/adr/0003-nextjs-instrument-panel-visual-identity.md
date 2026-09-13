@@ -194,13 +194,13 @@ inventing a local look.
 
     **GitHub sources picker (required)** — GitHub uses one
     **Choose GitHub sources** dialog with two independent panels visible
-    together (`.kern-github-sources-panels`): **Repository code** (required,
-    exactly one) and **Project issues** (optional, zero or one). Do **not**
+    together (`.kern-github-sources-panels`): **Repository code** (optional,
+    zero or one) and **Project issues** (optional, zero or one). Do **not**
     use tabs. Each panel has its own search. Project is not a child of the
-    repository. Clear a selected project by clicking it again. Footer:
-    `1 source selected` / `2 sources selected`; primary **Save**;
-    disable until a repository is selected. Two columns on desktop; stack on
-    narrow viewports.
+    repository. Clear a selected repository or project by clicking it again.
+    Footer: `0 sources selected` / `1 source selected` / `2 sources selected`;
+    primary **Save**; disable while unchanged. Sync requires at least one
+    source. Two columns on desktop; stack on narrow viewports.
 
     **Save dismiss + card busy (required)** — On **Save**, close the picker
     immediately (`setPickerOpen(false)` before awaiting persist/sync), then

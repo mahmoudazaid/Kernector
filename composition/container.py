@@ -755,7 +755,7 @@ class GitHubProjectPage:
 
 @dataclass(frozen=True, slots=True)
 class GitHubSelection:
-    """Saved Hub sync targets: one repository plus an optional ProjectV2."""
+    """Saved Hub sync targets: optional repository and/or ProjectV2."""
 
     owner: str | None = None
     repo: str | None = None
@@ -932,12 +932,6 @@ def github_status(
     reauthorization_required = (
         False if connection is None else connection.reauthorization_required
     )
-    if connection is None:
-        connection_state = "disconnected"
-    elif reauthorization_required:
-        connection_state = "reauthorization_required"
-    else:
-        connection_state = "ready"
     # Hub selection on the grant wins; env is a fallback for pre-seeded operators.
     owner = _coalesce_text(
         None if connection is None else connection.owner,
@@ -956,7 +950,22 @@ def github_status(
     )
     if project_number is None:
         project_number = settings.github.project_number
-    setup_required = bool(connection is not None and not (owner and repo))
+    has_scope = bool(
+        (owner and repo) or (project_owner and project_number is not None)
+    )
+    setup_required = bool(
+        connection is not None
+        and not reauthorization_required
+        and not has_scope
+    )
+    if connection is None:
+        connection_state = "disconnected"
+    elif reauthorization_required:
+        connection_state = "reauthorization_required"
+    elif setup_required:
+        connection_state = "setup_required"
+    else:
+        connection_state = "ready"
     return GitHubStatus(
         configured=configured,
         available=available,
@@ -976,7 +985,12 @@ def github_status(
         last_sync=last_sync,
         reauthorization_required=reauthorization_required,
         connection_state=connection_state,
-        sync_scope=_github_sync_scope(owner=owner, repo=repo),
+        sync_scope=_github_sync_scope(
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+        ),
         setup_required=setup_required,
     )
 
@@ -1026,12 +1040,21 @@ def _github_document_count(
         return 0
 
 
-def _github_sync_scope(*, owner: str | None, repo: str | None) -> str | None:
+def _github_sync_scope(
+    *,
+    owner: str | None,
+    repo: str | None,
+    project_owner: str | None = None,
+    project_number: int | None = None,
+) -> str | None:
+    parts: list[str] = []
     if owner and repo:
-        return f"{owner}/{repo}"
-    if owner:
-        return owner
-    return None
+        parts.append(f"{owner}/{repo}")
+    if project_owner and project_number is not None:
+        parts.append(f"{project_owner}#{project_number}")
+    if not parts:
+        return None
+    return " · ".join(parts)
 
 
 def google_drive_status(
@@ -1587,18 +1610,24 @@ def get_github_selection(
 def put_github_selection(
     settings: Settings,
     *,
-    owner: str,
-    repo: str,
+    owner: str | None = None,
+    repo: str | None = None,
     project_owner: str | None = None,
     project_number: int | None = None,
     connection_store=None,
     client_factory=None,
 ) -> GitHubSelection:
     """Validate access and atomically replace the saved GitHub selection."""
-    owner_clean = owner.strip()
-    repo_clean = repo.strip()
-    if not owner_clean or not repo_clean:
-        raise InputRejectedError("A repository owner and name are required.")
+    owner_clean = (
+        owner.strip() if isinstance(owner, str) and owner.strip() else None
+    )
+    repo_clean = (
+        repo.strip() if isinstance(repo, str) and repo.strip() else None
+    )
+    if (owner_clean is None) != (repo_clean is None):
+        raise InputRejectedError(
+            "Repository owner and name must be set together."
+        )
     project_owner_clean = (
         project_owner.strip() if isinstance(project_owner, str) else None
     ) or None
@@ -1615,21 +1644,25 @@ def put_github_selection(
     tokens_store, connection = _require_github_grant(
         settings, connection_store=connection_store
     )
-    client = _github_picker_client(
-        settings,
-        access_token=connection.access_token,
-        client_factory=client_factory,
-    )
-    try:
-        client.get_repository(owner_clean, repo_clean)
-        if project_owner_clean is not None and project_number is not None:
-            client.resolve_project_v2_id(project_owner_clean, project_number)
-    except ConnectorAuthError as error:
-        _mark_github_reauth(tokens_store, error)
-    except ConnectorError as error:
-        raise InputRejectedError(
-            "The selected GitHub repository or project is inaccessible."
-        ) from error
+    if owner_clean is not None or project_owner_clean is not None:
+        client = _github_picker_client(
+            settings,
+            access_token=connection.access_token,
+            client_factory=client_factory,
+        )
+        try:
+            if owner_clean is not None and repo_clean is not None:
+                client.get_repository(owner_clean, repo_clean)
+            if project_owner_clean is not None and project_number is not None:
+                client.resolve_project_v2_id(
+                    project_owner_clean, project_number
+                )
+        except ConnectorAuthError as error:
+            _mark_github_reauth(tokens_store, error)
+        except ConnectorError as error:
+            raise InputRejectedError(
+                "The selected GitHub repository or project is inaccessible."
+            ) from error
 
     def _apply(current):
         from infrastructure.connectors.github.oauth import with_connector_id
@@ -2350,9 +2383,12 @@ def sync_github_oauth(
         if connection.project_number is not None
         else settings.github.project_number
     )
-    if not (owner and repo):
+    has_scope = bool(
+        (owner and repo) or (project_owner and project_number is not None)
+    )
+    if not has_scope:
         raise GitHubSelectionRequiredError(
-            "Select a GitHub repository before syncing."
+            "Select a GitHub repository or project before syncing."
         )
     try:
         working_catalog = _resolve_catalog(

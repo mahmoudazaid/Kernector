@@ -271,7 +271,11 @@ export function GitHubPanel({
       return;
     }
     const status = view.kind === "ready" ? view.status : null;
-    if (status?.setup_required || !(status?.owner && status?.repo)) {
+    const hasRepo = Boolean(status?.owner && status?.repo);
+    const hasProject = Boolean(
+      status?.project_owner && status?.project_number != null,
+    );
+    if (status?.setup_required || !(hasRepo || hasProject)) {
       setPickerOpen(true);
       return;
     }
@@ -289,7 +293,9 @@ export function GitHubPanel({
         onCatalogChangeRef.current?.();
       } else if (
         error instanceof ApiError &&
-        error.detail.toLowerCase().includes("select a github repository")
+        error.detail
+          .toLowerCase()
+          .includes("select a github repository or project")
       ) {
         setPickerOpen(true);
       } else {
@@ -302,8 +308,8 @@ export function GitHubPanel({
   }
 
   async function onSaveSelection(next: {
-    owner: string;
-    repo: string;
+    owner: string | null;
+    repo: string | null;
     project_owner?: string | null;
     project_number?: number | null;
   }) {
@@ -321,7 +327,12 @@ export function GitHubPanel({
         selection: next,
       });
       setSelection(saved);
-      await syncNow({ baseUrl: apiBaseUrl });
+      const hasScope =
+        Boolean(saved.owner && saved.repo) ||
+        Boolean(saved.project_owner && saved.project_number != null);
+      if (hasScope) {
+        await syncNow({ baseUrl: apiBaseUrl });
+      }
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {
@@ -372,7 +383,7 @@ export function GitHubPanel({
         : reauth
           ? "Reconnect required"
           : setupRequired
-            ? "Choose repository"
+            ? "Choose sources"
             : status?.connected
               ? "Connected"
               : "Available";
@@ -479,7 +490,7 @@ export function GitHubPanel({
           className="kern-settings-callout kern-settings-callout--warn"
           role="status"
         >
-          <p>Choose a repository to sync before indexing.</p>
+          <p>Choose a repository or project to sync before indexing.</p>
         </div>
       ) : null}
 

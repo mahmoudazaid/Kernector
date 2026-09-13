@@ -89,7 +89,9 @@ describe("GitHubPanel", () => {
       />,
     );
     expect(
-      await screen.findByText(/choose a repository to sync before indexing/i),
+      await screen.findByText(
+        /choose a repository or project to sync before indexing/i,
+      ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Browse" }));
     expect(

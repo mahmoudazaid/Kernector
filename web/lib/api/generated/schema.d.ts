@@ -751,13 +751,13 @@ export interface components {
      */
     GitHubSelectionRequest: {
       /** Owner */
-      owner: string;
+      owner?: string | null;
       /** Project Number */
       project_number?: number | null;
       /** Project Owner */
       project_owner?: string | null;
       /** Repo */
-      repo: string;
+      repo?: string | null;
     };
     /**
      * GitHubSelectionResponse
