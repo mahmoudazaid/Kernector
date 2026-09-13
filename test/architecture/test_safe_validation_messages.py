@@ -35,9 +35,7 @@ _NON_FIRST_PARTY = frozenset(
     }
 )
 _KNOWN_UNSCANNED = frozenset({"infrastructure", "composition"})
-_NOQA_ALLOWLIST: frozenset[str] = frozenset(
-    {"packs/software_delivery/gherkin.py"}
-)
+_NOQA_ALLOWLIST: frozenset[str] = frozenset()
 
 
 def test_every_first_party_package_is_scanned_or_explicitly_deferred() -> None:

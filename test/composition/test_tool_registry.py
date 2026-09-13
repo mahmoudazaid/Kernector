@@ -15,9 +15,11 @@ from domain.models import AskResult, Message
 from infrastructure.config import DomainToolSettings, load_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RISK_TOOL = "software_delivery.risk_score"
-GENERATE_TOOL = "software_delivery.generate_test_cases"
-EXPORT_TOOL = "software_delivery.export_test_cases_markdown"
+RETIRED_TOOLS = (
+    "software_delivery.risk_score",
+    "software_delivery.generate_test_cases",
+    "software_delivery.export_test_cases_markdown",
+)
 
 
 class _FakeChat:
@@ -43,16 +45,16 @@ def test_empty_config_builds_empty_registry(env: pytest.MonkeyPatch) -> None:
     assert registry.names() == ()
 
 
-def test_software_delivery_registers_all_tools_with_injected_chat(
+def test_software_delivery_registers_no_tools_with_injected_chat(
     env: pytest.MonkeyPatch,
 ) -> None:
     env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     settings = load_settings()
     registry = build_tool_registry(settings, chat_model=_FakeChat())
-    assert set(registry.names()) == {RISK_TOOL, GENERATE_TOOL, EXPORT_TOOL}
-    assert RISK_TOOL in registry
-    assert GENERATE_TOOL in registry
-    assert EXPORT_TOOL in registry
+    assert registry.names() == ()
+    assert len(registry) == 0
+    for name in RETIRED_TOOLS:
+        assert name not in registry
 
 
 def test_enabled_pack_without_chat_model_is_configuration_error(

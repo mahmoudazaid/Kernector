@@ -1,4 +1,4 @@
-"""Chat-time intent selection: which tool chain a chat query is asking for."""
+"""Chat-time intent selection: retired scaffolding tools never match."""
 
 from __future__ import annotations
 
@@ -9,57 +9,25 @@ from packs.software_delivery.errors import OrchestrationValidationError
 
 
 @pytest.mark.parametrize(
-    ("query", "style"),
-    [
-        ("Create test cases for AUTH-101", "steps"),
-        ("Generate tests for AUTH-101", "steps"),
-        ("Generate comprehensive tests for AUTH-101", "steps"),
-        ("Draft a test plan for AUTH-101", "steps"),
-        ("Write gherkin test cases for AUTH-101", "gherkin"),
-        ("Generate tests for AUTH-101 in Given/When/Then form", "gherkin"),
-        ("Write a Gherkin feature file", "gherkin"),
-        ("Write a feature file for the login story", "gherkin"),
-        ("Produce Cucumber scenarios", "gherkin"),
-        ("Produce cucumber test scenarios for AUTH-101", "gherkin"),
-        (
-            "Score the risk and write gherkin test cases for AUTH-101",
-            "gherkin",
-        ),
-        ("Create test cases that do not require admin access", "steps"),
-        ("Create tests; never use production credentials", "steps"),
-        ("Do not summarize the docs; create test cases for AUTH-101", "steps"),
-    ],
-)
-def test_explicit_generation_requests_select_the_expected_chain(
-    query: str, style: str
-) -> None:
-    assert select_chat_intent(query) == ChatToolSelection(
-        generate_tests=True, output_style=style  # type: ignore[arg-type]
-    )
-
-
-@pytest.mark.parametrize(
     "query",
     [
-        "Analyze these requirements:\nAs a user I want MFA.",
-        "Review this story: Login must lock after five failures.",
-        "Analyze requirements for AUTH-101",
-        "Do not generate tests; analyze these requirements: Need MFA.",
-        (
-            "Analyze these requirements:\n"
-            "As a user I want MFA on AUTH-101.\n"
-            "Given an existing Session, lock after 5 failures."
-        ),
-    ],
-)
-def test_analysis_cues_select_no_tool(query: str) -> None:
-    """Requirements-analysis phrasing is no longer a dedicated chat workflow."""
-    assert select_chat_intent(query) is None
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
+        # Former generation matches
+        "Create test cases for AUTH-101",
+        "Generate tests for AUTH-101",
+        "Generate comprehensive tests for AUTH-101",
+        "Draft a test plan for AUTH-101",
+        "Write gherkin test cases for AUTH-101",
+        "Generate tests for AUTH-101 in Given/When/Then form",
+        "Write a Gherkin feature file",
+        "Write a feature file for the login story",
+        "Produce Cucumber scenarios",
+        "Produce cucumber test scenarios for AUTH-101",
+        "Score the risk and write gherkin test cases for AUTH-101",
+        "Create test cases that do not require admin access",
+        "Create tests; never use production credentials",
+        "Do not summarize the docs; create test cases for AUTH-101",
+        "Assess the risk and create test cases for AUTH-101",
+        # Former risk-only matches
         "What is the risk score for AUTH-101?",
         "Give me a risk assessment of the MFA rollout",
         "How risky is shipping AUTH-101 this sprint?",
@@ -68,68 +36,22 @@ def test_analysis_cues_select_no_tool(query: str) -> None:
         "Evaluate the risk before we ship",
         "Do not generate tests; assess the risk for AUTH-101",
         "Do not analyze these requirements; assess the risk for AUTH-101",
-    ],
-)
-def test_an_explicit_risk_request_selects_the_risk_only_chain(query: str) -> None:
-    assert select_chat_intent(query) == ChatToolSelection(
-        generate_tests=False, output_style="steps"
-    )
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        "Create a summary, not test cases",
+        # Analysis / non-tool (already None; keep as regression)
+        "Analyze these requirements:\nAs a user I want MFA.",
+        "Review this story: Login must lock after five failures.",
+        "Analyze requirements for AUTH-101",
+        "Do not generate tests; analyze these requirements: Need MFA.",
         "Create a summary of existing test cases",
-        "Create a list of test cases",
-        "Create an overview of the test plan",
-        "Generate a report without creating tests",
         "How do I create test cases?",
-        "How to write Gherkin scenarios",
-        "Explain how to generate tests",
-        "How do I analyze requirements?",
-        "What is Gherkin?",
-        "How is a risk score calculated?",
-        "Summarise the test plan",
-        "Which test cases cover AUTH-101?",
-        "I need a feature file for the login story",
-        "Show me the test plan for AUTH-101",
         "What is a risk score?",
-        "Explain the risk score model",
-        "Do not create test cases",
-        "Do not generate test cases for AUTH-101",
-        "Don't create tests for AUTH-101",
-        "Dont write test cases for AUTH-101",
-        "Never generate tests",
-        "Never generate test scenarios for login",
-        "Do not assess the risk",
-        "Do not assess the risk for AUTH-101",
-        "Do not analyze these requirements",
-        "Never review this story",
-        "Analyze these requirements",
-        "Review this story",
-        "analyze AUTH-101",
-        "gherkin",
-        "cucumber scenarios",
-        "feature file",
-        "test plan",
-        "test cases for AUTH-101",
         "What is the session timeout?",
-        "Summarise the auth docs",
-        "Who owns AUTH-101?",
-        "Explain how MFA enrolment works",
         "",
         "   ",
     ],
 )
-def test_non_tool_requests_select_no_tool(query: str) -> None:
+def test_select_chat_intent_always_returns_none(query: str) -> None:
+    """Choice A (#285): former tool-shaped queries stay on grounded RAG."""
     assert select_chat_intent(query) is None
-
-
-def test_generation_wins_over_risk_in_the_same_query() -> None:
-    assert select_chat_intent(
-        "Assess the risk and create test cases for AUTH-101"
-    ) == ChatToolSelection(generate_tests=True, output_style="steps")
 
 
 def test_an_unknown_style_cannot_be_constructed() -> None:
@@ -143,12 +65,6 @@ def test_registration_exposes_the_chat_intent_selector() -> None:
 
     select = build_chat_intent_selector()
 
-    assert select("Create test cases for AUTH-101") == ChatToolSelection(
-        generate_tests=True, output_style="steps"
-    )
-    assert select("Create a summary of existing test cases") is None
+    assert select("Create test cases for AUTH-101") is None
+    assert select("Do not generate tests; assess the risk for AUTH-101") is None
     assert select("What is the session timeout?") is None
-    assert select(
-        "Do not generate tests; assess the risk for AUTH-101"
-    ) == ChatToolSelection(generate_tests=False, output_style="steps")
-    assert select("Analyze these requirements:\nNeed MFA enrollment.") is None

@@ -130,33 +130,6 @@
       "kind": "pack_off",
       "query": "assess the risk of checkout",
       "k": 5
-    },
-    {
-      "id": "tool-risk-score",
-      "case_class": "tool",
-      "kind": "invoke_tool",
-      "tool_name": "software_delivery.risk_score",
-      "arguments": {
-        "target": "Assess authentication release risk",
-        "evidence": [
-          {
-            "source_id": "SRS-12",
-            "source_type": "srs",
-            "text": "Authentication requirements remain TBD.",
-            "is_complete": true
-          },
-          {
-            "source_id": "tests/auth-login",
-            "source_type": "test",
-            "text": "Critical login regression is failing.",
-            "is_complete": false
-          }
-        ]
-      },
-      "expected_tool_result": {
-        "level": "high",
-        "score": 60
-      }
     }
   ]
 }

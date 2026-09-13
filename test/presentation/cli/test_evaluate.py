@@ -470,6 +470,7 @@ def test_cli_offline_dataset_writes_reports_to_tmp_path(
     assert payload["mode"] == "offline"
     assert payload["schema_version"] == EVAL_SCHEMA_VERSION
     assert set(payload["coverage"]) == set(REQUIRED_CASE_CLASSES)
+    assert "tool" not in payload["coverage"]
     assert "Traceback" not in captured.err
     assert str(json_path) in captured.out
     assert code == 0

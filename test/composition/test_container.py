@@ -334,7 +334,7 @@ def test_build_ask_knowledge_routes_generation_through_ask_service(
     assert isinstance(ask._ask_service, AskService)
 
 
-def test_build_invoke_tool_registers_software_delivery_tools(
+def test_build_invoke_tool_registers_empty_software_delivery_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
@@ -346,38 +346,26 @@ def test_build_invoke_tool_registers_software_delivery_tools(
     invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
 
     assert isinstance(invoke, InvokeTool)
-    assert set(invoke._registry.names()) == {
+    assert invoke._registry.names() == ()
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
         RISK_SCORE_TOOL,
         GENERATE_TEST_CASES_TOOL,
         EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    }
-
-
-def test_build_invoke_tool_runs_real_risk_score(
+    ],
+)
+def test_build_invoke_tool_retired_names_are_not_invokable(
     monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
 ) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
 
-    response = invoke.execute(
-        InvokeToolRequest(
-            RISK_SCORE_TOOL,
-            {
-                "target": "Assess MFA",
-                "evidence": [
-                    {
-                        "source_id": "US-1",
-                        "source_type": "user_story",
-                        "text": "As a user I want MFA so that accounts are safer.",
-                        "is_complete": True,
-                    }
-                ],
-            },
-        )
-    )
-
-    assert response.tool_name == RISK_SCORE_TOOL
-    assert '"score"' in response.result
+    with pytest.raises(ApplicationValidationError, match="Unknown tool name"):
+        invoke.execute(InvokeToolRequest(tool_name, {}))
 
 
 def test_build_orchestrate_software_delivery_wires_pack_orchestrator(
@@ -657,12 +645,10 @@ def test_agent_model_factory_rejects_unknown_provider(
         factory()
 
 
-def test_agent_loop_e2e_missing_credentials_maps_to_problem(
+def test_agent_loop_enabled_former_tool_query_stays_on_rag_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Composed agent loop: missing credentials stay typed through ask → Problem."""
-    from presentation.http.errors import problem_from_exception
-
+    """Choice A (#285): retired intent never enters the agent loop."""
     _sd_env(monkeypatch)
     monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
@@ -670,153 +656,48 @@ def test_agent_loop_e2e_missing_credentials_maps_to_problem(
         "composition.container.build_rewrite_and_retrieve_knowledge",
         lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
     )
+    chat = _StubChat()
 
-    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+    ask = build_tool_augmented_ask(load_settings(), chat_model=chat)
+    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
 
-    with pytest.raises(MissingProviderCredentialsError) as caught:
-        ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+    assert response.answer == "stubbed"
+    assert response.tool_outputs == ()
+    assert response.run is not None
+    assert response.run.path == "rag"
+    assert ask.consume_tool_run_view() is None
+    assert chat.calls
 
-    problem = problem_from_exception(caught.value)
-    assert problem.status == 500
-    assert problem.code == "missing_provider_credentials"
-    assert "OPENROUTER_API_KEY" not in problem.detail
 
-
-def test_agent_loop_e2e_scripted_tool_run_answers(
+def test_agent_loop_enabled_does_not_invoke_retired_tools_for_former_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Composed agent loop runs a real LangGraphToolAgent with a scripted model."""
-    from langchain_core.messages import AIMessage
-
-    from composition.container import _ObservingChatOpenAI
-
+    """Composed agent loop stays dormant when intent never matches."""
     _sd_env(monkeypatch)
     monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setattr(
         "composition.container.build_rewrite_and_retrieve_knowledge",
         lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
     )
-
-    risk = json.dumps(
-        {
-            "score": 62,
-            "level": "high",
-            "rationale": "Acceptance criteria are absent from a complete story.",
-            "factors": [
-                {
-                    "factor_id": "missing_acceptance_criteria",
-                    "weight": 30,
-                    "references": [
-                        {"source_id": "US-1", "source_type": "user_story"}
-                    ],
-                }
-            ],
-        }
-    )
-    generated = json.dumps(
-        {
-            "output_style": "steps",
-            "test_cases": [
-                {
-                    "title": "Lock the account after five failed MFA attempts",
-                    "steps": ["Sign in with a valid password.", "Fail MFA five times."],
-                    "expected": "The account is locked.",
-                    "references": [
-                        {"source_id": "US-1", "source_type": "user_story"}
-                    ],
-                }
-            ],
-        }
-    )
-    invoke_tool = _ScriptedInvokeTool(
-        {
-            RISK_SCORE_TOOL: risk,
-            GENERATE_TEST_CASES_TOOL: generated,
-            EXPORT_TEST_CASES_MARKDOWN_TOOL: "# Test Cases\n",
-        }
-    )
+    invoke_tool = _ScriptedInvokeTool({})
     monkeypatch.setattr(
         "composition.container.build_invoke_tool",
         lambda settings, chat_model=None: invoke_tool,
     )
+    chat = _StubChat()
 
-    class _Scripted:
-        def __init__(self) -> None:
-            self._queue = [
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "software_delivery__risk_score",
-                            "args": {},
-                            "id": "1",
-                        }
-                    ],
-                ),
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "software_delivery__generate_test_cases",
-                            "args": {},
-                            "id": "2",
-                        }
-                    ],
-                ),
-                AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "software_delivery__export_test_cases_markdown",
-                            "args": {},
-                            "id": "3",
-                        }
-                    ],
-                ),
-                AIMessage(content="done"),
-            ]
-
-        def bind_tools(self, tools, *args, **kwargs):
-            del tools, args, kwargs
-            return self
-
-        def invoke(self, _messages, **_kwargs):
-            return self._queue.pop(0)
-
-    monkeypatch.setattr(
-        "composition.container._software_delivery_agent_model_factory",
-        lambda settings, *, recorder=None, **_kwargs: (
-            lambda **_kw: _ObservingChatOpenAI(
-                _Scripted(), recorder=recorder, model_name="scripted"
-            )
-        ),
-    )
-
-    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+    ask = build_tool_augmented_ask(load_settings(), chat_model=chat)
     assert isinstance(ask._ask, ToolAugmentedAsk)
 
     response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
 
-    assert invoke_tool.invoked == [
-        RISK_SCORE_TOOL,
-        GENERATE_TEST_CASES_TOOL,
-        EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    ]
-    assert response.answer.startswith(
-        "Scored risk, generated test cases, and exported Markdown."
-    )
-    assert "# Test Cases" in response.answer
+    assert invoke_tool.invoked == []
+    assert response.answer == "stubbed"
+    assert response.tool_outputs == ()
     assert response.run is not None
-    assert response.run.model == "scripted"
-    assert response.run.latency_ms is not None
-    assert response.run.latency_ms >= 0
-    assert response.run.hit_count == 1
-    assert response.run.path == "tools"
-    assert list(response.run.tools) == [
-        RISK_SCORE_TOOL,
-        GENERATE_TEST_CASES_TOOL,
-        EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    ]
+    assert response.run.path == "rag"
+    assert ask.consume_tool_run_view() is None
+    assert chat.calls
 
 
 def test_observing_chat_bind_tools_forwards_extra_options() -> None:
@@ -904,15 +785,91 @@ class _ScriptedInvokeTool:
         return InvokeToolResponse(request.tool_name, self._results[request.tool_name])
 
 
-def test_a_chat_tool_turn_runs_the_real_pack_chain(
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Create test cases for AUTH-101",
+        "What is the risk score for AUTH-101?",
+        "Score the risk for AUTH-101",
+    ],
+)
+def test_pack_enabled_former_tool_queries_stay_on_grounded_rag(
+    monkeypatch: pytest.MonkeyPatch,
+    query: str,
+) -> None:
+    """Choice A (#285): pack enabled + risk/generate phrasing → RAG, no tools."""
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    invoke_tool = _ScriptedInvokeTool({})
+    monkeypatch.setattr(
+        "composition.container.build_invoke_tool",
+        lambda settings, chat_model=None: invoke_tool,
+    )
+    chat = _StubChat()
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=chat)
+    response = ask.execute(AskRequest(query=query))
+
+    assert invoke_tool.invoked == []
+    assert response.tool_outputs == ()
+    assert response.answer == "stubbed"
+    assert response.run is not None
+    assert response.run.path == "rag"
+    assert ask.consume_tool_run_view() is None
+    assert chat.calls
+
+
+def test_former_generate_query_uses_grounded_ask_run_meta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC1 + AC4: the whole chat path, with only retrieval and the tools stubbed.
+    """Former generate phrasing answers via grounded ask, not the retired tool."""
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
 
-    Every double above stands in for the container's own orchestrate closure, so
-    nothing else proves that the request it builds is one the pack accepts, or
-    that the pack's JSON parsers are handed what they expect.
+    class _GroundedChat:
+        def complete(
+            self,
+            system: str,
+            messages: Sequence[Message],
+            settings: Mapping[str, object],
+        ) -> AskResult:
+            return AskResult(
+                content="Grounded answer about AUTH-101.",
+                model="gen-model",
+                latency_ms=55,
+                usage=Usage(total_tokens=12),
+            )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_GroundedChat())  # type: ignore[arg-type]
+    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+
+    assert response.answer == "Grounded answer about AUTH-101."
+    assert response.tool_outputs == ()
+    assert response.run is not None
+    assert response.run.path == "rag"
+    assert response.run.model == "gen-model"
+    assert response.run.latency_ms == 55
+    assert response.run.usage is not None
+    assert response.run.usage.total_tokens == 12
+    assert ask.consume_tool_run_view() is None
+
+
+def test_dormant_orchestrate_path_with_stub_intent_and_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pin container orchestrate closure → pack request → chain → projection.
+
+    Production intent is always ``None`` (#285). This injects a stub selector and
+    scripted tools so the dormant #170 path stays covered until a real tool lands.
     """
+    from packs.software_delivery.chat_intent import ChatToolSelection
+
     _sd_env(monkeypatch)
     monkeypatch.setattr(
         "composition.container.build_rewrite_and_retrieve_knowledge",
@@ -960,6 +917,14 @@ def test_a_chat_tool_turn_runs_the_real_pack_chain(
         "composition.container.build_invoke_tool",
         lambda settings, chat_model=None: invoke_tool,
     )
+    monkeypatch.setattr(
+        "packs.software_delivery.registration.build_chat_intent_selector",
+        lambda: (
+            lambda _query: ChatToolSelection(
+                generate_tests=True, output_style="steps"
+            )
+        ),
+    )
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
     response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
@@ -979,58 +944,14 @@ def test_a_chat_tool_turn_runs_the_real_pack_chain(
     )
     assert "**Risk 62/100 (high)**" in response.answer
     assert response.answer.endswith("# Test Cases\n")
-    assert [citation.reference.source_id for citation in response.citations] == ["US-1"]
-
-
-def test_generate_test_case_turn_receives_model_metadata_via_recording_wrapper(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Public container wiring: generate tool uses RecordingChatModel → RunMeta."""
-    _sd_env(monkeypatch)
-    monkeypatch.setattr(
-        "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
-    )
-
-    class _GeneratingChat:
-        def complete(
-            self,
-            system: str,
-            messages: Sequence[Message],
-            settings: Mapping[str, object],
-        ) -> AskResult:
-            payload = {
-                "test_cases": [
-                    {
-                        "title": "Lock after five failed MFA attempts",
-                        "steps": [
-                            "Sign in with a valid password.",
-                            "Fail MFA five times.",
-                        ],
-                        "expected": "The account is locked.",
-                        "evidence_ids": ["e0"],
-                    }
-                ]
-            }
-            return AskResult(
-                content=json.dumps(payload),
-                model="gen-model",
-                latency_ms=55,
-                usage=Usage(total_tokens=12),
-            )
-
-    ask = build_tool_augmented_ask(load_settings(), chat_model=_GeneratingChat())  # type: ignore[arg-type]
-    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
-
     assert response.run is not None
     assert response.run.path == "tools"
-    assert response.run.model == "gen-model"
-    assert response.run.latency_ms == 55
-    assert response.run.usage is not None
-    assert response.run.usage.total_tokens == 12
-    assert response.run.hit_count == 1
-    assert response.run.citation_count == 1
-    assert GENERATE_TEST_CASES_TOOL in response.run.tools
+    assert list(response.run.tools) == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+    assert ask.consume_tool_run_view() is not None
 
 
 def test_a_general_chat_query_never_reaches_a_tool(

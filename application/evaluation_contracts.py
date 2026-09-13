@@ -19,8 +19,11 @@ REQUIRED_CASE_CLASSES: tuple[str, ...] = (
     "unknown_source_kind",
     "citation_provenance",
     "pack_off",
-    "tool",
+    # "tool" — restore with the first real tool under packs/software_delivery/tools/ (#285)
 )
+
+# Valid case_class values beyond the exit-gate set (invoke_tool cases still validate).
+_KNOWN_CASE_CLASSES: frozenset[str] = frozenset(REQUIRED_CASE_CLASSES) | {"tool"}
 
 REQUIRED_AGGREGATES: tuple[str, ...] = (
     "hit_at_k",
@@ -241,9 +244,9 @@ class EvalCase:
             )
         if self.reference_answer is not None:
             _require_text(self.reference_answer, "reference_answer")
-        if self.case_class not in REQUIRED_CASE_CLASSES:
+        if self.case_class not in _KNOWN_CASE_CLASSES:
             raise ApplicationValidationError(
-                f"case_class must be a required eval class, got {self.case_class}"
+                f"case_class must be a known eval class, got {self.case_class}"
             )
         _require_text(self.kind, "kind")
         if self.kind not in _KINDS:

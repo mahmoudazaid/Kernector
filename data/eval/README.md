@@ -46,7 +46,7 @@ Judge scores are model opinions, not ground truth.
 
 Ask cases are the only Judge-eligible kind. `retrieve`, `pack_off`, and `invoke_tool` stay on the offline harness and are never Judged. The Software Delivery ask (`sd-password-reset-ask`) asks how long a password-reset email code is valid; it is not pack-shaped (no “assess the risk” / generate-tests).
 
-The irrelevant case uses a query with no lexical overlap so BM25 returns no evidence. The pack-off query is risk-shaped (`assess the risk of checkout`) while packs stay disabled. The tool case invokes `software_delivery.risk_score` with a worked evidence bundle (`level` `high`, `score` `60`).
+The irrelevant case uses a query with no lexical overlap so BM25 returns no evidence. The pack-off query is risk-shaped (`assess the risk of checkout`) while packs stay disabled. There is no `invoke_tool` case while the Software Delivery registry is empty (#285). The `tool` class is not required until a real tool lands; offline eval exits `0`.
 
 ## Skip reasons
 
@@ -58,5 +58,7 @@ Coverage marks a class `skipped` only when:
   that construct `EvaluateKnowledge` with `invoke=None`.
 
 The CLI exits `1` when any required class is skipped with `no_case_configured`.
+`tool` is optional until restored with the first real tool under
+`packs/software_delivery/tools/` (#285).
 
 Missing live credentials never skip a #102 case and never change `mode`. `--judge-mode auto` without ready Judge/answer config is a loud skip (exit `2`), not a fake run.
