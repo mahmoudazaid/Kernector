@@ -263,6 +263,59 @@ export function sanitizeStoredChatMessage(
       message.toolRun = toolRun;
     }
   }
+  if ("action" in value) {
+    const action = sanitizeChatAction(value.action);
+    if (action !== undefined) {
+      message.action = action;
+    }
+  }
 
   return message;
+}
+
+function sanitizeChatAction(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  if (
+    (value.kind !== "start_workflow" && value.kind !== "open_workflow") ||
+    typeof value.workflow_id !== "string" ||
+    typeof value.label !== "string"
+  ) {
+    return undefined;
+  }
+  const action: Record<string, unknown> = {
+    kind: value.kind,
+    workflow_id: value.workflow_id,
+    label: value.label,
+  };
+  if (value.ticket_identifier !== undefined && value.ticket_identifier !== null) {
+    if (typeof value.ticket_identifier !== "string") {
+      return undefined;
+    }
+    action.ticket_identifier = value.ticket_identifier;
+  }
+  if (value.draft_id !== undefined && value.draft_id !== null) {
+    if (typeof value.draft_id !== "string") {
+      return undefined;
+    }
+    action.draft_id = value.draft_id;
+  }
+  if (value.source_reference !== undefined && value.source_reference !== null) {
+    if (
+      !isPlainObject(value.source_reference) ||
+      typeof value.source_reference.source_id !== "string" ||
+      typeof value.source_reference.source_type !== "string"
+    ) {
+      return undefined;
+    }
+    action.source_reference = {
+      source_id: value.source_reference.source_id,
+      source_type: value.source_reference.source_type,
+    };
+  }
+  return action;
 }

@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type SubmitEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
@@ -15,6 +16,7 @@ import {
   type AskChatOptions,
   type ChatAskResponse,
 } from "@/lib/api/chat";
+import { createTestDesignDraft } from "@/lib/api/test-design";
 import type {
   GetRuntimeSettingsOptions,
   RuntimeSettingsResponse,
@@ -29,6 +31,7 @@ import {
   historyForModel,
   seedIds,
   type ChatMessage,
+  type ChatWorkflowAction,
   type Citation,
   type ToolRun,
   type ToolUsed,
@@ -271,7 +274,19 @@ function RunDetailsBlock({ run }: { run: ChatMessage["run"] }) {
   );
 }
 
-function MessageRow({ message }: { message: ChatMessage }) {
+function MessageRow({
+  message,
+  apiBaseUrl,
+  conversationId,
+}: {
+  message: ChatMessage;
+  apiBaseUrl: string;
+  conversationId: string | null;
+}) {
+  const router = useRouter();
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
   if (message.displayOnly) {
     return (
       <article
@@ -290,6 +305,35 @@ function MessageRow({ message }: { message: ChatMessage }) {
       </article>
     );
   }
+
+  async function handleStartWorkflow(action: ChatWorkflowAction) {
+    if (
+      action.kind !== "start_workflow" ||
+      action.workflow_id !== "software-delivery.test-design" ||
+      !action.source_reference ||
+      !action.ticket_identifier ||
+      !conversationId
+    ) {
+      return;
+    }
+    setStarting(true);
+    setStartError(null);
+    try {
+      const draft = await createTestDesignDraft({
+        baseUrl: apiBaseUrl,
+        body: {
+          conversation_id: conversationId,
+          source_reference: action.source_reference,
+          ticket_identifier: action.ticket_identifier,
+        },
+      });
+      router.push(`/test-design/${encodeURIComponent(draft.draft_id)}`);
+    } catch {
+      setStartError("Could not start Test Design. Try again.");
+      setStarting(false);
+    }
+  }
+
   return (
     <article
       className="kern-chat-msg kern-chat-msg--assistant"
@@ -300,6 +344,35 @@ function MessageRow({ message }: { message: ChatMessage }) {
       <ToolsUsedBlock tools={message.toolsUsed ?? []} />
       {message.toolRun ? <ToolRunBlock toolRun={message.toolRun} /> : null}
       <RunDetailsBlock run={message.run} />
+      {message.action?.kind === "start_workflow" &&
+      message.action.workflow_id === "software-delivery.test-design" ? (
+        <div className="kern-chat-action">
+          <Button
+            type="button"
+            disabled={starting || !conversationId}
+            onClick={() => {
+              void handleStartWorkflow(message.action!);
+            }}
+          >
+            {starting ? "Starting…" : message.action.label}
+          </Button>
+          {startError ? <p role="alert">{startError}</p> : null}
+        </div>
+      ) : null}
+      {message.action?.kind === "open_workflow" && message.action.draft_id ? (
+        <div className="kern-chat-action">
+          <Button
+            type="button"
+            onClick={() => {
+              router.push(
+                `/test-design/${encodeURIComponent(message.action!.draft_id!)}`,
+              );
+            }}
+          >
+            {message.action.label}
+          </Button>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -314,6 +387,7 @@ function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
     toolsUsed: message.toolsUsed,
     run: message.run,
     toolRun: message.toolRun,
+    action: message.action,
   }));
 }
 
@@ -327,6 +401,7 @@ function fromPersisted(messages: StoredChatMessage[]): ChatMessage[] {
     toolsUsed: message.toolsUsed as ChatMessage["toolsUsed"],
     run: message.run as ChatMessage["run"],
     toolRun: message.toolRun as ChatMessage["toolRun"],
+    action: message.action as ChatMessage["action"],
   }));
 }
 
@@ -856,7 +931,12 @@ export function ChatPanel({
 
         <div className="kern-chat-thread" aria-live="polite">
           {messages.map((message) => (
-            <MessageRow key={message.id} message={message} />
+            <MessageRow
+              key={message.id}
+              message={message}
+              apiBaseUrl={apiBaseUrl}
+              conversationId={boundId}
+            />
           ))}
           {sending ? (
             <p className="kern-chat-thinking" role="status">

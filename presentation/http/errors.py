@@ -32,6 +32,12 @@ from composition.errors import (
     UnsupportedPreviewFormatError,
 )
 from composition.software_delivery_chat import ToolRunFailedError
+from composition.test_design_errors import (
+    TestDesignNotFoundError,
+    TestDesignUnavailableError,
+    TestDesignValidationError,
+    TestDesignVersionConflictError,
+)
 from domain.errors import (
     ConfigurationBoundaryError,
     DomainValidationError,
@@ -62,6 +68,12 @@ _MISSING_PROVIDER_CREDENTIALS_DETAIL = (
     "Required LLM provider credentials are missing. Check server configuration."
 )
 _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
+_TEST_DESIGN_UNAVAILABLE_DETAIL = "Test Design is not available."
+_TEST_DESIGN_NOT_FOUND_DETAIL = "Test design draft was not found."
+_TEST_DESIGN_VERSION_CONFLICT_DETAIL = (
+    "The draft was updated elsewhere. Reload or retry with the latest version."
+)
+_TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
 _INTERNAL_FAILURE_DETAIL = "An unexpected error occurred."
 _VALIDATION_TITLE = "Request validation failed"
 _PROBLEM_BASE = "https://kernector.dev/problems"
@@ -284,6 +296,42 @@ def problem_from_exception(
             title="Insufficient evidence",
             status=422,
             detail=_INSUFFICIENT_EVIDENCE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignUnavailableError):
+        return _problem(
+            code="test_design_unavailable",
+            title="Test Design unavailable",
+            status=404,
+            detail=_TEST_DESIGN_UNAVAILABLE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignNotFoundError):
+        return _problem(
+            code="test_design_not_found",
+            title="Test design draft not found",
+            status=404,
+            detail=_TEST_DESIGN_NOT_FOUND_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignVersionConflictError):
+        return _problem(
+            code="test_design_version_conflict",
+            title="Test design version conflict",
+            status=409,
+            detail=_TEST_DESIGN_VERSION_CONFLICT_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignValidationError):
+        return _problem(
+            code="validation_error",
+            title="Validation error",
+            status=422,
+            detail=_TEST_DESIGN_VALIDATION_DETAIL,
             instance=instance,
             request_id=request_id,
         )

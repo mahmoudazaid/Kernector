@@ -441,6 +441,43 @@ def build_rewrite_and_retrieve_knowledge(
     )
 
 
+def build_test_design_facade(
+    settings: Settings, *, vector_store: VectorStore | None = None
+):
+    """Wire the test-design HTTP facade (pack gated at call time)."""
+    from pathlib import Path
+
+    from application.contracts import RetrieveRequest
+    from composition.test_design import TestDesignFacade
+
+    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=vector_store
+    )
+    try:
+        workspace_id = parse_workspace_id(settings.document_catalog.workspace_id)
+    except ValueError as error:
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
+        ) from error
+    if workspace_id is None:
+        workspace_id = "default"
+    store_path = Path("data/workspace_store/workspace.sqlite")
+    if settings.document_catalog.sql_path is not None:
+        store_path = (
+            settings.document_catalog.sql_path.parent / "workspace_store.sqlite"
+        )
+
+    def retrieve(query: str):
+        return rewrite_and_retrieve.execute(RetrieveRequest(query=query)).hits
+
+    return TestDesignFacade(
+        settings=settings,
+        retrieve=retrieve,
+        store_path=store_path,
+        workspace_id=workspace_id,
+    )
+
+
 def reindex_filter_metadata(settings: Settings) -> int:
     """Promote stored ``extra`` keys so metadata filters work on legacy records.
 

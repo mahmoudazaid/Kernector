@@ -144,6 +144,27 @@
                 "type": "null"
               }
             ]
+          },
+          "source_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceReferenceRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ticket_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Identifier"
           }
         },
         "required": ["query"],
@@ -153,6 +174,16 @@
       "ChatAskResponse": {
         "description": "Successful grounded ask turn.",
         "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatWorkflowActionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "answer": {
             "title": "Answer",
             "type": "string"
@@ -269,6 +300,59 @@
         "title": "ChatRuntimeRequest",
         "type": "object"
       },
+      "ChatWorkflowActionResponse": {
+        "description": "Allowlisted chat handoff action (never inferred from prose).",
+        "properties": {
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "kind": {
+            "enum": ["start_workflow", "open_workflow"],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "source_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceReferenceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ticket_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Identifier"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": ["kind", "workflow_id", "label"],
+        "title": "ChatWorkflowActionResponse",
+        "type": "object"
+      },
       "CitationResponse": {
         "description": "Provenance pointer on a grounded answer.",
         "properties": {
@@ -337,6 +421,47 @@
         },
         "required": ["source_id", "status", "chunk_count"],
         "title": "ConnectorSyncOutcomeResponse",
+        "type": "object"
+      },
+      "CoverageGapResponse": {
+        "description": "Typed coverage gap where evidence does not support a category.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": ["category", "detail"],
+        "title": "CoverageGapResponse",
+        "type": "object"
+      },
+      "CreateTestDesignDraftRequest": {
+        "description": "Wire body for ``POST /api/v1/test-design/drafts``.",
+        "properties": {
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "source_reference": {
+            "$ref": "#/components/schemas/SourceReferenceRequest"
+          },
+          "ticket_identifier": {
+            "minLength": 1,
+            "title": "Ticket Identifier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "source_reference",
+          "ticket_identifier"
+        ],
+        "title": "CreateTestDesignDraftRequest",
         "type": "object"
       },
       "DocumentChunkListResponse": {
@@ -435,6 +560,19 @@
         },
         "required": ["documents"],
         "title": "DocumentListResponse",
+        "type": "object"
+      },
+      "ExpectedVersionRequest": {
+        "description": "Mutating body that only carries compare-and-swap version.",
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": ["expected_version"],
+        "title": "ExpectedVersionRequest",
         "type": "object"
       },
       "GoogleDriveBrowseItemResponse": {
@@ -939,6 +1077,47 @@
         "title": "OpenRouterSettingsResponse",
         "type": "object"
       },
+      "PatchTestDesignDraftRequest": {
+        "description": "Wire body for ``PATCH /api/v1/test-design/drafts/{draft_id}``.",
+        "properties": {
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TestCandidateResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "scenarios": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TestScenarioResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenarios"
+          }
+        },
+        "required": ["expected_version"],
+        "title": "PatchTestDesignDraftRequest",
+        "type": "object"
+      },
       "Problem": {
         "description": "RFC 9457 Problem Details plus Kernector extensions.",
         "properties": {
@@ -1284,6 +1463,24 @@
         "title": "RuntimeSettingsResponse",
         "type": "object"
       },
+      "SourceReferenceRequest": {
+        "description": "Explicit source identity for chat handoff / test-design create.",
+        "properties": {
+          "source_id": {
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "minLength": 1,
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": ["source_id", "source_type"],
+        "title": "SourceReferenceRequest",
+        "type": "object"
+      },
       "SourceReferenceResponse": {
         "description": "Provenance id/type for projected tool results.",
         "properties": {
@@ -1298,6 +1495,53 @@
         },
         "required": ["source_id", "source_type"],
         "title": "SourceReferenceResponse",
+        "type": "object"
+      },
+      "TestCandidateResponse": {
+        "description": "One coverage candidate on a test-design draft.",
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "evidence_references": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReferenceResponse"
+            },
+            "title": "Evidence References",
+            "type": "array"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "title",
+          "category",
+          "rationale",
+          "evidence_references",
+          "selected",
+          "origin"
+        ],
+        "title": "TestCandidateResponse",
         "type": "object"
       },
       "TestCaseResponse": {
@@ -1347,6 +1591,139 @@
         },
         "required": ["output_style", "cases"],
         "title": "TestCasesResponse",
+        "type": "object"
+      },
+      "TestCoverageDraftResponse": {
+        "description": "Workspace-scoped test-design draft.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TestCandidateResponse"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "coverage_gaps": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageGapResponse"
+            },
+            "title": "Coverage Gaps",
+            "type": "array"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/TestScenarioResponse"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "selected_candidate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Selected Candidate Ids",
+            "type": "array"
+          },
+          "source_reference": {
+            "$ref": "#/components/schemas/SourceReferenceResponse"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "ticket_identifier": {
+            "title": "Ticket Identifier",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft_id",
+          "workspace_id",
+          "conversation_id",
+          "source_reference",
+          "ticket_identifier",
+          "status",
+          "candidates",
+          "scenarios",
+          "coverage_gaps",
+          "version",
+          "selected_candidate_ids"
+        ],
+        "title": "TestCoverageDraftResponse",
+        "type": "object"
+      },
+      "TestScenarioResponse": {
+        "description": "One detailed scenario on a test-design draft.",
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "evidence_references": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReferenceResponse"
+            },
+            "title": "Evidence References",
+            "type": "array"
+          },
+          "expected_result": {
+            "title": "Expected Result",
+            "type": "string"
+          },
+          "preconditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Preconditions",
+            "type": "array"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "candidate_id",
+          "title",
+          "category",
+          "preconditions",
+          "steps",
+          "expected_result",
+          "evidence_references"
+        ],
+        "title": "TestScenarioResponse",
         "type": "object"
       },
       "ToolCallResponse": {
@@ -2721,6 +3098,448 @@
         },
         "summary": "Runtime Settings",
         "tags": ["settings"]
+      }
+    },
+    "/api/v1/test-design/drafts": {
+      "post": {
+        "description": "Create a coverage-planning draft from explicit source + ticket context.",
+        "operationId": "create_draft_api_v1_test_design_drafts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTestDesignDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Create Draft",
+        "tags": ["test-design"]
+      }
+    },
+    "/api/v1/test-design/drafts/{draft_id}": {
+      "get": {
+        "description": "Load a workspace-scoped test-design draft.",
+        "operationId": "get_draft_api_v1_test_design_drafts__draft_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Get Draft",
+        "tags": ["test-design"]
+      },
+      "patch": {
+        "description": "Save draft selection, title edits, manual adds, and scenario edits.",
+        "operationId": "patch_draft_api_v1_test_design_drafts__draft_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchTestDesignDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Patch Draft",
+        "tags": ["test-design"]
+      }
+    },
+    "/api/v1/test-design/drafts/{draft_id}/confirm": {
+      "post": {
+        "description": "Mark the draft ready; idempotent when already ready at matching version.",
+        "operationId": "confirm_draft_api_v1_test_design_drafts__draft_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Confirm Draft",
+        "tags": ["test-design"]
+      }
+    },
+    "/api/v1/test-design/drafts/{draft_id}/scenarios": {
+      "post": {
+        "description": "Generate scenarios for selected candidates that are still missing them.",
+        "operationId": "generate_scenarios_api_v1_test_design_drafts__draft_id__scenarios_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpectedVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Generate Scenarios",
+        "tags": ["test-design"]
       }
     },
     "/health": {

@@ -41,6 +41,36 @@ describe("sanitizeStoredChatMessage", () => {
     ).toBeNull();
   });
 
+  it("keeps allowlisted chat workflow actions and drops malformed ones", () => {
+    const kept = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "Ready",
+      action: {
+        kind: "start_workflow",
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        ticket_identifier: "KERN-293",
+        source_reference: { source_id: "PROJ-42", source_type: "jira" },
+      },
+    });
+    expect(kept?.action).toEqual({
+      kind: "start_workflow",
+      workflow_id: "software-delivery.test-design",
+      label: "Start Test Design",
+      ticket_identifier: "KERN-293",
+      source_reference: { source_id: "PROJ-42", source_type: "jira" },
+    });
+
+    const dropped = sanitizeStoredChatMessage({
+      id: "a-2",
+      role: "assistant",
+      content: "Ready",
+      action: { kind: "invented", workflow_id: "x", label: "Nope" },
+    });
+    expect(dropped?.action).toBeUndefined();
+  });
+
   it("preserves unknown keys on toolRun, risk, and test_cases", () => {
     const sanitized = sanitizeStoredChatMessage({
       id: "a-1",

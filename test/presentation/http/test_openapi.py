@@ -15,6 +15,7 @@ _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/connectors/google-drive/sync": ("post", ("405", "409", "500", "502")),
     "/api/v1/connectors/google-drive/oauth/start": ("get", ("405", "500")),
     "/api/v1/connectors/google-drive/oauth/callback": ("get", ("405", "500")),
+    "/api/v1/test-design/drafts": ("post", ("404", "405", "409", "422", "500", "502")),
 }
 
 

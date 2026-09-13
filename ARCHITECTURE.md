@@ -187,11 +187,16 @@ the first content/prompt example. Pack metadata fields (for example SDLC-shaped
 Task-prompt packs are optional: the app starts and General mode works with zero
 enabled prompt packs.
 
-**Executable packs** under `packs/` contribute domain tools. The first is
-`packs/software_delivery/`. Its scaffolding risk/generate/export tools are
-retired (#285); `build_tools` returns an empty registry and chat intent never
-matches, so General chat stays on grounded RAG. Future tools land under
-`packs/software_delivery/tools/`. Enable via `DOMAIN_TOOL_PACKS=software-delivery`
+**Executable packs** under `packs/` contribute domain tools and pack-local
+workflows. The first is `packs/software_delivery/`. Its scaffolding
+risk/generate/export tools are retired (#285); `build_tools` returns an empty
+registry and chat intent never matches, so General chat stays on grounded RAG.
+Future tools land under `packs/software_delivery/tools/`. The **Test Design**
+workflow (#293) is pack-local (not an agent `Tool`): coverage planning and
+scenario generation under `packs/software_delivery/test_design/`, persisted via
+a namespaced versioned workspace store, exposed on always-mounted
+`/api/v1/test-design/*` routes that return `test_design_unavailable` when the
+pack is off. Enable via `DOMAIN_TOOL_PACKS=software-delivery`
 (CSV; default empty). Composition loads packs through an explicit allowlist
 manifest and `importlib` only for configured IDs — a disabled pack is neither
 imported nor registered.

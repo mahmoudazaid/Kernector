@@ -30,5 +30,22 @@ Composition reaches the selector through `registration.build_chat_intent_selecto
 Only General chat (`AskRequest.prompt_key is None`) is eligible; selected task
 prompts always stay on grounded RAG.
 
-Enable the pack (wiring only; no registered tools yet) with
-`DOMAIN_TOOL_PACKS=software-delivery`.
+## Test Design workflow (#293)
+
+Pack-local interactive workflow under `test_design/` — **not** a registered
+agent `Tool`. It plans coverage candidates from grounded ticket evidence,
+persists a workspace-scoped draft, generates scenarios for selected candidates
+only, and confirms a portable draft.
+
+| Module | Responsibility |
+| --- | --- |
+| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, `TestScenario`, gaps, allowlists |
+| `test_design/plan_coverage.py` | Evidence → coverage_review draft via `ChatModel` |
+| `test_design/generate_scenarios.py` | Selected-only missing scenario generation |
+| `test_design/codec.py` / `repository.py` | Opaque payload codec + repository Protocol |
+
+HTTP routes under `/api/v1/test-design/*` are always mounted; when the pack is
+disabled they return `test_design_unavailable` without importing this pack.
+Composition namespace for persistence: `software-delivery:test-design`.
+
+Enable with `DOMAIN_TOOL_PACKS=software-delivery`.

@@ -379,3 +379,18 @@ GoogleDriveSelectionReadDep = Annotated[
 GoogleDriveSelectionWriteDep = Annotated[
     Callable[..., GoogleDriveSelection], Depends(get_google_drive_selection_write)
 ]
+
+
+def get_test_design_facade(
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Build the test-design facade for this request (pack gated at call time)."""
+    from composition.container import build_test_design_facade
+
+    return build_test_design_facade(
+        settings,
+        vector_store=get_vector_store(),
+    )
+
+
+TestDesignFacadeDep = Annotated[object, Depends(get_test_design_facade)]
