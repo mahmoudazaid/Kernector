@@ -299,3 +299,73 @@ def test_oauth_sync_refreshes_token_then_retries(
     assert stored.owner == "octo"
     assert stored.repo == "repo"
     assert stored.reauthorization_required is False
+
+
+def test_oauth_sync_refreshes_when_connector_build_raises_auth(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Constructor auth errors must wrap as sync errors so refresh runs."""
+    settings = replace(
+        settings,
+        github=replace(
+            settings.github,
+            project_owner="ada",
+            project_number=1,
+        ),
+    )
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.save(
+        GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token="ghr-refresh-secret",
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    build_tokens: list[str] = []
+
+    def flaky_build(sync_settings, *, token: str):
+        build_tokens.append(token)
+        if token == "gho-access-secret":
+            raise ConnectorAuthError("expired")
+        return object()
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_github_oauth_connector",
+        flaky_build,
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "sync_github",
+        lambda *_args, **_kwargs: ConnectorSyncResponse(
+            outcomes=(ConnectorSyncOutcome("ok", ConnectorSyncStatus.INGESTED, 1),)
+        ),
+    )
+    gateway = FakeGateway()
+
+    result = sync_github_oauth(
+        settings,
+        catalog=InMemoryDocumentCatalog(),
+        vector_store=object(),  # type: ignore[arg-type]
+        connection_store=tokens,
+        oauth_gateway=gateway,
+    )
+
+    assert result.ingested_count == 1
+    assert gateway.refresh_calls == ["ghr-refresh-secret"]
+    assert build_tokens == ["gho-access-secret", "gho-refreshed-secret"]
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.access_token == "gho-refreshed-secret"
+    assert stored.reauthorization_required is False

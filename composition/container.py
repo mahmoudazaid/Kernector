@@ -2151,10 +2151,16 @@ def _run_github_oauth_sync(
             project_number=project_number,
         ),
     )
-    connector = build_github_oauth_connector(
-        oauth_settings,
-        token=access_token,
-    )
+    # Build inside the same exception domain as sync_github so constructor
+    # ConnectorAuthError / ConnectorUnavailableError become ConnectorSyncError
+    # with the typed cause preserved for refresh-then-retry.
+    try:
+        connector = build_github_oauth_connector(
+            oauth_settings,
+            token=access_token,
+        )
+    except ConnectorError as error:
+        raise GitHubConnectorSyncError(_GITHUB_SYNC_MESSAGE) from error
     return sync_github(
         oauth_settings,
         connector=connector,
