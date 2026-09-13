@@ -1,195 +1,91 @@
 /**
- * Domain-neutral active-session store (#14).
+ * Active conversation pointer (#246).
  *
- * Holds the turn in progress — composer draft plus transcript — under one
- * versioned key. Pack payloads on messages stay opaque (`toolRun?: unknown`);
- * shared presentation never interprets Story/Compare vocabulary. Pack-owned
- * surfaces get their own keys (`kernector:pack:…`), never a field here.
+ * Holds only which conversation (if any) is selected under one versioned key.
+ * Transcripts and drafts live in `kernector:conversations:v1`
+ * (`web/lib/session/conversations.ts`). Pack-owned surfaces get their own
+ * keys (`kernector:pack:…`), never a field here.
  *
- * Accessors never throw: private-mode / quota / garbage → empty session.
+ * Pre-#246 payloads stored `{ draft, messages, updatedAt }` here. Those
+ * fields are no longer written; `migrateLegacyTranscripts()` reads them once
+ * for import into the conversations store.
  *
- * Legacy `kernector:chat-messages:v1` (#235) is a write-through mirror and a
- * read fallback when the session key is absent or unusable, so a live user's
- * transcript is not orphaned.
+ * Accessors never throw: private-mode / quota / garbage → null pointer.
  */
 
-import { sanitizeStoredChatMessage } from "@/lib/chat/sanitize";
-import {
-  CHAT_MESSAGES_STORAGE_KEY,
-  type StoredChatMessage,
-} from "@/lib/settings/runtime-settings-storage";
-
-/** Versioned active-session key — owned by #14, domain-neutral by contract. */
+/** Versioned active-session key — owned by #14 / #246, domain-neutral. */
 export const ACTIVE_SESSION_STORAGE_KEY = "kernector:active-session:v1";
 
 export type ActiveSession = {
-  draft: string;
-  messages: StoredChatMessage[];
-  /** Monotonic revision; store derives the next stamp from storage, not the clock. */
-  updatedAt: number;
+  activeConversationId: string | null;
 };
 
 function emptySession(): ActiveSession {
-  return { draft: "", messages: [], updatedAt: 0 };
+  return { activeConversationId: null };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseMessages(value: unknown): StoredChatMessage[] | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  return value.flatMap((entry) => {
-    const sanitized = sanitizeStoredChatMessage(entry);
-    return sanitized ? [sanitized] : [];
-  });
-}
-
-function readUpdatedAt(record: Record<string, unknown>): number {
-  return typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
-    ? record.updatedAt
-    : 0;
-}
-
 function parseActiveSession(value: unknown): ActiveSession | null {
-  if (!isPlainObject(value) || typeof value.draft !== "string") {
+  if (!isPlainObject(value)) {
     return null;
   }
-  const messages = parseMessages(value.messages);
-  if (messages === null) {
-    return null;
-  }
-  return {
-    draft: value.draft,
-    messages,
-    updatedAt: readUpdatedAt(value),
-  };
-}
-
-function loadLegacyMessages(): StoredChatMessage[] {
-  try {
-    const raw = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
-    if (!raw) {
-      return [];
+  // Pointer-only shape (#246).
+  if ("activeConversationId" in value) {
+    const id = value.activeConversationId;
+    if (id === null) {
+      return { activeConversationId: null };
     }
-    const parsed: unknown = JSON.parse(raw);
-    return parseMessages(parsed) ?? [];
-  } catch {
-    return [];
-  }
-}
-
-function readStoredSession(): ActiveSession | null {
-  try {
-    const raw = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
-    if (!raw) {
-      return null;
+    if (typeof id === "string" && id.trim()) {
+      return { activeConversationId: id };
     }
-    return parseActiveSession(JSON.parse(raw) as unknown);
-  } catch {
-    return null;
+    return emptySession();
   }
+  // Pre-#246 payload still in storage — treat as no pointer until migration
+  // moves messages into the conversations store.
+  return emptySession();
 }
 
 /**
- * Load the active session, or an empty session when absent/invalid.
- *
- * When the #14 session key is missing or unusable, falls back to the #235
- * transcript key with an empty draft so pre-#14 visits keep their conversation.
+ * Load the active conversation pointer, or null when absent/invalid.
  */
 export function loadActiveSession(): ActiveSession {
   try {
     const raw = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
     if (!raw) {
-      return { draft: "", messages: loadLegacyMessages(), updatedAt: 0 };
+      return emptySession();
     }
-    const parsed: unknown = JSON.parse(raw);
-    const session = parseActiveSession(parsed);
-    if (session) {
-      return session;
-    }
-    return { draft: "", messages: loadLegacyMessages(), updatedAt: 0 };
+    return parseActiveSession(JSON.parse(raw) as unknown) ?? emptySession();
   } catch {
-    return { draft: "", messages: loadLegacyMessages(), updatedAt: 0 };
+    return emptySession();
   }
 }
 
 /**
- * Persist draft + transcript for the next visit / remount.
- *
- * Derives a monotonic `updatedAt` from storage so wall-clock skew cannot wedge
- * writes permanently. Refuses when the caller's stamp is older than storage
- * (`null`). Dual-writes `messages` to `CHAT_MESSAGES_STORAGE_KEY` as a
- * write-through mirror. Returns the stamp written, or `null` when refused.
+ * Persist which conversation is selected (`null` = empty `/chat` draft).
  */
-export function saveActiveSession(session: ActiveSession): number | null {
+export function setActiveConversationId(id: string | null): void {
   try {
-    const stored = readStoredSession();
-    if (stored && stored.updatedAt > session.updatedAt) {
-      return null;
-    }
-    const updatedAt = Math.max(
-      session.updatedAt,
-      (stored?.updatedAt ?? 0) + 1,
-    );
-    const payload = {
-      draft: session.draft,
-      messages: session.messages,
-      updatedAt,
+    const payload: ActiveSession = {
+      activeConversationId: id && id.trim() ? id : null,
     };
     localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(payload));
-    localStorage.setItem(
-      CHAT_MESSAGES_STORAGE_KEY,
-      JSON.stringify(session.messages),
-    );
-    return updatedAt;
   } catch {
-    // Quota / private mode — ignore; in-memory UI state still works.
-    return session.updatedAt;
+    // Quota / private mode — ignore.
   }
 }
 
 /**
- * Persist only the draft via read-modify-write (does not republish messages).
- * Returns the stamp written, or `null` when skipped because a newer revision
- * already owns the transcript.
- */
-export function saveActiveSessionDraft(
-  draft: string,
-  updatedAt: number,
-): number | null {
-  try {
-    const stored = readStoredSession() ?? emptySession();
-    if (stored.updatedAt > updatedAt) {
-      return null;
-    }
-    const nextUpdatedAt = Math.max(updatedAt, stored.updatedAt + 1);
-    const payload = {
-      draft,
-      messages: stored.messages,
-      updatedAt: nextUpdatedAt,
-    };
-    localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(payload));
-    return nextUpdatedAt;
-  } catch {
-    return updatedAt;
-  }
-}
-
-/**
- * Subscribe to cross-tab session changes (`storage` events).
+ * Subscribe to cross-tab pointer changes (`storage` events).
  */
 export function subscribeActiveSession(onChange: () => void): () => void {
   if (typeof window === "undefined") {
     return () => undefined;
   }
   const handler = (event: StorageEvent) => {
-    if (
-      event.key === ACTIVE_SESSION_STORAGE_KEY ||
-      event.key === CHAT_MESSAGES_STORAGE_KEY
-    ) {
+    if (event.key === ACTIVE_SESSION_STORAGE_KEY) {
       onChange();
     }
   };

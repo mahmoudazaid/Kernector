@@ -5,19 +5,19 @@
  * Ollama base URL is server-owned (`GET /api/v1/settings`); Chat should read it
  * from the catalog, not from this store.
  *
- * Active chat session (draft + transcript) is owned by #14 under
- * `kernector:active-session:v1` (`web/lib/session/active-session.ts`). This
- * module must not clear or rewrite that key (or the legacy transcript key
- * below) when saving settings.
+ * Active conversation pointer is owned by #246 under
+ * `kernector:active-session:v1` (`web/lib/session/active-session.ts`).
+ * Transcripts live in `kernector:conversations:v1`. This module must not
+ * clear or rewrite those keys (or the legacy transcript key below) when
+ * saving settings.
  */
 
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
 /**
- * Legacy chat transcript key from #235. Owned by the #14 session store as a
- * write-through mirror and absent/unusable-session read fallback — do not
- * rename without a migration. Callers must use `loadActiveSession` /
- * `saveActiveSession`; do not read or write this key directly.
+ * Legacy single-transcript key from #235. Read once by
+ * `migrateLegacyTranscripts()` (#246) into `kernector:conversations:v1` —
+ * do not rename without a migration. Do not write this key from new code.
  */
 export const CHAT_MESSAGES_STORAGE_KEY = "kernector:chat-messages:v1";
 
