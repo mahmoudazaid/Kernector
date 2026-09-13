@@ -1,8 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatConversationClient } from "@/components/chat/ChatConversationClient";
-import { ChatEmptyClient } from "@/components/chat/ChatEmptyClient";
+import { ChatRouteClient } from "@/components/chat/ChatRouteClient";
 import type { ChatAskResponse } from "@/lib/api/chat";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
@@ -12,22 +11,32 @@ import {
 } from "@/lib/session/conversations";
 
 const replace = vi.fn();
+let pathname = "/chat";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
+  usePathname: () => pathname,
 }));
 
 vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    onClick,
     ...props
   }: {
     href: string;
     children: React.ReactNode;
+    onClick?: (event: React.MouseEvent) => void;
     [key: string]: unknown;
   }) => (
-    <a href={href} {...props}>
+    <a
+      href={href}
+      {...props}
+      onClick={(event) => {
+        onClick?.(event);
+      }}
+    >
       {children}
     </a>
   ),
@@ -69,6 +78,8 @@ describe("chat landing and conversation UX (#246)", () => {
   beforeEach(() => {
     localStorage.clear();
     replace.mockReset();
+    pathname = "/chat";
+    void stubSettings;
   });
 
   it("shows a full-width landing with composer above Chats and no New chat or sidebar", async () => {
@@ -79,7 +90,7 @@ describe("chat landing and conversation UX (#246)", () => {
     });
 
     const { container } = render(
-      <ChatEmptyClient apiBaseUrl="http://127.0.0.1:8000" />,
+      <ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />,
     );
 
     expect(
@@ -166,19 +177,24 @@ describe("chat landing and conversation UX (#246)", () => {
     expect(listConversations().length).toBeGreaterThanOrEqual(1);
   });
 
-  it("opens a previous chat via its row link href", () => {
+  it("opens a previous chat via its row without leaving Chats visible", async () => {
+    const user = userEvent.setup();
     const created = createConversation({
       title: "Open me",
       messages: [{ id: "1", role: "user", content: "Open me" }],
       draft: "",
     });
 
-    render(<ChatEmptyClient apiBaseUrl="http://127.0.0.1:8000" />);
+    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
 
-    expect(screen.getByRole("link", { name: /Open me/i })).toHaveAttribute(
-      "href",
-      `/chat/${created.id}`,
-    );
+    await user.click(screen.getByRole("link", { name: /Open me/i }));
+
+    expect(
+      document.querySelector('[data-chat-mode="conversation"]'),
+    ).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Chats" })).not.toBeInTheDocument();
+    expect(replace).toHaveBeenCalledWith(`/chat/${created.id}`);
+    expect(await screen.findByText("Open me")).toBeInTheDocument();
   });
 
   it("shows the transcript on /chat/{id} without Chats or New chat", async () => {
@@ -190,12 +206,10 @@ describe("chat landing and conversation UX (#246)", () => {
       ],
       draft: "",
     });
+    pathname = `/chat/${created.id}`;
 
     const { container } = render(
-      <ChatConversationClient
-        apiBaseUrl="http://127.0.0.1:8000"
-        conversationId={created.id}
-      />,
+      <ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />,
     );
 
     expect(await screen.findByText("prior turn")).toBeInTheDocument();

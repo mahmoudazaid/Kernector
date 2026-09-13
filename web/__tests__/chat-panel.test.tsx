@@ -12,6 +12,7 @@ import {
 import {
   CONVERSATIONS_STORAGE_KEY,
   createConversation,
+  deleteConversation,
   getConversation,
   listConversations,
 } from "@/lib/session/conversations";
@@ -153,6 +154,88 @@ describe("ChatPanel", () => {
     expect(
       screen.getByPlaceholderText("What's on your mind!"),
     ).toBeInTheDocument();
+  });
+
+  it("renders the happy path with citations, tools, projected results, and run details", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue(SUCCESS);
+    saveRuntimeSettings({
+      provider: "openrouter",
+      model: "openai/gpt-4o-mini",
+      settings: { temperature: 0.3, max_tokens: 1000 },
+    });
+
+    const { id } = renderOpenConversation({ ask });
+
+    await user.type(
+      await screen.findByLabelText(/message/i),
+      "What is the policy?",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(await screen.findByText("What is the policy?")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Grounded answer from the corpus."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Citations \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Tools used \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Scored risk at 62\/100/)).toBeInTheDocument();
+    expect(screen.getByText(/Lock after five failures/)).toBeInTheDocument();
+    expect(screen.getByText(/Run details/)).toBeInTheDocument();
+
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: "http://127.0.0.1:8000",
+        body: expect.objectContaining({
+          query: "What is the policy?",
+          runtime: expect.objectContaining({
+            provider: "openrouter",
+            model: "openai/gpt-4o-mini",
+          }),
+        }),
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        getConversation(id)?.messages.some((m) => m.role === "assistant"),
+      ).toBe(true);
+    });
+  });
+
+  it("unlocks the composer when the conversation is missing from the store", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue(SUCCESS);
+    const onConversationClosed = vi.fn();
+    const created = createConversation({
+      title: "Gone",
+      messages: [],
+      draft: "",
+    });
+    const id = created.id;
+    deleteConversation(id);
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={id}
+        variant="conversation"
+        ask={ask}
+        loadSettings={stubSettings}
+        onConversationClosed={onConversationClosed}
+      />,
+    );
+
+    await user.type(await screen.findByLabelText(/message/i), "hello there");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /no longer available/i,
+    );
+    expect(await screen.findByLabelText(/message/i)).toHaveValue("hello there");
+    expect(screen.getByLabelText(/message/i)).not.toBeDisabled();
+    expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+    expect(onConversationClosed).toHaveBeenCalledTimes(1);
   });
 
   it("creates a conversation from landing without showing the transcript there", async () => {

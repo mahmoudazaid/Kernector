@@ -2398,7 +2398,7 @@ a.kern-btn {
   width: 100%;
 }
 
-/* Full-height conversation — same structure as main ConversationView / ChatPanel. */
+/* Full-height conversation — same structure as main ChatPanel layout. */
 .kern-chat-conversation {
   --kern-chat-col: 48rem;
   display: flex;

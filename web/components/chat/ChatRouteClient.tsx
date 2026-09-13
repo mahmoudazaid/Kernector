@@ -8,7 +8,10 @@ import {
   loadActiveSession,
   setActiveConversationId,
 } from "@/lib/session/active-session";
-import { markConversationRead } from "@/lib/session/conversations";
+import {
+  getConversation,
+  markConversationRead,
+} from "@/lib/session/conversations";
 import { interruptStalePendingFromCoordinator } from "@/lib/session/conversation-runs";
 
 function conversationIdFromPath(pathname: string): string | null {
@@ -40,9 +43,16 @@ export function ChatRouteClient({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (!boundId) {
       return;
     }
+    if (!getConversation(boundId)) {
+      setBoundId(null);
+      startTransition(() => {
+        router.replace("/chat");
+      });
+      return;
+    }
     setActiveConversationId(boundId);
     markConversationRead(boundId);
-  }, [boundId]);
+  }, [boundId, router]);
 
   useEffect(() => {
     if (!boundId) {

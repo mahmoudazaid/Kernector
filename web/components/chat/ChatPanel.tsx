@@ -40,6 +40,7 @@ import {
 import { setActiveConversationId } from "@/lib/session/active-session";
 import {
   createConversation,
+  deleteConversation,
   getConversation,
   migrateLegacyTranscripts,
   subscribeConversations,
@@ -332,7 +333,31 @@ type ConversationUiState = {
   hydrated: boolean;
 };
 
-function initialConversationUiState(
+/** First-paint state — never reads localStorage (SSR/hydration safe). */
+function mountConversationUiState(
+  conversationId: string | null,
+  isLanding: boolean,
+): ConversationUiState {
+  if (isLanding) {
+    return {
+      boundId: null,
+      messages: [],
+      draft: "",
+      sending: false,
+      hydrated: true,
+    };
+  }
+  return {
+    boundId: conversationId,
+    messages: [],
+    draft: "",
+    sending: false,
+    hydrated: false,
+  };
+}
+
+/** Client-only re-seed when the same ChatPanel instance changes route. */
+function readConversationUiState(
   conversationId: string | null,
   isLanding: boolean,
 ): ConversationUiState {
@@ -386,7 +411,7 @@ export function ChatPanel({
   const isLanding = variant === "landing";
   const bootRef = useRef<ConversationUiState | null>(null);
   if (bootRef.current === null) {
-    bootRef.current = initialConversationUiState(conversationId, isLanding);
+    bootRef.current = mountConversationUiState(conversationId, isLanding);
   }
   const boot = bootRef.current;
   const [boundId, setBoundId] = useState<string | null>(boot.boundId);
@@ -415,7 +440,7 @@ export function ChatPanel({
   if (routeKey !== routeStateKey) {
     // Keep transcript/pending in sync on the same ChatPanel instance when the
     // layout shell navigates `/chat` ↔ `/chat/[id]` without remounting.
-    const next = initialConversationUiState(conversationId, isLanding);
+    const next = readConversationUiState(conversationId, isLanding);
     setRouteStateKey(routeKey);
     setBoundId(next.boundId);
     setMessages(next.messages);
@@ -662,6 +687,8 @@ export function ChatPanel({
     setMessages(withUser);
     const id = boundIdRef.current ?? conversationId;
     if (!id) {
+      setDraft(query);
+      setMessages(messages);
       return;
     }
     updateConversation(id, {
@@ -681,10 +708,28 @@ export function ChatPanel({
       runtime: runtimeFromSettings(),
     });
     if (result.kind === "rejected") {
+      setSending(false);
       setInlineError(result.message);
       setDraft(query);
+      const conversation = getConversation(id);
+      if (!conversation || conversation.messages.length === 0) {
+        if (conversation) {
+          deleteConversation(id);
+        }
+        setMessages([]);
+        onClosedRef.current?.();
+      }
+    } else if (result.kind === "missing") {
+      setSending(false);
+      setMessages([]);
+      setDraft(query);
+      setInlineError("This conversation is no longer available.");
+      onClosedRef.current?.();
     } else if (result.kind === "unavailable") {
+      setSending(false);
       setUnavailable(true);
+    } else if (result.kind === "failed") {
+      setSending(false);
     }
   }
 

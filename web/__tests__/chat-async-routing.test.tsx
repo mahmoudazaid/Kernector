@@ -1,8 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatLanding } from "@/components/chat/ChatLanding";
-import { ConversationView } from "@/components/chat/ConversationView";
+import { ChatRouteClient } from "@/components/chat/ChatRouteClient";
 import { PreviousChats } from "@/components/chat/PreviousChats";
 import type { ChatAskResponse } from "@/lib/api/chat";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
@@ -22,22 +20,32 @@ import {
 } from "@/lib/session/conversation-runs";
 
 const replace = vi.fn();
+let pathname = "/chat";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
+  usePathname: () => pathname,
 }));
 
 vi.mock("next/link", () => ({
   default: ({
     href,
     children,
+    onClick,
     ...props
   }: {
     href: string;
     children: React.ReactNode;
+    onClick?: (event: React.MouseEvent) => void;
     [key: string]: unknown;
   }) => (
-    <a href={href} {...props}>
+    <a
+      href={href}
+      {...props}
+      onClick={(event) => {
+        onClick?.(event);
+      }}
+    >
       {children}
     </a>
   ),
@@ -80,6 +88,8 @@ describe("chat async routing (#246)", () => {
     resetLiveConversationRunsForTests();
     setActiveConversationId(null);
     replace.mockReset();
+    pathname = "/chat";
+    void stubSettings;
   });
 
   it("landing never shows a conversation transcript", async () => {
@@ -92,7 +102,7 @@ describe("chat async routing (#246)", () => {
       draft: "",
     });
 
-    render(<ChatLanding apiBaseUrl="http://127.0.0.1:8000" />);
+    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
 
     expect(await screen.findByPlaceholderText("What's on your mind!")).toBeInTheDocument();
     expect(screen.queryByText("Secret answer")).not.toBeInTheDocument();
@@ -125,7 +135,6 @@ describe("chat async routing (#246)", () => {
   });
 
   it("A's late result never appears on the landing page or conversation B", async () => {
-    const user = userEvent.setup();
     let resolveAsk: (value: ChatAskResponse) => void = () => undefined;
     const ask = vi.fn(
       () =>
@@ -134,8 +143,6 @@ describe("chat async routing (#246)", () => {
         }),
     );
 
-    // Spy ChatPanel ask by rendering landing with injected ask via ChatLanding's panel —
-    // use startConversationRun directly for the late-result seam.
     const a = createConversation({
       title: "A question",
       messages: [{ id: "u1", role: "user", content: "A question" }],
@@ -157,7 +164,7 @@ describe("chat async routing (#246)", () => {
       ask,
     });
 
-    render(<ChatLanding apiBaseUrl="http://127.0.0.1:8000" />);
+    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
     expect(screen.queryByText("Answer for A")).not.toBeInTheDocument();
 
     resolveAsk(SUCCESS);
@@ -171,16 +178,10 @@ describe("chat async routing (#246)", () => {
       { id: "u2", role: "user", content: "B only" },
     ]);
 
-    render(
-      <ConversationView
-        apiBaseUrl="http://127.0.0.1:8000"
-        conversationId={b.id}
-      />,
-    );
+    pathname = `/chat/${b.id}`;
+    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
     expect(screen.queryByText("Answer for A")).not.toBeInTheDocument();
     expect(await screen.findByText("B only")).toBeInTheDocument();
-
-    void user;
   });
 
   it("completion changes A to unread; opening A clears unread and shows the result", async () => {
@@ -211,12 +212,8 @@ describe("chat async routing (#246)", () => {
     rerender(<PreviousChats />);
     expect(screen.queryByLabelText("Unread response")).not.toBeInTheDocument();
 
-    render(
-      <ConversationView
-        apiBaseUrl="http://127.0.0.1:8000"
-        conversationId={a.id}
-      />,
-    );
+    pathname = `/chat/${a.id}`;
+    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
     expect(await screen.findByText("Answer for A")).toBeInTheDocument();
     expect(getConversation(a.id)?.unread).toBe(false);
   });
@@ -285,6 +282,5 @@ describe("chat async routing (#246)", () => {
     expect(screen.getByLabelText("Unread response")).toBeInTheDocument();
     expect(listConversations()).toHaveLength(1);
     void updateConversation;
-    void stubSettings;
   });
 });
