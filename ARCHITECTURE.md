@@ -195,9 +195,10 @@ matches, so General chat stays on grounded RAG. Future tools land under
 (CSV; default empty). Composition loads packs through an explicit allowlist
 manifest and `importlib` only for configured IDs — a disabled pack is neither
 imported nor registered.
-``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) optionally replaces the
-deterministic Software Delivery orchestrate with a LangGraph agent; #170 remains
-the default.
+``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) swaps the deterministic
+orchestrate for a LangGraph agent. Dormant with the scaffolding retired (#285):
+the orchestrate callable is only reached on a matched chat intent, so the flag
+has no observable effect until a real tool lands.
 
 #### Multi-source tool flow
 
@@ -297,8 +298,10 @@ projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
 wired through ``composition/software_delivery_agent.py``. Intent selection,
 retrieve → recorder → ordered ``tool_outputs``, stop handling, and sanitized
 ``ToolRunFailedError`` stay on the #170 path. Domain and application must not
-import LangGraph; ``langgraph`` is an infrastructure I/O package. Keep the
-deterministic chain as the default until the agent path is proven.
+import LangGraph; ``langgraph`` is an infrastructure I/O package. With chat
+intent always ``None`` (#285), flipping the flag has no observable effect until
+a real tool and matcher land. Keep the deterministic chain as the default until
+the agent path is proven.
 
 Two properties are worth naming because they are easy to lose:
 
@@ -333,7 +336,7 @@ importing pack-named modules or ``packs``.
   ``AskResponse`` (delivered).
 - **#43** — optional LangGraph agent orchestrate behind
   ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default off); same runner ledger and error
-  taxonomy.
+  taxonomy. Dormant while chat intent never matches (#285).
 
 ### Grounded ask: system policy vs optional task prompts
 

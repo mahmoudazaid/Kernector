@@ -860,6 +860,100 @@ def test_former_generate_query_uses_grounded_ask_run_meta(
     assert ask.consume_tool_run_view() is None
 
 
+def test_dormant_orchestrate_path_with_stub_intent_and_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pin container orchestrate closure → pack request → chain → projection.
+
+    Production intent is always ``None`` (#285). This injects a stub selector and
+    scripted tools so the dormant #170 path stays covered until a real tool lands.
+    """
+    from packs.software_delivery.chat_intent import ChatToolSelection
+
+    _sd_env(monkeypatch)
+    monkeypatch.setattr(
+        "composition.container.build_rewrite_and_retrieve_knowledge",
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+    )
+    risk = json.dumps(
+        {
+            "score": 62,
+            "level": "high",
+            "rationale": "Acceptance criteria are absent from a complete story.",
+            "factors": [
+                {
+                    "factor_id": "missing_acceptance_criteria",
+                    "weight": 30,
+                    "references": [
+                        {"source_id": "US-1", "source_type": "user_story"}
+                    ],
+                }
+            ],
+        }
+    )
+    generated = json.dumps(
+        {
+            "output_style": "steps",
+            "test_cases": [
+                {
+                    "title": "Lock the account after five failed MFA attempts",
+                    "steps": ["Sign in with a valid password.", "Fail MFA five times."],
+                    "expected": "The account is locked.",
+                    "references": [
+                        {"source_id": "US-1", "source_type": "user_story"}
+                    ],
+                }
+            ],
+        }
+    )
+    invoke_tool = _ScriptedInvokeTool(
+        {
+            RISK_SCORE_TOOL: risk,
+            GENERATE_TEST_CASES_TOOL: generated,
+            EXPORT_TEST_CASES_MARKDOWN_TOOL: "# Test Cases\n",
+        }
+    )
+    monkeypatch.setattr(
+        "composition.container.build_invoke_tool",
+        lambda settings, chat_model=None: invoke_tool,
+    )
+    monkeypatch.setattr(
+        "packs.software_delivery.registration.build_chat_intent_selector",
+        lambda: (
+            lambda _query: ChatToolSelection(
+                generate_tests=True, output_style="steps"
+            )
+        ),
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
+    response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
+
+    assert invoke_tool.invoked == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+    assert [output.tool_name for output in response.tool_outputs] == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+    assert response.answer.startswith(
+        "Scored risk, generated test cases, and exported Markdown."
+    )
+    assert "**Risk 62/100 (high)**" in response.answer
+    assert response.answer.endswith("# Test Cases\n")
+    assert response.run is not None
+    assert response.run.path == "tools"
+    assert list(response.run.tools) == [
+        RISK_SCORE_TOOL,
+        GENERATE_TEST_CASES_TOOL,
+        EXPORT_TEST_CASES_MARKDOWN_TOOL,
+    ]
+    assert ask.consume_tool_run_view() is not None
+
+
 def test_a_general_chat_query_never_reaches_a_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

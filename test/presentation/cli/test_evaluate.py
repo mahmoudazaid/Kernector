@@ -470,15 +470,10 @@ def test_cli_offline_dataset_writes_reports_to_tmp_path(
     assert payload["mode"] == "offline"
     assert payload["schema_version"] == EVAL_SCHEMA_VERSION
     assert set(payload["coverage"]) == set(REQUIRED_CASE_CLASSES)
-    assert payload["coverage"]["tool"] == {
-        "state": "skipped",
-        "reason": "no_case_configured",
-    }
+    assert "tool" not in payload["coverage"]
     assert "Traceback" not in captured.err
     assert str(json_path) in captured.out
-    # Required `tool` class has no case while the SD registry is empty (#285).
-    assert code == 1
-    assert "required eval classes not configured: tool" in captured.err
+    assert code == 0
     assert not (output / "rag-judge-report.json").exists()
     assert not (output / "rag-judge-report.csv").exists()
 

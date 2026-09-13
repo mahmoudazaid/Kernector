@@ -427,10 +427,14 @@ def _build_report(results: tuple[EvalCaseResult, ...]) -> EvalReport:
     for name in REQUIRED_CASE_CLASSES:
         if name in exercised:
             coverage[name] = EvalCoverageEntry("exercised")
-        elif name == "tool" and skipped_tool:
-            coverage[name] = EvalCoverageEntry("skipped", "tool_unavailable")
         else:
             coverage[name] = EvalCoverageEntry("skipped", "no_case_configured")
+    # Optional while the SD registry is empty (#285): report tool only when the
+    # suite included a tool case, so missing coverage does not fail the CLI gate.
+    if "tool" in exercised:
+        coverage["tool"] = EvalCoverageEntry("exercised")
+    elif skipped_tool:
+        coverage["tool"] = EvalCoverageEntry("skipped", "tool_unavailable")
     return EvalReport(
         schema_version=EVAL_SCHEMA_VERSION,
         mode=EVAL_MODE_OFFLINE,
