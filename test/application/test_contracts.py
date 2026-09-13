@@ -1059,21 +1059,29 @@ def test_connector_sync_response_counts_outcomes_by_status() -> None:
                 "c", ConnectorSyncStatus.FAILED, 0, error_type="ConnectorError"
             ),
             ConnectorSyncOutcome("d", ConnectorSyncStatus.INGESTED, 1),
+            ConnectorSyncOutcome("e", ConnectorSyncStatus.UPDATED, 4),
+            ConnectorSyncOutcome("f", ConnectorSyncStatus.REMOVED, 0),
         )
     )
     assert response.ingested_count == 2
+    assert response.updated_count == 1
     assert response.skipped_count == 1
     assert response.failed_count == 1
+    assert response.removed_count == 1
     assert tuple(outcome.source_id for outcome in response.outcomes) == (
         "a",
         "b",
         "c",
         "d",
+        "e",
+        "f",
     )
 
 
 def test_connector_sync_response_empty_folder_has_zero_counts() -> None:
     response = ConnectorSyncResponse(outcomes=())
     assert response.ingested_count == 0
+    assert response.updated_count == 0
     assert response.skipped_count == 0
     assert response.failed_count == 0
+    assert response.removed_count == 0

@@ -174,3 +174,111 @@ export async function disconnectGoogleDrive(
     timeoutMs: options.timeoutMs,
   } satisfies ApiRequestOptions);
 }
+
+/** Presentation-safe GitHub OAuth connection status (mirrors Drive). */
+export type GitHubLastSyncResponse = {
+  synced_at: string;
+  new_count: number;
+  updated_count: number;
+  unchanged_count: number;
+  failed_count: number;
+  removed_count?: number;
+};
+
+export type GitHubStatusResponse = {
+  configured: boolean;
+  available: boolean;
+  connected: boolean;
+  oauth_ready: boolean;
+  account_login: string | null;
+  document_count: number;
+  owner: string | null;
+  repo: string | null;
+  project_owner?: string | null;
+  project_number?: number | null;
+  last_sync: GitHubLastSyncResponse | null;
+  reauthorization_required: boolean;
+  connection_state: string;
+  sync_scope?: string | null;
+};
+
+export type GitHubSyncResponse = {
+  ingested_count: number;
+  updated_count: number;
+  skipped_count: number;
+  failed_count: number;
+  removed_count: number;
+  outcomes: Array<{
+    source_id: string;
+    status: "ingested" | "updated" | "skipped" | "failed" | "removed";
+    chunk_count: number;
+    error_type: string | null;
+  }>;
+};
+
+export const GITHUB_OAUTH_START_PATH =
+  "/api/v1/connectors/github/oauth/start";
+
+export function githubOAuthStartUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/$/, "")}${GITHUB_OAUTH_START_PATH}`;
+}
+
+export type GetGitHubStatusOptions = {
+  baseUrl: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  request?: typeof apiRequest;
+};
+
+export type SyncGitHubOptions = GetGitHubStatusOptions;
+export type DisconnectGitHubOptions = GetGitHubStatusOptions;
+
+/**
+ * Load GitHub OAuth connection status from ``GET /api/v1/connectors/github``.
+ */
+export async function getGitHubStatus(
+  options: GetGitHubStatusOptions,
+): Promise<GitHubStatusResponse> {
+  const request = options.request ?? apiRequest;
+  return request<GitHubStatusResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/github",
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Synchronize the connected GitHub grant via
+ * ``POST /api/v1/connectors/github/sync``.
+ */
+export async function syncGitHub(
+  options: SyncGitHubOptions,
+): Promise<GitHubSyncResponse> {
+  const request = options.request ?? apiRequest;
+  return request<GitHubSyncResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/github/sync",
+    method: "POST",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? CONNECTOR_SYNC_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Revoke and delete the stored GitHub grant via
+ * ``DELETE /api/v1/connectors/github``.
+ */
+export async function disconnectGitHub(
+  options: DisconnectGitHubOptions,
+): Promise<void> {
+  const request = options.request ?? apiRequest;
+  await request<undefined>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/github",
+    method: "DELETE",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}

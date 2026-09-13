@@ -96,6 +96,22 @@ class GoogleDriveSelectionRequiredError(ConfigurationError):
     """A user grant exists but no Drive folder or file roots are saved."""
 
 
+class GitHubNotConfiguredError(ConfigurationError):
+    """GitHub owner/repo or token is absent from runtime settings."""
+
+
+class GitHubOAuthNotConfiguredError(ConfigurationError):
+    """User OAuth client ID, secret, or redirect URI is absent."""
+
+
+class GitHubNotConnectedError(ConfigurationError):
+    """No user OAuth grant is stored for GitHub."""
+
+
+class GitHubReauthorizationRequiredError(ConfigurationError):
+    """The stored GitHub token was revoked or is no longer valid."""
+
+
 class InsufficientEvidenceError(RuntimeError):
     """A grounded use case found no retrieval hits above the relevance threshold.
 

@@ -20,6 +20,7 @@ class SourceType(StrEnum):
 
     KNOWLEDGE_DOCUMENT = "knowledge_document"
     GOOGLE_DRIVE = "google_drive"
+    GITHUB = "github"
 
 
 STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
@@ -29,6 +30,7 @@ HUB_SOURCE_TYPES = frozenset(
     {
         SourceType.KNOWLEDGE_DOCUMENT,
         SourceType.GOOGLE_DRIVE,
+        SourceType.GITHUB,
     }
 )
 """Source kinds shown in the shared documents hub and chunk-inspect API.

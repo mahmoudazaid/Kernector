@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from application.contracts import (
@@ -22,8 +22,9 @@ from domain.knowledge import (
     CatalogStatus,
     ConnectorDocument,
     SourceDocument,
+    SourceReference,
 )
-from domain.ports import DocumentCatalog, KnowledgeConnector
+from domain.ports import DocumentCatalog, KnowledgeConnector, VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,12 @@ class SyncConnectorDocuments:
     constructs embedding credentials, while a multi-document run reuses one
     ingest instance.
 
+    When ``reconcile_missing`` is enabled and the run finishes with zero
+    ``FAILED`` outcomes, catalog rows whose ``source_type`` is in
+    ``reconcile_source_types`` and whose reference was not listed are hard-
+    deleted (vectors first, then the catalog row). Incomplete listings must
+    raise from the connector so reconcile never runs on a short list.
+
     Args:
         connector (KnowledgeConnector): Remote listing and fetch adapter.
         catalog (DocumentCatalog): Durable document metadata store.
@@ -42,6 +49,13 @@ class SyncConnectorDocuments:
             pipeline on first use.
         now (Callable[[], datetime] | None): Clock for catalog timestamps.
             Defaults to timezone-aware UTC now.
+        reconcile_missing (bool): When True, delete in-scope catalog rows that
+            were not listed. Defaults to False (Drive semantics).
+        reconcile_source_types (frozenset[str]): Source types eligible for
+            reconcile. Empty by default; required non-empty when reconcile is on.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy vector
+            store getter used only for reconcile deletes. Required when
+            ``reconcile_missing`` is True.
     """
 
     def __init__(
@@ -50,23 +64,35 @@ class SyncConnectorDocuments:
         catalog: DocumentCatalog,
         ingest_factory: Callable[[], IngestKnowledge],
         now: Callable[[], datetime] | None = None,
+        *,
+        reconcile_missing: bool = False,
+        reconcile_source_types: frozenset[str] = frozenset(),
+        vector_store_factory: Callable[[], VectorStore] | None = None,
     ) -> None:
+        if reconcile_missing and vector_store_factory is None:
+            raise ApplicationValidationError(
+                "vector_store_factory is required when reconcile_missing is True"
+            )
         self._connector = connector
         self._catalog = catalog
         self._ingest_factory = ingest_factory
         self._now = now or (lambda: datetime.now(UTC))
         self._shared_ingest: IngestKnowledge | None = None
+        self._reconcile_missing = reconcile_missing
+        self._reconcile_source_types = reconcile_source_types
+        self._vector_store_factory = vector_store_factory
 
     def execute(self) -> ConnectorSyncResponse:
         """Synchronize listed connector documents in listing order.
 
         Returns:
-            ConnectorSyncResponse: Per-document outcomes in listing order.
+            ConnectorSyncResponse: Per-document outcomes in listing order,
+            followed by optional removals sorted by ``source_id``.
 
         Raises:
             Exception: Catalog writes, ingest-pipeline construction, connection-
-                wide connector failures, and unknown ingest errors abort the
-                remaining documents.
+                wide connector failures, unknown ingest errors, and reconcile
+                adapter failures abort the remaining work.
         """
         documents = self._connector.list_documents()
         existing = {row.reference: row for row in self._catalog.all()}
@@ -74,7 +100,8 @@ class SyncConnectorDocuments:
             self._sync_one(document, existing.get(document.reference))
             for document in documents
         ]
-        return ConnectorSyncResponse(outcomes=outcomes)
+        removals = self._reconcile(documents, existing, outcomes)
+        return ConnectorSyncResponse(outcomes=(*outcomes, *removals))
 
     def _ingest(self) -> IngestKnowledge:
         if self._shared_ingest is None:
@@ -142,11 +169,53 @@ class SyncConnectorDocuments:
             chunk_count=response.chunk_count,
         )
         self._catalog.upsert(ready)
+        status = (
+            ConnectorSyncStatus.UPDATED
+            if previous is not None and previous.status is CatalogStatus.READY
+            else ConnectorSyncStatus.INGESTED
+        )
         return ConnectorSyncOutcome(
             source_id=document.source_id,
-            status=ConnectorSyncStatus.INGESTED,
+            status=status,
             chunk_count=response.chunk_count,
         )
+
+    def _reconcile(
+        self,
+        documents: Sequence[ConnectorDocument],
+        existing: dict[SourceReference, CatalogDocument],
+        outcomes: Sequence[ConnectorSyncOutcome],
+    ) -> tuple[ConnectorSyncOutcome, ...]:
+        if not self._reconcile_missing:
+            return ()
+        if any(outcome.status is ConnectorSyncStatus.FAILED for outcome in outcomes):
+            return ()
+        listed = {document.reference for document in documents}
+        missing = sorted(
+            (
+                row
+                for reference, row in existing.items()
+                if reference.source_type in self._reconcile_source_types
+                and reference not in listed
+            ),
+            key=lambda row: row.reference.source_id,
+        )
+        if not missing:
+            return ()
+        assert self._vector_store_factory is not None
+        store = self._vector_store_factory()
+        removals: list[ConnectorSyncOutcome] = []
+        for row in missing:
+            store.delete_source(row.reference)
+            self._catalog.delete(row.reference)
+            removals.append(
+                ConnectorSyncOutcome(
+                    source_id=row.reference.source_id,
+                    status=ConnectorSyncStatus.REMOVED,
+                    chunk_count=0,
+                )
+            )
+        return tuple(removals)
 
     def _recover_ingest_failure(
         self,

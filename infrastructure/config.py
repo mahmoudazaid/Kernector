@@ -149,6 +149,24 @@ class GoogleDriveSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class GitHubSettings:
+    """GitHub connector configuration. Tokens are never persisted by settings."""
+
+    token: str | None = None
+    owner: str | None = None
+    repo: str | None = None
+    ref: str = "HEAD"
+    include_paths: tuple[str, ...] = ()
+    exclude_paths: tuple[str, ...] = ()
+    extensions: tuple[str, ...] = (".md", ".py", ".txt")
+    max_file_bytes: int = 512 * 1024
+    project_owner: str | None = None
+    project_number: int | None = None
+    include_issue_comments: bool = False
+    page_size: int = 100
+
+
+@dataclass(frozen=True, slots=True)
 class RagJudgeSettings:
     """Independent Judge model configuration. Never defaulted from LLM_PROVIDER.
 
@@ -289,6 +307,37 @@ class GoogleOAuthSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class GitHubOAuthSettings:
+    """User OAuth for the GitHub connector.
+
+    Client secret is never exposed on HTTP responses. Token JSON is stored at
+    ``token_path`` and is not loaded into this dataclass.
+    """
+
+    client_id: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str | None = None
+    frontend_redirect: str | None = None
+    token_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "github-oauth-connection.json"
+    )
+    state_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "github-oauth-state.json"
+    )
+    state_ttl_seconds: int = 600
+
+    def __repr__(self) -> str:
+        return (
+            "GitHubOAuthSettings("
+            f"client_id={self.client_id!r}, client_secret='***', "
+            f"redirect_uri={self.redirect_uri!r}, "
+            f"frontend_redirect={self.frontend_redirect!r}, "
+            f"token_path={self.token_path!r}, state_path={self.state_path!r}, "
+            f"state_ttl_seconds={self.state_ttl_seconds})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -305,8 +354,10 @@ class Settings:
     domain_tools: DomainToolSettings
     http: HttpAdapterSettings
     google_drive: GoogleDriveSettings = field(default_factory=GoogleDriveSettings)
+    github: GitHubSettings = field(default_factory=GitHubSettings)
     rag_judge: RagJudgeSettings = field(default_factory=RagJudgeSettings)
     google_oauth: GoogleOAuthSettings = field(default_factory=GoogleOAuthSettings)
+    github_oauth: GitHubOAuthSettings = field(default_factory=GitHubOAuthSettings)
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
@@ -348,8 +399,10 @@ def load_settings() -> Settings:
         domain_tools=_load_domain_tool_settings(),
         http=_load_http_adapter_settings(),
         google_drive=_load_google_drive_settings(),
+        github=_load_github_settings(),
         rag_judge=_load_rag_judge_settings(),
         google_oauth=_load_google_oauth_settings(),
+        github_oauth=_load_github_oauth_settings(),
     )
 
 
@@ -397,6 +450,20 @@ def _require_google_oauth_json_path(path: Path, env_name: str) -> Path:
     ):
         raise ValueError(
             f"{env_name} must use a google-oauth-*.json filename so the grant stays gitignored"
+        )
+    return path
+
+
+def _require_github_oauth_json_path(path: Path, env_name: str) -> Path:
+    """Reject in-repo grant paths that would not match the OAuth gitignore."""
+    resolved = path.expanduser().resolve()
+    if not resolved.is_relative_to(_PROJECT_ROOT.resolve()):
+        return path
+    if not resolved.name.startswith("github-oauth-") or not resolved.name.endswith(
+        ".json"
+    ):
+        raise ValueError(
+            f"{env_name} must use a github-oauth-*.json filename so the grant stays gitignored"
         )
     return path
 
@@ -599,6 +666,48 @@ def _load_google_drive_settings() -> GoogleDriveSettings:
     )
 
 
+def _load_github_settings() -> GitHubSettings:
+    """Parse optional GitHub connector env vars without persisting tokens."""
+    max_file_bytes = _env_int("GITHUB_MAX_FILE_BYTES", str(512 * 1024))
+    if max_file_bytes <= 0:
+        raise ValueError(
+            f"GITHUB_MAX_FILE_BYTES must be > 0, got {max_file_bytes}"
+        )
+    page_size = _env_int("GITHUB_PAGE_SIZE", "100")
+    if not 1 <= page_size <= 100:
+        raise ValueError(
+            f"GITHUB_PAGE_SIZE must satisfy 1 <= page_size <= 100, got {page_size}"
+        )
+    project_number_raw = _optional_env("GITHUB_PROJECT_NUMBER")
+    project_number = None
+    if project_number_raw is not None:
+        try:
+            project_number = int(project_number_raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"GITHUB_PROJECT_NUMBER must be an integer, got {project_number_raw!r}"
+            ) from exc
+        if project_number <= 0:
+            raise ValueError(
+                f"GITHUB_PROJECT_NUMBER must be > 0, got {project_number}"
+            )
+    ref = _optional_env("GITHUB_REF", "HEAD") or "HEAD"
+    return GitHubSettings(
+        token=_optional_env("GITHUB_TOKEN"),
+        owner=_optional_env("GITHUB_OWNER"),
+        repo=_optional_env("GITHUB_REPO"),
+        ref=ref,
+        include_paths=_csv(os.getenv("GITHUB_INCLUDE_PATHS", "")),
+        exclude_paths=_csv(os.getenv("GITHUB_EXCLUDE_PATHS", "")),
+        extensions=_csv(os.getenv("GITHUB_EXTENSIONS", ".md,.py,.txt")),
+        max_file_bytes=max_file_bytes,
+        project_owner=_optional_env("GITHUB_PROJECT_OWNER"),
+        project_number=project_number,
+        include_issue_comments=_env_bool("GITHUB_INCLUDE_ISSUE_COMMENTS", "false"),
+        page_size=page_size,
+    )
+
+
 def _load_rag_judge_settings() -> RagJudgeSettings:
     """Parse independent Judge env vars. Never default from LLM_PROVIDER."""
     provider_raw = os.getenv("RAG_JUDGE_PROVIDER")
@@ -676,6 +785,54 @@ def _load_google_oauth_settings() -> GoogleOAuthSettings:
         "GOOGLE_OAUTH_STATE_PATH",
     )
     return GoogleOAuthSettings(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+        frontend_redirect=frontend_redirect,
+        token_path=token_path,
+        state_path=state_path,
+        state_ttl_seconds=ttl,
+    )
+
+
+def _load_github_oauth_settings() -> GitHubOAuthSettings:
+    """Parse GitHub user-OAuth env without reading stored tokens."""
+    client_id = _optional_env("GITHUB_OAUTH_CLIENT_ID")
+    client_secret = _optional_env("GITHUB_OAUTH_CLIENT_SECRET")
+    raw_redirect = _optional_env("GITHUB_OAUTH_REDIRECT_URI")
+    raw_frontend = _optional_env("GITHUB_OAUTH_FRONTEND_REDIRECT")
+    raw_token = _optional_env("GITHUB_OAUTH_TOKEN_PATH")
+    raw_state = _optional_env("GITHUB_OAUTH_STATE_PATH")
+    ttl = _env_int("GITHUB_OAUTH_STATE_TTL_SECONDS", "600")
+    if ttl < 30:
+        raise ValueError("GITHUB_OAUTH_STATE_TTL_SECONDS must be at least 30")
+    redirect_uri = (
+        _require_absolute_http_url("GITHUB_OAUTH_REDIRECT_URI", raw_redirect)
+        if raw_redirect
+        else None
+    )
+    frontend_redirect = (
+        _require_absolute_http_url("GITHUB_OAUTH_FRONTEND_REDIRECT", raw_frontend)
+        if raw_frontend
+        else None
+    )
+    token_path = _require_github_oauth_json_path(
+        (
+            _resolve_under_project_root(raw_token)
+            if raw_token
+            else _PROJECT_ROOT / "data" / "github-oauth-connection.json"
+        ),
+        "GITHUB_OAUTH_TOKEN_PATH",
+    )
+    state_path = _require_github_oauth_json_path(
+        (
+            _resolve_under_project_root(raw_state)
+            if raw_state
+            else _PROJECT_ROOT / "data" / "github-oauth-state.json"
+        ),
+        "GITHUB_OAUTH_STATE_PATH",
+    )
+    return GitHubOAuthSettings(
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=redirect_uri,

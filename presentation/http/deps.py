@@ -15,6 +15,7 @@ from composition import (
     GoogleDriveSelection,
     GoogleDriveSelectedItem,
     GoogleDriveStatus,
+    GitHubStatus,
     GroundedAsk,
     Settings,
     browse_google_drive_items,
@@ -27,17 +28,22 @@ from composition import (
     build_vector_store,
     create_uploaded_document,
     delete_uploaded_document,
+    complete_github_oauth,
     complete_google_drive_oauth,
+    disconnect_github_oauth,
     disconnect_google_drive_oauth,
     get_google_drive_selection,
     get_uploaded_document_content,
+    github_status,
     google_drive_status,
     list_uploaded_document_chunks,
     list_uploaded_documents,
     load_runtime_settings,
     put_google_drive_selection,
     replace_uploaded_document,
+    start_github_oauth,
     start_google_drive_oauth,
+    sync_github_oauth,
     sync_google_drive_oauth,
 )
 from domain.knowledge import (
@@ -239,6 +245,13 @@ def get_google_drive_status(
     )
 
 
+def get_github_status(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GitHubStatus:
+    """Report GitHub configuration presence and extra availability."""
+    return github_status(settings, catalog_factory=get_document_catalog)
+
+
 def get_google_drive_sync(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Callable[[], ConnectorSyncResponse]:
@@ -259,6 +272,21 @@ def get_google_drive_sync(
     return sync
 
 
+def get_github_sync(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], ConnectorSyncResponse]:
+    """Return a GitHub sync callable that builds the vector store lazily."""
+
+    def sync() -> ConnectorSyncResponse:
+        return sync_github_oauth(
+            settings,
+            catalog_factory=get_document_catalog,
+            vector_store_factory=get_vector_store,
+        )
+
+    return sync
+
+
 def get_google_drive_oauth_start(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Callable[[], str]:
@@ -266,6 +294,17 @@ def get_google_drive_oauth_start(
 
     def start() -> str:
         return start_google_drive_oauth(settings)
+
+    return start
+
+
+def get_github_oauth_start(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], str]:
+    """Return a callable that issues CSRF state and builds GitHub's auth URL."""
+
+    def start() -> str:
+        return start_github_oauth(settings)
 
     return start
 
@@ -285,6 +324,21 @@ def get_google_drive_oauth_callback(
     return complete
 
 
+def get_github_oauth_callback(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[str | None, str | None, str | None], str]:
+    """Return a callable that completes the GitHub OAuth callback."""
+
+    def complete(
+        state: str | None, code: str | None, error: str | None
+    ) -> str:
+        return complete_github_oauth(
+            settings, state=state, code=code, error=error
+        )
+
+    return complete
+
+
 def get_google_drive_disconnect(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Callable[[], None]:
@@ -292,6 +346,17 @@ def get_google_drive_disconnect(
 
     def disconnect() -> None:
         disconnect_google_drive_oauth(settings)
+
+    return disconnect
+
+
+def get_github_disconnect(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], None]:
+    """Return a callable that revokes and deletes the stored GitHub grant."""
+
+    def disconnect() -> None:
+        disconnect_github_oauth(settings)
 
     return disconnect
 
@@ -357,18 +422,32 @@ DocumentOperationsDep = Annotated[
 GoogleDriveStatusDep = Annotated[
     GoogleDriveStatus, Depends(get_google_drive_status)
 ]
+GitHubStatusDep = Annotated[GitHubStatus, Depends(get_github_status)]
 GoogleDriveSyncDep = Annotated[
     Callable[[], ConnectorSyncResponse], Depends(get_google_drive_sync)
 ]
+GitHubSyncDep = Annotated[
+    Callable[[], ConnectorSyncResponse], Depends(get_github_sync)
+]
 GoogleDriveOAuthStartDep = Annotated[
     Callable[[], str], Depends(get_google_drive_oauth_start)
+]
+GitHubOAuthStartDep = Annotated[
+    Callable[[], str], Depends(get_github_oauth_start)
 ]
 GoogleDriveOAuthCallbackDep = Annotated[
     Callable[[str | None, str | None, str | None], str],
     Depends(get_google_drive_oauth_callback),
 ]
+GitHubOAuthCallbackDep = Annotated[
+    Callable[[str | None, str | None, str | None], str],
+    Depends(get_github_oauth_callback),
+]
 GoogleDriveDisconnectDep = Annotated[
     Callable[[], None], Depends(get_google_drive_disconnect)
+]
+GitHubDisconnectDep = Annotated[
+    Callable[[], None], Depends(get_github_disconnect)
 ]
 GoogleDriveBrowseDep = Annotated[
     Callable[..., GoogleDriveBrowsePage], Depends(get_google_drive_browse)

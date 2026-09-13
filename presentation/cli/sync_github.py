@@ -1,8 +1,8 @@
-"""Synchronize Google Drive documents into the knowledge base.
+"""Synchronize GitHub documents into the knowledge base.
 
 Run with::
 
-    uv run python -m presentation.cli.sync_google_drive
+    uv run python -m presentation.cli.sync_github
 """
 
 from __future__ import annotations
@@ -11,20 +11,14 @@ import sys
 
 from application.contracts import ConnectorSyncStatus
 from application.errors import ConfigurationError
-from composition import ConnectorSyncError, load_runtime_settings, sync_google_drive
+from composition import ConnectorSyncError, load_runtime_settings, sync_github
 
 
 def main() -> int:
-    """Run a Drive folder sync and print scheduler-safe counts.
-
-    Returns:
-        int: ``0`` when every listed document was ingested or skipped, ``1``
-        when at least one document failed or the run aborted, ``2`` when
-        connector or embedding configuration is invalid.
-    """
+    """Run a GitHub sync and print scheduler-safe counts."""
     try:
         settings = load_runtime_settings()
-        response = sync_google_drive(settings)
+        response = sync_github(settings)
     except ConfigurationError as error:
         print(str(error), file=sys.stderr)
         return 2
@@ -32,6 +26,13 @@ def main() -> int:
         print(str(error), file=sys.stderr)
         return 1
 
+    discovered = (
+        response.ingested_count
+        + response.updated_count
+        + response.skipped_count
+        + response.failed_count
+    )
+    print(f"discovered={discovered}")
     print(f"ingested={response.ingested_count}")
     print(f"updated={response.updated_count}")
     print(f"skipped={response.skipped_count}")

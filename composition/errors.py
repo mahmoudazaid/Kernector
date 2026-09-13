@@ -86,5 +86,9 @@ class ConnectorSyncError(RuntimeError):
         super().__init__(message)
 
 
+class GitHubConnectorSyncError(ConnectorSyncError):
+    """A GitHub connector sync failed at the run level."""
+
+
 class GoogleDriveConnectorError(RuntimeError):
     """A Drive browse or selection call failed without exposing provider details."""

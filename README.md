@@ -2,7 +2,7 @@
 
 ![Kernector overview](docs/images/kernector-overview.png)
 
-Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, and the Google Drive CLI connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. External provider connectors beyond Google Drive (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
+Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, the Google Drive connector, and the GitHub connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. External provider connectors beyond Drive and GitHub (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
 Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). JSON catalog retirement is recorded in [ADR 0007](docs/adr/0007-retire-json-document-catalog.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
@@ -14,11 +14,11 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 `domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` is enabled via `DOMAIN_TOOL_PACKS` but registers no tools (#285 retirement of the scaffolding risk/generate/export adapters); chat intent always falls through to grounded RAG. Future tools land under `packs/software_delivery/tools/`. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the FastAPI HTTP adapter and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly. The interactive UI is Next.js under `web/`, talking HTTP to FastAPI.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, and the Google Drive connector (HTTP status/sync plus CLI).
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, Google Drive, and GitHub (Hub OAuth plus CLI PAT).
 
 ## Knowledge path from source to cited answer
 
-Normalized documents follow one pipeline whether they arrived as an upload, a seed JSON row, or a Google Drive file. Additional connector payloads are planned behind the same `SourceDocument` boundary.
+Normalized documents follow one pipeline whether they arrived as an upload, a seed JSON row, a Google Drive file, or a GitHub repo/Issue document. Additional connector payloads are planned behind the same `SourceDocument` boundary.
 
 ![Knowledge pipeline](docs/images/kernector-knowledge-pipeline.png)
 
@@ -269,7 +269,52 @@ Exit codes:
 | `1` | At least one document failed, or the run aborted operationally |
 | `2` | Connector or embedding configuration is invalid |
 
-Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped; a changed version replaces stored chunks.
+Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped; a changed version replaces stored chunks. Re-ingests report `updated=` in the CLI.
+
+## Sync documents from GitHub
+
+GitHub has two connection strategies, like Drive. Knowledge Hub uses **user OAuth**. The CLI uses a **personal access token** from the environment only (never persisted). Do not paste a token into the browser.
+
+### Knowledge Hub (user OAuth)
+
+1. Create a GitHub OAuth App (or GitHub App with user-to-server OAuth) with callback
+   `http://127.0.0.1:8000/api/v1/connectors/github/oauth/callback`.
+2. Set `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`,
+   `GITHUB_OAUTH_REDIRECT_URI`, and optionally `GITHUB_OAUTH_FRONTEND_REDIRECT`
+   (see [`.env.example`](.env.example)). Never commit those values.
+3. Configure the allowlisted repository with `GITHUB_OWNER` / `GITHUB_REPO`
+   (and optional ProjectV2 + path filters). Install the extra: `uv sync --extra github`.
+4. In Knowledge Hub, click **Connect**. GitHub owns consent. After the callback,
+   use **Sync**. **Disconnect** revokes the stored grant.
+5. Grant files live under `data/github-oauth-*.json` (gitignored, mode `0600`).
+   The browser never sees tokens.
+
+Least-privilege scopes: repository contents read, plus Project/Issues read when
+ProjectV2 sync is enabled.
+
+### CLI (PAT)
+
+1. Create a fine-grained PAT (or classic token) with contents read (and project
+   read if using ProjectV2 Issues).
+2. Set `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`, and optional filters
+   (see [`.env.example`](.env.example)).
+3. Install and run:
+
+```bash
+uv sync --extra github
+uv run python -m presentation.cli.sync_github
+```
+
+Exit codes match Drive (`0` / `1` / `2`). The CLI prints
+`discovered` / `ingested` / `updated` / `skipped` / `removed` / `failed`.
+`discovered` excludes removals. Sync **reconciles** disappeared GitHub
+`source_type=github` rows (vectors then catalog) only on a fully successful
+listing with zero per-document failures. Incomplete pagination or rate limits
+abort without deletions.
+
+Repo files use stable ids `{owner}/{repo}:{path}`, blob SHA as revision, and a
+commit-pinned citation URL. ProjectV2 linked Issues (not PRs/discussions) use
+the Issue node id and `updatedAt` as revision.
 
 ## Logging and monitoring
 

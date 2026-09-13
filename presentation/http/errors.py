@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GitHubNotConnectedError,
+    GitHubReauthorizationRequiredError,
     GoogleDriveNotConfiguredError,
     GoogleDriveNotConnectedError,
     GoogleDriveOAuthNotConfiguredError,
@@ -24,6 +26,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GitHubConnectorSyncError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
     MissingUploadContentError,
@@ -335,6 +338,33 @@ def problem_from_exception(
             title="Google Drive request failed",
             status=502,
             detail="The Google Drive request failed.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GitHubNotConnectedError):
+        return _problem(
+            code="github_not_connected",
+            title="GitHub not connected",
+            status=409,
+            detail="GitHub is not connected.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GitHubReauthorizationRequiredError):
+        return _problem(
+            code="github_reauthorization_required",
+            title="GitHub reauthorization required",
+            status=409,
+            detail="GitHub authorization was revoked. Connect again.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GitHubConnectorSyncError):
+        return _problem(
+            code="connector_sync_failed",
+            title="Connector sync failed",
+            status=502,
+            detail="The GitHub connector sync failed.",
             instance=instance,
             request_id=request_id,
         )
