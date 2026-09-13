@@ -431,34 +431,36 @@ def test_rejected_intent_phrases_never_call_the_runner(query: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("query", "generate_tests", "output_style"),
+    "query",
     [
-        ("Create test cases that do not require admin access", True, "steps"),
-        ("Create tests; never use production credentials", True, "steps"),
-        (
-            "Do not summarize the docs; create test cases for AUTH-101",
-            True,
-            "steps",
-        ),
-        ("Do not generate tests; assess the risk for AUTH-101", False, "steps"),
+        "Create test cases that do not require admin access",
+        "Create tests; never use production credentials",
+        "Do not summarize the docs; create test cases for AUTH-101",
+        "Do not generate tests; assess the risk for AUTH-101",
+        "Create test cases for AUTH-101",
+        "What is the risk score for AUTH-101?",
+        "Score the risk for AUTH-101",
     ],
 )
-def test_accepted_intent_phrases_invoke_the_runner(
-    query: str, generate_tests: bool, output_style: str
-) -> None:
-    """Constraint or other-clause negation must not cancel an active request."""
+def test_former_tool_queries_fall_through_to_grounded_rag(query: str) -> None:
+    """Choice A (#285): retired matchers never call the pack runner."""
     from packs.software_delivery.chat_intent import select_chat_intent
 
     ask = _RecordingAsk()
     runner = _RecordingRunner(_outcome())
     wrapper = ToolAugmentedAsk(ask, runner=runner, select=select_chat_intent)
+    request = AskRequest(query=query, prompt_key=None)
 
-    response = wrapper.execute(AskRequest(query=query, prompt_key=None))
+    response = wrapper.execute(request)
 
-    assert runner.runs == [(query, generate_tests, output_style)]
-    assert ask.calls == []
-    assert response.answer == "Scored risk."
+    assert select_chat_intent(query) is None
+    assert response.answer == ask.response.answer
     assert response.tool_outputs == ()
+    assert response.run is not None
+    assert response.run.path == "rag"
+    assert ask.calls == [(request, None)]
+    assert runner.runs == []
+    assert wrapper.consume_tool_run_view() is None
 
 
 def test_tools_path_run_meta_includes_tool_names_and_pack() -> None:
