@@ -9,6 +9,7 @@ import requests
 from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import OllamaSettings
+from infrastructure.llm.provider_failures import classify_provider_failure
 
 
 class OllamaConfigError(RuntimeError):
@@ -32,6 +33,10 @@ class OllamaModelMissingError(OllamaConfigError):
 
 class _HttpPost(Protocol):
     def __call__(self, url: str, **kwargs: object) -> object: ...
+
+
+_CONNECTION_FAILURE_MESSAGE = "The Ollama chat provider could not be reached."
+_PARSE_FAILURE_MESSAGE = "The Ollama chat response could not be parsed."
 
 
 class OllamaChat:
@@ -80,13 +85,11 @@ class OllamaChat:
             data = response.json()
             content = data["choices"][0]["message"]["content"]
         except requests.exceptions.RequestException as exc:
-            raise ProviderError(
-                "The Ollama chat provider could not be reached."
+            raise classify_provider_failure(
+                exc, fallback_message=_CONNECTION_FAILURE_MESSAGE
             ) from exc
         except (KeyError, IndexError, ValueError) as exc:
-            raise ProviderError(
-                "The Ollama chat response could not be parsed."
-            ) from exc
+            raise ProviderError(_PARSE_FAILURE_MESSAGE) from exc
 
         return AskResult(
             content=content,

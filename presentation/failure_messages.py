@@ -13,5 +13,23 @@ cross-importing peer packages.
 from __future__ import annotations
 
 PROVIDER_FAILURE_MESSAGE = "The model provider could not complete the request."
+PROVIDER_AUTH_FAILURE_MESSAGE = (
+    "Authentication with the model provider failed. Check the API key configuration."
+)
+PROVIDER_CREDITS_FAILURE_MESSAGE = (
+    "The model provider has no remaining credits. Add credits or choose another provider."
+)
+PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE = (
+    "The selected model is unavailable. Choose a different model or check provider status."
+)
+PROVIDER_RATE_LIMIT_FAILURE_MESSAGE = (
+    "The model provider rate-limited the request. Wait briefly and try again."
+)
+PROVIDER_TIMEOUT_FAILURE_MESSAGE = (
+    "The model provider timed out. Try again or increase the request timeout."
+)
+PROVIDER_NETWORK_FAILURE_MESSAGE = (
+    "The model provider could not be reached. Check network connectivity and try again."
+)
 TOOL_FAILURE_MESSAGE = "A tool failed while processing your request."
 OPERATIONAL_FAILURE_MESSAGE = "Something went wrong while processing your request."

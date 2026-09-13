@@ -28,12 +28,39 @@ class ProviderError(RuntimeError):
     """
 
 
+class ProviderAuthError(ProviderError):
+    """Provider credentials or permissions were rejected."""
+
+
+class ProviderCreditsError(ProviderError):
+    """The provider rejected the call because credits or quota are exhausted."""
+
+
+class ProviderModelUnavailableError(ProviderError):
+    """The requested model is missing or unavailable on the provider."""
+
+
+class ProviderRateLimitError(ProviderError):
+    """The provider throttled the request."""
+
+
+class ProviderTimeoutError(ProviderError):
+    """The provider call timed out before a usable response arrived."""
+
+
+class ProviderNetworkError(ProviderError):
+    """The provider could not be reached over the network."""
+
+
 class QueryRewriterError(ProviderError):
     """The query rewriter failed to produce a usable retrieval query.
 
-    Provider-neutral: adapters raise this from ``rewrite()`` when invocation
-    fails or the model returns blank content after normalization. Application
-    code catches this single type rather than every ``RuntimeError``.
+    Provider-neutral: adapters raise this from ``rewrite()`` when the model
+    returns blank or non-string content after normalization. Invocation
+    failures that match a known provider category raise that
+    ``ProviderError`` subclass instead so presentation can distinguish them.
+    Application code still catches ``QueryRewriterError`` for unusable
+    rewrite content.
     """
 
 

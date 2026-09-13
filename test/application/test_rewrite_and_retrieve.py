@@ -12,7 +12,7 @@ from application.rewrite_and_retrieve import (
     QueryRewriteFailure,
     RewriteAndRetrieveKnowledge,
 )
-from domain.errors import QueryRewriterError
+from domain.errors import ProviderAuthError, QueryRewriterError
 from domain.knowledge import (
     DocumentChunk,
     EmbeddedChunk,
@@ -124,6 +124,21 @@ def test_query_rewriter_error_surfaces_as_query_rewrite_failure() -> None:
         use_case.execute(RetrieveRequest(query="what broke?", retrieval_limit=1))
 
     assert isinstance(raised.value.__cause__, QueryRewriterError)
+    assert embedder.queries == []
+
+
+def test_actionable_provider_error_from_rewrite_propagates_unwrapped() -> None:
+    class AuthFailingRewriter:
+        def rewrite(self, query: str) -> str:
+            raise ProviderAuthError("The model provider rejected authentication.")
+
+    store = InMemoryVectorStore()
+    use_case, embedder = _use_case(store, rewriter=AuthFailingRewriter())
+
+    with pytest.raises(ProviderAuthError, match="authentication") as raised:
+        use_case.execute(RetrieveRequest(query="what broke?", retrieval_limit=1))
+
+    assert not isinstance(raised.value, QueryRewriteFailure)
     assert embedder.queries == []
 
 

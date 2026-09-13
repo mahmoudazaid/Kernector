@@ -35,13 +35,25 @@ from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
     ConfigurationBoundaryError,
     DomainValidationError,
+    ProviderAuthError,
+    ProviderCreditsError,
     ProviderError,
+    ProviderModelUnavailableError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
     ToolFailureError,
     VectorStoreError,
 )
 from presentation.failure_messages import (
     OPERATIONAL_FAILURE_MESSAGE,
+    PROVIDER_AUTH_FAILURE_MESSAGE,
+    PROVIDER_CREDITS_FAILURE_MESSAGE,
     PROVIDER_FAILURE_MESSAGE,
+    PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE,
+    PROVIDER_NETWORK_FAILURE_MESSAGE,
+    PROVIDER_RATE_LIMIT_FAILURE_MESSAGE,
+    PROVIDER_TIMEOUT_FAILURE_MESSAGE,
     TOOL_FAILURE_MESSAGE,
 )
 
@@ -362,6 +374,60 @@ def problem_from_exception(
             title="Configuration error",
             status=500,
             detail=_CONFIGURATION_FAILURE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ProviderAuthError):
+        return _problem(
+            code="provider_auth_failed",
+            title="Provider authentication failed",
+            status=502,
+            detail=PROVIDER_AUTH_FAILURE_MESSAGE,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ProviderCreditsError):
+        return _problem(
+            code="provider_credits_exhausted",
+            title="Provider credits exhausted",
+            status=502,
+            detail=PROVIDER_CREDITS_FAILURE_MESSAGE,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ProviderModelUnavailableError):
+        return _problem(
+            code="provider_model_unavailable",
+            title="Provider model unavailable",
+            status=502,
+            detail=PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ProviderRateLimitError):
+        return _problem(
+            code="provider_rate_limited",
+            title="Provider rate limited",
+            status=502,
+            detail=PROVIDER_RATE_LIMIT_FAILURE_MESSAGE,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ProviderTimeoutError):
+        return _problem(
+            code="provider_timeout",
+            title="Provider timeout",
+            status=502,
+            detail=PROVIDER_TIMEOUT_FAILURE_MESSAGE,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ProviderNetworkError):
+        return _problem(
+            code="provider_network_error",
+            title="Provider network error",
+            status=502,
+            detail=PROVIDER_NETWORK_FAILURE_MESSAGE,
             instance=instance,
             request_id=request_id,
         )

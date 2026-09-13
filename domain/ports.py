@@ -67,15 +67,18 @@ class EmbeddingModel(Protocol):
 class QueryRewriter(Protocol):
     """Rewrites a natural-language query into a retrieval-oriented string.
 
-    Names ``QueryRewriterError`` (a ``ProviderError``) so the application can
-    catch one known type rather than every ``RuntimeError``.
+    Invocation failures raise ``ProviderError`` (including actionable
+    subclasses). Unusable model content raises ``QueryRewriterError`` so the
+    application can wrap blank/non-string rewrites without collapsing
+    auth/rate-limit categories into a generic rewrite failure.
     """
 
     def rewrite(self, query: str) -> str:
         """Return a non-blank retrieval-oriented query for ``query``.
 
         Raises:
-            QueryRewriterError: Invocation failed or content was unusable.
+            ProviderError: Invocation failed (including actionable subclasses).
+            QueryRewriterError: Content was blank or not a string.
         """
         ...
 

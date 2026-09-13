@@ -7,6 +7,11 @@ from langchain_openai import ChatOpenAI
 
 from domain.errors import QueryRewriterError
 from infrastructure.config import OpenRouterSettings
+from infrastructure.llm.provider_failures import classify_provider_failure
+
+_INVOKE_FAILURE_MESSAGE = (
+    "The OpenRouter query rewrite provider could not be reached."
+)
 
 # Domain-agnostic rewrite instruction. Kept as a module constant (not a user-
 # facing prompt pack) so PROMPT_PACKS cannot hide it and the sidebar cannot
@@ -69,8 +74,9 @@ class OpenRouterQueryRewriter:
         """Return a non-blank retrieval-oriented rewrite of ``query``.
 
         Raises:
-            QueryRewriterError: Invocation failed, content was not a string, or
-                content was blank after normalization.
+            ProviderError: Invocation failed (including actionable subclasses).
+            QueryRewriterError: Content was not a string, or was blank after
+                normalization.
         """
         messages = [
             SystemMessage(content=self._system),
@@ -79,8 +85,8 @@ class OpenRouterQueryRewriter:
         try:
             result = self._model.invoke(messages)
         except Exception as error:
-            raise QueryRewriterError(
-                "The OpenRouter query rewrite provider could not be reached."
+            raise classify_provider_failure(
+                error, fallback_message=_INVOKE_FAILURE_MESSAGE
             ) from error
 
         content = getattr(result, "content", result)

@@ -486,7 +486,13 @@ operational types to fixed category sentences (see below). The HTTP adapter unde
 | `MissingProviderCredentialsError` | 500 | `missing_provider_credentials` | fixed sentence |
 | `OllamaNotConfiguredError` | 409 | `ollama_unconfigured` | fixed sentence |
 | `ToolRunFailedError` | 500 | `tool_failure` | fixed tool sentence |
-| `ProviderError` (and subclasses) | 502 | `provider_error` | fixed provider sentence; on Software Delivery tool-run paths, `PackSoftwareDeliveryChat` re-wraps into `ToolRunFailedError` (500 `tool_failure`) so vendor text never reaches the chat bubble |
+| `ProviderAuthError` | 502 | `provider_auth_failed` | curated auth remediation |
+| `ProviderCreditsError` | 502 | `provider_credits_exhausted` | curated credits remediation |
+| `ProviderModelUnavailableError` | 502 | `provider_model_unavailable` | curated model remediation |
+| `ProviderRateLimitError` | 502 | `provider_rate_limited` | curated rate-limit remediation |
+| `ProviderTimeoutError` | 502 | `provider_timeout` | curated timeout remediation |
+| `ProviderNetworkError` | 502 | `provider_network_error` | curated network remediation |
+| `ProviderError` (and other subclasses) | 502 | `provider_error` | fixed provider sentence; on Software Delivery tool-run paths, `PackSoftwareDeliveryChat` re-wraps into `ToolRunFailedError` (500 `tool_failure`) so vendor text never reaches the chat bubble |
 | `ToolFailureError` | 500 | `tool_failure` | fixed tool sentence |
 | `VectorStoreError` | 500 | `store_error` | fixed operational sentence |
 | `KnowledgeLoadError` / document wraps | 500 | `operational_error` | fixed operational sentence |
@@ -510,8 +516,9 @@ to 4xx with boundary-authored (or class-composed) detail.
 | config | `ConfigurationBoundaryError` | domain | Marker base for typed config failures; prefer concrete application subclasses |
 | config | `ChatConfigError`, `OllamaConfigError`, `EmbeddingConfigError`, `QueryRewriteConfigError` | infrastructure | Adapter construction; mapped to `ConfigurationError` / `MissingProviderCredentialsError` / `OllamaNotConfiguredError` |
 | provider | `ProviderError` | domain | LLM / embedding / rewrite runtime failure |
-| provider | `QueryRewriterError` | domain | Subclass of `ProviderError` from the rewrite port |
-| provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping rewrite failures |
+| provider | `ProviderAuthError`, `ProviderCreditsError`, `ProviderModelUnavailableError`, `ProviderRateLimitError`, `ProviderTimeoutError`, `ProviderNetworkError` | domain | Actionable subclasses of `ProviderError` from chat/rewrite adapters |
+| provider | `QueryRewriterError` | domain | Subclass of `ProviderError` for blank/unusable rewrite content |
+| provider | `QueryRewriteFailure` | application | Subclass of `ProviderError` wrapping `QueryRewriterError` |
 | store | `VectorStoreError` | domain | Vector-store read or write failure |
 | store | `ChromaStoreError` | infrastructure | Subclass of `VectorStoreError` |
 | tool | `ToolArgumentValidationError` | domain | Invalid tool arguments before execution (`DomainValidationError`) |
@@ -537,7 +544,7 @@ are needed (see README observability).
 | Caught type | User-facing message | `drop_user_turn` |
 |---|---|---|
 | `ApplicationValidationError` | boundary-authored `str(error)` | yes |
-| `ProviderError` (incl. `QueryRewriterError`, `QueryRewriteFailure`) | fixed provider sentence | no |
+| `ProviderError` (incl. actionable subclasses, `QueryRewriterError`, `QueryRewriteFailure`) | fixed / curated provider sentence by type | no |
 | `ToolFailureError` | fixed tool sentence | no |
 | `VectorStoreError`, `DomainValidationError`, other `RuntimeError` | fixed operational sentence | no |
 
