@@ -6,7 +6,13 @@ from application.errors import ApplicationValidationError, ConfigurationError
 from application.rewrite_and_retrieve import QueryRewriteFailure
 from domain.errors import (
     DomainValidationError,
+    ProviderAuthError,
+    ProviderCreditsError,
     ProviderError,
+    ProviderModelUnavailableError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
     QueryRewriterError,
     ToolArgumentValidationError,
     ToolFailureError,
@@ -84,15 +90,34 @@ def test_embedding_provider_failure_is_provider_error_without_vendor_text() -> N
 def test_query_rewrite_failure_is_provider_error_subclass() -> None:
     rewriter = OpenRouterQueryRewriter(_openrouter(), model=_RaisingRewriteModel())
 
-    with pytest.raises(QueryRewriterError) as raised:
+    with pytest.raises(ProviderError) as raised:
         rewriter.rewrite("what broke?")
 
-    assert isinstance(raised.value, ProviderError)
+    assert not isinstance(raised.value, QueryRewriterError)
     assert "rewrite vendor detail" not in str(raised.value)
 
 
 def test_query_rewrite_failure_application_type_is_provider_error() -> None:
     assert issubclass(QueryRewriteFailure, ProviderError)
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        ProviderAuthError,
+        ProviderCreditsError,
+        ProviderModelUnavailableError,
+        ProviderRateLimitError,
+        ProviderTimeoutError,
+        ProviderNetworkError,
+    ],
+)
+def test_actionable_provider_errors_are_provider_error_subclasses(
+    error_type: type[ProviderError],
+) -> None:
+    assert issubclass(error_type, ProviderError)
+    assert error_type is not ProviderError
+    assert not issubclass(error_type, QueryRewriterError)
 
 
 def test_chroma_store_error_is_vector_store_error() -> None:

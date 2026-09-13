@@ -29,12 +29,27 @@ from composition.errors import (
 from composition.software_delivery_chat import ToolRunFailedError
 from domain.errors import (
     DomainValidationError,
+    ProviderAuthError,
+    ProviderCreditsError,
     ProviderError,
+    ProviderModelUnavailableError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
     ToolFailureError,
     VectorStoreError,
 )
 from domain.models import Message
-from presentation.failure_messages import OPERATIONAL_FAILURE_MESSAGE, TOOL_FAILURE_MESSAGE
+from presentation.failure_messages import (
+    OPERATIONAL_FAILURE_MESSAGE,
+    PROVIDER_AUTH_FAILURE_MESSAGE,
+    PROVIDER_CREDITS_FAILURE_MESSAGE,
+    PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE,
+    PROVIDER_NETWORK_FAILURE_MESSAGE,
+    PROVIDER_RATE_LIMIT_FAILURE_MESSAGE,
+    PROVIDER_TIMEOUT_FAILURE_MESSAGE,
+    TOOL_FAILURE_MESSAGE,
+)
 from presentation.http.errors import (
     DOCUMENT_NOT_FOUND_DETAIL,
     DOCUMENT_PARTIAL_DETAILS,
@@ -111,6 +126,45 @@ def test_provider_error_uses_fixed_sanitized_detail() -> None:
 
     assert problem.detail == "The model provider could not complete the request."
     assert "sk-secret" not in problem.detail
+
+
+@pytest.mark.parametrize(
+    ("exc", "code", "detail"),
+    [
+        (ProviderAuthError("sk-secret"), "provider_auth_failed", PROVIDER_AUTH_FAILURE_MESSAGE),
+        (
+            ProviderCreditsError("sk-secret"),
+            "provider_credits_exhausted",
+            PROVIDER_CREDITS_FAILURE_MESSAGE,
+        ),
+        (
+            ProviderModelUnavailableError("sk-secret"),
+            "provider_model_unavailable",
+            PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE,
+        ),
+        (
+            ProviderRateLimitError("sk-secret"),
+            "provider_rate_limited",
+            PROVIDER_RATE_LIMIT_FAILURE_MESSAGE,
+        ),
+        (ProviderTimeoutError("sk-secret"), "provider_timeout", PROVIDER_TIMEOUT_FAILURE_MESSAGE),
+        (
+            ProviderNetworkError("sk-secret"),
+            "provider_network_error",
+            PROVIDER_NETWORK_FAILURE_MESSAGE,
+        ),
+    ],
+)
+def test_actionable_provider_errors_map_to_curated_details(
+    exc: ProviderError, code: str, detail: str
+) -> None:
+    problem = problem_from_exception(exc)
+
+    assert problem.status == 502
+    assert problem.code == code
+    assert problem.detail == detail
+    assert "sk-secret" not in problem.detail
+    assert problem.type == f"https://kernector.dev/problems/{code}"
 
 
 def test_tool_failure_uses_fixed_sanitized_detail() -> None:

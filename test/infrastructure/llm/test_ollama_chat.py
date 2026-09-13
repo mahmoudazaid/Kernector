@@ -6,7 +6,13 @@ from typing import Any
 import pytest
 import requests
 
-from domain.errors import ProviderError
+from domain.errors import (
+    ProviderAuthError,
+    ProviderError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+)
 from domain.models import Message, Usage
 from infrastructure.config import OllamaSettings
 from infrastructure.llm.ollama import (
@@ -112,13 +118,43 @@ def test_complete_raises_provider_error_on_connection_failure() -> None:
     upstream = requests.exceptions.ConnectionError("connection refused: secret-token")
     chat = OllamaChat(_settings(), post=_RecordingPost(upstream))
 
-    with pytest.raises(
-        ProviderError, match="Ollama chat provider could not be reached"
-    ) as raised:
+    with pytest.raises(ProviderNetworkError) as raised:
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "secret-token" not in str(raised.value)
     assert "connection refused" not in str(raised.value)
+    assert raised.value.__cause__ is upstream
+
+
+@pytest.mark.parametrize(
+    ("upstream", "expected_type"),
+    [
+        (
+            requests.exceptions.HTTPError(
+                "401 sk-secret",
+                response=type("Resp", (), {"status_code": 401})(),
+            ),
+            ProviderAuthError,
+        ),
+        (
+            requests.exceptions.HTTPError(
+                "429 sk-secret",
+                response=type("Resp", (), {"status_code": 429})(),
+            ),
+            ProviderRateLimitError,
+        ),
+        (requests.exceptions.Timeout("deadline sk-secret"), ProviderTimeoutError),
+    ],
+)
+def test_complete_classifies_request_failures(
+    upstream: BaseException, expected_type: type[ProviderError]
+) -> None:
+    chat = OllamaChat(_settings(), post=_RecordingPost(upstream))
+
+    with pytest.raises(expected_type) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "sk-secret" not in str(raised.value)
     assert raised.value.__cause__ is upstream
 
 

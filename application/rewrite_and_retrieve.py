@@ -78,7 +78,8 @@ class RewriteAndRetrieveKnowledge:
             QueryRewriteFailure: The rewriter raised ``QueryRewriterError``,
                 returned blank content, or produced a rewritten query that
                 exceeds ``max_input_length``. Retrieve is not invoked.
-            ProviderError: Propagated from the embedding provider.
+            ProviderError: Propagated from rewrite invocation (actionable
+                subclasses included) or from the embedding provider.
             VectorStoreError: Propagated from the vector store.
         """
         try:

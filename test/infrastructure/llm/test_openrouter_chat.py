@@ -3,10 +3,20 @@
 from collections.abc import Mapping
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from openai import AuthenticationError, RateLimitError
 
-from domain.errors import ProviderError
+from domain.errors import (
+    ProviderAuthError,
+    ProviderCreditsError,
+    ProviderError,
+    ProviderModelUnavailableError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+)
 from domain.models import Message, Usage
 from infrastructure.config import OpenRouterSettings
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
@@ -133,6 +143,69 @@ def test_complete_raises_provider_error_without_vendor_text() -> None:
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "upstream down" not in str(raised.value)
+    assert raised.value.__cause__ is upstream
+    assert type(raised.value) is ProviderError
+
+
+def _httpx_response(status_code: int) -> httpx.Response:
+    return httpx.Response(
+        status_code, request=httpx.Request("POST", "https://openrouter.ai/api/v1")
+    )
+
+
+@pytest.mark.parametrize(
+    ("upstream", "expected_type"),
+    [
+        (
+            AuthenticationError(
+                "bad key sk-secret",
+                response=_httpx_response(401),
+                body={"error": {"message": "sk-secret"}},
+            ),
+            ProviderAuthError,
+        ),
+        (
+            type(
+                "Status402",
+                (Exception,),
+                {"status_code": 402, "body": {"error": {"code": "payment_required"}}},
+            )("paywall sk-secret"),
+            ProviderCreditsError,
+        ),
+        (
+            type(
+                "Status404",
+                (Exception,),
+                {"status_code": 404, "body": {"error": {"code": "model_not_found"}}},
+            )("missing model sk-secret"),
+            ProviderModelUnavailableError,
+        ),
+        (
+            RateLimitError(
+                "slow down sk-secret",
+                response=_httpx_response(429),
+                body={"error": {"message": "sk-secret"}},
+            ),
+            ProviderRateLimitError,
+        ),
+        (TimeoutError("deadline sk-secret"), ProviderTimeoutError),
+        (
+            type("Status408", (Exception,), {"status_code": 408})("timeout sk-secret"),
+            ProviderTimeoutError,
+        ),
+        (ConnectionError("refused sk-secret"), ProviderNetworkError),
+    ],
+)
+def test_complete_classifies_provider_failures(
+    upstream: BaseException, expected_type: type[ProviderError]
+) -> None:
+    fake = _FakeChat(error=upstream)
+    chat = OpenRouterChat(_settings(), model_factory=_RecordingFactory(fake))
+
+    with pytest.raises(expected_type) as raised:
+        chat.complete("system", (Message(role="user", content="hi"),), {})
+
+    assert "sk-secret" not in str(raised.value)
     assert raised.value.__cause__ is upstream
 
 
