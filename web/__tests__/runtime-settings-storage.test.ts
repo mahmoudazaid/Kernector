@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   ACTIVE_SESSION_STORAGE_KEY,
   loadActiveSession,
-  saveActiveSession,
+  setActiveConversationId,
 } from "@/lib/session/active-session";
+import {
+  CONVERSATIONS_STORAGE_KEY,
+  createConversation,
+} from "@/lib/session/conversations";
 import {
   CHAT_MESSAGES_STORAGE_KEY,
   RUNTIME_SETTINGS_STORAGE_KEY,
@@ -34,21 +38,24 @@ describe("runtime settings storage", () => {
     expect(loadRuntimeSettings()).toEqual(SAMPLE);
   });
 
-  it("does not clear session or transcript keys when saving settings", () => {
+  it("does not clear session or conversation keys when saving settings", () => {
     localStorage.setItem(
       CHAT_MESSAGES_STORAGE_KEY,
       JSON.stringify([{ id: "1", role: "user", content: "hi" }]),
     );
-    saveActiveSession({
-      draft: "d",
-      messages: [],
-      updatedAt: 1,
+    setActiveConversationId("conv-1");
+    createConversation({
+      title: "hi",
+      messages: [{ id: "1", role: "user", content: "hi" }],
+      draft: "",
     });
 
     saveRuntimeSettings(SAMPLE);
 
     expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeTruthy();
     expect(localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY)).toBeTruthy();
+    expect(localStorage.getItem(CONVERSATIONS_STORAGE_KEY)).toBeTruthy();
+    expect(loadActiveSession()).toEqual({ activeConversationId: "conv-1" });
     expect(loadRuntimeSettings()).toEqual(SAMPLE);
   });
 
@@ -63,41 +70,5 @@ describe("runtime settings storage", () => {
       JSON.stringify({ provider: "openrouter" }),
     );
     expect(loadRuntimeSettings()).toBeNull();
-  });
-});
-
-describe("session store owns transcript persistence", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it("round-trips messages and clears independently of runtime settings", () => {
-    saveRuntimeSettings(SAMPLE);
-    const stamp = saveActiveSession({
-      draft: "",
-      messages: [{ id: "1", role: "user", content: "hi" }],
-      updatedAt: 1,
-    });
-
-    expect(loadActiveSession().messages).toEqual([
-      { id: "1", role: "user", content: "hi" },
-    ]);
-    saveActiveSession({
-      draft: "",
-      messages: [],
-      updatedAt: stamp!,
-    });
-    expect(loadActiveSession().messages).toEqual([]);
-    expect(loadRuntimeSettings()).toEqual(SAMPLE);
-  });
-
-  it("degrades garbage transcripts to an empty list", () => {
-    localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, "{not-json");
-    expect(loadActiveSession().messages).toEqual([]);
-    localStorage.setItem(
-      CHAT_MESSAGES_STORAGE_KEY,
-      JSON.stringify([{ role: "user" }]),
-    );
-    expect(loadActiveSession().messages).toEqual([]);
   });
 });

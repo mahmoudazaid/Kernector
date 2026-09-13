@@ -97,8 +97,19 @@ Public env (optional overrides in `web/.env.local`): `NEXT_PUBLIC_APP_NAME`,
 
 With both processes up, open `/settings` for provider/model controls and `/chat`
 for grounded ask (history, citations, tools-used, projected tool results). Chat
-reads runtime selections from `localStorage` (`kernector:runtime-settings:v1`)
-and persists the transcript under `kernector:chat-messages:v1`.
+reads runtime selections from `localStorage` (`kernector:runtime-settings:v1`).
+Conversations live under `kernector:conversations:v1` (id, title, updatedAt,
+messages, draft, runStatus, requestStartedAt, runHeartbeatAt, unread);
+`kernector:active-session:v1` stores only `activeConversationId`. `/chat` is a
+landing page (empty composer + Chats list — never a transcript); submitting
+creates a thread, sets `runStatus: pending`, navigates to `/chat/{id}`, and runs
+the ask through a client-side conversation run coordinator keyed by that id so
+late responses always append to the originating conversation. Pending/unread/failed
+status shows on Chats rows; opening a thread clears unread. Use the main Chat nav
+item to return to the landing page. Legacy `kernector:chat-messages:v1` (and
+pre-#246 session payloads with messages) are migrated once into the conversations
+store; `kernector:conversations-migrated:v1` records that migration so a deleted
+chat cannot be resurrected from the legacy mirror.
 
 OpenAPI → TypeScript: from `web/`, `npm run api:generate`. Drift check:
 `npm run api:check` (also run on PRs to `main`).
