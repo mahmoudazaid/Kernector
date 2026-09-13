@@ -36,16 +36,21 @@ class SyncConnectorDocuments:
     constructs embedding credentials, while a multi-document run reuses one
     ingest instance.
 
-    When ``reconcile_missing`` is enabled and the run finishes with zero
-    ``FAILED`` outcomes, catalog rows whose ``source_type`` is in
-    ``reconcile_source_types`` and whose reference was not listed are hard-
-    deleted (vectors first, then the catalog row). Incomplete listings must
-    raise from the connector so reconcile never runs on a short list.
-    Deletion is further narrowed by ``reconcile_connector_ids`` and/or
+    When ``reconcile_missing`` is enabled, catalog rows whose ``source_type`` is
+    in ``reconcile_source_types`` and whose reference was not listed are hard-
+    deleted (vectors first, then the catalog row) after a clean run. Incomplete
+    listings must raise from the connector so reconcile never runs on a short
+    list. Deletion is further narrowed by ``reconcile_connector_ids`` and/or
     ``reconcile_source_id_prefixes`` so a source type alone never deletes
     across connector instances. When ``reconcile_connector_ids`` is set,
     catalog rows with ``connector_id is None`` are treated as legacy
     pre-identity rows and claimed into that reconcile scope.
+
+    If the run has any ``FAILED`` outcomes, same-scope rows are left alone
+    (ingest failures must not look like remote deletes). Rows whose source-id
+    scope (for example ``owner/repo:``) is outside every listed document are
+    still removed so a repository change cannot leave the previous repo's
+    documents behind.
 
     Args:
         connector (KnowledgeConnector): Remote listing and fetch adapter.
@@ -218,9 +223,17 @@ class SyncConnectorDocuments:
     ) -> tuple[ConnectorSyncOutcome, ...]:
         if not self._reconcile_missing:
             return ()
-        if any(outcome.status is ConnectorSyncStatus.FAILED for outcome in outcomes):
+        has_failures = any(
+            outcome.status is ConnectorSyncStatus.FAILED for outcome in outcomes
+        )
+        if has_failures and not documents:
             return ()
         listed = {document.reference for document in documents}
+        listed_scopes = {
+            scope
+            for document in documents
+            if (scope := _source_id_scope(document.source_id)) is not None
+        }
         prefixes = self._reconcile_source_id_prefixes
         connector_ids = self._reconcile_connector_ids
         missing = sorted(
@@ -237,6 +250,10 @@ class SyncConnectorDocuments:
                     )
                 )
                 and _row_in_connector_scope(row, connector_ids)
+                and (
+                    not has_failures
+                    or _source_id_scope(reference.source_id) not in listed_scopes
+                )
             ),
             key=lambda row: row.reference.source_id,
         )
@@ -326,6 +343,18 @@ def _row_in_connector_scope(
     if row.connector_id is None:
         return True
     return row.connector_id in connector_ids
+
+
+def _source_id_scope(source_id: str) -> str | None:
+    """Return the stable scope prefix for a connector source id.
+
+    GitHub repo files use ``owner/repo:path``; Project issues use ``issue:…``.
+    Scope is the segment through the first ``:`` so a repository change can
+    drop the previous repo even when the current sync has ingest failures.
+    """
+    if not source_id or ":" not in source_id:
+        return None
+    return source_id.split(":", 1)[0] + ":"
 
 
 def _failed_row(

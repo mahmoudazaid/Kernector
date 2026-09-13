@@ -738,9 +738,9 @@ def test_list_documents_raising_skips_reconcile() -> None:
     assert store.delete_calls == []
 
 
-def test_failed_outcome_skips_reconcile() -> None:
-    listed = _github_listed("file-1", revision="2")
-    gone = _github_listed("gone", file_name="gone.md")
+def test_failed_outcome_skips_same_repo_reconcile() -> None:
+    listed = _github_listed("acme/docs:file-1", revision="2")
+    gone = _github_listed("acme/docs:gone", file_name="gone.md")
     catalog = InMemoryDocumentCatalog()
     catalog.upsert(_row(listed, revision="1"))
     catalog.upsert(_row(gone))
@@ -763,6 +763,35 @@ def test_failed_outcome_skips_reconcile() -> None:
     assert response.removed_count == 0
     assert catalog.get(gone.reference) is not None
     assert store.delete_calls == []
+
+
+def test_failed_outcome_still_removes_other_repo_rows() -> None:
+    listed = _github_listed("acme/docs:file-1", revision="2", connector_id="c1")
+    other = _github_listed("other/repo:README.md", connector_id="c1")
+    same_repo_gone = _github_listed("acme/docs:gone.md", connector_id="c1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(listed, revision="1", connector_id="c1"))
+    catalog.upsert(_row(other, connector_id="c1"))
+    catalog.upsert(_row(same_repo_gone, connector_id="c1"))
+    store = RecordingVectorStore()
+    response = _use_case(
+        RecordingConnector(
+            (listed,),
+            {},
+            fetch_errors={listed.source_id: ConnectorError("read failed")},
+        ),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"c1"}),
+        vector_store_factory=lambda: store,
+    ).execute()
+
+    assert response.failed_count == 1
+    assert catalog.get(other.reference) is None
+    assert catalog.get(same_repo_gone.reference) is not None
+    assert response.removed_count == 1
+    assert store.delete_calls == [other.reference]
 
 
 def test_complete_run_listing_zero_documents_removes_every_in_scope_row() -> None:
