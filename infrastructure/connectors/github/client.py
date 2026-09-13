@@ -45,6 +45,10 @@ class GitHubClient(Protocol):
         """Return all ProjectV2 item content nodes, walking all pages."""
         ...
 
+    def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+        """Resolve a user/org ProjectV2 number to its node id."""
+        ...
+
 
 class HttpGitHubClient:
     """HTTP implementation of the GitHub client protocol."""
@@ -141,6 +145,22 @@ class HttpGitHubClient:
                 raise ConnectorError(_MSG_REQUEST_FAILED)
             after = end_cursor
 
+    def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+        payload = self._graphql(
+            _PROJECT_V2_LOOKUP_QUERY,
+            {"login": owner_login, "number": number},
+        )
+        for root in ("organization", "user"):
+            owner = _optional_nested_mapping(payload, ("data", root))
+            if owner is None:
+                continue
+            project = owner.get("projectV2")
+            if isinstance(project, Mapping):
+                project_id = project.get("id")
+                if isinstance(project_id, str) and project_id.strip():
+                    return project_id
+        raise ConnectorError(_MSG_REQUEST_FAILED)
+
     def _get_json(
         self,
         path: str,
@@ -180,6 +200,19 @@ def _nested_mapping(payload: Mapping[str, object], keys: Sequence[str]) -> Mappi
     return current
 
 
+def _optional_nested_mapping(
+    payload: Mapping[str, object], keys: Sequence[str]
+) -> Mapping[str, object] | None:
+    current: object = payload
+    for key in keys:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    if not isinstance(current, Mapping):
+        return None
+    return current
+
+
 def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorError:
     http_status_error = getattr(httpx_module, "HTTPStatusError")
     request_error = getattr(httpx_module, "RequestError")
@@ -196,6 +229,17 @@ def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorErr
         return error
     return ConnectorError(_MSG_REQUEST_FAILED)
 
+
+_PROJECT_V2_LOOKUP_QUERY = """
+query KernectorProjectLookup($login: String!, $number: Int!) {
+  organization(login: $login) {
+    projectV2(number: $number) { id }
+  }
+  user(login: $login) {
+    projectV2(number: $number) { id }
+  }
+}
+"""
 
 _PROJECT_V2_ITEMS_QUERY = """
 query KernectorProjectItems($projectId: ID!, $first: Int!, $after: String) {

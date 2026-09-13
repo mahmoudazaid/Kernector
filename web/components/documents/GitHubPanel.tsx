@@ -226,6 +226,13 @@ export function GitHubPanel({
       setActionError("GitHub OAuth is not configured on the server.");
       return;
     }
+    if (status !== null && !(status.owner && status.repo)) {
+      event.preventDefault();
+      setActionError(
+        "Set GITHUB_OWNER and GITHUB_REPO on the server before connecting.",
+      );
+      return;
+    }
     setRedirecting(true);
   }
 

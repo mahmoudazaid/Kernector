@@ -16,6 +16,7 @@ from domain.knowledge import (
 from infrastructure.connectors.github.client import GitHubClient
 
 _MSG_REQUEST_FAILED = "The GitHub request failed."
+ISSUE_SOURCE_ID_PREFIX = "issue:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,20 +33,18 @@ class GitHubIssueDocuments:
     def __init__(self, client: GitHubClient, config: GitHubIssueConfig) -> None:
         self._client = client
         self._config = config
+        self._issues_by_id: dict[str, Mapping[str, object]] | None = None
 
     def list_documents(self) -> Sequence[ConnectorDocument]:
+        issues = self._load_issues()
         documents: list[ConnectorDocument] = []
-        for content in self._client.get_project_v2_items(self._config.project_node_id):
-            if content.get("__typename") != "Issue":
-                continue
-            source_id = _required_text(content, "id")
-            updated_at = _required_text(content, "updatedAt")
+        for source_id, content in issues.items():
             number = _required_int(content, "number")
             documents.append(
                 ConnectorDocument(
                     reference=SourceReference(source_id, SourceType.GITHUB),
                     file_name=f"issue-{number}.md",
-                    revision=updated_at,
+                    revision=_required_text(content, "updatedAt"),
                     extra={
                         "github_kind": "issue",
                         "project_node_id": self._config.project_node_id,
@@ -77,10 +76,26 @@ class GitHubIssueDocuments:
         )
 
     def _find_issue(self, source_id: str) -> Mapping[str, object]:
+        cached = self._issues_by_id
+        if cached is not None and source_id in cached:
+            return cached[source_id]
+        issues = self._load_issues(force=True)
+        issue = issues.get(source_id)
+        if issue is None:
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        return issue
+
+    def _load_issues(self, *, force: bool = False) -> dict[str, Mapping[str, object]]:
+        if self._issues_by_id is not None and not force:
+            return self._issues_by_id
+        issues: dict[str, Mapping[str, object]] = {}
         for content in self._client.get_project_v2_items(self._config.project_node_id):
-            if content.get("__typename") == "Issue" and content.get("id") == source_id:
-                return content
-        raise ConnectorError(_MSG_REQUEST_FAILED)
+            if content.get("__typename") != "Issue":
+                continue
+            node_id = _required_text(content, "id")
+            issues[f"{ISSUE_SOURCE_ID_PREFIX}{node_id}"] = content
+        self._issues_by_id = issues
+        return issues
 
 
 def _markdown_for_issue(

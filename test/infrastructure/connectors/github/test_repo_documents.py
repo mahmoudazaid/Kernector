@@ -47,6 +47,9 @@ class FakeGitHubClient:
     def get_project_v2_items(self, project_node_id: str) -> list[dict[str, object]]:
         return []
 
+    def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+        return f"PVT_{owner_login}_{number}"
+
 
 def test_lists_supported_repo_blobs_with_commit_provenance() -> None:
     client = FakeGitHubClient(

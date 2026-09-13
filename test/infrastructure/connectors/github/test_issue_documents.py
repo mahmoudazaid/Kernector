@@ -34,6 +34,9 @@ class FakeGitHubClient:
         self.project_calls.append(project_node_id)
         return list(self.items)
 
+    def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+        return f"PVT_{owner_login}_{number}"
+
 
 def _issue(**overrides: object) -> dict[str, object]:
     issue: dict[str, object] = {
@@ -81,11 +84,22 @@ def test_lists_only_project_v2_linked_issues() -> None:
     docs = adapter.list_documents()
 
     assert len(docs) == 1
-    assert docs[0].source_id == "I_kwDO"
+    assert docs[0].source_id == "issue:I_kwDO"
     assert docs[0].reference.source_type == SourceType.GITHUB
     assert docs[0].revision == "2026-01-02T00:00:00Z"
     assert docs[0].file_name == "issue-42.md"
     assert docs[0].extra["github_kind"] == "issue"
+
+
+def test_fetch_reuses_list_walk_without_second_project_request() -> None:
+    client = FakeGitHubClient([_issue()])
+    adapter = GitHubIssueDocuments(client, GitHubIssueConfig(project_node_id="PVT_1"))
+    listed = adapter.list_documents()[0]
+    assert client.project_calls == ["PVT_1"]
+
+    adapter.fetch_document(listed)
+
+    assert client.project_calls == ["PVT_1"]
 
 
 def test_fetch_renders_issue_markdown_without_comments_by_default() -> None:

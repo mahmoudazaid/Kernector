@@ -62,16 +62,16 @@ def _doc(source_id: str, kind: str) -> ConnectorDocument:
 
 def test_combined_connector_merges_and_dispatches_documents() -> None:
     repo_doc = _doc("octo/hello:README.md", "repo")
-    issue_doc = _doc("I_kwDO", "issue")
+    issue_doc = _doc("issue:I_kwDO", "issue")
     repo = FakeAdapter([repo_doc])
     issues = FakeAdapter([issue_doc])
     connector = GitHubKnowledgeConnector(repo_documents=repo, issue_documents=issues)  # type: ignore[arg-type]
 
     assert connector.list_documents() == (repo_doc, issue_doc)
     assert connector.fetch_document(repo_doc).content == "content for octo/hello:README.md"
-    assert connector.fetch_document(issue_doc).content == "content for I_kwDO"
+    assert connector.fetch_document(issue_doc).content == "content for issue:I_kwDO"
     assert repo.fetches == ["octo/hello:README.md"]
-    assert issues.fetches == ["I_kwDO"]
+    assert issues.fetches == ["issue:I_kwDO"]
 
 
 def test_combined_connector_never_returns_partial_listing() -> None:

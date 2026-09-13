@@ -889,11 +889,16 @@ def github_status(
         connection_state = "reauthorization_required"
     else:
         connection_state = "ready"
-    owner = github.owner if connection is None else connection.owner
-    repo = github.repo if connection is None else connection.repo
-    project_owner = github.project_owner if connection is None else connection.project_owner
+    owner = _coalesce_text(settings.github.owner, None if connection is None else connection.owner)
+    repo = _coalesce_text(settings.github.repo, None if connection is None else connection.repo)
+    project_owner = _coalesce_text(
+        settings.github.project_owner,
+        None if connection is None else connection.project_owner,
+    )
     project_number = (
-        github.project_number if connection is None else connection.project_number
+        settings.github.project_number
+        if settings.github.project_number is not None
+        else (None if connection is None else connection.project_number)
     )
     return GitHubStatus(
         configured=configured,
@@ -916,6 +921,23 @@ def github_status(
         connection_state=connection_state,
         sync_scope=_github_sync_scope(owner=owner, repo=repo),
     )
+
+
+def _coalesce_text(preferred: str | None, fallback: str | None) -> str | None:
+    if isinstance(preferred, str) and preferred.strip():
+        return preferred.strip()
+    if isinstance(fallback, str) and fallback.strip():
+        return fallback.strip()
+    return None
+
+
+def _github_reconcile_prefixes(github) -> frozenset[str]:
+    prefixes: set[str] = set()
+    if github.owner and github.repo:
+        prefixes.add(f"{github.owner}/{github.repo}:")
+    if github.project_owner and github.project_number is not None:
+        prefixes.add("issue:")
+    return frozenset(prefixes)
 
 
 def _github_document_count(
@@ -1272,6 +1294,8 @@ def start_github_oauth(
 ) -> str:
     """Issue CSRF state and return GitHub's authorization URL."""
     if not _github_oauth_ready(settings):
+        return _github_hub_redirect(settings, result="unconfigured")
+    if not (settings.github.owner and settings.github.repo):
         return _github_hub_redirect(settings, result="unconfigured")
     from infrastructure.connectors.github_oauth import authorization_url
 
@@ -1960,6 +1984,7 @@ def sync_github(
             ),
             reconcile_missing=True,
             reconcile_source_types=frozenset({SourceType.GITHUB}),
+            reconcile_source_id_prefixes=_github_reconcile_prefixes(settings.github),
             vector_store_factory=get_store,
         ).execute()
     except ConnectorError as error:
@@ -1994,49 +2019,104 @@ def sync_github_oauth(
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
     connection_store=None,
+    oauth_gateway=None,
 ) -> ConnectorSyncResponse:
     """Synchronize GitHub using the stored user OAuth grant."""
     from datetime import datetime, timezone
 
+    from infrastructure.connectors.github_oauth import (
+        GitHubOAuthError,
+        HttpGitHubOAuthGateway,
+    )
+
     tokens_store, connection = _require_github_grant(
         settings, connection_store=connection_store
+    )
+    gateway = (
+        oauth_gateway
+        if oauth_gateway is not None
+        else HttpGitHubOAuthGateway(settings.github_oauth)
+    )
+    access_token = connection.access_token
+    owner = _coalesce_text(settings.github.owner, connection.owner)
+    repo = _coalesce_text(settings.github.repo, connection.repo)
+    project_owner = _coalesce_text(
+        settings.github.project_owner, connection.project_owner
+    )
+    project_number = (
+        settings.github.project_number
+        if settings.github.project_number is not None
+        else connection.project_number
     )
     try:
         working_catalog = _resolve_catalog(
             settings, catalog=catalog, catalog_factory=catalog_factory
         )
-        oauth_settings = replace(
+        result = _run_github_oauth_sync(
             settings,
-            github=replace(
-                settings.github,
-                token=connection.access_token,
-                owner=connection.owner,
-                repo=connection.repo,
-                project_owner=connection.project_owner,
-                project_number=connection.project_number,
-            ),
-        )
-        connector = build_github_oauth_connector(
-            oauth_settings,
-            token=connection.access_token,
-        )
-        result = sync_github(
-            oauth_settings,
-            connector=connector,
+            access_token=access_token,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
             catalog=working_catalog,
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
         )
     except ConnectorSyncError as error:
-        if isinstance(error.__cause__, ConnectorAuthError):
+        if not isinstance(error.__cause__, ConnectorAuthError):
+            raise
+        if not connection.refresh_token:
             _mark_github_reauth(tokens_store, error)
-        raise
+        try:
+            grant = gateway.refresh(connection.refresh_token)
+        except GitHubOAuthError as refresh_error:
+            _mark_github_reauth(tokens_store, refresh_error)
+        access_token = grant.access_token
+        refresh_token = grant.refresh_token or connection.refresh_token
+        tokens_store.mutate(
+            lambda current: None
+            if current is None
+            else replace(
+                current,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                reauthorization_required=False,
+                owner=owner,
+                repo=repo,
+                project_owner=project_owner,
+                project_number=project_number,
+            )
+        )
+        try:
+            working_catalog = _resolve_catalog(
+                settings, catalog=catalog, catalog_factory=catalog_factory
+            )
+            result = _run_github_oauth_sync(
+                settings,
+                access_token=access_token,
+                owner=owner,
+                repo=repo,
+                project_owner=project_owner,
+                project_number=project_number,
+                catalog=working_catalog,
+                vector_store=vector_store,
+                vector_store_factory=vector_store_factory,
+            )
+        except ConnectorSyncError as retry_error:
+            if isinstance(retry_error.__cause__, ConnectorAuthError):
+                _mark_github_reauth(tokens_store, retry_error)
+            raise
     synced_at = datetime.now(timezone.utc).isoformat()
     tokens_store.mutate(
         lambda current: None
         if current is None
         else replace(
             current,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
             last_synced_at=synced_at,
             last_sync_new=result.ingested_count,
             last_sync_updated=result.updated_count,
@@ -2046,6 +2126,42 @@ def sync_github_oauth(
         )
     )
     return result
+
+
+def _run_github_oauth_sync(
+    settings: Settings,
+    *,
+    access_token: str,
+    owner: str | None,
+    repo: str | None,
+    project_owner: str | None,
+    project_number: int | None,
+    catalog: DocumentCatalog,
+    vector_store: VectorStore | None,
+    vector_store_factory: Callable[[], VectorStore] | None,
+) -> ConnectorSyncResponse:
+    oauth_settings = replace(
+        settings,
+        github=replace(
+            settings.github,
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+        ),
+    )
+    connector = build_github_oauth_connector(
+        oauth_settings,
+        token=access_token,
+    )
+    return sync_github(
+        oauth_settings,
+        connector=connector,
+        catalog=catalog,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
 
 
 def build_document_extractor() -> UploadedFileExtractor:

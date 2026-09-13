@@ -8,7 +8,10 @@ from domain.errors import ConnectorError
 from domain.knowledge import ConnectorDocument, SourceDocument
 from domain.ports import KnowledgeConnector
 from infrastructure.connectors.github.client import GitHubClient, GitHubConfigError, HttpGitHubClient
-from infrastructure.connectors.github.issue_documents import GitHubIssueDocuments
+from infrastructure.connectors.github.issue_documents import (
+    GitHubIssueConfig,
+    GitHubIssueDocuments,
+)
 from infrastructure.connectors.github.repo_documents import GitHubRepoConfig, GitHubRepoDocuments
 
 _MSG_REQUEST_FAILED = "The GitHub request failed."
@@ -45,6 +48,21 @@ class GitHubKnowledgeConnector:
                         max_size_bytes=int(getattr(settings, "max_file_bytes", 1_000_000)),
                     ),
                 )
+            project_owner = _setting_text(settings, "project_owner")
+            project_number = getattr(settings, "project_number", None)
+            if project_owner and isinstance(project_number, int):
+                project_node_id = client.resolve_project_v2_id(
+                    project_owner, project_number
+                )
+                issue_documents = GitHubIssueDocuments(
+                    client,
+                    GitHubIssueConfig(
+                        project_node_id=project_node_id,
+                        include_comments=bool(
+                            getattr(settings, "include_issue_comments", False)
+                        ),
+                    ),
+                )
             if repo_documents is None and issue_documents is None:
                 raise GitHubConnectorConfigError(_MSG_CONFIG)
         self._repo_documents = repo_documents
@@ -60,11 +78,11 @@ class GitHubKnowledgeConnector:
 
     def fetch_document(self, document: ConnectorDocument) -> SourceDocument:
         kind = document.extra.get("github_kind")
-        if kind == "repo" or (kind is None and ":" in document.source_id):
+        if kind == "repo" or (kind is None and ":" in document.source_id and not document.source_id.startswith("issue:")):
             if self._repo_documents is None:
                 raise ConnectorError(_MSG_REQUEST_FAILED)
             return self._repo_documents.fetch_document(document)
-        if kind == "issue" or kind is None:
+        if kind == "issue" or (kind is None and document.source_id.startswith("issue:")):
             if self._issue_documents is None:
                 raise ConnectorError(_MSG_REQUEST_FAILED)
             return self._issue_documents.fetch_document(document)

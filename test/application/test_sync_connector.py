@@ -166,6 +166,7 @@ def _use_case(
     factory: object | None = None,
     reconcile_missing: bool = False,
     reconcile_source_types: frozenset[str] = frozenset(),
+    reconcile_source_id_prefixes: frozenset[str] = frozenset(),
     vector_store_factory: object | None = None,
 ) -> SyncConnectorDocuments:
     ingest = ingest or RecordingIngest()
@@ -176,6 +177,7 @@ def _use_case(
         now=FixedClock(NOW),
         reconcile_missing=reconcile_missing,
         reconcile_source_types=reconcile_source_types,
+        reconcile_source_id_prefixes=reconcile_source_id_prefixes,
         vector_store_factory=vector_store_factory,
     )
 
@@ -905,4 +907,35 @@ def test_reconcile_requires_vector_store_factory() -> None:
             reconcile_missing=True,
             reconcile_source_types=frozenset({"github"}),
         )
+
+
+def test_reconcile_requires_non_empty_source_types() -> None:
+    with pytest.raises(ApplicationValidationError, match="reconcile_source_types"):
+        SyncConnectorDocuments(
+            connector=RecordingConnector(()),
+            catalog=InMemoryDocumentCatalog(),
+            ingest_factory=lambda: RecordingIngest(),
+            reconcile_missing=True,
+            vector_store_factory=lambda: RecordingVectorStore(),
+        )
+
+
+def test_reconcile_source_id_prefixes_limit_deletes() -> None:
+    kept_other_repo = _github_listed("other/repo:README.md", file_name="README.md")
+    gone = _github_listed("acme/docs:old.md", file_name="old.md")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(kept_other_repo))
+    catalog.upsert(_row(gone))
+    store = RecordingVectorStore()
+    _use_case(
+        RecordingConnector(()),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_source_id_prefixes=frozenset({"acme/docs:"}),
+        vector_store_factory=lambda: store,
+    ).execute()
+    assert catalog.get(kept_other_repo.reference) is not None
+    assert catalog.get(gone.reference) is None
+    assert store.delete_calls == [gone.reference]
 

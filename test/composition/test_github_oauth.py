@@ -35,12 +35,20 @@ from test.document_doubles import InMemoryDocumentCatalog
 class FakeGateway:
     def __init__(self) -> None:
         self.revoked: list[str] = []
+        self.refresh_calls: list[str] = []
 
     def exchange_code(self, code: str) -> GitHubOAuthGrant:
         assert code == "code"
         return GitHubOAuthGrant(
             access_token="gho-access-secret",
             refresh_token="ghr-refresh-secret",
+        )
+
+    def refresh(self, refresh_token: str) -> GitHubOAuthGrant:
+        self.refresh_calls.append(refresh_token)
+        return GitHubOAuthGrant(
+            access_token="gho-refreshed-secret",
+            refresh_token=refresh_token,
         )
 
     def fetch_account_login(self, _access_token: str) -> str | None:
@@ -228,3 +236,66 @@ def test_oauth_sync_marks_reauth_on_auth_error(
         )
 
     assert tokens.load().reauthorization_required is True
+
+
+def test_oauth_sync_refreshes_token_then_retries(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.save(
+        GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token="ghr-refresh-secret",
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    seen_tokens: list[str] = []
+    calls = {"n": 0}
+
+    def flaky_sync(sync_settings, **_kwargs):
+        calls["n"] += 1
+        seen_tokens.append(sync_settings.github.token or "")
+        if calls["n"] == 1:
+            raise composition_container.ConnectorSyncError(
+                "The GitHub connector sync failed."
+            ) from ConnectorAuthError("expired")
+        return ConnectorSyncResponse(
+            outcomes=(ConnectorSyncOutcome("ok", ConnectorSyncStatus.INGESTED, 1),)
+        )
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_github_oauth_connector",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(composition_container, "sync_github", flaky_sync)
+    gateway = FakeGateway()
+
+    result = sync_github_oauth(
+        settings,
+        catalog=InMemoryDocumentCatalog(),
+        vector_store=object(),  # type: ignore[arg-type]
+        connection_store=tokens,
+        oauth_gateway=gateway,
+    )
+
+    assert result.ingested_count == 1
+    assert gateway.refresh_calls == ["ghr-refresh-secret"]
+    assert seen_tokens == ["gho-access-secret", "gho-refreshed-secret"]
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.access_token == "gho-refreshed-secret"
+    assert stored.owner == "octo"
+    assert stored.repo == "repo"
+    assert stored.reauthorization_required is False

@@ -53,6 +53,9 @@ class SyncConnectorDocuments:
             were not listed. Defaults to False (Drive semantics).
         reconcile_source_types (frozenset[str]): Source types eligible for
             reconcile. Empty by default; required non-empty when reconcile is on.
+        reconcile_source_id_prefixes (frozenset[str]): When non-empty, only
+            rows whose ``source_id`` starts with one of these prefixes are
+            eligible for reconcile (narrower than source type alone).
         vector_store_factory (Callable[[], VectorStore] | None): Lazy vector
             store getter used only for reconcile deletes. Required when
             ``reconcile_missing`` is True.
@@ -67,11 +70,16 @@ class SyncConnectorDocuments:
         *,
         reconcile_missing: bool = False,
         reconcile_source_types: frozenset[str] = frozenset(),
+        reconcile_source_id_prefixes: frozenset[str] = frozenset(),
         vector_store_factory: Callable[[], VectorStore] | None = None,
     ) -> None:
         if reconcile_missing and vector_store_factory is None:
             raise ApplicationValidationError(
                 "vector_store_factory is required when reconcile_missing is True"
+            )
+        if reconcile_missing and not reconcile_source_types:
+            raise ApplicationValidationError(
+                "reconcile_source_types must be non-empty when reconcile_missing is True"
             )
         self._connector = connector
         self._catalog = catalog
@@ -80,6 +88,7 @@ class SyncConnectorDocuments:
         self._shared_ingest: IngestKnowledge | None = None
         self._reconcile_missing = reconcile_missing
         self._reconcile_source_types = reconcile_source_types
+        self._reconcile_source_id_prefixes = reconcile_source_id_prefixes
         self._vector_store_factory = vector_store_factory
 
     def execute(self) -> ConnectorSyncResponse:
@@ -191,12 +200,20 @@ class SyncConnectorDocuments:
         if any(outcome.status is ConnectorSyncStatus.FAILED for outcome in outcomes):
             return ()
         listed = {document.reference for document in documents}
+        prefixes = self._reconcile_source_id_prefixes
         missing = sorted(
             (
                 row
                 for reference, row in existing.items()
                 if reference.source_type in self._reconcile_source_types
                 and reference not in listed
+                and (
+                    not prefixes
+                    or any(
+                        reference.source_id.startswith(prefix)
+                        for prefix in prefixes
+                    )
+                )
             ),
             key=lambda row: row.reference.source_id,
         )
