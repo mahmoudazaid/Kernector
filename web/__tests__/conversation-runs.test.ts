@@ -1,0 +1,159 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api/errors";
+import type { ChatAskResponse } from "@/lib/api/chat";
+import { setActiveConversationId } from "@/lib/session/active-session";
+import {
+  createConversation,
+  getConversation,
+  listConversations,
+  resetConversationsSnapshotForTests,
+} from "@/lib/session/conversations";
+import {
+  hasLiveConversationRun,
+  interruptStalePendingFromCoordinator,
+  resetLiveConversationRunsForTests,
+  startConversationRun,
+} from "@/lib/session/conversation-runs";
+
+const SUCCESS: ChatAskResponse = {
+  answer: "Grounded answer.",
+  citations: [],
+  tools_used: [],
+  run: {
+    request_id: "req-1",
+    outcome: "success",
+    latency_ms: 10,
+    model: "test",
+    hit_count: 0,
+    citation_count: 0,
+    tools: [],
+  },
+  tool_run: null,
+};
+
+describe("conversation run coordinator", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    resetConversationsSnapshotForTests();
+    resetLiveConversationRunsForTests();
+    setActiveConversationId(null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("appends a late success to the originating conversation and sets unread when not open", async () => {
+    const created = createConversation({
+      title: "A",
+      messages: [{ id: "u1", role: "user", content: "A question" }],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+    });
+    setActiveConversationId(null);
+
+    let resolveAsk: (value: ChatAskResponse) => void = () => undefined;
+    const ask = vi.fn(
+      () =>
+        new Promise<ChatAskResponse>((resolve) => {
+          resolveAsk = resolve;
+        }),
+    );
+
+    const done = startConversationRun({
+      conversationId: created.id,
+      query: "A question",
+      history: [],
+      baseUrl: "http://127.0.0.1:8000",
+      ask,
+    });
+
+    expect(hasLiveConversationRun(created.id)).toBe(true);
+    expect(getConversation(created.id)?.runStatus).toBe("pending");
+
+    resolveAsk(SUCCESS);
+    await done;
+
+    const conversation = getConversation(created.id);
+    expect(conversation?.runStatus).toBe("idle");
+    expect(conversation?.unread).toBe(true);
+    expect(conversation?.requestStartedAt).toBeNull();
+    expect(conversation?.messages.some((m) => m.role === "assistant")).toBe(
+      true,
+    );
+    expect(hasLiveConversationRun(created.id)).toBe(false);
+    expect(listConversations()).toHaveLength(1);
+  });
+
+  it("does not set unread when the originating conversation is still active", async () => {
+    const created = createConversation({
+      title: "A",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+    });
+    setActiveConversationId(created.id);
+
+    const ask = vi.fn().mockResolvedValue(SUCCESS);
+    await startConversationRun({
+      conversationId: created.id,
+      query: "hi",
+      history: [],
+      baseUrl: "http://127.0.0.1:8000",
+      ask,
+    });
+
+    expect(getConversation(created.id)?.unread).toBe(false);
+    expect(getConversation(created.id)?.runStatus).toBe("idle");
+  });
+
+  it("marks failed on ask error without creating another conversation", async () => {
+    const created = createConversation({
+      title: "A",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+    });
+
+    const ask = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 502,
+        title: "Provider error",
+        detail: "boom",
+        code: "provider_error",
+      }),
+    );
+
+    await startConversationRun({
+      conversationId: created.id,
+      query: "hi",
+      history: [],
+      baseUrl: "http://127.0.0.1:8000",
+      ask,
+    });
+
+    expect(listConversations()).toHaveLength(1);
+    expect(getConversation(created.id)?.runStatus).toBe("failed");
+    expect(getConversation(created.id)?.unread).toBe(false);
+    expect(
+      getConversation(created.id)?.messages.some((m) =>
+        m.content.includes("boom"),
+      ),
+    ).toBe(true);
+  });
+
+  it("interruptStalePendingFromCoordinator fails pending without a live task", () => {
+    const stale = createConversation({
+      title: "stale",
+      messages: [],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: 1,
+    });
+    interruptStalePendingFromCoordinator();
+    expect(getConversation(stale.id)?.runStatus).toBe("failed");
+  });
+});

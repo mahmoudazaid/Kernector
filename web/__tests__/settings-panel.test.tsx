@@ -4,15 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
-  CHAT_MESSAGES_STORAGE_KEY,
   loadRuntimeSettings,
   RUNTIME_SETTINGS_STORAGE_KEY,
 } from "@/lib/settings/runtime-settings-storage";
 import {
   ACTIVE_SESSION_STORAGE_KEY,
   loadActiveSession,
-  saveActiveSession,
+  setActiveConversationId,
 } from "@/lib/session/active-session";
+import {
+  CONVERSATIONS_STORAGE_KEY,
+  createConversation,
+  getConversation,
+} from "@/lib/session/conversations";
 
 const CATALOG: RuntimeSettingsResponse = {
   providers: ["openrouter", "ollama"],
@@ -382,16 +386,16 @@ describe("SettingsPanel", () => {
     expect(loadCatalog).toHaveBeenCalledTimes(2);
   });
 
-  it("leaves the active session untouched when provider/model change", async () => {
+  it("leaves conversation storage untouched when provider/model change", async () => {
     const user = userEvent.setup();
-    const session = {
+    const created = createConversation({
+      title: "keep this turn",
+      messages: [{ id: "1", role: "user", content: "keep this turn" }],
       draft: "keep this draft",
-      messages: [{ id: "1", role: "user" as const, content: "keep this turn" }],
-      updatedAt: 1,
-    };
-    saveActiveSession(session);
+    });
+    setActiveConversationId(created.id);
     const sessionBefore = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
-    const transcriptBefore = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
+    const conversationsBefore = localStorage.getItem(CONVERSATIONS_STORAGE_KEY);
 
     render(
       <SettingsPanel
@@ -411,13 +415,13 @@ describe("SettingsPanel", () => {
     expect(localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY)).toBe(
       sessionBefore,
     );
-    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBe(
-      transcriptBefore,
+    expect(localStorage.getItem(CONVERSATIONS_STORAGE_KEY)).toBe(
+      conversationsBefore,
     );
-    expect(loadActiveSession()).toEqual({
-      draft: session.draft,
-      messages: session.messages,
-      updatedAt: expect.any(Number),
+    expect(loadActiveSession()).toEqual({ activeConversationId: created.id });
+    expect(getConversation(created.id)).toMatchObject({
+      draft: "keep this draft",
+      messages: [{ id: "1", role: "user", content: "keep this turn" }],
     });
     expect(localStorage.getItem(RUNTIME_SETTINGS_STORAGE_KEY)).toBeTruthy();
   });
