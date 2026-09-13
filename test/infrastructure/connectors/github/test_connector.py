@@ -94,6 +94,7 @@ def test_http_client_walks_project_pagination_fully() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode("utf-8"))
         assert "comments(first: 100)" in body["query"]
+        assert "... on Discussion" not in body["query"]
         calls.append(body["variables"])
         after = body["variables"]["after"]
         return httpx.Response(

@@ -512,7 +512,6 @@ _ISSUE_CONTENT_FIELDS = """
               }
             }
             ... on PullRequest { id }
-            ... on Discussion { id }
             ... on DraftIssue { id }
 """
 
