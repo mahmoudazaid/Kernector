@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from domain.errors import ConnectorError
+from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
 from domain.knowledge import ConnectorDocument, SourceDocument
 from domain.ports import KnowledgeConnector
 from infrastructure.connectors.github.client import GitHubClient, GitHubConfigError, HttpGitHubClient
@@ -55,11 +55,12 @@ class GitHubKnowledgeConnector:
                     project_node_id = client.resolve_project_v2_id(
                         project_owner, project_number
                     )
+                except (ConnectorAuthError, ConnectorUnavailableError):
+                    raise
                 except ConnectorError as error:
-                    # Project settings are configuration for the Issues half.
-                    # Map to ConfigError so Hub/CLI report configuration_error
-                    # instead of a generic sync failure; leave repo_documents
-                    # intact for callers that recover from ConfigurationError.
+                    # Genuine miss / malformed project response — configuration.
+                    # Auth and availability stay typed so OAuth refresh and
+                    # retryable sync handlers can still run.
                     raise GitHubConnectorConfigError(_MSG_CONFIG) from error
                 issue_documents = GitHubIssueDocuments(
                     client,

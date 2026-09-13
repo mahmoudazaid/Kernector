@@ -313,10 +313,38 @@ def test_resolve_project_v2_id_accepts_forbidden_on_org_then_user() -> None:
 
 
 def test_settings_project_lookup_failure_is_config_error() -> None:
-    from dataclasses import dataclass
-
     from domain.errors import ConnectorError
     from infrastructure.connectors.github.connector import GitHubConnectorConfigError
+
+    with pytest.raises(GitHubConnectorConfigError):
+        GitHubKnowledgeConnector(
+            _project_settings(),
+            client=_lookup_client(ConnectorError("The GitHub request failed.")),  # type: ignore[arg-type]
+        )
+
+
+def test_settings_project_lookup_auth_error_propagates() -> None:
+    from domain.errors import ConnectorAuthError
+
+    with pytest.raises(ConnectorAuthError, match="expired"):
+        GitHubKnowledgeConnector(
+            _project_settings(),
+            client=_lookup_client(ConnectorAuthError("expired")),  # type: ignore[arg-type]
+        )
+
+
+def test_settings_project_lookup_unavailable_error_propagates() -> None:
+    from domain.errors import ConnectorUnavailableError
+
+    with pytest.raises(ConnectorUnavailableError, match="rate limited"):
+        GitHubKnowledgeConnector(
+            _project_settings(),
+            client=_lookup_client(ConnectorUnavailableError("rate limited")),  # type: ignore[arg-type]
+        )
+
+
+def _project_settings() -> object:
+    from dataclasses import dataclass
 
     @dataclass
     class Settings:
@@ -333,9 +361,12 @@ def test_settings_project_lookup_failure_is_config_error() -> None:
         include_issue_comments: bool = False
         page_size: int = 100
 
+    return Settings()
+
+
+def _lookup_client(error: BaseException) -> object:
     class FailingClient:
         def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
-            raise ConnectorError("The GitHub request failed.")
+            raise error
 
-    with pytest.raises(GitHubConnectorConfigError):
-        GitHubKnowledgeConnector(Settings(), client=FailingClient())  # type: ignore[arg-type]
+    return FailingClient()
