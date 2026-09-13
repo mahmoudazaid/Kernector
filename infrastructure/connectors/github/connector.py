@@ -51,9 +51,16 @@ class GitHubKnowledgeConnector:
             project_owner = _setting_text(settings, "project_owner")
             project_number = getattr(settings, "project_number", None)
             if project_owner and isinstance(project_number, int):
-                project_node_id = client.resolve_project_v2_id(
-                    project_owner, project_number
-                )
+                try:
+                    project_node_id = client.resolve_project_v2_id(
+                        project_owner, project_number
+                    )
+                except ConnectorError as error:
+                    # Project settings are configuration for the Issues half.
+                    # Map to ConfigError so Hub/CLI report configuration_error
+                    # instead of a generic sync failure; leave repo_documents
+                    # intact for callers that recover from ConfigurationError.
+                    raise GitHubConnectorConfigError(_MSG_CONFIG) from error
                 issue_documents = GitHubIssueDocuments(
                     client,
                     GitHubIssueConfig(

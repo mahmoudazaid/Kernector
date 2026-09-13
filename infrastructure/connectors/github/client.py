@@ -146,11 +146,18 @@ class HttpGitHubClient:
             after = end_cursor
 
     def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
-        payload = self._graphql(
-            _PROJECT_V2_LOOKUP_QUERY,
-            {"login": owner_login, "number": number},
-        )
-        for root in ("organization", "user"):
+        # Query org and user separately: a login is only one of them, and a
+        # combined document always carries a top-level NOT_FOUND/FORBIDDEN
+        # error for the other root even when the project id is present.
+        for query, root in (
+            (_PROJECT_V2_ORG_LOOKUP_QUERY, "organization"),
+            (_PROJECT_V2_USER_LOOKUP_QUERY, "user"),
+        ):
+            payload = self._graphql(
+                query,
+                {"login": owner_login, "number": number},
+                soft_lookup_miss=True,
+            )
             owner = _optional_nested_mapping(payload, ("data", root))
             if owner is None:
                 continue
@@ -177,14 +184,25 @@ class HttpGitHubClient:
             raise ConnectorError(_MSG_REQUEST_FAILED)
         return payload
 
-    def _graphql(self, query: str, variables: Mapping[str, object]) -> Mapping[str, object]:
+    def _graphql(
+        self,
+        query: str,
+        variables: Mapping[str, object],
+        *,
+        soft_lookup_miss: bool = False,
+    ) -> Mapping[str, object]:
         try:
             response = self._client.post("/graphql", json={"query": query, "variables": dict(variables)})
             response.raise_for_status()
             payload = response.json()
         except Exception as error:
             raise _map_httpx_error(error, self._httpx) from error
-        if not isinstance(payload, Mapping) or payload.get("errors"):
+        if not isinstance(payload, Mapping):
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        errors = payload.get("errors")
+        if errors:
+            if soft_lookup_miss and _is_soft_lookup_miss(errors):
+                return payload
             raise ConnectorError(_MSG_REQUEST_FAILED)
         return payload
 
@@ -230,16 +248,36 @@ def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorErr
     return ConnectorError(_MSG_REQUEST_FAILED)
 
 
-_PROJECT_V2_LOOKUP_QUERY = """
-query KernectorProjectLookup($login: String!, $number: Int!) {
+_PROJECT_V2_ORG_LOOKUP_QUERY = """
+query KernectorProjectOrgLookup($login: String!, $number: Int!) {
   organization(login: $login) {
     projectV2(number: $number) { id }
   }
+}
+"""
+
+_PROJECT_V2_USER_LOOKUP_QUERY = """
+query KernectorProjectUserLookup($login: String!, $number: Int!) {
   user(login: $login) {
     projectV2(number: $number) { id }
   }
 }
 """
+
+
+def _is_soft_lookup_miss(errors: object) -> bool:
+    """Return True when every GraphQL error is a login/permission miss."""
+    if not isinstance(errors, Sequence) or isinstance(errors, (str, bytes)):
+        return False
+    if not errors:
+        return False
+    for error in errors:
+        if not isinstance(error, Mapping):
+            return False
+        error_type = error.get("type")
+        if error_type not in {"NOT_FOUND", "FORBIDDEN"}:
+            return False
+    return True
 
 _PROJECT_V2_ITEMS_QUERY = """
 query KernectorProjectItems($projectId: ID!, $first: Int!, $after: String) {

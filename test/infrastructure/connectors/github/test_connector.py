@@ -203,3 +203,139 @@ def test_http_client_decodes_blob_content() -> None:
     )
 
     assert client.get_blob_content("octo", "hello", "blob-1") == b"hello"
+
+
+def test_resolve_project_v2_id_accepts_user_owned_partial_error() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        query = body["query"]
+        calls.append("organization" if "organization" in query else "user")
+        if "organization" in query:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {"organization": None},
+                    "errors": [
+                        {
+                            "type": "NOT_FOUND",
+                            "path": ["organization"],
+                            "message": "Could not resolve to an Organization with the login of 'ada'.",
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"data": {"user": {"projectV2": {"id": "PVT_kwHOUserOwned"}}}},
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.resolve_project_v2_id("ada", 3) == "PVT_kwHOUserOwned"
+    assert calls == ["organization", "user"]
+
+
+def test_resolve_project_v2_id_accepts_org_owned_partial_error() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        query = body["query"]
+        calls.append("organization" if "organization" in query else "user")
+        if "organization" in query:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "organization": {"projectV2": {"id": "PVT_kwHOOrgOwned"}}
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": {"user": None},
+                "errors": [
+                    {
+                        "type": "NOT_FOUND",
+                        "path": ["user"],
+                        "message": "Could not resolve to a User with the login of 'acme'.",
+                    }
+                ],
+            },
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.resolve_project_v2_id("acme", 7) == "PVT_kwHOOrgOwned"
+    assert calls == ["organization"]
+
+
+def test_resolve_project_v2_id_accepts_forbidden_on_org_then_user() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        if "organization" in body["query"]:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {"organization": None},
+                    "errors": [
+                        {
+                            "type": "FORBIDDEN",
+                            "path": ["organization"],
+                            "message": "Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions.",
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"data": {"user": {"projectV2": {"id": "PVT_kwHOFallback"}}}},
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.resolve_project_v2_id("acme", 1) == "PVT_kwHOFallback"
+
+
+def test_settings_project_lookup_failure_is_config_error() -> None:
+    from dataclasses import dataclass
+
+    from domain.errors import ConnectorError
+    from infrastructure.connectors.github.connector import GitHubConnectorConfigError
+
+    @dataclass
+    class Settings:
+        token: str = SECRET
+        owner: str = "octo"
+        repo: str = "hello"
+        ref: str = "HEAD"
+        include_paths: tuple[str, ...] = ()
+        exclude_paths: tuple[str, ...] = ()
+        extensions: tuple[str, ...] = (".md",)
+        max_file_bytes: int = 1_000_000
+        project_owner: str = "ada"
+        project_number: int = 1
+        include_issue_comments: bool = False
+        page_size: int = 100
+
+    class FailingClient:
+        def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+            raise ConnectorError("The GitHub request failed.")
+
+    with pytest.raises(GitHubConnectorConfigError):
+        GitHubKnowledgeConnector(Settings(), client=FailingClient())  # type: ignore[arg-type]
