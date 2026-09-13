@@ -82,13 +82,20 @@ def apply_migrations(
                 f"unsupported schema version {recorded}; latest shipped is {latest}"
             )
         for version, sql in migrations:
+            # Always re-read: a peer may have advanced (or we may have been
+            # waiting on BEGIN IMMEDIATE while peers finished later versions).
+            recorded = _read_version(connection)
             if version <= recorded:
                 continue
             try:
                 _apply_one(connection, version, sql)
-            except sqlite3.Error:
+            except sqlite3.Error as error:
                 recorded = _read_version(connection)
                 if recorded >= version:
+                    continue
+                if _is_duplicate_column_error(error):
+                    # Peer added the column; never downgrade schema_version.
+                    _bump_schema_version(connection, version)
                     continue
                 raise
     except CatalogError:
@@ -113,6 +120,20 @@ def _read_version(connection: sqlite3.Connection) -> int:
     return int(row[0])
 
 
+def _is_duplicate_column_error(error: BaseException) -> bool:
+    return "duplicate column name" in str(error).lower()
+
+
+def _bump_schema_version(connection: sqlite3.Connection, version: int) -> None:
+    if connection.in_transaction:
+        connection.rollback()
+    connection.execute(
+        "UPDATE schema_version SET version = ? WHERE version < ?",
+        (version, version),
+    )
+    connection.commit()
+
+
 @functools.lru_cache(maxsize=1)
 def _load_shipped_migrations() -> tuple[tuple[int, str], ...]:
     return tuple(_load_migrations(_SHIPPED_MIGRATIONS))
@@ -134,17 +155,20 @@ def _load_migrations(directory: Path) -> list[tuple[int, str]]:
 def _apply_one(connection: sqlite3.Connection, version: int, sql: str) -> None:
     if connection.in_transaction:
         connection.rollback()
-    # Keep DDL and schema_version in one executescript transaction.
-    # executescript COMMITs any pending work, then runs and COMMITs the script.
-    # A separate UPDATE after executescript opens a race where another connection
-    # can observe the new column while schema_version is still behind.
+    # Keep DDL and schema_version in one transaction, then COMMIT explicitly.
+    # executescript with an inner BEGIN leaves the transaction open; without
+    # commit(), the next migration's rollback() would undo this version.
+    # WHERE version < N prevents a late lower migration from downgrading after
+    # peers already applied a higher version.
     script = (
         f"BEGIN IMMEDIATE;\n"
         f"{sql.rstrip()}\n"
-        f"UPDATE schema_version SET version = {int(version)};\n"
+        f"UPDATE schema_version SET version = {int(version)} "
+        f"WHERE version < {int(version)};\n"
     )
     try:
         connection.executescript(script)
+        connection.commit()
     except Exception:
         connection.rollback()
         raise
