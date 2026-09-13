@@ -15,7 +15,6 @@ import {
   type AskChatOptions,
   type ChatAskResponse,
 } from "@/lib/api/chat";
-import { ApiError } from "@/lib/api/errors";
 import type {
   GetRuntimeSettingsOptions,
   RuntimeSettingsResponse,
@@ -27,8 +26,6 @@ import {
 import { runDetailLines } from "@/lib/chat/run-details";
 import {
   appendUserMessage,
-  applyTurnResult,
-  classifyFailure,
   historyForModel,
   seedIds,
   type ChatMessage,
@@ -40,12 +37,17 @@ import {
   loadRuntimeSettings,
   type StoredChatMessage,
 } from "@/lib/settings/runtime-settings-storage";
+import { setActiveConversationId } from "@/lib/session/active-session";
 import {
-  loadActiveSession,
-  saveActiveSession,
-  saveActiveSessionDraft,
-  subscribeActiveSession,
-} from "@/lib/session/active-session";
+  createConversation,
+  deleteConversation,
+  getConversation,
+  migrateLegacyTranscripts,
+  subscribeConversations,
+  titleFromMessages,
+  updateConversation,
+} from "@/lib/session/conversations";
+import { startConversationRun } from "@/lib/session/conversation-runs";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
 const SEND_ICON = (
@@ -74,10 +76,26 @@ const DRAFT_SAVE_DEBOUNCE_MS = 300;
 
 export type ChatPanelProps = {
   apiBaseUrl: string;
+  /** Bound conversation; `null`/`undefined` = empty `/chat` draft. */
+  conversationId?: string | null;
+  /**
+   * `landing` — empty composer only (never shows a transcript).
+   * `conversation` — bound thread transcript + composer.
+   */
+  variant?: "landing" | "conversation";
+  /** Called after the first turn creates a conversation on `/chat`. */
+  onConversationCreated?: (id: string) => void;
+  /** Called when a brand-new conversation is discarded (e.g. rejected query). */
+  onConversationClosed?: () => void;
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
   loadSettings?: (
     options: GetRuntimeSettingsOptions,
   ) => Promise<RuntimeSettingsResponse>;
+};
+
+type CloseHandoffNotice = {
+  draft: string;
+  message: string;
 };
 
 function CitationsBlock({ citations }: { citations: Citation[] }) {
@@ -299,8 +317,8 @@ function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
   }));
 }
 
-function fromPersisted(raw: StoredChatMessage[]): ChatMessage[] {
-  return raw.map((message) => ({
+function fromPersisted(messages: StoredChatMessage[]): ChatMessage[] {
+  return messages.map((message) => ({
     id: message.id,
     role: message.role,
     content: message.content,
@@ -312,15 +330,100 @@ function fromPersisted(raw: StoredChatMessage[]): ChatMessage[] {
   }));
 }
 
+type ConversationUiState = {
+  boundId: string | null;
+  messages: ChatMessage[];
+  draft: string;
+  sending: boolean;
+  hydrated: boolean;
+};
+
+/** First-paint state — never reads localStorage (SSR/hydration safe). */
+function mountConversationUiState(
+  conversationId: string | null,
+  isLanding: boolean,
+): ConversationUiState {
+  if (isLanding) {
+    return {
+      boundId: null,
+      messages: [],
+      draft: "",
+      sending: false,
+      hydrated: true,
+    };
+  }
+  return {
+    boundId: conversationId,
+    messages: [],
+    draft: "",
+    sending: false,
+    hydrated: false,
+  };
+}
+
+/** Client-only re-seed when the same ChatPanel instance changes route. */
+function readConversationUiState(
+  conversationId: string | null,
+  isLanding: boolean,
+): ConversationUiState {
+  if (isLanding) {
+    return {
+      boundId: null,
+      messages: [],
+      draft: "",
+      sending: false,
+      hydrated: true,
+    };
+  }
+  if (!conversationId) {
+    return {
+      boundId: null,
+      messages: [],
+      draft: "",
+      sending: false,
+      hydrated: true,
+    };
+  }
+  const conversation = getConversation(conversationId);
+  if (!conversation) {
+    return {
+      boundId: conversationId,
+      messages: [],
+      draft: "",
+      sending: false,
+      hydrated: true,
+    };
+  }
+  seedIds(conversation.messages);
+  return {
+    boundId: conversationId,
+    messages: fromPersisted(conversation.messages),
+    draft: conversation.draft,
+    sending: conversation.runStatus === "pending",
+    hydrated: true,
+  };
+}
+
 export function ChatPanel({
   apiBaseUrl,
+  conversationId = null,
+  variant = conversationId ? "conversation" : "landing",
+  onConversationCreated,
+  onConversationClosed,
   ask = askChat,
   loadSettings,
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [hydrated, setHydrated] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  const isLanding = variant === "landing";
+  const bootRef = useRef<ConversationUiState | null>(null);
+  if (bootRef.current === null) {
+    bootRef.current = mountConversationUiState(conversationId, isLanding);
+  }
+  const boot = bootRef.current;
+  const [boundId, setBoundId] = useState<string | null>(boot.boundId);
+  const [messages, setMessages] = useState<ChatMessage[]>(boot.messages);
+  const [hydrated, setHydrated] = useState(boot.hydrated);
+  const [draft, setDraft] = useState(boot.draft);
+  const [sending, setSending] = useState(boot.sending);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const {
@@ -332,106 +435,219 @@ export function ChatPanel({
   const maxInputLength = catalog?.constraints.max_input_length ?? null;
 
   const composerTouchedRef = useRef(false);
-  const sessionUpdatedAtRef = useRef(0);
-  const turnGenerationRef = useRef(0);
   const skipNextPersistRef = useRef(false);
   const draftRef = useRef(draft);
+  const boundIdRef = useRef(boundId);
+  const onCreatedRef = useRef(onConversationCreated);
+  const onClosedRef = useRef(onConversationClosed);
+  /** Survives close→landing so draft/error are not wiped by route sync. */
+  const closeHandoffRef = useRef<CloseHandoffNotice | null>(null);
+  const routeKey = isLanding ? "landing" : (conversationId ?? "none");
+  const [routeStateKey, setRouteStateKey] = useState(routeKey);
+  if (routeKey !== routeStateKey) {
+    // Keep transcript/pending in sync on the same ChatPanel instance when the
+    // layout shell navigates `/chat` ↔ `/chat/[id]` without remounting.
+    const next = readConversationUiState(conversationId, isLanding);
+    const handoff = isLanding ? closeHandoffRef.current : null;
+    if (handoff) {
+      closeHandoffRef.current = null;
+    }
+    setRouteStateKey(routeKey);
+    setBoundId(next.boundId);
+    setMessages(next.messages);
+    setSending(next.sending);
+    setHydrated(next.hydrated);
+    setUnavailable(false);
+    if (handoff) {
+      setDraft(handoff.draft);
+      setInlineError(handoff.message);
+      composerTouchedRef.current = true;
+    } else {
+      setDraft(next.draft);
+      setInlineError(null);
+      composerTouchedRef.current = false;
+    }
+  }
 
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
 
   useEffect(() => {
-    const session = loadActiveSession();
-    seedIds(session.messages);
-    sessionUpdatedAtRef.current = session.updatedAt;
-    setMessages((current) =>
-      current.length ? current : fromPersisted(session.messages),
-    );
-    if (!composerTouchedRef.current) {
-      setDraft(session.draft);
-    }
-    setHydrated(true);
-  }, []);
+    boundIdRef.current = boundId;
+  }, [boundId]);
 
   useEffect(() => {
-    return subscribeActiveSession(() => {
-      const session = loadActiveSession();
-      if (session.updatedAt <= sessionUpdatedAtRef.current) {
-        return;
-      }
-      seedIds(session.messages);
-      sessionUpdatedAtRef.current = session.updatedAt;
-      setMessages(fromPersisted(session.messages));
-      if (!composerTouchedRef.current) {
-        setDraft(session.draft);
-      }
-    });
-  }, []);
+    onCreatedRef.current = onConversationCreated;
+  }, [onConversationCreated]);
 
-  function adoptSessionStamp(stamp: number | null): void {
-    if (stamp !== null) {
-      sessionUpdatedAtRef.current = stamp;
+  useEffect(() => {
+    onClosedRef.current = onConversationClosed;
+  }, [onConversationClosed]);
+
+  useEffect(() => {
+    if (isLanding) {
+      // Landing never hydrates a transcript. Legacy migrate may still create
+      // a conversation and navigate via onConversationCreated.
+      const migrated = migrateLegacyTranscripts();
+      if (migrated.migrated && migrated.conversationId) {
+        setActiveConversationId(migrated.conversationId);
+        onCreatedRef.current?.(migrated.conversationId);
+      }
+      setBoundId(null);
+      setMessages([]);
+      setHydrated(true);
       return;
     }
-    const session = loadActiveSession();
-    seedIds(session.messages);
-    sessionUpdatedAtRef.current = session.updatedAt;
-    skipNextPersistRef.current = true;
-    setMessages(fromPersisted(session.messages));
-    if (!composerTouchedRef.current) {
-      setDraft(session.draft);
+
+    const migrated = migrateLegacyTranscripts();
+    if (migrated.migrated && migrated.conversationId && !conversationId) {
+      setActiveConversationId(migrated.conversationId);
+      onCreatedRef.current?.(migrated.conversationId);
+      setBoundId(migrated.conversationId);
+      const conversation = getConversation(migrated.conversationId);
+      if (conversation) {
+        seedIds(conversation.messages);
+        setMessages(fromPersisted(conversation.messages));
+        setSending(conversation.runStatus === "pending");
+        if (!composerTouchedRef.current) {
+          setDraft(conversation.draft);
+        }
+      }
+      setHydrated(true);
+      return;
     }
+
+    if (hydrated && conversationId && conversationId === boundIdRef.current) {
+      setActiveConversationId(conversationId);
+      return;
+    }
+
+    setBoundId(conversationId);
+    if (conversationId) {
+      setActiveConversationId(conversationId);
+      const conversation = getConversation(conversationId);
+      if (conversation) {
+        seedIds(conversation.messages);
+        skipNextPersistRef.current = true;
+        setMessages(fromPersisted(conversation.messages));
+        setSending(conversation.runStatus === "pending");
+        if (!composerTouchedRef.current) {
+          setDraft(conversation.draft);
+        }
+      } else {
+        setMessages([]);
+        setSending(false);
+        if (!composerTouchedRef.current) {
+          setDraft("");
+        }
+      }
+    } else {
+      setActiveConversationId(null);
+      setMessages([]);
+      setSending(false);
+      if (!composerTouchedRef.current) {
+        setDraft("");
+      }
+    }
+    setHydrated(true);
+  }, [conversationId, hydrated, isLanding]);
+
+  useEffect(() => {
+    if (isLanding) {
+      return;
+    }
+    return subscribeConversations(() => {
+      const id = boundIdRef.current;
+      if (!id) {
+        return;
+      }
+      const conversation = getConversation(id);
+      if (!conversation) {
+        setMessages([]);
+        setSending(false);
+        if (!composerTouchedRef.current) {
+          setDraft("");
+        }
+        return;
+      }
+      seedIds(conversation.messages);
+      skipNextPersistRef.current = true;
+      setMessages(fromPersisted(conversation.messages));
+      setSending(conversation.runStatus === "pending");
+      if (!composerTouchedRef.current) {
+        setDraft(conversation.draft);
+      }
+    });
+  }, [isLanding]);
+
+  function persistBound(
+    id: string,
+    nextMessages: ChatMessage[],
+    nextDraft: string,
+  ): void {
+    updateConversation(id, {
+      messages: toPersisted(nextMessages),
+      draft: nextDraft,
+    });
   }
 
   useEffect(() => {
-    if (!hydrated) {
+    if (isLanding || !hydrated || !boundId) {
       return;
     }
     if (skipNextPersistRef.current) {
       skipNextPersistRef.current = false;
       return;
     }
-    adoptSessionStamp(
-      saveActiveSession({
-        draft: draftRef.current,
-        messages: toPersisted(messages),
-        updatedAt: sessionUpdatedAtRef.current,
-      }),
-    );
-  }, [messages, hydrated]);
+    persistBound(boundId, messages, draftRef.current);
+  }, [messages, hydrated, boundId, isLanding]);
 
   useEffect(() => {
-    if (!hydrated) {
+    if (isLanding || !hydrated || !boundId) {
       return;
     }
     const handle = window.setTimeout(() => {
-      adoptSessionStamp(
-        saveActiveSessionDraft(draft, sessionUpdatedAtRef.current),
+      const conversation = getConversation(boundId);
+      if (!conversation) {
+        return;
+      }
+      updateConversation(
+        boundId,
+        {
+          messages: conversation.messages,
+          draft,
+        },
+        { touchUpdatedAt: false },
       );
     }, DRAFT_SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [draft, hydrated]);
+  }, [draft, hydrated, boundId, isLanding]);
 
   useEffect(() => {
     return () => {
-      if (!hydrated) {
+      if (isLanding || !hydrated || !boundIdRef.current) {
         return;
       }
-      const stamp = saveActiveSessionDraft(
-        draftRef.current,
-        sessionUpdatedAtRef.current,
-      );
-      if (stamp !== null) {
-        sessionUpdatedAtRef.current = stamp;
+      const conversation = getConversation(boundIdRef.current);
+      if (!conversation) {
+        return;
       }
+      updateConversation(
+        boundIdRef.current,
+        {
+          messages: conversation.messages,
+          draft: draftRef.current,
+        },
+        { touchUpdatedAt: false },
+      );
     };
-  }, [hydrated]);
+  }, [hydrated, isLanding]);
 
   const lengthFeedback =
     maxInputLength === null ? null : evaluateInputLength(draft, maxInputLength);
   const historyFeedback =
-    maxInputLength === null
+    maxInputLength === null || isLanding
       ? null
       : evaluateHistoryLength(historyForModel(messages), maxInputLength);
   const overLimit = lengthFeedback?.exceeded ?? false;
@@ -439,6 +655,22 @@ export function ChatPanel({
   const sendBlocked = overLimit || historyBlocked;
   const statusGuidance =
     lengthFeedback?.guidance ?? historyFeedback?.guidance ?? null;
+
+  function runtimeFromSettings(): AskChatOptions["body"]["runtime"] {
+    const stored = loadRuntimeSettings();
+    if (!stored) {
+      return null;
+    }
+    const provider =
+      stored.provider === "ollama" || stored.provider === "openrouter"
+        ? stored.provider
+        : null;
+    return {
+      provider,
+      model: stored.model,
+      settings: stored.settings,
+    };
+  }
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -448,109 +680,138 @@ export function ChatPanel({
       return;
     }
     composerTouchedRef.current = true;
-    const generation = turnGenerationRef.current;
     setUnavailable(false);
     setDraft("");
+
+    if (isLanding) {
+      const withUser = appendUserMessage([], query);
+      const created = createConversation({
+        title: titleFromMessages(toPersisted(withUser)),
+        messages: toPersisted(withUser),
+        draft: "",
+        runStatus: "pending",
+        requestStartedAt: Date.now(),
+        unread: false,
+      });
+      setActiveConversationId(created.id);
+      // Register the live run before navigation/shell effects so
+      // interruptStalePendingFromCoordinator does not clear pending.
+      const runPromise = startConversationRun({
+        conversationId: created.id,
+        query,
+        history: [],
+        baseUrl: apiBaseUrl,
+        ask,
+        runtime: runtimeFromSettings(),
+      });
+      onCreatedRef.current?.(created.id);
+      const result = await runPromise;
+      await applyConversationRunResult(created.id, query, result);
+      return;
+    }
+
     const history = historyForModel(messages);
     const withUser = appendUserMessage(messages, query);
     setMessages(withUser);
+    const id = boundIdRef.current ?? conversationId;
+    if (!id) {
+      setDraft(query);
+      setMessages(messages);
+      return;
+    }
+    updateConversation(id, {
+      messages: toPersisted(withUser),
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+      unread: false,
+    });
     setSending(true);
-    try {
-      const stored = loadRuntimeSettings();
-      const response = await ask({
-        baseUrl: apiBaseUrl,
-        body: {
-          query,
-          history,
-          runtime: stored
-            ? {
-                provider:
-                  stored.provider === "ollama" ||
-                  stored.provider === "openrouter"
-                    ? stored.provider
-                    : null,
-                model: stored.model,
-                settings: stored.settings,
-              }
-            : null,
-        },
-      });
-      if (generation !== turnGenerationRef.current) {
+    const result = await startConversationRun({
+      conversationId: id,
+      query,
+      history,
+      baseUrl: apiBaseUrl,
+      ask,
+      runtime: runtimeFromSettings(),
+    });
+    await applyConversationRunResult(id, query, result);
+  }
+
+  async function applyConversationRunResult(
+    id: string,
+    query: string,
+    result: Awaited<ReturnType<typeof startConversationRun>>,
+  ): Promise<void> {
+    if (result.kind === "rejected") {
+      const conversation = getConversation(id);
+      const discard = !conversation || conversation.messages.length === 0;
+      if (discard && conversation) {
+        deleteConversation(id);
+      }
+      // Store already recorded the outcome on `id`; never mutate another thread's UI.
+      if (boundIdRef.current !== id) {
+        // Landing first-turn reject before bind: restore query on the empty
+        // composer. Never paint another thread's rejection onto the open one.
+        if (discard && boundIdRef.current === null) {
+          setSending(false);
+          setInlineError(result.message);
+          setDraft(query);
+          setMessages([]);
+          closeHandoffRef.current = { draft: query, message: result.message };
+          onClosedRef.current?.();
+        }
         return;
       }
-      setMessages((current) =>
-        applyTurnResult(current, { kind: "success", response }),
-      );
-    } catch (error) {
-      if (generation !== turnGenerationRef.current) {
-        return;
+      setSending(false);
+      setInlineError(result.message);
+      setDraft(query);
+      if (discard) {
+        setMessages([]);
+        closeHandoffRef.current = { draft: query, message: result.message };
+        onClosedRef.current?.();
       }
-      const apiError = error instanceof ApiError ? error : ApiError.generic(0);
-      const failure = classifyFailure(apiError);
-      if (failure.kind === "unavailable") {
-        setUnavailable(true);
-        setMessages((current) => applyTurnResult(current, failure));
-      } else if (failure.kind === "rejected") {
-        setInlineError(failure.message);
-        setDraft(query);
-        setMessages((current) => applyTurnResult(current, failure));
-      } else {
-        setMessages((current) => applyTurnResult(current, failure));
-      }
-    } finally {
-      if (generation === turnGenerationRef.current) {
-        setSending(false);
-      }
+      return;
+    }
+
+    if (boundIdRef.current !== id) {
+      return;
+    }
+
+    if (result.kind === "missing") {
+      setSending(false);
+      setMessages([]);
+      setDraft(query);
+      const message = "This conversation is no longer available.";
+      setInlineError(message);
+      closeHandoffRef.current = { draft: query, message };
+      onClosedRef.current?.();
+    } else if (result.kind === "unavailable") {
+      setSending(false);
+      setUnavailable(true);
+    } else if (result.kind === "failed") {
+      setSending(false);
     }
   }
 
-  function handleNewChat() {
-    turnGenerationRef.current += 1;
-    composerTouchedRef.current = false;
-    skipNextPersistRef.current = true;
-    let stamp = saveActiveSession({
-      draft: "",
-      messages: [],
-      updatedAt: sessionUpdatedAtRef.current,
-    });
-    // New chat is deliberate — retry once against the current revision so a
-    // concurrent writer cannot leave someone else's transcript on screen.
-    if (stamp === null) {
-      stamp = saveActiveSession({
-        draft: "",
-        messages: [],
-        updatedAt: loadActiveSession().updatedAt,
-      });
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
     }
-    if (stamp === null) {
-      // Last-resort path: both clears lost a race. New chat still owns the
-      // composer — clear draft rather than restoring a concurrent writer's.
-      const session = loadActiveSession();
-      seedIds(session.messages);
-      sessionUpdatedAtRef.current = session.updatedAt;
-      setMessages(fromPersisted(session.messages));
-      setDraft("");
-      setInlineError(null);
-      setUnavailable(false);
-      setSending(false);
-      return;
-    }
-    sessionUpdatedAtRef.current = stamp;
-    setMessages([]);
-    setInlineError(null);
-    setUnavailable(false);
-    setDraft("");
-    setSending(false);
   }
+
+  // Empty-hero (centered composer) is landing-only. Conversation routes always
+  // use the main full-height layout: transcript scrolls, composer pinned.
+  const isEmptyHero = isLanding;
+  const describedByIds =
+    lengthFeedback || statusGuidance ? "chat-input-length" : "";
 
   if (unavailable && messages.length === 0) {
     return (
       <section className="kern-chat">
         <header className="kern-chat-header">
           <h1>Chat</h1>
-          <Button variant="secondary" type="button" onClick={handleNewChat}>
-            New chat
-          </Button>
         </header>
         <div className="kern-chat-body">
           <UnavailableState
@@ -562,34 +823,10 @@ export function ChatPanel({
     );
   }
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
-    }
-  }
-
-  const isEmptyHero =
-    hydrated && !unavailable && messages.length === 0 && !sending;
-  // Option (a): keep New chat when transcript/unavailable, or when storage
-  // still holds a concurrent writer's session (stale-session escape).
-  const showNewChat =
-    !hydrated ||
-    unavailable ||
-    messages.length > 0 ||
-    loadActiveSession().messages.length > 0;
-  const describedByIds =
-    lengthFeedback || statusGuidance ? "chat-input-length" : "";
-
   return (
     <section className={`kern-chat${isEmptyHero ? " kern-chat--empty" : ""}`}>
       <header className="kern-chat-header">
         <h1>Chat</h1>
-        {showNewChat ? (
-          <Button variant="secondary" type="button" onClick={handleNewChat}>
-            New chat
-          </Button>
-        ) : null}
       </header>
 
       <div className="kern-chat-body">

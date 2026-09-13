@@ -2,16 +2,24 @@
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
+from openai import AuthenticationError, RateLimitError
 
-from domain.errors import QueryRewriterError
+from domain.errors import (
+    ProviderAuthError,
+    ProviderError,
+    ProviderRateLimitError,
+    QueryRewriterError,
+)
 from infrastructure.config import OpenRouterSettings
 from infrastructure.llm.query_rewrite import (
     REWRITE_SYSTEM,
     OpenRouterQueryRewriter,
     QueryRewriteConfigError,
 )
+
 
 
 def _settings(**overrides: object) -> OpenRouterSettings:
@@ -71,18 +79,53 @@ def test_rewrite_normalizes_surrounding_whitespace() -> None:
     assert rewriter.rewrite("vague") == "payment service failure"
 
 
-def test_invocation_failure_raises_query_rewriter_error() -> None:
+def test_invocation_failure_raises_provider_error() -> None:
     fake = _FakeModel(error=RuntimeError("upstream down"))
     rewriter = OpenRouterQueryRewriter(_settings(), model=fake)
 
-    with pytest.raises(
-        QueryRewriterError, match="OpenRouter query rewrite provider"
-    ) as raised:
+    with pytest.raises(ProviderError, match="OpenRouter query rewrite provider") as raised:
         rewriter.rewrite("what broke?")
 
+    assert not isinstance(raised.value, QueryRewriterError)
     assert "upstream down" not in str(raised.value)
     assert isinstance(raised.value.__cause__, RuntimeError)
     assert raised.value.__cause__ is fake._error
+
+
+def test_invocation_auth_failure_raises_provider_auth_error() -> None:
+    upstream = AuthenticationError(
+        "bad key sk-secret",
+        response=httpx.Response(
+            401, request=httpx.Request("POST", "https://openrouter.ai/api/v1")
+        ),
+        body={"error": {"message": "sk-secret"}},
+    )
+    fake = _FakeModel(error=upstream)
+    rewriter = OpenRouterQueryRewriter(_settings(), model=fake)
+
+    with pytest.raises(ProviderAuthError) as raised:
+        rewriter.rewrite("what broke?")
+
+    assert "sk-secret" not in str(raised.value)
+    assert raised.value.__cause__ is upstream
+
+
+def test_invocation_rate_limit_raises_provider_rate_limit_error() -> None:
+    upstream = RateLimitError(
+        "slow sk-secret",
+        response=httpx.Response(
+            429, request=httpx.Request("POST", "https://openrouter.ai/api/v1")
+        ),
+        body={"error": {"message": "sk-secret"}},
+    )
+    fake = _FakeModel(error=upstream)
+    rewriter = OpenRouterQueryRewriter(_settings(), model=fake)
+
+    with pytest.raises(ProviderRateLimitError) as raised:
+        rewriter.rewrite("what broke?")
+
+    assert "sk-secret" not in str(raised.value)
+    assert raised.value.__cause__ is upstream
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "\n\t"])
