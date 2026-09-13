@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
-import { ChatPanel } from "@/components/chat/ChatPanel";
+import { ChatPanel, type ChatPanelProps } from "@/components/chat/ChatPanel";
 import { PreviousChats } from "@/components/chat/PreviousChats";
 import {
   loadActiveSession,
@@ -22,11 +22,19 @@ function conversationIdFromPath(pathname: string): string | null {
 /**
  * Stable chat shell for `/chat` and `/chat/[conversationId]`.
  *
- * Conversation layout matches main (plain flex height, composer pinned).
- * UI mode flips immediately on open/create so the Chats list never paints
- * the new row before the transcript appears; soft CSS fade-in only.
+ * One ChatPanel instance stays mounted across landing ↔ conversation so
+ * in-flight asks cannot corrupt another thread's UI, and close handoffs can
+ * preserve draft/error on `/chat`.
  */
-export function ChatRouteClient({ apiBaseUrl }: { apiBaseUrl: string }) {
+export function ChatRouteClient({
+  apiBaseUrl,
+  ask,
+  loadSettings,
+}: {
+  apiBaseUrl: string;
+  ask?: ChatPanelProps["ask"];
+  loadSettings?: ChatPanelProps["loadSettings"];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const pathConversationId = conversationIdFromPath(pathname);
@@ -80,33 +88,29 @@ export function ChatRouteClient({ apiBaseUrl }: { apiBaseUrl: string }) {
     });
   }
 
-  if (isLanding) {
-    return (
-      <div className="kern-chat-landing" data-chat-mode="landing">
-        <ChatPanel
-          apiBaseUrl={apiBaseUrl}
-          conversationId={null}
-          variant="landing"
-          onConversationCreated={openConversation}
-        />
-        <div className="kern-chat-landing-history">
-          <PreviousChats onSelectConversation={openConversation} />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
-      className="kern-chat-conversation kern-chat-conversation--enter"
-      data-chat-mode="conversation"
+      className={
+        isLanding
+          ? "kern-chat-landing"
+          : "kern-chat-conversation kern-chat-conversation--enter"
+      }
+      data-chat-mode={isLanding ? "landing" : "conversation"}
     >
       <ChatPanel
         apiBaseUrl={apiBaseUrl}
         conversationId={boundId}
-        variant="conversation"
+        variant={isLanding ? "landing" : "conversation"}
+        ask={ask}
+        loadSettings={loadSettings}
+        onConversationCreated={openConversation}
         onConversationClosed={closeConversation}
       />
+      {isLanding ? (
+        <div className="kern-chat-landing-history">
+          <PreviousChats onSelectConversation={openConversation} />
+        </div>
+      ) : null}
     </div>
   );
 }

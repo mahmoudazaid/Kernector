@@ -93,6 +93,11 @@ export type ChatPanelProps = {
   ) => Promise<RuntimeSettingsResponse>;
 };
 
+type CloseHandoffNotice = {
+  draft: string;
+  message: string;
+};
+
 function CitationsBlock({ citations }: { citations: Citation[] }) {
   if (!Array.isArray(citations) || citations.length === 0) {
     return null;
@@ -435,20 +440,32 @@ export function ChatPanel({
   const boundIdRef = useRef(boundId);
   const onCreatedRef = useRef(onConversationCreated);
   const onClosedRef = useRef(onConversationClosed);
+  /** Survives close→landing so draft/error are not wiped by route sync. */
+  const closeHandoffRef = useRef<CloseHandoffNotice | null>(null);
   const routeKey = isLanding ? "landing" : (conversationId ?? "none");
   const [routeStateKey, setRouteStateKey] = useState(routeKey);
   if (routeKey !== routeStateKey) {
     // Keep transcript/pending in sync on the same ChatPanel instance when the
     // layout shell navigates `/chat` ↔ `/chat/[id]` without remounting.
     const next = readConversationUiState(conversationId, isLanding);
+    const handoff = isLanding ? closeHandoffRef.current : null;
+    if (handoff) {
+      closeHandoffRef.current = null;
+    }
     setRouteStateKey(routeKey);
     setBoundId(next.boundId);
     setMessages(next.messages);
     setSending(next.sending);
-    setDraft(next.draft);
     setHydrated(next.hydrated);
-    setInlineError(null);
-    composerTouchedRef.current = false;
+    if (handoff) {
+      setDraft(handoff.draft);
+      setInlineError(handoff.message);
+      composerTouchedRef.current = true;
+    } else {
+      setDraft(next.draft);
+      setInlineError(null);
+      composerTouchedRef.current = false;
+    }
   }
 
   useEffect(() => {
@@ -707,23 +724,39 @@ export function ChatPanel({
       ask,
       runtime: runtimeFromSettings(),
     });
+
     if (result.kind === "rejected") {
+      const conversation = getConversation(id);
+      const discard = !conversation || conversation.messages.length === 0;
+      if (discard && conversation) {
+        deleteConversation(id);
+      }
+      // Store already recorded the outcome on `id`; never mutate another thread's UI.
+      if (boundIdRef.current !== id) {
+        return;
+      }
       setSending(false);
       setInlineError(result.message);
       setDraft(query);
-      const conversation = getConversation(id);
-      if (!conversation || conversation.messages.length === 0) {
-        if (conversation) {
-          deleteConversation(id);
-        }
+      if (discard) {
         setMessages([]);
+        closeHandoffRef.current = { draft: query, message: result.message };
         onClosedRef.current?.();
       }
-    } else if (result.kind === "missing") {
+      return;
+    }
+
+    if (boundIdRef.current !== id) {
+      return;
+    }
+
+    if (result.kind === "missing") {
       setSending(false);
       setMessages([]);
       setDraft(query);
-      setInlineError("This conversation is no longer available.");
+      const message = "This conversation is no longer available.";
+      setInlineError(message);
+      closeHandoffRef.current = { draft: query, message };
       onClosedRef.current?.();
     } else if (result.kind === "unavailable") {
       setSending(false);
