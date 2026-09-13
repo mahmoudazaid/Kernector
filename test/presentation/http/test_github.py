@@ -10,11 +10,13 @@ from application.contracts import (
     ConnectorSyncStatus,
 )
 from composition import GitHubLastSync, GitHubStatus
+from composition.errors import GitHubConnectorError
 from presentation.http.app import create_app
 from presentation.http.deps import (
     get_github_disconnect,
     get_github_oauth_callback,
     get_github_oauth_start,
+    get_github_repo_list,
     get_github_status,
     get_github_sync,
 )
@@ -158,3 +160,22 @@ def test_disconnect_returns_204() -> None:
     response = client.delete("/api/v1/connectors/github")
     assert response.status_code == 204
     assert called["n"] == 1
+
+
+def test_repos_maps_github_connector_error_to_502() -> None:
+    app = create_app()
+
+    def failing_list(*, page: int = 1):
+        raise GitHubConnectorError("vendor body /secret/token")
+
+    app.dependency_overrides[get_github_repo_list] = lambda: failing_list
+    client = TestClient(app)
+
+    response = client.get("/api/v1/connectors/github/repos")
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == "github_request_failed"
+    assert body["detail"] == "The GitHub request failed."
+    assert "/secret/token" not in body["detail"]
+    assert response.headers["content-type"].startswith("application/problem+json")

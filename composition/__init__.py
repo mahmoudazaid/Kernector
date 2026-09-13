@@ -93,6 +93,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GitHubConnectorError,
     GitHubConnectorSyncError,
     KnowledgeLoadError,
     MissingUploadContentError,
@@ -105,6 +106,7 @@ from infrastructure.config import Settings
 
 __all__ = [
     "ConnectorSyncError",
+    "GitHubConnectorError",
     "GitHubConnectorSyncError",
     "GoogleDriveBrowsePage",
     "GoogleDriveLastSync",

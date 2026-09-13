@@ -22,6 +22,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GitHubConnectorError,
     KnowledgeLoadError,
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
@@ -97,6 +98,7 @@ from presentation.http.errors import (
             "google_drive_reauthorization_required",
         ),
         (ConnectorSyncError("vendor body"), 502, "connector_sync_failed"),
+        (GitHubConnectorError("vendor body"), 502, "github_request_failed"),
         (ProviderError("upstream"), 502, "provider_error"),
         (ToolFailureError("tool broke"), 500, "tool_failure"),
         (
@@ -410,6 +412,15 @@ def test_connector_sync_error_uses_fixed_sanitized_detail() -> None:
     assert problem.code == "connector_sync_failed"
     assert problem.detail == "The Google Drive connector sync failed."
     assert "/secret/sa.json" not in problem.detail
+
+
+def test_github_connector_error_uses_fixed_sanitized_detail() -> None:
+    problem = problem_from_exception(GitHubConnectorError("vendor body /secret/token"))
+
+    assert problem.status == 502
+    assert problem.code == "github_request_failed"
+    assert problem.detail == "The GitHub request failed."
+    assert "/secret/token" not in problem.detail
 
 
 def test_problem_responses_413_describes_payload_too_large() -> None:

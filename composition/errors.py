@@ -90,5 +90,9 @@ class GitHubConnectorSyncError(ConnectorSyncError):
     """A GitHub connector sync failed at the run level."""
 
 
+class GitHubConnectorError(RuntimeError):
+    """A GitHub browse or picker call failed without exposing provider details."""
+
+
 class GoogleDriveConnectorError(RuntimeError):
     """A Drive browse or selection call failed without exposing provider details."""

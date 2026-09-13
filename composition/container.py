@@ -58,6 +58,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GitHubConnectorError,
     GitHubConnectorSyncError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
@@ -657,6 +658,7 @@ _DRIVE_CLIENT_MISSING_MESSAGE = (
 )
 _GITHUB_CONFIG_MESSAGE = "GitHub connector configuration is invalid."
 _GITHUB_SYNC_MESSAGE = "The GitHub connector sync failed."
+_GITHUB_REQUEST_MESSAGE = "The GitHub request failed."
 _GITHUB_CLIENT_MISSING_MESSAGE = (
     "GitHub client is not installed; run uv sync --extra github."
 )
@@ -1498,10 +1500,10 @@ def list_github_repositories(
     except ConnectorAuthError as error:
         _mark_github_reauth(_tokens_store, error)
     except ConnectorError as error:
-        raise InputRejectedError("The GitHub repository list request failed.") from error
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE) from error
     raw_items = payload.get("items")
     if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
-        raise InputRejectedError("The GitHub repository list request failed.")
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE)
     items: list[GitHubRepoItem] = []
     for row in raw_items:
         if not isinstance(row, Mapping):
@@ -1557,10 +1559,10 @@ def list_github_projects(
     except ConnectorAuthError as error:
         _mark_github_reauth(_tokens_store, error)
     except ConnectorError as error:
-        raise InputRejectedError("The GitHub project list request failed.") from error
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE) from error
     raw_items = payload.get("items")
     if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
-        raise InputRejectedError("The GitHub project list request failed.")
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE)
     items: list[GitHubProjectItem] = []
     for row in raw_items:
         if not isinstance(row, Mapping):

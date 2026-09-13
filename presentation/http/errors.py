@@ -27,6 +27,7 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GitHubConnectorError,
     GitHubConnectorSyncError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
@@ -378,6 +379,15 @@ def problem_from_exception(
             title="GitHub reauthorization required",
             status=409,
             detail="GitHub authorization was revoked. Connect again.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GitHubConnectorError):
+        return _problem(
+            code="github_request_failed",
+            title="GitHub request failed",
+            status=502,
+            detail="The GitHub request failed.",
             instance=instance,
             request_id=request_id,
         )

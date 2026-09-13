@@ -582,3 +582,78 @@ def test_github_status_setup_required_until_repo_or_project(settings) -> None:
     assert ready.setup_required is False
     assert ready.connection_state == "ready"
     assert ready.sync_scope == "octocat#19"
+
+def test_list_github_repositories_maps_connector_error(settings) -> None:
+    from composition import list_github_repositories
+    from composition.errors import GitHubConnectorError
+    from domain.errors import ConnectorError
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    class FailingClient:
+        def list_repositories(self, *, page: int = 1):
+            raise ConnectorError("vendor secret")
+
+    with pytest.raises(GitHubConnectorError, match="GitHub request failed"):
+        list_github_repositories(
+            settings,
+            page=1,
+            connection_store=tokens,
+            client_factory=lambda _token: FailingClient(),
+        )
+
+
+def test_list_github_projects_maps_connector_error(settings) -> None:
+    from composition import list_github_projects
+    from composition.errors import GitHubConnectorError
+    from domain.errors import ConnectorError
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    class FailingClient:
+        def list_projects(self, owner_login: str, *, after: str | None = None):
+            raise ConnectorError("vendor secret")
+
+    with pytest.raises(GitHubConnectorError, match="GitHub request failed"):
+        list_github_projects(
+            settings,
+            owner_login="acme",
+            connection_store=tokens,
+            client_factory=lambda _token: FailingClient(),
+        )
