@@ -12,6 +12,8 @@ import {
   hasLiveConversationRun,
   interruptStalePendingFromCoordinator,
   resetLiveConversationRunsForTests,
+  RUN_HEARTBEAT_STALE_MS,
+  scheduleStalePendingSweep,
   startConversationRun,
 } from "@/lib/session/conversation-runs";
 
@@ -157,16 +159,48 @@ describe("conversation run coordinator", () => {
     expect(getConversation(stale.id)?.runStatus).toBe("failed");
   });
 
-  it("treats a recently started pending run as live across tabs", () => {
+  it("interrupts a recent pending row on cold load without a heartbeat", () => {
+    const recent = createConversation({
+      title: "reloaded",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+    });
+    expect(hasLiveConversationRun(recent.id)).toBe(false);
+    interruptStalePendingFromCoordinator();
+    expect(getConversation(recent.id)?.runStatus).toBe("failed");
+  });
+
+  it("treats a fresh runHeartbeatAt as live across tabs", () => {
     const recent = createConversation({
       title: "other tab",
       messages: [{ id: "u1", role: "user", content: "hi" }],
       draft: "",
       runStatus: "pending",
       requestStartedAt: Date.now(),
+      runHeartbeatAt: Date.now(),
     });
     expect(hasLiveConversationRun(recent.id)).toBe(true);
     interruptStalePendingFromCoordinator();
     expect(getConversation(recent.id)?.runStatus).toBe("pending");
+  });
+
+  it("interrupts after the heartbeat grace window on cold load", () => {
+    vi.useFakeTimers();
+    const recent = createConversation({
+      title: "grace",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+      runHeartbeatAt: Date.now(),
+    });
+    const cancel = scheduleStalePendingSweep();
+    expect(getConversation(recent.id)?.runStatus).toBe("pending");
+    vi.advanceTimersByTime(RUN_HEARTBEAT_STALE_MS);
+    expect(getConversation(recent.id)?.runStatus).toBe("failed");
+    cancel();
+    vi.useRealTimers();
   });
 });

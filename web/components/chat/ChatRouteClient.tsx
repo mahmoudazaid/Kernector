@@ -12,7 +12,7 @@ import {
   getConversation,
   markConversationRead,
 } from "@/lib/session/conversations";
-import { interruptStalePendingFromCoordinator } from "@/lib/session/conversation-runs";
+import { scheduleStalePendingSweep } from "@/lib/session/conversation-runs";
 
 function conversationIdFromPath(pathname: string): string | null {
   const match = /^\/chat\/([^/]+)\/?$/.exec(pathname);
@@ -47,19 +47,20 @@ export function ChatRouteClient({
   }, [pathConversationId]);
 
   useEffect(() => {
-    interruptStalePendingFromCoordinator();
+    const cancelSweep = scheduleStalePendingSweep();
     if (!boundId) {
-      return;
+      return cancelSweep;
     }
     if (!getConversation(boundId)) {
       setBoundId(null);
       startTransition(() => {
         router.replace("/chat");
       });
-      return;
+      return cancelSweep;
     }
     setActiveConversationId(boundId);
     markConversationRead(boundId);
+    return cancelSweep;
   }, [boundId, router]);
 
   useEffect(() => {

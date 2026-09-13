@@ -4,7 +4,7 @@
  * Key: `kernector:conversations:v1`
  * Schema: `{ conversations: Conversation[] }` where each conversation has
  * `id`, `title`, `updatedAt` (wall-clock ms for newest-first sort), `messages`,
- * `draft`, `runStatus`, `requestStartedAt`, and `unread`.
+ * `draft`, `runStatus`, `requestStartedAt`, `runHeartbeatAt`, and `unread`.
  *
  * Migration: `migrateLegacyTranscripts()` once imports a non-empty transcript
  * from the pre-#246 active-session payload (`draft` + `messages`) or the
@@ -40,6 +40,8 @@ export type Conversation = {
   draft: string;
   runStatus: ConversationRunStatus;
   requestStartedAt: number | null;
+  /** Owning-tab heartbeat while a run is live; null when idle/failed. */
+  runHeartbeatAt: number | null;
   unread: boolean;
 };
 
@@ -49,6 +51,7 @@ export type ConversationWrite = {
   draft: string;
   runStatus?: ConversationRunStatus;
   requestStartedAt?: number | null;
+  runHeartbeatAt?: number | null;
   unread?: boolean;
 };
 
@@ -58,6 +61,7 @@ export type ConversationPatch = {
   title?: string;
   runStatus?: ConversationRunStatus;
   requestStartedAt?: number | null;
+  runHeartbeatAt?: number | null;
   unread?: boolean;
 };
 
@@ -133,6 +137,11 @@ function parseConversation(value: unknown): Conversation | null {
     Number.isFinite(value.requestStartedAt)
       ? value.requestStartedAt
       : null;
+  const runHeartbeatAt =
+    typeof value.runHeartbeatAt === "number" &&
+    Number.isFinite(value.runHeartbeatAt)
+      ? value.runHeartbeatAt
+      : null;
   return {
     id: value.id,
     title: value.title,
@@ -141,6 +150,7 @@ function parseConversation(value: unknown): Conversation | null {
     updatedAt,
     runStatus: parseRunStatus(value.runStatus),
     requestStartedAt,
+    runHeartbeatAt,
     unread: value.unread === true,
   };
 }
@@ -240,6 +250,8 @@ export function createConversation(input: ConversationWrite): Conversation {
     runStatus: input.runStatus ?? "idle",
     requestStartedAt:
       input.requestStartedAt === undefined ? null : input.requestStartedAt,
+    runHeartbeatAt:
+      input.runHeartbeatAt === undefined ? null : input.runHeartbeatAt,
     unread: input.unread === true,
   };
   const payload = readPayload();
@@ -305,6 +317,10 @@ export function updateConversation(
       patch.requestStartedAt !== undefined
         ? patch.requestStartedAt
         : current.requestStartedAt,
+    runHeartbeatAt:
+      patch.runHeartbeatAt !== undefined
+        ? patch.runHeartbeatAt
+        : current.runHeartbeatAt,
     unread: patch.unread !== undefined ? patch.unread : current.unread,
     updatedAt:
       options?.touchUpdatedAt === false ? current.updatedAt : Date.now(),
@@ -322,8 +338,16 @@ export function markConversationRead(id: string): Conversation | null {
   return updateConversation(id, { unread: false }, { touchUpdatedAt: false });
 }
 
-const INTERRUPT_MESSAGE =
+export const INTERRUPT_MESSAGE =
   "The previous request was interrupted. Please try again.";
+
+function isInterruptNotice(message: StoredChatMessage): boolean {
+  return (
+    message.role === "assistant" &&
+    message.displayOnly === true &&
+    message.content === INTERRUPT_MESSAGE
+  );
+}
 
 /**
  * Pending rows with no live coordinator task are interrupted (failed), not
@@ -339,23 +363,20 @@ export function interruptStalePendingRuns(
       return entry;
     }
     changed = true;
-    const alreadyNotified = entry.messages.some(
-      (message) =>
-        message.role === "assistant" &&
-        message.displayOnly &&
-        message.content === INTERRUPT_MESSAGE,
-    );
+    const last = entry.messages[entry.messages.length - 1];
+    const alreadyNotified = last !== undefined && isInterruptNotice(last);
     return {
       ...entry,
       runStatus: "failed" as const,
       requestStartedAt: null,
+      runHeartbeatAt: null,
       updatedAt: Date.now(),
       messages: alreadyNotified
         ? entry.messages
         : [
             ...entry.messages,
             {
-              id: `interrupt-${entry.id}`,
+              id: `interrupt-${entry.id}-${entry.messages.length}`,
               role: "assistant" as const,
               content: INTERRUPT_MESSAGE,
               displayOnly: true,

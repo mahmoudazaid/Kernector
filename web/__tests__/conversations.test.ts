@@ -258,6 +258,7 @@ describe("conversation store", () => {
       runStatus: "idle",
       unread: false,
       requestStartedAt: null,
+      runHeartbeatAt: null,
     });
   });
 
@@ -348,12 +349,41 @@ describe("conversation store", () => {
     expect(getConversation(stale.id)?.messages).toEqual([
       { id: "u1", role: "user", content: "hello" },
       {
-        id: `interrupt-${stale.id}`,
+        id: `interrupt-${stale.id}-1`,
         role: "assistant",
         content: "The previous request was interrupted. Please try again.",
         displayOnly: true,
       },
     ]);
+  });
+
+  it("appends a new interrupt notice after a later retry is interrupted", () => {
+    const stale = createConversation({
+      title: "stale",
+      messages: [
+        { id: "u1", role: "user", content: "q1" },
+        {
+          id: "interrupt-old",
+          role: "assistant",
+          content: "The previous request was interrupted. Please try again.",
+          displayOnly: true,
+        },
+        { id: "u2", role: "user", content: "q2" },
+      ],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: 2,
+    });
+    interruptStalePendingRuns(() => false);
+    expect(getConversation(stale.id)?.messages.map((m) => m.content)).toEqual([
+      "q1",
+      "The previous request was interrupted. Please try again.",
+      "q2",
+      "The previous request was interrupted. Please try again.",
+    ]);
+    expect(getConversation(stale.id)?.messages.at(-1)?.id).toBe(
+      `interrupt-${stale.id}-3`,
+    );
   });
 
   it("notifies same-tab subscribers when the store mutates", () => {

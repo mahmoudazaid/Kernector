@@ -4,8 +4,11 @@
  * Captures the originating conversation id for each in-flight ask so a late
  * response always appends to that conversation — even if the user has moved
  * to `/chat` or another thread. Async UI state lives on the conversation
- * record (`runStatus`, `requestStartedAt`, `unread`), not in whichever
- * component is mounted.
+ * record (`runStatus`, `requestStartedAt`, `runHeartbeatAt`, `unread`), not
+ * in whichever component is mounted.
+ *
+ * Cross-tab liveness uses `runHeartbeatAt`: only a living tab refreshes it.
+ * A cold reload stops heartbeating and is swept once the heartbeat goes stale.
  */
 
 import {
@@ -30,9 +33,11 @@ import {
 import type { StoredChatMessage } from "@/lib/settings/runtime-settings-storage";
 
 const liveRuns = new Set<string>();
+const heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
 
-/** Pending rows newer than this are treated as possibly live in another tab. */
-const CROSS_TAB_LIVE_WINDOW_MS = 2 * 60 * 1000;
+const HEARTBEAT_INTERVAL_MS = 2_000;
+/** Heartbeats older than this are not treated as live (reload / crashed tab). */
+export const RUN_HEARTBEAT_STALE_MS = 5_000;
 
 export type StartConversationRunOptions = {
   conversationId: string;
@@ -72,23 +77,68 @@ function toStored(messages: readonly ChatMessage[]): StoredChatMessage[] {
   }));
 }
 
+function stopRunHeartbeat(conversationId: string): void {
+  const handle = heartbeatTimers.get(conversationId);
+  if (handle !== undefined) {
+    clearInterval(handle);
+    heartbeatTimers.delete(conversationId);
+  }
+}
+
+function startRunHeartbeat(conversationId: string): void {
+  stopRunHeartbeat(conversationId);
+  const tick = () => {
+    if (!liveRuns.has(conversationId)) {
+      stopRunHeartbeat(conversationId);
+      return;
+    }
+    updateConversation(
+      conversationId,
+      { runHeartbeatAt: Date.now() },
+      { touchUpdatedAt: false },
+    );
+  };
+  tick();
+  heartbeatTimers.set(
+    conversationId,
+    setInterval(tick, HEARTBEAT_INTERVAL_MS),
+  );
+}
+
 export function hasLiveConversationRun(conversationId: string): boolean {
   if (liveRuns.has(conversationId)) {
     return true;
   }
-  // Another tab may own the in-flight ask; shared storage only has timestamps.
+  // Another tab may own the in-flight ask; only a living owner refreshes
+  // `runHeartbeatAt`. Recency of `requestStartedAt` alone is not liveness.
   const conversation = getConversation(conversationId);
   if (
     conversation?.runStatus === "pending" &&
-    typeof conversation.requestStartedAt === "number"
+    typeof conversation.runHeartbeatAt === "number"
   ) {
-    return Date.now() - conversation.requestStartedAt < CROSS_TAB_LIVE_WINDOW_MS;
+    return Date.now() - conversation.runHeartbeatAt < RUN_HEARTBEAT_STALE_MS;
   }
   return false;
 }
 
 export function interruptStalePendingFromCoordinator(): void {
   interruptStalePendingRuns(hasLiveConversationRun);
+}
+
+/**
+ * Sweep now and once more after the heartbeat grace window so a cold reload
+ * that lands inside a still-fresh heartbeat self-heals without waiting for
+ * another navigation.
+ */
+export function scheduleStalePendingSweep(): () => void {
+  interruptStalePendingFromCoordinator();
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const handle = window.setTimeout(() => {
+    interruptStalePendingFromCoordinator();
+  }, RUN_HEARTBEAT_STALE_MS);
+  return () => window.clearTimeout(handle);
 }
 
 export type ConversationRunResult =
@@ -121,12 +171,15 @@ export async function startConversationRun(
     return { kind: "missing" };
   }
 
+  const startedAt = Date.now();
   liveRuns.add(conversationId);
   updateConversation(conversationId, {
     runStatus: "pending",
-    requestStartedAt: Date.now(),
+    requestStartedAt: startedAt,
+    runHeartbeatAt: startedAt,
     unread: false,
   });
+  startRunHeartbeat(conversationId);
 
   try {
     const response = await ask({
@@ -151,6 +204,7 @@ export async function startConversationRun(
       draft: conversation.draft,
       runStatus: "idle",
       requestStartedAt: null,
+      runHeartbeatAt: null,
       unread: activeId !== conversationId,
     });
     return { kind: "success" };
@@ -171,6 +225,7 @@ export async function startConversationRun(
         draft: query,
         runStatus: "failed",
         requestStartedAt: null,
+        runHeartbeatAt: null,
         unread: false,
       });
       return { kind: "rejected", message: failure.message };
@@ -181,6 +236,7 @@ export async function startConversationRun(
       draft: conversation.draft,
       runStatus: "failed",
       requestStartedAt: null,
+      runHeartbeatAt: null,
       unread: false,
     });
     if (failure.kind === "unavailable") {
@@ -188,12 +244,16 @@ export async function startConversationRun(
     }
     return { kind: "failed", message: failure.message };
   } finally {
+    stopRunHeartbeat(conversationId);
     liveRuns.delete(conversationId);
   }
 }
 
 /** Test helper to clear live-run tracking between suites. */
 export function resetLiveConversationRunsForTests(): void {
+  for (const conversationId of [...heartbeatTimers.keys()]) {
+    stopRunHeartbeat(conversationId);
+  }
   liveRuns.clear();
 }
 
