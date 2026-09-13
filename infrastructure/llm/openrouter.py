@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import OpenRouterSettings
+from infrastructure.llm.provider_failures import classify_provider_failure
 
 _CONNECTION_FAILURE_MESSAGE = "The OpenRouter chat provider could not be reached."
 _PARSE_FAILURE_MESSAGE = "The OpenRouter chat response could not be parsed."
@@ -58,7 +59,9 @@ class OpenRouterChat:
                 "history": _to_provider_messages(messages),
             })
         except Exception as exc:
-            raise ProviderError(_CONNECTION_FAILURE_MESSAGE) from exc
+            raise classify_provider_failure(
+                exc, fallback_message=_CONNECTION_FAILURE_MESSAGE
+            ) from exc
 
         try:
             content = getattr(ai_message, "content", None)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import pytest
 from fastapi.testclient import TestClient
 
 from application.contracts import (
@@ -16,9 +17,26 @@ from application.contracts import (
 from application.errors import InputRejectedError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from application.input_safety import UNSAFE_QUERY_MESSAGE
-from domain.errors import ProviderError, ToolFailureError
+from domain.errors import (
+    ProviderAuthError,
+    ProviderCreditsError,
+    ProviderError,
+    ProviderModelUnavailableError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ToolFailureError,
+)
 from domain.knowledge import SourceReference
 from domain.models import Usage
+from presentation.failure_messages import (
+    PROVIDER_AUTH_FAILURE_MESSAGE,
+    PROVIDER_CREDITS_FAILURE_MESSAGE,
+    PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE,
+    PROVIDER_NETWORK_FAILURE_MESSAGE,
+    PROVIDER_RATE_LIMIT_FAILURE_MESSAGE,
+    PROVIDER_TIMEOUT_FAILURE_MESSAGE,
+)
 from presentation.http.app import create_app
 from presentation.http.deps import get_ask_factory
 
@@ -191,6 +209,49 @@ def test_provider_error_returns_502() -> None:
     assert response.status_code == 502
     body = response.json()
     assert body["code"] == "provider_error"
+    assert "sk-secret" not in response.text
+    assert "Traceback" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "detail"),
+    [
+        (ProviderAuthError("sk-secret"), "provider_auth_failed", PROVIDER_AUTH_FAILURE_MESSAGE),
+        (
+            ProviderCreditsError("sk-secret"),
+            "provider_credits_exhausted",
+            PROVIDER_CREDITS_FAILURE_MESSAGE,
+        ),
+        (
+            ProviderModelUnavailableError("sk-secret"),
+            "provider_model_unavailable",
+            PROVIDER_MODEL_UNAVAILABLE_FAILURE_MESSAGE,
+        ),
+        (
+            ProviderRateLimitError("sk-secret"),
+            "provider_rate_limited",
+            PROVIDER_RATE_LIMIT_FAILURE_MESSAGE,
+        ),
+        (ProviderTimeoutError("sk-secret"), "provider_timeout", PROVIDER_TIMEOUT_FAILURE_MESSAGE),
+        (
+            ProviderNetworkError("sk-secret"),
+            "provider_network_error",
+            PROVIDER_NETWORK_FAILURE_MESSAGE,
+        ),
+    ],
+)
+def test_actionable_provider_errors_return_curated_502(
+    error: ProviderError, code: str, detail: str
+) -> None:
+    ask = _StubAsk(error=error)
+    client = _client_with_ask(ask)
+
+    response = client.post("/api/v1/chat/ask", json={"query": "hello"})
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == code
+    assert body["detail"] == detail
     assert "sk-secret" not in response.text
     assert "Traceback" not in response.text
 
