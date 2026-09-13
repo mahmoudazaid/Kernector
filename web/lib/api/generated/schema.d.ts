@@ -4,2439 +4,2440 @@
  */
 
 export interface paths {
-    "/api/v1/chat/ask": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Chat Ask
-         * @description Run one grounded ask turn through composition.
-         */
-        post: operations["chat_ask_api_v1_chat_ask_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/api/v1/chat/ask": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/github": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Github Connector Status
-         * @description Return presentation-safe GitHub PAT flags and user OAuth connection.
-         */
-        get: operations["github_connector_status_api_v1_connectors_github_get"];
-        put?: never;
-        post?: never;
-        /**
-         * Github Connector Disconnect
-         * @description Revoke and delete the stored user grant. Indexed documents stay.
-         */
-        delete: operations["github_connector_disconnect_api_v1_connectors_github_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Chat Ask
+     * @description Run one grounded ask turn through composition.
+     */
+    post: operations["chat_ask_api_v1_chat_ask_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/github/last-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Github Connector Last Sync
-         * @description Return the last persisted GitHub sync summary, if present.
-         */
-        get: operations["github_connector_last_sync_api_v1_connectors_github_last_sync_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Github Connector Status
+     * @description Return presentation-safe GitHub PAT flags and user OAuth connection.
+     */
+    get: operations["github_connector_status_api_v1_connectors_github_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Github Connector Disconnect
+     * @description Revoke and delete the stored user grant. Indexed documents stay.
+     */
+    delete: operations["github_connector_disconnect_api_v1_connectors_github_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github/last-sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/github/oauth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Github Oauth Callback
-         * @description Validate state, exchange the code server-side, and return to the Hub.
-         */
-        get: operations["github_oauth_callback_api_v1_connectors_github_oauth_callback_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Github Connector Last Sync
+     * @description Return the last persisted GitHub sync summary, if present.
+     */
+    get: operations["github_connector_last_sync_api_v1_connectors_github_last_sync_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/github/oauth/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Github Oauth Start
-         * @description Issue CSRF state and redirect the browser to GitHub, or back to the Hub.
-         */
-        get: operations["github_oauth_start_api_v1_connectors_github_oauth_start_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Github Oauth Callback
+     * @description Validate state, exchange the code server-side, and return to the Hub.
+     */
+    get: operations["github_oauth_callback_api_v1_connectors_github_oauth_callback_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github/oauth/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/github/sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Github Connector Sync
-         * @description Synchronize GitHub for the stored user OAuth grant.
-         */
-        post: operations["github_connector_sync_api_v1_connectors_github_sync_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Github Oauth Start
+     * @description Issue CSRF state and redirect the browser to GitHub, or back to the Hub.
+     */
+    get: operations["github_oauth_start_api_v1_connectors_github_oauth_start_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/google-drive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Google Drive Connector Status
-         * @description Return presentation-safe Drive SA flags and user OAuth connection.
-         */
-        get: operations["google_drive_connector_status_api_v1_connectors_google_drive_get"];
-        put?: never;
-        post?: never;
-        /**
-         * Google Drive Connector Disconnect
-         * @description Revoke and delete the stored user grant. Indexed documents stay.
-         */
-        delete: operations["google_drive_connector_disconnect_api_v1_connectors_google_drive_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Github Connector Sync
+     * @description Synchronize GitHub for the stored user OAuth grant.
+     */
+    post: operations["github_connector_sync_api_v1_connectors_github_sync_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/google-drive/items": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Google Drive Connector Items
-         * @description List Drive folders or files for the content picker. No tokens on the wire.
-         */
-        get: operations["google_drive_connector_items_api_v1_connectors_google_drive_items_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Google Drive Connector Status
+     * @description Return presentation-safe Drive SA flags and user OAuth connection.
+     */
+    get: operations["google_drive_connector_status_api_v1_connectors_google_drive_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Google Drive Connector Disconnect
+     * @description Revoke and delete the stored user grant. Indexed documents stay.
+     */
+    delete: operations["google_drive_connector_disconnect_api_v1_connectors_google_drive_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/items": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/google-drive/oauth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Google Drive Oauth Callback
-         * @description Validate state, exchange the code server-side, and return to the Hub.
-         */
-        get: operations["google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Google Drive Connector Items
+     * @description List Drive folders or files for the content picker. No tokens on the wire.
+     */
+    get: operations["google_drive_connector_items_api_v1_connectors_google_drive_items_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/google-drive/oauth/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Google Drive Oauth Start
-         * @description Issue CSRF state and redirect the browser to Google, or back to the Hub.
-         */
-        get: operations["google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Google Drive Oauth Callback
+     * @description Validate state, exchange the code server-side, and return to the Hub.
+     */
+    get: operations["google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/oauth/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/google-drive/selection": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Google Drive Connector Get Selection
-         * @description Return saved folder and file roots (Drive IDs and names only).
-         */
-        get: operations["google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get"];
-        /**
-         * Google Drive Connector Put Selection
-         * @description Validate access and atomically replace the saved Drive selection.
-         */
-        put: operations["google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Google Drive Oauth Start
+     * @description Issue CSRF state and redirect the browser to Google, or back to the Hub.
+     */
+    get: operations["google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/selection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/google-drive/sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Google Drive Connector Sync
-         * @description Synchronize Drive for the stored user OAuth grant.
-         */
-        post: operations["google_drive_connector_sync_api_v1_connectors_google_drive_sync_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Google Drive Connector Get Selection
+     * @description Return saved folder and file roots (Drive IDs and names only).
+     */
+    get: operations["google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get"];
+    /**
+     * Google Drive Connector Put Selection
+     * @description Validate access and atomically replace the saved Drive selection.
+     */
+    put: operations["google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/google-drive/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/documents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Documents
-         * @description Return upload and Google Drive catalog rows for the documents UI.
-         */
-        get: operations["list_documents_api_v1_documents_get"];
-        put?: never;
-        /**
-         * Create Document
-         * @description Upload a new document; always allocates a system-managed source ID.
-         */
-        post: operations["create_document_api_v1_documents_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Google Drive Connector Sync
+     * @description Synchronize Drive for the stored user OAuth grant.
+     */
+    post: operations["google_drive_connector_sync_api_v1_connectors_google_drive_sync_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/documents/{source_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Replace Document
-         * @description Replace document content under the same source ID.
-         */
-        put: operations["replace_document_api_v1_documents__source_id__put"];
-        post?: never;
-        /**
-         * Delete Document
-         * @description Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.
-         */
-        delete: operations["delete_document_api_v1_documents__source_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Documents
+     * @description Return upload and Google Drive catalog rows for the documents UI.
+     */
+    get: operations["list_documents_api_v1_documents_get"];
+    put?: never;
+    /**
+     * Create Document
+     * @description Upload a new document; always allocates a system-managed source ID.
+     */
+    post: operations["create_document_api_v1_documents_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/documents/{source_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/documents/{source_id}/chunks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Document Chunks
-         * @description Return a page of stored chunks for one catalogued source.
-         */
-        get: operations["list_document_chunks_api_v1_documents__source_id__chunks_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    /**
+     * Replace Document
+     * @description Replace document content under the same source ID.
+     */
+    put: operations["replace_document_api_v1_documents__source_id__put"];
+    post?: never;
+    /**
+     * Delete Document
+     * @description Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.
+     */
+    delete: operations["delete_document_api_v1_documents__source_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/documents/{source_id}/chunks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/documents/{source_id}/content": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Document Content
-         * @description Return original uploaded bytes for inline display.
-         */
-        get: operations["get_document_content_api_v1_documents__source_id__content_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Document Chunks
+     * @description Return a page of stored chunks for one catalogued source.
+     */
+    get: operations["list_document_chunks_api_v1_documents__source_id__chunks_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/documents/{source_id}/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/documents/{source_id}/download": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Download Document
-         * @description Return original uploaded bytes as an attachment.
-         */
-        get: operations["download_document_api_v1_documents__source_id__download_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Get Document Content
+     * @description Return original uploaded bytes for inline display.
+     */
+    get: operations["get_document_content_api_v1_documents__source_id__content_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/documents/{source_id}/download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/ollama/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Ollama Status
-         * @description Probe the configured Ollama base URL (never a client-supplied target).
-         */
-        get: operations["ollama_status_api_v1_ollama_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Download Document
+     * @description Return original uploaded bytes as an attachment.
+     */
+    get: operations["download_document_api_v1_documents__source_id__download_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/ollama/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Runtime Settings
-         * @description Expose the client-facing runtime contract for Settings / Chat / Documents.
-         */
-        get: operations["runtime_settings_api_v1_settings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Ollama Status
+     * @description Probe the configured Ollama base URL (never a client-supplied target).
+     */
+    get: operations["ollama_status_api_v1_ollama_status_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health
-         * @description Return process readiness without touching composition or infrastructure.
-         */
-        get: operations["health_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Runtime Settings
+     * @description Expose the client-facing runtime contract for Settings / Chat / Documents.
+     */
+    get: operations["runtime_settings_api_v1_settings_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /**
+     * Health
+     * @description Return process readiness without touching composition or infrastructure.
+     */
+    get: operations["health_health_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        /** Body_create_document_api_v1_documents_post */
-        Body_create_document_api_v1_documents_post: {
-            /** File */
-            file?: string | null;
-        };
-        /** Body_replace_document_api_v1_documents__source_id__put */
-        Body_replace_document_api_v1_documents__source_id__put: {
-            /** File */
-            file?: string | null;
-        };
-        /**
-         * CatalogDocumentResponse
-         * @description Wire projection of one uploaded catalog row (sanitized diagnostics).
-         */
-        CatalogDocumentResponse: {
-            /** Chunk Count */
-            chunk_count: number;
-            /** Content Format */
-            content_format?: string | null;
-            /** Error Summary */
-            error_summary?: string | null;
-            /** File Name */
-            file_name: string;
-            /** Has Error */
-            has_error: boolean;
-            /**
-             * Has Stored Content
-             * @default true
-             */
-            has_stored_content: boolean;
-            /** Source Id */
-            source_id: string;
-            /** Source Type */
-            source_type: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "pending" | "ready" | "failed" | "degraded";
-            /** Title */
-            title?: string | null;
-            /** Uploaded At */
-            uploaded_at: string;
-        };
-        /**
-         * ChatAskRequest
-         * @description Wire body for ``POST /api/v1/chat/ask``.
-         */
-        ChatAskRequest: {
-            /** History */
-            history?: components["schemas"]["ChatHistoryMessage"][];
-            /** Query */
-            query: string;
-            runtime?: components["schemas"]["ChatRuntimeRequest"] | null;
-        };
-        /**
-         * ChatAskResponse
-         * @description Successful grounded ask turn.
-         */
-        ChatAskResponse: {
-            /** Answer */
-            answer: string;
-            /** Citations */
-            citations: components["schemas"]["CitationResponse"][];
-            run?: components["schemas"]["RunMetaResponse"] | null;
-            tool_run?: components["schemas"]["ToolRunResponse"] | null;
-            /** Tools Used */
-            tools_used: components["schemas"]["ToolUsedResponse"][];
-        };
-        /**
-         * ChatHistoryMessage
-         * @description One prior conversation turn for grounded ask.
-         */
-        ChatHistoryMessage: {
-            /** Content */
-            content: string;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "user" | "assistant";
-        };
-        /**
-         * ChatRuntimeRequest
-         * @description Optional client runtime overrides from Settings localStorage (#237).
-         */
-        ChatRuntimeRequest: {
-            /** Model */
-            model?: string | null;
-            /** Ollama Base Url */
-            ollama_base_url?: string | null;
-            /** Provider */
-            provider?: ("openrouter" | "ollama") | null;
-            /** Settings */
-            settings?: {
-                [key: string]: number;
-            };
-        };
-        /**
-         * CitationResponse
-         * @description Provenance pointer on a grounded answer.
-         */
-        CitationResponse: {
-            /** Chunk Index */
-            chunk_index?: number | null;
-            /** Quote */
-            quote?: string | null;
-            /** Source Id */
-            source_id: string;
-            /** Source Type */
-            source_type: string;
-        };
-        /**
-         * ConnectorSyncOutcomeResponse
-         * @description One listed Drive document outcome from a sync run.
-         */
-        ConnectorSyncOutcomeResponse: {
-            /** Chunk Count */
-            chunk_count: number;
-            /** Error Type */
-            error_type?: string | null;
-            /** Source Id */
-            source_id: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "ingested" | "updated" | "skipped" | "failed" | "removed";
-        };
-        /**
-         * DocumentChunkListResponse
-         * @description Stored chunks for one catalogued document.
-         */
-        DocumentChunkListResponse: {
-            /** Chunks */
-            chunks: components["schemas"]["DocumentChunkResponse"][];
-            /** Has More */
-            has_more: boolean;
-        };
-        /**
-         * DocumentChunkResponse
-         * @description Wire projection of one stored chunk for the documents UI.
-         *
-         *     Scalar fields are an explicit allowlist. ``extra`` forwards connector
-         *     metadata from ``SourceMetadata.extra`` without a key filter — callers must
-         *     not treat it as a closed schema.
-         */
-        DocumentChunkResponse: {
-            /** Content */
-            content: string;
-            /** Content Format */
-            content_format?: string | null;
-            /** Extra */
-            extra: {
-                [key: string]: string;
-            };
-            /** Index */
-            index: number;
-            /** Provider */
-            provider?: string | null;
-            /** Source Id */
-            source_id: string;
-            /** Source Type */
-            source_type: string;
-            /** Title */
-            title?: string | null;
-        };
-        /**
-         * DocumentListResponse
-         * @description Uploaded-document catalog for the documents UI.
-         */
-        DocumentListResponse: {
-            /** Documents */
-            documents: components["schemas"]["CatalogDocumentResponse"][];
-        };
-        /**
-         * GitHubLastSyncResponse
-         * @description Last GitHub user-OAuth sync summary. Counts are honest; no secrets.
-         */
-        GitHubLastSyncResponse: {
-            /** Failed Count */
-            failed_count: number;
-            /** New Count */
-            new_count: number;
-            /** Removed Count */
-            removed_count: number;
-            /** Synced At */
-            synced_at: string;
-            /** Unchanged Count */
-            unchanged_count: number;
-            /** Updated Count */
-            updated_count: number;
-        };
-        /**
-         * GitHubStatusResponse
-         * @description GitHub connector presence and user OAuth connection (no secrets).
-         */
-        GitHubStatusResponse: {
-            /** Account Login */
-            account_login?: string | null;
-            /** Available */
-            available: boolean;
-            /** Configured */
-            configured: boolean;
-            /**
-             * Connected
-             * @default false
-             */
-            connected: boolean;
-            /**
-             * Connection State
-             * @default disconnected
-             */
-            connection_state: string;
-            /**
-             * Document Count
-             * @default 0
-             */
-            document_count: number;
-            last_sync?: components["schemas"]["GitHubLastSyncResponse"] | null;
-            /**
-             * Oauth Ready
-             * @default false
-             */
-            oauth_ready: boolean;
-            /** Owner */
-            owner?: string | null;
-            /** Project Number */
-            project_number?: number | null;
-            /** Project Owner */
-            project_owner?: string | null;
-            /**
-             * Reauthorization Required
-             * @default false
-             */
-            reauthorization_required: boolean;
-            /** Repo */
-            repo?: string | null;
-            /** Sync Scope */
-            sync_scope?: string | null;
-        };
-        /**
-         * GitHubSyncResponse
-         * @description Projected GitHub sync counts and per-document outcomes.
-         */
-        GitHubSyncResponse: {
-            /** Failed Count */
-            failed_count: number;
-            /** Ingested Count */
-            ingested_count: number;
-            /** Outcomes */
-            outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
-            /**
-             * Removed Count
-             * @default 0
-             */
-            removed_count: number;
-            /** Skipped Count */
-            skipped_count: number;
-            /**
-             * Updated Count
-             * @default 0
-             */
-            updated_count: number;
-        };
-        /**
-         * GoogleDriveBrowseItemResponse
-         * @description One Drive picker row. ``id`` is the only identity field.
-         */
-        GoogleDriveBrowseItemResponse: {
-            /** Id */
-            id: string;
-            /** Kind */
-            kind: string;
-            /** Mime Type */
-            mime_type?: string | null;
-            /** Modified At */
-            modified_at?: string | null;
-            /** Name */
-            name: string;
-            /** Supported */
-            supported: boolean;
-        };
-        /**
-         * GoogleDriveBrowsePageResponse
-         * @description One page of Drive picker results. Tokens stay off this payload.
-         */
-        GoogleDriveBrowsePageResponse: {
-            /** Items */
-            items: components["schemas"]["GoogleDriveBrowseItemResponse"][];
-            /** Next Page Token */
-            next_page_token?: string | null;
-        };
-        /**
-         * GoogleDriveLastSyncResponse
-         * @description Last user-OAuth sync summary. Counts are honest; no secrets.
-         */
-        GoogleDriveLastSyncResponse: {
-            /** Failed Count */
-            failed_count: number;
-            /** New Count */
-            new_count: number;
-            /** Synced At */
-            synced_at: string;
-            /** Unchanged Count */
-            unchanged_count: number;
-            /** Updated Count */
-            updated_count: number;
-        };
-        /**
-         * GoogleDriveSelectedItemRequest
-         * @description PUT selection item. ``root`` is rejected so sync cannot cover all Drive.
-         */
-        GoogleDriveSelectedItemRequest: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-        };
-        /**
-         * GoogleDriveSelectedItemResponse
-         * @description Saved sync root: Drive ID plus a presentation name.
-         */
-        GoogleDriveSelectedItemResponse: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-        };
-        /**
-         * GoogleDriveSelectionRequest
-         * @description PUT body: bounded so one request can finish inside the client timeout.
-         */
-        GoogleDriveSelectionRequest: {
-            /** Files */
-            files?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
-            /** Folders */
-            folders?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
-        };
-        /**
-         * GoogleDriveSelectionResponse
-         * @description Saved folder and exact-file roots. Unbounded so existing grants still load.
-         */
-        GoogleDriveSelectionResponse: {
-            /** Files */
-            files?: components["schemas"]["GoogleDriveSelectedItemResponse"][];
-            /** Folders */
-            folders?: components["schemas"]["GoogleDriveSelectedItemResponse"][];
-        };
-        /**
-         * GoogleDriveStatusResponse
-         * @description Google Drive connector presence and user OAuth connection (no secrets).
-         */
-        GoogleDriveStatusResponse: {
-            /** Account Email */
-            account_email?: string | null;
-            /** Available */
-            available: boolean;
-            /** Configured */
-            configured: boolean;
-            /**
-             * Connected
-             * @default false
-             */
-            connected: boolean;
-            /**
-             * Connection State
-             * @default disconnected
-             */
-            connection_state: string;
-            /**
-             * Document Count
-             * @default 0
-             */
-            document_count: number;
-            /** Folder Count */
-            folder_count?: number | null;
-            last_sync?: components["schemas"]["GoogleDriveLastSyncResponse"] | null;
-            /**
-             * Oauth Ready
-             * @default false
-             */
-            oauth_ready: boolean;
-            /**
-             * Reauthorization Required
-             * @default false
-             */
-            reauthorization_required: boolean;
-            /**
-             * Setup Required
-             * @default false
-             */
-            setup_required: boolean;
-            /** Sync Scope */
-            sync_scope?: string | null;
-        };
-        /**
-         * GoogleDriveSyncResponse
-         * @description Projected connector sync counts and per-document outcomes.
-         */
-        GoogleDriveSyncResponse: {
-            /** Failed Count */
-            failed_count: number;
-            /** Ingested Count */
-            ingested_count: number;
-            /** Outcomes */
-            outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
-            /**
-             * Removed Count
-             * @default 0
-             */
-            removed_count: number;
-            /** Skipped Count */
-            skipped_count: number;
-            /**
-             * Updated Count
-             * @default 0
-             */
-            updated_count: number;
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /**
-         * HealthResponse
-         * @description Operational readiness payload for unversioned ``GET /health``.
-         */
-        HealthResponse: {
-            /**
-             * Status
-             * @example ok
-             */
-            status: string;
-        };
-        /**
-         * HubSourceType
-         * @description Hub catalog kinds accepted by chunk-inspect query params.
-         *
-         *     Mirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so
-         *     the wire contract stays documented and does not silently widen with
-         *     ``SourceType``.
-         * @enum {string}
-         */
-        HubSourceType: "knowledge_document" | "google_drive" | "github";
-        /**
-         * ModelSettingDefResponse
-         * @description One generation setting for Settings UI controls.
-         */
-        ModelSettingDefResponse: {
-            /** Default */
-            default: number;
-            /** Help */
-            help: string;
-            /** Key */
-            key: string;
-            /** Label */
-            label: string;
-            /** Max Value */
-            max_value: number;
-            /** Min Value */
-            min_value: number;
-            /** Providers */
-            providers: string[];
-            /** Step */
-            step: number;
-            /** Widget */
-            widget: string;
-        };
-        /**
-         * OllamaSettingsResponse
-         * @description Ollama defaults from runtime config (live models come from probe).
-         */
-        OllamaSettingsResponse: {
-            /** Default Base Url */
-            default_base_url?: string | null;
-            /** Default Model */
-            default_model?: string | null;
-        };
-        /**
-         * OllamaStatusResponse
-         * @description Ollama reachability and installed models for a base URL.
-         */
-        OllamaStatusResponse: {
-            /** Models */
-            models: string[];
-            /** Reachable */
-            reachable: boolean;
-        };
-        /**
-         * OpenRouterSettingsResponse
-         * @description OpenRouter models and default from runtime config.
-         */
-        OpenRouterSettingsResponse: {
-            /** Default Model */
-            default_model?: string | null;
-            /** Models */
-            models: string[];
-        };
-        /**
-         * Problem
-         * @description RFC 9457 Problem Details plus Kernector extensions.
-         */
-        Problem: {
-            /** Code */
-            code: string;
-            /** Detail */
-            detail: string;
-            /**
-             * Errors
-             * @default null
-             */
-            errors: components["schemas"]["ProblemError"][] | null;
-            /**
-             * Instance
-             * @default null
-             */
-            instance: string | null;
-            /**
-             * Request Id
-             * @default null
-             */
-            request_id: string | null;
-            /** Status */
-            status: number;
-            /** Title */
-            title: string;
-            /** Type */
-            type: string;
-        };
-        /**
-         * ProblemError
-         * @description Field-level Problem Details extension entry.
-         */
-        ProblemError: {
-            /** Detail */
-            detail: string;
-            /** Pointer */
-            pointer: string;
-        };
-        /**
-         * RiskFactorResponse
-         * @description One risk factor with provenance ids only.
-         */
-        RiskFactorResponse: {
-            /** Factor Id */
-            factor_id: string;
-            /** References */
-            references: components["schemas"]["SourceReferenceResponse"][];
-            /** Weight */
-            weight: number;
-        };
-        /**
-         * RiskScoreResponse
-         * @description Structured risk assessment for the chat UI.
-         */
-        RiskScoreResponse: {
-            /** Factors */
-            factors: components["schemas"]["RiskFactorResponse"][];
-            /** Level */
-            level: string;
-            /** Rationale */
-            rationale: string;
-            /** Score */
-            score: number;
-        };
-        /**
-         * RunMetaResponse
-         * @description Safe run fields the chat UI may display (allowlisted projection).
-         */
-        RunMetaResponse: {
-            /** Citation Count */
-            citation_count?: number | null;
-            /** Completion Tokens */
-            completion_tokens?: number | null;
-            /** Hit Count */
-            hit_count?: number | null;
-            /** Latency Ms */
-            latency_ms?: number | null;
-            /** Model */
-            model?: string | null;
-            /** Outcome */
-            outcome?: string | null;
-            /** Pack */
-            pack?: string | null;
-            /** Prompt Tokens */
-            prompt_tokens?: number | null;
-            /** Query Rewritten */
-            query_rewritten?: boolean | null;
-            /** Request Id */
-            request_id?: string | null;
-            /** Tools */
-            tools?: string[];
-            /** Total Tokens */
-            total_tokens?: number | null;
-        };
-        /**
-         * RuntimeConstraintsResponse
-         * @description Global server-enforced constraints for client preflight validation.
-         */
-        RuntimeConstraintsResponse: {
-            /** Max Input Length */
-            max_input_length: number;
-            /** Max Upload Bytes */
-            max_upload_bytes: number;
-            /** Supported Upload Suffixes */
-            supported_upload_suffixes: string[];
-        };
-        /**
-         * RuntimeSettingsResponse
-         * @description Client-facing runtime contract: providers, packs, and constraints.
-         */
-        RuntimeSettingsResponse: {
-            constraints: components["schemas"]["RuntimeConstraintsResponse"];
-            /** Default Provider */
-            default_provider: string;
-            /** Enabled Packs */
-            enabled_packs: string[];
-            /** Model Settings */
-            model_settings: components["schemas"]["ModelSettingDefResponse"][];
-            ollama: components["schemas"]["OllamaSettingsResponse"];
-            openrouter: components["schemas"]["OpenRouterSettingsResponse"];
-            /** Providers */
-            providers: string[];
-        };
-        /**
-         * SourceReferenceResponse
-         * @description Provenance id/type for projected tool results.
-         */
-        SourceReferenceResponse: {
-            /** Source Id */
-            source_id: string;
-            /** Source Type */
-            source_type: string;
-        };
-        /**
-         * TestCaseResponse
-         * @description One generated test case.
-         */
-        TestCaseResponse: {
-            /** Expected */
-            expected: string;
-            /** References */
-            references: components["schemas"]["SourceReferenceResponse"][];
-            /** Steps */
-            steps: string[];
-            /** Title */
-            title: string;
-        };
-        /**
-         * TestCasesResponse
-         * @description Generated test cases for the chat UI.
-         */
-        TestCasesResponse: {
-            /** Cases */
-            cases: components["schemas"]["TestCaseResponse"][];
-            /** Output Style */
-            output_style: string;
-        };
-        /**
-         * ToolCallResponse
-         * @description One projected tool invocation (authored summary, never opaque payload).
-         */
-        ToolCallResponse: {
-            /** Ok */
-            ok: boolean;
-            /**
-             * Summary
-             * @default
-             */
-            summary: string;
-            /** Tool Name */
-            tool_name: string;
-        };
-        /**
-         * ToolRunResponse
-         * @description Projected Software Delivery tool-run view (no opaque payloads).
-         */
-        ToolRunResponse: {
-            /** Calls */
-            calls: components["schemas"]["ToolCallResponse"][];
-            /**
-             * Markdown
-             * @default
-             */
-            markdown: string;
-            risk?: components["schemas"]["RiskScoreResponse"] | null;
-            /** Summary */
-            summary: string;
-            test_cases?: components["schemas"]["TestCasesResponse"] | null;
-        };
-        /**
-         * ToolUsedResponse
-         * @description Opaque tool contribution measured by character count only.
-         */
-        ToolUsedResponse: {
-            /** Result Chars */
-            result_chars: number;
-            /** Tool Name */
-            tool_name: string;
-        };
-        /** ValidationError */
-        ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-        };
+  schemas: {
+    /** Body_create_document_api_v1_documents_post */
+    Body_create_document_api_v1_documents_post: {
+      /** File */
+      file?: string | null;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    /** Body_replace_document_api_v1_documents__source_id__put */
+    Body_replace_document_api_v1_documents__source_id__put: {
+      /** File */
+      file?: string | null;
+    };
+    /**
+     * CatalogDocumentResponse
+     * @description Wire projection of one uploaded catalog row (sanitized diagnostics).
+     */
+    CatalogDocumentResponse: {
+      /** Chunk Count */
+      chunk_count: number;
+      /** Content Format */
+      content_format?: string | null;
+      /** Error Summary */
+      error_summary?: string | null;
+      /** File Name */
+      file_name: string;
+      /** Has Error */
+      has_error: boolean;
+      /**
+       * Has Stored Content
+       * @default true
+       */
+      has_stored_content: boolean;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "pending" | "ready" | "failed" | "degraded";
+      /** Title */
+      title?: string | null;
+      /** Uploaded At */
+      uploaded_at: string;
+    };
+    /**
+     * ChatAskRequest
+     * @description Wire body for ``POST /api/v1/chat/ask``.
+     */
+    ChatAskRequest: {
+      /** History */
+      history?: components["schemas"]["ChatHistoryMessage"][];
+      /** Query */
+      query: string;
+      runtime?: components["schemas"]["ChatRuntimeRequest"] | null;
+    };
+    /**
+     * ChatAskResponse
+     * @description Successful grounded ask turn.
+     */
+    ChatAskResponse: {
+      /** Answer */
+      answer: string;
+      /** Citations */
+      citations: components["schemas"]["CitationResponse"][];
+      run?: components["schemas"]["RunMetaResponse"] | null;
+      tool_run?: components["schemas"]["ToolRunResponse"] | null;
+      /** Tools Used */
+      tools_used: components["schemas"]["ToolUsedResponse"][];
+    };
+    /**
+     * ChatHistoryMessage
+     * @description One prior conversation turn for grounded ask.
+     */
+    ChatHistoryMessage: {
+      /** Content */
+      content: string;
+      /**
+       * Role
+       * @enum {string}
+       */
+      role: "user" | "assistant";
+    };
+    /**
+     * ChatRuntimeRequest
+     * @description Optional client runtime overrides from Settings localStorage (#237).
+     */
+    ChatRuntimeRequest: {
+      /** Model */
+      model?: string | null;
+      /** Ollama Base Url */
+      ollama_base_url?: string | null;
+      /** Provider */
+      provider?: ("openrouter" | "ollama") | null;
+      /** Settings */
+      settings?: {
+        [key: string]: number;
+      };
+    };
+    /**
+     * CitationResponse
+     * @description Provenance pointer on a grounded answer.
+     */
+    CitationResponse: {
+      /** Chunk Index */
+      chunk_index?: number | null;
+      /** Quote */
+      quote?: string | null;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+    };
+    /**
+     * ConnectorSyncOutcomeResponse
+     * @description One listed Drive document outcome from a sync run.
+     */
+    ConnectorSyncOutcomeResponse: {
+      /** Chunk Count */
+      chunk_count: number;
+      /** Error Type */
+      error_type?: string | null;
+      /** Source Id */
+      source_id: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ingested" | "updated" | "skipped" | "failed" | "removed";
+    };
+    /**
+     * DocumentChunkListResponse
+     * @description Stored chunks for one catalogued document.
+     */
+    DocumentChunkListResponse: {
+      /** Chunks */
+      chunks: components["schemas"]["DocumentChunkResponse"][];
+      /** Has More */
+      has_more: boolean;
+    };
+    /**
+     * DocumentChunkResponse
+     * @description Wire projection of one stored chunk for the documents UI.
+     *
+     *     Scalar fields are an explicit allowlist. ``extra`` forwards connector
+     *     metadata from ``SourceMetadata.extra`` without a key filter — callers must
+     *     not treat it as a closed schema.
+     */
+    DocumentChunkResponse: {
+      /** Content */
+      content: string;
+      /** Content Format */
+      content_format?: string | null;
+      /** Extra */
+      extra: {
+        [key: string]: string;
+      };
+      /** Index */
+      index: number;
+      /** Provider */
+      provider?: string | null;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+      /** Title */
+      title?: string | null;
+    };
+    /**
+     * DocumentListResponse
+     * @description Uploaded-document catalog for the documents UI.
+     */
+    DocumentListResponse: {
+      /** Documents */
+      documents: components["schemas"]["CatalogDocumentResponse"][];
+    };
+    /**
+     * GitHubLastSyncResponse
+     * @description Last GitHub user-OAuth sync summary. Counts are honest; no secrets.
+     */
+    GitHubLastSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** New Count */
+      new_count: number;
+      /** Removed Count */
+      removed_count: number;
+      /** Synced At */
+      synced_at: string;
+      /** Unchanged Count */
+      unchanged_count: number;
+      /** Updated Count */
+      updated_count: number;
+    };
+    /**
+     * GitHubStatusResponse
+     * @description GitHub connector presence and user OAuth connection (no secrets).
+     */
+    GitHubStatusResponse: {
+      /** Account Login */
+      account_login?: string | null;
+      /** Available */
+      available: boolean;
+      /** Configured */
+      configured: boolean;
+      /**
+       * Connected
+       * @default false
+       */
+      connected: boolean;
+      /**
+       * Connection State
+       * @default disconnected
+       */
+      connection_state: string;
+      /**
+       * Document Count
+       * @default 0
+       */
+      document_count: number;
+      last_sync?: components["schemas"]["GitHubLastSyncResponse"] | null;
+      /**
+       * Oauth Ready
+       * @default false
+       */
+      oauth_ready: boolean;
+      /** Owner */
+      owner?: string | null;
+      /** Project Number */
+      project_number?: number | null;
+      /** Project Owner */
+      project_owner?: string | null;
+      /**
+       * Reauthorization Required
+       * @default false
+       */
+      reauthorization_required: boolean;
+      /** Repo */
+      repo?: string | null;
+      /** Sync Scope */
+      sync_scope?: string | null;
+    };
+    /**
+     * GitHubSyncResponse
+     * @description Projected GitHub sync counts and per-document outcomes.
+     */
+    GitHubSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** Ingested Count */
+      ingested_count: number;
+      /** Outcomes */
+      outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
+      /**
+       * Removed Count
+       * @default 0
+       */
+      removed_count: number;
+      /** Skipped Count */
+      skipped_count: number;
+      /**
+       * Updated Count
+       * @default 0
+       */
+      updated_count: number;
+    };
+    /**
+     * GoogleDriveBrowseItemResponse
+     * @description One Drive picker row. ``id`` is the only identity field.
+     */
+    GoogleDriveBrowseItemResponse: {
+      /** Id */
+      id: string;
+      /** Kind */
+      kind: string;
+      /** Mime Type */
+      mime_type?: string | null;
+      /** Modified At */
+      modified_at?: string | null;
+      /** Name */
+      name: string;
+      /** Supported */
+      supported: boolean;
+    };
+    /**
+     * GoogleDriveBrowsePageResponse
+     * @description One page of Drive picker results. Tokens stay off this payload.
+     */
+    GoogleDriveBrowsePageResponse: {
+      /** Items */
+      items: components["schemas"]["GoogleDriveBrowseItemResponse"][];
+      /** Next Page Token */
+      next_page_token?: string | null;
+    };
+    /**
+     * GoogleDriveLastSyncResponse
+     * @description Last user-OAuth sync summary. Counts are honest; no secrets.
+     */
+    GoogleDriveLastSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** New Count */
+      new_count: number;
+      /** Synced At */
+      synced_at: string;
+      /** Unchanged Count */
+      unchanged_count: number;
+      /** Updated Count */
+      updated_count: number;
+    };
+    /**
+     * GoogleDriveSelectedItemRequest
+     * @description PUT selection item. ``root`` is rejected so sync cannot cover all Drive.
+     */
+    GoogleDriveSelectedItemRequest: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /**
+     * GoogleDriveSelectedItemResponse
+     * @description Saved sync root: Drive ID plus a presentation name.
+     */
+    GoogleDriveSelectedItemResponse: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /**
+     * GoogleDriveSelectionRequest
+     * @description PUT body: bounded so one request can finish inside the client timeout.
+     */
+    GoogleDriveSelectionRequest: {
+      /** Files */
+      files?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
+      /** Folders */
+      folders?: components["schemas"]["GoogleDriveSelectedItemRequest"][];
+    };
+    /**
+     * GoogleDriveSelectionResponse
+     * @description Saved folder and exact-file roots. Unbounded so existing grants still load.
+     */
+    GoogleDriveSelectionResponse: {
+      /** Files */
+      files?: components["schemas"]["GoogleDriveSelectedItemResponse"][];
+      /** Folders */
+      folders?: components["schemas"]["GoogleDriveSelectedItemResponse"][];
+    };
+    /**
+     * GoogleDriveStatusResponse
+     * @description Google Drive connector presence and user OAuth connection (no secrets).
+     */
+    GoogleDriveStatusResponse: {
+      /** Account Email */
+      account_email?: string | null;
+      /** Available */
+      available: boolean;
+      /** Configured */
+      configured: boolean;
+      /**
+       * Connected
+       * @default false
+       */
+      connected: boolean;
+      /**
+       * Connection State
+       * @default disconnected
+       */
+      connection_state: string;
+      /**
+       * Document Count
+       * @default 0
+       */
+      document_count: number;
+      /** Folder Count */
+      folder_count?: number | null;
+      last_sync?: components["schemas"]["GoogleDriveLastSyncResponse"] | null;
+      /**
+       * Oauth Ready
+       * @default false
+       */
+      oauth_ready: boolean;
+      /**
+       * Reauthorization Required
+       * @default false
+       */
+      reauthorization_required: boolean;
+      /**
+       * Setup Required
+       * @default false
+       */
+      setup_required: boolean;
+      /** Sync Scope */
+      sync_scope?: string | null;
+    };
+    /**
+     * GoogleDriveSyncResponse
+     * @description Projected connector sync counts and per-document outcomes.
+     */
+    GoogleDriveSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** Ingested Count */
+      ingested_count: number;
+      /** Outcomes */
+      outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
+      /**
+       * Removed Count
+       * @default 0
+       */
+      removed_count: number;
+      /** Skipped Count */
+      skipped_count: number;
+      /**
+       * Updated Count
+       * @default 0
+       */
+      updated_count: number;
+    };
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
+    };
+    /**
+     * HealthResponse
+     * @description Operational readiness payload for unversioned ``GET /health``.
+     */
+    HealthResponse: {
+      /**
+       * Status
+       * @example ok
+       */
+      status: string;
+    };
+    /**
+     * HubSourceType
+     * @description Hub catalog kinds accepted by chunk-inspect query params.
+     *
+     *     Mirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so
+     *     the wire contract stays documented and does not silently widen with
+     *     ``SourceType``.
+     * @enum {string}
+     */
+    HubSourceType: "knowledge_document" | "google_drive" | "github";
+    /**
+     * ModelSettingDefResponse
+     * @description One generation setting for Settings UI controls.
+     */
+    ModelSettingDefResponse: {
+      /** Default */
+      default: number;
+      /** Help */
+      help: string;
+      /** Key */
+      key: string;
+      /** Label */
+      label: string;
+      /** Max Value */
+      max_value: number;
+      /** Min Value */
+      min_value: number;
+      /** Providers */
+      providers: string[];
+      /** Step */
+      step: number;
+      /** Widget */
+      widget: string;
+    };
+    /**
+     * OllamaSettingsResponse
+     * @description Ollama defaults from runtime config (live models come from probe).
+     */
+    OllamaSettingsResponse: {
+      /** Default Base Url */
+      default_base_url?: string | null;
+      /** Default Model */
+      default_model?: string | null;
+    };
+    /**
+     * OllamaStatusResponse
+     * @description Ollama reachability and installed models for a base URL.
+     */
+    OllamaStatusResponse: {
+      /** Models */
+      models: string[];
+      /** Reachable */
+      reachable: boolean;
+    };
+    /**
+     * OpenRouterSettingsResponse
+     * @description OpenRouter models and default from runtime config.
+     */
+    OpenRouterSettingsResponse: {
+      /** Default Model */
+      default_model?: string | null;
+      /** Models */
+      models: string[];
+    };
+    /**
+     * Problem
+     * @description RFC 9457 Problem Details plus Kernector extensions.
+     */
+    Problem: {
+      /** Code */
+      code: string;
+      /** Detail */
+      detail: string;
+      /**
+       * Errors
+       * @default null
+       */
+      errors: components["schemas"]["ProblemError"][] | null;
+      /**
+       * Instance
+       * @default null
+       */
+      instance: string | null;
+      /**
+       * Request Id
+       * @default null
+       */
+      request_id: string | null;
+      /** Status */
+      status: number;
+      /** Title */
+      title: string;
+      /** Type */
+      type: string;
+    };
+    /**
+     * ProblemError
+     * @description Field-level Problem Details extension entry.
+     */
+    ProblemError: {
+      /** Detail */
+      detail: string;
+      /** Pointer */
+      pointer: string;
+    };
+    /**
+     * RiskFactorResponse
+     * @description One risk factor with provenance ids only.
+     */
+    RiskFactorResponse: {
+      /** Factor Id */
+      factor_id: string;
+      /** References */
+      references: components["schemas"]["SourceReferenceResponse"][];
+      /** Weight */
+      weight: number;
+    };
+    /**
+     * RiskScoreResponse
+     * @description Structured risk assessment for the chat UI.
+     */
+    RiskScoreResponse: {
+      /** Factors */
+      factors: components["schemas"]["RiskFactorResponse"][];
+      /** Level */
+      level: string;
+      /** Rationale */
+      rationale: string;
+      /** Score */
+      score: number;
+    };
+    /**
+     * RunMetaResponse
+     * @description Safe run fields the chat UI may display (allowlisted projection).
+     */
+    RunMetaResponse: {
+      /** Citation Count */
+      citation_count?: number | null;
+      /** Completion Tokens */
+      completion_tokens?: number | null;
+      /** Hit Count */
+      hit_count?: number | null;
+      /** Latency Ms */
+      latency_ms?: number | null;
+      /** Model */
+      model?: string | null;
+      /** Outcome */
+      outcome?: string | null;
+      /** Pack */
+      pack?: string | null;
+      /** Prompt Tokens */
+      prompt_tokens?: number | null;
+      /** Query Rewritten */
+      query_rewritten?: boolean | null;
+      /** Request Id */
+      request_id?: string | null;
+      /** Tools */
+      tools?: string[];
+      /** Total Tokens */
+      total_tokens?: number | null;
+    };
+    /**
+     * RuntimeConstraintsResponse
+     * @description Global server-enforced constraints for client preflight validation.
+     */
+    RuntimeConstraintsResponse: {
+      /** Max Input Length */
+      max_input_length: number;
+      /** Max Upload Bytes */
+      max_upload_bytes: number;
+      /** Supported Upload Suffixes */
+      supported_upload_suffixes: string[];
+    };
+    /**
+     * RuntimeSettingsResponse
+     * @description Client-facing runtime contract: providers, packs, and constraints.
+     */
+    RuntimeSettingsResponse: {
+      constraints: components["schemas"]["RuntimeConstraintsResponse"];
+      /** Default Provider */
+      default_provider: string;
+      /** Enabled Packs */
+      enabled_packs: string[];
+      /** Model Settings */
+      model_settings: components["schemas"]["ModelSettingDefResponse"][];
+      ollama: components["schemas"]["OllamaSettingsResponse"];
+      openrouter: components["schemas"]["OpenRouterSettingsResponse"];
+      /** Providers */
+      providers: string[];
+    };
+    /**
+     * SourceReferenceResponse
+     * @description Provenance id/type for projected tool results.
+     */
+    SourceReferenceResponse: {
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+    };
+    /**
+     * TestCaseResponse
+     * @description One generated test case.
+     */
+    TestCaseResponse: {
+      /** Expected */
+      expected: string;
+      /** References */
+      references: components["schemas"]["SourceReferenceResponse"][];
+      /** Steps */
+      steps: string[];
+      /** Title */
+      title: string;
+    };
+    /**
+     * TestCasesResponse
+     * @description Generated test cases for the chat UI.
+     */
+    TestCasesResponse: {
+      /** Cases */
+      cases: components["schemas"]["TestCaseResponse"][];
+      /** Output Style */
+      output_style: string;
+    };
+    /**
+     * ToolCallResponse
+     * @description One projected tool invocation (authored summary, never opaque payload).
+     */
+    ToolCallResponse: {
+      /** Ok */
+      ok: boolean;
+      /**
+       * Summary
+       * @default
+       */
+      summary: string;
+      /** Tool Name */
+      tool_name: string;
+    };
+    /**
+     * ToolRunResponse
+     * @description Projected Software Delivery tool-run view (no opaque payloads).
+     */
+    ToolRunResponse: {
+      /** Calls */
+      calls: components["schemas"]["ToolCallResponse"][];
+      /**
+       * Markdown
+       * @default
+       */
+      markdown: string;
+      risk?: components["schemas"]["RiskScoreResponse"] | null;
+      /** Summary */
+      summary: string;
+      test_cases?: components["schemas"]["TestCasesResponse"] | null;
+    };
+    /**
+     * ToolUsedResponse
+     * @description Opaque tool contribution measured by character count only.
+     */
+    ToolUsedResponse: {
+      /** Result Chars */
+      result_chars: number;
+      /** Tool Name */
+      tool_name: string;
+    };
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    chat_ask_api_v1_chat_ask_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatAskRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatAskResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Provider error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  chat_ask_api_v1_chat_ask_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    github_connector_status_api_v1_connectors_github_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GitHubStatusResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChatAskRequest"];
+      };
     };
-    github_connector_disconnect_api_v1_connectors_github_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["ChatAskResponse"];
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    github_connector_last_sync_api_v1_connectors_github_last_sync_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GitHubLastSyncResponse"] | null;
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  github_connector_status_api_v1_connectors_github_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    github_oauth_callback_api_v1_connectors_github_oauth_callback_get: {
-        parameters: {
-            query?: {
-                state?: string | null;
-                code?: string | null;
-                error?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["GitHubStatusResponse"];
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    github_oauth_start_api_v1_connectors_github_oauth_start_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  github_connector_disconnect_api_v1_connectors_github_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    github_connector_sync_api_v1_connectors_github_sync_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GitHubSyncResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Provider error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    google_drive_connector_status_api_v1_connectors_google_drive_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoogleDriveStatusResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  github_connector_last_sync_api_v1_connectors_github_last_sync_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    google_drive_connector_disconnect_api_v1_connectors_google_drive_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json":
+            components["schemas"]["GitHubLastSyncResponse"] | null;
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    google_drive_connector_items_api_v1_connectors_google_drive_items_get: {
-        parameters: {
-            query?: {
-                parent_id?: string | null;
-                kind?: string;
-                query?: string | null;
-                page_token?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoogleDriveBrowsePageResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Provider error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  github_oauth_callback_api_v1_connectors_github_oauth_callback_get: {
+    parameters: {
+      query?: {
+        state?: string | null;
+        code?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get: {
-        parameters: {
-            query?: {
-                state?: string | null;
-                code?: string | null;
-                error?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": unknown;
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  github_oauth_start_api_v1_connectors_github_oauth_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": unknown;
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GoogleDriveSelectionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Provider error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  github_connector_sync_api_v1_connectors_github_sync_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    google_drive_connector_sync_api_v1_connectors_google_drive_sync_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoogleDriveSyncResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Provider error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["GitHubSyncResponse"];
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    list_documents_api_v1_documents_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocumentListResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  google_drive_connector_status_api_v1_connectors_google_drive_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    create_document_api_v1_documents_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_create_document_api_v1_documents_post"];
-            };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveStatusResponse"];
         };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CatalogDocumentResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Payload too large */
-            413: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    replace_document_api_v1_documents__source_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                source_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_replace_document_api_v1_documents__source_id__put"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CatalogDocumentResponse"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Payload too large */
-            413: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  google_drive_connector_disconnect_api_v1_connectors_google_drive_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    delete_document_api_v1_documents__source_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                source_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    list_document_chunks_api_v1_documents__source_id__chunks_get: {
-        parameters: {
-            query: {
-                source_type: components["schemas"]["HubSourceType"];
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                source_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocumentChunkListResponse"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  google_drive_connector_items_api_v1_connectors_google_drive_items_get: {
+    parameters: {
+      query?: {
+        parent_id?: string | null;
+        kind?: string;
+        query?: string | null;
+        page_token?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    get_document_content_api_v1_documents__source_id__content_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                source_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Original document content */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/pdf": string;
-                    "text/plain; charset=utf-8": string;
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveBrowsePageResponse"];
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    download_document_api_v1_documents__source_id__download_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                source_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Original document download */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/octet-stream": string;
-                    "application/pdf": string;
-                    "text/plain; charset=utf-8": string;
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Validation error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  google_drive_oauth_callback_api_v1_connectors_google_drive_oauth_callback_get: {
+    parameters: {
+      query?: {
+        state?: string | null;
+        code?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    ollama_status_api_v1_ollama_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OllamaStatusResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": unknown;
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
-    runtime_settings_api_v1_settings_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RuntimeSettingsResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
+  };
+  google_drive_oauth_start_api_v1_connectors_google_drive_oauth_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    health_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-            /** @description Method not allowed */
-            405: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+        content: {
+          "application/json": unknown;
         };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
+  };
+  google_drive_connector_get_selection_api_v1_connectors_google_drive_selection_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_put_selection_api_v1_connectors_google_drive_selection_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GoogleDriveSelectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  google_drive_connector_sync_api_v1_connectors_google_drive_sync_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveSyncResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_documents_api_v1_documents_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentListResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  create_document_api_v1_documents_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "multipart/form-data": components["schemas"]["Body_create_document_api_v1_documents_post"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogDocumentResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Payload too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  replace_document_api_v1_documents__source_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "multipart/form-data": components["schemas"]["Body_replace_document_api_v1_documents__source_id__put"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogDocumentResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Payload too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  delete_document_api_v1_documents__source_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_document_chunks_api_v1_documents__source_id__chunks_get: {
+    parameters: {
+      query: {
+        source_type: components["schemas"]["HubSourceType"];
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentChunkListResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_document_content_api_v1_documents__source_id__content_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Original document content */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/pdf": string;
+          "text/plain; charset=utf-8": string;
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  download_document_api_v1_documents__source_id__download_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Original document download */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": string;
+          "application/pdf": string;
+          "text/plain; charset=utf-8": string;
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  ollama_status_api_v1_ollama_status_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OllamaStatusResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  runtime_settings_api_v1_settings_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeSettingsResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  health_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HealthResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
 }

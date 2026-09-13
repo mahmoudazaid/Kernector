@@ -88,12 +88,7 @@
             "type": "string"
           },
           "status": {
-            "enum": [
-              "pending",
-              "ready",
-              "failed",
-              "degraded"
-            ],
+            "enum": ["pending", "ready", "failed", "degraded"],
             "title": "Status",
             "type": "string"
           },
@@ -151,9 +146,7 @@
             ]
           }
         },
-        "required": [
-          "query"
-        ],
+        "required": ["query"],
         "title": "ChatAskRequest",
         "type": "object"
       },
@@ -199,11 +192,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "answer",
-          "citations",
-          "tools_used"
-        ],
+        "required": ["answer", "citations", "tools_used"],
         "title": "ChatAskResponse",
         "type": "object"
       },
@@ -216,18 +205,12 @@
             "type": "string"
           },
           "role": {
-            "enum": [
-              "user",
-              "assistant"
-            ],
+            "enum": ["user", "assistant"],
             "title": "Role",
             "type": "string"
           }
         },
-        "required": [
-          "role",
-          "content"
-        ],
+        "required": ["role", "content"],
         "title": "ChatHistoryMessage",
         "type": "object"
       },
@@ -259,10 +242,7 @@
           "provider": {
             "anyOf": [
               {
-                "enum": [
-                  "openrouter",
-                  "ollama"
-                ],
+                "enum": ["openrouter", "ollama"],
                 "type": "string"
               },
               {
@@ -323,10 +303,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "source_id",
-          "source_type"
-        ],
+        "required": ["source_id", "source_type"],
         "title": "CitationResponse",
         "type": "object"
       },
@@ -353,22 +330,12 @@
             "type": "string"
           },
           "status": {
-            "enum": [
-              "ingested",
-              "updated",
-              "skipped",
-              "failed",
-              "removed"
-            ],
+            "enum": ["ingested", "updated", "skipped", "failed", "removed"],
             "title": "Status",
             "type": "string"
           }
         },
-        "required": [
-          "source_id",
-          "status",
-          "chunk_count"
-        ],
+        "required": ["source_id", "status", "chunk_count"],
         "title": "ConnectorSyncOutcomeResponse",
         "type": "object"
       },
@@ -387,10 +354,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "chunks",
-          "has_more"
-        ],
+        "required": ["chunks", "has_more"],
         "title": "DocumentChunkListResponse",
         "type": "object"
       },
@@ -454,13 +418,7 @@
             "title": "Title"
           }
         },
-        "required": [
-          "index",
-          "content",
-          "source_id",
-          "source_type",
-          "extra"
-        ],
+        "required": ["index", "content", "source_id", "source_type", "extra"],
         "title": "DocumentChunkResponse",
         "type": "object"
       },
@@ -475,9 +433,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "documents"
-        ],
+        "required": ["documents"],
         "title": "DocumentListResponse",
         "type": "object"
       },
@@ -633,10 +589,7 @@
             "title": "Sync Scope"
           }
         },
-        "required": [
-          "configured",
-          "available"
-        ],
+        "required": ["configured", "available"],
         "title": "GitHubStatusResponse",
         "type": "object"
       },
@@ -724,12 +677,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "kind",
-          "supported"
-        ],
+        "required": ["id", "name", "kind", "supported"],
         "title": "GoogleDriveBrowseItemResponse",
         "type": "object"
       },
@@ -755,9 +703,7 @@
             "title": "Next Page Token"
           }
         },
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "title": "GoogleDriveBrowsePageResponse",
         "type": "object"
       },
@@ -812,10 +758,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "name"
-        ],
+        "required": ["id", "name"],
         "title": "GoogleDriveSelectedItemRequest",
         "type": "object"
       },
@@ -834,10 +777,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "name"
-        ],
+        "required": ["id", "name"],
         "title": "GoogleDriveSelectedItemResponse",
         "type": "object"
       },
@@ -970,10 +910,7 @@
             "title": "Sync Scope"
           }
         },
-        "required": [
-          "configured",
-          "available"
-        ],
+        "required": ["configured", "available"],
         "title": "GoogleDriveStatusResponse",
         "type": "object"
       },
@@ -1036,26 +973,18 @@
         "description": "Operational readiness payload for unversioned ``GET /health``.",
         "properties": {
           "status": {
-            "examples": [
-              "ok"
-            ],
+            "examples": ["ok"],
             "title": "Status",
             "type": "string"
           }
         },
-        "required": [
-          "status"
-        ],
+        "required": ["status"],
         "title": "HealthResponse",
         "type": "object"
       },
       "HubSourceType": {
         "description": "Hub catalog kinds accepted by chunk-inspect query params.\n\nMirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so\nthe wire contract stays documented and does not silently widen with\n``SourceType``.",
-        "enum": [
-          "knowledge_document",
-          "google_drive",
-          "github"
-        ],
+        "enum": ["knowledge_document", "google_drive", "github"],
         "title": "HubSourceType",
         "type": "string"
       },
@@ -1188,10 +1117,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "reachable",
-          "models"
-        ],
+        "required": ["reachable", "models"],
         "title": "OllamaStatusResponse",
         "type": "object"
       },
@@ -1217,9 +1143,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "models"
-        ],
+        "required": ["models"],
         "title": "OpenRouterSettingsResponse",
         "type": "object"
       },
@@ -1286,13 +1210,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "type",
-          "title",
-          "status",
-          "detail",
-          "code"
-        ],
+        "required": ["type", "title", "status", "detail", "code"],
         "title": "Problem",
         "type": "object"
       },
@@ -1308,10 +1226,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "pointer",
-          "detail"
-        ],
+        "required": ["pointer", "detail"],
         "title": "ProblemError",
         "type": "object"
       },
@@ -1334,11 +1249,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "factor_id",
-          "weight",
-          "references"
-        ],
+        "required": ["factor_id", "weight", "references"],
         "title": "RiskFactorResponse",
         "type": "object"
       },
@@ -1365,12 +1276,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "score",
-          "level",
-          "rationale",
-          "factors"
-        ],
+        "required": ["score", "level", "rationale", "factors"],
         "title": "RiskScoreResponse",
         "type": "object"
       },
@@ -1598,10 +1504,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "source_id",
-          "source_type"
-        ],
+        "required": ["source_id", "source_type"],
         "title": "SourceReferenceResponse",
         "type": "object"
       },
@@ -1631,12 +1534,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "title",
-          "steps",
-          "expected",
-          "references"
-        ],
+        "required": ["title", "steps", "expected", "references"],
         "title": "TestCaseResponse",
         "type": "object"
       },
@@ -1655,10 +1553,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "output_style",
-          "cases"
-        ],
+        "required": ["output_style", "cases"],
         "title": "TestCasesResponse",
         "type": "object"
       },
@@ -1679,10 +1574,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "tool_name",
-          "ok"
-        ],
+        "required": ["tool_name", "ok"],
         "title": "ToolCallResponse",
         "type": "object"
       },
@@ -1726,10 +1618,7 @@
             ]
           }
         },
-        "required": [
-          "summary",
-          "calls"
-        ],
+        "required": ["summary", "calls"],
         "title": "ToolRunResponse",
         "type": "object"
       },
@@ -1745,10 +1634,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "tool_name",
-          "result_chars"
-        ],
+        "required": ["tool_name", "result_chars"],
         "title": "ToolUsedResponse",
         "type": "object"
       },
@@ -1784,11 +1670,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
+        "required": ["loc", "msg", "type"],
         "title": "ValidationError",
         "type": "object"
       }
@@ -1878,9 +1760,7 @@
           }
         },
         "summary": "Chat Ask",
-        "tags": [
-          "chat"
-        ]
+        "tags": ["chat"]
       }
     },
     "/api/v1/connectors/github": {
@@ -1923,9 +1803,7 @@
           }
         },
         "summary": "Github Connector Disconnect",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       },
       "get": {
         "description": "Return presentation-safe GitHub PAT flags and user OAuth connection.",
@@ -1963,9 +1841,7 @@
           }
         },
         "summary": "Github Connector Status",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/github/last-sync": {
@@ -2013,9 +1889,7 @@
           }
         },
         "summary": "Github Connector Last Sync",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/github/oauth/callback": {
@@ -2113,9 +1987,7 @@
           }
         },
         "summary": "Github Oauth Callback",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/github/oauth/start": {
@@ -2153,9 +2025,7 @@
           }
         },
         "summary": "Github Oauth Start",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/github/sync": {
@@ -2215,9 +2085,7 @@
           }
         },
         "summary": "Github Connector Sync",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/google-drive": {
@@ -2260,9 +2128,7 @@
           }
         },
         "summary": "Google Drive Connector Disconnect",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       },
       "get": {
         "description": "Return presentation-safe Drive SA flags and user OAuth connection.",
@@ -2300,9 +2166,7 @@
           }
         },
         "summary": "Google Drive Connector Status",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/google-drive/items": {
@@ -2432,9 +2296,7 @@
           }
         },
         "summary": "Google Drive Connector Items",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/google-drive/oauth/callback": {
@@ -2532,9 +2394,7 @@
           }
         },
         "summary": "Google Drive Oauth Callback",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/google-drive/oauth/start": {
@@ -2572,9 +2432,7 @@
           }
         },
         "summary": "Google Drive Oauth Start",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/google-drive/selection": {
@@ -2624,9 +2482,7 @@
           }
         },
         "summary": "Google Drive Connector Get Selection",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       },
       "put": {
         "description": "Validate access and atomically replace the saved Drive selection.",
@@ -2704,9 +2560,7 @@
           }
         },
         "summary": "Google Drive Connector Put Selection",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/connectors/google-drive/sync": {
@@ -2766,9 +2620,7 @@
           }
         },
         "summary": "Google Drive Connector Sync",
-        "tags": [
-          "connectors"
-        ]
+        "tags": ["connectors"]
       }
     },
     "/api/v1/documents": {
@@ -2808,9 +2660,7 @@
           }
         },
         "summary": "List Documents",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       },
       "post": {
         "description": "Upload a new document; always allocates a system-managed source ID.",
@@ -2887,9 +2737,7 @@
           }
         },
         "summary": "Create Document",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       }
     },
     "/api/v1/documents/{source_id}": {
@@ -2953,9 +2801,7 @@
           }
         },
         "summary": "Delete Document",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       },
       "put": {
         "description": "Replace document content under the same source ID.",
@@ -3053,9 +2899,7 @@
           }
         },
         "summary": "Replace Document",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       }
     },
     "/api/v1/documents/{source_id}/chunks": {
@@ -3157,9 +3001,7 @@
           }
         },
         "summary": "List Document Chunks",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       }
     },
     "/api/v1/documents/{source_id}/content": {
@@ -3237,9 +3079,7 @@
           }
         },
         "summary": "Get Document Content",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       }
     },
     "/api/v1/documents/{source_id}/download": {
@@ -3323,9 +3163,7 @@
           }
         },
         "summary": "Download Document",
-        "tags": [
-          "documents"
-        ]
+        "tags": ["documents"]
       }
     },
     "/api/v1/ollama/status": {
@@ -3375,9 +3213,7 @@
           }
         },
         "summary": "Ollama Status",
-        "tags": [
-          "settings"
-        ]
+        "tags": ["settings"]
       }
     },
     "/api/v1/settings": {
@@ -3417,9 +3253,7 @@
           }
         },
         "summary": "Runtime Settings",
-        "tags": [
-          "settings"
-        ]
+        "tags": ["settings"]
       }
     },
     "/health": {
@@ -3449,9 +3283,7 @@
           }
         },
         "summary": "Health",
-        "tags": [
-          "ops"
-        ]
+        "tags": ["ops"]
       }
     }
   }

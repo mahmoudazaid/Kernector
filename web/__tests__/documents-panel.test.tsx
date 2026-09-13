@@ -44,6 +44,23 @@ vi.mock("@/lib/api/connectors", async (importOriginal) => {
       .mockResolvedValue({ items: [], next_page_token: null }),
     googleDriveOAuthStartUrl: (baseUrl: string) =>
       `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
+    getGitHubStatus: vi.fn().mockResolvedValue({
+      configured: false,
+      available: true,
+      connected: false,
+      oauth_ready: true,
+      account_login: null,
+      document_count: 0,
+      owner: null,
+      repo: null,
+      last_sync: null,
+      reauthorization_required: false,
+      connection_state: "disconnected",
+    }),
+    syncGitHub: vi.fn(),
+    disconnectGitHub: vi.fn(),
+    githubOAuthStartUrl: (baseUrl: string) =>
+      `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/github/oauth/start`,
   };
 });
 
@@ -345,7 +362,7 @@ describe("DocumentsPanel", () => {
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
 
     const dialog = await screen.findByRole("dialog");
-    const alert = await screen.findByRole("alert");
+    const alert = await within(dialog).findByRole("alert");
     expect(dialog.contains(alert)).toBe(true);
     expect(alert).toHaveTextContent(/document upload failed/i);
     expect(dialog).toHaveAttribute("aria-describedby", "hub-upload-error");
@@ -633,8 +650,9 @@ describe("DocumentsPanel", () => {
     await user.click(await screen.findByRole("button", { name: /^browse$/i }));
 
     await screen.findByRole("dialog");
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByText(/document operation failed/i)).toBeNull();
+    expect(
+      screen.queryByText(/document operation failed/i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows sanitized per-document warning from error_summary", async () => {
@@ -899,9 +917,9 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByRole("button", { name: /^checking/i }),
     ).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      /settings catalog unavailable/i,
-    );
+    expect(
+      screen.getByText(/settings catalog unavailable/i).closest('[role="alert"]'),
+    ).toHaveTextContent(/settings catalog unavailable/i);
 
     finishReload(SETTINGS);
 
@@ -1295,9 +1313,16 @@ describe("DocumentsPanel", () => {
       />,
     );
 
-    expect(
-      await screen.findByRole("link", { name: /^connect$/i }),
-    ).toHaveAttribute(
+    const connectLinks = await screen.findAllByRole("link", {
+      name: /^connect$/i,
+    });
+    const driveConnect = connectLinks.find((link) =>
+      link
+        .getAttribute("href")
+        ?.includes("/api/v1/connectors/google-drive/oauth/start"),
+    );
+    expect(driveConnect).toBeDefined();
+    expect(driveConnect).toHaveAttribute(
       "href",
       "http://api.test/api/v1/connectors/google-drive/oauth/start",
     );
@@ -1305,6 +1330,7 @@ describe("DocumentsPanel", () => {
       name: "Available connectors",
     }).parentElement?.nextElementSibling;
     expect(available?.textContent).toMatch(/google drive/i);
+    expect(available?.textContent).toMatch(/github/i);
     expect(
       screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
