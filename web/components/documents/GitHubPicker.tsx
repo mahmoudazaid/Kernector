@@ -479,20 +479,6 @@ export function GitHubPicker({
               />
             </div>
           </div>
-          {hasProject ? (
-            <div className="kern-github-project-clear-row">
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => {
-                  setSelectedProjectOwner(null);
-                  setSelectedProjectNumber(null);
-                }}
-              >
-                Clear project
-              </Button>
-            </div>
-          ) : null}
           <div
             className={
               projectsLoading
@@ -551,6 +537,13 @@ export function GitHubPicker({
                           onChange={() => {
                             setSelectedProjectOwner(project.owner_login);
                             setSelectedProjectNumber(project.number);
+                          }}
+                          onClick={() => {
+                            if (!checked || busy) {
+                              return;
+                            }
+                            setSelectedProjectOwner(null);
+                            setSelectedProjectNumber(null);
                           }}
                         />
                         <span className="kern-drive-item-icon">

@@ -1588,12 +1588,6 @@ a.kern-btn {
   flex: 1;
 }
 
-.kern-github-project-clear-row {
-  display: flex;
-  justify-content: flex-end;
-  flex-shrink: 0;
-}
-
 @media (max-width: 48rem) {
   .kern-github-sources-panels {
     grid-template-columns: 1fr;

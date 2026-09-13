@@ -196,7 +196,7 @@ inventing a local look.
     together (`.kern-github-sources-panels`): **Repository code** (required,
     exactly one) and **Project issues** (optional, zero or one). Do **not**
     use tabs. Each panel has its own search. Project is not a child of the
-    repository. Provide an obvious **Clear project** action. Footer:
+    repository. Clear a selected project by clicking it again. Footer:
     `1 source selected` / `2 sources selected`; primary **Save sources**;
     disable until a repository is selected. Two columns on desktop; stack on
     narrow viewports.

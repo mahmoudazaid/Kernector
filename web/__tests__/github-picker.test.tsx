@@ -153,9 +153,12 @@ describe("GitHubPicker", () => {
       await within(dialog).findByRole("radio", { name: /#18 ai course/i }),
     ).toBeChecked();
     expect(within(dialog).getByText(/2 sources selected/i)).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: /clear project/i }),
+    ).not.toBeInTheDocument();
 
     await user.click(
-      within(dialog).getByRole("button", { name: /clear project/i }),
+      within(dialog).getByRole("radio", { name: /#18 ai course/i }),
     );
     expect(
       within(dialog).getByRole("radio", { name: /#18 ai course/i }),
