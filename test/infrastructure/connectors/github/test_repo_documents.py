@@ -106,6 +106,54 @@ def test_fetches_repo_blob_as_source_document() -> None:
     )
 
 
+def test_skips_empty_blobs_when_listing() -> None:
+    client = FakeGitHubClient(
+        tree=[
+            {
+                "type": "blob",
+                "path": "docs/empty.md",
+                "sha": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+                "size": 0,
+            },
+            {"type": "blob", "path": "docs/readme.md", "sha": "blob-1", "size": 11},
+        ]
+    )
+    adapter = GitHubRepoDocuments(client, GitHubRepoConfig(owner="octo", repo="hello"))
+
+    docs = adapter.list_documents()
+
+    assert [doc.source_id for doc in docs] == ["octo/hello:docs/readme.md"]
+
+
+def test_rejects_empty_blob_content_as_connector_error() -> None:
+    client = FakeGitHubClient(
+        tree=[{"type": "blob", "path": "docs/readme.md", "sha": "blob-1", "size": 1}],
+        blobs={"blob-1": b"   \n"},
+    )
+    adapter = GitHubRepoDocuments(client, GitHubRepoConfig(owner="octo", repo="hello"))
+    listed = adapter.list_documents()[0]
+
+    with pytest.raises(ConnectorError, match="empty"):
+        adapter.fetch_document(listed)
+
+
+def test_lists_nothing_when_repository_has_no_commits() -> None:
+    from infrastructure.connectors.github.client import GitHubEmptyRepositoryError
+
+    class EmptyRepoClient(FakeGitHubClient):
+        def resolve_commit_sha(self, owner: str, repo: str, ref: str) -> str:
+            raise GitHubEmptyRepositoryError(
+                "This GitHub repository has no commits yet."
+            )
+
+    adapter = GitHubRepoDocuments(
+        EmptyRepoClient(tree=[]),
+        GitHubRepoConfig(owner="octo", repo="empty"),
+    )
+
+    assert adapter.list_documents() == ()
+
+
 def test_rejects_non_utf8_blob_without_provider_detail() -> None:
     client = FakeGitHubClient(
         tree=[{"type": "blob", "path": "docs/readme.md", "sha": "blob-1", "size": 3}],

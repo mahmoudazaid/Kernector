@@ -361,6 +361,9 @@ export interface paths {
     /**
      * Delete Document
      * @description Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.
+     *
+     *     ``source_id`` uses a path converter so GitHub ids that contain ``/``
+     *     (``owner/repo:path/to/file``) still route after percent-decoding.
      */
     delete: operations["delete_document_api_v1_documents__source_id__delete"];
     options?: never;
@@ -761,6 +764,8 @@ export interface components {
      * @description Saved Hub sync targets (no tokens).
      */
     GitHubSelectionResponse: {
+      /** Connector Id */
+      connector_id?: string | null;
       /** Owner */
       owner?: string | null;
       /** Project Number */

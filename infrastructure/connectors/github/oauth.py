@@ -17,8 +17,9 @@ import os
 import secrets
 import tempfile
 import time
+import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 from urllib.error import HTTPError, URLError
@@ -28,6 +29,27 @@ from urllib.request import Request, urlopen
 from infrastructure.config import GitHubOAuthSettings
 
 _LOG = logging.getLogger(__name__)
+
+
+def new_github_connector_id() -> str:
+    """Return a new opaque connector instance id."""
+    return uuid.uuid4().hex
+
+
+def with_connector_id(
+    connection: GitHubOAuthConnection,
+    *,
+    preferred: str | None = None,
+) -> GitHubOAuthConnection:
+    """Return ``connection`` with a stable connector_id, minting when missing."""
+    if connection.connector_id:
+        return connection
+    connector_id = preferred.strip() if isinstance(preferred, str) else None
+    if not connector_id:
+        connector_id = new_github_connector_id()
+    return replace(connection, connector_id=connector_id)
+
+
 _AUTH_ENDPOINT = "https://github.com/login/oauth/authorize"
 _TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token"
 _REVOKE_ENDPOINT = "https://api.github.com/applications/{client_id}/grant"
@@ -74,6 +96,7 @@ class GitHubOAuthConnection:
     last_sync_removed: int | None
     last_sync_failed: int | None
     reauthorization_required: bool
+    connector_id: str | None = None
 
     def __repr__(self) -> str:
         return (
@@ -82,6 +105,7 @@ class GitHubOAuthConnection:
             f"account_login={self.account_login!r}, owner={self.owner!r}, "
             f"repo={self.repo!r}, project_owner={self.project_owner!r}, "
             f"project_number={self.project_number!r}, "
+            f"connector_id={self.connector_id!r}, "
             f"last_synced_at={self.last_synced_at!r}, "
             f"reauthorization_required={self.reauthorization_required})"
         )
@@ -207,6 +231,7 @@ class GitHubOAuthConnectionStore:
             last_sync_removed=_optional_int(raw.get("last_sync_removed")),
             last_sync_failed=_optional_int(raw.get("last_sync_failed")),
             reauthorization_required=bool(raw.get("reauthorization_required")),
+            connector_id=_optional_str(raw.get("connector_id")),
         )
 
 
@@ -394,6 +419,7 @@ def _connection_payload(connection: GitHubOAuthConnection) -> dict[str, object]:
         "last_sync_removed": connection.last_sync_removed,
         "last_sync_failed": connection.last_sync_failed,
         "reauthorization_required": connection.reauthorization_required,
+        "connector_id": connection.connector_id,
     }
 
 

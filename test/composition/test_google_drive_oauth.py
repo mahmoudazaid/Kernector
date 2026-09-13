@@ -47,7 +47,7 @@ from domain.knowledge import (
     SourceType,
 )
 from infrastructure.config import GoogleOAuthSettings, load_settings
-from infrastructure.connectors.google_oauth import (
+from infrastructure.connectors.google_drive.oauth import (
     GoogleDriveSelectedItem as StoredItem,
     GoogleOAuthConnection,
     GoogleOAuthConnectionStore,
@@ -172,8 +172,8 @@ def test_callback_rejects_replayed_state(settings) -> None:
     assert stored.files == ()
     status = google_drive_status(settings)
     assert status.connected is True
-    assert status.setup_required is False
-    assert status.connection_state == "ready"
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
     assert status.sync_scope is None
 
 
@@ -341,7 +341,8 @@ def test_callback_reconnect_with_unknown_email_drops_scope(settings) -> None:
     status = google_drive_status(settings)
     assert status.account_email is None
     assert status.reauthorization_required is False
-    assert status.connection_state == "ready"
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
     with pytest.raises(GoogleDriveSelectionRequiredError):
         sync_google_drive_oauth(settings, connection_store=tokens)
 
@@ -368,7 +369,8 @@ def test_callback_first_connect_with_unknown_email_is_not_revoked(settings) -> N
     status = google_drive_status(settings)
     assert status.connected is True
     assert status.reauthorization_required is False
-    assert status.connection_state == "ready"
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
     assert status.account_email is None
 
 
@@ -990,8 +992,8 @@ def test_put_selection_allows_empty(settings) -> None:
     assert loaded.folders == ()
     assert loaded.files == ()
     status = google_drive_status(settings)
-    assert status.setup_required is False
-    assert status.connection_state == "ready"
+    assert status.setup_required is True
+    assert status.connection_state == "setup_required"
 
 
 class _FakeRemote:

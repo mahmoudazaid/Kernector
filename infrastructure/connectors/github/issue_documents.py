@@ -25,6 +25,7 @@ class GitHubIssueConfig:
 
     project_node_id: str
     include_comments: bool = False
+    connector_id: str | None = None
 
 
 class GitHubIssueDocuments:
@@ -50,6 +51,7 @@ class GitHubIssueDocuments:
                         "project_node_id": self._config.project_node_id,
                         "number": str(number),
                         "url": _optional_text(content.get("url")) or "",
+                        **_connector_extra(self._config.connector_id),
                     },
                 )
             )
@@ -70,6 +72,7 @@ class GitHubIssueDocuments:
                     "github_issue_url": _optional_text(issue.get("url")) or "",
                     "github_repository": _repository_name(issue),
                     "github_updated_at": _required_text(issue, "updatedAt"),
+                    **_connector_extra(self._config.connector_id),
                 },
             ),
             _markdown_for_issue(issue, include_comments=self._config.include_comments),
@@ -158,6 +161,12 @@ def _comments(raw: object) -> list[str]:
 
 def _repository_name(issue: Mapping[str, object]) -> str:
     return _nested_optional_text(issue, ("repository", "nameWithOwner")) or ""
+
+
+def _connector_extra(connector_id: str | None) -> dict[str, str]:
+    if isinstance(connector_id, str) and connector_id.strip():
+        return {"connector_id": connector_id.strip()}
+    return {}
 
 
 def _milestone(issue: Mapping[str, object]) -> str:

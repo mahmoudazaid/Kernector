@@ -10,8 +10,8 @@ from urllib.error import URLError
 import pytest
 
 from infrastructure.config import GoogleOAuthSettings
-from infrastructure.connectors import google_oauth as oauth_mod
-from infrastructure.connectors.google_oauth import (
+from infrastructure.connectors.google_drive import oauth as oauth_mod
+from infrastructure.connectors.google_drive.oauth import (
     GoogleDriveSelectedItem,
     GoogleOAuthConnection,
     GoogleOAuthConnectionStore,
@@ -178,7 +178,7 @@ def test_exchange_logs_omit_tokens(
             redirect_uri="http://127.0.0.1:8000/callback",
         )
     )
-    caplog.set_level(logging.INFO, logger="infrastructure.connectors.google_oauth")
+    caplog.set_level(logging.INFO, logger="infrastructure.connectors.google_drive.oauth")
 
     with pytest.raises(GoogleOAuthError):
         gateway.exchange_code("4/secret-auth-code")

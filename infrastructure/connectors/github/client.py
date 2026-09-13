@@ -12,11 +12,16 @@ _MSG_AUTH = "GitHub rejected the connector credentials or permissions."
 _MSG_UNAVAILABLE = "GitHub is temporarily unavailable."
 _MSG_REQUEST_FAILED = "The GitHub request failed."
 _MSG_INCOMPLETE_TREE = "GitHub returned an incomplete repository listing."
+_MSG_EMPTY_REPOSITORY = "This GitHub repository has no commits yet."
 _MSG_CONFIG = "GitHub connector optional dependency is missing; install kernector[github]."
 
 
 class GitHubConfigError(RuntimeError):
     """GitHub connector settings or optional dependencies are unusable."""
+
+
+class GitHubEmptyRepositoryError(ConnectorError):
+    """The selected repository exists but has no commits to sync."""
 
 
 class GitHubClient(Protocol):
@@ -386,6 +391,8 @@ def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorErr
         status = int(error.response.status_code)
         if status in {401, 403}:
             return ConnectorAuthError(_MSG_AUTH)
+        if status == 409:
+            return GitHubEmptyRepositoryError(_MSG_EMPTY_REPOSITORY)
         if status == 429 or status >= 500:
             return ConnectorUnavailableError(_MSG_UNAVAILABLE)
         return ConnectorError(_MSG_REQUEST_FAILED)

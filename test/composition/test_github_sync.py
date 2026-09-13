@@ -70,11 +70,17 @@ def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     return load_settings()
 
 
-def _listed(source_id: str = "repo:README.md", revision: str = "1") -> ConnectorDocument:
+def _listed(
+    source_id: str = "repo:README.md",
+    revision: str = "1",
+    *,
+    connector_id: str = "connector-cli",
+) -> ConnectorDocument:
     return ConnectorDocument(
         reference=SourceReference(source_id, SourceType.GITHUB),
         file_name="README.md",
         revision=revision,
+        extra={"connector_id": connector_id},
     )
 
 
@@ -102,6 +108,7 @@ def test_sync_github_reconciles_missing_github_rows(
             chunk_count=1,
             error=None,
             revision="old",
+            connector_id="connector-cli",
         )
     )
     store = InMemoryVectorStore()
@@ -109,6 +116,10 @@ def test_sync_github_reconciles_missing_github_rows(
         composition_container,
         "build_ingest_knowledge",
         lambda _settings, *, vector_store=None: RecordingIngest(),
+    )
+    settings = replace(
+        settings,
+        github=replace(settings.github, connector_id="connector-cli"),
     )
 
     response = sync_github(
@@ -123,10 +134,23 @@ def test_sync_github_reconciles_missing_github_rows(
     assert catalog.get(stale) is None
 
 
+def test_sync_github_requires_connector_id(settings: Settings) -> None:
+    with pytest.raises(ConfigurationError, match="connector_id"):
+        sync_github(
+            settings,
+            connector=RecordingConnector((_listed(),)),
+            catalog=InMemoryDocumentCatalog(),
+        )
+
+
 def test_sync_github_wraps_listing_failure(settings: Settings) -> None:
     class FailingConnector(RecordingConnector):
         def list_documents(self) -> tuple[ConnectorDocument, ...]:
             raise ConnectorError("secret")
 
+    settings = replace(
+        settings,
+        github=replace(settings.github, connector_id="connector-cli"),
+    )
     with pytest.raises(ConnectorSyncError, match="GitHub connector sync failed"):
         sync_github(settings, connector=FailingConnector(), catalog=InMemoryDocumentCatalog())

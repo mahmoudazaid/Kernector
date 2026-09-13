@@ -469,6 +469,8 @@ describe("DocumentsPanel", () => {
       name: /delete document/i,
     });
     expect(dialog).toHaveTextContent(/cannot be undone/i);
+    expect(dialog).toHaveTextContent(/Delete “spec.md”\?/i);
+    expect(dialog).not.toHaveTextContent(/src-1/);
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
 
     expect(remove).toHaveBeenCalledWith(
@@ -477,6 +479,43 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByText(/deleted document src-1/i),
     ).toBeInTheDocument();
+  });
+
+  it("formats GitHub delete confirms without raw repo:path source ids", async () => {
+    const user = userEvent.setup();
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              source_id:
+                "mahmoudazaid/Kernector:.agents/skills/fastapi/references/dependencies.md",
+              source_type: "github",
+              file_name: "dependencies.md",
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    expect(
+      await screen.findByText(
+        "mahmoudazaid/Kernector · .agents/skills/fastapi/references/dependencies.md",
+      ),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /delete dependencies\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    expect(dialog).toHaveTextContent(
+      /Delete “dependencies\.md” from mahmoudazaid\/Kernector \(\.agents\/skills\/fastapi\/references\/dependencies\.md\)\?/,
+    );
+    expect(dialog).not.toHaveTextContent(/Kernector:\.agents/);
   });
 
   it("does not delete when row confirmation is cancelled", async () => {
@@ -2440,7 +2479,12 @@ describe("DocumentsPanel", () => {
 
     await openDocumentsTab(user);
     await screen.findByText("drive-note.md");
-    expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/managed by google drive sync/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/managed by github sync/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^preview drive-note\.md$/i }),
     ).not.toBeInTheDocument();

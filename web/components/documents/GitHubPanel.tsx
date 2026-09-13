@@ -311,6 +311,7 @@ export function GitHubPanel({
       return;
     }
     busyRef.current = true;
+    setPickerOpen(false);
     setBusy(true);
     setPickerNotice(null);
     setActionError(null);
@@ -321,14 +322,15 @@ export function GitHubPanel({
       });
       setSelection(saved);
       await syncNow({ baseUrl: apiBaseUrl });
-      setPickerOpen(false);
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {
       if (isAbortError(error)) {
-        setPickerNotice(ABORT_COPY);
+        setActionError(ABORT_COPY);
+        void loadStatus();
+        onCatalogChangeRef.current?.();
       } else {
-        setPickerNotice(actionErrorMessage(error));
+        setActionError(actionErrorMessage(error));
       }
     } finally {
       busyRef.current = false;
@@ -435,152 +437,154 @@ export function GitHubPanel({
   const repoLabel =
     status?.owner && status?.repo
       ? `${status.owner}/${status.repo}`
-      : "Choose a repository";
+      : null;
   const projectLabel =
     status?.project_owner && status.project_number != null
-      ? `${status.project_owner} #${status.project_number}`
-      : "None";
+      ? `#${status.project_number}`
+      : null;
 
   return (
-    <>
-      <article className="kern-source-card" aria-busy={cardBusy}>
-        {cardBusy ? (
-          <div className="kern-source-busy-overlay">
-            <Loader label="Syncing GitHub" size="sm" />
+    <article className="kern-source-card" aria-busy={cardBusy}>
+      {cardBusy ? (
+        <div className="kern-source-busy-overlay">
+          <Loader label="Syncing GitHub" size="sm" />
+        </div>
+      ) : null}
+      <div className="kern-source-card-title">
+        <div className="kern-source-name">
+          <span className="kern-source-icon">
+            <GitHubIcon />
+          </span>
+          <div>
+            <h3>GitHub</h3>
+            <p className="kern-source-kind">Repository knowledge</p>
           </div>
-        ) : null}
-        <div className="kern-source-card-title">
-          <div className="kern-source-name">
-            <span className="kern-source-icon">
-              <GitHubIcon />
-            </span>
-            <div>
-              <h3>GitHub</h3>
-              <p className="kern-source-kind">Repository knowledge</p>
-            </div>
-          </div>
-          <span className={`kern-source-status${reauth ? " is-muted" : ""}`}>
-            {statusLabel}
+        </div>
+        <span className={`kern-source-status${reauth ? " is-muted" : ""}`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      {alertMessage ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          <p>{alertMessage}</p>
+        </div>
+      ) : null}
+
+      {setupRequired && !reauth ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--warn"
+          role="status"
+        >
+          <p>Choose a repository to sync before indexing.</p>
+        </div>
+      ) : null}
+
+      <div className="kern-source-metrics">
+        <div>
+          <span className="kern-metric-label">Account</span>
+          <span className="kern-metric-value">
+            {status?.account_login ?? "Connected account"}
           </span>
         </div>
-
-        {alertMessage ? (
-          <div
-            className="kern-settings-callout kern-settings-callout--error"
-            role="alert"
-          >
-            <p>{alertMessage}</p>
-          </div>
-        ) : null}
-
-        {setupRequired && !reauth ? (
-          <div
-            className="kern-settings-callout kern-settings-callout--warn"
-            role="status"
-          >
-            <p>Choose a repository to sync before indexing.</p>
-          </div>
-        ) : null}
-
-        <div className="kern-source-metrics">
-          <div>
-            <span className="kern-metric-label">Account</span>
-            <span className="kern-metric-value">
-              {status?.account_login ?? "Connected account"}
-            </span>
-          </div>
-          <div>
-            <span className="kern-metric-label">Repository</span>
-            <span className="kern-metric-value">{repoLabel}</span>
-          </div>
-          <div>
-            <span className="kern-metric-label">Project</span>
-            <span className="kern-metric-value">{projectLabel}</span>
-          </div>
-          <div>
-            <span className="kern-metric-label">Indexed</span>
-            <span className="kern-metric-value">
-              {status?.document_count ?? 0}
-            </span>
-          </div>
+        <div>
+          <span className="kern-metric-label">Indexed</span>
+          <span className="kern-metric-value">
+            {status?.document_count ?? 0}
+          </span>
         </div>
-        <div className="kern-sync-section" role="status">
-          <div className="kern-sync-heading">
-            <h3>Last synced</h3>
-            <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
-              {lastSync ? formatTimestamp(lastSync.synced_at) : "Never"}
-            </time>
-          </div>
-        </div>
-        {failedCount > 0 ? (
-          <div className="kern-settings-callout kern-settings-callout--warn">
-            <p>
-              {failedCount === 1
-                ? "1 document failed to index. See Documents."
-                : `${failedCount} documents failed to index. See Documents.`}
-            </p>
-          </div>
-        ) : null}
+      </div>
 
-        <div className="kern-source-actions is-split">
-          <div className="kern-action-group">
-            {reauth ? (
-              connectControl
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={syncDisabled}
-                  onClick={() => void onSync()}
-                >
-                  {setupRequired ? "Choose repository" : "Sync"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => setPickerOpen(true)}
-                >
-                  Change selection
-                </Button>
-              </>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => setConfirmOpen(true)}
-          >
-            Disconnect
-          </Button>
+      <div className="kern-sync-section" role="status">
+        <div className="kern-sync-heading">
+          <h3>Repository</h3>
+          <span className="kern-sync-time">
+            {repoLabel ?? "Not selected"}
+            {projectLabel ? ` · Project ${projectLabel}` : ""}
+          </span>
         </div>
+        <div className="kern-sync-heading">
+          <h3>Last synced</h3>
+          <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
+            {lastSync ? formatTimestamp(lastSync.synced_at) : "Never"}
+          </time>
+        </div>
+      </div>
 
-        <ConfirmDialog
-          open={confirmOpen}
-          title="Disconnect GitHub?"
-          description="This removes the stored GitHub grant from this workspace. Indexed documents stay until you delete them or the next sync reconciles removals."
-          confirmLabel="Disconnect"
-          cancelLabel="Cancel"
+      {failedCount > 0 ? (
+        <div className="kern-settings-callout kern-settings-callout--warn">
+          <p>
+            {failedCount === 1
+              ? "1 document failed to index. See Documents."
+              : `${failedCount} documents failed to index. See Documents.`}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="kern-source-actions is-split">
+        <div className="kern-action-group">
+          {reauth ? (
+            connectControl
+          ) : (
+            <>
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => setPickerOpen(true)}
+              >
+                Browse
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={syncDisabled}
+                onClick={() => void onSync()}
+              >
+                Sync
+              </Button>
+            </>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="danger"
+          disabled={busy}
+          onClick={() => setConfirmOpen(true)}
+        >
+          Disconnect
+        </Button>
+      </div>
+
+      {pickerOpen ? (
+        <GitHubPicker
+          open
+          apiBaseUrl={apiBaseUrl}
+          accountLogin={status?.account_login}
+          initialSelection={selection}
+          selectionLoading={!selectionReady}
           busy={busy}
-          onCancel={() => setConfirmOpen(false)}
-          onConfirm={() => void onDisconnect()}
+          listRepos={listRepos}
+          listProjects={listProjects}
+          notice={pickerNotice}
+          onCancel={() => setPickerOpen(false)}
+          onConfirm={(next) => void onSaveSelection(next)}
         />
-      </article>
+      ) : null}
 
-      <GitHubPicker
-        open={pickerOpen}
-        apiBaseUrl={apiBaseUrl}
-        initialSelection={selection}
-        selectionLoading={!selectionReady}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Disconnect GitHub?"
+        description="This removes the stored GitHub grant from this workspace. Indexed documents stay until you delete them or the next sync reconciles removals."
+        confirmLabel="Disconnect"
+        cancelLabel="Cancel"
+        tone="danger"
         busy={busy}
-        listRepos={listRepos}
-        listProjects={listProjects}
-        notice={pickerNotice}
-        onCancel={() => setPickerOpen(false)}
-        onConfirm={(next) => void onSaveSelection(next)}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => void onDisconnect()}
       />
-    </>
+    </article>
   );
 }

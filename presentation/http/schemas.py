@@ -195,6 +195,7 @@ class GitHubSelectionResponse(BaseModel):
     repo: str | None = None
     project_owner: str | None = None
     project_number: int | None = None
+    connector_id: str | None = None
 
 
 class GitHubSelectionRequest(BaseModel):

@@ -46,6 +46,7 @@ class GitHubKnowledgeConnector:
                         exclude_prefixes=tuple(getattr(settings, "exclude_paths", ())),
                         text_extensions=frozenset(getattr(settings, "extensions", ())),
                         max_size_bytes=int(getattr(settings, "max_file_bytes", 1_000_000)),
+                        connector_id=_setting_text(settings, "connector_id"),
                     ),
                 )
             project_owner = _setting_text(settings, "project_owner")
@@ -69,6 +70,7 @@ class GitHubKnowledgeConnector:
                         include_comments=bool(
                             getattr(settings, "include_issue_comments", False)
                         ),
+                        connector_id=_setting_text(settings, "connector_id"),
                     ),
                 )
             if repo_documents is None and issue_documents is None:

@@ -613,6 +613,17 @@
       "GitHubSelectionResponse": {
         "description": "Saved Hub sync targets (no tokens).",
         "properties": {
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
+          },
           "owner": {
             "anyOf": [
               {
@@ -3239,7 +3250,7 @@
     },
     "/api/v1/documents/{source_id}": {
       "delete": {
-        "description": "Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.",
+        "description": "Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.\n\n``source_id`` uses a path converter so GitHub ids that contain ``/``\n(``owner/repo:path/to/file``) still route after percent-decoding.",
         "operationId": "delete_document_api_v1_documents__source_id__delete",
         "parameters": [
           {

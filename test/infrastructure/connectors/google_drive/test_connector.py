@@ -28,7 +28,7 @@ from domain.knowledge import (
     UploadPayload,
 )
 from infrastructure.config import GoogleDriveSettings
-from infrastructure.connectors.google_drive import (
+from infrastructure.connectors.google_drive.connector import (
     GoogleDriveConfigError,
     GoogleDriveConnector,
 )

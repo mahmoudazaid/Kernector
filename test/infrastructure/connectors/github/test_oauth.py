@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from infrastructure.connectors.github_oauth import (
+from infrastructure.connectors.github.oauth import (
     GitHubOAuthConnection,
     GitHubOAuthConnectionStore,
     GitHubOAuthStateStore,

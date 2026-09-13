@@ -41,6 +41,11 @@ class SyncConnectorDocuments:
     ``reconcile_source_types`` and whose reference was not listed are hard-
     deleted (vectors first, then the catalog row). Incomplete listings must
     raise from the connector so reconcile never runs on a short list.
+    Deletion is further narrowed by ``reconcile_connector_ids`` and/or
+    ``reconcile_source_id_prefixes`` so a source type alone never deletes
+    across connector instances. When ``reconcile_connector_ids`` is set,
+    catalog rows with ``connector_id is None`` are treated as legacy
+    pre-identity rows and claimed into that reconcile scope.
 
     Args:
         connector (KnowledgeConnector): Remote listing and fetch adapter.
@@ -56,6 +61,8 @@ class SyncConnectorDocuments:
         reconcile_source_id_prefixes (frozenset[str]): When non-empty, only
             rows whose ``source_id`` starts with one of these prefixes are
             eligible for reconcile (narrower than source type alone).
+        reconcile_connector_ids (frozenset[str]): When non-empty, only rows
+            whose ``connector_id`` is in this set are eligible for reconcile.
         vector_store_factory (Callable[[], VectorStore] | None): Lazy vector
             store getter used only for reconcile deletes. Required when
             ``reconcile_missing`` is True.
@@ -71,6 +78,7 @@ class SyncConnectorDocuments:
         reconcile_missing: bool = False,
         reconcile_source_types: frozenset[str] = frozenset(),
         reconcile_source_id_prefixes: frozenset[str] = frozenset(),
+        reconcile_connector_ids: frozenset[str] = frozenset(),
         vector_store_factory: Callable[[], VectorStore] | None = None,
     ) -> None:
         if reconcile_missing and vector_store_factory is None:
@@ -81,6 +89,13 @@ class SyncConnectorDocuments:
             raise ApplicationValidationError(
                 "reconcile_source_types must be non-empty when reconcile_missing is True"
             )
+        if reconcile_missing and not (
+            reconcile_source_id_prefixes or reconcile_connector_ids
+        ):
+            raise ApplicationValidationError(
+                "reconcile_connector_ids or reconcile_source_id_prefixes must be "
+                "non-empty when reconcile_missing is True"
+            )
         self._connector = connector
         self._catalog = catalog
         self._ingest_factory = ingest_factory
@@ -89,6 +104,7 @@ class SyncConnectorDocuments:
         self._reconcile_missing = reconcile_missing
         self._reconcile_source_types = reconcile_source_types
         self._reconcile_source_id_prefixes = reconcile_source_id_prefixes
+        self._reconcile_connector_ids = reconcile_connector_ids
         self._vector_store_factory = vector_store_factory
 
     def execute(self) -> ConnectorSyncResponse:
@@ -124,6 +140,11 @@ class SyncConnectorDocuments:
     ) -> ConnectorSyncOutcome:
         if _is_unchanged(previous, document):
             assert previous is not None
+            stamped = _connector_id_of(document)
+            if stamped and previous.connector_id != stamped:
+                self._catalog.upsert(
+                    dataclasses.replace(previous, connector_id=stamped)
+                )
             return ConnectorSyncOutcome(
                 source_id=document.source_id,
                 status=ConnectorSyncStatus.SKIPPED,
@@ -201,6 +222,7 @@ class SyncConnectorDocuments:
             return ()
         listed = {document.reference for document in documents}
         prefixes = self._reconcile_source_id_prefixes
+        connector_ids = self._reconcile_connector_ids
         missing = sorted(
             (
                 row
@@ -214,6 +236,7 @@ class SyncConnectorDocuments:
                         for prefix in prefixes
                     )
                 )
+                and _row_in_connector_scope(row, connector_ids)
             ),
             key=lambda row: row.reference.source_id,
         )
@@ -281,6 +304,30 @@ def _is_unchanged(
     )
 
 
+def _connector_id_of(document: ConnectorDocument) -> str | None:
+    value = document.extra.get("connector_id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _row_in_connector_scope(
+    row: CatalogDocument, connector_ids: frozenset[str]
+) -> bool:
+    """Return whether ``row`` is eligible for connector-scoped reconcile.
+
+    Rows with a matching ``connector_id`` are always in scope. Rows with
+    ``connector_id is None`` are treated as legacy pre-identity catalog
+    entries and claimed by the active connector reconcile so a repository
+    change can still remove them.
+    """
+    if not connector_ids:
+        return True
+    if row.connector_id is None:
+        return True
+    return row.connector_id in connector_ids
+
+
 def _failed_row(
     document: ConnectorDocument,
     *,
@@ -297,6 +344,7 @@ def _failed_row(
         chunk_count=0,
         error=type(error).__name__,
         revision=document.revision,
+        connector_id=_connector_id_of(document),
     )
 
 
@@ -316,6 +364,7 @@ def _pending_row(
         chunk_count=0,
         error=None,
         revision=document.revision,
+        connector_id=_connector_id_of(document),
     )
 
 

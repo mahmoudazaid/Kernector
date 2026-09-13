@@ -76,6 +76,7 @@ def _row(
     chunk_count: int = 3,
     revision: str | None = "1",
     error: str | None = None,
+    connector_id: str | None = None,
 ) -> CatalogDocument:
     return CatalogDocument(
         reference=document.reference,
@@ -87,6 +88,9 @@ def _row(
         chunk_count=chunk_count,
         error=error,
         revision=revision,
+        connector_id=connector_id
+        if connector_id is not None
+        else document.extra.get("connector_id"),
     )
 
 
@@ -167,6 +171,7 @@ def _use_case(
     reconcile_missing: bool = False,
     reconcile_source_types: frozenset[str] = frozenset(),
     reconcile_source_id_prefixes: frozenset[str] = frozenset(),
+    reconcile_connector_ids: frozenset[str] = frozenset(),
     vector_store_factory: object | None = None,
 ) -> SyncConnectorDocuments:
     ingest = ingest or RecordingIngest()
@@ -178,6 +183,7 @@ def _use_case(
         reconcile_missing=reconcile_missing,
         reconcile_source_types=reconcile_source_types,
         reconcile_source_id_prefixes=reconcile_source_id_prefixes,
+        reconcile_connector_ids=reconcile_connector_ids,
         vector_store_factory=vector_store_factory,
     )
 
@@ -637,11 +643,14 @@ def _github_listed(
     *,
     file_name: str = "guide.md",
     revision: str = "1",
+    connector_id: str = "test-github",
 ) -> ConnectorDocument:
+    extra = {"connector_id": connector_id} if connector_id else {}
     return ConnectorDocument(
         reference=_github_ref(source_id),
         file_name=file_name,
         revision=revision,
+        extra=extra,
     )
 
 
@@ -673,6 +682,7 @@ def test_reconcile_deletes_missing_remote_ref_vectors_before_catalog() -> None:
         catalog,
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
 
@@ -721,6 +731,7 @@ def test_list_documents_raising_skips_reconcile() -> None:
             catalog,
             reconcile_missing=True,
             reconcile_source_types=frozenset({"github"}),
+            reconcile_connector_ids=frozenset({"test-github"}),
             vector_store_factory=lambda: store,
         ).execute()
     assert catalog.get(gone.reference) is not None
@@ -744,6 +755,7 @@ def test_failed_outcome_skips_reconcile() -> None:
         catalog,
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
 
@@ -765,6 +777,7 @@ def test_complete_run_listing_zero_documents_removes_every_in_scope_row() -> Non
         catalog,
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
 
@@ -789,6 +802,7 @@ def test_reconcile_leaves_other_source_types_untouched() -> None:
         catalog,
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
 
@@ -813,6 +827,7 @@ def test_reconcile_workspace_isolation_with_sql_catalog(tmp_path) -> None:
         workspace_a,
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
 
@@ -834,6 +849,7 @@ def test_delete_source_failure_leaves_catalog_and_propagates() -> None:
             catalog,
             reconcile_missing=True,
             reconcile_source_types=frozenset({"github"}),
+            reconcile_connector_ids=frozenset({"test-github"}),
             vector_store_factory=lambda: store,
         ).execute()
     assert catalog.get(first.reference) is None
@@ -854,6 +870,7 @@ def test_rename_removes_old_ref_and_ingests_new() -> None:
         ingest=RecordingIngest(chunk_count=2),
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
 
@@ -868,6 +885,7 @@ def test_rename_removes_old_ref_and_ingests_new() -> None:
         catalog,
         reconcile_missing=True,
         reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
         vector_store_factory=lambda: store,
     ).execute()
     assert second.outcomes[0].status is ConnectorSyncStatus.SKIPPED
@@ -920,6 +938,18 @@ def test_reconcile_requires_non_empty_source_types() -> None:
         )
 
 
+def test_reconcile_requires_connector_ids_or_prefixes() -> None:
+    with pytest.raises(ApplicationValidationError, match="reconcile_connector_ids"):
+        SyncConnectorDocuments(
+            connector=RecordingConnector(()),
+            catalog=InMemoryDocumentCatalog(),
+            ingest_factory=lambda: RecordingIngest(),
+            reconcile_missing=True,
+            reconcile_source_types=frozenset({"github"}),
+            vector_store_factory=lambda: RecordingVectorStore(),
+        )
+
+
 def test_reconcile_source_id_prefixes_limit_deletes() -> None:
     kept_other_repo = _github_listed("other/repo:README.md", file_name="README.md")
     gone = _github_listed("acme/docs:old.md", file_name="old.md")
@@ -938,4 +968,108 @@ def test_reconcile_source_id_prefixes_limit_deletes() -> None:
     assert catalog.get(kept_other_repo.reference) is not None
     assert catalog.get(gone.reference) is None
     assert store.delete_calls == [gone.reference]
+
+def test_reconcile_connector_ids_isolate_other_connectors() -> None:
+    kept_other = _github_listed("other/repo:README.md", connector_id="connector-b")
+    gone = _github_listed("acme/docs:old.md", connector_id="connector-a")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(kept_other))
+    catalog.upsert(_row(gone))
+    store = RecordingVectorStore()
+    _use_case(
+        RecordingConnector(()),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"connector-a"}),
+        vector_store_factory=lambda: store,
+    ).execute()
+    assert catalog.get(kept_other.reference) is not None
+    assert catalog.get(gone.reference) is None
+    assert store.delete_calls == [gone.reference]
+
+
+def test_reconcile_claims_legacy_null_connector_id_rows() -> None:
+    """Pre-identity GitHub rows (connector_id NULL) must leave on repo change."""
+    legacy = _github_listed("old/repo:SKILL.md", connector_id="")
+    listed = _github_listed("new/repo:README.md", connector_id="connector-a")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(legacy, connector_id=None))
+    assert catalog.get(legacy.reference) is not None
+    assert catalog.get(legacy.reference).connector_id is None
+    store = RecordingVectorStore()
+    response = _use_case(
+        RecordingConnector((listed,), {listed.source_id: _source(listed)}),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"connector-a"}),
+        vector_store_factory=lambda: store,
+    ).execute()
+    assert catalog.get(legacy.reference) is None
+    assert response.removed_count == 1
+    assert store.delete_calls == [legacy.reference]
+
+
+def test_unchanged_skip_stamps_missing_connector_id() -> None:
+    listed = _github_listed("acme/docs:README.md", revision="1", connector_id="connector-a")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(listed, connector_id=None))
+    response = _use_case(
+        RecordingConnector((listed,), {}),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"connector-a"}),
+        vector_store_factory=lambda: RecordingVectorStore(),
+    ).execute()
+    assert response.outcomes[0].status is ConnectorSyncStatus.SKIPPED
+    assert catalog.get(listed.reference).connector_id == "connector-a"
+
+
+def test_repo_change_reconciles_stale_rows_for_same_connector() -> None:
+    stale = _github_listed("old/repo:README.md", connector_id="connector-a")
+    listed = _github_listed("new/repo:README.md", connector_id="connector-a")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(stale))
+    store = RecordingVectorStore()
+    response = _use_case(
+        RecordingConnector((listed,), {listed.source_id: _source(listed)}),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"connector-a"}),
+        vector_store_factory=lambda: store,
+    ).execute()
+    assert catalog.get(stale.reference) is None
+    assert catalog.get(listed.reference) is not None
+    assert catalog.get(listed.reference).connector_id == "connector-a"
+    assert response.removed_count == 1
+
+
+def test_failed_listing_outcome_skips_reconcile() -> None:
+    stale = _github_listed("acme/docs:old.md")
+    listed = _github_listed("acme/docs:new.md")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(stale))
+    store = RecordingVectorStore()
+
+    class PartialConnector(RecordingConnector):
+        def fetch_document(self, document: ConnectorDocument):
+            from domain.errors import ConnectorError
+
+            raise ConnectorError("unavailable")
+
+    response = _use_case(
+        PartialConnector((listed,)),
+        catalog,
+        reconcile_missing=True,
+        reconcile_source_types=frozenset({"github"}),
+        reconcile_connector_ids=frozenset({"test-github"}),
+        vector_store_factory=lambda: store,
+    ).execute()
+    assert response.failed_count == 1
+    assert response.removed_count == 0
+    assert catalog.get(stale.reference) is not None
+    assert store.delete_calls == []
 

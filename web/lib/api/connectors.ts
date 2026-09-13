@@ -246,6 +246,7 @@ export type GitHubSelectionResponse = {
   repo: string | null;
   project_owner: string | null;
   project_number: number | null;
+  connector_id?: string | null;
 };
 
 export const GITHUB_OAUTH_START_PATH =

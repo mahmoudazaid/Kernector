@@ -305,6 +305,7 @@ class CatalogDocument:
     chunk_count: int
     error: str | None
     revision: str | None = None
+    connector_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
@@ -333,3 +334,5 @@ class CatalogDocument:
                 f"revision must be a string or None, "
                 f"got {type(self.revision).__name__}"
             )
+        if self.connector_id is not None:
+            _require_text(self.connector_id, "connector_id")

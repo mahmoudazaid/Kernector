@@ -114,7 +114,7 @@ from infrastructure.config import (
     Settings,
     load_settings,
 )
-from infrastructure.connectors.drive_folder import (
+from infrastructure.connectors.google_drive.folder import (
     DRIVE_ID_BODY,
     is_drive_folder_id,
     require_drive_folder_id,
@@ -761,6 +761,7 @@ class GitHubSelection:
     repo: str | None = None
     project_owner: str | None = None
     project_number: int | None = None
+    connector_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -813,8 +814,8 @@ class GoogleDriveStatus:
         folder_count (int | None): Selected folder count when connected.
         last_sync (GoogleDriveLastSync | None): Last HTTP sync summary.
         reauthorization_required (bool): Stored refresh token was rejected.
-        setup_required (bool): Unused; empty selection is still connected.
-        connection_state (str): disconnected, ready, or
+        setup_required (bool): Connected but no folders or files selected yet.
+        connection_state (str): disconnected, ready, setup_required, or
             reauthorization_required.
         sync_scope (str | None): Presentation summary such as ``2 folders + 1 file``.
     """
@@ -844,19 +845,19 @@ def _github_oauth_ready(settings: Settings) -> bool:
 
 
 def _connection_store(settings: Settings):
-    from infrastructure.connectors.google_oauth import GoogleOAuthConnectionStore
+    from infrastructure.connectors.google_drive.oauth import GoogleOAuthConnectionStore
 
     return GoogleOAuthConnectionStore(settings.google_oauth.token_path)
 
 
 def _github_connection_store(settings: Settings):
-    from infrastructure.connectors.github_oauth import GitHubOAuthConnectionStore
+    from infrastructure.connectors.github.oauth import GitHubOAuthConnectionStore
 
     return GitHubOAuthConnectionStore(settings.github_oauth.token_path)
 
 
 def _state_store(settings: Settings):
-    from infrastructure.connectors.google_oauth import GoogleOAuthStateStore
+    from infrastructure.connectors.google_drive.oauth import GoogleOAuthStateStore
 
     return GoogleOAuthStateStore(
         settings.google_oauth.state_path,
@@ -865,7 +866,7 @@ def _state_store(settings: Settings):
 
 
 def _github_state_store(settings: Settings):
-    from infrastructure.connectors.github_oauth import GitHubOAuthStateStore
+    from infrastructure.connectors.github.oauth import GitHubOAuthStateStore
 
     return GitHubOAuthStateStore(
         settings.github_oauth.state_path,
@@ -988,13 +989,11 @@ def _coalesce_text(preferred: str | None, fallback: str | None) -> str | None:
     return None
 
 
-def _github_reconcile_prefixes(github) -> frozenset[str]:
-    prefixes: set[str] = set()
-    if github.owner and github.repo:
-        prefixes.add(f"{github.owner}/{github.repo}:")
-    if github.project_owner and github.project_number is not None:
-        prefixes.add("issue:")
-    return frozenset(prefixes)
+def _github_reconcile_connector_ids(github) -> frozenset[str]:
+    connector_id = getattr(github, "connector_id", None)
+    if isinstance(connector_id, str) and connector_id.strip():
+        return frozenset({connector_id.strip()})
+    return frozenset()
 
 
 def _github_document_count(
@@ -1082,10 +1081,18 @@ def google_drive_status(
     reauthorization_required = (
         False if connection is None else connection.reauthorization_required
     )
+    setup_required = (
+        connection is not None
+        and not reauthorization_required
+        and not connection.folders
+        and not connection.files
+    )
     if connection is None:
         connection_state = "disconnected"
     elif reauthorization_required:
         connection_state = "reauthorization_required"
+    elif setup_required:
+        connection_state = "setup_required"
     else:
         connection_state = "ready"
     return GoogleDriveStatus(
@@ -1107,7 +1114,7 @@ def google_drive_status(
         folder_count=None if connection is None else len(connection.folders),
         last_sync=last_sync,
         reauthorization_required=reauthorization_required,
-        setup_required=False,
+        setup_required=setup_required,
         connection_state=connection_state,
         sync_scope=None if connection is None else _sync_scope_label(connection),
     )
@@ -1173,7 +1180,7 @@ def start_google_drive_oauth(
     """
     if not _oauth_ready(settings):
         return _hub_redirect(settings, result="unconfigured")
-    from infrastructure.connectors.google_oauth import authorization_url
+    from infrastructure.connectors.google_drive.oauth import authorization_url
 
     store = state_store if state_store is not None else _state_store(settings)
     state = store.issue()
@@ -1213,7 +1220,7 @@ def complete_google_drive_oauth(
         return _hub_redirect(settings, result="error")
     if not _oauth_ready(settings):
         return _hub_redirect(settings, result="error")
-    from infrastructure.connectors.google_oauth import (
+    from infrastructure.connectors.google_drive.oauth import (
         GoogleOAuthConnection,
         GoogleOAuthError,
         HttpGoogleOAuthGateway,
@@ -1285,7 +1292,7 @@ def disconnect_google_drive_oauth(
     connection = tokens_store.load()
     if connection is None:
         raise GoogleDriveNotConnectedError("Google Drive is not connected")
-    from infrastructure.connectors.google_oauth import HttpGoogleOAuthGateway
+    from infrastructure.connectors.google_drive.oauth import HttpGoogleOAuthGateway
 
     oauth_gateway = gateway if gateway is not None else HttpGoogleOAuthGateway(
         settings.google_oauth
@@ -1352,7 +1359,7 @@ def start_github_oauth(
     """Issue CSRF state and return GitHub's authorization URL."""
     if not _github_oauth_ready(settings):
         return _github_hub_redirect(settings, result="unconfigured")
-    from infrastructure.connectors.github_oauth import authorization_url
+    from infrastructure.connectors.github.oauth import authorization_url
 
     store = state_store if state_store is not None else _github_state_store(settings)
     state = store.issue()
@@ -1379,7 +1386,7 @@ def complete_github_oauth(
         return _github_hub_redirect(settings, result="error")
     if not _github_oauth_ready(settings):
         return _github_hub_redirect(settings, result="error")
-    from infrastructure.connectors.github_oauth import (
+    from infrastructure.connectors.github.oauth import (
         GitHubOAuthConnection,
         GitHubOAuthError,
         HttpGitHubOAuthGateway,
@@ -1438,7 +1445,7 @@ def disconnect_github_oauth(
     connection = tokens_store.load()
     if connection is None:
         raise GitHubNotConnectedError("GitHub is not connected")
-    from infrastructure.connectors.github_oauth import HttpGitHubOAuthGateway
+    from infrastructure.connectors.github.oauth import HttpGitHubOAuthGateway
 
     oauth_gateway = gateway if gateway is not None else HttpGitHubOAuthGateway(
         settings.github_oauth
@@ -1573,6 +1580,7 @@ def get_github_selection(
         repo=connection.repo,
         project_owner=connection.project_owner,
         project_number=connection.project_number,
+        connector_id=connection.connector_id,
     )
 
 
@@ -1624,26 +1632,32 @@ def put_github_selection(
         ) from error
 
     def _apply(current):
+        from infrastructure.connectors.github.oauth import with_connector_id
+
         if current is None:
             raise GitHubNotConnectedError("GitHub is not connected")
         if current.reauthorization_required:
             raise GitHubReauthorizationRequiredError(
                 "GitHub authorization was revoked"
             )
-        return replace(
+        updated = replace(
             current,
             owner=owner_clean,
             repo=repo_clean,
             project_owner=project_owner_clean,
             project_number=project_number,
         )
+        return with_connector_id(updated, preferred=settings.github.connector_id)
 
     tokens_store.mutate(_apply)
+    saved = tokens_store.load()
+    assert saved is not None
     return GitHubSelection(
         owner=owner_clean,
         repo=repo_clean,
         project_owner=project_owner_clean,
         project_number=project_number,
+        connector_id=saved.connector_id,
     )
 
 
@@ -1819,7 +1833,7 @@ def put_google_drive_selection(
         _mark_reauth(tokens_store, error)
     except ConnectorError as error:
         raise InputRejectedError(_SELECTION_INACCESSIBLE_DETAIL) from error
-    from infrastructure.connectors.google_oauth import GoogleDriveSelectedItem as StoredItem
+    from infrastructure.connectors.google_drive.oauth import GoogleDriveSelectedItem as StoredItem
 
     def _apply(current):
         if current is None:
@@ -2007,13 +2021,13 @@ def build_google_drive_oauth_connector(
         GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
     """
     from infrastructure.config import GoogleDriveSettings
-    from infrastructure.connectors.google_oauth import (
+    from infrastructure.connectors.google_drive.oauth import (
         GoogleOAuthError,
         build_oauth_drive_files,
     )
 
     try:
-        from infrastructure.connectors.google_drive import (
+        from infrastructure.connectors.google_drive.connector import (
             GoogleDriveConfigError,
             GoogleDriveConnector,
         )
@@ -2142,7 +2156,7 @@ def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
         except ValueError as error:
             raise ConfigurationError(str(error)) from error
     try:
-        from infrastructure.connectors.google_drive import (
+        from infrastructure.connectors.google_drive.connector import (
             GoogleDriveConfigError,
             GoogleDriveConnector,
         )
@@ -2246,6 +2260,11 @@ def sync_github(
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
         )
+        connector_ids = _github_reconcile_connector_ids(settings.github)
+        if not connector_ids:
+            raise ConfigurationError(
+                "GitHub connector_id is required before synchronizing."
+            )
 
         return SyncConnectorDocuments(
             connector=connector,
@@ -2256,7 +2275,7 @@ def sync_github(
             ),
             reconcile_missing=True,
             reconcile_source_types=frozenset({SourceType.GITHUB}),
-            reconcile_source_id_prefixes=_github_reconcile_prefixes(settings.github),
+            reconcile_connector_ids=connector_ids,
             vector_store_factory=get_store,
         ).execute()
     except ConnectorError as error:
@@ -2296,14 +2315,25 @@ def sync_github_oauth(
     """Synchronize GitHub using the stored user OAuth grant."""
     from datetime import datetime, timezone
 
-    from infrastructure.connectors.github_oauth import (
+    from infrastructure.connectors.github.oauth import (
         GitHubOAuthError,
         HttpGitHubOAuthGateway,
+        with_connector_id,
     )
 
     tokens_store, connection = _require_github_grant(
         settings, connection_store=connection_store
     )
+    if not connection.connector_id:
+        tokens_store.mutate(
+            lambda current: None
+            if current is None
+            else with_connector_id(
+                current, preferred=settings.github.connector_id
+            )
+        )
+        connection = tokens_store.load()
+        assert connection is not None
     gateway = (
         oauth_gateway
         if oauth_gateway is not None
@@ -2335,6 +2365,7 @@ def sync_github_oauth(
             repo=repo,
             project_owner=project_owner,
             project_number=project_number,
+            connector_id=connection.connector_id,
             catalog=working_catalog,
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
@@ -2375,6 +2406,7 @@ def sync_github_oauth(
                 repo=repo,
                 project_owner=project_owner,
                 project_number=project_number,
+                connector_id=connection.connector_id,
                 catalog=working_catalog,
                 vector_store=vector_store,
                 vector_store_factory=vector_store_factory,
@@ -2412,10 +2444,18 @@ def _run_github_oauth_sync(
     repo: str | None,
     project_owner: str | None,
     project_number: int | None,
+    connector_id: str | None,
     catalog: DocumentCatalog,
     vector_store: VectorStore | None,
     vector_store_factory: Callable[[], VectorStore] | None,
 ) -> ConnectorSyncResponse:
+    from infrastructure.connectors.github.oauth import new_github_connector_id
+
+    resolved_connector_id = (
+        connector_id.strip()
+        if isinstance(connector_id, str) and connector_id.strip()
+        else settings.github.connector_id or new_github_connector_id()
+    )
     oauth_settings = replace(
         settings,
         github=replace(
@@ -2425,6 +2465,7 @@ def _run_github_oauth_sync(
             repo=repo,
             project_owner=project_owner,
             project_number=project_number,
+            connector_id=resolved_connector_id,
         ),
     )
     # Build inside the same exception domain as sync_github so constructor

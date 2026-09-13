@@ -316,7 +316,7 @@ def test_only_infrastructure_imports_google_drive_client() -> None:
             assert not hits, (
                 f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
             )
-    drive = REPO_ROOT / "infrastructure" / "connectors" / "google_drive.py"
+    drive = REPO_ROOT / "infrastructure" / "connectors" / "google_drive" / "connector.py"
     imported = find_forbidden_imports(drive, google_roots)
     assert imported == google_roots
 

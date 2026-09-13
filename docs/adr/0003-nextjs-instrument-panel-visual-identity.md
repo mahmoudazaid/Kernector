@@ -72,7 +72,8 @@ inventing a local look.
    - Chat: bubbles, composer, **circular** send control
    - Settings: fieldsets, radios, range thumbs, SoftSelect
    - Knowledge Hub: fieldsets, file inputs (`::file-selector-button`),
-     row actions, confirm dialogs
+     row actions, confirm dialogs, **connector cards and browse pickers**
+     (decision 12)
    - Waits: brand `Loader` (`web/components/ui/Loader.tsx`) on every
      screen-level load
    - Dialogs: `DialogFrame` (`.kern-dialog`) for every overlay; `ConfirmDialog`
@@ -100,8 +101,8 @@ inventing a local look.
    light press-in (`emboss-press` + slight scale) over heavy glow stacks.
 
    **Dialog enter / exit (required overlay recipe)** — Every product dialog
-   (delete confirm, upload, Google Drive picker, and future overlays) uses
-   [`DialogFrame`](../../web/components/ui/DialogFrame.tsx) with the
+   (delete confirm, upload, connector browse pickers, and future overlays)
+   uses [`DialogFrame`](../../web/components/ui/DialogFrame.tsx) with the
    [Motion Base UI dialog](https://motion.dev/examples/react-base-dialog)
    overlay + content pattern: the scrim fades on its own (`opacity` 0→1,
    ~200ms) while the soft-glass panel independently fades and scales
@@ -153,16 +154,90 @@ inventing a local look.
     wire and in `datetime` attributes wherever the timestamp is rendered as
     its own element.
 
+12. **Knowledge Hub connectors (required card + browse recipe)** — Every
+    OAuth / sync connector on the Connectors surface reuses the Google Drive
+    card and picker chrome. Do not invent a second card layout, inline scope
+    form, or modal styling per provider.
+
+    **Connected card (`.kern-source-card`)** — Match
+    [`GoogleDrivePanel`](../../web/components/documents/GoogleDrivePanel.tsx):
+
+    | Region | Content |
+    | --- | --- |
+    | Title row | Provider icon, name, short kind line, status pill (`Connected` / reconnect / setup) |
+    | Metrics (`.kern-source-metrics`) | Two columns only: **Account** (login or email) \| **Indexed** (document count) |
+    | Sync block (`.kern-sync-section`) | **Last synced** via `formatTimestamp` (or `Never`). Providers with a single sync scope (for example one GitHub repository) may add one prior row in the same block (label + value), not extra metric columns |
+    | Actions (`.kern-source-actions.is-split`) | Left: primary **Browse**, secondary **Sync**. Right: danger **Disconnect** |
+
+    Disconnected state uses `.kern-available-card` + **Connect** (same pattern
+    as Drive). Disconnect confirms through `ConfirmDialog` with
+    `tone="danger"`. Do not put repository / folder / project pickers,
+    selects, or “Save and sync” controls inside the card body.
+
+    **Browse picker (required overlay)** — **Browse** opens a
+    `DialogFrame` with `panelClassName="kern-picker-dialog"` — the same
+    recipe as
+    [`GoogleDrivePicker`](../../web/components/documents/GoogleDrivePicker.tsx)
+    and
+    [`GitHubPicker`](../../web/components/documents/GitHubPicker.tsx):
+
+    - Title + short body copy; ghost close control
+    - Optional search row (`.kern-picker-search`) when the catalog is large
+    - Scrollable list (`.kern-picker-list`) of `.kern-drive-item` rows
+      (checkbox or radio as the product model requires; icon + primary name
+      + muted meta)
+    - Footer (`.kern-picker-foot`): live selection summary + **Cancel** /
+      **Save** (or equivalent primary confirm). Keep the primary label
+      **Save** while the control is disabled — do not swap it to
+      “Saving…”.
+
+    **GitHub sources picker (required)** — GitHub uses one
+    **Choose GitHub sources** dialog with two independent panels visible
+    together (`.kern-github-sources-panels`): **Repository code** (required,
+    exactly one) and **Project issues** (optional, zero or one). Do **not**
+    use tabs. Each panel has its own search. Project is not a child of the
+    repository. Provide an obvious **Clear project** action. Footer:
+    `1 source selected` / `2 sources selected`; primary **Save sources**;
+    disable until a repository is selected. Two columns on desktop; stack on
+    narrow viewports.
+
+    **Save dismiss + card busy (required)** — On **Save**, close the picker
+    immediately (`setPickerOpen(false)` before awaiting persist/sync), then
+    run save + initial sync under the connector card busy overlay
+    (`cardBusy = busy && !pickerOpen`, `Loader` with a short “Syncing …”
+    label). Do not leave the dialog open as the loading surface. Persist
+    failures surface on the **card** (`role="alert"` / action error), not
+    inside a closed picker. Match
+    [`GoogleDrivePanel.onAddSelection`](../../web/components/documents/GoogleDrivePanel.tsx)
+    and
+    [`GitHubPanel.onSaveSelection`](../../web/components/documents/GitHubPanel.tsx).
+
+    Selection that drives sync lives in that dialog only. After save, the
+    card shows the chosen scope as plain values (account metrics + optional
+    sync-section row), never as an embedded form. Future connectors (Jira,
+    Confluence, and others) must copy this card + picker split; extend shared
+    classes rather than forking layout.
+
+    **Stable connector identity** — Each configured GitHub connector instance
+    persists an opaque `connector_id` with the grant/config. Catalog rows and
+    provenance carry it. Reconciliation and deletion are scoped by
+    `workspace_id` (catalog binding) + `connector_id`, never by
+    `source_type="github"` alone. Changing the repository or Project keeps the
+    same `connector_id`; a new Connect after disconnect mints a new id.
+
 ## Consequences
 
 - PRs that add or restyle `web/` UI are incomplete if controls look native or
   flat relative to Settings / Chat / Knowledge Hub under the same theme, if
   workspace pages leave unused side gutters from an artificial content
-  `max-width`, or if confirms use browser system dialogs.
-- Changing the identity (palette, emboss model, type, main-pane fill, or
-  dialog recipe) requires updating this ADR (or a superseding ADR),
-  `tokens.css`, `web/README.md` Visual direction, and the design-token tests
-  together — not a silent CSS drift on one route.
+  `max-width`, if confirms use browser system dialogs, or if a new connector
+  ships a divergent card metrics layout or an inline / non-`DialogFrame`
+  browse picker.
+- Changing the identity (palette, emboss model, type, main-pane fill,
+  dialog recipe, or connector card / picker recipe) requires updating this
+  ADR (or a superseding ADR), `tokens.css`, `web/README.md` Visual
+  direction, and the design-token tests together — not a silent CSS drift on
+  one route.
 - Accessibility for filled controls is part of the identity: prefer
   `--kern-control-sheen-fill` and verified contrast over stronger gloss.
 - Streamlit presentation is out of scope for this ADR; it is not required to
@@ -183,5 +258,11 @@ inventing a local look.
   — full-pane wait wrapping `Loader`
 - [web/lib/format/timestamp.ts](../../web/lib/format/timestamp.ts) —
   unified `09 Sep 2026, 09:35 AM` display timestamps
+- [web/components/documents/GoogleDrivePanel.tsx](../../web/components/documents/GoogleDrivePanel.tsx)
+  / [GoogleDrivePicker.tsx](../../web/components/documents/GoogleDrivePicker.tsx)
+  — reference connected card + browse dialog
+- [web/components/documents/GitHubPanel.tsx](../../web/components/documents/GitHubPanel.tsx)
+  / [GitHubPicker.tsx](../../web/components/documents/GitHubPicker.tsx)
+  — second connector following the same recipe
 - [ADR 0002](0002-nextjs-presentation-migration.md) — Next.js / HTTP ownership
   of `web/`

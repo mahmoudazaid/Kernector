@@ -145,7 +145,7 @@ other provider types as permanent core entities.
 `list_documents()` returns provider-neutral `ConnectorDocument` values, and
 `fetch_document()` returns a `SourceDocument`. Implemented connectors:
 
-- Google Drive (`infrastructure/connectors/google_drive.py`) — Hub user OAuth
+- Google Drive (`infrastructure/connectors/google_drive/`) — Hub user OAuth
   plus CLI service-account sync.
 - GitHub (`infrastructure/connectors/github/`) — Hub user OAuth plus CLI PAT
   sync for allowlisted repo files and optional ProjectV2 Issues.

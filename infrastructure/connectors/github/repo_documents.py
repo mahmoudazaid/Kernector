@@ -14,10 +14,11 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from infrastructure.connectors.github.client import GitHubClient
+from infrastructure.connectors.github.client import GitHubClient, GitHubEmptyRepositoryError
 
 _MSG_REQUEST_FAILED = "The GitHub request failed."
 _MSG_UNREADABLE = "A GitHub file could not be read as text."
+_MSG_EMPTY = "A GitHub file was empty."
 _DEFAULT_TEXT_EXTENSIONS = frozenset(
     {
         ".csv",
@@ -85,6 +86,7 @@ class GitHubRepoConfig:
     exclude_prefixes: Sequence[str] = ()
     text_extensions: frozenset[str] = field(default_factory=lambda: _DEFAULT_TEXT_EXTENSIONS)
     max_size_bytes: int = 1_000_000
+    connector_id: str | None = None
 
 
 class GitHubRepoDocuments:
@@ -95,11 +97,14 @@ class GitHubRepoDocuments:
         self._config = config
 
     def list_documents(self) -> Sequence[ConnectorDocument]:
-        commit_sha = self._client.resolve_commit_sha(
-            self._config.owner,
-            self._config.repo,
-            self._config.ref,
-        )
+        try:
+            commit_sha = self._client.resolve_commit_sha(
+                self._config.owner,
+                self._config.repo,
+                self._config.ref,
+            )
+        except GitHubEmptyRepositoryError:
+            return ()
         payload = self._client.get_git_tree(
             self._config.owner,
             self._config.repo,
@@ -133,6 +138,8 @@ class GitHubRepoDocuments:
             text = content.decode("utf-8")
         except UnicodeDecodeError as error:
             raise ConnectorError(_MSG_UNREADABLE) from error
+        if not text.strip():
+            raise ConnectorError(_MSG_EMPTY)
         return SourceDocument(
             SourceMetadata(
                 reference=document.reference,
@@ -153,6 +160,7 @@ class GitHubRepoDocuments:
                         path,
                     ),
                     "byte_size": str(len(content)),
+                    **_connector_extra(self._config.connector_id),
                 },
             ),
             text,
@@ -170,6 +178,8 @@ class GitHubRepoDocuments:
         path = _required_text(entry, "path")
         blob_sha = _required_text(entry, "sha")
         size = _optional_size(entry.get("size"))
+        if size is not None and size == 0:
+            return None
         if size is not None and size > self._config.max_size_bytes:
             return None
         if not _path_allowed(path, self._config):
@@ -190,8 +200,15 @@ class GitHubRepoDocuments:
                 "blob_sha": blob_sha,
                 "url": _provenance_url(self._config.owner, self._config.repo, commit_sha, path),
                 **({"size": str(size)} if size is not None else {}),
+                **_connector_extra(self._config.connector_id),
             },
         )
+
+
+def _connector_extra(connector_id: str | None) -> dict[str, str]:
+    if isinstance(connector_id, str) and connector_id.strip():
+        return {"connector_id": connector_id.strip()}
+    return {}
 
 
 def _path_allowed(path: str, config: GitHubRepoConfig) -> bool:

@@ -243,6 +243,42 @@ function sourceLabel(sourceType: string): string {
   return "File upload";
 }
 
+/** Split GitHub ``owner/repo:path`` into repo + path for display. */
+function githubRepoAndPath(
+  sourceId: string,
+): { repo: string; path: string } | null {
+  const colon = sourceId.indexOf(":");
+  if (colon <= 0 || colon >= sourceId.length - 1) {
+    return null;
+  }
+  return {
+    repo: sourceId.slice(0, colon),
+    path: sourceId.slice(colon + 1),
+  };
+}
+
+/** Secondary row line under the file name (avoid raw ``repo:path`` colon jam). */
+function documentLocator(doc: CatalogDocumentResponse): string {
+  if (isGitHubDocument(doc)) {
+    const parts = githubRepoAndPath(doc.source_id);
+    if (parts) {
+      return `${parts.repo} · ${parts.path}`;
+    }
+  }
+  return doc.source_id;
+}
+
+/** Confirm copy matches conversation delete: quoted name, no opaque id dump. */
+function deleteDocumentDescription(doc: CatalogDocumentResponse): string {
+  if (isGitHubDocument(doc)) {
+    const parts = githubRepoAndPath(doc.source_id);
+    if (parts) {
+      return `Delete “${doc.file_name}” from ${parts.repo} (${parts.path})? This cannot be undone.`;
+    }
+  }
+  return `Delete “${doc.file_name}”? This cannot be undone.`;
+}
+
 function documentStatusClass(status: string): string | undefined {
   if (status === "ready") {
     return "kern-doc-ready";
@@ -1357,7 +1393,7 @@ export function DocumentsPanel({
                           }}
                         >
                           <span className="kern-doc-name">{doc.file_name}</span>
-                          <span className="kern-doc-id">{doc.source_id}</span>
+                          <span className="kern-doc-id">{documentLocator(doc)}</span>
                         </button>
                       </td>
                       <td>
@@ -1424,13 +1460,6 @@ export function DocumentsPanel({
 
         {selected ? (
           <div className="kern-documents-detail">
-            <p className="kern-settings-hint">
-              {isDriveDocument(selected)
-                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
-                : isGitHubDocument(selected)
-                  ? `Managed by GitHub sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
-                  : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
-            </p>
             {isUploadDocument(selected) ? (
               <div className="kern-documents-detail-actions">
                 {selected.has_stored_content ? (
@@ -1611,9 +1640,7 @@ export function DocumentsPanel({
         open={pendingDelete !== null}
         title="Delete document"
         description={
-          pendingDelete
-            ? `Delete ${pendingDelete.file_name} (${pendingDelete.source_id})? This cannot be undone.`
-            : ""
+          pendingDelete ? deleteDocumentDescription(pendingDelete) : ""
         }
         confirmLabel="Delete"
         tone="danger"

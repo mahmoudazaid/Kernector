@@ -277,6 +277,11 @@ export function GoogleDrivePanel({
     if (busyRef.current) {
       return;
     }
+    const current = view.kind === "ready" ? view.status : null;
+    if (current?.setup_required) {
+      setPickerOpen(true);
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setActionError(null);
@@ -289,6 +294,12 @@ export function GoogleDrivePanel({
         setActionError(ABORT_COPY);
         void loadStatus();
         onCatalogChangeRef.current?.();
+      } else if (
+        error instanceof ApiError &&
+        (error.code === "google_drive_selection_required" ||
+          error.detail.toLowerCase().includes("select google drive"))
+      ) {
+        setPickerOpen(true);
       } else {
         setActionError(actionErrorMessage(error));
       }
@@ -364,6 +375,7 @@ export function GoogleDrivePanel({
 
   const status = view.kind === "ready" ? view.status : null;
   const reauth = Boolean(status?.reauthorization_required);
+  const setupRequired = Boolean(status?.setup_required);
   const oauthStartHref = googleDriveOAuthStartUrl(apiBaseUrl);
   const statusLabel =
     view.kind === "loading"
@@ -372,9 +384,11 @@ export function GoogleDrivePanel({
         ? "Unavailable"
         : reauth
           ? "Reconnect required"
-          : status?.connected
-            ? "Connected"
-            : "Available";
+          : setupRequired
+            ? "Choose folders"
+            : status?.connected
+              ? "Connected"
+              : "Available";
 
   const lastSync = status?.last_sync ?? null;
   const failedCount = lastSync?.failed_count ?? 0;
@@ -463,6 +477,15 @@ export function GoogleDrivePanel({
         </div>
       ) : null}
 
+      {setupRequired && !reauth ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--warn"
+          role="status"
+        >
+          <p>Choose Google Drive folders or files to sync before indexing.</p>
+        </div>
+      ) : null}
+
       <div className="kern-source-metrics">
         <div>
           <span className="kern-metric-label">Account</span>
@@ -478,6 +501,12 @@ export function GoogleDrivePanel({
         </div>
       </div>
       <div className="kern-sync-section" role="status">
+        <div className="kern-sync-heading">
+          <h3>Sync scope</h3>
+          <span className="kern-sync-time">
+            {status?.sync_scope ?? "Not selected"}
+          </span>
+        </div>
         <div className="kern-sync-heading">
           <h3>Last synced</h3>
           <time className="kern-sync-time" dateTime={lastSync?.synced_at}>

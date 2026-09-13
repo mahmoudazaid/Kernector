@@ -72,6 +72,7 @@ def _selection_response(selection) -> GitHubSelectionResponse:
         repo=selection.repo,
         project_owner=selection.project_owner,
         project_number=selection.project_number,
+        connector_id=selection.connector_id,
     )
 
 

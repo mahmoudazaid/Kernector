@@ -228,7 +228,7 @@ def test_build_google_drive_connector_maps_missing_client_extra(
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:
-        if name == "infrastructure.connectors.google_drive":
+        if name == "infrastructure.connectors.google_drive.connector":
             raise ImportError("No module named 'googleapiclient'")
         return real_import(name, globals, locals, fromlist, level)
 

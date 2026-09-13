@@ -23,7 +23,7 @@ from composition import (
 from composition import container as composition_container
 from domain.errors import ConnectorAuthError
 from infrastructure.config import GitHubOAuthSettings, GitHubSettings, load_settings
-from infrastructure.connectors.github_oauth import (
+from infrastructure.connectors.github.oauth import (
     GitHubOAuthConnection,
     GitHubOAuthConnectionStore,
     GitHubOAuthGrant,
@@ -458,7 +458,32 @@ def test_put_github_selection_persists_validated_repo(settings) -> None:
     assert selection.owner == "acme"
     assert selection.repo == "docs"
     assert selection.project_number == 16
+    assert selection.connector_id
     stored = tokens.load()
     assert stored is not None
     assert stored.owner == "acme"
     assert stored.repo == "docs"
+    assert stored.connector_id == selection.connector_id
+
+    class SwapClient:
+        def get_repository(self, owner: str, repo: str):
+            return {"full_name": f"{owner}/{repo}"}
+
+        def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+            return f"PVT_{owner_login}_{number}"
+
+    swapped = put_github_selection(
+        settings,
+        owner="acme",
+        repo="handbook",
+        project_owner=None,
+        project_number=None,
+        connection_store=tokens,
+        client_factory=lambda _token: SwapClient(),
+    )
+    assert swapped.repo == "handbook"
+    assert swapped.project_number is None
+    assert swapped.connector_id == selection.connector_id
+    stored_again = tokens.load()
+    assert stored_again is not None
+    assert stored_again.connector_id == selection.connector_id

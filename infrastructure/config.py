@@ -164,6 +164,7 @@ class GitHubSettings:
     project_number: int | None = None
     include_issue_comments: bool = False
     page_size: int = 100
+    connector_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -705,6 +706,7 @@ def _load_github_settings() -> GitHubSettings:
         project_number=project_number,
         include_issue_comments=_env_bool("GITHUB_INCLUDE_ISSUE_COMMENTS", "false"),
         page_size=page_size,
+        connector_id=_optional_env("GITHUB_CONNECTOR_ID"),
     )
 
 

@@ -190,6 +190,26 @@ def test_http_client_redacts_auth_error_detail() -> None:
     assert SECRET not in str(raised.value)
 
 
+def test_http_client_maps_empty_repository_conflict() -> None:
+    from infrastructure.connectors.github.client import GitHubEmptyRepositoryError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url).endswith("/repos/octo/empty/commits/HEAD")
+        return httpx.Response(
+            409,
+            json={"message": "Git Repository is empty.", "status": "409"},
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(GitHubEmptyRepositoryError, match="no commits"):
+        client.resolve_commit_sha("octo", "empty", "HEAD")
+
+
 def test_http_client_decodes_blob_content() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url).endswith("/repos/octo/hello/git/blobs/blob-1")
