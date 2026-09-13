@@ -91,12 +91,9 @@ def _classify_one(exc: BaseException) -> ProviderError | None:
     if isinstance(exc, AuthenticationError):
         return ProviderAuthError(_MSG_AUTH)
 
-    if isinstance(exc, RateLimitError):
-        return ProviderRateLimitError(_MSG_RATE)
-
-    if isinstance(exc, PermissionDeniedError):
-        return ProviderAuthError(_MSG_AUTH)
-
+    # Structured provider codes must win over RateLimitError / PermissionDeniedError
+    # isinstance checks: exhausted credits arrive as 429+insufficient_quota and
+    # 403+billing_not_active on those SDK types.
     code = _provider_error_code(exc)
     if code in _AUTH_CODES:
         return ProviderAuthError(_MSG_AUTH)
@@ -104,6 +101,12 @@ def _classify_one(exc: BaseException) -> ProviderError | None:
         return ProviderCreditsError(_MSG_CREDITS)
     if code in _MODEL_CODES:
         return ProviderModelUnavailableError(_MSG_MODEL)
+
+    if isinstance(exc, RateLimitError):
+        return ProviderRateLimitError(_MSG_RATE)
+
+    if isinstance(exc, PermissionDeniedError):
+        return ProviderAuthError(_MSG_AUTH)
 
     status = _http_status(exc)
     if status == 401:

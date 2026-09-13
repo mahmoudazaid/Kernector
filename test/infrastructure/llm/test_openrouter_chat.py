@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from openai import AuthenticationError, RateLimitError
+from openai import AuthenticationError, PermissionDeniedError, RateLimitError
 
 from domain.errors import (
     ProviderAuthError,
@@ -184,9 +184,25 @@ def _httpx_response(status_code: int) -> httpx.Response:
             RateLimitError(
                 "slow down sk-secret",
                 response=_httpx_response(429),
-                body={"error": {"message": "sk-secret"}},
+                body={"message": "sk-secret"},
             ),
             ProviderRateLimitError,
+        ),
+        (
+            RateLimitError(
+                "quota sk-secret",
+                response=_httpx_response(429),
+                body={"code": "insufficient_quota", "message": "sk-secret"},
+            ),
+            ProviderCreditsError,
+        ),
+        (
+            PermissionDeniedError(
+                "billing sk-secret",
+                response=_httpx_response(403),
+                body={"code": "billing_not_active", "message": "sk-secret"},
+            ),
+            ProviderCreditsError,
         ),
         (TimeoutError("deadline sk-secret"), ProviderTimeoutError),
         (
