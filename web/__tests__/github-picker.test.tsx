@@ -96,7 +96,7 @@ describe("GitHubPicker", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose github sources/i,
     });
-    const save = within(dialog).getByRole("button", { name: /save sources/i });
+    const save = within(dialog).getByRole("button", { name: /^save$/i });
     expect(save).toBeDisabled();
     expect(within(dialog).getByText(/0 sources selected/i)).toBeInTheDocument();
 
@@ -169,7 +169,7 @@ describe("GitHubPicker", () => {
     ).toBeInTheDocument();
 
     await user.click(
-      within(dialog).getByRole("button", { name: /save sources/i }),
+      within(dialog).getByRole("button", { name: /^save$/i }),
     );
     expect(onConfirm).toHaveBeenCalledWith({
       owner: "acme",

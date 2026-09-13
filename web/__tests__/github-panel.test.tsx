@@ -192,7 +192,7 @@ describe("GitHubPanel", () => {
     });
     await user.click(await within(dialog).findByRole("radio", { name: /acme\/docs/i }));
     await user.click(
-      within(dialog).getByRole("button", { name: /save sources/i }),
+      within(dialog).getByRole("button", { name: /^save$/i }),
     );
 
     expect(

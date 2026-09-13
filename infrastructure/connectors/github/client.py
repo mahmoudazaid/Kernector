@@ -76,8 +76,15 @@ class GitHubClient(Protocol):
         """
         ...
 
-    def get_project_v2_items(self, project_node_id: str) -> Sequence[Mapping[str, object]]:
-        """Return all ProjectV2 item content nodes, walking all pages."""
+    def get_project_v2_items(
+        self,
+        project_node_id: str,
+    ) -> Sequence[Mapping[str, object]]:
+        """Return all ProjectV2 item content nodes, walking all pages.
+
+        Each Issue includes up to 100 comments. Page size is capped so nested
+        comment fields stay within GitHub GraphQL complexity limits.
+        """
         ...
 
     def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
@@ -252,11 +259,24 @@ class HttpGitHubClient:
             return {"items": tuple(items), "next_cursor": next_cursor}
         return {"items": (), "next_cursor": None}
 
-    def get_project_v2_items(self, project_node_id: str) -> Sequence[Mapping[str, object]]:
+    def get_project_v2_items(
+        self,
+        project_node_id: str,
+    ) -> Sequence[Mapping[str, object]]:
         items: list[Mapping[str, object]] = []
         after: str | None = None
+        # Cap page size — nested comments(first:100) on a full page exceeds
+        # GitHub GraphQL complexity limits.
+        page_size = min(self._page_size, 20)
         while True:
-            payload = self._graphql(_PROJECT_V2_ITEMS_QUERY, {"projectId": project_node_id, "after": after, "first": self._page_size})
+            payload = self._graphql(
+                _PROJECT_V2_ITEMS_QUERY,
+                {
+                    "projectId": project_node_id,
+                    "after": after,
+                    "first": page_size,
+                },
+            )
             project = _nested_mapping(payload, ("data", "node"))
             if project.get("__typename") != "ProjectV2":
                 raise ConnectorError(_MSG_REQUEST_FAILED)
@@ -356,7 +376,8 @@ class HttpGitHubClient:
         if errors:
             if soft_lookup_miss and _is_soft_lookup_miss(errors):
                 return payload
-            raise ConnectorError(_MSG_REQUEST_FAILED)
+            detail = _graphql_error_detail(errors)
+            raise ConnectorError(detail or _MSG_REQUEST_FAILED)
         return payload
 
 
@@ -456,14 +477,21 @@ def _is_soft_lookup_miss(errors: object) -> bool:
             return False
     return True
 
-_PROJECT_V2_ITEMS_QUERY = """
-query KernectorProjectItems($projectId: ID!, $first: Int!, $after: String) {
-  node(id: $projectId) {
-    __typename
-    ... on ProjectV2 {
-      items(first: $first, after: $after) {
-        nodes {
-          content {
+
+def _graphql_error_detail(errors: object) -> str | None:
+    """Return a presentation-safe first GraphQL error message, if any."""
+    if not isinstance(errors, Sequence) or isinstance(errors, (str, bytes)):
+        return None
+    for error in errors:
+        if not isinstance(error, Mapping):
+            continue
+        message = error.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return None
+
+
+_ISSUE_CONTENT_FIELDS = """
             __typename
             ... on Issue {
               id
@@ -486,11 +514,22 @@ query KernectorProjectItems($projectId: ID!, $first: Int!, $after: String) {
             ... on PullRequest { id }
             ... on Discussion { id }
             ... on DraftIssue { id }
-          }
-        }
-        pageInfo { hasNextPage endCursor }
-      }
-    }
-  }
-}
+"""
+
+_PROJECT_V2_ITEMS_QUERY = f"""
+query KernectorProjectItems($projectId: ID!, $first: Int!, $after: String) {{
+  node(id: $projectId) {{
+    __typename
+    ... on ProjectV2 {{
+      items(first: $first, after: $after) {{
+        nodes {{
+          content {{
+{_ISSUE_CONTENT_FIELDS}
+          }}
+        }}
+        pageInfo {{ hasNextPage endCursor }}
+      }}
+    }}
+  }}
+}}
 """

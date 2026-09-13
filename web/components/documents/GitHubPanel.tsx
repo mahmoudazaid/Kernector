@@ -503,7 +503,12 @@ export function GitHubPanel({
           <h3>Repository</h3>
           <span className="kern-sync-time">
             {repoLabel ?? "Not selected"}
-            {projectLabel ? ` · Project ${projectLabel}` : ""}
+          </span>
+        </div>
+        <div className="kern-sync-heading">
+          <h3>Project</h3>
+          <span className="kern-sync-time">
+            {projectLabel ?? "Not selected"}
           </span>
         </div>
         <div className="kern-sync-heading">

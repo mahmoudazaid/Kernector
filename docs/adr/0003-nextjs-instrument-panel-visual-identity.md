@@ -187,9 +187,10 @@ inventing a local look.
       (checkbox or radio as the product model requires; icon + primary name
       + muted meta)
     - Footer (`.kern-picker-foot`): live selection summary + **Cancel** /
-      **Save** (or equivalent primary confirm). Keep the primary label
-      **Save** while the control is disabled — do not swap it to
-      “Saving…”.
+      **Save**. Use the primary label **Save** for every picker confirm
+      control in the Hub — do not specialize it by source or function
+      (no “Save sources”, “Save and sync”, etc.). Keep **Save** while the
+      control is disabled — do not swap it to “Saving…”.
 
     **GitHub sources picker (required)** — GitHub uses one
     **Choose GitHub sources** dialog with two independent panels visible
@@ -197,7 +198,7 @@ inventing a local look.
     exactly one) and **Project issues** (optional, zero or one). Do **not**
     use tabs. Each panel has its own search. Project is not a child of the
     repository. Clear a selected project by clicking it again. Footer:
-    `1 source selected` / `2 sources selected`; primary **Save sources**;
+    `1 source selected` / `2 sources selected`; primary **Save**;
     disable until a repository is selected. Two columns on desktop; stack on
     narrow viewports.
 

@@ -8,7 +8,7 @@ import json
 import httpx
 import pytest
 
-from domain.errors import ConnectorAuthError, ConnectorUnavailableError
+from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
 from domain.knowledge import (
     ConnectorDocument,
     SourceDocument,
@@ -93,6 +93,7 @@ def test_http_client_walks_project_pagination_fully() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode("utf-8"))
+        assert "comments(first: 100)" in body["query"]
         calls.append(body["variables"])
         after = body["variables"]["after"]
         return httpx.Response(
@@ -133,9 +134,64 @@ def test_http_client_walks_project_pagination_fully() -> None:
 
     assert [item["id"] for item in items] == ["issue-first", "issue-cursor-1"]
     assert calls == [
-        {"projectId": "PVT_1", "after": None, "first": 100},
-        {"projectId": "PVT_1", "after": "cursor-1", "first": 100},
+        {"projectId": "PVT_1", "after": None, "first": 20},
+        {"projectId": "PVT_1", "after": "cursor-1", "first": 20},
     ]
+
+
+def test_http_client_project_items_caps_page_size_for_comments() -> None:
+    calls: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        assert "comments(first: 100)" in body["query"]
+        calls.append(body["variables"])
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "node": {
+                        "__typename": "ProjectV2",
+                        "items": {
+                            "nodes": [],
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        },
+                    }
+                }
+            },
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        page_size=100,
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.get_project_v2_items("PVT_1") == ()
+    assert calls == [{"projectId": "PVT_1", "after": None, "first": 20}]
+
+
+def test_http_client_surfaces_graphql_error_message() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "errors": [
+                    {
+                        "type": "COMPLEXITY",
+                        "message": "Query exceeds maximum node limit",
+                    }
+                ]
+            },
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(ConnectorError, match="maximum node limit"):
+        client.get_project_v2_items("PVT_1")
 
 
 def test_http_client_mid_pagination_rate_limit_raises_without_partial() -> None:
@@ -428,7 +484,6 @@ def _project_settings() -> object:
         max_file_bytes: int = 1_000_000
         project_owner: str = "ada"
         project_number: int = 1
-        include_issue_comments: bool = False
         page_size: int = 100
 
     return Settings()

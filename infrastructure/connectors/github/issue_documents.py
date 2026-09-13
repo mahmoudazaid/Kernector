@@ -24,7 +24,6 @@ class GitHubIssueConfig:
     """ProjectV2 issue ingestion configuration."""
 
     project_node_id: str
-    include_comments: bool = False
     connector_id: str | None = None
 
 
@@ -75,7 +74,7 @@ class GitHubIssueDocuments:
                     **_connector_extra(self._config.connector_id),
                 },
             ),
-            _markdown_for_issue(issue, include_comments=self._config.include_comments),
+            _markdown_for_issue(issue),
         )
 
     def _find_issue(self, source_id: str) -> Mapping[str, object]:
@@ -101,11 +100,7 @@ class GitHubIssueDocuments:
         return issues
 
 
-def _markdown_for_issue(
-    issue: Mapping[str, object],
-    *,
-    include_comments: bool,
-) -> str:
+def _markdown_for_issue(issue: Mapping[str, object]) -> str:
     title = _required_text(issue, "title")
     lines = [
         f"# {title}",
@@ -124,11 +119,10 @@ def _markdown_for_issue(
         "",
         _optional_text(issue.get("body")) or "",
     ]
-    if include_comments:
-        comments = _comments(issue.get("comments"))
-        if comments:
-            lines.extend(["", "## Comments", ""])
-            lines.extend(comments)
+    comments = _comments(issue.get("comments"))
+    if comments:
+        lines.extend(["", "## Comments", ""])
+        lines.extend(comments)
     return "\n".join(lines).strip() or title
 
 

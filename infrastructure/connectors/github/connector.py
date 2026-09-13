@@ -67,9 +67,6 @@ class GitHubKnowledgeConnector:
                     client,
                     GitHubIssueConfig(
                         project_node_id=project_node_id,
-                        include_comments=bool(
-                            getattr(settings, "include_issue_comments", False)
-                        ),
                         connector_id=_setting_text(settings, "connector_id"),
                     ),
                 )

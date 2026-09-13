@@ -162,7 +162,6 @@ class GitHubSettings:
     max_file_bytes: int = 512 * 1024
     project_owner: str | None = None
     project_number: int | None = None
-    include_issue_comments: bool = False
     page_size: int = 100
     connector_id: str | None = None
 
@@ -704,7 +703,6 @@ def _load_github_settings() -> GitHubSettings:
         max_file_bytes=max_file_bytes,
         project_owner=_optional_env("GITHUB_PROJECT_OWNER"),
         project_number=project_number,
-        include_issue_comments=_env_bool("GITHUB_INCLUDE_ISSUE_COMMENTS", "false"),
         page_size=page_size,
         connector_id=_optional_env("GITHUB_CONNECTOR_ID"),
     )

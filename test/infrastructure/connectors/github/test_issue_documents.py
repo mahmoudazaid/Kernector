@@ -70,28 +70,28 @@ def _issue(**overrides: object) -> dict[str, object]:
     return issue
 
 
-def test_lists_only_project_v2_linked_issues() -> None:
+def test_list_maps_issues_and_skips_non_issues() -> None:
     client = FakeGitHubClient(
         [
             _issue(),
             {"__typename": "PullRequest", "id": "PR_1"},
             {"__typename": "DraftIssue", "id": "DI_1"},
-            {"__typename": "Discussion", "id": "D_1"},
         ]
     )
     adapter = GitHubIssueDocuments(client, GitHubIssueConfig(project_node_id="PVT_1"))
 
-    docs = adapter.list_documents()
+    listed = adapter.list_documents()
 
-    assert len(docs) == 1
-    assert docs[0].source_id == "issue:I_kwDO"
-    assert docs[0].reference.source_type == SourceType.GITHUB
-    assert docs[0].revision == "2026-01-02T00:00:00Z"
-    assert docs[0].file_name == "issue-42.md"
-    assert docs[0].extra["github_kind"] == "issue"
+    assert len(listed) == 1
+    assert listed[0].reference.source_type is SourceType.GITHUB
+    assert listed[0].source_id == "issue:I_kwDO"
+    assert listed[0].file_name == "issue-42.md"
+    assert listed[0].revision == "2026-01-02T00:00:00Z"
+    assert listed[0].extra["github_kind"] == "issue"
+    assert client.project_calls == ["PVT_1"]
 
 
-def test_fetch_reuses_list_walk_without_second_project_request() -> None:
+def test_fetch_reuses_cached_project_items() -> None:
     client = FakeGitHubClient([_issue()])
     adapter = GitHubIssueDocuments(client, GitHubIssueConfig(project_node_id="PVT_1"))
     listed = adapter.list_documents()[0]
@@ -102,7 +102,7 @@ def test_fetch_reuses_list_walk_without_second_project_request() -> None:
     assert client.project_calls == ["PVT_1"]
 
 
-def test_fetch_renders_issue_markdown_without_comments_by_default() -> None:
+def test_fetch_renders_issue_markdown_with_comments() -> None:
     client = FakeGitHubClient([_issue()])
     adapter = GitHubIssueDocuments(client, GitHubIssueConfig(project_node_id="PVT_1"))
     listed = adapter.list_documents()[0]
@@ -118,19 +118,6 @@ def test_fetch_renders_issue_markdown_without_comments_by_default() -> None:
     assert "- Assignees: mona" in source.content
     assert "- Milestone: v1" in source.content
     assert "The sync misses files." in source.content
-    assert "I can reproduce this." not in source.content
-
-
-def test_fetch_includes_comments_when_configured() -> None:
-    client = FakeGitHubClient([_issue()])
-    adapter = GitHubIssueDocuments(
-        client,
-        GitHubIssueConfig(project_node_id="PVT_1", include_comments=True),
-    )
-    listed = adapter.list_documents()[0]
-
-    source = adapter.fetch_document(listed)
-
     assert "## Comments" in source.content
     assert "### Comment by hubot" in source.content
     assert "I can reproduce this." in source.content

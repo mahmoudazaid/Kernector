@@ -586,7 +586,7 @@ export function GitHubPicker({
               });
             }}
           >
-            Save sources
+            Save
           </Button>
         </div>
       </div>
