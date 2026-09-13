@@ -205,6 +205,56 @@ def test_http_client_decodes_blob_content() -> None:
     assert client.get_blob_content("octo", "hello", "blob-1") == b"hello"
 
 
+def test_http_client_lists_repositories_and_projects() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/user/repos"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "name": "hello",
+                        "full_name": "octo/hello",
+                        "private": False,
+                        "owner": {"login": "octo"},
+                    }
+                ],
+            )
+        body = json.loads(request.content.decode("utf-8"))
+        if "projectsV2" in body["query"] and "organization" in body["query"]:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {"organization": None},
+                    "errors": [{"type": "NOT_FOUND", "path": ["organization"]}],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "user": {
+                        "projectsV2": {
+                            "nodes": [{"number": 1, "title": "Board"}],
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        }
+                    }
+                }
+            },
+        )
+
+    client = HttpGitHubClient(
+        SECRET,
+        base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+    repos = client.list_repositories(page=1)
+    assert repos["items"][0]["full_name"] == "octo/hello"
+    assert repos["has_next"] is False
+    projects = client.list_projects("octo")
+    assert projects["items"][0]["number"] == 1
+    assert projects["next_cursor"] is None
+
+
 def test_resolve_project_v2_id_accepts_user_owned_partial_error() -> None:
     calls: list[str] = []
 

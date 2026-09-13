@@ -293,15 +293,20 @@ GitHub has two connection strategies, like Drive. Knowledge Hub uses **user OAut
 2. Set `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`,
    `GITHUB_OAUTH_REDIRECT_URI`, and optionally `GITHUB_OAUTH_FRONTEND_REDIRECT`
    (see [`.env.example`](.env.example)). Never commit those values.
-3. Configure the allowlisted repository with `GITHUB_OWNER` / `GITHUB_REPO`
-   (and optional ProjectV2 + path filters). Install the extra: `uv sync --extra github`.
+3. Install the extra: `uv sync --extra github`.
 4. In Knowledge Hub, click **Connect**. GitHub owns consent. After the callback,
-   use **Sync**. **Disconnect** revokes the stored grant.
-5. Grant files live under `data/github-oauth-*.json` (gitignored, mode `0600`).
+   choose a **repository** (and optionally a ProjectV2) in the picker, then
+   **Save and sync**. **Change selection** updates the scope later.
+   **Disconnect** revokes the stored grant.
+5. Optional env `GITHUB_OWNER` / `GITHUB_REPO` (and Project fields) only
+   pre-seed the grant after Connect; Hub selection replaces them. CLI still
+   uses those env vars with a PAT.
+6. Grant files live under `data/github-oauth-*.json` (gitignored, mode `0600`).
    The browser never sees tokens.
 
 Least-privilege scopes: repository contents read, plus Project/Issues read when
-ProjectV2 sync is enabled.
+ProjectV2 sync is enabled. Classic OAuth `repo` consent is account-wide; Kernector
+only syncs the repository (and optional project) saved in Hub selection.
 
 ### CLI (PAT)
 

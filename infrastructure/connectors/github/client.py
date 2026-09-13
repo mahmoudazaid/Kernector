@@ -41,6 +41,36 @@ class GitHubClient(Protocol):
         """Return decoded blob bytes."""
         ...
 
+    def get_repository(self, owner: str, repo: str) -> Mapping[str, object]:
+        """Return one repository metadata payload."""
+        ...
+
+    def list_repositories(
+        self,
+        *,
+        page: int = 1,
+        per_page: int | None = None,
+    ) -> Mapping[str, object]:
+        """Return one page of repositories visible to the token.
+
+        Payload shape: ``{"items": Sequence[Mapping], "has_next": bool}``.
+        """
+        ...
+
+    def list_projects(
+        self,
+        owner_login: str,
+        *,
+        after: str | None = None,
+        first: int | None = None,
+    ) -> Mapping[str, object]:
+        """Return one page of ProjectV2 projects for a user or organization.
+
+        Payload shape: ``{"items": Sequence[Mapping], "next_cursor": str | None}``.
+        Each item includes ``number``, ``title``, and ``owner_login``.
+        """
+        ...
+
     def get_project_v2_items(self, project_node_id: str) -> Sequence[Mapping[str, object]]:
         """Return all ProjectV2 item content nodes, walking all pages."""
         ...
@@ -115,6 +145,108 @@ class HttpGitHubClient:
         except ValueError as error:
             raise ConnectorError(_MSG_REQUEST_FAILED) from error
 
+    def get_repository(self, owner: str, repo: str) -> Mapping[str, object]:
+        return self._get_json(f"/repos/{owner}/{repo}")
+
+    def list_repositories(
+        self,
+        *,
+        page: int = 1,
+        per_page: int | None = None,
+    ) -> Mapping[str, object]:
+        size = self._page_size if per_page is None else per_page
+        if page < 1 or size < 1:
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        payload = self._get_json_list(
+            "/user/repos",
+            params={
+                "per_page": size,
+                "page": page,
+                "affiliation": "owner,collaborator,organization_member",
+                "sort": "full_name",
+            },
+        )
+        items: list[Mapping[str, object]] = []
+        for row in payload:
+            if not isinstance(row, Mapping):
+                continue
+            full_name = row.get("full_name")
+            name = row.get("name")
+            owner_payload = row.get("owner")
+            owner_login = None
+            if isinstance(owner_payload, Mapping):
+                login = owner_payload.get("login")
+                if isinstance(login, str) and login.strip():
+                    owner_login = login.strip()
+            if (
+                isinstance(full_name, str)
+                and full_name.strip()
+                and isinstance(name, str)
+                and name.strip()
+                and owner_login
+            ):
+                items.append(
+                    {
+                        "owner": owner_login,
+                        "name": name.strip(),
+                        "full_name": full_name.strip(),
+                        "private": bool(row.get("private")),
+                    }
+                )
+        return {"items": tuple(items), "has_next": len(payload) >= size}
+
+    def list_projects(
+        self,
+        owner_login: str,
+        *,
+        after: str | None = None,
+        first: int | None = None,
+    ) -> Mapping[str, object]:
+        size = self._page_size if first is None else first
+        if size < 1 or not owner_login.strip():
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        login = owner_login.strip()
+        for query, root in (
+            (_PROJECT_V2_ORG_LIST_QUERY, "organization"),
+            (_PROJECT_V2_USER_LIST_QUERY, "user"),
+        ):
+            payload = self._graphql(
+                query,
+                {"login": login, "first": size, "after": after},
+                soft_lookup_miss=True,
+            )
+            owner = _optional_nested_mapping(payload, ("data", root))
+            if owner is None:
+                continue
+            page = owner.get("projectsV2")
+            if not isinstance(page, Mapping):
+                raise ConnectorError(_MSG_REQUEST_FAILED)
+            nodes = page.get("nodes")
+            if not isinstance(nodes, Sequence) or isinstance(nodes, (str, bytes)):
+                raise ConnectorError(_MSG_REQUEST_FAILED)
+            items: list[Mapping[str, object]] = []
+            for node in nodes:
+                if not isinstance(node, Mapping):
+                    continue
+                number = node.get("number")
+                title = node.get("title")
+                if isinstance(number, int) and isinstance(title, str) and title.strip():
+                    items.append(
+                        {
+                            "number": number,
+                            "title": title.strip(),
+                            "owner_login": login,
+                        }
+                    )
+            page_info = page.get("pageInfo")
+            next_cursor: str | None = None
+            if isinstance(page_info, Mapping) and page_info.get("hasNextPage") is True:
+                end_cursor = page_info.get("endCursor")
+                if isinstance(end_cursor, str) and end_cursor:
+                    next_cursor = end_cursor
+            return {"items": tuple(items), "next_cursor": next_cursor}
+        return {"items": (), "next_cursor": None}
+
     def get_project_v2_items(self, project_node_id: str) -> Sequence[Mapping[str, object]]:
         items: list[Mapping[str, object]] = []
         after: str | None = None
@@ -181,6 +313,22 @@ class HttpGitHubClient:
         except Exception as error:
             raise _map_httpx_error(error, self._httpx) from error
         if not isinstance(payload, Mapping):
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        return payload
+
+    def _get_json_list(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, object] | None = None,
+    ) -> Sequence[object]:
+        try:
+            response = self._client.get(path, params=params)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as error:
+            raise _map_httpx_error(error, self._httpx) from error
+        if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
             raise ConnectorError(_MSG_REQUEST_FAILED)
         return payload
 
@@ -260,6 +408,28 @@ _PROJECT_V2_USER_LOOKUP_QUERY = """
 query KernectorProjectUserLookup($login: String!, $number: Int!) {
   user(login: $login) {
     projectV2(number: $number) { id }
+  }
+}
+"""
+
+_PROJECT_V2_ORG_LIST_QUERY = """
+query KernectorProjectOrgList($login: String!, $first: Int!, $after: String) {
+  organization(login: $login) {
+    projectsV2(first: $first, after: $after) {
+      nodes { number title }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+_PROJECT_V2_USER_LIST_QUERY = """
+query KernectorProjectUserList($login: String!, $first: Int!, $after: String) {
+  user(login: $login) {
+    projectsV2(first: $first, after: $after) {
+      nodes { number title }
+      pageInfo { hasNextPage endCursor }
+    }
   }
 }
 """

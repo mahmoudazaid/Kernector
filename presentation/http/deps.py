@@ -15,6 +15,9 @@ from composition import (
     GoogleDriveSelection,
     GoogleDriveSelectedItem,
     GoogleDriveStatus,
+    GitHubProjectPage,
+    GitHubRepoPage,
+    GitHubSelection,
     GitHubStatus,
     GroundedAsk,
     Settings,
@@ -32,13 +35,17 @@ from composition import (
     complete_google_drive_oauth,
     disconnect_github_oauth,
     disconnect_google_drive_oauth,
+    get_github_selection,
     get_google_drive_selection,
     get_uploaded_document_content,
     github_status,
     google_drive_status,
+    list_github_projects,
+    list_github_repositories,
     list_uploaded_document_chunks,
     list_uploaded_documents,
     load_runtime_settings,
+    put_github_selection,
     put_google_drive_selection,
     replace_uploaded_document,
     start_github_oauth,
@@ -412,6 +419,68 @@ def get_google_drive_selection_write(
     return save
 
 
+def get_github_repo_list(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GitHubRepoPage]:
+    """Return a GitHub repository listing callable for the Hub picker."""
+
+    def list_repos(*, page: int = 1) -> GitHubRepoPage:
+        return list_github_repositories(settings, page=page)
+
+    return list_repos
+
+
+def get_github_project_list(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GitHubProjectPage]:
+    """Return a GitHub ProjectV2 listing callable for the Hub picker."""
+
+    def list_projects(
+        *,
+        owner_login: str,
+        after: str | None = None,
+    ) -> GitHubProjectPage:
+        return list_github_projects(
+            settings, owner_login=owner_login, after=after
+        )
+
+    return list_projects
+
+
+def get_github_selection_read(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], GitHubSelection]:
+    """Return a callable that loads the saved GitHub selection."""
+
+    def load() -> GitHubSelection:
+        return get_github_selection(settings)
+
+    return load
+
+
+def get_github_selection_write(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GitHubSelection]:
+    """Return a callable that validates and replaces the saved GitHub selection."""
+
+    def save(
+        *,
+        owner: str,
+        repo: str,
+        project_owner: str | None = None,
+        project_number: int | None = None,
+    ) -> GitHubSelection:
+        return put_github_selection(
+            settings,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+        )
+
+    return save
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
@@ -457,4 +526,16 @@ GoogleDriveSelectionReadDep = Annotated[
 ]
 GoogleDriveSelectionWriteDep = Annotated[
     Callable[..., GoogleDriveSelection], Depends(get_google_drive_selection_write)
+]
+GitHubRepoListDep = Annotated[
+    Callable[..., GitHubRepoPage], Depends(get_github_repo_list)
+]
+GitHubProjectListDep = Annotated[
+    Callable[..., GitHubProjectPage], Depends(get_github_project_list)
+]
+GitHubSelectionReadDep = Annotated[
+    Callable[[], GitHubSelection], Depends(get_github_selection_read)
+]
+GitHubSelectionWriteDep = Annotated[
+    Callable[..., GitHubSelection], Depends(get_github_selection_write)
 ]

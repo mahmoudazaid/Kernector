@@ -108,6 +108,70 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connectors/github/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Github Connector Projects
+     * @description List ProjectV2 projects for a login using the stored grant.
+     */
+    get: operations["github_connector_projects_api_v1_connectors_github_projects_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github/repos": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Github Connector Repos
+     * @description List repositories visible to the stored grant for the Hub picker.
+     */
+    get: operations["github_connector_repos_api_v1_connectors_github_repos_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/github/selection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Github Connector Get Selection
+     * @description Return the saved repository and optional ProjectV2 selection.
+     */
+    get: operations["github_connector_get_selection_api_v1_connectors_github_selection_get"];
+    /**
+     * Github Connector Put Selection
+     * @description Validate access and atomically replace the saved GitHub selection.
+     */
+    put: operations["github_connector_put_selection_api_v1_connectors_github_selection_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connectors/github/sync": {
     parameters: {
       query?: never;
@@ -622,6 +686,91 @@ export interface components {
       updated_count: number;
     };
     /**
+     * GitHubProjectItemResponse
+     * @description One ProjectV2 row for the Hub picker.
+     */
+    GitHubProjectItemResponse: {
+      /** Number */
+      number: number;
+      /** Owner Login */
+      owner_login: string;
+      /** Title */
+      title: string;
+    };
+    /**
+     * GitHubProjectPageResponse
+     * @description One page of ProjectV2 projects for the Hub picker.
+     */
+    GitHubProjectPageResponse: {
+      /** Items */
+      items: components["schemas"]["GitHubProjectItemResponse"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /**
+     * GitHubRepoItemResponse
+     * @description One repository row for the Hub picker.
+     */
+    GitHubRepoItemResponse: {
+      /** Full Name */
+      full_name: string;
+      /** Name */
+      name: string;
+      /** Owner */
+      owner: string;
+      /**
+       * Private
+       * @default false
+       */
+      private: boolean;
+    };
+    /**
+     * GitHubRepoPageResponse
+     * @description One page of repositories for the Hub picker.
+     */
+    GitHubRepoPageResponse: {
+      /**
+       * Has Next
+       * @default false
+       */
+      has_next: boolean;
+      /** Items */
+      items: components["schemas"]["GitHubRepoItemResponse"][];
+      /**
+       * Page
+       * @default 1
+       */
+      page: number;
+    };
+    /**
+     * GitHubSelectionRequest
+     * @description Replace the saved GitHub sync selection.
+     */
+    GitHubSelectionRequest: {
+      /** Owner */
+      owner: string;
+      /** Project Number */
+      project_number?: number | null;
+      /** Project Owner */
+      project_owner?: string | null;
+      /** Repo */
+      repo: string;
+    };
+    /**
+     * GitHubSelectionResponse
+     * @description Saved Hub sync targets (no tokens).
+     */
+    GitHubSelectionResponse: {
+      /** Owner */
+      owner?: string | null;
+      /** Project Number */
+      project_number?: number | null;
+      /** Project Owner */
+      project_owner?: string | null;
+      /** Repo */
+      repo?: string | null;
+    };
+    /**
      * GitHubStatusResponse
      * @description GitHub connector presence and user OAuth connection (no secrets).
      */
@@ -666,6 +815,11 @@ export interface components {
       reauthorization_required: boolean;
       /** Repo */
       repo?: string | null;
+      /**
+       * Setup Required
+       * @default false
+       */
+      setup_required: boolean;
       /** Sync Scope */
       sync_scope?: string | null;
     };
@@ -1423,6 +1577,257 @@ export interface operations {
       };
       /** @description Server error */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  github_connector_projects_api_v1_connectors_github_projects_get: {
+    parameters: {
+      query: {
+        owner_login: string;
+        after?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GitHubProjectPageResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  github_connector_repos_api_v1_connectors_github_repos_get: {
+    parameters: {
+      query?: {
+        page?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GitHubRepoPageResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  github_connector_get_selection_api_v1_connectors_github_selection_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GitHubSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  github_connector_put_selection_api_v1_connectors_github_selection_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GitHubSelectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GitHubSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
         headers: {
           [name: string]: unknown;
         };

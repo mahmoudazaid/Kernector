@@ -9,6 +9,7 @@ from application.errors import (
     ConfigurationError,
     GitHubNotConnectedError,
     GitHubReauthorizationRequiredError,
+    GitHubSelectionRequiredError,
     GoogleDriveNotConfiguredError,
     GoogleDriveNotConnectedError,
     GoogleDriveOAuthNotConfiguredError,
@@ -359,6 +360,15 @@ def problem_from_exception(
             title="GitHub not connected",
             status=409,
             detail="GitHub is not connected.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, GitHubSelectionRequiredError):
+        return _problem(
+            code="github_selection_required",
+            title="GitHub selection required",
+            status=409,
+            detail="Select a GitHub repository before syncing.",
             instance=instance,
             request_id=request_id,
         )

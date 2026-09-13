@@ -153,6 +153,57 @@ class GitHubStatusResponse(BaseModel):
     reauthorization_required: bool = False
     connection_state: str = "disconnected"
     sync_scope: str | None = None
+    setup_required: bool = False
+
+
+class GitHubRepoItemResponse(BaseModel):
+    """One repository row for the Hub picker."""
+
+    owner: str
+    name: str
+    full_name: str
+    private: bool = False
+
+
+class GitHubRepoPageResponse(BaseModel):
+    """One page of repositories for the Hub picker."""
+
+    items: list[GitHubRepoItemResponse]
+    has_next: bool = False
+    page: int = 1
+
+
+class GitHubProjectItemResponse(BaseModel):
+    """One ProjectV2 row for the Hub picker."""
+
+    owner_login: str
+    number: int
+    title: str
+
+
+class GitHubProjectPageResponse(BaseModel):
+    """One page of ProjectV2 projects for the Hub picker."""
+
+    items: list[GitHubProjectItemResponse]
+    next_cursor: str | None = None
+
+
+class GitHubSelectionResponse(BaseModel):
+    """Saved Hub sync targets (no tokens)."""
+
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
+
+
+class GitHubSelectionRequest(BaseModel):
+    """Replace the saved GitHub sync selection."""
+
+    owner: str
+    repo: str
+    project_owner: str | None = None
+    project_number: int | None = None
 
 
 class GoogleDriveBrowseItemResponse(BaseModel):

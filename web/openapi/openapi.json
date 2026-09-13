@@ -476,6 +476,191 @@
         "title": "GitHubLastSyncResponse",
         "type": "object"
       },
+      "GitHubProjectItemResponse": {
+        "description": "One ProjectV2 row for the Hub picker.",
+        "properties": {
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "owner_login": {
+            "title": "Owner Login",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["owner_login", "number", "title"],
+        "title": "GitHubProjectItemResponse",
+        "type": "object"
+      },
+      "GitHubProjectPageResponse": {
+        "description": "One page of ProjectV2 projects for the Hub picker.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubProjectItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items"],
+        "title": "GitHubProjectPageResponse",
+        "type": "object"
+      },
+      "GitHubRepoItemResponse": {
+        "description": "One repository row for the Hub picker.",
+        "properties": {
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "private": {
+            "default": false,
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": ["owner", "name", "full_name"],
+        "title": "GitHubRepoItemResponse",
+        "type": "object"
+      },
+      "GitHubRepoPageResponse": {
+        "description": "One page of repositories for the Hub picker.",
+        "properties": {
+          "has_next": {
+            "default": false,
+            "title": "Has Next",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubRepoItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": ["items"],
+        "title": "GitHubRepoPageResponse",
+        "type": "object"
+      },
+      "GitHubSelectionRequest": {
+        "description": "Replace the saved GitHub sync selection.",
+        "properties": {
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "project_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Number"
+          },
+          "project_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Owner"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": ["owner", "repo"],
+        "title": "GitHubSelectionRequest",
+        "type": "object"
+      },
+      "GitHubSelectionResponse": {
+        "description": "Saved Hub sync targets (no tokens).",
+        "properties": {
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "project_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Number"
+          },
+          "project_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Owner"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          }
+        },
+        "title": "GitHubSelectionResponse",
+        "type": "object"
+      },
       "GitHubStatusResponse": {
         "description": "GitHub connector presence and user OAuth connection (no secrets).",
         "properties": {
@@ -576,6 +761,11 @@
               }
             ],
             "title": "Repo"
+          },
+          "setup_required": {
+            "default": false,
+            "title": "Setup Required",
+            "type": "boolean"
           },
           "sync_scope": {
             "anyOf": [
@@ -2025,6 +2215,313 @@
           }
         },
         "summary": "Github Oauth Start",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/projects": {
+      "get": {
+        "description": "List ProjectV2 projects for a login using the stored grant.",
+        "operationId": "github_connector_projects_api_v1_connectors_github_projects_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner_login",
+            "required": true,
+            "schema": {
+              "title": "Owner Login",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubProjectPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Projects",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/repos": {
+      "get": {
+        "description": "List repositories visible to the stored grant for the Hub picker.",
+        "operationId": "github_connector_repos_api_v1_connectors_github_repos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepoPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Repos",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/selection": {
+      "get": {
+        "description": "Return the saved repository and optional ProjectV2 selection.",
+        "operationId": "github_connector_get_selection_api_v1_connectors_github_selection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Connector Get Selection",
+        "tags": ["connectors"]
+      },
+      "put": {
+        "description": "Validate access and atomically replace the saved GitHub selection.",
+        "operationId": "github_connector_put_selection_api_v1_connectors_github_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Put Selection",
         "tags": ["connectors"]
       }
     },

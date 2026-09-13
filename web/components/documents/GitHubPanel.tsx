@@ -3,15 +3,25 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { GitHubPicker } from "@/components/documents/GitHubPicker";
 import { Loader } from "@/components/ui/Loader";
 import {
   disconnectGitHub,
+  getGitHubSelection,
   getGitHubStatus,
   githubOAuthStartUrl,
+  listGitHubProjects,
+  listGitHubRepos,
+  putGitHubSelection,
   syncGitHub,
   type DisconnectGitHubOptions,
+  type GetGitHubSelectionOptions,
   type GetGitHubStatusOptions,
+  type GitHubSelectionResponse,
   type GitHubStatusResponse,
+  type ListGitHubProjectsOptions,
+  type ListGitHubReposOptions,
+  type PutGitHubSelectionOptions,
   type SyncGitHubOptions,
 } from "@/lib/api/connectors";
 import { ApiError, isAbortError } from "@/lib/api/errors";
@@ -24,11 +34,31 @@ export type GitHubPanelProps = {
   getStatus?: (
     options: GetGitHubStatusOptions,
   ) => Promise<GitHubStatusResponse>;
+  listRepos?: (
+    options: ListGitHubReposOptions,
+  ) => Promise<{
+    items: { owner: string; name: string; full_name: string; private: boolean }[];
+    has_next: boolean;
+  }>;
+  listProjects?: (
+    options: ListGitHubProjectsOptions,
+  ) => Promise<{
+    items: { owner_login: string; number: number; title: string }[];
+    next_cursor: string | null;
+  }>;
+  loadSelection?: (
+    options: GetGitHubSelectionOptions,
+  ) => Promise<GitHubSelectionResponse>;
+  saveSelection?: (
+    options: PutGitHubSelectionOptions,
+  ) => Promise<GitHubSelectionResponse>;
   syncNow?: (options: SyncGitHubOptions) => Promise<unknown>;
   disconnect?: (options: DisconnectGitHubOptions) => Promise<void>;
   onConnectionChange?: (connected: boolean) => void;
   onCatalogChange?: () => void;
   reloadToken?: number;
+  pickerOpen?: boolean;
+  onPickerOpenChange?: (open: boolean) => void;
   onOAuthCallbackConsumed?: () => void;
 };
 
@@ -36,6 +66,13 @@ type StatusView =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; status: GitHubStatusResponse };
+
+const EMPTY_SELECTION: GitHubSelectionResponse = {
+  owner: null,
+  repo: null,
+  project_owner: null,
+  project_number: null,
+};
 
 const ABORT_COPY =
   "The sync request was cancelled or timed out. The run may still be in progress on the server.";
@@ -70,12 +107,18 @@ function GitHubIcon() {
 export function GitHubPanel({
   apiBaseUrl,
   getStatus = getGitHubStatus,
+  listRepos = listGitHubRepos,
+  listProjects = listGitHubProjects,
+  loadSelection = getGitHubSelection,
+  saveSelection = putGitHubSelection,
   syncNow = syncGitHub,
   disconnect = disconnectGitHub,
   onConnectionChange,
   onCatalogChange,
   reloadToken = 0,
   oauthCallback = null,
+  pickerOpen: pickerOpenProp,
+  onPickerOpenChange,
   onOAuthCallbackConsumed,
 }: GitHubPanelProps) {
   const [view, setView] = useState<StatusView>({ kind: "loading" });
@@ -83,12 +126,26 @@ export function GitHubPanel({
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [internalPickerOpen, setInternalPickerOpen] = useState(false);
+  const pickerOpen = onPickerOpenChange
+    ? (pickerOpenProp ?? false)
+    : internalPickerOpen;
+  const setPickerOpen = onPickerOpenChange ?? setInternalPickerOpen;
+  const [selection, setSelection] =
+    useState<GitHubSelectionResponse>(EMPTY_SELECTION);
+  const [selectionReady, setSelectionReady] = useState(false);
+  const [pickerNotice, setPickerNotice] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const selectionAbortRef = useRef<AbortController | null>(null);
+  const pickerOpenRef = useRef(pickerOpen);
+  const selectionReadyRef = useRef(selectionReady);
   const onConnectionChangeRef = useRef(onConnectionChange);
   const onCatalogChangeRef = useRef(onCatalogChange);
   const onOAuthCallbackConsumedRef = useRef(onOAuthCallbackConsumed);
 
   useEffect(() => {
+    pickerOpenRef.current = pickerOpen;
+    selectionReadyRef.current = selectionReady;
     onConnectionChangeRef.current = onConnectionChange;
     onCatalogChangeRef.current = onCatalogChange;
     onOAuthCallbackConsumedRef.current = onOAuthCallbackConsumed;
@@ -105,12 +162,53 @@ export function GitHubPanel({
     }
   }
 
+  async function refreshSelection(options?: {
+    forPicker?: boolean;
+  }): Promise<GitHubSelectionResponse | null> {
+    const forPicker = options?.forPicker === true;
+    selectionAbortRef.current?.abort();
+    const controller = new AbortController();
+    selectionAbortRef.current = controller;
+    setSelectionReady(false);
+    try {
+      const next = await loadSelection({
+        baseUrl: apiBaseUrl,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) {
+        return null;
+      }
+      setSelection(next);
+      setSelectionReady(true);
+      setPickerNotice(null);
+      return next;
+    } catch (error) {
+      if (isAbortError(error) || controller.signal.aborted) {
+        return null;
+      }
+      setSelection(EMPTY_SELECTION);
+      setSelectionReady(true);
+      if (forPicker || pickerOpenRef.current) {
+        if (forPicker || !selectionReadyRef.current) {
+          setActionError(actionErrorMessage(error));
+          setPickerOpen(false);
+        } else {
+          setPickerNotice(actionErrorMessage(error));
+        }
+      }
+      return null;
+    }
+  }
+
   useEffect(() => {
     let ignore = false;
     void (async () => {
-      await loadStatus();
+      const status = await loadStatus();
       if (ignore) {
         return;
+      }
+      if (status?.connected) {
+        await refreshSelection();
       }
     })();
     return () => {
@@ -127,18 +225,35 @@ export function GitHubPanel({
     consumeGithubCallback();
     onOAuthCallbackConsumedRef.current?.();
     if (github === "connected") {
+      setPickerOpen(true);
       void loadStatus();
     } else {
       setActionError(CALLBACK_ERRORS[github] ?? CALLBACK_ERRORS.error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- callback token
-  }, [oauthCallback]);
+  }, [oauthCallback, setPickerOpen]);
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      selectionAbortRef.current?.abort();
+      setSelectionReady(false);
+      setPickerNotice(null);
+      return;
+    }
+    void refreshSelection({ forPicker: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- picker open
+  }, [pickerOpen]);
 
   useEffect(() => {
     if (reloadToken === 0) {
       return;
     }
-    void loadStatus();
+    void (async () => {
+      const status = await loadStatus();
+      if (status?.connected) {
+        await refreshSelection();
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- parent nonce
   }, [reloadToken]);
 
@@ -155,6 +270,11 @@ export function GitHubPanel({
     if (busyRef.current) {
       return;
     }
+    const status = view.kind === "ready" ? view.status : null;
+    if (status?.setup_required || !(status?.owner && status?.repo)) {
+      setPickerOpen(true);
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setActionError(null);
@@ -167,8 +287,48 @@ export function GitHubPanel({
         setActionError(ABORT_COPY);
         void loadStatus();
         onCatalogChangeRef.current?.();
+      } else if (
+        error instanceof ApiError &&
+        error.detail.toLowerCase().includes("select a github repository")
+      ) {
+        setPickerOpen(true);
       } else {
         setActionError(actionErrorMessage(error));
+      }
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function onSaveSelection(next: {
+    owner: string;
+    repo: string;
+    project_owner?: string | null;
+    project_number?: number | null;
+  }) {
+    if (busyRef.current) {
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    setPickerNotice(null);
+    setActionError(null);
+    try {
+      const saved = await saveSelection({
+        baseUrl: apiBaseUrl,
+        selection: next,
+      });
+      setSelection(saved);
+      await syncNow({ baseUrl: apiBaseUrl });
+      setPickerOpen(false);
+      await loadStatus();
+      onCatalogChangeRef.current?.();
+    } catch (error) {
+      if (isAbortError(error)) {
+        setPickerNotice(ABORT_COPY);
+      } else {
+        setPickerNotice(actionErrorMessage(error));
       }
     } finally {
       busyRef.current = false;
@@ -186,6 +346,8 @@ export function GitHubPanel({
     try {
       await disconnect({ baseUrl: apiBaseUrl });
       setConfirmOpen(false);
+      setPickerOpen(false);
+      setSelection(EMPTY_SELECTION);
       await loadStatus();
       onCatalogChangeRef.current?.();
     } catch (error) {
@@ -198,6 +360,7 @@ export function GitHubPanel({
 
   const status = view.kind === "ready" ? view.status : null;
   const reauth = Boolean(status?.reauthorization_required);
+  const setupRequired = Boolean(status?.setup_required);
   const oauthStartHref = githubOAuthStartUrl(apiBaseUrl);
   const statusLabel =
     view.kind === "loading"
@@ -206,9 +369,11 @@ export function GitHubPanel({
         ? "Unavailable"
         : reauth
           ? "Reconnect required"
-          : status?.connected
-            ? "Connected"
-            : "Available";
+          : setupRequired
+            ? "Choose repository"
+            : status?.connected
+              ? "Connected"
+              : "Available";
 
   const lastSync = status?.last_sync ?? null;
   const failedCount = lastSync?.failed_count ?? 0;
@@ -224,13 +389,6 @@ export function GitHubPanel({
     if (status !== null && !status.oauth_ready) {
       event.preventDefault();
       setActionError("GitHub OAuth is not configured on the server.");
-      return;
-    }
-    if (status !== null && !(status.owner && status.repo)) {
-      event.preventDefault();
-      setActionError(
-        "Set GITHUB_OWNER and GITHUB_REPO on the server before connecting.",
-      );
       return;
     }
     setRedirecting(true);
@@ -273,113 +431,156 @@ export function GitHubPanel({
   }
 
   const syncDisabled = busy || reauth;
+  const cardBusy = busy && !pickerOpen;
   const repoLabel =
     status?.owner && status?.repo
       ? `${status.owner}/${status.repo}`
-      : "Configured repository";
+      : "Choose a repository";
+  const projectLabel =
+    status?.project_owner && status.project_number != null
+      ? `${status.project_owner} #${status.project_number}`
+      : "None";
 
   return (
-    <article className="kern-source-card" aria-busy={busy}>
-      {busy ? (
-        <div className="kern-source-busy-overlay">
-          <Loader label="Syncing GitHub" size="sm" />
-        </div>
-      ) : null}
-      <div className="kern-source-card-title">
-        <div className="kern-source-name">
-          <span className="kern-source-icon">
-            <GitHubIcon />
+    <>
+      <article className="kern-source-card" aria-busy={cardBusy}>
+        {cardBusy ? (
+          <div className="kern-source-busy-overlay">
+            <Loader label="Syncing GitHub" size="sm" />
+          </div>
+        ) : null}
+        <div className="kern-source-card-title">
+          <div className="kern-source-name">
+            <span className="kern-source-icon">
+              <GitHubIcon />
+            </span>
+            <div>
+              <h3>GitHub</h3>
+              <p className="kern-source-kind">Repository knowledge</p>
+            </div>
+          </div>
+          <span className={`kern-source-status${reauth ? " is-muted" : ""}`}>
+            {statusLabel}
           </span>
+        </div>
+
+        {alertMessage ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--error"
+            role="alert"
+          >
+            <p>{alertMessage}</p>
+          </div>
+        ) : null}
+
+        {setupRequired && !reauth ? (
+          <div
+            className="kern-settings-callout kern-settings-callout--warn"
+            role="status"
+          >
+            <p>Choose a repository to sync before indexing.</p>
+          </div>
+        ) : null}
+
+        <div className="kern-source-metrics">
           <div>
-            <h3>GitHub</h3>
-            <p className="kern-source-kind">Repository knowledge</p>
+            <span className="kern-metric-label">Account</span>
+            <span className="kern-metric-value">
+              {status?.account_login ?? "Connected account"}
+            </span>
+          </div>
+          <div>
+            <span className="kern-metric-label">Repository</span>
+            <span className="kern-metric-value">{repoLabel}</span>
+          </div>
+          <div>
+            <span className="kern-metric-label">Project</span>
+            <span className="kern-metric-value">{projectLabel}</span>
+          </div>
+          <div>
+            <span className="kern-metric-label">Indexed</span>
+            <span className="kern-metric-value">
+              {status?.document_count ?? 0}
+            </span>
           </div>
         </div>
-        <span className={`kern-source-status${reauth ? " is-muted" : ""}`}>
-          {statusLabel}
-        </span>
-      </div>
+        <div className="kern-sync-section" role="status">
+          <div className="kern-sync-heading">
+            <h3>Last synced</h3>
+            <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
+              {lastSync ? formatTimestamp(lastSync.synced_at) : "Never"}
+            </time>
+          </div>
+        </div>
+        {failedCount > 0 ? (
+          <div className="kern-settings-callout kern-settings-callout--warn">
+            <p>
+              {failedCount === 1
+                ? "1 document failed to index. See Documents."
+                : `${failedCount} documents failed to index. See Documents.`}
+            </p>
+          </div>
+        ) : null}
 
-      {alertMessage ? (
-        <div
-          className="kern-settings-callout kern-settings-callout--error"
-          role="alert"
-        >
-          <p>{alertMessage}</p>
+        <div className="kern-source-actions is-split">
+          <div className="kern-action-group">
+            {reauth ? (
+              connectControl
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={syncDisabled}
+                  onClick={() => void onSync()}
+                >
+                  {setupRequired ? "Choose repository" : "Sync"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => setPickerOpen(true)}
+                >
+                  Change selection
+                </Button>
+              </>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => setConfirmOpen(true)}
+          >
+            Disconnect
+          </Button>
         </div>
-      ) : null}
 
-      <div className="kern-source-metrics">
-        <div>
-          <span className="kern-metric-label">Account</span>
-          <span className="kern-metric-value">
-            {status?.account_login ?? "Connected account"}
-          </span>
-        </div>
-        <div>
-          <span className="kern-metric-label">Repository</span>
-          <span className="kern-metric-value">{repoLabel}</span>
-        </div>
-        <div>
-          <span className="kern-metric-label">Indexed</span>
-          <span className="kern-metric-value">
-            {status?.document_count ?? 0}
-          </span>
-        </div>
-      </div>
-      <div className="kern-sync-section" role="status">
-        <div className="kern-sync-heading">
-          <h3>Last synced</h3>
-          <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
-            {lastSync ? formatTimestamp(lastSync.synced_at) : "Never"}
-          </time>
-        </div>
-      </div>
-      {failedCount > 0 ? (
-        <div className="kern-settings-callout kern-settings-callout--warn">
-          <p>
-            {failedCount === 1
-              ? "1 document failed to index. See Documents."
-              : `${failedCount} documents failed to index. See Documents.`}
-          </p>
-        </div>
-      ) : null}
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Disconnect GitHub?"
+          description="This removes the stored GitHub grant from this workspace. Indexed documents stay until you delete them or the next sync reconciles removals."
+          confirmLabel="Disconnect"
+          cancelLabel="Cancel"
+          busy={busy}
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => void onDisconnect()}
+        />
+      </article>
 
-      <div className="kern-source-actions is-split">
-        <div className="kern-action-group">
-          {reauth ? (
-            connectControl
-          ) : (
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={syncDisabled}
-              onClick={() => void onSync()}
-            >
-              Sync
-            </Button>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={busy}
-          onClick={() => setConfirmOpen(true)}
-        >
-          Disconnect
-        </Button>
-      </div>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Disconnect GitHub?"
-        description="This removes the stored GitHub grant from this workspace. Indexed documents stay until you delete them or the next sync reconciles removals."
-        confirmLabel="Disconnect"
-        cancelLabel="Cancel"
+      <GitHubPicker
+        open={pickerOpen}
+        apiBaseUrl={apiBaseUrl}
+        initialSelection={selection}
+        selectionLoading={!selectionReady}
         busy={busy}
-        onCancel={() => setConfirmOpen(false)}
-        onConfirm={() => void onDisconnect()}
+        listRepos={listRepos}
+        listProjects={listProjects}
+        notice={pickerNotice}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={(next) => void onSaveSelection(next)}
       />
-    </article>
+    </>
   );
 }

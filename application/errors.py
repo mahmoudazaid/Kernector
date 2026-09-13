@@ -108,6 +108,10 @@ class GitHubNotConnectedError(ConfigurationError):
     """No user OAuth grant is stored for GitHub."""
 
 
+class GitHubSelectionRequiredError(ConfigurationError):
+    """A user grant exists but no repository (and optional project) is saved."""
+
+
 class GitHubReauthorizationRequiredError(ConfigurationError):
     """The stored GitHub token was revoked or is no longer valid."""
 

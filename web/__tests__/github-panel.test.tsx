@@ -16,6 +16,7 @@ const disconnected: GitHubStatusResponse = {
   last_sync: null,
   reauthorization_required: false,
   connection_state: "disconnected",
+  setup_required: false,
 };
 
 const connected: GitHubStatusResponse = {
@@ -25,7 +26,8 @@ const connected: GitHubStatusResponse = {
   owner: "acme",
   repo: "docs",
   document_count: 3,
-  connection_state: "connected",
+  connection_state: "ready",
+  setup_required: false,
   last_sync: {
     synced_at: "2026-09-13T12:00:00+00:00",
     new_count: 1,
@@ -36,8 +38,18 @@ const connected: GitHubStatusResponse = {
   },
 };
 
+const needsSetup: GitHubStatusResponse = {
+  ...disconnected,
+  connected: true,
+  account_login: "octocat",
+  owner: null,
+  repo: null,
+  connection_state: "ready",
+  setup_required: true,
+};
+
 describe("GitHubPanel", () => {
-  it("shows Connect when disconnected", async () => {
+  it("shows Connect when disconnected without requiring env owner/repo", async () => {
     render(
       <GitHubPanel
         apiBaseUrl="http://api"
@@ -50,6 +62,43 @@ describe("GitHubPanel", () => {
     );
   });
 
+  it("opens picker when setup is required", async () => {
+    const user = userEvent.setup();
+    render(
+      <GitHubPanel
+        apiBaseUrl="http://api"
+        getStatus={async () => needsSetup}
+        loadSelection={async () => ({
+          owner: null,
+          repo: null,
+          project_owner: null,
+          project_number: null,
+        })}
+        listRepos={async () => ({
+          items: [
+            {
+              owner: "acme",
+              name: "docs",
+              full_name: "acme/docs",
+              private: false,
+            },
+          ],
+          has_next: false,
+        })}
+        listProjects={async () => ({ items: [], next_cursor: null })}
+      />,
+    );
+    expect(
+      await screen.findByText(/choose a repository to sync before indexing/i),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Choose repository" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: /choose github sync scope/i }),
+    ).toBeInTheDocument();
+  });
+
   it("syncs and disconnects when connected", async () => {
     const user = userEvent.setup();
     const syncNow = vi.fn().mockResolvedValue({});
@@ -59,6 +108,12 @@ describe("GitHubPanel", () => {
       <GitHubPanel
         apiBaseUrl="http://api"
         getStatus={async () => status}
+        loadSelection={async () => ({
+          owner: "acme",
+          repo: "docs",
+          project_owner: null,
+          project_number: null,
+        })}
         syncNow={syncNow}
         disconnect={async () => {
           await disconnect();

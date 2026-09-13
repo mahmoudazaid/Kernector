@@ -8,12 +8,22 @@ from presentation.http.deps import (
     GitHubDisconnectDep,
     GitHubOAuthCallbackDep,
     GitHubOAuthStartDep,
+    GitHubProjectListDep,
+    GitHubRepoListDep,
+    GitHubSelectionReadDep,
+    GitHubSelectionWriteDep,
     GitHubStatusDep,
     GitHubSyncDep,
 )
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     GitHubLastSyncResponse,
+    GitHubProjectItemResponse,
+    GitHubProjectPageResponse,
+    GitHubRepoItemResponse,
+    GitHubRepoPageResponse,
+    GitHubSelectionRequest,
+    GitHubSelectionResponse,
     GitHubStatusResponse,
     GitHubSyncResponse,
     github_sync_response,
@@ -52,6 +62,16 @@ def _status_response(status: GitHubStatus) -> GitHubStatusResponse:
         reauthorization_required=status.reauthorization_required,
         connection_state=status.connection_state,
         sync_scope=status.sync_scope,
+        setup_required=status.setup_required,
+    )
+
+
+def _selection_response(selection) -> GitHubSelectionResponse:
+    return GitHubSelectionResponse(
+        owner=selection.owner,
+        repo=selection.repo,
+        project_owner=selection.project_owner,
+        project_number=selection.project_number,
     )
 
 
@@ -102,6 +122,85 @@ def github_oauth_callback(
     return RedirectResponse(
         url=complete(state, code, error),
         status_code=302,
+    )
+
+
+@router.get(
+    "/connectors/github/repos",
+    responses=problem_responses(405, 409, 500, 502),
+)
+def github_connector_repos(
+    list_repos: GitHubRepoListDep,
+    page: int = 1,
+) -> GitHubRepoPageResponse:
+    """List repositories visible to the stored grant for the Hub picker."""
+    result = list_repos(page=page)
+    return GitHubRepoPageResponse(
+        items=[
+            GitHubRepoItemResponse(
+                owner=item.owner,
+                name=item.name,
+                full_name=item.full_name,
+                private=item.private,
+            )
+            for item in result.items
+        ],
+        has_next=result.has_next,
+        page=result.page,
+    )
+
+
+@router.get(
+    "/connectors/github/projects",
+    responses=problem_responses(405, 409, 422, 500, 502),
+)
+def github_connector_projects(
+    list_projects: GitHubProjectListDep,
+    owner_login: str,
+    after: str | None = None,
+) -> GitHubProjectPageResponse:
+    """List ProjectV2 projects for a login using the stored grant."""
+    result = list_projects(owner_login=owner_login, after=after)
+    return GitHubProjectPageResponse(
+        items=[
+            GitHubProjectItemResponse(
+                owner_login=item.owner_login,
+                number=item.number,
+                title=item.title,
+            )
+            for item in result.items
+        ],
+        next_cursor=result.next_cursor,
+    )
+
+
+@router.get(
+    "/connectors/github/selection",
+    responses=problem_responses(405, 409, 500),
+)
+def github_connector_get_selection(
+    load_selection: GitHubSelectionReadDep,
+) -> GitHubSelectionResponse:
+    """Return the saved repository and optional ProjectV2 selection."""
+    return _selection_response(load_selection())
+
+
+@router.put(
+    "/connectors/github/selection",
+    responses=problem_responses(405, 409, 422, 500, 502),
+)
+def github_connector_put_selection(
+    body: GitHubSelectionRequest,
+    save_selection: GitHubSelectionWriteDep,
+) -> GitHubSelectionResponse:
+    """Validate access and atomically replace the saved GitHub selection."""
+    return _selection_response(
+        save_selection(
+            owner=body.owner,
+            repo=body.repo,
+            project_owner=body.project_owner,
+            project_number=body.project_number,
+        )
     )
 
 

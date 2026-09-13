@@ -24,6 +24,7 @@ from application.errors import (
     ConfigurationError,
     GitHubNotConnectedError,
     GitHubReauthorizationRequiredError,
+    GitHubSelectionRequiredError,
     GoogleDriveNotConnectedError,
     GoogleDriveReauthorizationRequiredError,
     GoogleDriveSelectionRequiredError,
@@ -713,6 +714,53 @@ class GitHubStatus:
     reauthorization_required: bool = False
     connection_state: str = "disconnected"
     sync_scope: str | None = None
+    setup_required: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoItem:
+    """One repository row for the Hub picker."""
+
+    owner: str
+    name: str
+    full_name: str
+    private: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoPage:
+    """One page of repositories for the Hub picker."""
+
+    items: tuple[GitHubRepoItem, ...]
+    has_next: bool = False
+    page: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubProjectItem:
+    """One ProjectV2 row for the Hub picker."""
+
+    owner_login: str
+    number: int
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubProjectPage:
+    """One page of ProjectV2 projects for the Hub picker."""
+
+    items: tuple[GitHubProjectItem, ...]
+    next_cursor: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubSelection:
+    """Saved Hub sync targets: one repository plus an optional ProjectV2."""
+
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -889,17 +937,25 @@ def github_status(
         connection_state = "reauthorization_required"
     else:
         connection_state = "ready"
-    owner = _coalesce_text(settings.github.owner, None if connection is None else connection.owner)
-    repo = _coalesce_text(settings.github.repo, None if connection is None else connection.repo)
+    # Hub selection on the grant wins; env is a fallback for pre-seeded operators.
+    owner = _coalesce_text(
+        None if connection is None else connection.owner,
+        settings.github.owner,
+    )
+    repo = _coalesce_text(
+        None if connection is None else connection.repo,
+        settings.github.repo,
+    )
     project_owner = _coalesce_text(
-        settings.github.project_owner,
         None if connection is None else connection.project_owner,
+        settings.github.project_owner,
     )
     project_number = (
-        settings.github.project_number
-        if settings.github.project_number is not None
-        else (None if connection is None else connection.project_number)
+        None if connection is None else connection.project_number
     )
+    if project_number is None:
+        project_number = settings.github.project_number
+    setup_required = bool(connection is not None and not (owner and repo))
     return GitHubStatus(
         configured=configured,
         available=available,
@@ -920,6 +976,7 @@ def github_status(
         reauthorization_required=reauthorization_required,
         connection_state=connection_state,
         sync_scope=_github_sync_scope(owner=owner, repo=repo),
+        setup_required=setup_required,
     )
 
 
@@ -1295,8 +1352,6 @@ def start_github_oauth(
     """Issue CSRF state and return GitHub's authorization URL."""
     if not _github_oauth_ready(settings):
         return _github_hub_redirect(settings, result="unconfigured")
-    if not (settings.github.owner and settings.github.repo):
-        return _github_hub_redirect(settings, result="unconfigured")
     from infrastructure.connectors.github_oauth import authorization_url
 
     store = state_store if state_store is not None else _github_state_store(settings)
@@ -1343,6 +1398,8 @@ def complete_github_oauth(
         login = oauth_gateway.fetch_account_login(grant.access_token)
 
         def _next(_existing):
+            # Pre-seed from env when present so existing operators keep working;
+            # Hub selection can replace these after Connect.
             return GitHubOAuthConnection(
                 access_token=grant.access_token,
                 refresh_token=grant.refresh_token,
@@ -1388,6 +1445,221 @@ def disconnect_github_oauth(
     )
     oauth_gateway.revoke(connection.access_token)
     tokens_store.clear()
+
+
+def list_github_repositories(
+    settings: Settings,
+    *,
+    page: int = 1,
+    connection_store=None,
+    client_factory=None,
+) -> GitHubRepoPage:
+    """List repositories visible to the stored GitHub grant for the Hub picker."""
+    _tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    client = _github_picker_client(
+        settings,
+        access_token=connection.access_token,
+        client_factory=client_factory,
+    )
+    try:
+        payload = client.list_repositories(page=page)
+    except ConnectorAuthError as error:
+        _mark_github_reauth(_tokens_store, error)
+    except ConnectorError as error:
+        raise InputRejectedError("The GitHub repository list request failed.") from error
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
+        raise InputRejectedError("The GitHub repository list request failed.")
+    items: list[GitHubRepoItem] = []
+    for row in raw_items:
+        if not isinstance(row, Mapping):
+            continue
+        owner = row.get("owner")
+        name = row.get("name")
+        full_name = row.get("full_name")
+        if (
+            isinstance(owner, str)
+            and owner.strip()
+            and isinstance(name, str)
+            and name.strip()
+            and isinstance(full_name, str)
+            and full_name.strip()
+        ):
+            items.append(
+                GitHubRepoItem(
+                    owner=owner.strip(),
+                    name=name.strip(),
+                    full_name=full_name.strip(),
+                    private=bool(row.get("private")),
+                )
+            )
+    return GitHubRepoPage(
+        items=tuple(items),
+        has_next=bool(payload.get("has_next")),
+        page=page,
+    )
+
+
+def list_github_projects(
+    settings: Settings,
+    *,
+    owner_login: str,
+    after: str | None = None,
+    connection_store=None,
+    client_factory=None,
+) -> GitHubProjectPage:
+    """List ProjectV2 projects for a login using the stored GitHub grant."""
+    login = owner_login.strip()
+    if not login:
+        raise InputRejectedError("A project owner login is required.")
+    _tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    client = _github_picker_client(
+        settings,
+        access_token=connection.access_token,
+        client_factory=client_factory,
+    )
+    try:
+        payload = client.list_projects(login, after=after)
+    except ConnectorAuthError as error:
+        _mark_github_reauth(_tokens_store, error)
+    except ConnectorError as error:
+        raise InputRejectedError("The GitHub project list request failed.") from error
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
+        raise InputRejectedError("The GitHub project list request failed.")
+    items: list[GitHubProjectItem] = []
+    for row in raw_items:
+        if not isinstance(row, Mapping):
+            continue
+        number = row.get("number")
+        title = row.get("title")
+        row_owner = row.get("owner_login")
+        if (
+            isinstance(number, int)
+            and isinstance(title, str)
+            and title.strip()
+            and isinstance(row_owner, str)
+            and row_owner.strip()
+        ):
+            items.append(
+                GitHubProjectItem(
+                    owner_login=row_owner.strip(),
+                    number=number,
+                    title=title.strip(),
+                )
+            )
+    next_cursor = payload.get("next_cursor")
+    return GitHubProjectPage(
+        items=tuple(items),
+        next_cursor=next_cursor if isinstance(next_cursor, str) and next_cursor else None,
+    )
+
+
+def get_github_selection(
+    settings: Settings,
+    *,
+    connection_store=None,
+) -> GitHubSelection:
+    """Return the saved repository and optional ProjectV2 selection."""
+    _tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    return GitHubSelection(
+        owner=connection.owner,
+        repo=connection.repo,
+        project_owner=connection.project_owner,
+        project_number=connection.project_number,
+    )
+
+
+def put_github_selection(
+    settings: Settings,
+    *,
+    owner: str,
+    repo: str,
+    project_owner: str | None = None,
+    project_number: int | None = None,
+    connection_store=None,
+    client_factory=None,
+) -> GitHubSelection:
+    """Validate access and atomically replace the saved GitHub selection."""
+    owner_clean = owner.strip()
+    repo_clean = repo.strip()
+    if not owner_clean or not repo_clean:
+        raise InputRejectedError("A repository owner and name are required.")
+    project_owner_clean = (
+        project_owner.strip() if isinstance(project_owner, str) else None
+    ) or None
+    if project_number is not None and (
+        not isinstance(project_number, int)
+        or isinstance(project_number, bool)
+        or project_number < 1
+    ):
+        raise InputRejectedError("A project number must be a positive integer.")
+    if (project_owner_clean is None) != (project_number is None):
+        raise InputRejectedError(
+            "Project owner and project number must be set together."
+        )
+    tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    client = _github_picker_client(
+        settings,
+        access_token=connection.access_token,
+        client_factory=client_factory,
+    )
+    try:
+        client.get_repository(owner_clean, repo_clean)
+        if project_owner_clean is not None and project_number is not None:
+            client.resolve_project_v2_id(project_owner_clean, project_number)
+    except ConnectorAuthError as error:
+        _mark_github_reauth(tokens_store, error)
+    except ConnectorError as error:
+        raise InputRejectedError(
+            "The selected GitHub repository or project is inaccessible."
+        ) from error
+
+    def _apply(current):
+        if current is None:
+            raise GitHubNotConnectedError("GitHub is not connected")
+        if current.reauthorization_required:
+            raise GitHubReauthorizationRequiredError(
+                "GitHub authorization was revoked"
+            )
+        return replace(
+            current,
+            owner=owner_clean,
+            repo=repo_clean,
+            project_owner=project_owner_clean,
+            project_number=project_number,
+        )
+
+    tokens_store.mutate(_apply)
+    return GitHubSelection(
+        owner=owner_clean,
+        repo=repo_clean,
+        project_owner=project_owner_clean,
+        project_number=project_number,
+    )
+
+
+def _github_picker_client(
+    settings: Settings,
+    *,
+    access_token: str,
+    client_factory=None,
+):
+    if client_factory is not None:
+        return client_factory(access_token)
+    try:
+        from infrastructure.connectors.github.client import HttpGitHubClient
+    except ImportError as error:
+        raise ConfigurationError(_GITHUB_CLIENT_MISSING_MESSAGE) from error
+    return HttpGitHubClient(access_token, page_size=settings.github.page_size)
 
 
 def browse_google_drive_items(
@@ -2038,16 +2310,20 @@ def sync_github_oauth(
         else HttpGitHubOAuthGateway(settings.github_oauth)
     )
     access_token = connection.access_token
-    owner = _coalesce_text(settings.github.owner, connection.owner)
-    repo = _coalesce_text(settings.github.repo, connection.repo)
+    owner = _coalesce_text(connection.owner, settings.github.owner)
+    repo = _coalesce_text(connection.repo, settings.github.repo)
     project_owner = _coalesce_text(
-        settings.github.project_owner, connection.project_owner
+        connection.project_owner, settings.github.project_owner
     )
     project_number = (
-        settings.github.project_number
-        if settings.github.project_number is not None
-        else connection.project_number
+        connection.project_number
+        if connection.project_number is not None
+        else settings.github.project_number
     )
+    if not (owner and repo):
+        raise GitHubSelectionRequiredError(
+            "Select a GitHub repository before syncing."
+        )
     try:
         working_catalog = _resolve_catalog(
             settings, catalog=catalog, catalog_factory=catalog_factory

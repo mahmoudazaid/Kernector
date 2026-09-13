@@ -369,3 +369,96 @@ def test_oauth_sync_refreshes_when_connector_build_raises_auth(
     assert stored is not None
     assert stored.access_token == "gho-refreshed-secret"
     assert stored.reauthorization_required is False
+
+
+def test_start_oauth_without_env_repo_still_issues_github_url(settings) -> None:
+    from dataclasses import replace as dc_replace
+
+    bare = dc_replace(settings, github=GitHubSettings())
+    url = start_github_oauth(bare)
+    assert "github.com/login/oauth/authorize" in url
+
+
+def test_sync_oauth_without_selection_raises(settings, tmp_path: Path) -> None:
+    from application.errors import GitHubSelectionRequiredError
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    bare = replace(settings, github=GitHubSettings())
+    with pytest.raises(GitHubSelectionRequiredError):
+        sync_github_oauth(
+            bare,
+            catalog=InMemoryDocumentCatalog(),
+            vector_store=object(),  # type: ignore[arg-type]
+            connection_store=tokens,
+            oauth_gateway=FakeGateway(),
+        )
+
+
+def test_put_github_selection_persists_validated_repo(settings) -> None:
+    from composition import put_github_selection
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+
+    class FakeClient:
+        def get_repository(self, owner: str, repo: str):
+            assert owner == "acme"
+            assert repo == "docs"
+            return {"full_name": "acme/docs"}
+
+        def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+            assert owner_login == "acme"
+            assert number == 16
+            return "PVT_1"
+
+    selection = put_github_selection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner="acme",
+        project_number=16,
+        connection_store=tokens,
+        client_factory=lambda _token: FakeClient(),
+    )
+    assert selection.owner == "acme"
+    assert selection.repo == "docs"
+    assert selection.project_number == 16
+    stored = tokens.load()
+    assert stored is not None
+    assert stored.owner == "acme"
+    assert stored.repo == "docs"
