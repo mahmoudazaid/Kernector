@@ -134,14 +134,17 @@ def _load_migrations(directory: Path) -> list[tuple[int, str]]:
 def _apply_one(connection: sqlite3.Connection, version: int, sql: str) -> None:
     if connection.in_transaction:
         connection.rollback()
-    script = f"BEGIN IMMEDIATE;\n{sql}"
+    # Keep DDL and schema_version in one executescript transaction.
+    # executescript COMMITs any pending work, then runs and COMMITs the script.
+    # A separate UPDATE after executescript opens a race where another connection
+    # can observe the new column while schema_version is still behind.
+    script = (
+        f"BEGIN IMMEDIATE;\n"
+        f"{sql.rstrip()}\n"
+        f"UPDATE schema_version SET version = {int(version)};\n"
+    )
     try:
         connection.executescript(script)
-        connection.execute(
-            "UPDATE schema_version SET version = ?",
-            (version,),
-        )
-        connection.commit()
     except Exception:
         connection.rollback()
         raise
