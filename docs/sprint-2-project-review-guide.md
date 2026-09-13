@@ -75,17 +75,17 @@ This is **intent-routed tool selection**, not LLM native `bind_tools` / function
 - Only **General** chat is eligible; a selected task prompt always stays on grounded RAG
 - Unmatched queries fall through to ordinary RAG — narrow matching by design
 
-Three tools (satisfies “≥3 domain tool calls”):
+Scaffolding tools (**retired** in #285 — empty registry; intent always `None`):
 
-| Tool id | Path | Class | What it does |
-| --- | --- | --- | --- |
-| `software_delivery.risk_score` | [`risk_score_tool.py`](../packs/software_delivery/risk_score_tool.py) | `RiskScoreTool` | Validates evidence args → calls `score_risk` → JSON result |
-| `software_delivery.generate_test_cases` | [`generate_test_cases_tool.py`](../packs/software_delivery/generate_test_cases_tool.py) | `GenerateTestCasesTool` | LLM-backed structured test cases from evidence |
-| `software_delivery.export_test_cases_markdown` | [`export_test_cases_markdown_tool.py`](../packs/software_delivery/export_test_cases_markdown_tool.py) | `ExportTestCasesMarkdownTool` | Deterministic Markdown export of generated cases |
+| Tool id | Former path | Status |
+| --- | --- | --- |
+| `software_delivery.risk_score` | `risk_score_tool.py` | Retired — not registered |
+| `software_delivery.generate_test_cases` | `generate_test_cases_tool.py` | Retired — not registered |
+| `software_delivery.export_test_cases_markdown` | `export_test_cases_markdown_tool.py` | Retired — not registered |
 
-Chain orchestration: [`orchestration.py`](../packs/software_delivery/orchestration.py) → `OrchestrateSoftwareDelivery`.
+Chain orchestration machinery remains at [`orchestration.py`](../packs/software_delivery/orchestration.py) for the next real tool; it is unreachable while intent never matches. Future adapters land under [`packs/software_delivery/tools/`](../packs/software_delivery/tools/).
 
-Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
+Enable with `DOMAIN_TOOL_PACKS=software-delivery` (wiring only until a real tool lands).
 
 ---
 
@@ -100,8 +100,8 @@ Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
 | Chunking | [`application/chunking.py`](../application/chunking.py), [`application/ingest_knowledge.py`](../application/ingest_knowledge.py) | `chunk_document()`, `IngestKnowledge` | Splits docs into chunks; orchestrates chunk → embed → store |
 | Similarity search | [`infrastructure/vectorstore/chroma.py`](../infrastructure/vectorstore/chroma.py) | `ChromaVectorStore` | Persisted cosine similarity over chunk embeddings |
 | Query translation / advanced RAG | [`application/rewrite_and_retrieve.py`](../application/rewrite_and_retrieve.py), [`infrastructure/llm/query_rewrite.py`](../infrastructure/llm/query_rewrite.py) | `RewriteAndRetrieveKnowledge`, `OpenRouterQueryRewriter` | Rewrites the user query then retrieves with provenance |
-| ≥3 tool calls | [`packs/software_delivery/`](../packs/software_delivery/) `*_tool.py`, [`orchestration.py`](../packs/software_delivery/orchestration.py) | `RiskScoreTool`, `GenerateTestCasesTool`, `ExportTestCasesMarkdownTool`, `OrchestrateSoftwareDelivery` | Registers tools and runs ordered chains over an evidence bundle |
-| Chat-time tool selection | [`packs/software_delivery/chat_intent.py`](../packs/software_delivery/chat_intent.py), [`composition/tool_augmented_ask.py`](../composition/tool_augmented_ask.py) | `select_chat_intent()`, `ToolAugmentedAsk` | Explicit-phrase routing vs grounded RAG (not native function calling) |
+| ≥3 tool calls | [`packs/software_delivery/`](../packs/software_delivery/) (retired scaffolding; empty `build_tools`) | — | Scaffolding tools retired (#285); next tools under `tools/` |
+| Chat-time tool selection | [`packs/software_delivery/chat_intent.py`](../packs/software_delivery/chat_intent.py), [`composition/tool_augmented_ask.py`](../composition/tool_augmented_ask.py) | `select_chat_intent()`, `ToolAugmentedAsk` | Always `None` → grounded RAG until a real tool lands |
 | Domain focus + prompts | [`packs/software_delivery/`](../packs/software_delivery/), [`prompts/packs/`](../prompts/packs/) | pack registration + prompt files | Software Delivery Intelligence domain + optional task prompts |
 | Domain security | [`application/input_safety.py`](../application/input_safety.py), [`application/grounded_rag_policy.py`](../application/grounded_rag_policy.py) | `reject_unsafe_query()`, `GROUNDED_RAG_SYSTEM` | Blocks unsafe input; answers only from retrieved context |
 | LangChain + OpenRouter | [`infrastructure/llm/openrouter.py`](../infrastructure/llm/openrouter.py), [`pyproject.toml`](../pyproject.toml) | `OpenRouterChat` | LangChain chat model via OpenRouter OpenAI-compatible API |

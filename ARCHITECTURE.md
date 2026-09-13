@@ -188,10 +188,13 @@ Task-prompt packs are optional: the app starts and General mode works with zero
 enabled prompt packs.
 
 **Executable packs** under `packs/` contribute domain tools. The first is
-`packs/software_delivery/` with tool `software_delivery.risk_score`. Enable via
-`DOMAIN_TOOL_PACKS=software-delivery` (CSV; default empty). Composition loads
-packs through an explicit allowlist manifest and `importlib` only for configured
-IDs — a disabled pack is neither imported nor registered.
+`packs/software_delivery/`. Its scaffolding risk/generate/export tools are
+retired (#285); `build_tools` returns an empty registry and chat intent never
+matches, so General chat stays on grounded RAG. Future tools land under
+`packs/software_delivery/tools/`. Enable via `DOMAIN_TOOL_PACKS=software-delivery`
+(CSV; default empty). Composition loads packs through an explicit allowlist
+manifest and `importlib` only for configured IDs — a disabled pack is neither
+imported nor registered.
 ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) optionally replaces the
 deterministic Software Delivery orchestrate with a LangGraph agent; #170 remains
 the default.
@@ -201,22 +204,15 @@ the default.
 ```text
 connector/upload → SourceDocument → chunks/index
        → authorized cross-source retrieval → evidence bundle
-       → optional domain tool (e.g. software_delivery.risk_score)
+       → optional domain tool (when registered under tools/)
        → cited / structured result
 ```
 
 Chat-time tool selection shares one chat surface with grounded RAG.
-A General-mode query is matched by the pack intent policy:
-
-- explicit generate/risk phrasing → evidence bundle → ordered tool chain
-  through the opaque ``InvokeTool`` boundary → ``AskResponse`` with opaque
-  ``tool_outputs`` and citations from the raw hits
-- anything else → grounded RAG via ``AskKnowledge``
-
-One domain tool consumes a multi-source evidence bundle. A new source kind does
-not require a new risk tool or shared-core contract change. Absence-based
-policies (for example missing acceptance criteria) apply only when evidence is
-marked complete; chunk-level evidence may still contribute positive signals.
+With the Software Delivery scaffolding retired, General-mode queries always
+fall through to grounded RAG via ``AskKnowledge`` until a real tool and intent
+policy land. The dormant orchestration/agent wiring stays so the next tool
+re-enters without structure churn.
 
 The Next.js **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,

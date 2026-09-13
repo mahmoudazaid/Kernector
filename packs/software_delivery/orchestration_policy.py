@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+# Retired scaffolding names — unreachable while build_tools() returns empty
+# and select_chat_intent always returns None. Kept so orchestration chain
+# policy and projection DTOs stay stable until a real tool lands.
 RISK_SCORE_TOOL = "software_delivery.risk_score"
 GENERATE_TEST_CASES_TOOL = "software_delivery.generate_test_cases"
 EXPORT_TEST_CASES_MARKDOWN_TOOL = "software_delivery.export_test_cases_markdown"
