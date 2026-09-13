@@ -156,4 +156,17 @@ describe("conversation run coordinator", () => {
     interruptStalePendingFromCoordinator();
     expect(getConversation(stale.id)?.runStatus).toBe("failed");
   });
+
+  it("treats a recently started pending run as live across tabs", () => {
+    const recent = createConversation({
+      title: "other tab",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      draft: "",
+      runStatus: "pending",
+      requestStartedAt: Date.now(),
+    });
+    expect(hasLiveConversationRun(recent.id)).toBe(true);
+    interruptStalePendingFromCoordinator();
+    expect(getConversation(recent.id)?.runStatus).toBe("pending");
+  });
 });

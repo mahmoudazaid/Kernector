@@ -457,6 +457,7 @@ export function ChatPanel({
     setMessages(next.messages);
     setSending(next.sending);
     setHydrated(next.hydrated);
+    setUnavailable(false);
     if (handoff) {
       setDraft(handoff.draft);
       setInlineError(handoff.message);
@@ -528,6 +529,7 @@ export function ChatPanel({
       const conversation = getConversation(conversationId);
       if (conversation) {
         seedIds(conversation.messages);
+        skipNextPersistRef.current = true;
         setMessages(fromPersisted(conversation.messages));
         setSending(conversation.runStatus === "pending");
         if (!composerTouchedRef.current) {
@@ -610,10 +612,14 @@ export function ChatPanel({
       if (!conversation) {
         return;
       }
-      updateConversation(boundId, {
-        messages: conversation.messages,
-        draft,
-      });
+      updateConversation(
+        boundId,
+        {
+          messages: conversation.messages,
+          draft,
+        },
+        { touchUpdatedAt: false },
+      );
     }, DRAFT_SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [draft, hydrated, boundId, isLanding]);
@@ -627,10 +633,14 @@ export function ChatPanel({
       if (!conversation) {
         return;
       }
-      updateConversation(boundIdRef.current, {
-        messages: conversation.messages,
-        draft: draftRef.current,
-      });
+      updateConversation(
+        boundIdRef.current,
+        {
+          messages: conversation.messages,
+          draft: draftRef.current,
+        },
+        { touchUpdatedAt: false },
+      );
     };
   }, [hydrated, isLanding]);
 
@@ -695,7 +705,8 @@ export function ChatPanel({
         runtime: runtimeFromSettings(),
       });
       onCreatedRef.current?.(created.id);
-      void runPromise;
+      const result = await runPromise;
+      await applyConversationRunResult(created.id, query, result);
       return;
     }
 
@@ -724,7 +735,14 @@ export function ChatPanel({
       ask,
       runtime: runtimeFromSettings(),
     });
+    await applyConversationRunResult(id, query, result);
+  }
 
+  async function applyConversationRunResult(
+    id: string,
+    query: string,
+    result: Awaited<ReturnType<typeof startConversationRun>>,
+  ): Promise<void> {
     if (result.kind === "rejected") {
       const conversation = getConversation(id);
       const discard = !conversation || conversation.messages.length === 0;
@@ -733,6 +751,16 @@ export function ChatPanel({
       }
       // Store already recorded the outcome on `id`; never mutate another thread's UI.
       if (boundIdRef.current !== id) {
+        // Landing first-turn reject before bind: restore query on the empty
+        // composer. Never paint another thread's rejection onto the open one.
+        if (discard && boundIdRef.current === null) {
+          setSending(false);
+          setInlineError(result.message);
+          setDraft(query);
+          setMessages([]);
+          closeHandoffRef.current = { draft: query, message: result.message };
+          onClosedRef.current?.();
+        }
         return;
       }
       setSending(false);

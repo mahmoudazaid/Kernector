@@ -273,10 +273,14 @@ export function renameConversation(
 
 /**
  * Patch fields on an existing conversation.
+ *
+ * Pass `{ touchUpdatedAt: false }` for read-only / draft-only writes that
+ * must not reshuffle newest-first ordering.
  */
 export function updateConversation(
   id: string,
   patch: ConversationPatch,
+  options?: { touchUpdatedAt?: boolean },
 ): Conversation | null {
   const payload = readPayload();
   const index = payload.conversations.findIndex((entry) => entry.id === id);
@@ -302,7 +306,8 @@ export function updateConversation(
         ? patch.requestStartedAt
         : current.requestStartedAt,
     unread: patch.unread !== undefined ? patch.unread : current.unread,
-    updatedAt: Date.now(),
+    updatedAt:
+      options?.touchUpdatedAt === false ? current.updatedAt : Date.now(),
   };
   payload.conversations[index] = updated;
   writePayload(payload);
@@ -311,10 +316,14 @@ export function updateConversation(
 
 /**
  * Clear the unread flag when a conversation is opened.
+ * Does not bump `updatedAt` — opening is not activity.
  */
 export function markConversationRead(id: string): Conversation | null {
-  return updateConversation(id, { unread: false });
+  return updateConversation(id, { unread: false }, { touchUpdatedAt: false });
 }
+
+const INTERRUPT_MESSAGE =
+  "The previous request was interrupted. Please try again.";
 
 /**
  * Pending rows with no live coordinator task are interrupted (failed), not
@@ -330,11 +339,28 @@ export function interruptStalePendingRuns(
       return entry;
     }
     changed = true;
+    const alreadyNotified = entry.messages.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.displayOnly &&
+        message.content === INTERRUPT_MESSAGE,
+    );
     return {
       ...entry,
       runStatus: "failed" as const,
       requestStartedAt: null,
       updatedAt: Date.now(),
+      messages: alreadyNotified
+        ? entry.messages
+        : [
+            ...entry.messages,
+            {
+              id: `interrupt-${entry.id}`,
+              role: "assistant" as const,
+              content: INTERRUPT_MESSAGE,
+              displayOnly: true,
+            },
+          ],
     };
   });
   if (changed) {
@@ -397,15 +423,43 @@ function readLegacyMirrorTranscript(): StoredChatMessage[] {
   }
 }
 
+const MIGRATION_DONE_KEY = "kernector:conversations-migrated:v1";
+
+function markMigrationDone(): void {
+  try {
+    localStorage.setItem(MIGRATION_DONE_KEY, "1");
+  } catch {
+    // private mode / quota — next visit may retry; still clear when possible
+  }
+}
+
+function clearLegacyMirror(): void {
+  try {
+    localStorage.removeItem(CHAT_MESSAGES_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Import a single conversation from pre-#246 local transcript keys.
  *
- * Idempotent: no-op when conversations already exist or there is nothing to
- * import. Prefers active-session messages over the legacy mirror.
+ * Runs at most once per browser profile (marker key). Also clears the legacy
+ * mirror so deleting the migrated chat cannot resurrect it on the next visit.
  */
 export function migrateLegacyTranscripts(): MigrateLegacyResult {
+  try {
+    if (localStorage.getItem(MIGRATION_DONE_KEY) === "1") {
+      return { migrated: false, conversationId: null };
+    }
+  } catch {
+    return { migrated: false, conversationId: null };
+  }
+
   const existing = readPayload();
   if (existing.conversations.length > 0) {
+    clearLegacyMirror();
+    markMigrationDone();
     return { migrated: false, conversationId: null };
   }
 
@@ -418,6 +472,8 @@ export function migrateLegacyTranscripts(): MigrateLegacyResult {
     })();
 
   if (!messages || messages.length === 0) {
+    clearLegacyMirror();
+    markMigrationDone();
     return { migrated: false, conversationId: null };
   }
 
@@ -426,6 +482,8 @@ export function migrateLegacyTranscripts(): MigrateLegacyResult {
     messages,
     draft: fromSession?.draft ?? "",
   });
+  clearLegacyMirror();
+  markMigrationDone();
   return { migrated: true, conversationId: created.id };
 }
 

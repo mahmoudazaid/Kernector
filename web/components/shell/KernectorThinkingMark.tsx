@@ -9,15 +9,14 @@ type KernectorThinkingMarkProps = {
 /**
  * Animated Kernector “thinking” mark.
  * Clip paths use per-instance ids (multiple marks on one page must not collide).
- * Motion styles are embedded so animation does not depend on a caller class name.
+ * Motion comes from `.kern-chat-thinking-mark` rules in globals.css.
  */
 export function KernectorThinkingMark({
   className,
 }: KernectorThinkingMarkProps) {
-  const uid = useId().replace(/:/g, "");
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const clipA = `${uid}-think-a`;
   const clipB = `${uid}-think-b`;
-  const scope = `kern-thinking-${uid}`;
 
   return (
     <svg
@@ -28,60 +27,6 @@ export function KernectorThinkingMark({
       fill="none"
       aria-hidden="true"
     >
-      <style>{`
-        .${scope} .kn-sweep { animation: ${scope}-sweep 3.2s ease-in-out infinite; }
-        .${scope} .kn-cloud {
-          animation: ${scope}-cloud 3.2s ease-in-out infinite;
-          transform-origin: 0 0;
-        }
-        .${scope} .kn-trail { animation: ${scope}-trail 3.2s ease-in-out infinite; }
-        .${scope} .kn-dot { transform-origin: 0 0; }
-        .${scope} .kn-d1 { animation: ${scope}-d1 3.2s ease-out infinite; }
-        .${scope} .kn-d2 { animation: ${scope}-d2 3.2s ease-out infinite; }
-        .${scope} .kn-d3 { animation: ${scope}-d3 3.2s ease-out infinite; }
-        .${scope} .kn-rest { display: none; }
-
-        @keyframes ${scope}-sweep {
-          0%, 10% { transform: translate(0px, 0px); }
-          42%, 70% { transform: translate(24.83px, -24.83px); }
-          92%, 100% { transform: translate(0px, 0px); }
-        }
-        @keyframes ${scope}-cloud {
-          0%, 14% { transform: scale(0.2); opacity: 0; }
-          34% { transform: scale(0.92); opacity: 1; }
-          38% { transform: scale(1.06); opacity: 1; }
-          44%, 72% { transform: scale(1); opacity: 1; }
-          74% { transform: scale(0.92); opacity: 1; }
-          90% { transform: scale(0.28); opacity: 0; }
-          92%, 100% { transform: scale(0.2); opacity: 0; }
-        }
-        @keyframes ${scope}-trail {
-          0%, 10% { opacity: 0; }
-          18%, 78% { opacity: 1; }
-          88%, 100% { opacity: 0; }
-        }
-        @keyframes ${scope}-d1 {
-          0%, 44% { transform: scale(0); }
-          52%, 100% { transform: scale(1); }
-        }
-        @keyframes ${scope}-d2 {
-          0%, 51% { transform: scale(0); }
-          59%, 100% { transform: scale(1); }
-        }
-        @keyframes ${scope}-d3 {
-          0%, 58% { transform: scale(0); }
-          66%, 100% { transform: scale(1); }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .${scope} .kn-sweep,
-          .${scope} .kn-cloud,
-          .${scope} .kn-trail,
-          .${scope} .kn-dot { animation: none; }
-          .${scope} .kn-sweep { display: none; }
-          .${scope} .kn-rest { display: inline; }
-        }
-      `}</style>
       <defs>
         <clipPath id={clipB}>
           <path d="M37.18 134.9L57.78 114.3A12.12 12.12 0 0 0 40.65 97.17L20.05 117.77A12.12 12.12 0 0 0 37.18 134.9Z" />
@@ -90,7 +35,7 @@ export function KernectorThinkingMark({
           <path d="M114.3 57.78L134.9 37.18A12.12 12.12 0 0 0 117.77 20.05L97.17 40.65A12.12 12.12 0 0 0 114.3 57.78Z" />
         </clipPath>
       </defs>
-      <g className={scope}>
+      <g>
         <g className="kern-thinking-body">
           <path d="M15.2 89.39L15.2 6.4A3.2 3.2 0 0 1 18.4 3.2L49.6 3.2A3.2 3.2 0 0 1 52.8 6.4L52.8 58.36A1.5 1.5 0 0 0 55.36 59.42L69.72 45.05A1.5 1.5 0 0 1 72.27 45.9L75.19 66.17A3.2 3.2 0 0 1 74.29 68.89L70.32 72.86A3.2 3.2 0 0 1 68.06 73.8L38.44 73.8A3.2 3.2 0 0 0 36.37 74.56L17.68 90.53A1.5 1.5 0 0 1 15.2 89.39Z" />
           <path d="M163.45 154.9L118.14 154.9A3.2 3.2 0 0 1 115.74 153.81L83.36 116.97A3.2 3.2 0 0 1 82.58 115.21L79.79 89.58A3.2 3.2 0 0 1 80.71 86.97L85.64 82.04A3.2 3.2 0 0 1 87.9 81.1L110.49 81.1A1.5 1.5 0 0 1 111.55 83.66L109.15 86.06A3.2 3.2 0 0 0 109.05 90.47L163.98 150.96A3.2 3.2 0 0 1 164.81 153.11L164.81 153.54A1.36 1.36 0 0 1 163.45 154.9Z" />

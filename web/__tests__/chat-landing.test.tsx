@@ -79,7 +79,6 @@ describe("chat landing and conversation UX (#246)", () => {
     localStorage.clear();
     replace.mockReset();
     pathname = "/chat";
-    void stubSettings;
   });
 
   it("shows a full-width landing with composer above Chats and no New chat or sidebar", async () => {
@@ -90,7 +89,10 @@ describe("chat landing and conversation UX (#246)", () => {
     });
 
     const { container } = render(
-      <ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />,
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
     );
 
     expect(
@@ -185,7 +187,12 @@ describe("chat landing and conversation UX (#246)", () => {
       draft: "",
     });
 
-    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
+    render(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
+    );
 
     await user.click(screen.getByRole("link", { name: /Open me/i }));
 
@@ -209,7 +216,10 @@ describe("chat landing and conversation UX (#246)", () => {
     pathname = `/chat/${created.id}`;
 
     const { container } = render(
-      <ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />,
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
     );
 
     expect(await screen.findByText("prior turn")).toBeInTheDocument();

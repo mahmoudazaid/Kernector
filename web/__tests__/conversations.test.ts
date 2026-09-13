@@ -214,6 +214,24 @@ describe("conversation store", () => {
     expect(listConversations()).toHaveLength(1);
   });
 
+  it("does not resurrect a deleted migrated conversation from the legacy mirror", () => {
+    localStorage.setItem(
+      CHAT_MESSAGES_STORAGE_KEY,
+      JSON.stringify([{ id: "1", role: "user", content: "legacy" }]),
+    );
+    const migrated = migrateLegacyTranscripts();
+    expect(migrated.conversationId).toBeTruthy();
+    deleteConversation(migrated.conversationId!);
+    expect(listConversations()).toHaveLength(0);
+    expect(localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY)).toBeNull();
+
+    expect(migrateLegacyTranscripts()).toEqual({
+      migrated: false,
+      conversationId: null,
+    });
+    expect(listConversations()).toHaveLength(0);
+  });
+
   it("stays quiet when localStorage throws", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("private mode");
@@ -273,6 +291,39 @@ describe("conversation store", () => {
     expect(getConversation(created.id)?.unread).toBe(false);
   });
 
+  it("markConversationRead does not bump updatedAt or re-sort the list", () => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(200);
+    const older = createConversation({
+      title: "older",
+      messages: [],
+      draft: "",
+      unread: true,
+    });
+    const newer = createConversation({
+      title: "newer",
+      messages: [],
+      draft: "",
+    });
+    expect(listConversations().map((c) => c.id)).toEqual([newer.id, older.id]);
+
+    vi.spyOn(Date, "now").mockReturnValue(999);
+    markConversationRead(older.id);
+    expect(getConversation(older.id)?.updatedAt).toBe(100);
+    expect(listConversations().map((c) => c.id)).toEqual([newer.id, older.id]);
+  });
+
+  it("updateConversation can skip bumping updatedAt", () => {
+    const created = createConversation({
+      title: "t",
+      messages: [],
+      draft: "",
+    });
+    vi.spyOn(Date, "now").mockReturnValue(999);
+    updateConversation(created.id, { draft: "typing" }, { touchUpdatedAt: false });
+    expect(getConversation(created.id)?.updatedAt).toBe(1_700_000_000_000);
+    expect(getConversation(created.id)?.draft).toBe("typing");
+  });
+
   it("interruptStalePendingRuns marks pending without a live task as failed", () => {
     const live = createConversation({
       title: "live",
@@ -283,7 +334,7 @@ describe("conversation store", () => {
     });
     const stale = createConversation({
       title: "stale",
-      messages: [],
+      messages: [{ id: "u1", role: "user", content: "hello" }],
       draft: "",
       runStatus: "pending",
       requestStartedAt: 2,
@@ -294,6 +345,15 @@ describe("conversation store", () => {
       runStatus: "failed",
       requestStartedAt: null,
     });
+    expect(getConversation(stale.id)?.messages).toEqual([
+      { id: "u1", role: "user", content: "hello" },
+      {
+        id: `interrupt-${stale.id}`,
+        role: "assistant",
+        content: "The previous request was interrupted. Please try again.",
+        displayOnly: true,
+      },
+    ]);
   });
 
   it("notifies same-tab subscribers when the store mutates", () => {

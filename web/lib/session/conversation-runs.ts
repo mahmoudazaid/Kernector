@@ -31,6 +31,9 @@ import type { StoredChatMessage } from "@/lib/settings/runtime-settings-storage"
 
 const liveRuns = new Set<string>();
 
+/** Pending rows newer than this are treated as possibly live in another tab. */
+const CROSS_TAB_LIVE_WINDOW_MS = 2 * 60 * 1000;
+
 export type StartConversationRunOptions = {
   conversationId: string;
   query: string;
@@ -70,7 +73,18 @@ function toStored(messages: readonly ChatMessage[]): StoredChatMessage[] {
 }
 
 export function hasLiveConversationRun(conversationId: string): boolean {
-  return liveRuns.has(conversationId);
+  if (liveRuns.has(conversationId)) {
+    return true;
+  }
+  // Another tab may own the in-flight ask; shared storage only has timestamps.
+  const conversation = getConversation(conversationId);
+  if (
+    conversation?.runStatus === "pending" &&
+    typeof conversation.requestStartedAt === "number"
+  ) {
+    return Date.now() - conversation.requestStartedAt < CROSS_TAB_LIVE_WINDOW_MS;
+  }
+  return false;
 }
 
 export function interruptStalePendingFromCoordinator(): void {

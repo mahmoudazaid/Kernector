@@ -383,6 +383,6 @@ describe("PreviousChats", () => {
       thinking?.querySelector(".kern-thinking-mark, .kern-chat-thinking-mark"),
     ).not.toBeNull();
     expect(thinking?.querySelector(".kn-rest")).not.toBeNull();
-    expect(thinking?.querySelector("style")?.textContent).toMatch(/kn-rest/);
+    expect(thinking?.querySelector("style")).toBeNull();
   });
 });

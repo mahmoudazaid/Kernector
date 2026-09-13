@@ -89,7 +89,6 @@ describe("chat async routing (#246)", () => {
     setActiveConversationId(null);
     replace.mockReset();
     pathname = "/chat";
-    void stubSettings;
   });
 
   it("landing never shows a conversation transcript", async () => {
@@ -102,7 +101,12 @@ describe("chat async routing (#246)", () => {
       draft: "",
     });
 
-    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
+    render(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
+    );
 
     expect(await screen.findByPlaceholderText("What's on your mind!")).toBeInTheDocument();
     expect(screen.queryByText("Secret answer")).not.toBeInTheDocument();
@@ -164,7 +168,12 @@ describe("chat async routing (#246)", () => {
       ask,
     });
 
-    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
+    render(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
+    );
     expect(screen.queryByText("Answer for A")).not.toBeInTheDocument();
 
     resolveAsk(SUCCESS);
@@ -179,7 +188,12 @@ describe("chat async routing (#246)", () => {
     ]);
 
     pathname = `/chat/${b.id}`;
-    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
+    render(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
+    );
     expect(screen.queryByText("Answer for A")).not.toBeInTheDocument();
     expect(await screen.findByText("B only")).toBeInTheDocument();
   });
@@ -213,7 +227,12 @@ describe("chat async routing (#246)", () => {
     expect(screen.queryByLabelText("Unread response")).not.toBeInTheDocument();
 
     pathname = `/chat/${a.id}`;
-    render(<ChatRouteClient apiBaseUrl="http://127.0.0.1:8000" />);
+    render(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        loadSettings={stubSettings}
+      />,
+    );
     expect(await screen.findByText("Answer for A")).toBeInTheDocument();
     expect(getConversation(a.id)?.unread).toBe(false);
   });
