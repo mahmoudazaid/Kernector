@@ -467,7 +467,9 @@ def build_test_design_facade(
             f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
         ) from error
     if workspace_id is None:
-        workspace_id = "default"
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID is required; it {WORKSPACE_ID_CONTRACT}"
+        )
     store_path = Path("data/workspace_store/workspace.sqlite")
     if settings.document_catalog.sql_path is not None:
         store_path = (

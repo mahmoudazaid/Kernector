@@ -198,6 +198,46 @@ describe("TestDesignWorkspace", () => {
     expect(screen.getByDisplayValue("Manual edge case")).toBeInTheDocument();
   });
 
+  it("disables candidate title and selection controls while save is in flight", async () => {
+    const user = userEvent.setup();
+    let resolvePatch: ((value: ReturnType<typeof draft>) => void) | undefined;
+    vi.mocked(patchTestDesignDraft).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+    );
+    await renderWorkspace();
+
+    const title = screen.getByDisplayValue("Covers happy path");
+    const checkbox = screen.getByRole("checkbox", { name: /keep covers happy path/i });
+    await user.clear(title);
+    await user.type(title, "Edited while idle");
+    await user.click(screen.getByRole("button", { name: /save draft/i }));
+
+    expect(title).toBeDisabled();
+    expect(checkbox).toBeDisabled();
+
+    resolvePatch?.(
+      draft({
+        version: 4,
+        candidates: [
+          candidate({ title: "Edited while idle" }),
+          candidate({
+            candidate_id: "manual-1",
+            title: "Manual edge case",
+            category: "edge_case",
+            origin: "manual",
+          }),
+        ],
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Edited while idle")).toBeEnabled();
+    });
+    expect(screen.getByRole("checkbox", { name: /keep covers happy path|keep edited while idle/i })).toBeEnabled();
+  });
+
   it("disables confirm without a selection, while busy, and while dirty", async () => {
     const user = userEvent.setup();
     vi.mocked(getTestDesignDraft).mockResolvedValueOnce(

@@ -480,6 +480,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                               id={`candidate-selected-${candidate.candidate_id}`}
                               type="checkbox"
                               checked={candidate.selected}
+                              disabled={busy}
                               aria-label={`Keep ${candidate.title || "candidate"}`}
                               onChange={() =>
                                 toggleCandidate(candidate.candidate_id)
@@ -512,6 +513,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                               maxLength={MAX_TITLE_CHARS}
                               placeholder="Enter or edit test title"
                               aria-label="Test title"
+                              disabled={busy}
                               onChange={(event) =>
                                 updateCandidateTitle(
                                   candidate.candidate_id,

@@ -324,7 +324,7 @@ def test_software_delivery_test_design_pack_does_not_import_github() -> None:
 
 def test_only_infrastructure_imports_google_drive_client() -> None:
     """The Google Drive SDK must stay behind infrastructure adapters."""
-    forbidden = {"googleapiclient", "httplib2"}
+    forbidden = {"google", "googleapiclient", "httplib2"}
     for layer in ("application", "composition", "domain", "packs", "presentation"):
         for module_path in _modules(layer):
             hits = find_forbidden_imports(module_path, forbidden)

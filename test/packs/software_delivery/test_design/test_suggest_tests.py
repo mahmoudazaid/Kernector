@@ -344,6 +344,39 @@ def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:
 
     assert [candidate.candidate_id for candidate in draft.candidates] == [
         "cand-2",
+        "auto-1",
+    ]
+
+
+def test_generated_candidate_id_before_model_id_does_not_collide() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "title": "Valid login",
+                "category": "positive",
+                "rationale": "Acceptance criteria describe successful login.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "candidate_id": "cand-1",
+                "title": "Invalid login",
+                "category": "negative",
+                "rationale": "Acceptance criteria mention credential checks.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert [candidate.candidate_id for candidate in draft.candidates] == [
+        "auto-1",
         "cand-1",
     ]
 

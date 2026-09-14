@@ -239,6 +239,91 @@ def test_pack_validation_error_is_wrapped_with_sanitized_message(
     assert "secret-body" not in str(raised.value)
 
 
+def test_patch_rejects_ready_draft_with_zero_selections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _RecordingReader(document=_doc())
+    facade = TestDesignFacade(
+        settings=_settings(),
+        store_path=tmp_path / "ws.sqlite",
+        workspace_id="default",
+        oauth_preflight=lambda: "token",
+        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(
+        facade,
+        "_build_chat_model",
+        lambda: type(
+            "FakeChat",
+            (),
+            {
+                "complete": lambda self, *_args, **_kwargs: AskResult(
+                    content=(
+                        '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
+                        '"category":"positive","rationale":"Grounded.",'
+                        '"evidence_references":[{"source_type":"github",'
+                        '"source_id":"issue:I_kwDOExample"}]}],"coverage_gaps":[]}'
+                    ),
+                    model="fake",
+                )
+            },
+        )(),
+    )
+    draft = facade.create_draft(
+        CreateTestDesignDraftRequest(
+            conversation_id="conv-1",
+            source_locator=SourceLocatorView(
+                provider="github", locator="mahmoudazaid/Kernector#293"
+            ),
+        )
+    )
+    selected = facade.patch_draft(
+        draft.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=draft.version,
+            candidates=(
+                TestCandidateView(
+                    candidate_id="cand-1",
+                    title="Valid",
+                    category="positive",
+                    rationale="Grounded.",
+                    evidence_references=(
+                        SourceReferenceView("issue:I_kwDOExample", "github"),
+                    ),
+                    selected=True,
+                    origin="suggested",
+                ),
+            ),
+        ),
+    )
+    confirmed = facade.confirm_draft(
+        selected.draft_id, expected_version=selected.version
+    )
+    assert confirmed.status == "ready"
+
+    with pytest.raises(TestDesignValidationError, match="at least one selected"):
+        facade.patch_draft(
+            confirmed.draft_id,
+            PatchTestDesignDraftRequest(
+                expected_version=confirmed.version,
+                candidates=(
+                    TestCandidateView(
+                        candidate_id="cand-1",
+                        title="Valid",
+                        category="positive",
+                        rationale="Grounded.",
+                        evidence_references=(
+                            SourceReferenceView("issue:I_kwDOExample", "github"),
+                        ),
+                        selected=False,
+                        origin="suggested",
+                    ),
+                ),
+            ),
+        )
+
+
 def test_issue_pr_and_mismatch_errors_are_sanitized(
     tmp_path: Path,
 ) -> None:
@@ -299,12 +384,12 @@ def test_chat_handoff_rejects_locator_mismatch() -> None:
         )
 
 
-def test_chat_handoff_rejects_distinct_multi_refs() -> None:
-    with pytest.raises(TestDesignValidationError, match="exactly one"):
-        try_test_design_chat_handoff(
-            settings=_settings(),
-            query="Design tests for mahmoudazaid/Kernector#293 and other/repo#1",
-        )
+def test_chat_handoff_declines_distinct_multi_refs() -> None:
+    handoff = try_test_design_chat_handoff(
+        settings=_settings(),
+        query="Compare the test coverage of acme/web#10 and acme/api#11",
+    )
+    assert handoff is None
 
 
 class _FakeRefreshGateway:
@@ -432,6 +517,20 @@ def test_live_reader_marks_reauth_when_refresh_token_missing(tmp_path: Path) -> 
     saved = tokens.load()
     assert saved is not None
     assert saved.reauthorization_required is True
+
+
+def test_build_test_design_facade_requires_workspace_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from application.errors import ConfigurationError
+
+    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
+    monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
+    settings = composition_container.load_settings()
+
+    with pytest.raises(ConfigurationError, match="DOCUMENT_CATALOG_WORKSPACE_ID"):
+        composition_container.build_test_design_facade(settings)
 
 
 def test_build_test_design_facade_does_not_require_vector_store(

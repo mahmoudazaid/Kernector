@@ -325,9 +325,9 @@ def _parse_candidates(
         )
         candidate_id = item.get("candidate_id")
         if not isinstance(candidate_id, str) or not candidate_id.strip():
-            while f"cand-{next_generated}" in seen_ids:
+            while f"auto-{next_generated}" in seen_ids:
                 next_generated += 1
-            candidate_id = f"cand-{next_generated}"
+            candidate_id = f"auto-{next_generated}"
             next_generated += 1
         if candidate_id in seen_ids:
             raise ToolFailureError("candidates items must have unique candidate_id")

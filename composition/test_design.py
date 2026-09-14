@@ -167,7 +167,7 @@ def try_test_design_chat_handoff(
     """Detect Test Design handoff before ask.execute; return fixed answer + action.
 
     Returns None when this is not a Test Design Issue handoff (caller runs RAG).
-    Raises TestDesignValidationError on ambiguous refs or locator mismatch.
+    Raises TestDesignValidationError on locator mismatch with client source_locator.
     """
     if not software_delivery_tools_enabled(settings):
         return None
@@ -182,10 +182,10 @@ def try_test_design_chat_handoff(
 
     try:
         parsed = extract_github_issue_locator(query)
-    except AmbiguousGitHubIssueLocatorError as error:
-        raise TestDesignValidationError(
-            "Query must reference exactly one GitHub Issue"
-        ) from error
+    except AmbiguousGitHubIssueLocatorError:
+        # More than one Issue in the text is not a Test Design handoff;
+        # fall through to grounded RAG rather than failing the chat turn.
+        return None
     if parsed is None:
         return None
     canonical = parsed.canonical
@@ -366,6 +366,13 @@ class TestDesignFacade:
                         _TEST_DESIGN_VALIDATION_DETAIL
                     ) from error
                 raise
+        selected_ids = tuple(
+            candidate.candidate_id for candidate in candidates if candidate.selected
+        )
+        if current.status == "ready" and not selected_ids:
+            raise TestDesignValidationError(
+                "A confirmed draft must keep at least one selected candidate"
+            )
         try:
             updated = TestCoverageDraft(
                 draft_id=current.draft_id,
