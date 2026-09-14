@@ -528,6 +528,39 @@ def test_delete_accepts_non_blank_ids_without_blob_charset_rule(
     assert [ref.source_id for ref in ledger["deleted"]] == [".."]
 
 
+def test_delete_accepts_github_source_ids_with_slashes(client_factory) -> None:
+    """GitHub repo paths include ``/``; routing must survive percent-decoding."""
+    from urllib.parse import quote
+
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+    source_id = "mahmoudazaid/Kernector:.agents/skills/tdd/SKILL.md"
+
+    response = client.delete(f"/api/v1/documents/{quote(source_id, safe='')}")
+
+    assert response.status_code == 204
+    assert [ref.source_id for ref in ledger["deleted"]] == [source_id]
+    assert ledger["deleted"][0].source_type == SourceType.KNOWLEDGE_DOCUMENT
+
+
+def test_list_chunks_accepts_github_source_ids_with_slashes(client_factory) -> None:
+    from urllib.parse import quote
+
+    ops, ledger = _stub_ops()
+    client = client_factory(ops)
+    source_id = "acme/docs:docs/SKILL.md"
+
+    response = client.get(
+        f"/api/v1/documents/{quote(source_id, safe='')}/chunks",
+        params={"source_type": SourceType.GITHUB},
+    )
+
+    assert response.status_code == 200
+    assert ledger["listed_chunks"][0][0] == SourceReference(
+        source_id, SourceType.GITHUB
+    )
+
+
 def test_filesystem_delete_dotdot_is_noop_without_touching_blob_root(
     tmp_path: Path,
 ) -> None:

@@ -34,6 +34,7 @@ class HubSourceType(StrEnum):
 
     KNOWLEDGE_DOCUMENT = SourceType.KNOWLEDGE_DOCUMENT
     GOOGLE_DRIVE = SourceType.GOOGLE_DRIVE
+    GITHUB = SourceType.GITHUB
 
 
 class HealthResponse(BaseModel):
@@ -124,6 +125,88 @@ class GoogleDriveStatusResponse(BaseModel):
     sync_scope: str | None = None
 
 
+class GitHubLastSyncResponse(BaseModel):
+    """Last GitHub user-OAuth sync summary. Counts are honest; no secrets."""
+
+    synced_at: str
+    new_count: int
+    updated_count: int
+    unchanged_count: int
+    removed_count: int
+    failed_count: int
+
+
+class GitHubStatusResponse(BaseModel):
+    """GitHub connector presence and user OAuth connection (no secrets)."""
+
+    configured: bool
+    available: bool
+    connected: bool = False
+    oauth_ready: bool = False
+    account_login: str | None = None
+    document_count: int = 0
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
+    last_sync: GitHubLastSyncResponse | None = None
+    reauthorization_required: bool = False
+    connection_state: str = "disconnected"
+    sync_scope: str | None = None
+    setup_required: bool = False
+
+
+class GitHubRepoItemResponse(BaseModel):
+    """One repository row for the Hub picker."""
+
+    owner: str
+    name: str
+    full_name: str
+    private: bool = False
+
+
+class GitHubRepoPageResponse(BaseModel):
+    """One page of repositories for the Hub picker."""
+
+    items: list[GitHubRepoItemResponse]
+    has_next: bool = False
+    page: int = 1
+
+
+class GitHubProjectItemResponse(BaseModel):
+    """One ProjectV2 row for the Hub picker."""
+
+    owner_login: str
+    number: int
+    title: str
+
+
+class GitHubProjectPageResponse(BaseModel):
+    """One page of ProjectV2 projects for the Hub picker."""
+
+    items: list[GitHubProjectItemResponse]
+    next_cursor: str | None = None
+
+
+class GitHubSelectionResponse(BaseModel):
+    """Saved Hub sync targets (no tokens)."""
+
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
+    connector_id: str | None = None
+
+
+class GitHubSelectionRequest(BaseModel):
+    """Replace the saved GitHub sync selection."""
+
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
+
+
 class GoogleDriveBrowseItemResponse(BaseModel):
     """One Drive picker row. ``id`` is the only identity field."""
 
@@ -188,7 +271,7 @@ class ConnectorSyncOutcomeResponse(BaseModel):
     """One listed Drive document outcome from a sync run."""
 
     source_id: str
-    status: Literal["ingested", "skipped", "failed"]
+    status: Literal["ingested", "updated", "skipped", "failed", "removed"]
     chunk_count: int
     error_type: str | None = None
 
@@ -197,19 +280,27 @@ class GoogleDriveSyncResponse(BaseModel):
     """Projected connector sync counts and per-document outcomes."""
 
     ingested_count: int
+    updated_count: int = 0
     skipped_count: int
     failed_count: int
+    removed_count: int = 0
     outcomes: list[ConnectorSyncOutcomeResponse]
 
 
-def google_drive_sync_response(
+class GitHubSyncResponse(GoogleDriveSyncResponse):
+    """Projected GitHub sync counts and per-document outcomes."""
+
+
+def connector_sync_response(
     response: ConnectorSyncResponse,
 ) -> GoogleDriveSyncResponse:
     """Project application sync counts onto the wire schema."""
     return GoogleDriveSyncResponse(
         ingested_count=response.ingested_count,
+        updated_count=response.updated_count,
         skipped_count=response.skipped_count,
         failed_count=response.failed_count,
+        removed_count=response.removed_count,
         outcomes=[
             ConnectorSyncOutcomeResponse(
                 source_id=outcome.source_id,
@@ -220,6 +311,19 @@ def google_drive_sync_response(
             for outcome in response.outcomes
         ],
     )
+
+
+def google_drive_sync_response(
+    response: ConnectorSyncResponse,
+) -> GoogleDriveSyncResponse:
+    """Project Drive sync counts onto the wire schema."""
+    return connector_sync_response(response)
+
+
+def github_sync_response(response: ConnectorSyncResponse) -> GitHubSyncResponse:
+    """Project GitHub sync counts onto the wire schema."""
+    base = connector_sync_response(response)
+    return GitHubSyncResponse(**base.model_dump())
 
 
 class ChatHistoryMessage(BaseModel):

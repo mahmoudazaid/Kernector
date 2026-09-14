@@ -25,6 +25,9 @@ google-drive = [
     "google-api-python-client>=2.190.0",
     "google-auth>=2.42.0",
 ]
+github = [
+    "httpx>=0.28.0",
+]
 
 [dependency-groups]
 dev = [
@@ -32,6 +35,7 @@ dev = [
     "jsonschema>=4.26.0",
     "pytest>=9.1.1",
     "kernector[google-drive]",
+    "kernector[github]",
 ]
 
 [tool.pytest.ini_options]

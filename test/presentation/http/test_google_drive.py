@@ -249,8 +249,10 @@ def test_google_drive_sync_returns_ingested_skipped_failed() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "ingested_count": 1,
+        "updated_count": 0,
         "skipped_count": 2,
         "failed_count": 0,
+        "removed_count": 0,
         "outcomes": [
             {
                 "source_id": "drive:file-1",

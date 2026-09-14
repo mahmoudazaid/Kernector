@@ -28,7 +28,7 @@ from domain.knowledge import (
     UploadPayload,
 )
 from infrastructure.config import GoogleDriveSettings
-from infrastructure.connectors.google_drive import (
+from infrastructure.connectors.google_drive.connector import (
     GoogleDriveConfigError,
     GoogleDriveConnector,
 )
@@ -547,7 +547,7 @@ def test_secret_marker_never_reaches_logs(
     assert SECRET not in caplog.text
 
 
-def test_inaccessible_folder_is_skipped_without_deleting_or_aborting() -> None:
+def test_inaccessible_folder_raises_instead_of_empty_listing() -> None:
     files = FakeDriveFiles(
         list_error=_http_error(
             403,
@@ -559,8 +559,8 @@ def test_inaccessible_folder_is_skipped_without_deleting_or_aborting() -> None:
             },
         )
     )
-    documents = _connector(files).list_documents()
-    assert documents == ()
+    with pytest.raises(ConnectorError):
+        _connector(files).list_documents()
 
 
 def test_mid_pagination_403_does_not_look_like_a_complete_listing() -> None:
@@ -663,7 +663,7 @@ def test_nested_mid_pagination_404_does_not_look_like_a_complete_listing() -> No
         _connector(NestedMidPageMissing(), recursive=True).list_documents()
 
 
-def test_inaccessible_nested_folder_404_is_skipped() -> None:
+def test_inaccessible_nested_folder_404_raises() -> None:
     class NestedMissing(FakeDriveFiles):
         def list(self, **kwargs: object) -> FakeListRequest:
             self.list_calls.append(dict(kwargs))
@@ -683,8 +683,8 @@ def test_inaccessible_nested_folder_404_is_skipped() -> None:
                 }
             )
 
-    documents = _connector(NestedMissing(), recursive=True).list_documents()
-    assert [document.source_id for document in documents] == ["root-file"]
+    with pytest.raises(ConnectorError):
+        _connector(NestedMissing(), recursive=True).list_documents()
 
 
 def test_recursive_folder_discovers_nested_supported_files() -> None:
@@ -728,6 +728,42 @@ def test_exact_file_ids_are_fetched_once_and_ignore_unselected_siblings() -> Non
     ).list_documents()
     assert [document.source_id for document in documents] == ["exact"]
     assert files.get_calls == ["exact"]
+
+
+def test_inaccessible_exact_file_raises() -> None:
+    files = FakeDriveFiles(
+        get_error=_http_error(
+            403,
+            {
+                "error": {
+                    "errors": [{"reason": "insufficientFilePermissions"}],
+                    "message": SECRET,
+                }
+            },
+        )
+    )
+    with pytest.raises(ConnectorError):
+        _connector(files, folder_ids=(), file_ids=("gone",)).list_documents()
+
+
+def test_trashed_exact_file_is_skipped() -> None:
+    files = FakeDriveFiles(
+        files_by_id={"gone": _file("gone", "gone.md") | {"trashed": True}}
+    )
+    documents = _connector(
+        files, folder_ids=(), file_ids=("gone",)
+    ).list_documents()
+    assert documents == ()
+
+
+def test_unsupported_exact_file_is_skipped() -> None:
+    files = FakeDriveFiles(
+        files_by_id={"sheet": _file("sheet", "sheet", mime_type="application/vnd.google-apps.spreadsheet")}
+    )
+    documents = _connector(
+        files, folder_ids=(), file_ids=("sheet",)
+    ).list_documents()
+    assert documents == ()
 
 
 def test_duplicate_file_id_in_folder_and_exact_selection_is_listed_once() -> None:

@@ -22,6 +22,9 @@ from application.contracts import (
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GitHubNotConnectedError,
+    GitHubReauthorizationRequiredError,
+    GitHubSelectionRequiredError,
     GoogleDriveNotConnectedError,
     GoogleDriveReauthorizationRequiredError,
     GoogleDriveSelectionRequiredError,
@@ -55,6 +58,8 @@ from composition.errors import (
     DocumentContentError,
     DocumentOperationError,
     DocumentUploadError,
+    GitHubConnectorError,
+    GitHubConnectorSyncError,
     GoogleDriveConnectorError,
     KnowledgeLoadError,
     MissingUploadContentError,
@@ -110,7 +115,7 @@ from infrastructure.config import (
     Settings,
     load_settings,
 )
-from infrastructure.connectors.drive_folder import (
+from infrastructure.connectors.google_drive.folder import (
     DRIVE_ID_BODY,
     is_drive_folder_id,
     require_drive_folder_id,
@@ -651,6 +656,12 @@ _DRIVE_REQUEST_MESSAGE = "The Google Drive request failed."
 _DRIVE_CLIENT_MISSING_MESSAGE = (
     "Google Drive client is not installed; run uv sync --extra google-drive."
 )
+_GITHUB_CONFIG_MESSAGE = "GitHub connector configuration is invalid."
+_GITHUB_SYNC_MESSAGE = "The GitHub connector sync failed."
+_GITHUB_REQUEST_MESSAGE = "The GitHub request failed."
+_GITHUB_CLIENT_MISSING_MESSAGE = (
+    "GitHub client is not installed; run uv sync --extra github."
+)
 _DRIVE_ITEM_ID = re.compile(rf"^(root|{DRIVE_ID_BODY})$")
 _DRIVE_SELECTION_ID = re.compile(rf"^(?!root$){DRIVE_ID_BODY}$")
 _DRIVE_ITEM_NAME_MAX = 256
@@ -673,6 +684,86 @@ class GoogleDriveLastSync:
     updated_count: int
     unchanged_count: int
     failed_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubLastSync:
+    """Last HTTP OAuth sync counts persisted with the user grant."""
+
+    synced_at: str
+    new_count: int
+    updated_count: int
+    unchanged_count: int
+    removed_count: int
+    failed_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubStatus:
+    """GitHub PAT presence, extra availability, and user OAuth connection."""
+
+    configured: bool
+    available: bool
+    connected: bool = False
+    oauth_ready: bool = False
+    account_login: str | None = None
+    document_count: int = 0
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
+    last_sync: GitHubLastSync | None = None
+    reauthorization_required: bool = False
+    connection_state: str = "disconnected"
+    sync_scope: str | None = None
+    setup_required: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoItem:
+    """One repository row for the Hub picker."""
+
+    owner: str
+    name: str
+    full_name: str
+    private: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoPage:
+    """One page of repositories for the Hub picker."""
+
+    items: tuple[GitHubRepoItem, ...]
+    has_next: bool = False
+    page: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubProjectItem:
+    """One ProjectV2 row for the Hub picker."""
+
+    owner_login: str
+    number: int
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubProjectPage:
+    """One page of ProjectV2 projects for the Hub picker."""
+
+    items: tuple[GitHubProjectItem, ...]
+    next_cursor: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubSelection:
+    """Saved Hub sync targets: optional repository and/or ProjectV2."""
+
+    owner: str | None = None
+    repo: str | None = None
+    project_owner: str | None = None
+    project_number: int | None = None
+    connector_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -725,8 +816,8 @@ class GoogleDriveStatus:
         folder_count (int | None): Selected folder count when connected.
         last_sync (GoogleDriveLastSync | None): Last HTTP sync summary.
         reauthorization_required (bool): Stored refresh token was rejected.
-        setup_required (bool): Unused; empty selection is still connected.
-        connection_state (str): disconnected, ready, or
+        setup_required (bool): Connected but no folders or files selected yet.
+        connection_state (str): disconnected, ready, setup_required, or
             reauthorization_required.
         sync_scope (str | None): Presentation summary such as ``2 folders + 1 file``.
     """
@@ -750,18 +841,38 @@ def _oauth_ready(settings: Settings) -> bool:
     return bool(oauth.client_id and oauth.client_secret and oauth.redirect_uri)
 
 
+def _github_oauth_ready(settings: Settings) -> bool:
+    oauth = settings.github_oauth
+    return bool(oauth.client_id and oauth.client_secret and oauth.redirect_uri)
+
+
 def _connection_store(settings: Settings):
-    from infrastructure.connectors.google_oauth import GoogleOAuthConnectionStore
+    from infrastructure.connectors.google_drive.oauth import GoogleOAuthConnectionStore
 
     return GoogleOAuthConnectionStore(settings.google_oauth.token_path)
 
 
+def _github_connection_store(settings: Settings):
+    from infrastructure.connectors.github.oauth import GitHubOAuthConnectionStore
+
+    return GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+
+
 def _state_store(settings: Settings):
-    from infrastructure.connectors.google_oauth import GoogleOAuthStateStore
+    from infrastructure.connectors.google_drive.oauth import GoogleOAuthStateStore
 
     return GoogleOAuthStateStore(
         settings.google_oauth.state_path,
         ttl_seconds=settings.google_oauth.state_ttl_seconds,
+    )
+
+
+def _github_state_store(settings: Settings):
+    from infrastructure.connectors.github.oauth import GitHubOAuthStateStore
+
+    return GitHubOAuthStateStore(
+        settings.github_oauth.state_path,
+        ttl_seconds=settings.github_oauth.state_ttl_seconds,
     )
 
 
@@ -776,6 +887,176 @@ def _hub_redirect(settings: Settings, *, result: str) -> str:
         base = f"{origin.rstrip('/')}/documents"
     separator = "&" if "?" in base else "?"
     return f"{base}{separator}drive={result}"
+
+
+def _github_hub_redirect(settings: Settings, *, result: str) -> str:
+    base = settings.github_oauth.frontend_redirect
+    if base is None:
+        origin = (
+            settings.http.cors_origins[0]
+            if settings.http.cors_origins
+            else "http://localhost:3000"
+        )
+        base = f"{origin.rstrip('/')}/documents"
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}github={result}"
+
+
+def github_status(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+) -> GitHubStatus:
+    """Report PAT flags plus user OAuth connection metadata."""
+    github = settings.github
+    connection = _github_connection_store(settings).load()
+    configured = bool(github.token and github.owner and github.repo)
+    available = importlib.util.find_spec("httpx") is not None
+    last_sync = None
+    if (
+        connection is not None
+        and connection.last_synced_at is not None
+        and connection.last_sync_new is not None
+        and connection.last_sync_updated is not None
+        and connection.last_sync_unchanged is not None
+        and connection.last_sync_removed is not None
+        and connection.last_sync_failed is not None
+    ):
+        last_sync = GitHubLastSync(
+            synced_at=connection.last_synced_at,
+            new_count=connection.last_sync_new,
+            updated_count=connection.last_sync_updated,
+            unchanged_count=connection.last_sync_unchanged,
+            removed_count=connection.last_sync_removed,
+            failed_count=connection.last_sync_failed,
+        )
+    reauthorization_required = (
+        False if connection is None else connection.reauthorization_required
+    )
+    # Hub selection on the grant wins; env is a fallback for pre-seeded operators.
+    owner = _coalesce_text(
+        None if connection is None else connection.owner,
+        settings.github.owner,
+    )
+    repo = _coalesce_text(
+        None if connection is None else connection.repo,
+        settings.github.repo,
+    )
+    project_owner = _coalesce_text(
+        None if connection is None else connection.project_owner,
+        settings.github.project_owner,
+    )
+    project_number = (
+        None if connection is None else connection.project_number
+    )
+    if project_number is None:
+        project_number = settings.github.project_number
+    has_scope = bool(
+        (owner and repo) or (project_owner and project_number is not None)
+    )
+    setup_required = bool(
+        connection is not None
+        and not reauthorization_required
+        and not has_scope
+    )
+    if connection is None:
+        connection_state = "disconnected"
+    elif reauthorization_required:
+        connection_state = "reauthorization_required"
+    elif setup_required:
+        connection_state = "setup_required"
+    else:
+        connection_state = "ready"
+    return GitHubStatus(
+        configured=configured,
+        available=available,
+        connected=connection is not None,
+        oauth_ready=_github_oauth_ready(settings),
+        account_login=None if connection is None else connection.account_login,
+        document_count=_github_document_count(
+            settings,
+            connection=connection,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+        ),
+        owner=owner,
+        repo=repo,
+        project_owner=project_owner,
+        project_number=project_number,
+        last_sync=last_sync,
+        reauthorization_required=reauthorization_required,
+        connection_state=connection_state,
+        sync_scope=_github_sync_scope(
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+        ),
+        setup_required=setup_required,
+    )
+
+
+def _coalesce_text(preferred: str | None, fallback: str | None) -> str | None:
+    if isinstance(preferred, str) and preferred.strip():
+        return preferred.strip()
+    if isinstance(fallback, str) and fallback.strip():
+        return fallback.strip()
+    return None
+
+
+def _github_reconcile_connector_ids(github) -> frozenset[str]:
+    connector_id = getattr(github, "connector_id", None)
+    if isinstance(connector_id, str) and connector_id.strip():
+        return frozenset({connector_id.strip()})
+    return frozenset()
+
+
+def _github_document_count(
+    settings: Settings,
+    *,
+    connection,
+    catalog: DocumentCatalog | None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+) -> int:
+    if connection is None and not (
+        settings.github.token and settings.github.owner and settings.github.repo
+    ):
+        return 0
+    try:
+        working = _resolve_catalog(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
+        return working.count(
+            source_type=SourceType.GITHUB,
+            status=CatalogStatus.READY,
+        )
+    except (
+        CatalogError,
+        ConfigurationError,
+        DocumentOperationError,
+        OSError,
+        ValueError,
+    ):
+        logger.warning("GitHub document count unavailable", exc_info=True)
+        return 0
+
+
+def _github_sync_scope(
+    *,
+    owner: str | None,
+    repo: str | None,
+    project_owner: str | None = None,
+    project_number: int | None = None,
+) -> str | None:
+    parts: list[str] = []
+    if owner and repo:
+        parts.append(f"{owner}/{repo}")
+    if project_owner and project_number is not None:
+        parts.append(f"{project_owner}#{project_number}")
+    if not parts:
+        return None
+    return " · ".join(parts)
 
 
 def google_drive_status(
@@ -825,10 +1106,18 @@ def google_drive_status(
     reauthorization_required = (
         False if connection is None else connection.reauthorization_required
     )
+    setup_required = (
+        connection is not None
+        and not reauthorization_required
+        and not connection.folders
+        and not connection.files
+    )
     if connection is None:
         connection_state = "disconnected"
     elif reauthorization_required:
         connection_state = "reauthorization_required"
+    elif setup_required:
+        connection_state = "setup_required"
     else:
         connection_state = "ready"
     return GoogleDriveStatus(
@@ -850,7 +1139,7 @@ def google_drive_status(
         folder_count=None if connection is None else len(connection.folders),
         last_sync=last_sync,
         reauthorization_required=reauthorization_required,
-        setup_required=False,
+        setup_required=setup_required,
         connection_state=connection_state,
         sync_scope=None if connection is None else _sync_scope_label(connection),
     )
@@ -916,7 +1205,7 @@ def start_google_drive_oauth(
     """
     if not _oauth_ready(settings):
         return _hub_redirect(settings, result="unconfigured")
-    from infrastructure.connectors.google_oauth import authorization_url
+    from infrastructure.connectors.google_drive.oauth import authorization_url
 
     store = state_store if state_store is not None else _state_store(settings)
     state = store.issue()
@@ -956,7 +1245,7 @@ def complete_google_drive_oauth(
         return _hub_redirect(settings, result="error")
     if not _oauth_ready(settings):
         return _hub_redirect(settings, result="error")
-    from infrastructure.connectors.google_oauth import (
+    from infrastructure.connectors.google_drive.oauth import (
         GoogleOAuthConnection,
         GoogleOAuthError,
         HttpGoogleOAuthGateway,
@@ -1009,15 +1298,23 @@ def disconnect_google_drive_oauth(
     *,
     connection_store=None,
     gateway=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> None:
-    """Revoke the stored refresh token and delete the local grant.
+    """Revoke the stored refresh token, delete the local grant, and purge docs.
 
-    Indexed Drive catalog rows are left in place.
+    Synced Google Drive catalog rows are removed from the catalog and vector store.
 
     Args:
         settings (Settings): Loaded environment settings.
         connection_store: Injected connection store for tests.
         gateway: Injected Google token gateway for tests.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog.
+        vector_store (VectorStore | None): Injected store for tests.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store.
 
     Raises:
         GoogleDriveNotConnectedError: No stored grant.
@@ -1028,13 +1325,20 @@ def disconnect_google_drive_oauth(
     connection = tokens_store.load()
     if connection is None:
         raise GoogleDriveNotConnectedError("Google Drive is not connected")
-    from infrastructure.connectors.google_oauth import HttpGoogleOAuthGateway
+    from infrastructure.connectors.google_drive.oauth import HttpGoogleOAuthGateway
 
     oauth_gateway = gateway if gateway is not None else HttpGoogleOAuthGateway(
         settings.google_oauth
     )
     oauth_gateway.revoke(connection.refresh_token)
     tokens_store.clear()
+    _purge_google_drive_docs(
+        settings,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
 
 
 def _require_drive_grant(settings: Settings, *, connection_store=None):
@@ -1060,6 +1364,527 @@ def _mark_reauth(tokens_store, error: BaseException) -> NoReturn:
     raise GoogleDriveReauthorizationRequiredError(
         "Google Drive authorization was revoked"
     ) from error
+
+
+def _require_github_grant(settings: Settings, *, connection_store=None):
+    tokens_store = (
+        connection_store
+        if connection_store is not None
+        else _github_connection_store(settings)
+    )
+    connection = tokens_store.load()
+    if connection is None:
+        raise GitHubNotConnectedError("GitHub is not connected")
+    if connection.reauthorization_required:
+        raise GitHubReauthorizationRequiredError("GitHub authorization was revoked")
+    return tokens_store, connection
+
+
+def _mark_github_reauth(tokens_store, error: BaseException) -> NoReturn:
+    tokens_store.mutate(
+        lambda current: None
+        if current is None
+        else replace(current, reauthorization_required=True)
+    )
+    raise GitHubReauthorizationRequiredError(
+        "GitHub authorization was revoked"
+    ) from error
+
+
+def start_github_oauth(
+    settings: Settings,
+    *,
+    state_store=None,
+) -> str:
+    """Issue CSRF state and return GitHub's authorization URL."""
+    if not _github_oauth_ready(settings):
+        return _github_hub_redirect(settings, result="unconfigured")
+    from infrastructure.connectors.github.oauth import authorization_url
+
+    store = state_store if state_store is not None else _github_state_store(settings)
+    state = store.issue()
+    return authorization_url(settings.github_oauth, state=state)
+
+
+def complete_github_oauth(
+    settings: Settings,
+    *,
+    state: str | None,
+    code: str | None,
+    error: str | None,
+    state_store=None,
+    connection_store=None,
+    gateway=None,
+) -> str:
+    """Validate callback query params, persist the GitHub grant, return Hub URL."""
+    if error == "access_denied":
+        return _github_hub_redirect(settings, result="denied")
+    store = state_store if state_store is not None else _github_state_store(settings)
+    if not store.consume(state):
+        return _github_hub_redirect(settings, result="invalid_state")
+    if error or not code:
+        return _github_hub_redirect(settings, result="error")
+    if not _github_oauth_ready(settings):
+        return _github_hub_redirect(settings, result="error")
+    from infrastructure.connectors.github.oauth import (
+        GitHubOAuthConnection,
+        GitHubOAuthError,
+        HttpGitHubOAuthGateway,
+    )
+
+    oauth_gateway = gateway if gateway is not None else HttpGitHubOAuthGateway(
+        settings.github_oauth
+    )
+    tokens_store = (
+        connection_store
+        if connection_store is not None
+        else _github_connection_store(settings)
+    )
+    try:
+        grant = oauth_gateway.exchange_code(code)
+        login = oauth_gateway.fetch_account_login(grant.access_token)
+
+        def _next(_existing):
+            # Pre-seed from env when present so existing operators keep working;
+            # Hub selection can replace these after Connect.
+            return GitHubOAuthConnection(
+                access_token=grant.access_token,
+                refresh_token=grant.refresh_token,
+                account_login=login,
+                owner=settings.github.owner,
+                repo=settings.github.repo,
+                project_owner=settings.github.project_owner,
+                project_number=settings.github.project_number,
+                last_synced_at=None,
+                last_sync_new=None,
+                last_sync_updated=None,
+                last_sync_unchanged=None,
+                last_sync_removed=None,
+                last_sync_failed=None,
+                reauthorization_required=False,
+            )
+
+        tokens_store.mutate(_next)
+    except GitHubOAuthError:
+        return _github_hub_redirect(settings, result="error")
+    return _github_hub_redirect(settings, result="connected")
+
+
+def disconnect_github_oauth(
+    settings: Settings,
+    *,
+    connection_store=None,
+    gateway=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> None:
+    """Revoke the stored access token, delete the local grant, and purge docs.
+
+    Synced GitHub catalog rows for this connection's ``connector_id`` (repository
+    files and ProjectV2 issues) are removed from the catalog and vector store.
+    """
+    tokens_store = (
+        connection_store
+        if connection_store is not None
+        else _github_connection_store(settings)
+    )
+    connection = tokens_store.load()
+    if connection is None:
+        raise GitHubNotConnectedError("GitHub is not connected")
+    from infrastructure.connectors.github.oauth import HttpGitHubOAuthGateway
+
+    oauth_gateway = gateway if gateway is not None else HttpGitHubOAuthGateway(
+        settings.github_oauth
+    )
+    connector_id = connection.connector_id
+    oauth_gateway.revoke(connection.access_token)
+    tokens_store.clear()
+    _purge_github_connector_docs(
+        settings,
+        connector_id=connector_id,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
+
+
+def list_github_repositories(
+    settings: Settings,
+    *,
+    page: int = 1,
+    connection_store=None,
+    client_factory=None,
+) -> GitHubRepoPage:
+    """List repositories visible to the stored GitHub grant for the Hub picker."""
+    _tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    client = _github_picker_client(
+        settings,
+        access_token=connection.access_token,
+        client_factory=client_factory,
+    )
+    try:
+        payload = client.list_repositories(page=page)
+    except ConnectorAuthError as error:
+        _mark_github_reauth(_tokens_store, error)
+    except ConnectorError as error:
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE) from error
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE)
+    items: list[GitHubRepoItem] = []
+    for row in raw_items:
+        if not isinstance(row, Mapping):
+            continue
+        owner = row.get("owner")
+        name = row.get("name")
+        full_name = row.get("full_name")
+        if (
+            isinstance(owner, str)
+            and owner.strip()
+            and isinstance(name, str)
+            and name.strip()
+            and isinstance(full_name, str)
+            and full_name.strip()
+        ):
+            items.append(
+                GitHubRepoItem(
+                    owner=owner.strip(),
+                    name=name.strip(),
+                    full_name=full_name.strip(),
+                    private=bool(row.get("private")),
+                )
+            )
+    return GitHubRepoPage(
+        items=tuple(items),
+        has_next=bool(payload.get("has_next")),
+        page=page,
+    )
+
+
+def list_github_projects(
+    settings: Settings,
+    *,
+    owner_login: str,
+    after: str | None = None,
+    connection_store=None,
+    client_factory=None,
+) -> GitHubProjectPage:
+    """List ProjectV2 projects for a login using the stored GitHub grant."""
+    login = owner_login.strip()
+    if not login:
+        raise InputRejectedError("A project owner login is required.")
+    _tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    client = _github_picker_client(
+        settings,
+        access_token=connection.access_token,
+        client_factory=client_factory,
+    )
+    try:
+        payload = client.list_projects(login, after=after)
+    except ConnectorAuthError as error:
+        _mark_github_reauth(_tokens_store, error)
+    except ConnectorError as error:
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE) from error
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, Sequence) or isinstance(raw_items, (str, bytes)):
+        raise GitHubConnectorError(_GITHUB_REQUEST_MESSAGE)
+    items: list[GitHubProjectItem] = []
+    for row in raw_items:
+        if not isinstance(row, Mapping):
+            continue
+        number = row.get("number")
+        title = row.get("title")
+        row_owner = row.get("owner_login")
+        if (
+            isinstance(number, int)
+            and isinstance(title, str)
+            and title.strip()
+            and isinstance(row_owner, str)
+            and row_owner.strip()
+        ):
+            items.append(
+                GitHubProjectItem(
+                    owner_login=row_owner.strip(),
+                    number=number,
+                    title=title.strip(),
+                )
+            )
+    next_cursor = payload.get("next_cursor")
+    return GitHubProjectPage(
+        items=tuple(items),
+        next_cursor=next_cursor if isinstance(next_cursor, str) and next_cursor else None,
+    )
+
+
+def get_github_selection(
+    settings: Settings,
+    *,
+    connection_store=None,
+) -> GitHubSelection:
+    """Return the saved repository and optional ProjectV2 selection."""
+    _tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    return GitHubSelection(
+        owner=connection.owner,
+        repo=connection.repo,
+        project_owner=connection.project_owner,
+        project_number=connection.project_number,
+        connector_id=connection.connector_id,
+    )
+
+
+def put_github_selection(
+    settings: Settings,
+    *,
+    owner: str | None = None,
+    repo: str | None = None,
+    project_owner: str | None = None,
+    project_number: int | None = None,
+    connection_store=None,
+    client_factory=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> GitHubSelection:
+    """Validate access and atomically replace the saved GitHub selection.
+
+    When a previously selected repository and/or project is cleared or replaced,
+    synced GitHub catalog rows for the dropped scope(s) are removed from the
+    catalog and vector store.
+    """
+    owner_clean = (
+        owner.strip() if isinstance(owner, str) and owner.strip() else None
+    )
+    repo_clean = (
+        repo.strip() if isinstance(repo, str) and repo.strip() else None
+    )
+    if (owner_clean is None) != (repo_clean is None):
+        raise InputRejectedError(
+            "Repository owner and name must be set together."
+        )
+    project_owner_clean = (
+        project_owner.strip() if isinstance(project_owner, str) else None
+    ) or None
+    if project_number is not None and (
+        not isinstance(project_number, int)
+        or isinstance(project_number, bool)
+        or project_number < 1
+    ):
+        raise InputRejectedError("A project number must be a positive integer.")
+    if (project_owner_clean is None) != (project_number is None):
+        raise InputRejectedError(
+            "Project owner and project number must be set together."
+        )
+    tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    previous_owner = connection.owner
+    previous_repo = connection.repo
+    previous_project_owner = connection.project_owner
+    previous_project_number = connection.project_number
+    if owner_clean is not None or project_owner_clean is not None:
+        client = _github_picker_client(
+            settings,
+            access_token=connection.access_token,
+            client_factory=client_factory,
+        )
+        try:
+            if owner_clean is not None and repo_clean is not None:
+                client.get_repository(owner_clean, repo_clean)
+            if project_owner_clean is not None and project_number is not None:
+                client.resolve_project_v2_id(
+                    project_owner_clean, project_number
+                )
+        except ConnectorAuthError as error:
+            _mark_github_reauth(tokens_store, error)
+        except ConnectorError as error:
+            raise InputRejectedError(
+                "The selected GitHub repository or project is inaccessible."
+            ) from error
+
+    def _apply(current):
+        from infrastructure.connectors.github.oauth import with_connector_id
+
+        if current is None:
+            raise GitHubNotConnectedError("GitHub is not connected")
+        if current.reauthorization_required:
+            raise GitHubReauthorizationRequiredError(
+                "GitHub authorization was revoked"
+            )
+        updated = replace(
+            current,
+            owner=owner_clean,
+            repo=repo_clean,
+            project_owner=project_owner_clean,
+            project_number=project_number,
+        )
+        return with_connector_id(updated, preferred=settings.github.connector_id)
+
+    tokens_store.mutate(_apply)
+    saved = tokens_store.load()
+    assert saved is not None
+    _purge_github_dropped_selection_docs(
+        settings,
+        previous_owner=previous_owner,
+        previous_repo=previous_repo,
+        previous_project_owner=previous_project_owner,
+        previous_project_number=previous_project_number,
+        new_owner=owner_clean,
+        new_repo=repo_clean,
+        new_project_owner=project_owner_clean,
+        new_project_number=project_number,
+        connector_id=saved.connector_id,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
+    return GitHubSelection(
+        owner=owner_clean,
+        repo=repo_clean,
+        project_owner=project_owner_clean,
+        project_number=project_number,
+        connector_id=saved.connector_id,
+    )
+
+
+_GITHUB_ISSUE_SOURCE_ID_PREFIX = "issue:"
+
+
+def _github_row_in_connector_scope(
+    row: CatalogDocument, connector_ids: frozenset[str]
+) -> bool:
+    if not connector_ids:
+        return True
+    if row.connector_id is None:
+        return True
+    return row.connector_id in connector_ids
+
+
+def _purge_github_connector_docs(
+    settings: Settings,
+    *,
+    connector_id: str | None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+    source_id_prefixes: tuple[str, ...] | None = None,
+) -> None:
+    """Delete GitHub catalog+vector rows for ``connector_id``.
+
+    When ``source_id_prefixes`` is set, only matching source ids are removed.
+    Otherwise every GitHub row in connector scope is removed (disconnect).
+    """
+    working = _resolve_catalog(
+        settings, catalog=catalog, catalog_factory=catalog_factory
+    )
+    connector_ids = (
+        frozenset({connector_id.strip()})
+        if isinstance(connector_id, str) and connector_id.strip()
+        else frozenset()
+    )
+    prefixes = source_id_prefixes
+    targets = [
+        row
+        for row in working.all()
+        if row.reference.source_type == SourceType.GITHUB
+        and (
+            prefixes is None
+            or any(
+                row.reference.source_id.startswith(prefix) for prefix in prefixes
+            )
+        )
+        and _github_row_in_connector_scope(row, connector_ids)
+    ]
+    if not targets:
+        return
+
+    get_store = _lazy_vector_store(
+        settings,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
+    store = get_store()
+    try:
+        for row in targets:
+            store.delete_source(row.reference)
+            working.delete(row.reference)
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except VectorStoreError as error:
+        raise DocumentOperationError(str(error)) from error
+
+
+def _purge_github_dropped_selection_docs(
+    settings: Settings,
+    *,
+    previous_owner: str | None,
+    previous_repo: str | None,
+    previous_project_owner: str | None,
+    previous_project_number: int | None,
+    new_owner: str | None,
+    new_repo: str | None,
+    new_project_owner: str | None,
+    new_project_number: int | None,
+    connector_id: str | None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> None:
+    """Delete catalog+vector rows for repo/project scopes dropped by selection."""
+    prefixes: list[str] = []
+    if previous_owner and previous_repo:
+        old_repo = (previous_owner, previous_repo)
+        new_repo_pair = (new_owner, new_repo) if new_owner and new_repo else None
+        if old_repo != new_repo_pair:
+            prefixes.append(f"{previous_owner}/{previous_repo}:")
+    if previous_project_owner and previous_project_number is not None:
+        old_project = (previous_project_owner, previous_project_number)
+        new_project = (
+            (new_project_owner, new_project_number)
+            if new_project_owner and new_project_number is not None
+            else None
+        )
+        if old_project != new_project:
+            prefixes.append(_GITHUB_ISSUE_SOURCE_ID_PREFIX)
+    if not prefixes:
+        return
+
+    _purge_github_connector_docs(
+        settings,
+        connector_id=connector_id,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+        source_id_prefixes=tuple(prefixes),
+    )
+
+
+def _github_picker_client(
+    settings: Settings,
+    *,
+    access_token: str,
+    client_factory=None,
+):
+    if client_factory is not None:
+        return client_factory(access_token)
+    try:
+        from infrastructure.connectors.github.client import HttpGitHubClient
+    except ImportError as error:
+        raise ConfigurationError(_GITHUB_CLIENT_MISSING_MESSAGE) from error
+    return HttpGitHubClient(access_token, page_size=settings.github.page_size)
 
 
 def browse_google_drive_items(
@@ -1180,8 +2005,17 @@ def put_google_drive_selection(
     files: Sequence[GoogleDriveSelectedItem],
     connection_store=None,
     connector_factory=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> GoogleDriveSelection:
     """Validate access and atomically replace the saved Drive selection.
+
+    Dropped exact file selections are purged from the catalog immediately.
+    Clearing every root purges all Google Drive documents. Folder drops that
+    leave remaining roots are cleaned up by the next OAuth sync reconcile,
+    which only runs after a complete listing (inaccessible selected roots raise).
 
     Args:
         settings (Settings): Loaded environment settings.
@@ -1189,6 +2023,10 @@ def put_google_drive_selection(
         files (Sequence[GoogleDriveSelectedItem]): Exact file IDs.
         connection_store: Injected grant store for tests.
         connector_factory: Injected ``get_item`` factory for tests.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog.
+        vector_store (VectorStore | None): Injected store for tests.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store.
 
     Returns:
         GoogleDriveSelection: The persisted roots.
@@ -1207,6 +2045,7 @@ def put_google_drive_selection(
     tokens_store, connection = _require_drive_grant(
         settings, connection_store=connection_store
     )
+    previous_file_ids = frozenset(item.id for item in connection.files)
     try:
         resolved_folders, resolved_files = _validate_selection_items(
             settings,
@@ -1219,7 +2058,7 @@ def put_google_drive_selection(
         _mark_reauth(tokens_store, error)
     except ConnectorError as error:
         raise InputRejectedError(_SELECTION_INACCESSIBLE_DETAIL) from error
-    from infrastructure.connectors.google_oauth import GoogleDriveSelectedItem as StoredItem
+    from infrastructure.connectors.google_drive.oauth import GoogleDriveSelectedItem as StoredItem
 
     def _apply(current):
         if current is None:
@@ -1239,7 +2078,69 @@ def put_google_drive_selection(
         )
 
     tokens_store.mutate(_apply)
+    new_file_ids = frozenset(item.id for item in resolved_files)
+    if not resolved_folders and not resolved_files:
+        _purge_google_drive_docs(
+            settings,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
+    else:
+        dropped_files = previous_file_ids - new_file_ids
+        if dropped_files:
+            _purge_google_drive_docs(
+                settings,
+                source_ids=dropped_files,
+                catalog=catalog,
+                catalog_factory=catalog_factory,
+                vector_store=vector_store,
+                vector_store_factory=vector_store_factory,
+            )
     return GoogleDriveSelection(folders=resolved_folders, files=resolved_files)
+
+
+def _purge_google_drive_docs(
+    settings: Settings,
+    *,
+    source_ids: frozenset[str] | None = None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> None:
+    """Delete Google Drive catalog+vector rows.
+
+    When ``source_ids`` is None, every Drive row is removed. Otherwise only
+    rows whose ``source_id`` is in ``source_ids`` are removed.
+    """
+    working = _resolve_catalog(
+        settings, catalog=catalog, catalog_factory=catalog_factory
+    )
+    targets = [
+        row
+        for row in working.all()
+        if row.reference.source_type == SourceType.GOOGLE_DRIVE
+        and (source_ids is None or row.reference.source_id in source_ids)
+    ]
+    if not targets:
+        return
+
+    get_store = _lazy_vector_store(
+        settings,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
+    store = get_store()
+    try:
+        for row in targets:
+            store.delete_source(row.reference)
+            working.delete(row.reference)
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except VectorStoreError as error:
+        raise DocumentOperationError(str(error)) from error
 
 
 def _dedupe_selected(
@@ -1407,13 +2308,13 @@ def build_google_drive_oauth_connector(
         GoogleDriveReauthorizationRequiredError: Refresh token was rejected.
     """
     from infrastructure.config import GoogleDriveSettings
-    from infrastructure.connectors.google_oauth import (
+    from infrastructure.connectors.google_drive.oauth import (
         GoogleOAuthError,
         build_oauth_drive_files,
     )
 
     try:
-        from infrastructure.connectors.google_drive import (
+        from infrastructure.connectors.google_drive.connector import (
             GoogleDriveConfigError,
             GoogleDriveConnector,
         )
@@ -1486,11 +2387,6 @@ def sync_google_drive_oauth(
         working_catalog = _resolve_catalog(
             settings, catalog=catalog, catalog_factory=catalog_factory
         )
-        before = {
-            row.reference.source_id
-            for row in working_catalog.all()
-            if row.reference.source_type == SourceType.GOOGLE_DRIVE
-        }
         connector = build_google_drive_oauth_connector(
             settings,
             refresh_token=connection.refresh_token,
@@ -1504,23 +2400,14 @@ def sync_google_drive_oauth(
             catalog=working_catalog,
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
+            reconcile_missing=True,
         )
     except ConnectorSyncError as error:
         if isinstance(error.__cause__, ConnectorAuthError):
             _mark_reauth(tokens_store, error)
         raise
-    new_count = sum(
-        1
-        for outcome in result.outcomes
-        if outcome.status is ConnectorSyncStatus.INGESTED
-        and outcome.source_id not in before
-    )
-    updated_count = sum(
-        1
-        for outcome in result.outcomes
-        if outcome.status is ConnectorSyncStatus.INGESTED
-        and outcome.source_id in before
-    )
+    new_count = result.ingested_count
+    updated_count = result.updated_count
     synced_at = datetime.now(timezone.utc).isoformat()
     tokens_store.mutate(
         lambda current: None
@@ -1557,7 +2444,7 @@ def build_google_drive_connector(settings: Settings) -> KnowledgeConnector:
         except ValueError as error:
             raise ConfigurationError(str(error)) from error
     try:
-        from infrastructure.connectors.google_drive import (
+        from infrastructure.connectors.google_drive.connector import (
             GoogleDriveConfigError,
             GoogleDriveConnector,
         )
@@ -1579,6 +2466,7 @@ def sync_google_drive(
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
+    reconcile_missing: bool = False,
 ) -> ConnectorSyncResponse:
     """Synchronize the configured Drive folder into the knowledge base.
 
@@ -1592,6 +2480,8 @@ def sync_google_drive(
         vector_store (VectorStore | None): Shared store for the run, if already built.
         vector_store_factory (Callable[[], VectorStore] | None): Lazy store builder
             used by ingest instead of constructing the store up front.
+        reconcile_missing (bool): When True, remove Google Drive catalog rows
+            absent from the current listing (OAuth Hub sync).
 
     Returns:
         ConnectorSyncResponse: Per-document outcomes in listing order.
@@ -1611,6 +2501,16 @@ def sync_google_drive(
             vector_store_factory=vector_store_factory,
         )
 
+        reconcile_kwargs: dict[str, object] = {}
+        if reconcile_missing:
+            # Empty prefix matches every source_id; scoped by source_type only.
+            reconcile_kwargs = {
+                "reconcile_missing": True,
+                "reconcile_source_types": frozenset({SourceType.GOOGLE_DRIVE}),
+                "reconcile_source_id_prefixes": frozenset({""}),
+                "vector_store_factory": get_store,
+            }
+
         return SyncConnectorDocuments(
             connector=connector,
             catalog=catalog,
@@ -1618,6 +2518,7 @@ def sync_google_drive(
                 settings,
                 vector_store=get_store(),
             ),
+            **reconcile_kwargs,
         ).execute()
     except ConnectorError as error:
         raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
@@ -1625,6 +2526,270 @@ def sync_google_drive(
         raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
     except VectorStoreError as error:
         raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error
+
+
+def build_github_connector(settings: Settings) -> KnowledgeConnector:
+    """Build the GitHub connector from runtime settings."""
+    try:
+        from infrastructure.connectors.github.connector import (
+            GitHubConnectorConfigError,
+            GitHubKnowledgeConnector,
+        )
+    except ImportError as error:
+        raise ConfigurationError(_GITHUB_CLIENT_MISSING_MESSAGE) from error
+    try:
+        return GitHubKnowledgeConnector(settings.github)
+    except GitHubConnectorConfigError as error:
+        raise ConfigurationError(_GITHUB_CONFIG_MESSAGE) from error
+
+
+def sync_github(
+    settings: Settings,
+    *,
+    connector: KnowledgeConnector | None = None,
+    catalog: DocumentCatalog | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> ConnectorSyncResponse:
+    """Synchronize configured GitHub content into the knowledge base."""
+    try:
+        if connector is None:
+            connector = build_github_connector(settings)
+        if catalog is None:
+            catalog = build_document_catalog(settings)
+        get_store = _lazy_vector_store(
+            settings,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
+        connector_ids = _github_reconcile_connector_ids(settings.github)
+        if not connector_ids:
+            raise ConfigurationError(
+                "GitHub connector_id is required before synchronizing."
+            )
+
+        return SyncConnectorDocuments(
+            connector=connector,
+            catalog=catalog,
+            ingest_factory=lambda: build_ingest_knowledge(
+                settings,
+                vector_store=get_store(),
+            ),
+            reconcile_missing=True,
+            reconcile_source_types=frozenset({SourceType.GITHUB}),
+            reconcile_connector_ids=connector_ids,
+            vector_store_factory=get_store,
+        ).execute()
+    except ConnectorError as error:
+        raise GitHubConnectorSyncError(_GITHUB_SYNC_MESSAGE) from error
+    except CatalogError as error:
+        raise GitHubConnectorSyncError(_GITHUB_SYNC_MESSAGE) from error
+    except VectorStoreError as error:
+        raise GitHubConnectorSyncError(_GITHUB_SYNC_MESSAGE) from error
+
+
+def build_github_oauth_connector(settings: Settings, *, token: str) -> KnowledgeConnector:
+    """Build a GitHub connector from a stored OAuth access token."""
+    github = replace(settings.github, token=token)
+    try:
+        from infrastructure.connectors.github.connector import (
+            GitHubConnectorConfigError,
+            GitHubKnowledgeConnector,
+        )
+    except ImportError as error:
+        raise ConfigurationError(_GITHUB_CLIENT_MISSING_MESSAGE) from error
+    try:
+        return GitHubKnowledgeConnector(github)
+    except GitHubConnectorConfigError as error:
+        raise ConfigurationError(_GITHUB_CONFIG_MESSAGE) from error
+
+
+def sync_github_oauth(
+    settings: Settings,
+    *,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+    connection_store=None,
+    oauth_gateway=None,
+) -> ConnectorSyncResponse:
+    """Synchronize GitHub using the stored user OAuth grant."""
+    from datetime import datetime, timezone
+
+    from infrastructure.connectors.github.oauth import (
+        GitHubOAuthError,
+        HttpGitHubOAuthGateway,
+        with_connector_id,
+    )
+
+    tokens_store, connection = _require_github_grant(
+        settings, connection_store=connection_store
+    )
+    if not connection.connector_id:
+        tokens_store.mutate(
+            lambda current: None
+            if current is None
+            else with_connector_id(
+                current, preferred=settings.github.connector_id
+            )
+        )
+        connection = tokens_store.load()
+        assert connection is not None
+    gateway = (
+        oauth_gateway
+        if oauth_gateway is not None
+        else HttpGitHubOAuthGateway(settings.github_oauth)
+    )
+    access_token = connection.access_token
+    owner = _coalesce_text(connection.owner, settings.github.owner)
+    repo = _coalesce_text(connection.repo, settings.github.repo)
+    project_owner = _coalesce_text(
+        connection.project_owner, settings.github.project_owner
+    )
+    project_number = (
+        connection.project_number
+        if connection.project_number is not None
+        else settings.github.project_number
+    )
+    has_scope = bool(
+        (owner and repo) or (project_owner and project_number is not None)
+    )
+    if not has_scope:
+        raise GitHubSelectionRequiredError(
+            "Select a GitHub repository or project before syncing."
+        )
+    try:
+        working_catalog = _resolve_catalog(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
+        result = _run_github_oauth_sync(
+            settings,
+            access_token=access_token,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+            connector_id=connection.connector_id,
+            catalog=working_catalog,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
+    except ConnectorSyncError as error:
+        if not isinstance(error.__cause__, ConnectorAuthError):
+            raise
+        if not connection.refresh_token:
+            _mark_github_reauth(tokens_store, error)
+        try:
+            grant = gateway.refresh(connection.refresh_token)
+        except GitHubOAuthError as refresh_error:
+            _mark_github_reauth(tokens_store, refresh_error)
+        access_token = grant.access_token
+        refresh_token = grant.refresh_token or connection.refresh_token
+        tokens_store.mutate(
+            lambda current: None
+            if current is None
+            else replace(
+                current,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                reauthorization_required=False,
+                owner=owner,
+                repo=repo,
+                project_owner=project_owner,
+                project_number=project_number,
+            )
+        )
+        try:
+            working_catalog = _resolve_catalog(
+                settings, catalog=catalog, catalog_factory=catalog_factory
+            )
+            result = _run_github_oauth_sync(
+                settings,
+                access_token=access_token,
+                owner=owner,
+                repo=repo,
+                project_owner=project_owner,
+                project_number=project_number,
+                connector_id=connection.connector_id,
+                catalog=working_catalog,
+                vector_store=vector_store,
+                vector_store_factory=vector_store_factory,
+            )
+        except ConnectorSyncError as retry_error:
+            if isinstance(retry_error.__cause__, ConnectorAuthError):
+                _mark_github_reauth(tokens_store, retry_error)
+            raise
+    synced_at = datetime.now(timezone.utc).isoformat()
+    tokens_store.mutate(
+        lambda current: None
+        if current is None
+        else replace(
+            current,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+            last_synced_at=synced_at,
+            last_sync_new=result.ingested_count,
+            last_sync_updated=result.updated_count,
+            last_sync_unchanged=result.skipped_count,
+            last_sync_removed=result.removed_count,
+            last_sync_failed=result.failed_count,
+        )
+    )
+    return result
+
+
+def _run_github_oauth_sync(
+    settings: Settings,
+    *,
+    access_token: str,
+    owner: str | None,
+    repo: str | None,
+    project_owner: str | None,
+    project_number: int | None,
+    connector_id: str | None,
+    catalog: DocumentCatalog,
+    vector_store: VectorStore | None,
+    vector_store_factory: Callable[[], VectorStore] | None,
+) -> ConnectorSyncResponse:
+    from infrastructure.connectors.github.oauth import new_github_connector_id
+
+    resolved_connector_id = (
+        connector_id.strip()
+        if isinstance(connector_id, str) and connector_id.strip()
+        else settings.github.connector_id or new_github_connector_id()
+    )
+    oauth_settings = replace(
+        settings,
+        github=replace(
+            settings.github,
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+            connector_id=resolved_connector_id,
+        ),
+    )
+    # Build inside the same exception domain as sync_github so constructor
+    # ConnectorAuthError / ConnectorUnavailableError become ConnectorSyncError
+    # with the typed cause preserved for refresh-then-retry.
+    try:
+        connector = build_github_oauth_connector(
+            oauth_settings,
+            token=access_token,
+        )
+    except ConnectorError as error:
+        raise GitHubConnectorSyncError(_GITHUB_SYNC_MESSAGE) from error
+    return sync_github(
+        oauth_settings,
+        connector=connector,
+        catalog=catalog,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
 
 
 def build_document_extractor() -> UploadedFileExtractor:

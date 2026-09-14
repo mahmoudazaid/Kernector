@@ -143,32 +143,32 @@ other provider types as permanent core entities.
 
 `KnowledgeConnector` (`domain/ports.py`) is the replaceable adapter port:
 `list_documents()` returns provider-neutral `ConnectorDocument` values, and
-`fetch_document()` returns a `SourceDocument`. Google Drive is the first
-implemented connector (`infrastructure/connectors/google_drive.py`).
+`fetch_document()` returns a `SourceDocument`. Implemented connectors:
 
-Drive failures map to a small domain taxonomy: `ConnectorAuthError` for
+- Google Drive (`infrastructure/connectors/google_drive/`) — Hub user OAuth
+  plus CLI service-account sync.
+- GitHub (`infrastructure/connectors/github/`) — Hub user OAuth plus CLI PAT
+  sync for allowlisted repo files and optional ProjectV2 Issues.
+
+Drive/GitHub failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
-Exception messages are fixed; raw Google bodies stay on `__cause__` only.
+Exception messages are fixed; raw provider bodies stay on `__cause__` only.
 
-Presentation exposes HTTP status, user OAuth, and sync for this connector:
-`GET /api/v1/connectors/google-drive` (SA flags plus OAuth connection metadata),
-`GET /api/v1/connectors/google-drive/oauth/start` (CSRF state, 302 to Google, or
-back to the Hub with `drive=unconfigured` when the OAuth client is missing),
-`GET /api/v1/connectors/google-drive/oauth/callback` (code exchange, 302 to the
-Hub with a non-sensitive `drive=` result),
-`POST /api/v1/connectors/google-drive/sync` (user grant only), and
-`DELETE /api/v1/connectors/google-drive` (revoke + delete the grant). Knowledge
-Hub (`GoogleDrivePanel` inside `DocumentsPanel`) starts OAuth via the backend
-start URL; it never stores tokens. The CLI
-(`presentation.cli.sync_google_drive`) remains on the service-account path. The adapter reuses
-`UploadedFileExtractor` for TXT/Markdown/PDF bytes, then overwrites metadata so
-`provider` is `google_drive` rather than `upload`. Synchronization compares
-Drive `version` (checksum fallback only when version is missing) to
-`CatalogDocument.revision` and skips unchanged `READY` rows. Remote deletion
-reconciliation and connector config editing are **not** implemented.
-Concurrent HTTP syncs are unguarded server-side: the client `busy` flag covers
-one tab, but two tabs or a direct `curl` can run at once.
+Presentation exposes HTTP status, user OAuth, and sync for Drive and GitHub
+under `/api/v1/connectors/{google-drive|github}/…`. Knowledge Hub panels start
+OAuth via the backend start URL and never store tokens. Grant JSON lives under
+`data/*-oauth-*.json` (gitignored). The Drive CLI remains on the service-account
+path; the GitHub CLI uses `GITHUB_TOKEN` from the environment only.
+
+Drive synchronization compares Drive `version` to `CatalogDocument.revision`
+and skips unchanged `READY` rows. Drive sync is **add/update-only** (no remote
+deletion reconciliation). GitHub sync opts into hard-delete reconciliation for
+`source_type=github` when the listing completes with zero `FAILED` outcomes;
+incomplete listings must raise rather than return a short list. Concurrent HTTP
+syncs are unguarded server-side: the client `busy` flag covers one tab, but two
+tabs or a direct `curl` can run at once. Multi-instance claim is deferred (#270).
+Scheduled sync and webhooks are out of scope.
 
 ### Optional domain packs
 
@@ -414,7 +414,8 @@ pipeline. Names only (no implementation commitment in this document):
 
 - File upload (TXT, Markdown, PDF)
 - Seed JSON corpus adapter
-- Future: GitHub, Jira, Confluence, Google Drive
+- Future: Jira, Confluence
+- Implemented: Google Drive, GitHub
 
 ### Catalog adapter
 
