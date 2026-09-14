@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from infrastructure.config import DomainToolSettings
@@ -126,13 +127,25 @@ def test_test_design_explicit_command_with_multiple_issues_returns_422() -> None
     assert response.json()["code"] == "validation_error"
 
 
-def test_test_design_explicit_command_with_bare_number_returns_422() -> None:
-    client = _pack_client(
-        ask_factory=lambda: (lambda _runtime=None: _ExplodingAsk())
-    )
+@pytest.mark.parametrize(
+    "query",
+    [
+        "How does test design work in this repo?",
+        "Who owns test design here?",
+        "What do the docs say about test design?",
+        "Design tests for 293",
+        "Can you explain the coverage plan we agreed on last sprint?",
+    ],
+)
+def test_test_design_topical_phrase_without_issue_falls_through_to_ask(
+    query: str,
+) -> None:
+    ask = _RecordingAsk()
+    client = _pack_client(ask_factory=lambda: (lambda _runtime=None: ask))
     response = client.post(
         "/api/v1/chat/ask",
-        json={"query": "Design tests for 293", "history": []},
+        json={"query": query, "history": []},
     )
-    assert response.status_code == 422
-    assert response.json()["code"] == "validation_error"
+    assert response.status_code == 200
+    assert ask.calls == 1
+    assert response.json().get("action") is None

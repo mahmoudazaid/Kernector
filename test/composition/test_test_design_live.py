@@ -471,12 +471,17 @@ def test_chat_handoff_rejects_explicit_command_with_multiple_issues() -> None:
         )
 
 
-def test_chat_handoff_rejects_explicit_command_with_bare_number() -> None:
-    with pytest.raises(TestDesignValidationError, match="exactly one"):
-        try_test_design_chat_handoff(
-            settings=_settings(),
-            query="Design tests for 293",
-        )
+def test_chat_handoff_declines_topical_phrase_without_issue_reference() -> None:
+    for query in (
+        "How does test design work in this repo?",
+        "Who owns test design here?",
+        "What do the docs say about test design?",
+        "Design tests for 293",
+        "Can you explain the coverage plan we agreed on last sprint?",
+    ):
+        assert (
+            try_test_design_chat_handoff(settings=_settings(), query=query) is None
+        ), query
 
 
 class _FakeRefreshGateway:

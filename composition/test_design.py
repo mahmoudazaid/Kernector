@@ -166,10 +166,11 @@ def try_test_design_chat_handoff(
 ) -> TestDesignChatHandoffView | None:
     """Detect Test Design handoff before ask.execute; return fixed answer + action.
 
-    Returns None when this is not an explicit Test Design Issue command (caller
-    runs RAG), including ordinary discussion that merely mentions coverage.
-    Raises TestDesignValidationError for explicit commands with ambiguous or
-    invalid Issue references, or for client source_locator mismatch.
+    Returns None when this is not a Test Design Issue handoff (caller runs RAG),
+    including topical discussion that merely mentions test design/coverage and
+    phrases that match the command regex but carry no Issue reference.
+    Raises TestDesignValidationError for commands with multiple distinct Issues,
+    or for client source_locator mismatch.
     """
     if not software_delivery_tools_enabled(settings):
         return None
@@ -189,9 +190,9 @@ def try_test_design_chat_handoff(
             "Query must reference exactly one GitHub Issue"
         ) from error
     if parsed is None:
-        raise TestDesignValidationError(
-            "Query must reference exactly one GitHub Issue"
-        )
+        # Phrase match alone is not enough — no Issue means discussion, not
+        # a handoff. Fall through to grounded RAG.
+        return None
     canonical = parsed.canonical
     if source_locator is not None:
         client_locator = _require_github_locator_view(source_locator)
