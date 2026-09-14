@@ -8,19 +8,12 @@ import { Loader } from "@/components/ui/Loader";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
-  confirmTestDesignDraft,
-  generateTestDesignScenarios,
   getTestDesignDraft,
   patchTestDesignDraft,
   type TestCoverageDraftResponse,
 } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
-import {
-  getConversation,
-  updateConversation,
-} from "@/lib/session/conversations";
-import type { StoredChatMessage } from "@/lib/settings/runtime-settings-storage";
 
 const PACK_ID = "software-delivery";
 
@@ -75,7 +68,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const [draft, setDraft] = useState<TestCoverageDraftResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmNote, setConfirmNote] = useState<string | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!packEnabled) {
@@ -168,6 +161,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     }
     setBusy(true);
     setError(null);
+    setSaveNote(null);
     try {
       const saved = await patchTestDesignDraft({
         baseUrl: apiBaseUrl,
@@ -179,6 +173,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         },
       });
       setDraft(saved);
+      setSaveNote("Draft saved.");
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError(
@@ -192,73 +187,8 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     }
   }
 
-  async function confirmDraft() {
-    if (!draft) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setConfirmNote(null);
-    try {
-      // Persist checkbox selection first — confirm reads the store, not local state.
-      const saved = await patchTestDesignDraft({
-        baseUrl: apiBaseUrl,
-        draftId: draft.draft_id,
-        body: {
-          expected_version: draft.version,
-          candidates: draft.candidates,
-          scenarios: draft.scenarios,
-        },
-      });
-      setDraft(saved);
-      const ready = await confirmTestDesignDraft({
-        baseUrl: apiBaseUrl,
-        draftId: saved.draft_id,
-        body: { expected_version: saved.version },
-      });
-      setDraft(ready);
-      const originatingId = ready.conversation_id;
-      const conversation = getConversation(originatingId);
-      if (!conversation) {
-        setConfirmNote(
-          "Draft is ready. The originating chat could not be updated because it was deleted.",
-        );
-        return;
-      }
-      const summary: StoredChatMessage = {
-        id: `td-ready-${ready.draft_id}`,
-        role: "assistant",
-        content: `Test Design draft ready for ${ready.ticket_identifier}.`,
-        action: {
-          kind: "open_workflow",
-          workflow_id: "software-delivery.test-design",
-          label: "Open Test Design draft",
-          draft_id: ready.draft_id,
-        },
-      };
-      updateConversation(originatingId, {
-        messages: [...conversation.messages, summary],
-        unread: true,
-      });
-      setConfirmNote(
-        "Draft confirmed. A summary was added to the originating chat.",
-      );
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409) {
-        setError("Version conflict while confirming. Reload and try again.");
-      } else if (caught instanceof ApiError && caught.status === 422) {
-        setError(
-          "Select at least one candidate, then confirm again.",
-        );
-      } else {
-        setError("Could not confirm draft.");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function toggleCandidate(candidateId: string) {
+    setSaveNote(null);
     setDraft((current) => {
       if (!current) {
         return current;
@@ -299,11 +229,11 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           <div>
             <h1>Test Design</h1>
             <p className="kern-documents-lead">
-              Review coverage for{" "}
+              Review candidates for{" "}
               <code className="kern-test-design-ticket">
                 {draft.ticket_identifier}
               </code>
-              , select candidates to keep, then confirm the draft.
+              , select which to keep, then save the draft.
             </p>
           </div>
           <div className="kern-test-design-meta" aria-label="Draft status">
@@ -324,19 +254,19 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           <p>{error}</p>
         </div>
       ) : null}
-      {confirmNote ? (
+      {saveNote ? (
         <div
           className="kern-settings-callout kern-settings-callout--ok"
           role="status"
         >
-          <p>{confirmNote}</p>
+          <p>{saveNote}</p>
         </div>
       ) : null}
 
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
         <legend>Candidates</legend>
         <p className="kern-settings-hint">
-          Select candidates to keep, then save or confirm the draft.
+          Select candidates to keep, then save the draft.
         </p>
         <div className="kern-test-design-groups">
           {groupCandidatesByCategory(draft.candidates).map((group) => {
@@ -407,18 +337,10 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         <div className="kern-test-design-actions__primary">
           <Button
             type="button"
-            variant="secondary"
             disabled={busy}
             onClick={() => void saveDraft()}
           >
             Save draft
-          </Button>
-          <Button
-            type="button"
-            disabled={busy || selectedCount === 0 || draft.status === "ready"}
-            onClick={() => void confirmDraft()}
-          >
-            Confirm
           </Button>
         </div>
         <Button
