@@ -3195,64 +3195,42 @@ a.kern-btn {
 .kern-chat-test-design-attach {
   flex-shrink: 0;
   margin: 0 0 var(--kern-space-2);
-  padding: var(--kern-space-2) var(--kern-space-4);
-  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--kern-surface) 92%, var(--kern-ink) 8%);
-}
-
-.kern-chat-test-design-attach__label {
-  margin: 0 0 var(--kern-space-1);
-  color: var(--kern-muted);
-  font-size: var(--kern-text-xs);
-  font-weight: 500;
+  display: grid;
+  gap: var(--kern-space-2);
 }
 
 .kern-chat-test-design-attach__row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--kern-space-2);
-  align-items: center;
+  gap: var(--kern-space-3);
+  align-items: end;
 }
 
-.kern-chat-test-design-attach__select,
-.kern-chat-test-design-attach__ticket {
+.kern-chat-test-design-attach__source {
+  flex: 1 1 16rem;
   min-width: 0;
-  flex: 1 1 12rem;
-  min-height: 2.25rem;
-  padding: 0.4rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--kern-line) 90%, transparent);
-  border-radius: 10px;
-  color: var(--kern-ink);
-  background: var(--kern-surface);
-  font: inherit;
-  font-size: var(--kern-text-sm);
 }
 
-.kern-chat-test-design-attach__ticket[aria-invalid="true"] {
+.kern-chat-test-design-attach__ticket-field {
+  flex: 1 1 10rem;
+  min-width: 0;
+  display: grid;
+  gap: var(--kern-space-1);
+}
+
+.kern-chat-test-design-attach__ticket-field label {
+  color: var(--kern-muted);
+  font-size: var(--kern-text-sm);
+  font-weight: 500;
+}
+
+.kern-chat-test-design-attach .kern-settings-input[aria-invalid="true"] {
   border-color: var(--kern-danger);
 }
 
-.kern-chat-test-design-attach__clear {
+.kern-chat-test-design-attach .kern-btn-secondary {
   flex: 0 0 auto;
-  padding: 0.35rem 0.75rem;
-  border: 0;
-  border-radius: 999px;
-  color: var(--kern-muted);
-  background: transparent;
-  font: inherit;
-  font-size: var(--kern-text-xs);
-  cursor: pointer;
-}
-
-.kern-chat-test-design-attach__clear:hover:not(:disabled) {
-  color: var(--kern-ink);
-}
-
-.kern-chat-test-design-attach__hint {
-  margin: var(--kern-space-1) 0 0;
-  color: var(--kern-muted);
-  font-size: var(--kern-text-xs);
+  align-self: end;
 }
 
 .kern-chat-composer {

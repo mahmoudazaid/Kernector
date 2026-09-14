@@ -1153,14 +1153,17 @@ describe("ChatPanel", () => {
     expect(
       await screen.findByText(/Test Design context/i),
     ).toBeInTheDocument();
-    const sourceSelect = await screen.findByLabelText(/source document/i);
-    await waitFor(() => {
-      expect(sourceSelect).not.toBeDisabled();
-      expect(
-        screen.getByRole("option", { name: /issue-8\.md/i }),
-      ).toBeInTheDocument();
+    const sourceTrigger = await screen.findByRole("combobox", {
+      name: /source document/i,
     });
-    await user.selectOptions(sourceSelect, "github::issue:I_1");
+    await waitFor(() => {
+      expect(sourceTrigger).toHaveAttribute("aria-expanded", "false");
+    });
+    await user.click(sourceTrigger);
+    const option = await screen.findByRole("option", {
+      name: /issue-8\.md — Story prompts/i,
+    });
+    await user.click(option);
     await waitFor(() => {
       expect(screen.getByLabelText(/ticket identifier/i)).toHaveValue(
         "issue-8",

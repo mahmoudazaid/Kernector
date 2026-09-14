@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { SoftSelect } from "@/components/ui/SoftSelect";
 import {
   listDocuments,
   type CatalogDocumentResponse,
@@ -20,6 +22,7 @@ export type ChatTestDesignAttachProps = {
 };
 
 const SOURCE_KEY_SEP = "::";
+const PLACEHOLDER = "Select a document…";
 
 function sourceOptionKey(sourceType: string, sourceId: string): string {
   return `${sourceType}${SOURCE_KEY_SEP}${sourceId}`;
@@ -39,7 +42,8 @@ function sourceOptionKeyParts(
 }
 
 function documentLabel(doc: CatalogDocumentResponse): string {
-  const title = typeof doc.title === "string" && doc.title.trim() ? doc.title : null;
+  const title =
+    typeof doc.title === "string" && doc.title.trim() ? doc.title : null;
   const name = doc.file_name || doc.source_id;
   return title ? `${name} — ${title}` : name;
 }
@@ -54,12 +58,42 @@ export function ChatTestDesignAttach({
   listDocs = listDocuments,
   onHandoffChange,
 }: ChatTestDesignAttachProps) {
-  const sourceSelectId = useId();
   const ticketInputId = useId();
   const [documents, setDocuments] = useState<CatalogDocumentResponse[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceKey, setSourceKey] = useState("");
   const [ticket, setTicket] = useState("");
+
+  const labelByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    const used = new Set<string>();
+    for (const doc of documents) {
+      const key = sourceOptionKey(doc.source_type, doc.source_id);
+      let label = documentLabel(doc);
+      if (used.has(label)) {
+        label = `${label} (${doc.source_id})`;
+      }
+      used.add(label);
+      map.set(key, label);
+    }
+    return map;
+  }, [documents]);
+
+  const keyByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [key, label] of labelByKey) {
+      map.set(label, key);
+    }
+    return map;
+  }, [labelByKey]);
+
+  const selectOptions = useMemo(
+    () => [PLACEHOLDER, ...labelByKey.values()],
+    [labelByKey],
+  );
+
+  const selectedLabel =
+    (sourceKey && labelByKey.get(sourceKey)) || PLACEHOLDER;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -96,9 +130,14 @@ export function ChatTestDesignAttach({
     onHandoffChange(buildTestDesignHandoff(source, ticket));
   }, [documents, onHandoffChange, sourceKey, ticket]);
 
-  function handleSourceChange(value: string) {
-    setSourceKey(value);
-    const parsed = value ? sourceOptionKeyParts(value) : null;
+  function handleSourceLabelChange(label: string) {
+    if (label === PLACEHOLDER) {
+      setSourceKey("");
+      return;
+    }
+    const key = keyByLabel.get(label) ?? "";
+    setSourceKey(key);
+    const parsed = key ? sourceOptionKeyParts(key) : null;
     const selected = parsed
       ? documents.find(
           (doc) =>
@@ -123,70 +162,60 @@ export function ChatTestDesignAttach({
   const ticketBare = /^\d+$/u.test(ticket.trim());
 
   return (
-    <div className="kern-chat-test-design-attach">
-      <p className="kern-chat-test-design-attach__label">
-        Test Design context (optional)
-      </p>
+    <fieldset
+      className="kern-settings-fieldset kern-chat-test-design-attach"
+      disabled={disabled}
+    >
+      <legend>Test Design context (optional)</legend>
       <div className="kern-chat-test-design-attach__row">
-        <label className="visually-hidden" htmlFor={sourceSelectId}>
-          Source document
-        </label>
-        <select
-          id={sourceSelectId}
-          className="kern-chat-test-design-attach__select"
-          value={sourceKey}
-          disabled={disabled || documents.length === 0}
-          onChange={(event) => handleSourceChange(event.target.value)}
-        >
-          <option value="">Select a document…</option>
-          {documents.map((doc) => {
-            const key = sourceOptionKey(doc.source_type, doc.source_id);
-            return (
-              <option key={key} value={key}>
-                {documentLabel(doc)}
-              </option>
-            );
-          })}
-        </select>
-        <label className="visually-hidden" htmlFor={ticketInputId}>
-          Ticket identifier
-        </label>
-        <input
-          id={ticketInputId}
-          className="kern-chat-test-design-attach__ticket"
-          type="text"
-          placeholder="Ticket id (e.g. issue-8)"
-          value={ticket}
-          disabled={disabled}
-          aria-invalid={ticketBare || undefined}
-          onChange={(event) => setTicket(event.target.value)}
-        />
+        <div className="kern-chat-test-design-attach__source">
+          <SoftSelect
+            id="chat-test-design-source"
+            label="Source document"
+            value={selectedLabel}
+            options={selectOptions}
+            onChange={handleSourceLabelChange}
+          />
+        </div>
+        <div className="kern-settings-field kern-chat-test-design-attach__ticket-field">
+          <label htmlFor={ticketInputId}>Ticket identifier</label>
+          <input
+            id={ticketInputId}
+            className="kern-settings-input"
+            type="text"
+            placeholder="e.g. issue-8"
+            value={ticket}
+            disabled={disabled}
+            aria-invalid={ticketBare || undefined}
+            onChange={(event) => setTicket(event.target.value)}
+          />
+        </div>
         {sourceKey || ticket ? (
-          <button
+          <Button
             type="button"
-            className="kern-chat-test-design-attach__clear"
+            variant="secondary"
             disabled={disabled}
             onClick={clearAttachment}
           >
             Clear
-          </button>
+          </Button>
         ) : null}
       </div>
       {loadError ? (
-        <p className="kern-chat-test-design-attach__hint" role="status">
+        <p className="kern-settings-hint" role="status">
           {loadError}
         </p>
       ) : null}
       {ticketBare ? (
-        <p className="kern-chat-test-design-attach__hint" role="status">
+        <p className="kern-settings-hint" role="status">
           Ticket id cannot be a bare number.
         </p>
       ) : null}
       {sourceKey && ticket.trim() && !ticketBare ? (
-        <p className="kern-chat-test-design-attach__hint">
+        <p className="kern-settings-hint">
           Send a message to get a Start Test Design action for this ticket.
         </p>
       ) : null}
-    </div>
+    </fieldset>
   );
 }
