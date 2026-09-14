@@ -338,6 +338,47 @@ export function markConversationRead(id: string): Conversation | null {
   return updateConversation(id, { unread: false }, { touchUpdatedAt: false });
 }
 
+/**
+ * After Test Design confirm, update the originating conversation's existing
+ * Open Test Design assistant message in place (no duplicate card).
+ *
+ * Returns false when the conversation or matching action is missing — callers
+ * must still treat confirm as successful.
+ */
+export function recordTestDesignCoverageConfirmed(input: {
+  conversationId: string;
+  draftId: string;
+  ticketIdentifier: string;
+  selectedCount: number;
+  coverageGapCount: number;
+}): boolean {
+  const conversation = getConversation(input.conversationId);
+  if (conversation == null) {
+    return false;
+  }
+  let found = false;
+  const summary =
+    `Coverage confirmed for ${input.ticketIdentifier}: ` +
+    `${input.selectedCount} tests selected, ` +
+    `${input.coverageGapCount} coverage gaps.`;
+  const messages = conversation.messages.map((message) => {
+    const action = message.action;
+    if (
+      !isPlainObject(action) ||
+      action.kind !== "open_workflow" ||
+      action.draft_id !== input.draftId
+    ) {
+      return message;
+    }
+    found = true;
+    return { ...message, content: summary };
+  });
+  if (!found) {
+    return false;
+  }
+  return updateConversation(input.conversationId, { messages }) != null;
+}
+
 export const INTERRUPT_MESSAGE =
   "The previous request was interrupted. Please try again.";
 

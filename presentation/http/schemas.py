@@ -342,12 +342,27 @@ class ChatRuntimeRequest(BaseModel):
     settings: dict[str, int | float] = Field(default_factory=dict)
 
 
+class SourceLocatorRequest(BaseModel):
+    """Provider-neutral live source locator for chat handoff / create."""
+
+    provider: str = Field(min_length=1)
+    locator: str = Field(min_length=1)
+
+
+class SourceReferenceRequest(BaseModel):
+    """Explicit source identity retained for draft projections."""
+
+    source_id: str = Field(min_length=1)
+    source_type: str = Field(min_length=1)
+
+
 class ChatAskRequest(BaseModel):
     """Wire body for ``POST /api/v1/chat/ask``."""
 
     query: str = Field(min_length=1)
     history: list[ChatHistoryMessage] = Field(default_factory=list)
     runtime: ChatRuntimeRequest | None = None
+    source_locator: SourceLocatorRequest | None = None
 
 
 class CitationResponse(BaseModel):
@@ -441,6 +456,16 @@ class ToolRunResponse(BaseModel):
     markdown: str = ""
 
 
+class ChatWorkflowActionResponse(BaseModel):
+    """Allowlisted chat handoff action (never inferred from prose alone)."""
+
+    kind: Literal["start_workflow", "open_workflow"]
+    workflow_id: str
+    label: str
+    source_locator: SourceLocatorRequest | None = None
+    draft_id: str | None = None
+
+
 class ChatAskResponse(BaseModel):
     """Successful grounded ask turn."""
 
@@ -449,6 +474,121 @@ class ChatAskResponse(BaseModel):
     tools_used: list[ToolUsedResponse]
     run: RunMetaResponse | None = None
     tool_run: ToolRunResponse | None = None
+    action: ChatWorkflowActionResponse | None = None
+
+
+class TestCandidateResponse(BaseModel):
+    """One coverage candidate on a test-design draft."""
+
+    candidate_id: str
+    title: str
+    category: str
+    rationale: str
+    evidence_references: list[SourceReferenceResponse]
+    selected: bool
+    origin: str
+
+
+class CoverageGapResponse(BaseModel):
+    """Typed coverage gap where evidence does not support a category."""
+
+    category: str
+    detail: str
+
+
+class TestCoverageDraftResponse(BaseModel):
+    """Workspace-scoped test-design draft."""
+
+    draft_id: str
+    workspace_id: str
+    conversation_id: str
+    source_reference: SourceReferenceResponse
+    ticket_identifier: str
+    status: str
+    candidates: list[TestCandidateResponse]
+    coverage_gaps: list[CoverageGapResponse]
+    version: int
+    selected_candidate_ids: list[str]
+
+
+class CreateTestDesignDraftRequest(BaseModel):
+    """Wire body for ``POST /api/v1/test-design/drafts``."""
+
+    conversation_id: str = Field(min_length=1)
+    source_locator: SourceLocatorRequest
+
+
+class PatchTestDesignDraftRequest(BaseModel):
+    """Wire body for ``PATCH /api/v1/test-design/drafts/{draft_id}``."""
+
+    expected_version: int = Field(ge=1)
+    candidates: list[TestCandidateResponse] | None = None
+
+
+class ExpectedVersionRequest(BaseModel):
+    """Mutating body that only carries compare-and-swap version."""
+
+    expected_version: int = Field(ge=1)
+
+
+def chat_workflow_action_response(
+    view: object,
+) -> ChatWorkflowActionResponse:
+    """Project a composition chat action view onto the wire schema."""
+    locator = getattr(view, "source_locator", None)
+    return ChatWorkflowActionResponse(
+        kind=view.kind,  # type: ignore[attr-defined]
+        workflow_id=view.workflow_id,  # type: ignore[attr-defined]
+        label=view.label,  # type: ignore[attr-defined]
+        source_locator=(
+            None
+            if locator is None
+            else SourceLocatorRequest(
+                provider=locator.provider,
+                locator=locator.locator,
+            )
+        ),
+        draft_id=getattr(view, "draft_id", None),
+    )
+
+
+def test_coverage_draft_response(view: object) -> TestCoverageDraftResponse:
+    """Project a composition draft view onto the wire schema."""
+    source = view.source_reference  # type: ignore[attr-defined]
+    return TestCoverageDraftResponse(
+        draft_id=view.draft_id,  # type: ignore[attr-defined]
+        workspace_id=view.workspace_id,  # type: ignore[attr-defined]
+        conversation_id=view.conversation_id,  # type: ignore[attr-defined]
+        source_reference=SourceReferenceResponse(
+            source_id=source.source_id,
+            source_type=source.source_type,
+        ),
+        ticket_identifier=view.ticket_identifier,  # type: ignore[attr-defined]
+        status=view.status,  # type: ignore[attr-defined]
+        candidates=[
+            TestCandidateResponse(
+                candidate_id=item.candidate_id,
+                title=item.title,
+                category=item.category,
+                rationale=item.rationale,
+                evidence_references=[
+                    SourceReferenceResponse(
+                        source_id=ref.source_id, source_type=ref.source_type
+                    )
+                    for ref in item.evidence_references
+                ],
+                selected=item.selected,
+                origin=item.origin,
+            )
+            for item in view.candidates  # type: ignore[attr-defined]
+        ],
+        coverage_gaps=[
+            CoverageGapResponse(category=gap.category, detail=gap.detail)
+            for gap in view.coverage_gaps  # type: ignore[attr-defined]
+        ],
+        version=view.version,  # type: ignore[attr-defined]
+        selected_candidate_ids=list(view.selected_candidate_ids),  # type: ignore[attr-defined]
+    )
 
 
 def citation_response(citation: Citation) -> CitationResponse:

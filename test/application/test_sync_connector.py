@@ -16,7 +16,12 @@ from application.contracts import (
 from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.sync_connector import SyncConnectorDocuments
-from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
+from domain.errors import (
+    ConnectorAuthError,
+    ConnectorError,
+    ConnectorTimeoutError,
+    ConnectorUnavailableError,
+)
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -450,6 +455,25 @@ def test_fetch_failure_preserves_ready_row_and_continues(
     ]
     assert payloads
     assert SECRET not in "".join(payloads)
+
+
+def test_fetch_timeout_propagates_as_unavailable_and_aborts_sync() -> None:
+    first = _listed("file-1", revision="2")
+    second = _listed("file-2", file_name="ok.md")
+    catalog = InMemoryDocumentCatalog()
+    connector = RecordingConnector(
+        (first, second),
+        {first.source_id: _source(first), second.source_id: _source(second)},
+        fetch_errors={first.source_id: ConnectorTimeoutError("timed out")},
+    )
+    ingest = RecordingIngest()
+
+    with pytest.raises(ConnectorUnavailableError):
+        _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert ingest.calls == []
+    assert catalog.get(second.reference) is None
+    assert len(connector.fetched) == 1
 
 
 def test_fetch_failure_on_new_document_persists_failed() -> None:

@@ -93,6 +93,7 @@ from domain.knowledge import (
     ChunkPage,
     ScoredChunk,
     SourceDocument,
+    SourceLocator,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -444,6 +445,157 @@ def build_rewrite_and_retrieve_knowledge(
         retrieve,
         max_input_length=settings.max_input_length,
     )
+
+
+def build_test_design_facade(
+    settings: Settings,
+    *,
+    connection_store=None,
+    oauth_gateway=None,
+    client_factory=None,
+):
+    """Wire the test-design HTTP facade (pack gated at call time)."""
+    from pathlib import Path
+
+    from application.errors import GitHubNotConnectedError
+    from composition.test_design import TestDesignFacade
+
+    try:
+        workspace_id = parse_workspace_id(settings.document_catalog.workspace_id)
+    except ValueError as error:
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
+        ) from error
+    if workspace_id is None:
+        raise ConfigurationError(
+            f"DOCUMENT_CATALOG_WORKSPACE_ID is required; it {WORKSPACE_ID_CONTRACT}"
+        )
+    store_path = Path("data/workspace_store/workspace.sqlite")
+    if settings.document_catalog.sql_path is not None:
+        store_path = (
+            settings.document_catalog.sql_path.parent / "workspace_store.sqlite"
+        )
+
+    def oauth_preflight() -> str:
+        _tokens_store, connection = _require_github_grant(
+            settings, connection_store=connection_store
+        )
+        token = connection.access_token
+        if not isinstance(token, str) or not token.strip():
+            raise GitHubNotConnectedError("GitHub is not connected")
+        return token.strip()
+
+    def live_source_reader_factory(access_token: str):
+        tokens_store, connection = _require_github_grant(
+            settings, connection_store=connection_store
+        )
+        return _AuthRetryingGitHubIssueReader(
+            settings=settings,
+            access_token=access_token,
+            tokens_store=tokens_store,
+            connection=connection,
+            oauth_gateway=oauth_gateway,
+            client_factory=client_factory,
+        )
+
+    return TestDesignFacade(
+        settings=settings,
+        store_path=store_path,
+        workspace_id=workspace_id,
+        oauth_preflight=oauth_preflight,
+        live_source_reader_factory=live_source_reader_factory,
+    )
+
+
+class _AuthRetryingGitHubIssueReader:
+    """Live issue reader that refreshes the GitHub grant once on auth failure."""
+
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        access_token: str,
+        tokens_store,
+        connection,
+        oauth_gateway=None,
+        client_factory=None,
+    ) -> None:
+        self._settings = settings
+        self._access_token = access_token
+        self._tokens_store = tokens_store
+        self._connection = connection
+        self._oauth_gateway = oauth_gateway
+        self._client_factory = client_factory
+
+    def fetch(self, locator: SourceLocator) -> SourceDocument:
+        from infrastructure.connectors.github.issue_source_reader import (
+            GitHubIssueSourceReader,
+        )
+
+        try:
+            client = _github_picker_client(
+                self._settings,
+                access_token=self._access_token,
+                client_factory=self._client_factory,
+            )
+            return GitHubIssueSourceReader(client).fetch(locator)
+        except ConnectorAuthError as error:
+            refreshed = _refresh_github_grant_access_token(
+                self._settings,
+                tokens_store=self._tokens_store,
+                connection=self._connection,
+                oauth_gateway=self._oauth_gateway,
+                cause=error,
+            )
+            try:
+                client = _github_picker_client(
+                    self._settings,
+                    access_token=refreshed,
+                    client_factory=self._client_factory,
+                )
+                return GitHubIssueSourceReader(client).fetch(locator)
+            except ConnectorAuthError as retry_error:
+                _mark_github_reauth(self._tokens_store, retry_error)
+
+
+def _refresh_github_grant_access_token(
+    settings: Settings,
+    *,
+    tokens_store,
+    connection,
+    oauth_gateway=None,
+    cause: BaseException,
+) -> str:
+    """Refresh and persist a GitHub user grant; mark reauth when refresh is impossible."""
+    from infrastructure.connectors.github.oauth import (
+        GitHubOAuthError,
+        HttpGitHubOAuthGateway,
+    )
+
+    if not connection.refresh_token:
+        _mark_github_reauth(tokens_store, cause)
+    gateway = (
+        oauth_gateway
+        if oauth_gateway is not None
+        else HttpGitHubOAuthGateway(settings.github_oauth)
+    )
+    try:
+        grant = gateway.refresh(connection.refresh_token)
+    except GitHubOAuthError as refresh_error:
+        _mark_github_reauth(tokens_store, refresh_error)
+    access_token = grant.access_token
+    refresh_token = grant.refresh_token or connection.refresh_token
+    tokens_store.mutate(
+        lambda current: None
+        if current is None
+        else replace(
+            current,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            reauthorization_required=False,
+        )
+    )
+    return access_token
 
 
 def reindex_filter_metadata(settings: Settings) -> int:

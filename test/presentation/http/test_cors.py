@@ -100,7 +100,7 @@ def test_cors_preflight_allows_post() -> None:
     assert "POST" in allow_methods.upper()
 
 
-@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE"])
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
 def test_cors_preflight_allows_document_mutating_methods(method: str) -> None:
     client = TestClient(create_app(cors_origins=(_ORIGIN,)))
     response = client.options(

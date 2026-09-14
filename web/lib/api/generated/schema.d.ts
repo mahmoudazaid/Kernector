@@ -15,7 +15,7 @@ export interface paths {
     put?: never;
     /**
      * Chat Ask
-     * @description Run one grounded ask turn through composition.
+     * @description Run one grounded ask turn, or a RAG-free Test Design handoff.
      */
     post: operations["chat_ask_api_v1_chat_ask_post"];
     delete?: never;
@@ -471,6 +471,70 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/test-design/drafts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Draft
+     * @description Create a coverage-planning draft from a live GitHub Issue locator.
+     */
+    post: operations["create_draft_api_v1_test_design_drafts_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/test-design/drafts/{draft_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Draft
+     * @description Load a workspace-scoped test-design draft.
+     */
+    get: operations["get_draft_api_v1_test_design_drafts__draft_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Draft
+     * @description Save draft selection, title edits, and manual candidate adds.
+     */
+    patch: operations["patch_draft_api_v1_test_design_drafts__draft_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/test-design/drafts/{draft_id}/confirm": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Confirm Draft
+     * @description Mark the draft ready; idempotent when already ready at matching version.
+     */
+    post: operations["confirm_draft_api_v1_test_design_drafts__draft_id__confirm_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -549,12 +613,14 @@ export interface components {
       /** Query */
       query: string;
       runtime?: components["schemas"]["ChatRuntimeRequest"] | null;
+      source_locator?: components["schemas"]["SourceLocatorRequest"] | null;
     };
     /**
      * ChatAskResponse
      * @description Successful grounded ask turn.
      */
     ChatAskResponse: {
+      action?: components["schemas"]["ChatWorkflowActionResponse"] | null;
       /** Answer */
       answer: string;
       /** Citations */
@@ -594,6 +660,24 @@ export interface components {
       };
     };
     /**
+     * ChatWorkflowActionResponse
+     * @description Allowlisted chat handoff action (never inferred from prose alone).
+     */
+    ChatWorkflowActionResponse: {
+      /** Draft Id */
+      draft_id?: string | null;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "start_workflow" | "open_workflow";
+      /** Label */
+      label: string;
+      source_locator?: components["schemas"]["SourceLocatorRequest"] | null;
+      /** Workflow Id */
+      workflow_id: string;
+    };
+    /**
      * CitationResponse
      * @description Provenance pointer on a grounded answer.
      */
@@ -623,6 +707,25 @@ export interface components {
        * @enum {string}
        */
       status: "ingested" | "updated" | "skipped" | "failed" | "removed";
+    };
+    /**
+     * CoverageGapResponse
+     * @description Typed coverage gap where evidence does not support a category.
+     */
+    CoverageGapResponse: {
+      /** Category */
+      category: string;
+      /** Detail */
+      detail: string;
+    };
+    /**
+     * CreateTestDesignDraftRequest
+     * @description Wire body for ``POST /api/v1/test-design/drafts``.
+     */
+    CreateTestDesignDraftRequest: {
+      /** Conversation Id */
+      conversation_id: string;
+      source_locator: components["schemas"]["SourceLocatorRequest"];
     };
     /**
      * DocumentChunkListResponse
@@ -669,6 +772,14 @@ export interface components {
     DocumentListResponse: {
       /** Documents */
       documents: components["schemas"]["CatalogDocumentResponse"][];
+    };
+    /**
+     * ExpectedVersionRequest
+     * @description Mutating body that only carries compare-and-swap version.
+     */
+    ExpectedVersionRequest: {
+      /** Expected Version */
+      expected_version: number;
     };
     /**
      * GitHubLastSyncResponse
@@ -1088,6 +1199,16 @@ export interface components {
       models: string[];
     };
     /**
+     * PatchTestDesignDraftRequest
+     * @description Wire body for ``PATCH /api/v1/test-design/drafts/{draft_id}``.
+     */
+    PatchTestDesignDraftRequest: {
+      /** Candidates */
+      candidates?: components["schemas"]["TestCandidateResponse"][] | null;
+      /** Expected Version */
+      expected_version: number;
+    };
+    /**
      * Problem
      * @description RFC 9457 Problem Details plus Kernector extensions.
      */
@@ -1214,6 +1335,16 @@ export interface components {
       providers: string[];
     };
     /**
+     * SourceLocatorRequest
+     * @description Provider-neutral live source locator for chat handoff / create.
+     */
+    SourceLocatorRequest: {
+      /** Locator */
+      locator: string;
+      /** Provider */
+      provider: string;
+    };
+    /**
      * SourceReferenceResponse
      * @description Provenance id/type for projected tool results.
      */
@@ -1222,6 +1353,26 @@ export interface components {
       source_id: string;
       /** Source Type */
       source_type: string;
+    };
+    /**
+     * TestCandidateResponse
+     * @description One coverage candidate on a test-design draft.
+     */
+    TestCandidateResponse: {
+      /** Candidate Id */
+      candidate_id: string;
+      /** Category */
+      category: string;
+      /** Evidence References */
+      evidence_references: components["schemas"]["SourceReferenceResponse"][];
+      /** Origin */
+      origin: string;
+      /** Rationale */
+      rationale: string;
+      /** Selected */
+      selected: boolean;
+      /** Title */
+      title: string;
     };
     /**
      * TestCaseResponse
@@ -1246,6 +1397,31 @@ export interface components {
       cases: components["schemas"]["TestCaseResponse"][];
       /** Output Style */
       output_style: string;
+    };
+    /**
+     * TestCoverageDraftResponse
+     * @description Workspace-scoped test-design draft.
+     */
+    TestCoverageDraftResponse: {
+      /** Candidates */
+      candidates: components["schemas"]["TestCandidateResponse"][];
+      /** Conversation Id */
+      conversation_id: string;
+      /** Coverage Gaps */
+      coverage_gaps: components["schemas"]["CoverageGapResponse"][];
+      /** Draft Id */
+      draft_id: string;
+      /** Selected Candidate Ids */
+      selected_candidate_ids: string[];
+      source_reference: components["schemas"]["SourceReferenceResponse"];
+      /** Status */
+      status: string;
+      /** Ticket Identifier */
+      ticket_identifier: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
     };
     /**
      * ToolCallResponse
@@ -2803,6 +2979,284 @@ export interface operations {
       };
       /** @description Method not allowed */
       405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  create_draft_api_v1_test_design_drafts_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateTestDesignDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TestCoverageDraftResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_draft_api_v1_test_design_drafts__draft_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TestCoverageDraftResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  patch_draft_api_v1_test_design_drafts__draft_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PatchTestDesignDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TestCoverageDraftResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  confirm_draft_api_v1_test_design_drafts__draft_id__confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExpectedVersionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TestCoverageDraftResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
         headers: {
           [name: string]: unknown;
         };

@@ -187,11 +187,24 @@ the first content/prompt example. Pack metadata fields (for example SDLC-shaped
 Task-prompt packs are optional: the app starts and General mode works with zero
 enabled prompt packs.
 
-**Executable packs** under `packs/` contribute domain tools. The first is
-`packs/software_delivery/`. Its scaffolding risk/generate/export tools are
-retired (#285); `build_tools` returns an empty registry and chat intent never
-matches, so General chat stays on grounded RAG. Future tools land under
-`packs/software_delivery/tools/`. Enable via `DOMAIN_TOOL_PACKS=software-delivery`
+**Executable packs** under `packs/` contribute domain tools and pack-local
+workflows. The first is `packs/software_delivery/`. Its scaffolding
+risk/generate/export tools are retired (#285); `build_tools` returns an empty
+registry and chat intent never matches, so General chat stays on grounded RAG.
+Future tools land under `packs/software_delivery/tools/`. The **Test Design**
+workflow (#293) is pack-local (not an agent `Tool`): Chat handoff detects Test
+Design intent plus exactly one GitHub Issue reference **before** grounded RAG,
+returns a fixed server answer and `Start Test Design` action with a canonical
+`source_locator`, then create fetches that Issue live via `LiveSourceReader`
+(OAuth preflight first; no catalog/vector/RAG). Test candidate suggestion under
+`packs/software_delivery/test_design/` (pack-local use case `SuggestTestCandidates`
+in `suggest_tests.py`, not an agent Tool) sees only `SourceDocument` evidence,
+persists candidates and coverage gaps via a namespaced versioned workspace
+store, and supports edit/select/save/confirm through `ready` (coverage
+selection confirmed — not detailed test-case generation; that remains #300).
+Always-mounted `/api/v1/test-design/*` routes return `test_design_unavailable`
+when the pack is off. Enable via
+`DOMAIN_TOOL_PACKS=software-delivery`
 (CSV; default empty). Composition loads packs through an explicit allowlist
 manifest and `importlib` only for configured IDs — a disabled pack is neither
 imported nor registered.
