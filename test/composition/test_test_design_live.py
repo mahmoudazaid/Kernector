@@ -239,7 +239,7 @@ def test_pack_validation_error_is_wrapped_with_sanitized_message(
     assert "secret-body" not in str(raised.value)
 
 
-def test_patch_rejects_ready_draft_with_zero_selections(
+def test_patch_demotes_ready_draft_when_candidates_change(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -301,27 +301,98 @@ def test_patch_rejects_ready_draft_with_zero_selections(
         selected.draft_id, expected_version=selected.version
     )
     assert confirmed.status == "ready"
+    ready_version = confirmed.version
 
-    with pytest.raises(TestDesignValidationError, match="at least one selected"):
-        facade.patch_draft(
-            confirmed.draft_id,
-            PatchTestDesignDraftRequest(
-                expected_version=confirmed.version,
-                candidates=(
-                    TestCandidateView(
-                        candidate_id="cand-1",
-                        title="Valid",
-                        category="positive",
-                        rationale="Grounded.",
-                        evidence_references=(
-                            SourceReferenceView("issue:I_kwDOExample", "github"),
-                        ),
-                        selected=False,
-                        origin="suggested",
+    renamed = facade.patch_draft(
+        confirmed.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=ready_version,
+            candidates=(
+                TestCandidateView(
+                    candidate_id="cand-1",
+                    title="Renamed title",
+                    category="positive",
+                    rationale="Grounded.",
+                    evidence_references=(
+                        SourceReferenceView("issue:I_kwDOExample", "github"),
                     ),
+                    selected=True,
+                    origin="suggested",
                 ),
             ),
-        )
+        ),
+    )
+    assert renamed.status == "coverage_review"
+    assert renamed.version == ready_version + 1
+
+    deselected = facade.patch_draft(
+        renamed.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=renamed.version,
+            candidates=(
+                TestCandidateView(
+                    candidate_id="cand-1",
+                    title="Renamed title",
+                    category="positive",
+                    rationale="Grounded.",
+                    evidence_references=(
+                        SourceReferenceView("issue:I_kwDOExample", "github"),
+                    ),
+                    selected=False,
+                    origin="suggested",
+                ),
+            ),
+        ),
+    )
+    assert deselected.status == "coverage_review"
+    assert deselected.selected_candidate_ids == ()
+
+    reselected = facade.patch_draft(
+        deselected.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=deselected.version,
+            candidates=(
+                TestCandidateView(
+                    candidate_id="cand-1",
+                    title="Renamed title",
+                    category="positive",
+                    rationale="Grounded.",
+                    evidence_references=(
+                        SourceReferenceView("issue:I_kwDOExample", "github"),
+                    ),
+                    selected=True,
+                    origin="suggested",
+                ),
+            ),
+        ),
+    )
+    reconfirmed = facade.confirm_draft(
+        reselected.draft_id, expected_version=reselected.version
+    )
+    assert reconfirmed.status == "ready"
+    assert reconfirmed.version == reselected.version + 1
+
+    identical = facade.patch_draft(
+        reconfirmed.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=reconfirmed.version,
+            candidates=(
+                TestCandidateView(
+                    candidate_id="cand-1",
+                    title="Renamed title",
+                    category="positive",
+                    rationale="Grounded.",
+                    evidence_references=(
+                        SourceReferenceView("issue:I_kwDOExample", "github"),
+                    ),
+                    selected=True,
+                    origin="suggested",
+                ),
+            ),
+        ),
+    )
+    assert identical.status == "ready"
+    assert identical.version == reconfirmed.version + 1
 
 
 def test_issue_pr_and_mismatch_errors_are_sanitized(
@@ -384,12 +455,28 @@ def test_chat_handoff_rejects_locator_mismatch() -> None:
         )
 
 
-def test_chat_handoff_declines_distinct_multi_refs() -> None:
+def test_chat_handoff_declines_discussion_with_multiple_issues() -> None:
     handoff = try_test_design_chat_handoff(
         settings=_settings(),
         query="Compare the test coverage of acme/web#10 and acme/api#11",
     )
     assert handoff is None
+
+
+def test_chat_handoff_rejects_explicit_command_with_multiple_issues() -> None:
+    with pytest.raises(TestDesignValidationError, match="exactly one"):
+        try_test_design_chat_handoff(
+            settings=_settings(),
+            query="Design tests for acme/web#10 and acme/api#11",
+        )
+
+
+def test_chat_handoff_rejects_explicit_command_with_bare_number() -> None:
+    with pytest.raises(TestDesignValidationError, match="exactly one"):
+        try_test_design_chat_handoff(
+            settings=_settings(),
+            query="Design tests for 293",
+        )
 
 
 class _FakeRefreshGateway:

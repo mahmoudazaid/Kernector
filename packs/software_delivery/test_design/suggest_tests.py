@@ -168,30 +168,25 @@ class SuggestTestCandidates:
 
 
 def budget_source_document_text(document: SourceDocument) -> str:
-    """Return deterministic bounded evidence text from a source document."""
+    """Return deterministic bounded evidence text from a source document.
+
+    Uses the reader's already-rendered ``document.content`` as the single
+    evidence representation (title, metadata, and body), without rebuilding a
+    duplicate prefix.
+    """
     if not isinstance(document, SourceDocument):
         raise TestDesignValidationError(
             f"document must be a SourceDocument, got {type(document).__name__}"
         )
-    metadata_lines = [
-        f"# {document.metadata.title}",
-        "",
-        "## Metadata",
-    ]
-    for key, value in sorted(document.metadata.extra.items()):
-        if isinstance(value, str):
-            metadata_lines.append(f"- {key}: {value}")
-    metadata_lines.extend(["", "## Body", ""])
-    prefix = "\n".join(metadata_lines)
-    body = document.content.strip()
-    full = f"{prefix}{body}"
-    if len(full) <= MAX_EVIDENCE_TEXT_CHARS:
-        return full
-    budget = MAX_EVIDENCE_TEXT_CHARS - len(prefix) - len(TRUNCATION_MARKER)
-    if budget < 0:
-        prefix_budget = MAX_EVIDENCE_TEXT_CHARS - len(TRUNCATION_MARKER)
-        return prefix[: max(0, prefix_budget)] + TRUNCATION_MARKER
-    return f"{prefix}{body[:budget].rstrip()}{TRUNCATION_MARKER}"
+    text = document.content
+    if not isinstance(text, str) or not text.strip():
+        raise TestDesignValidationError("document content must be non-empty")
+    if len(text) <= MAX_EVIDENCE_TEXT_CHARS:
+        return text
+    budget = MAX_EVIDENCE_TEXT_CHARS - len(TRUNCATION_MARKER)
+    if budget <= 0:
+        return TRUNCATION_MARKER[:MAX_EVIDENCE_TEXT_CHARS]
+    return f"{text[:budget].rstrip()}{TRUNCATION_MARKER}"
 
 
 def _require_id(value: object, field_name: str) -> str:
@@ -310,14 +305,27 @@ def _parse_candidates(
         raw = []
     if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
         raise ToolFailureError("candidates must be a sequence")
-    candidates: list[TestCandidate] = []
-    seen_ids: set[str] = set()
-    next_generated = 1
-    for index, item in enumerate(raw):
-        if len(candidates) >= MAX_SUGGESTED_CANDIDATES:
+    items: list[Mapping[str, object]] = []
+    for item in raw:
+        if len(items) >= MAX_SUGGESTED_CANDIDATES:
             break
         if not isinstance(item, Mapping):
             raise ToolFailureError("candidates items must be objects")
+        items.append(item)
+
+    reserved_ids: set[str] = set()
+    for item in items:
+        candidate_id = item.get("candidate_id")
+        if not isinstance(candidate_id, str) or not candidate_id.strip():
+            continue
+        if candidate_id in reserved_ids:
+            raise ToolFailureError("candidates items must have unique candidate_id")
+        reserved_ids.add(candidate_id)
+
+    candidates: list[TestCandidate] = []
+    used_ids: set[str] = set()
+    next_generated = 1
+    for item in items:
         refs = _parse_references(
             item.get("evidence_references"),
             allowed_refs,
@@ -325,13 +333,13 @@ def _parse_candidates(
         )
         candidate_id = item.get("candidate_id")
         if not isinstance(candidate_id, str) or not candidate_id.strip():
-            while f"auto-{next_generated}" in seen_ids:
+            while f"cand-{next_generated}" in reserved_ids or (
+                f"cand-{next_generated}" in used_ids
+            ):
                 next_generated += 1
-            candidate_id = f"auto-{next_generated}"
+            candidate_id = f"cand-{next_generated}"
             next_generated += 1
-        if candidate_id in seen_ids:
-            raise ToolFailureError("candidates items must have unique candidate_id")
-        seen_ids.add(candidate_id)
+        used_ids.add(candidate_id)
         try:
             candidates.append(
                 TestCandidate(

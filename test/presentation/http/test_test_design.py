@@ -251,7 +251,46 @@ def test_real_facade_patch_duplicate_candidate_ids_returns_422(
     assert response.json()["code"] == "validation_error"
 
 
-def test_get_draft_returns_projection() -> None:
+def test_real_facade_patch_demotes_ready_after_semantic_edit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    draft = _created_draft(client)
+    candidate = draft["candidates"][0] | {"selected": True}
+
+    selected = client.patch(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}",
+        json={"expected_version": draft["version"], "candidates": [candidate]},
+    )
+    assert selected.status_code == 200
+    confirmed = client.post(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}/confirm",
+        json={"expected_version": selected.json()["version"]},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "ready"
+    ready_version = confirmed.json()["version"]
+
+    renamed = client.patch(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}",
+        json={
+            "expected_version": ready_version,
+            "candidates": [candidate | {"title": "Edited after confirm"}],
+        },
+    )
+    assert renamed.status_code == 200
+    body = renamed.json()
+    assert body["status"] == "coverage_review"
+    assert body["version"] == ready_version + 1
+
+    reconfirmed = client.post(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}/confirm",
+        json={"expected_version": body["version"]},
+    )
+    assert reconfirmed.status_code == 200
+    assert reconfirmed.json()["status"] == "ready"
+    assert reconfirmed.json()["version"] == body["version"] + 1
     client = _client(_StubFacade(enabled=True, draft=_draft_view()))
     response = client.get("/api/v1/test-design/drafts/draft-1")
     assert response.status_code == 200

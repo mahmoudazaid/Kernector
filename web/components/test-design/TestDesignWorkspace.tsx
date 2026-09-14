@@ -14,6 +14,7 @@ import {
   type TestCoverageDraftResponse,
 } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
+import { recordTestDesignCoverageConfirmed } from "@/lib/session/conversations";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
 const PACK_ID = "software-delivery";
@@ -368,6 +369,13 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         baseUrl: apiBaseUrl,
         draftId: draft.draft_id,
         body: { expected_version: draft.version },
+      });
+      recordTestDesignCoverageConfirmed({
+        conversationId: confirmed.conversation_id,
+        draftId: confirmed.draft_id,
+        ticketIdentifier: confirmed.ticket_identifier,
+        selectedCount: confirmed.selected_candidate_ids.length,
+        coverageGapCount: confirmed.coverage_gaps.length,
       });
       setDraft(confirmed);
       setDirty(false);

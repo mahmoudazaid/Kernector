@@ -41,13 +41,13 @@ _TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
 OAuthPreflight = Callable[[], str]
 LiveSourceReaderFactory = Callable[[str], LiveSourceReader]
 
-_TEST_DESIGN_INTENT = re.compile(
+_TEST_DESIGN_COMMAND = re.compile(
     r"\b("
     r"test\s*design|"
     r"design\s+tests?|"
     r"plan\s+(?:test\s+)?coverage|"
     r"coverage\s+plan|"
-    r"test\s+coverage"
+    r"start\s+test\s+design"
     r")\b",
     re.IGNORECASE,
 )
@@ -166,14 +166,16 @@ def try_test_design_chat_handoff(
 ) -> TestDesignChatHandoffView | None:
     """Detect Test Design handoff before ask.execute; return fixed answer + action.
 
-    Returns None when this is not a Test Design Issue handoff (caller runs RAG).
-    Raises TestDesignValidationError on locator mismatch with client source_locator.
+    Returns None when this is not an explicit Test Design Issue command (caller
+    runs RAG), including ordinary discussion that merely mentions coverage.
+    Raises TestDesignValidationError for explicit commands with ambiguous or
+    invalid Issue references, or for client source_locator mismatch.
     """
     if not software_delivery_tools_enabled(settings):
         return None
     if not isinstance(query, str) or not query.strip():
         return None
-    if _TEST_DESIGN_INTENT.search(query) is None:
+    if _TEST_DESIGN_COMMAND.search(query) is None:
         return None
     from infrastructure.connectors.github.issue_locator import (
         AmbiguousGitHubIssueLocatorError,
@@ -182,12 +184,14 @@ def try_test_design_chat_handoff(
 
     try:
         parsed = extract_github_issue_locator(query)
-    except AmbiguousGitHubIssueLocatorError:
-        # More than one Issue in the text is not a Test Design handoff;
-        # fall through to grounded RAG rather than failing the chat turn.
-        return None
+    except AmbiguousGitHubIssueLocatorError as error:
+        raise TestDesignValidationError(
+            "Query must reference exactly one GitHub Issue"
+        ) from error
     if parsed is None:
-        return None
+        raise TestDesignValidationError(
+            "Query must reference exactly one GitHub Issue"
+        )
     canonical = parsed.canonical
     if source_locator is not None:
         client_locator = _require_github_locator_view(source_locator)
@@ -366,13 +370,13 @@ class TestDesignFacade:
                         _TEST_DESIGN_VALIDATION_DETAIL
                     ) from error
                 raise
-        selected_ids = tuple(
-            candidate.candidate_id for candidate in candidates if candidate.selected
-        )
-        if current.status == "ready" and not selected_ids:
-            raise TestDesignValidationError(
-                "A confirmed draft must keep at least one selected candidate"
-            )
+        next_status = current.status
+        if (
+            request.candidates is not None
+            and current.status == "ready"
+            and not _candidates_semantically_equal(candidates, current.candidates)
+        ):
+            next_status = "coverage_review"
         try:
             updated = TestCoverageDraft(
                 draft_id=current.draft_id,
@@ -380,7 +384,7 @@ class TestDesignFacade:
                 conversation_id=current.conversation_id,
                 source_reference=current.source_reference,
                 ticket_identifier=current.ticket_identifier,
-                status=current.status,
+                status=next_status,
                 candidates=candidates,
                 coverage_gaps=current.coverage_gaps,
                 version=current.version,
@@ -550,6 +554,34 @@ def _raise_composition_validation_if_pack_error(error: BaseException) -> None:
 
     if isinstance(error, PackTestDesignValidationError):
         raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
+
+
+def _candidates_semantically_equal(left: object, right: object) -> bool:
+    """Return True when candidate sequences match for confirmation invalidation."""
+    if not isinstance(left, tuple) or not isinstance(right, tuple):
+        return False
+    if len(left) != len(right):
+        return False
+    for left_item, right_item in zip(left, right, strict=True):
+        if _candidate_fingerprint(left_item) != _candidate_fingerprint(right_item):
+            return False
+    return True
+
+
+def _candidate_fingerprint(candidate: object) -> tuple[object, ...]:
+    refs = tuple(
+        (ref.source_id, ref.source_type)
+        for ref in getattr(candidate, "evidence_references", ())
+    )
+    return (
+        getattr(candidate, "candidate_id", None),
+        getattr(candidate, "title", None),
+        getattr(candidate, "category", None),
+        getattr(candidate, "rationale", None),
+        getattr(candidate, "selected", None),
+        getattr(candidate, "origin", None),
+        refs,
+    )
 
 
 def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:

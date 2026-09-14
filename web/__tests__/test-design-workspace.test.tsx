@@ -238,6 +238,90 @@ describe("TestDesignWorkspace", () => {
     expect(screen.getByRole("checkbox", { name: /keep covers happy path|keep edited while idle/i })).toBeEnabled();
   });
 
+  it("demotes ready to coverage_review after saving a title edit", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getTestDesignDraft).mockResolvedValueOnce(
+      draft({ status: "ready", version: 5 }),
+    );
+    vi.mocked(patchTestDesignDraft).mockResolvedValueOnce(
+      draft({
+        status: "coverage_review",
+        version: 6,
+        candidates: [candidate({ title: "Edited after confirm" }), candidate({
+          candidate_id: "manual-1",
+          title: "Manual edge case",
+          category: "edge_case",
+          origin: "manual",
+        })],
+      }),
+    );
+    await renderWorkspace();
+
+    const title = screen.getByDisplayValue("Covers happy path");
+    await user.clear(title);
+    await user.type(title, "Edited after confirm");
+    await user.click(screen.getByRole("button", { name: /save draft/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /confirm/i })).toBeEnabled();
+    });
+    expect(patchTestDesignDraft).toHaveBeenCalled();
+  });
+
+  it("records coverage confirmation into the originating conversation", async () => {
+    const user = userEvent.setup();
+    const {
+      createConversation,
+      getConversation,
+      resetConversationsSnapshotForTests,
+      CONVERSATIONS_STORAGE_KEY,
+    } = await import("@/lib/session/conversations");
+    localStorage.clear();
+    resetConversationsSnapshotForTests();
+    const created = createConversation({
+      title: "Design",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Your Test Design draft is ready.",
+          action: {
+            kind: "open_workflow",
+            workflow_id: "software-delivery.test-design",
+            label: "Open Test Design",
+            draft_id: "draft-1",
+          },
+        },
+      ],
+      draft: "",
+    });
+    const raw = JSON.parse(localStorage.getItem(CONVERSATIONS_STORAGE_KEY)!);
+    raw.conversations[0].id = "conv-1";
+    localStorage.setItem(CONVERSATIONS_STORAGE_KEY, JSON.stringify(raw));
+    resetConversationsSnapshotForTests();
+    expect(getConversation("conv-1")?.id).toBe("conv-1");
+    expect(created.id).toBeTruthy();
+
+    vi.mocked(confirmTestDesignDraft).mockResolvedValueOnce(
+      draft({
+        status: "ready",
+        version: 4,
+        selected_candidate_ids: ["cand-positive", "manual-1"],
+        coverage_gaps: [
+          { category: "negative", detail: "No evidence for auth failure paths." },
+        ],
+      }),
+    );
+    await renderWorkspace();
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+
+    await waitFor(() => {
+      expect(getConversation("conv-1")?.messages[0]?.content).toBe(
+        "Coverage confirmed for mahmoudazaid/Kernector#293: 2 tests selected, 1 coverage gaps.",
+      );
+    });
+  });
+
   it("disables confirm without a selection, while busy, and while dirty", async () => {
     const user = userEvent.setup();
     vi.mocked(getTestDesignDraft).mockResolvedValueOnce(

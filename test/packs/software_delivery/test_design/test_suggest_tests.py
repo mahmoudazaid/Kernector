@@ -97,6 +97,22 @@ def _model_payload(**overrides: object) -> str:
 
 
 def _source_document(*, title: str = "Live Issue", body: str = "Body") -> SourceDocument:
+    content = (
+        f"# {title}\n"
+        "\n"
+        "- State: OPEN\n"
+        "- Labels: none\n"
+        "- Assignees: none\n"
+        "- Milestone: none\n"
+        "- Repository: mahmoudazaid/Kernector\n"
+        "- URL: https://github.com/mahmoudazaid/Kernector/issues/293\n"
+        "- Updated: 2026-09-14T12:00:00Z\n"
+        "- Revision: 2026-09-14T12:00:00Z\n"
+        "\n"
+        "## Body\n"
+        "\n"
+        f"{body}"
+    )
     return SourceDocument(
         SourceMetadata(
             reference=SourceReference("issue:I_123", SourceType.GITHUB),
@@ -109,7 +125,7 @@ def _source_document(*, title: str = "Live Issue", body: str = "Body") -> Source
                 "revision": "2026-09-14T12:00:00Z",
             },
         ),
-        body,
+        content,
     )
 
 
@@ -344,11 +360,11 @@ def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:
 
     assert [candidate.candidate_id for candidate in draft.candidates] == [
         "cand-2",
-        "auto-1",
+        "cand-1",
     ]
 
 
-def test_generated_candidate_id_before_model_id_does_not_collide() -> None:
+def test_generated_candidate_id_before_explicit_auto_id_does_not_collide() -> None:
     payload = _model_payload(
         candidates=[
             {
@@ -376,8 +392,116 @@ def test_generated_candidate_id_before_model_id_does_not_collide() -> None:
     draft = use_case.execute(_request(evidence=(_evidence(),)))
 
     assert [candidate.candidate_id for candidate in draft.candidates] == [
+        "cand-2",
+        "cand-1",
+    ]
+
+
+def test_generated_candidate_id_skips_later_explicit_auto_style_id() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "candidate_id": "cand-1",
+                "title": "Valid login",
+                "category": "positive",
+                "rationale": "Acceptance criteria describe successful login.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "title": "Missing id first gap",
+                "category": "negative",
+                "rationale": "Acceptance criteria mention credential checks.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "title": "Missing id second gap",
+                "category": "edge_case",
+                "rationale": "Edge paths remain unspecified.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert [candidate.candidate_id for candidate in draft.candidates] == [
+        "cand-1",
+        "cand-2",
+        "cand-3",
+    ]
+
+
+def test_generated_candidate_id_skips_explicit_auto_prefix_ids() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "candidate_id": "auto-1",
+                "title": "Valid login",
+                "category": "positive",
+                "rationale": "Acceptance criteria describe successful login.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "title": "Invalid login",
+                "category": "negative",
+                "rationale": "Acceptance criteria mention credential checks.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert [candidate.candidate_id for candidate in draft.candidates] == [
         "auto-1",
         "cand-1",
+    ]
+
+
+def test_generated_candidate_id_before_explicit_auto_prefix_id() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "title": "Valid login",
+                "category": "positive",
+                "rationale": "Acceptance criteria describe successful login.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "candidate_id": "auto-1",
+                "title": "Invalid login",
+                "category": "negative",
+                "rationale": "Acceptance criteria mention credential checks.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert [candidate.candidate_id for candidate in draft.candidates] == [
+        "cand-1",
+        "auto-1",
     ]
 
 
@@ -411,20 +535,32 @@ def test_duplicate_model_supplied_candidate_ids_are_rejected() -> None:
         use_case.execute(_request(evidence=(_evidence(),)))
 
 
-def test_budget_source_document_text_preserves_prefix_and_truncates_body() -> None:
+def test_budget_source_document_text_preserves_short_content() -> None:
+    document = _source_document(body="Short body")
+    text = budget_source_document_text(document)
+
+    assert text == document.content
+    assert text.count("# Live Issue") == 1
+    assert text.count("## Body") == 1
+    assert TRUNCATION_MARKER not in text
+
+
+def test_budget_source_document_text_truncates_long_content_once() -> None:
     text = budget_source_document_text(_source_document(body="B" * 20_000))
 
     assert len(text) <= 10_000
-    assert "# Live Issue" in text
-    assert "github_repository: mahmoudazaid/Kernector" in text
-    assert TRUNCATION_MARKER in text
+    assert text.count("# Live Issue") == 1
+    assert text.count("## Body") == 1
+    assert text.count(TRUNCATION_MARKER) == 1
+    assert text.endswith(TRUNCATION_MARKER)
+    assert "BBB" in text
 
 
 def test_budget_source_document_text_does_not_truncate_near_limit_body() -> None:
-    body = "B" * 9_000
-    text = budget_source_document_text(_source_document(body=body))
+    document = _source_document(body="B" * 1_000)
+    text = budget_source_document_text(document)
 
-    assert text.endswith(body)
+    assert text == document.content
     assert TRUNCATION_MARKER not in text
 
 
