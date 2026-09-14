@@ -191,8 +191,7 @@ class GoogleDriveConnector:
         Raises:
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
-            ConnectorError: Listing failed, a selected root/file is inaccessible,
-                or a supported entry was unusable.
+            ConnectorError: Listing failed or a selected root/file is inaccessible.
         """
         documents: dict[str, ConnectorDocument] = {}
         visited_folders: set[str] = set()
@@ -203,7 +202,8 @@ class GoogleDriveConnector:
                 if file_id in documents:
                     continue
                 document = self._document_from_id(file_id)
-                documents[document.source_id] = document
+                if document is not None:
+                    documents[document.source_id] = document
         except ConnectorError:
             raise
         except Exception as error:
@@ -328,19 +328,16 @@ class GoogleDriveConnector:
         )
         return _execute(request)
 
-    def _document_from_id(self, file_id: str) -> ConnectorDocument:
+    def _document_from_id(self, file_id: str) -> ConnectorDocument | None:
         try:
             entry = self._get_file(file_id)
         except HttpError as error:
             raise _map_google_error(error) from error
         if entry.get("trashed") is True:
-            raise ConnectorError(_MSG_REQUEST_FAILED)
+            return None
         if entry.get("mimeType") == _FOLDER_MIME:
-            raise ConnectorError(_MSG_REQUEST_FAILED)
-        document = _document_from_file(entry)
-        if document is None:
-            raise ConnectorError(_MSG_REQUEST_FAILED)
-        return document
+            return None
+        return _document_from_file(entry)
 
     def _get_file(self, file_id: str) -> Mapping[str, object]:
         request = self._files.get(

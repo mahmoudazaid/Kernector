@@ -746,6 +746,26 @@ def test_inaccessible_exact_file_raises() -> None:
         _connector(files, folder_ids=(), file_ids=("gone",)).list_documents()
 
 
+def test_trashed_exact_file_is_skipped() -> None:
+    files = FakeDriveFiles(
+        files_by_id={"gone": _file("gone", "gone.md") | {"trashed": True}}
+    )
+    documents = _connector(
+        files, folder_ids=(), file_ids=("gone",)
+    ).list_documents()
+    assert documents == ()
+
+
+def test_unsupported_exact_file_is_skipped() -> None:
+    files = FakeDriveFiles(
+        files_by_id={"sheet": _file("sheet", "sheet", mime_type="application/vnd.google-apps.spreadsheet")}
+    )
+    documents = _connector(
+        files, folder_ids=(), file_ids=("sheet",)
+    ).list_documents()
+    assert documents == ()
+
+
 def test_duplicate_file_id_in_folder_and_exact_selection_is_listed_once() -> None:
     listed = _file("shared", "shared.md")
     files = FakeDriveFiles(
