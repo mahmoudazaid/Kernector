@@ -1,10 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat/ChatPanel";
 import { ApiError } from "@/lib/api/errors";
 import type { ChatAskResponse } from "@/lib/api/chat";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
+import { createTestDesignDraft } from "@/lib/api/test-design";
 import {
   loadActiveSession,
   setActiveConversationId,
@@ -20,6 +21,14 @@ import {
   CHAT_MESSAGES_STORAGE_KEY,
   saveRuntimeSettings,
 } from "@/lib/settings/runtime-settings-storage";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}));
+
+vi.mock("@/lib/api/test-design", () => ({
+  createTestDesignDraft: vi.fn(),
+}));
 
 function catalogWithLimit(maxInputLength: number): RuntimeSettingsResponse {
   return {
@@ -98,6 +107,10 @@ const SUCCESS: ChatAskResponse = {
 describe("ChatPanel", () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   function renderOpenConversation(
@@ -1093,5 +1106,154 @@ describe("ChatPanel", () => {
     const input = await screen.findByLabelText(/message/i);
     await user.type(input, "hello");
     expect(input).toHaveValue("hello");
+  });
+
+  it("starts Test Design from server action without client Issue chip", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue({
+      ...SUCCESS,
+      action: {
+        kind: "start_workflow",
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
+      },
+    });
+
+    const created = createConversation({
+      title: "open",
+      messages: [],
+      draft: "",
+    });
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={created.id}
+        variant="conversation"
+        ask={ask}
+        loadSettings={async () => ({
+          ...catalogWithLimit(10_000),
+          enabled_packs: ["software-delivery"],
+        })}
+      />,
+    );
+
+    await user.type(
+      screen.getByLabelText(/message/i),
+      "Design tests for mahmoudazaid/Kernector#293",
+    );
+    expect(screen.queryByText(/GitHub Issue/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(ask).toHaveBeenCalled();
+    });
+    expect(ask.mock.calls[0]?.[0]?.body).toEqual(
+      expect.objectContaining({
+        query: "Design tests for mahmoudazaid/Kernector#293",
+      }),
+    );
+    expect(ask.mock.calls[0]?.[0]?.body).not.toHaveProperty("source_locator");
+    expect(
+      await screen.findByRole("button", { name: /start test design/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("promotes Start Test Design to Open after draft create", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue({
+      ...SUCCESS,
+      action: {
+        kind: "start_workflow",
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
+      },
+    });
+    vi.mocked(createTestDesignDraft).mockResolvedValue({
+      draft_id: "draft-resume-1",
+      workspace_id: "default",
+      conversation_id: "conv",
+      source_reference: { source_id: "issue:1", source_type: "github" },
+      ticket_identifier: "mahmoudazaid/Kernector#293",
+      status: "coverage_review",
+      candidates: [],
+      coverage_gaps: [],
+      version: 1,
+      selected_candidate_ids: [],
+    });
+
+    const created = createConversation({
+      title: "open",
+      messages: [],
+      draft: "",
+    });
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={created.id}
+        variant="conversation"
+        ask={ask}
+        loadSettings={async () => ({
+          ...catalogWithLimit(10_000),
+          enabled_packs: ["software-delivery"],
+        })}
+      />,
+    );
+
+    await user.type(
+      screen.getByLabelText(/message/i),
+      "Design tests for mahmoudazaid/Kernector#293",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    const start = await screen.findByRole("button", {
+      name: /start test design/i,
+    });
+    await user.click(start);
+
+    expect(
+      await screen.findByRole("button", { name: /open test design/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /start test design/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Your Test Design draft is ready/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Use Start Test Design to fetch/i),
+    ).not.toBeInTheDocument();
+
+    const stored = getConversation(created.id);
+    const action = stored?.messages
+      .map((message) => message.action)
+      .find((item): item is { kind: string } => {
+        return (
+          typeof item === "object" &&
+          item !== null &&
+          "kind" in item &&
+          typeof (item as { kind: unknown }).kind === "string"
+        );
+      });
+    expect(action?.kind).toBe("open_workflow");
+    expect(action).toEqual(
+      expect.objectContaining({
+        kind: "open_workflow",
+        draft_id: "draft-resume-1",
+        label: "Open Test Design",
+      }),
+    );
+    expect(
+      stored?.messages.some((message) =>
+        message.content.includes("Your Test Design draft is ready"),
+      ),
+    ).toBe(true);
   });
 });

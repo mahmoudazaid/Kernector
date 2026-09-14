@@ -94,5 +94,21 @@ class ConnectorAuthError(ConnectorError):
     """Credentials or permissions were rejected."""
 
 
+class ConnectorNotFoundError(ConnectorError):
+    """The requested remote resource does not exist."""
+
+
 class ConnectorUnavailableError(ConnectorError):
     """The provider is temporarily unreachable or throttling requests."""
+
+
+class ConnectorRateLimitError(ConnectorUnavailableError):
+    """The provider rejected the call due to rate limiting."""
+
+
+class ConnectorTimeoutError(ConnectorUnavailableError):
+    """The provider request timed out."""
+
+
+class ConnectorNetworkError(ConnectorUnavailableError):
+    """A transport-level failure prevented reaching the provider."""

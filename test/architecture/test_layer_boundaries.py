@@ -307,18 +307,30 @@ def test_chat_intent_imports_only_domain_and_stdlib() -> None:
     )
 
 
+def test_software_delivery_test_design_pack_does_not_import_github() -> None:
+    """Pack-local test_design must stay provider-neutral (SourceDocument only)."""
+    root = REPO_ROOT / "packs" / "software_delivery" / "test_design"
+    forbidden = {"infrastructure", "httpx", "composition", "presentation"}
+    for module_path in sorted(root.rglob("*.py")):
+        hits = find_forbidden_imports(module_path, forbidden)
+        assert not hits, (
+            f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
+        )
+        text = module_path.read_text(encoding="utf-8")
+        assert "connectors.github" not in text
+        assert "GitHubIssue" not in text
+        assert "HttpGitHubClient" not in text
+
+
 def test_only_infrastructure_imports_google_drive_client() -> None:
-    """Google client packages stay behind the infrastructure connector adapter."""
-    google_roots = {"google", "googleapiclient"}
-    for layer in ("domain", "application", "presentation", "packs"):
+    """The Google Drive SDK must stay behind infrastructure adapters."""
+    forbidden = {"google", "googleapiclient", "httplib2"}
+    for layer in ("application", "composition", "domain", "packs", "presentation"):
         for module_path in _modules(layer):
-            hits = find_forbidden_imports(module_path, google_roots)
+            hits = find_forbidden_imports(module_path, forbidden)
             assert not hits, (
                 f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
             )
-    drive = REPO_ROOT / "infrastructure" / "connectors" / "google_drive" / "connector.py"
-    imported = find_forbidden_imports(drive, google_roots)
-    assert imported == google_roots
 
 
 def test_drive_sync_cli_reaches_the_connector_only_through_composition() -> None:

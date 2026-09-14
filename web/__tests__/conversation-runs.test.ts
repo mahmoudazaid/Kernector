@@ -88,6 +88,59 @@ describe("conversation run coordinator", () => {
     expect(listConversations()).toHaveLength(1);
   });
 
+  it("forwards ask body and persists Test Design action", async () => {
+    const created = createConversation({
+      title: "A",
+      messages: [{ id: "u1", role: "user", content: "plan tests" }],
+      draft: "",
+    });
+    setActiveConversationId(created.id);
+    const ask = vi.fn(async () => ({
+      ...SUCCESS,
+      action: {
+        kind: "start_workflow" as const,
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
+      },
+    }));
+
+    await startConversationRun({
+      conversationId: created.id,
+      query: "Design tests for mahmoudazaid/Kernector#293",
+      history: [],
+      baseUrl: "http://127.0.0.1:8000",
+      ask,
+    });
+
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.not.objectContaining({
+          source_locator: expect.anything(),
+        }),
+      }),
+    );
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: "Design tests for mahmoudazaid/Kernector#293",
+        }),
+      }),
+    );
+    expect(getConversation(created.id)?.messages.at(-1)?.action).toEqual({
+      kind: "start_workflow",
+      workflow_id: "software-delivery.test-design",
+      label: "Start Test Design",
+      source_locator: {
+        provider: "github",
+        locator: "mahmoudazaid/Kernector#293",
+      },
+    });
+  });
+
   it("does not set unread when the originating conversation is still active", async () => {
     const created = createConversation({
       title: "A",

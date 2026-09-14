@@ -37,8 +37,21 @@ from composition.errors import (
     UnsupportedPreviewFormatError,
 )
 from composition.software_delivery_chat import ToolRunFailedError
+from composition.test_design_errors import (
+    TestDesignNotFoundError,
+    TestDesignUnavailableError,
+    TestDesignValidationError,
+    TestDesignVersionConflictError,
+)
 from domain.errors import (
     ConfigurationBoundaryError,
+    ConnectorAuthError,
+    ConnectorError,
+    ConnectorNetworkError,
+    ConnectorNotFoundError,
+    ConnectorRateLimitError,
+    ConnectorTimeoutError,
+    ConnectorUnavailableError,
     DomainValidationError,
     ProviderAuthError,
     ProviderCreditsError,
@@ -67,6 +80,19 @@ _MISSING_PROVIDER_CREDENTIALS_DETAIL = (
     "Required LLM provider credentials are missing. Check server configuration."
 )
 _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
+_TEST_DESIGN_UNAVAILABLE_DETAIL = "Test Design is not available."
+_TEST_DESIGN_NOT_FOUND_DETAIL = "Test design draft was not found."
+_TEST_DESIGN_VERSION_CONFLICT_DETAIL = (
+    "The draft was updated elsewhere. Reload or retry with the latest version."
+)
+_TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
+_CONNECTOR_AUTH_DETAIL = "The connector rejected the credentials or permissions."
+_CONNECTOR_NOT_FOUND_DETAIL = "The requested connector resource was not found."
+_CONNECTOR_RATE_LIMIT_DETAIL = "The connector rate limit was exceeded."
+_CONNECTOR_TIMEOUT_DETAIL = "The connector request timed out."
+_CONNECTOR_NETWORK_DETAIL = "The connector network request failed."
+_CONNECTOR_UNAVAILABLE_DETAIL = "The connector is temporarily unavailable."
+_CONNECTOR_REQUEST_FAILED_DETAIL = "The connector request failed."
 _INTERNAL_FAILURE_DETAIL = "An unexpected error occurred."
 _VALIDATION_TITLE = "Request validation failed"
 _PROBLEM_BASE = "https://kernector.dev/problems"
@@ -292,6 +318,42 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
+    if isinstance(exc, TestDesignUnavailableError):
+        return _problem(
+            code="test_design_unavailable",
+            title="Test Design unavailable",
+            status=404,
+            detail=_TEST_DESIGN_UNAVAILABLE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignNotFoundError):
+        return _problem(
+            code="test_design_not_found",
+            title="Test design draft not found",
+            status=404,
+            detail=_TEST_DESIGN_NOT_FOUND_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignVersionConflictError):
+        return _problem(
+            code="test_design_version_conflict",
+            title="Test design version conflict",
+            status=409,
+            detail=_TEST_DESIGN_VERSION_CONFLICT_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignValidationError):
+        return _problem(
+            code="validation_error",
+            title="Validation error",
+            status=422,
+            detail=_TEST_DESIGN_VALIDATION_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
     if isinstance(exc, OllamaNotConfiguredError):
         return _problem(
             code="ollama_unconfigured",
@@ -388,6 +450,69 @@ def problem_from_exception(
             title="GitHub request failed",
             status=502,
             detail="The GitHub request failed.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorAuthError):
+        return _problem(
+            code="connector_auth_failed",
+            title="Connector authentication failed",
+            status=502,
+            detail=_CONNECTOR_AUTH_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorNotFoundError):
+        return _problem(
+            code="connector_not_found",
+            title="Connector resource not found",
+            status=404,
+            detail=_CONNECTOR_NOT_FOUND_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorRateLimitError):
+        return _problem(
+            code="connector_rate_limited",
+            title="Connector rate limited",
+            status=502,
+            detail=_CONNECTOR_RATE_LIMIT_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorTimeoutError):
+        return _problem(
+            code="connector_timeout",
+            title="Connector timeout",
+            status=502,
+            detail=_CONNECTOR_TIMEOUT_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorNetworkError):
+        return _problem(
+            code="connector_network_error",
+            title="Connector network error",
+            status=502,
+            detail=_CONNECTOR_NETWORK_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorUnavailableError):
+        return _problem(
+            code="connector_unavailable",
+            title="Connector unavailable",
+            status=502,
+            detail=_CONNECTOR_UNAVAILABLE_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ConnectorError):
+        return _problem(
+            code="connector_request_failed",
+            title="Connector request failed",
+            status=502,
+            detail=_CONNECTOR_REQUEST_FAILED_DETAIL,
             instance=instance,
             request_id=request_id,
         )
