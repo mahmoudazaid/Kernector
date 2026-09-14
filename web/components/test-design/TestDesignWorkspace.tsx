@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { Loader } from "@/components/ui/Loader";
+import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
   confirmTestDesignDraft,
@@ -26,6 +28,14 @@ type Props = {
   apiBaseUrl: string;
   draftId: string;
 };
+
+function formatCategory(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function formatStatus(value: string): string {
+  return value.replaceAll("_", " ");
+}
 
 export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const router = useRouter();
@@ -67,23 +77,58 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   }, [apiBaseUrl, draftId, packEnabled]);
 
   if (catalogLoading) {
-    return <p>Loading…</p>;
+    return (
+      <section className="kern-test-design" aria-busy="true">
+        <header className="kern-hub-head">
+          <h1>Test Design</h1>
+        </header>
+        <div className="kern-content-state">
+          <LoadingState label="Loading Test Design" />
+        </div>
+      </section>
+    );
   }
+
   if (!packEnabled) {
     return (
-      <UnavailableState
-        title="Test Design unavailable"
-        description="Enable the Software Delivery pack to use Test Design."
-      />
+      <section className="kern-test-design">
+        <header className="kern-hub-head">
+          <h1>Test Design</h1>
+        </header>
+        <div className="kern-content-state">
+          <UnavailableState
+            title="Test Design unavailable"
+            description="Enable the Software Delivery pack to use Test Design."
+          />
+        </div>
+      </section>
     );
   }
-  if (error) {
+
+  if (error && !draft) {
     return (
-      <UnavailableState title="Draft unavailable" description={error} />
+      <section className="kern-test-design">
+        <header className="kern-hub-head">
+          <h1>Test Design</h1>
+        </header>
+        <div className="kern-content-state">
+          <UnavailableState title="Draft unavailable" description={error} />
+        </div>
+      </section>
     );
   }
+
   if (!draft) {
-    return <p>Loading draft…</p>;
+    return (
+      <section className="kern-test-design" aria-busy="true">
+        <header className="kern-hub-head">
+          <h1>Test Design</h1>
+        </header>
+        <div className="kern-content-state">
+          <LoadingState label="Loading draft" />
+        </div>
+      </section>
+    );
   }
 
   async function saveDraft() {
@@ -175,7 +220,9 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         messages: [...conversation.messages, summary],
         unread: true,
       });
-      setConfirmNote("Draft confirmed. A summary was added to the originating chat.");
+      setConfirmNote(
+        "Draft confirmed. A summary was added to the originating chat.",
+      );
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError("Version conflict while confirming. Reload and try again.");
@@ -192,19 +239,15 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       if (!current) {
         return current;
       }
+      const candidates = current.candidates.map((candidate) =>
+        candidate.candidate_id === candidateId
+          ? { ...candidate, selected: !candidate.selected }
+          : candidate,
+      );
       return {
         ...current,
-        candidates: current.candidates.map((candidate) =>
-          candidate.candidate_id === candidateId
-            ? { ...candidate, selected: !candidate.selected }
-            : candidate,
-        ),
-        selected_candidate_ids: current.candidates
-          .map((candidate) =>
-            candidate.candidate_id === candidateId
-              ? { ...candidate, selected: !candidate.selected }
-              : candidate,
-          )
+        candidates,
+        selected_candidate_ids: candidates
           .filter((candidate) => candidate.selected)
           .map((candidate) => candidate.candidate_id),
       };
@@ -212,102 +255,188 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   }
 
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
+  const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
 
   return (
-    <main className="kern-test-design">
-      <header>
-        <p>
-          <Link href={`/chat/${encodeURIComponent(draft.conversation_id)}`}>
-            Back to Chat
-          </Link>
+    <section className="kern-test-design" aria-busy={busy}>
+      {busy ? (
+        <div className="kern-test-design-busy" aria-hidden="true">
+          <Loader label="Working" size="md" />
+        </div>
+      ) : null}
+
+      <header className="kern-hub-head">
+        <p className="kern-breadcrumb">
+          <Link href={chatHref}>Chat</Link>
+          <span aria-hidden="true">/</span>
+          <strong>Test Design</strong>
         </p>
-        <h1>Test Design</h1>
-        <p>
-          Ticket {draft.ticket_identifier} · status {draft.status} · version{" "}
-          {draft.version}
-        </p>
-        <p>
-          Selected {selectedCount} of {draft.candidates.length} candidates
-        </p>
+        <div className="kern-test-design-title-row">
+          <div>
+            <h1>Test Design</h1>
+            <p className="kern-documents-lead">
+              Review coverage for{" "}
+              <code className="kern-test-design-ticket">
+                {draft.ticket_identifier}
+              </code>
+              , then generate scenarios for the selected candidates.
+            </p>
+          </div>
+          <div className="kern-test-design-meta" aria-label="Draft status">
+            <span className="kern-status">{formatStatus(draft.status)}</span>
+            <span className="kern-status">v{draft.version}</span>
+            <span className="kern-status">
+              {selectedCount}/{draft.candidates.length} selected
+            </span>
+          </div>
+        </div>
       </header>
 
-      {error ? <p role="alert">{error}</p> : null}
-      {confirmNote ? <p role="status">{confirmNote}</p> : null}
+      {error ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          <p>{error}</p>
+        </div>
+      ) : null}
+      {confirmNote ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--ok"
+          role="status"
+        >
+          <p>{confirmNote}</p>
+        </div>
+      ) : null}
 
-      <section>
-        <h2>Coverage</h2>
-        <ul>
+      <fieldset className="kern-settings-fieldset kern-test-design-panel">
+        <legend>Coverage</legend>
+        <p className="kern-settings-hint">
+          Select candidates to keep. Gaps mark categories the ticket evidence
+          does not support.
+        </p>
+        <ul className="kern-test-design-candidates">
           {draft.candidates.map((candidate) => (
             <li key={candidate.candidate_id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={candidate.selected}
-                  onChange={() => toggleCandidate(candidate.candidate_id)}
-                />{" "}
-                <strong>{candidate.title}</strong> ({candidate.category})
+              <label className="kern-test-design-candidate">
+                <span className="kern-test-design-check">
+                  <input
+                    type="checkbox"
+                    checked={candidate.selected}
+                    onChange={() => toggleCandidate(candidate.candidate_id)}
+                  />
+                  <svg
+                    className="kern-test-design-check__mark"
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M3.5 8.2 6.4 11l6.1-6.6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span className="kern-test-design-candidate__body">
+                  <span className="kern-test-design-candidate__title">
+                    <strong>{candidate.title}</strong>
+                    <span className="kern-status">
+                      {formatCategory(candidate.category)}
+                    </span>
+                  </span>
+                  <span className="kern-test-design-candidate__rationale">
+                    {candidate.rationale}
+                  </span>
+                </span>
               </label>
-              <p>{candidate.rationale}</p>
             </li>
           ))}
         </ul>
-        {draft.coverage_gaps.length > 0 ? (
-          <>
-            <h3>Coverage gaps</h3>
-            <ul>
-              {draft.coverage_gaps.map((gap) => (
-                <li key={`${gap.category}-${gap.detail}`}>
-                  <strong>{gap.category}</strong>: {gap.detail}
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-      </section>
+      </fieldset>
 
-      <section>
-        <h2>Scenarios</h2>
+      {draft.coverage_gaps.length > 0 ? (
+        <fieldset className="kern-settings-fieldset kern-test-design-panel">
+          <legend>Coverage gaps</legend>
+          <ul className="kern-test-design-gaps">
+            {draft.coverage_gaps.map((gap) => (
+              <li key={`${gap.category}-${gap.detail}`}>
+                <span className="kern-status">{formatCategory(gap.category)}</span>
+                <p>{gap.detail}</p>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      ) : null}
+
+      <fieldset className="kern-settings-fieldset kern-test-design-panel">
+        <legend>Scenarios</legend>
         {draft.scenarios.length === 0 ? (
-          <p>No scenarios yet. Generate for selected candidates.</p>
+          <p className="kern-settings-hint">
+            No scenarios yet. Select coverage candidates, then generate.
+          </p>
         ) : (
-          <ul>
+          <ul className="kern-test-design-scenarios">
             {draft.scenarios.map((scenario) => (
               <li key={scenario.scenario_id}>
-                <strong>{scenario.title}</strong>
+                <div className="kern-test-design-candidate__title">
+                  <strong>{scenario.title}</strong>
+                  <span className="kern-status">
+                    {formatCategory(scenario.category)}
+                  </span>
+                </div>
                 <ol>
                   {scenario.steps.map((step) => (
                     <li key={step}>{step}</li>
                   ))}
                 </ol>
-                <p>Expected: {scenario.expected_result}</p>
+                <p className="kern-test-design-expected">
+                  <span className="kern-settings-hint">Expected</span>
+                  {scenario.expected_result}
+                </p>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </fieldset>
 
-      <footer>
-        <Button type="button" disabled={busy} onClick={() => void saveDraft()}>
-          Save Draft
-        </Button>
+      <footer className="kern-test-design-actions">
+        <div className="kern-test-design-actions__primary">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void saveDraft()}
+          >
+            Save draft
+          </Button>
+          <Button
+            type="button"
+            disabled={busy || selectedCount === 0}
+            onClick={() => void generateScenarios()}
+          >
+            Generate scenarios
+          </Button>
+          <Button
+            type="button"
+            disabled={busy || draft.status === "ready"}
+            onClick={() => void confirmDraft()}
+          >
+            Confirm
+          </Button>
+        </div>
         <Button
           type="button"
-          disabled={busy || selectedCount === 0}
-          onClick={() => void generateScenarios()}
+          variant="ghost"
+          disabled={busy}
+          onClick={() => router.push(chatHref)}
         >
-          Generate Scenarios
-        </Button>
-        <Button
-          type="button"
-          disabled={busy || draft.status === "ready"}
-          onClick={() => void confirmDraft()}
-        >
-          Confirm
-        </Button>
-        <Button type="button" onClick={() => router.push("/chat")}>
-          Chat
+          Back to chat
         </Button>
       </footer>
-    </main>
+    </section>
   );
 }

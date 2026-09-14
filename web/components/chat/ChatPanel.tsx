@@ -21,6 +21,7 @@ import {
   type ChatAskResponse,
 } from "@/lib/api/chat";
 import { createTestDesignDraft } from "@/lib/api/test-design";
+import { ApiError } from "@/lib/api/errors";
 import type {
   GetRuntimeSettingsOptions,
   RuntimeSettingsResponse,
@@ -337,9 +338,13 @@ function MessageRow({
           ticket_identifier: action.ticket_identifier,
         },
       });
-      router.push(`/test-design/${encodeURIComponent(draft.draft_id)}`);
-    } catch {
-      setStartError("Could not start Test Design. Try again.");
+      await router.push(`/test-design/${encodeURIComponent(draft.draft_id)}`);
+    } catch (caught) {
+      if (caught instanceof ApiError) {
+        setStartError(caught.detail || "Could not start Test Design. Try again.");
+      } else {
+        setStartError("Could not start Test Design. Try again.");
+      }
       setStarting(false);
     }
   }

@@ -3233,6 +3233,263 @@ a.kern-btn {
   align-self: end;
 }
 
+.kern-test-design {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: var(--kern-space-5);
+  width: 100%;
+  min-width: 0;
+}
+
+.kern-test-design h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.4vw, 2.4rem);
+  letter-spacing: -0.02em;
+}
+
+.kern-test-design-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--kern-space-4);
+}
+
+.kern-test-design-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kern-space-2);
+  padding-top: var(--kern-space-1);
+}
+
+.kern-test-design-ticket {
+  font-family: var(--kern-font-mono);
+  font-size: 0.95em;
+}
+
+.kern-test-design-panel {
+  width: 100%;
+}
+
+.kern-test-design-candidates,
+.kern-test-design-gaps,
+.kern-test-design-scenarios {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--kern-space-2);
+}
+
+.kern-test-design-candidate {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--kern-space-3);
+  align-items: start;
+  width: 100%;
+  margin: 0;
+  padding: var(--kern-space-3);
+  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
+  border-radius: 16px;
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+  color: var(--kern-ink);
+  cursor: pointer;
+  transition:
+    border-color var(--kern-duration) var(--kern-ease),
+    box-shadow var(--kern-duration-emphasis) var(--kern-ease-out),
+    transform var(--kern-duration-emphasis) var(--kern-ease-out);
+}
+
+.kern-test-design-candidate:hover {
+  border-color: color-mix(in srgb, var(--kern-accent) 28%, var(--kern-line));
+}
+
+.kern-test-design-candidate:has(input:checked) {
+  border-color: color-mix(in srgb, var(--kern-accent) 34%, transparent);
+  background:
+    var(--kern-control-sheen),
+    var(--kern-accent-soft);
+}
+
+.kern-test-design-candidate:active {
+  transform: scale(0.995);
+  box-shadow: var(--kern-control-emboss-press);
+}
+
+.kern-test-design-candidate input {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 1.5px solid color-mix(in srgb, var(--kern-muted) 55%, var(--kern-line));
+  border-radius: 5px;
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: inset 0 1px 1px var(--kern-control-highlight);
+  cursor: pointer;
+}
+
+.kern-test-design-check {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.kern-test-design-check__mark {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--kern-duration) var(--kern-ease);
+}
+
+.kern-test-design-candidate:has(input:checked) .kern-test-design-check input {
+  border-color: var(--kern-accent);
+  background:
+    var(--kern-control-sheen-fill),
+    var(--kern-accent);
+  box-shadow: var(--kern-control-emboss-press);
+}
+
+.kern-test-design-candidate:has(input:checked) .kern-test-design-check__mark {
+  opacity: 1;
+}
+
+.kern-test-design-candidate input:focus-visible {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+.kern-test-design-candidate__body {
+  display: grid;
+  gap: var(--kern-space-1);
+  min-width: 0;
+}
+
+.kern-test-design-candidate__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kern-space-2);
+}
+
+.kern-test-design-candidate__title strong {
+  font-weight: 500;
+}
+
+.kern-test-design-candidate__rationale {
+  color: var(--kern-muted);
+  font-size: var(--kern-text-sm);
+  line-height: 1.5;
+}
+
+.kern-test-design-gaps > li {
+  display: grid;
+  gap: var(--kern-space-2);
+  padding: var(--kern-space-3);
+  border: 1px solid color-mix(in srgb, var(--kern-line) 70%, transparent);
+  border-radius: 14px;
+  background: var(--kern-surface-2);
+}
+
+.kern-test-design-gaps > li > p {
+  margin: 0;
+  color: var(--kern-muted);
+  font-size: var(--kern-text-sm);
+  line-height: 1.5;
+}
+
+.kern-test-design-scenarios > li {
+  display: grid;
+  gap: var(--kern-space-2);
+  padding: var(--kern-space-3);
+  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
+  border-radius: 16px;
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+}
+
+.kern-test-design-scenarios ol {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--kern-ink);
+  font-size: var(--kern-text-sm);
+  line-height: 1.55;
+}
+
+.kern-test-design-expected {
+  display: grid;
+  gap: var(--kern-space-1);
+  margin: 0;
+  font-size: var(--kern-text-sm);
+  line-height: 1.5;
+}
+
+.kern-test-design-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-space-3);
+  padding-top: var(--kern-space-2);
+  border-top: 1px solid var(--kern-line);
+}
+
+.kern-test-design-actions__primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kern-space-2);
+}
+
+.kern-test-design-busy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--kern-bg) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 720px) {
+  .kern-test-design-title-row {
+    flex-direction: column;
+  }
+
+  .kern-test-design-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .kern-test-design-actions__primary {
+    flex-direction: column;
+  }
+
+  .kern-test-design-actions .kern-btn,
+  .kern-test-design-actions .kern-btn-secondary,
+  .kern-test-design-actions .kern-btn-ghost {
+    width: 100%;
+  }
+}
+
 .kern-chat-composer {
   flex-shrink: 0;
   margin-top: auto;
@@ -3469,7 +3726,8 @@ a.kern-btn {
   .kern-nav-item:active,
   .kern-chat-send:hover:not(:disabled),
   .kern-chat-send:active:not(:disabled),
-  .kern-documents-delete:hover:not(:disabled) {
+  .kern-documents-delete:hover:not(:disabled),
+  .kern-test-design-candidate:active {
     transform: none;
   }
 }

@@ -172,12 +172,19 @@ class TestDesignFacade:
         ticket = _require_ticket(request.ticket_identifier)
         source = _require_source(request.source_reference)
         hits = self._retrieve(ticket)
+        preferred = tuple(
+            hit
+            for hit in hits
+            if hit.chunk.reference.source_id == source.source_id
+            and hit.chunk.reference.source_type == source.source_type
+        )
+        selected_hits = preferred or tuple(hits)
         evidence = tuple(
             CoverageEvidenceItem(
                 reference=hit.chunk.reference,
                 text=hit.chunk.content,
             )
-            for hit in hits
+            for hit in selected_hits
             if hit.chunk.content.strip()
         )
         if not evidence:

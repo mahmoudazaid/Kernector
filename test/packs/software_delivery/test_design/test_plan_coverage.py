@@ -184,7 +184,7 @@ def test_model_receives_evidence_inside_context_delimiters() -> None:
     assert context.index("Ticket body with login AC.") < context.index(CONTEXT_CLOSE)
 
 
-def test_rejects_model_citations_outside_evidence_bundle() -> None:
+def test_rejects_model_citations_outside_multi_source_evidence_bundle() -> None:
     payload = _model_payload(
         candidates=[
             {
@@ -204,9 +204,79 @@ def test_rejects_model_citations_outside_evidence_bundle() -> None:
     use_case = PlanCoverage(chat_model=chat, repository=repo)
 
     with pytest.raises(ToolFailureError, match="evidence"):
-        use_case.execute(_request(evidence=(_evidence(),)))
+        use_case.execute(
+            _request(
+                evidence=(
+                    _evidence(source_id="PROJ-42"),
+                    _evidence(
+                        text="Second ticket body.",
+                        source_id="PROJ-43",
+                    ),
+                )
+            )
+        )
 
     assert repo.created == []
+
+
+def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "candidate_id": "cand-1",
+                "title": "Issue coverage",
+                "category": "happy_path",
+                "rationale": "Grounded in the attached issue.",
+                "evidence_references": [
+                    {"source_type": "github", "source_id": "issue-8"}
+                ],
+            }
+        ],
+        coverage_gaps=[],
+    )
+    chat = _FakeChat(content=payload)
+    repo = _MemoryRepo()
+    use_case = PlanCoverage(chat_model=chat, repository=repo)
+
+    draft = use_case.execute(
+        _request(
+            ticket_identifier="issue-8",
+            source_reference=_ref("issue:I_abc", "github"),
+            evidence=(
+                _evidence(
+                    text="GitHub issue body with acceptance criteria.",
+                    source_id="issue:I_abc",
+                    source_type="github",
+                ),
+            ),
+        )
+    )
+
+    assert draft.candidates[0].evidence_references[0].source_id == "issue:I_abc"
+    assert draft.candidates[0].evidence_references[0].source_type == "github"
+
+
+def test_skips_malformed_coverage_gaps_without_failing_draft() -> None:
+    payload = _model_payload(
+        coverage_gaps=[
+            {"detail": "Missing ACL criteria without a category key."},
+            {
+                "type": "permission_security",
+                "description": "No ACL acceptance criteria found.",
+            },
+            "bare string gap",
+            {"category": "not_a_real_category", "detail": "bad category"},
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = PlanCoverage(chat_model=chat, repository=_MemoryRepo())
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert len(draft.candidates) == 1
+    assert len(draft.coverage_gaps) == 1
+    assert draft.coverage_gaps[0].category == "permission_security"
+    assert "ACL" in draft.coverage_gaps[0].detail
 
 
 def test_invalid_model_json_does_not_persist_draft() -> None:
