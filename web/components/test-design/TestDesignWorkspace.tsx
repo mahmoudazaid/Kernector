@@ -38,6 +38,9 @@ function formatStatus(value: string): string {
   return value.replaceAll("_", " ");
 }
 
+const MAX_CANDIDATES = 40;
+const MAX_TITLE_CHARS = 200;
+
 function groupCandidatesByCategory(
   candidates: readonly DraftCandidate[],
 ): { category: string; candidates: DraftCandidate[] }[] {
@@ -49,16 +52,23 @@ function groupCandidatesByCategory(
   }
   const ordered: { category: string; candidates: DraftCandidate[] }[] = [];
   for (const category of CATEGORY_ORDER) {
-    const group = byCategory.get(category);
-    if (group && group.length > 0) {
-      ordered.push({ category, candidates: group });
-      byCategory.delete(category);
-    }
+    ordered.push({
+      category,
+      candidates: byCategory.get(category) ?? [],
+    });
+    byCategory.delete(category);
   }
   for (const [category, group] of byCategory) {
     ordered.push({ category, candidates: group });
   }
   return ordered;
+}
+
+function newManualCandidateId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `manual-${crypto.randomUUID()}`;
+  }
+  return `manual-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
@@ -159,6 +169,14 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     if (!draft) {
       return;
     }
+    const blankTitle = draft.candidates.find(
+      (candidate) => !candidate.title.trim(),
+    );
+    if (blankTitle) {
+      setError("Every candidate needs a title before saving.");
+      setSaveNote(null);
+      return;
+    }
     setBusy(true);
     setError(null);
     setSaveNote(null);
@@ -187,8 +205,13 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     }
   }
 
-  function toggleCandidate(candidateId: string) {
+  function markDirty() {
     setSaveNote(null);
+    setError(null);
+  }
+
+  function toggleCandidate(candidateId: string) {
+    markDirty();
     setDraft((current) => {
       if (!current) {
         return current;
@@ -205,6 +228,59 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           .filter((candidate) => candidate.selected)
           .map((candidate) => candidate.candidate_id),
       };
+    });
+  }
+
+  function updateCandidateTitle(candidateId: string, title: string) {
+    markDirty();
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        candidates: current.candidates.map((candidate) =>
+          candidate.candidate_id === candidateId
+            ? { ...candidate, title: title.slice(0, MAX_TITLE_CHARS) }
+            : candidate,
+        ),
+      };
+    });
+  }
+
+  function addCandidate(category: string) {
+    if (!draft || draft.candidates.length >= MAX_CANDIDATES) {
+      return;
+    }
+    markDirty();
+    const candidateId = newManualCandidateId();
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      const next: DraftCandidate = {
+        candidate_id: candidateId,
+        title: "",
+        category,
+        rationale: "Manually added",
+        evidence_references: [],
+        selected: true,
+        origin: "manual",
+      };
+      const candidates = [...current.candidates, next];
+      return {
+        ...current,
+        candidates,
+        selected_candidate_ids: candidates
+          .filter((candidate) => candidate.selected)
+          .map((candidate) => candidate.candidate_id),
+      };
+    });
+    queueMicrotask(() => {
+      const input = document.getElementById(
+        `candidate-title-${candidateId}`,
+      ) as HTMLInputElement | null;
+      input?.focus();
     });
   }
 
@@ -233,7 +309,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
               <code className="kern-test-design-ticket">
                 {draft.ticket_identifier}
               </code>
-              , select which to keep, then save the draft.
+              . Edit titles, add tests, select which to keep, then save.
             </p>
           </div>
           <div className="kern-test-design-meta" aria-label="Draft status">
@@ -266,13 +342,14 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
         <legend>Candidates</legend>
         <p className="kern-settings-hint">
-          Select candidates to keep, then save the draft.
+          Edit titles or add candidates, select which to keep, then save.
         </p>
         <div className="kern-test-design-groups">
           {groupCandidatesByCategory(draft.candidates).map((group) => {
             const selectedInGroup = group.candidates.filter(
               (candidate) => candidate.selected,
             ).length;
+            const canAdd = draft.candidates.length < MAX_CANDIDATES;
             return (
               <details
                 key={group.category}
@@ -290,9 +367,16 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                 <ul className="kern-test-design-candidates">
                   {group.candidates.map((candidate) => (
                     <li key={candidate.candidate_id}>
-                      <label className="kern-test-design-candidate">
-                        <span className="kern-test-design-check">
+                      <div className="kern-test-design-candidate">
+                        <label
+                          className="kern-test-design-check"
+                          htmlFor={`candidate-selected-${candidate.candidate_id}`}
+                        >
+                          <span className="visually-hidden">
+                            Keep {candidate.title || "candidate"}
+                          </span>
                           <input
+                            id={`candidate-selected-${candidate.candidate_id}`}
                             type="checkbox"
                             checked={candidate.selected}
                             onChange={() =>
@@ -314,19 +398,41 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                               strokeLinejoin="round"
                             />
                           </svg>
-                        </span>
-                        <span className="kern-test-design-candidate__body">
-                          <span className="kern-test-design-candidate__title">
-                            <strong>{candidate.title}</strong>
-                          </span>
-                          <span className="kern-test-design-candidate__rationale">
+                        </label>
+                        <div className="kern-test-design-candidate__body">
+                          <input
+                            id={`candidate-title-${candidate.candidate_id}`}
+                            className="kern-test-design-candidate__title-input"
+                            type="text"
+                            value={candidate.title}
+                            maxLength={MAX_TITLE_CHARS}
+                            placeholder="Test title"
+                            aria-label="Candidate title"
+                            onChange={(event) =>
+                              updateCandidateTitle(
+                                candidate.candidate_id,
+                                event.target.value,
+                              )
+                            }
+                          />
+                          <p className="kern-test-design-candidate__rationale">
                             {candidate.rationale}
-                          </span>
-                        </span>
-                      </label>
+                          </p>
+                        </div>
+                      </div>
                     </li>
                   ))}
                 </ul>
+                <div className="kern-test-design-group__add">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy || !canAdd}
+                    onClick={() => addCandidate(group.category)}
+                  >
+                    Add {formatCategory(group.category)} test
+                  </Button>
+                </div>
               </details>
             );
           })}
