@@ -88,7 +88,7 @@ describe("conversation run coordinator", () => {
     expect(listConversations()).toHaveLength(1);
   });
 
-  it("forwards optional source_locator and persists action", async () => {
+  it("forwards ask body and persists Test Design action", async () => {
     const created = createConversation({
       title: "A",
       messages: [{ id: "u1", role: "user", content: "plan tests" }],
@@ -114,19 +114,19 @@ describe("conversation run coordinator", () => {
       history: [],
       baseUrl: "http://127.0.0.1:8000",
       ask,
-      source_locator: {
-        provider: "github",
-        locator: "mahmoudazaid/Kernector#293",
-      },
     });
 
     expect(ask).toHaveBeenCalledWith(
       expect.objectContaining({
+        body: expect.not.objectContaining({
+          source_locator: expect.anything(),
+        }),
+      }),
+    );
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
         body: expect.objectContaining({
-          source_locator: {
-            provider: "github",
-            locator: "mahmoudazaid/Kernector#293",
-          },
+          query: "Design tests for mahmoudazaid/Kernector#293",
         }),
       }),
     );

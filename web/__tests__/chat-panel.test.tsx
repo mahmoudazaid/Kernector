@@ -1103,7 +1103,7 @@ describe("ChatPanel", () => {
     expect(input).toHaveValue("hello");
   });
 
-  it("shows Issue chip when pack is enabled and sends source_locator on ask", async () => {
+  it("starts Test Design from server action without client Issue chip", async () => {
     const user = userEvent.setup();
     const ask = vi.fn().mockResolvedValue({
       ...SUCCESS,
@@ -1140,8 +1140,7 @@ describe("ChatPanel", () => {
       screen.getByLabelText(/message/i),
       "Design tests for mahmoudazaid/Kernector#293",
     );
-    expect(await screen.findByText("mahmoudazaid/Kernector#293")).toBeInTheDocument();
-    expect(screen.getByText(/GitHub Issue/i)).toBeInTheDocument();
+    expect(screen.queryByText(/GitHub Issue/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /send/i }));
 
@@ -1150,12 +1149,10 @@ describe("ChatPanel", () => {
     });
     expect(ask.mock.calls[0]?.[0]?.body).toEqual(
       expect.objectContaining({
-        source_locator: {
-          provider: "github",
-          locator: "mahmoudazaid/Kernector#293",
-        },
+        query: "Design tests for mahmoudazaid/Kernector#293",
       }),
     );
+    expect(ask.mock.calls[0]?.[0]?.body).not.toHaveProperty("source_locator");
     expect(
       await screen.findByRole("button", { name: /start test design/i }),
     ).toBeInTheDocument();

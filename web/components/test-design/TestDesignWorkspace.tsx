@@ -192,26 +192,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     }
   }
 
-  async function generateScenarios() {
-    if (!draft) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await generateTestDesignScenarios({
-        baseUrl: apiBaseUrl,
-        draftId: draft.draft_id,
-        body: { expected_version: draft.version },
-      });
-      setDraft(updated);
-    } catch {
-      setError("Could not generate scenarios.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function confirmDraft() {
     if (!draft) {
       return;
@@ -308,7 +288,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
               <code className="kern-test-design-ticket">
                 {draft.ticket_identifier}
               </code>
-              , then generate scenarios for the selected candidates.
+              , select candidates to keep, then confirm the draft.
             </p>
           </div>
           <div className="kern-test-design-meta" aria-label="Draft status">
@@ -341,8 +321,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
         <legend>Coverage</legend>
         <p className="kern-settings-hint">
-          Select candidates to keep, then generate scenarios for the selected
-          ones.
+          Select candidates to keep, then save or confirm the draft.
         </p>
         <div className="kern-test-design-groups">
           {groupCandidatesByCategory(draft.candidates).map((group) => {
@@ -409,37 +388,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         </div>
       </fieldset>
 
-      <fieldset className="kern-settings-fieldset kern-test-design-panel">
-        <legend>Scenarios</legend>
-        {draft.scenarios.length === 0 ? (
-          <p className="kern-settings-hint">
-            No scenarios yet. Select coverage candidates, then generate.
-          </p>
-        ) : (
-          <ul className="kern-test-design-scenarios">
-            {draft.scenarios.map((scenario) => (
-              <li key={scenario.scenario_id}>
-                <div className="kern-test-design-candidate__title">
-                  <strong>{scenario.title}</strong>
-                  <span className="kern-status">
-                    {formatCategory(scenario.category)}
-                  </span>
-                </div>
-                <ol>
-                  {scenario.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-                <p className="kern-test-design-expected">
-                  <span className="kern-settings-hint">Expected</span>
-                  {scenario.expected_result}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </fieldset>
-
       <footer className="kern-test-design-actions">
         <div className="kern-test-design-actions__primary">
           <Button
@@ -452,14 +400,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           </Button>
           <Button
             type="button"
-            disabled={busy || selectedCount === 0}
-            onClick={() => void generateScenarios()}
-          >
-            Generate scenarios
-          </Button>
-          <Button
-            type="button"
-            disabled={busy || draft.status === "ready"}
+            disabled={busy || selectedCount === 0 || draft.status === "ready"}
             onClick={() => void confirmDraft()}
           >
             Confirm

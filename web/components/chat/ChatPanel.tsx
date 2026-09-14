@@ -22,17 +22,11 @@ import type {
   GetRuntimeSettingsOptions,
   RuntimeSettingsResponse,
 } from "@/lib/api/settings";
-import { extractGitHubIssueLocator } from "@/lib/chat/github-issue-locator";
 import {
   evaluateHistoryLength,
   evaluateInputLength,
 } from "@/lib/chat/input-length";
 import { runDetailLines } from "@/lib/chat/run-details";
-import {
-  buildTestDesignHandoff,
-  softwareDeliveryPackEnabled,
-  type TestDesignHandoff,
-} from "@/lib/chat/test-design-handoff";
 import {
   appendUserMessage,
   historyForModel,
@@ -43,7 +37,6 @@ import {
   type ToolRun,
   type ToolUsed,
 } from "@/lib/chat/turn";
-import { ChatIssueLocatorChip } from "@/components/chat/ChatIssueLocatorChip";
 import {
   loadRuntimeSettings,
   type StoredChatMessage,
@@ -527,13 +520,6 @@ export function ChatPanel({
   const onClosedRef = useRef(onConversationClosed);
   /** Survives close→landing so draft/error are not wiped by route sync. */
   const closeHandoffRef = useRef<CloseHandoffNotice | null>(null);
-  const [chipDismissed, setChipDismissed] = useState(false);
-  const showIssueChip = softwareDeliveryPackEnabled(catalog?.enabled_packs);
-  const parsedIssue =
-    showIssueChip && !chipDismissed ? extractGitHubIssueLocator(draft) : null;
-  const issueHandoff: TestDesignHandoff | null = buildTestDesignHandoff(
-    parsedIssue?.canonical ?? null,
-  );
   const routeKey = isLanding ? "landing" : (conversationId ?? "none");
   const [routeStateKey, setRouteStateKey] = useState(routeKey);
   if (routeKey !== routeStateKey) {
@@ -774,8 +760,6 @@ export function ChatPanel({
     composerTouchedRef.current = true;
     setUnavailable(false);
     setDraft("");
-    setChipDismissed(false);
-    const handoff = issueHandoff;
 
     if (isLanding) {
       const withUser = appendUserMessage([], query);
@@ -797,7 +781,6 @@ export function ChatPanel({
         baseUrl: apiBaseUrl,
         ask,
         runtime: runtimeFromSettings(),
-        source_locator: handoff?.source_locator ?? null,
       });
       onCreatedRef.current?.(created.id);
       const result = await runPromise;
@@ -829,7 +812,6 @@ export function ChatPanel({
       baseUrl: apiBaseUrl,
       ask,
       runtime: runtimeFromSettings(),
-      source_locator: handoff?.source_locator ?? null,
     });
     await applyConversationRunResult(id, query, result);
   }
@@ -972,16 +954,6 @@ export function ChatPanel({
         <p className="kern-chat-inline-error" role="alert">
           {inlineError}
         </p>
-      ) : null}
-
-      {showIssueChip ? (
-        <ChatIssueLocatorChip
-          handoff={issueHandoff}
-          disabled={sending || historyBlocked}
-          onClear={() => {
-            setChipDismissed(true);
-          }}
-        />
       ) : null}
 
       <form className="kern-chat-composer" onSubmit={handleSubmit}>

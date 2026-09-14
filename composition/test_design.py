@@ -436,11 +436,9 @@ class TestDesignFacade:
             raise TestDesignNotFoundError("draft not found")
         if current.status == "ready" and current.version == expected_version:
             return _draft_view(current)
-        selected = {c.candidate_id for c in current.candidates if c.selected}
-        scenario_ids = {s.candidate_id for s in current.scenarios}
-        if selected - scenario_ids:
+        if not any(c.selected for c in current.candidates):
             raise TestDesignValidationError(
-                "selected candidates must have scenarios before confirm"
+                "select at least one candidate before confirm"
             )
         updated = TestCoverageDraft(
             draft_id=current.draft_id,
