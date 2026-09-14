@@ -263,12 +263,12 @@ class TestDesignFacade:
             )
         draft_id = str(uuid.uuid4())
         (
-            PlanCoverage,
-            PlanCoverageRequest,
+            SuggestTestCandidates,
+            SuggestTestCandidatesRequest,
             CoverageEvidenceItem,
             budget_source_document_text,
         ) = (
-            self._load_plan_coverage()
+            self._load_suggest_tests()
         )
         try:
             evidence = (
@@ -279,9 +279,9 @@ class TestDesignFacade:
             )
             chat_model = self._build_chat_model()
             repo = self._repository()
-            use_case = PlanCoverage(chat_model=chat_model, repository=repo)
+            use_case = SuggestTestCandidates(chat_model=chat_model, repository=repo)
             draft = use_case.execute(
-                PlanCoverageRequest(
+                SuggestTestCandidatesRequest(
                     draft_id=draft_id,
                     workspace_id=self._workspace_id,
                     conversation_id=_require_text(
@@ -298,7 +298,7 @@ class TestDesignFacade:
         except TestDesignValidationError:
             raise
         except Exception as error:
-            from packs.software_delivery.test_design.plan_coverage import (
+            from packs.software_delivery.test_design.suggest_tests import (
                 TestDesignInsufficientEvidenceError,
             )
             from packs.software_delivery.test_design.errors import (
@@ -469,17 +469,17 @@ class TestDesignFacade:
         return build_chat_model(self._settings)
 
     @staticmethod
-    def _load_plan_coverage():
-        from packs.software_delivery.test_design.plan_coverage import (
+    def _load_suggest_tests():
+        from packs.software_delivery.test_design.suggest_tests import (
             CoverageEvidenceItem,
-            PlanCoverage,
-            PlanCoverageRequest,
+            SuggestTestCandidates,
+            SuggestTestCandidatesRequest,
             budget_source_document_text,
         )
 
         return (
-            PlanCoverage,
-            PlanCoverageRequest,
+            SuggestTestCandidates,
+            SuggestTestCandidatesRequest,
             CoverageEvidenceItem,
             budget_source_document_text,
         )

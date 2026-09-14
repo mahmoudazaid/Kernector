@@ -1,4 +1,4 @@
-"""Coverage planning use case: grounded evidence → typed draft candidates."""
+"""Suggest test candidates use case: grounded evidence → typed draft candidates."""
 
 from __future__ import annotations
 
@@ -32,15 +32,15 @@ CONTEXT_CLOSE = "<<<END_RETRIEVED_CONTEXT>>>"
 
 
 class TestDesignInsufficientEvidenceError(RuntimeError):
-    """No usable grounded evidence for coverage planning."""
+    """No usable grounded evidence for test candidate suggestion."""
 
     __test__ = False
 
 
 TRUNCATION_MARKER = "\n\n[Evidence truncated to fit coverage planning budget.]"
 
-COVERAGE_PLANNING_SYSTEM = f"""\
-You are a software-delivery test coverage planner. Propose grounded test \
+TEST_CANDIDATE_SUGGESTION_SYSTEM = f"""\
+You are a software-delivery test candidate suggester. Propose grounded test \
 coverage candidates only from the retrieved ticket evidence supplied with \
 each request.
 
@@ -64,7 +64,7 @@ each item needs category and detail.
 
 @dataclass(frozen=True, slots=True)
 class CoverageEvidenceItem:
-    """One grounded evidence item for coverage planning."""
+    """One grounded evidence item for test candidate suggestion."""
 
     reference: SourceReference
     text: str
@@ -85,8 +85,8 @@ class CoverageEvidenceItem:
 
 
 @dataclass(frozen=True, slots=True)
-class PlanCoverageRequest:
-    """Input for planning coverage from grounded ticket evidence."""
+class SuggestTestCandidatesRequest:
+    """Input for suggesting test candidates from grounded ticket evidence."""
 
     draft_id: str
     workspace_id: str
@@ -96,8 +96,8 @@ class PlanCoverageRequest:
     evidence: Sequence[CoverageEvidenceItem]
 
 
-class PlanCoverage:
-    """Plan categorised coverage candidates and persist a coverage_review draft."""
+class SuggestTestCandidates:
+    """Suggest categorised test candidates and persist a coverage_review draft."""
 
     def __init__(
         self,
@@ -108,8 +108,8 @@ class PlanCoverage:
         self._chat_model = chat_model
         self._repository = repository
 
-    def execute(self, request: PlanCoverageRequest) -> TestCoverageDraft:
-        """Validate, plan from evidence, persist, and return the draft.
+    def execute(self, request: SuggestTestCandidatesRequest) -> TestCoverageDraft:
+        """Validate, suggest candidates from evidence, persist, and return the draft.
 
         Raises:
             TestDesignValidationError: Invalid request fields.
@@ -128,7 +128,7 @@ class PlanCoverage:
         evidence = _normalize_evidence(request.evidence)
         if not evidence:
             raise TestDesignInsufficientEvidenceError(
-                "No usable grounded evidence for test coverage planning."
+                "No usable grounded evidence for test candidate suggestion."
             )
 
         allowed_refs = {
@@ -136,19 +136,19 @@ class PlanCoverage:
             for item in evidence
         }
         result = self._chat_model.complete(
-            COVERAGE_PLANNING_SYSTEM,
+            TEST_CANDIDATE_SUGGESTION_SYSTEM,
             (
                 _context_message(evidence),
                 Message(
                     role="user",
-                    content=_planning_user_message(
+                    content=_suggestion_user_message(
                         ticket_identifier, allowed_refs
                     ),
                 ),
             ),
             PLAN_COVERAGE_MODEL_SETTINGS,
         )
-        candidates, gaps = _parse_coverage_plan(
+        candidates, gaps = _parse_test_candidates(
             result,
             allowed_refs,
             ticket_identifier=ticket_identifier,
@@ -258,7 +258,7 @@ def _context_message(evidence: Sequence[CoverageEvidenceItem]) -> Message:
     return Message(role="user", content="\n".join(lines))
 
 
-def _planning_user_message(
+def _suggestion_user_message(
     ticket_identifier: str,
     allowed_refs: set[tuple[str, str]],
 ) -> str:
@@ -267,14 +267,14 @@ def _planning_user_message(
         for source_type, source_id in sorted(allowed_refs)
     ]
     return (
-        f"Plan test coverage for ticket {ticket_identifier}. "
+        f"Suggest test candidates for ticket {ticket_identifier}. "
         "Return JSON only.\n"
         "Allowed evidence_references (copy source_type and source_id exactly):\n"
         f"{json.dumps(allowlist, separators=(',', ':'), sort_keys=True)}"
     )
 
 
-def _parse_coverage_plan(
+def _parse_test_candidates(
     result: AskResult,
     allowed_refs: set[tuple[str, str]],
     *,
@@ -282,7 +282,7 @@ def _parse_coverage_plan(
 ) -> tuple[tuple[TestCandidate, ...], tuple[CoverageGap, ...]]:
     data = loads_model_json_object(
         result.content if isinstance(result.content, str) else "",
-        failure_prefix="Coverage planning result",
+        failure_prefix="Test candidate suggestion result",
     )
     try:
         candidates = _parse_candidates(
@@ -296,7 +296,7 @@ def _parse_coverage_plan(
         raise
     except Exception as error:
         raise ToolFailureError(
-            "Coverage planning result missing required fields"
+            "Test candidate suggestion result missing required fields"
         ) from error
 
 
@@ -346,7 +346,7 @@ def _parse_candidates(
             )
         except TestDesignValidationError as error:
             raise ToolFailureError(
-                "Coverage planning result failed candidate validation"
+                "Test candidate suggestion result failed candidate validation"
             ) from error
     return tuple(candidates)
 
@@ -369,7 +369,7 @@ def _parse_coverage_gaps(raw: object) -> tuple[CoverageGap, ...]:
             )
         except (KeyError, TestDesignValidationError) as error:
             raise ToolFailureError(
-                "Coverage planning result failed coverage_gaps validation"
+                "Test candidate suggestion result failed coverage_gaps validation"
             ) from error
     return tuple(gaps)
 

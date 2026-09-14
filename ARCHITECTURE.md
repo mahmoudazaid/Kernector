@@ -196,8 +196,9 @@ workflow (#293) is pack-local (not an agent `Tool`): Chat handoff detects Test
 Design intent plus exactly one GitHub Issue reference **before** grounded RAG,
 returns a fixed server answer and `Start Test Design` action with a canonical
 `source_locator`, then create fetches that Issue live via `LiveSourceReader`
-(OAuth preflight first; no catalog/vector/RAG). Coverage planning under
-`packs/software_delivery/test_design/` sees only `SourceDocument` evidence,
+(OAuth preflight first; no catalog/vector/RAG). Test candidate suggestion under
+`packs/software_delivery/test_design/` (pack-local use case `SuggestTestCandidates`
+in `suggest_tests.py`, not an agent Tool) sees only `SourceDocument` evidence,
 persists candidates and coverage gaps via a namespaced versioned workspace
 store, and supports edit/select/save/confirm through `ready` (coverage
 selection confirmed — not detailed test-case generation; that remains #300).
