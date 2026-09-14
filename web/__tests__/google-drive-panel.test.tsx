@@ -183,7 +183,8 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
     expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
-    expect(screen.queryByText(/^sync scope$/i)).toBeNull();
+    expect(screen.getByText(/^sync scope$/i)).toBeInTheDocument();
+    expect(screen.getByText("1 folder")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^connect$/i })).toBeNull();
     expect(document.body.textContent).not.toMatch(/ya29\.|1\/\/|client-secret/);
   });
@@ -222,23 +223,33 @@ describe("GoogleDrivePanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Connected and enables Sync when no files are selected", async () => {
+  it("prompts to choose folders and opens the picker from Sync", async () => {
+    const user = userEvent.setup();
     render(
       <GoogleDrivePanel
         apiBaseUrl="http://api.test"
         getStatus={async () => SETUP_REQUIRED}
         loadSelection={emptySelection}
+        listItems={folderPage}
+        syncNow={async () => {
+          throw new Error("sync should not run without selection");
+        }}
       />,
     );
 
     expect(await screen.findByText(/^never$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^connected$/i)).toBeInTheDocument();
-    expect(screen.queryByText(/setup required/i)).toBeNull();
+    expect(screen.getByText(/^choose folders$/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/choose google drive folders or files to sync/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^not selected$/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Sync/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Browse/i })).toBeEnabled();
-    expect(screen.getByText(/^indexed$/i)).toBeInTheDocument();
-    expect(screen.queryByText(/^sync scope$/i)).toBeNull();
-    expect(screen.queryByText(/^new$/i)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Sync/i }));
+    expect(
+      await screen.findByRole("dialog", { name: /choose from google drive/i }),
+    ).toBeInTheDocument();
   });
 
   it("updates last-synced time from a status refetch after Sync", async () => {
@@ -413,7 +424,7 @@ describe("GoogleDrivePanel", () => {
     );
     expect(disconnect).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveTextContent(/indexed documents stay/i);
+    expect(dialog).toHaveTextContent(/deletes synced drive documents/i);
     await user.click(
       within(dialog).getByRole("button", { name: /disconnect/i }),
     );
@@ -786,6 +797,11 @@ describe("GoogleDrivePanel", () => {
     );
     await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
 
+    const confirm = await screen.findByRole("dialog", {
+      name: /remove synced google drive documents/i,
+    });
+    await user.click(within(confirm).getByRole("button", { name: /^remove$/i }));
+
     await waitFor(() => {
       expect(saveSelection).toHaveBeenCalledTimes(1);
     });
@@ -884,5 +900,81 @@ describe("GoogleDrivePanel", () => {
     expect(screen.getByRole("button", { name: /Browse/i })).toBeInTheDocument();
     expect(getStatus).toHaveBeenCalledTimes(2);
     expect(loadSelection).toHaveBeenCalledTimes(2);
+  });
+
+  it("warns before deselecting Drive roots when documents exist", async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn().mockResolvedValue(EMPTY_SELECTION);
+    const syncNow = vi.fn().mockResolvedValue({});
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => CONNECTED}
+        loadSelection={async () => ({
+          folders: [{ id: "folder-1", name: "Specs" }],
+          files: [],
+        })}
+        listItems={folderPage}
+        saveSelection={saveSelection}
+        syncNow={syncNow}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
+    const picker = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    await user.click(
+      await within(picker).findByRole("checkbox", { name: /specs/i }),
+    );
+    await user.click(within(picker).getByRole("button", { name: /^save$/i }));
+
+    const confirm = await screen.findByRole("dialog", {
+      name: /remove synced google drive documents/i,
+    });
+    expect(saveSelection).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: /choose from google drive/i }),
+    ).toBeInTheDocument();
+
+    await user.click(within(confirm).getByRole("button", { name: /^remove$/i }));
+    await waitFor(() => expect(saveSelection).toHaveBeenCalled());
+    expect(syncNow).not.toHaveBeenCalled();
+  });
+
+  it("cancels Drive purge confirm without saving", async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn();
+    render(
+      <GoogleDrivePanel
+        apiBaseUrl="http://api.test"
+        getStatus={async () => CONNECTED}
+        loadSelection={async () => ({
+          folders: [{ id: "folder-1", name: "Specs" }],
+          files: [],
+        })}
+        listItems={folderPage}
+        saveSelection={saveSelection}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Browse/i }));
+    const picker = await screen.findByRole("dialog", {
+      name: /choose from google drive/i,
+    });
+    await user.click(
+      await within(picker).findByRole("checkbox", { name: /specs/i }),
+    );
+    await user.click(within(picker).getByRole("button", { name: /^save$/i }));
+
+    const confirm = await screen.findByRole("dialog", {
+      name: /remove synced google drive documents/i,
+    });
+    await user.click(within(confirm).getByRole("button", { name: /^cancel$/i }));
+
+    expect(saveSelection).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: /choose from google drive/i }),
+    ).toBeInTheDocument();
   });
 });

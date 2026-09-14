@@ -316,7 +316,7 @@ def test_only_infrastructure_imports_google_drive_client() -> None:
             assert not hits, (
                 f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
             )
-    drive = REPO_ROOT / "infrastructure" / "connectors" / "google_drive.py"
+    drive = REPO_ROOT / "infrastructure" / "connectors" / "google_drive" / "connector.py"
     imported = find_forbidden_imports(drive, google_roots)
     assert imported == google_roots
 
@@ -329,3 +329,27 @@ def test_drive_sync_cli_reaches_the_connector_only_through_composition() -> None
     source = cli.read_text(encoding="utf-8")
     assert "from composition import" in source
     assert "sync_google_drive" in source
+
+
+def test_github_sync_cli_reaches_the_connector_only_through_composition() -> None:
+    cli = REPO_ROOT / "presentation" / "cli" / "sync_github.py"
+    assert not find_forbidden_imports(cli, {"infrastructure", "httpx"})
+    source = cli.read_text(encoding="utf-8")
+    assert "from composition import" in source
+    assert "sync_github" in source
+
+
+def test_github_http_routes_reach_connectors_only_through_composition() -> None:
+    routes = REPO_ROOT / "presentation" / "http" / "routes" / "github.py"
+    assert not find_forbidden_imports(routes, {"infrastructure", "httpx"})
+    source = routes.read_text(encoding="utf-8")
+    assert "from composition import" in source
+
+
+def test_pyproject_does_not_declare_a_github_sdk() -> None:
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    forbidden = ("PyGithub", "githubkit", "gidgethub", "pygithub")
+    for name in forbidden:
+        assert name not in text, f"unexpected GitHub SDK dependency: {name}"
+    assert 'github = [' in text or 'github=[' in text
+    assert "httpx" in text

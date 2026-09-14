@@ -41,7 +41,7 @@ def test_hub_source_types_are_explicit_members() -> None:
     from domain.knowledge import HUB_SOURCE_TYPES
 
     assert HUB_SOURCE_TYPES == frozenset(
-        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE, SourceType.GITHUB}
     )
 
 

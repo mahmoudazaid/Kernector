@@ -18,9 +18,17 @@ import {
   type GoogleDrivePanelProps,
 } from "@/components/documents/GoogleDrivePanel";
 import {
+  GitHubPanel,
+  type GitHubPanelProps,
+} from "@/components/documents/GitHubPanel";
+import {
   captureDriveCallback,
   peekDriveCallback,
 } from "@/lib/documents/drive-callback";
+import {
+  captureGithubCallback,
+  peekGithubCallback,
+} from "@/lib/documents/github-callback";
 import { triggerBrowserDownload } from "@/lib/documents/download";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
@@ -78,9 +86,13 @@ export type DocumentsPanelProps = {
   getDriveStatus?: GoogleDrivePanelProps["getStatus"];
   syncDrive?: GoogleDrivePanelProps["syncNow"];
   disconnectDrive?: GoogleDrivePanelProps["disconnect"];
+  getGitHubStatus?: GitHubPanelProps["getStatus"];
+  syncGitHub?: GitHubPanelProps["syncNow"];
+  disconnectGitHub?: GitHubPanelProps["disconnect"];
 };
 
 const GOOGLE_DRIVE_SOURCE = "google_drive";
+const GITHUB_SOURCE = "github";
 
 type CatalogView =
   | { kind: "loading" }
@@ -122,15 +134,23 @@ const HUB_LEDE =
   "Connect knowledge sources, control synchronization, and browse every indexed document in one place.";
 
 const PLANNED_CONNECTORS = [
-  { name: "GitHub", kind: "Repository knowledge", icon: "github" },
   { name: "Jira", kind: "Issues and stories", icon: "jira" },
   { name: "Confluence", kind: "Team documentation", icon: "book" },
 ] as const;
 
-const SOURCE_FILTERS = ["All sources", "File uploads", "Google Drive"] as const;
+const SOURCE_FILTERS = [
+  "All sources",
+  "File uploads",
+  "Google Drive",
+  "GitHub",
+] as const;
 
 function isHubSourceType(value: string): value is HubSourceType {
-  return value === "knowledge_document" || value === "google_drive";
+  return (
+    value === "knowledge_document" ||
+    value === "google_drive" ||
+    value === "github"
+  );
 }
 
 function maxEmptyWindowsForSelection(chunkCount: number | null | undefined): number {
@@ -196,6 +216,14 @@ function isDriveDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GOOGLE_DRIVE_SOURCE;
 }
 
+function isGitHubDocument(doc: CatalogDocumentResponse): boolean {
+  return doc.source_type === GITHUB_SOURCE;
+}
+
+function isUploadDocument(doc: CatalogDocumentResponse): boolean {
+  return !isDriveDocument(doc) && !isGitHubDocument(doc);
+}
+
 /** Ready documents with stored chunks may open the inspect sheet. */
 function canInspectChunks(doc: CatalogDocumentResponse): boolean {
   return (
@@ -206,7 +234,49 @@ function canInspectChunks(doc: CatalogDocumentResponse): boolean {
 }
 
 function sourceLabel(sourceType: string): string {
-  return sourceType === GOOGLE_DRIVE_SOURCE ? "Google Drive" : "File upload";
+  if (sourceType === GOOGLE_DRIVE_SOURCE) {
+    return "Google Drive";
+  }
+  if (sourceType === GITHUB_SOURCE) {
+    return "GitHub";
+  }
+  return "File upload";
+}
+
+/** Split GitHub ``owner/repo:path`` into repo + path for display. */
+function githubRepoAndPath(
+  sourceId: string,
+): { repo: string; path: string } | null {
+  const colon = sourceId.indexOf(":");
+  if (colon <= 0 || colon >= sourceId.length - 1) {
+    return null;
+  }
+  return {
+    repo: sourceId.slice(0, colon),
+    path: sourceId.slice(colon + 1),
+  };
+}
+
+/** Secondary row line under the file name (avoid raw ``repo:path`` colon jam). */
+function documentLocator(doc: CatalogDocumentResponse): string {
+  if (isGitHubDocument(doc)) {
+    const parts = githubRepoAndPath(doc.source_id);
+    if (parts) {
+      return `${parts.repo} · ${parts.path}`;
+    }
+  }
+  return doc.source_id;
+}
+
+/** Confirm copy matches conversation delete: quoted name, no opaque id dump. */
+function deleteDocumentDescription(doc: CatalogDocumentResponse): string {
+  if (isGitHubDocument(doc)) {
+    const parts = githubRepoAndPath(doc.source_id);
+    if (parts) {
+      return `Delete “${doc.file_name}” from ${parts.repo} (${parts.path})? This cannot be undone.`;
+    }
+  }
+  return `Delete “${doc.file_name}”? This cannot be undone.`;
 }
 
 function documentStatusClass(status: string): string | undefined {
@@ -249,21 +319,22 @@ function DriveIcon() {
   );
 }
 
+function GitHubMiniIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 2.8a7.2 7.2 0 0 0-2.28 14.03c.36.07.5-.16.5-.35v-1.23c-2.03.44-2.46-.87-2.46-.87-.33-.84-.8-1.07-.8-1.07-.66-.45.05-.44.05-.44.73.05 1.11.75 1.11.75.65 1.11 1.7.79 2.12.6.06-.47.25-.79.46-.97-1.62-.18-3.32-.81-3.32-3.6 0-.8.28-1.45.75-1.96-.08-.18-.33-.92.07-1.91 0 0 .61-.2 2 .75a6.9 6.9 0 0 1 3.64 0c1.39-.95 2-.75 2-.75.4 1 .15 1.73.07 1.91.47.51.75 1.16.75 1.96 0 2.8-1.7 3.42-3.33 3.6.26.22.5.67.5 1.35v2c0 .2.13.42.5.35A7.2 7.2 0 0 0 10 2.8Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function PlannedIcon({
   name,
 }: {
   name: (typeof PLANNED_CONNECTORS)[number]["icon"];
 }) {
-  if (name === "github") {
-    return (
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path
-          d="M10 2.8a7.2 7.2 0 0 0-2.28 14.03c.36.07.5-.16.5-.35v-1.23c-2.03.44-2.46-.87-2.46-.87-.33-.84-.8-1.07-.8-1.07-.66-.45.05-.44.05-.44.73.05 1.11.75 1.11.75.65 1.11 1.7.79 2.12.6.06-.47.25-.79.46-.97-1.62-.18-3.32-.81-3.32-3.6 0-.8.28-1.45.75-1.96-.08-.18-.33-.92.07-1.91 0 0 .61-.2 2 0.75a6.9 6.9 0 0 1 3.64 0c1.39-.95 2-.75 2-.75.4 1 .15 1.73.07 1.91.47.51.75 1.16.75 1.96 0 2.8-1.7 3.42-3.33 3.6.26.22.5.67.5 1.35v2c0 .2.13.42.5.35A7.2 7.2 0 0 0 10 2.8Z"
-          fill="currentColor"
-        />
-      </svg>
-    );
-  }
   if (name === "jira") {
     return (
       <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -321,6 +392,9 @@ export function DocumentsPanel({
   getDriveStatus,
   syncDrive,
   disconnectDrive,
+  getGitHubStatus,
+  syncGitHub: syncGitHubNow,
+  disconnectGitHub: disconnectGitHubNow,
 }: DocumentsPanelProps) {
   const {
     catalog: runtimeCatalog,
@@ -350,6 +424,11 @@ export function DocumentsPanel({
   const [driveReloadToken, setDriveReloadToken] = useState(0);
   const [oauthCallback, setOauthCallback] = useState<string | null>(
     peekDriveCallback,
+  );
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [githubReloadToken, setGithubReloadToken] = useState(0);
+  const [githubOauthCallback, setGithubOauthCallback] = useState<string | null>(
+    peekGithubCallback,
   );
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -385,6 +464,7 @@ export function DocumentsPanel({
 
   useEffect(() => {
     captureDriveCallback();
+    captureGithubCallback();
   }, []);
 
   useEffect(() => {
@@ -510,12 +590,15 @@ export function DocumentsPanel({
     catalog.kind === "ready" || catalog.kind === "error"
       ? catalog.documents
       : [];
-  const uploadedDocuments = documents.filter((doc) => !isDriveDocument(doc));
+  const uploadedDocuments = documents.filter((doc) => isUploadDocument(doc));
   const visibleDocuments = documents.filter((doc) => {
     if (sourceFilter === "Google Drive" && !isDriveDocument(doc)) {
       return false;
     }
-    if (sourceFilter === "File uploads" && isDriveDocument(doc)) {
+    if (sourceFilter === "GitHub" && !isGitHubDocument(doc)) {
+      return false;
+    }
+    if (sourceFilter === "File uploads" && !isUploadDocument(doc)) {
       return false;
     }
     if (!query.trim()) {
@@ -906,6 +989,9 @@ export function DocumentsPanel({
       if (isDriveDocument(document)) {
         setDriveReloadToken((token) => token + 1);
       }
+      if (isGitHubDocument(document)) {
+        setGithubReloadToken((token) => token + 1);
+      }
       await refresh();
     } catch (error) {
       setPendingDelete(null);
@@ -952,7 +1038,8 @@ export function DocumentsPanel({
     },
     null,
   );
-  const connectedCount = 1 + (driveConnected ? 1 : 0);
+  const connectedCount =
+    1 + (driveConnected ? 1 : 0) + (githubConnected ? 1 : 0);
 
   if (catalog.kind === "loading") {
     return (
@@ -1131,6 +1218,23 @@ export function DocumentsPanel({
               onPickerOpenChange={setPickerOpen}
             />
           ) : null}
+          {githubConnected ? (
+            <GitHubPanel
+              apiBaseUrl={apiBaseUrl}
+              getStatus={getGitHubStatus}
+              syncNow={syncGitHubNow}
+              disconnect={disconnectGitHubNow}
+              onConnectionChange={setGithubConnected}
+              onCatalogChange={() => {
+                void refresh();
+              }}
+              reloadToken={githubReloadToken}
+              oauthCallback={githubOauthCallback}
+              onOAuthCallbackConsumed={() => {
+                setGithubOauthCallback(null);
+              }}
+            />
+          ) : null}
         </div>
         <div className="kern-hub-section-head">
           <h2>Available connectors</h2>
@@ -1156,6 +1260,23 @@ export function DocumentsPanel({
               }}
               pickerOpen={drivePickerOpen}
               onPickerOpenChange={setPickerOpen}
+            />
+          ) : null}
+          {!githubConnected ? (
+            <GitHubPanel
+              apiBaseUrl={apiBaseUrl}
+              getStatus={getGitHubStatus}
+              syncNow={syncGitHubNow}
+              disconnect={disconnectGitHubNow}
+              onConnectionChange={setGithubConnected}
+              onCatalogChange={() => {
+                void refresh();
+              }}
+              reloadToken={githubReloadToken}
+              oauthCallback={githubOauthCallback}
+              onOAuthCallbackConsumed={() => {
+                setGithubOauthCallback(null);
+              }}
             />
           ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
@@ -1272,7 +1393,7 @@ export function DocumentsPanel({
                           }}
                         >
                           <span className="kern-doc-name">{doc.file_name}</span>
-                          <span className="kern-doc-id">{doc.source_id}</span>
+                          <span className="kern-doc-id">{documentLocator(doc)}</span>
                         </button>
                       </td>
                       <td>
@@ -1280,6 +1401,8 @@ export function DocumentsPanel({
                           <span className="kern-mini-icon">
                             {isDriveDocument(doc) ? (
                               <DriveIcon />
+                            ) : isGitHubDocument(doc) ? (
+                              <GitHubMiniIcon />
                             ) : (
                               <UploadIcon />
                             )}
@@ -1337,12 +1460,7 @@ export function DocumentsPanel({
 
         {selected ? (
           <div className="kern-documents-detail">
-            <p className="kern-settings-hint">
-              {isDriveDocument(selected)
-                ? `Managed by Google Drive sync. Status: ${selected.status} · chunks: ${selected.chunk_count} · synced: ${formatTimestamp(selected.uploaded_at)}`
-                : `Catalog identity is the source ID, not the file name. Status: ${selected.status} · chunks: ${selected.chunk_count} · uploaded: ${formatTimestamp(selected.uploaded_at)}`}
-            </p>
-            {!isDriveDocument(selected) ? (
+            {isUploadDocument(selected) ? (
               <div className="kern-documents-detail-actions">
                 {selected.has_stored_content ? (
                   <>
@@ -1390,7 +1508,7 @@ export function DocumentsPanel({
               </div>
             ) : null}
             {previewSourceId === selected.source_id &&
-            !isDriveDocument(selected) &&
+            isUploadDocument(selected) &&
             selected.has_stored_content ? (
               <DocumentViewer
                 sourceId={selected.source_id}
@@ -1409,7 +1527,7 @@ export function DocumentsPanel({
           </p>
         ) : null}
 
-        {selected && !isDriveDocument(selected) ? (
+        {selected && isUploadDocument(selected) ? (
           <form className="kern-documents-form" onSubmit={onReplace}>
             <fieldset
               className="kern-settings-fieldset"
@@ -1522,9 +1640,7 @@ export function DocumentsPanel({
         open={pendingDelete !== null}
         title="Delete document"
         description={
-          pendingDelete
-            ? `Delete ${pendingDelete.file_name} (${pendingDelete.source_id})? This cannot be undone.`
-            : ""
+          pendingDelete ? deleteDocumentDescription(pendingDelete) : ""
         }
         confirmLabel="Delete"
         tone="danger"

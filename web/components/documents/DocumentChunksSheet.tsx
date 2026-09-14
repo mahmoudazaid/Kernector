@@ -15,6 +15,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/Accordion";
 import { Button } from "@/components/ui/Button";
+import { Loader } from "@/components/ui/Loader";
 import { Sheet } from "@/components/ui/Sheet";
 import type {
   CatalogDocumentResponse,
@@ -267,9 +268,9 @@ export function DocumentChunksSheet({
 
       <div className="kern-chunks-sheet-body">
         {chunksView.kind === "loading" ? (
-          <p className="kern-settings-hint" role="status">
-            Loading stored chunks…
-          </p>
+          <div className="kern-picker-loading">
+            <Loader label="Loading stored chunks" size="sm" />
+          </div>
         ) : null}
 
         {chunksView.kind === "empty" ? (

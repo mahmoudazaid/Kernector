@@ -75,6 +75,26 @@ const EMPTY_SELECTION: GoogleDriveSelectionResponse = {
   files: [],
 };
 
+function selectionIds(selection: GoogleDriveSelectionResponse): Set<string> {
+  return new Set([
+    ...(selection.folders ?? []).map((item) => item.id),
+    ...(selection.files ?? []).map((item) => item.id),
+  ]);
+}
+
+function droppedDriveSelection(
+  previous: GoogleDriveSelectionResponse,
+  next: GoogleDriveSelectionResponse,
+): boolean {
+  const nextIds = selectionIds(next);
+  for (const id of selectionIds(previous)) {
+    if (!nextIds.has(id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -116,6 +136,9 @@ export function GoogleDrivePanel({
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
+  const [pendingSelection, setPendingSelection] =
+    useState<GoogleDriveSelectionResponse | null>(null);
   const [internalPickerOpen, setInternalPickerOpen] = useState(false);
   const pickerOpen = onPickerOpenChange
     ? (pickerOpenProp ?? false)
@@ -277,6 +300,11 @@ export function GoogleDrivePanel({
     if (busyRef.current) {
       return;
     }
+    const current = view.kind === "ready" ? view.status : null;
+    if (current?.setup_required) {
+      setPickerOpen(true);
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setActionError(null);
@@ -289,6 +317,12 @@ export function GoogleDrivePanel({
         setActionError(ABORT_COPY);
         void loadStatus();
         onCatalogChangeRef.current?.();
+      } else if (
+        error instanceof ApiError &&
+        (error.code === "google_drive_selection_required" ||
+          error.detail.toLowerCase().includes("select google drive"))
+      ) {
+        setPickerOpen(true);
       } else {
         setActionError(actionErrorMessage(error));
       }
@@ -303,6 +337,8 @@ export function GoogleDrivePanel({
       return;
     }
     busyRef.current = true;
+    setPurgeConfirmOpen(false);
+    setPendingSelection(null);
     setPickerOpen(false);
     setBusy(true);
     setActionError(null);
@@ -335,6 +371,30 @@ export function GoogleDrivePanel({
     }
   }
 
+  function onPickerConfirm(next: GoogleDriveSelectionResponse) {
+    const documentCount =
+      view.kind === "ready" ? view.status.document_count : 0;
+    if (droppedDriveSelection(selection, next) && documentCount > 0) {
+      setPendingSelection(next);
+      setPurgeConfirmOpen(true);
+      return;
+    }
+    void onAddSelection(next);
+  }
+
+  function onPurgeCancel() {
+    setPurgeConfirmOpen(false);
+    setPendingSelection(null);
+  }
+
+  function onPurgeConfirm() {
+    if (pendingSelection == null) {
+      onPurgeCancel();
+      return;
+    }
+    void onAddSelection(pendingSelection);
+  }
+
   async function onDisconnect() {
     if (busyRef.current) {
       return;
@@ -364,6 +424,7 @@ export function GoogleDrivePanel({
 
   const status = view.kind === "ready" ? view.status : null;
   const reauth = Boolean(status?.reauthorization_required);
+  const setupRequired = Boolean(status?.setup_required);
   const oauthStartHref = googleDriveOAuthStartUrl(apiBaseUrl);
   const statusLabel =
     view.kind === "loading"
@@ -372,9 +433,11 @@ export function GoogleDrivePanel({
         ? "Unavailable"
         : reauth
           ? "Reconnect required"
-          : status?.connected
-            ? "Connected"
-            : "Available";
+          : setupRequired
+            ? "Choose folders"
+            : status?.connected
+              ? "Connected"
+              : "Available";
 
   const lastSync = status?.last_sync ?? null;
   const failedCount = lastSync?.failed_count ?? 0;
@@ -463,6 +526,15 @@ export function GoogleDrivePanel({
         </div>
       ) : null}
 
+      {setupRequired && !reauth ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--warn"
+          role="status"
+        >
+          <p>Choose Google Drive folders or files to sync before indexing.</p>
+        </div>
+      ) : null}
+
       <div className="kern-source-metrics">
         <div>
           <span className="kern-metric-label">Account</span>
@@ -478,6 +550,12 @@ export function GoogleDrivePanel({
         </div>
       </div>
       <div className="kern-sync-section" role="status">
+        <div className="kern-sync-heading">
+          <h3>Sync scope</h3>
+          <span className="kern-sync-time">
+            {status?.sync_scope ?? "Not selected"}
+          </span>
+        </div>
         <div className="kern-sync-heading">
           <h3>Last synced</h3>
           <time className="kern-sync-time" dateTime={lastSync?.synced_at}>
@@ -537,9 +615,10 @@ export function GoogleDrivePanel({
           selectionLoading={!selectionReady}
           busy={busy}
           listItems={listItems}
-          onConfirm={(next) => void onAddSelection(next)}
+          onConfirm={onPickerConfirm}
           notice={pickerNotice}
           onCancel={() => {
+            onPurgeCancel();
             setActionError(null);
             setPickerNotice(null);
             setPickerOpen(false);
@@ -548,9 +627,21 @@ export function GoogleDrivePanel({
       ) : null}
 
       <ConfirmDialog
+        open={purgeConfirmOpen}
+        title="Remove synced Google Drive documents?"
+        description="Removing selected folders or files will delete their synced documents from the knowledge base. This cannot be undone from here."
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        tone="danger"
+        busy={busy}
+        onCancel={onPurgeCancel}
+        onConfirm={onPurgeConfirm}
+      />
+
+      <ConfirmDialog
         open={confirmOpen}
         title="Disconnect Google Drive?"
-        description="Indexed documents stay in the catalog. You can connect again later."
+        description="This removes the stored Google Drive grant and deletes synced Drive documents from this workspace."
         confirmLabel="Disconnect"
         tone="danger"
         busy={busy}

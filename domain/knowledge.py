@@ -20,6 +20,7 @@ class SourceType(StrEnum):
 
     KNOWLEDGE_DOCUMENT = "knowledge_document"
     GOOGLE_DRIVE = "google_drive"
+    GITHUB = "github"
 
 
 STORY_SOURCE_TYPES = frozenset({"story", "user_story"})
@@ -29,6 +30,7 @@ HUB_SOURCE_TYPES = frozenset(
     {
         SourceType.KNOWLEDGE_DOCUMENT,
         SourceType.GOOGLE_DRIVE,
+        SourceType.GITHUB,
     }
 )
 """Source kinds shown in the shared documents hub and chunk-inspect API.
@@ -303,6 +305,7 @@ class CatalogDocument:
     chunk_count: int
     error: str | None
     revision: str | None = None
+    connector_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
@@ -331,3 +334,5 @@ class CatalogDocument:
                 f"revision must be a string or None, "
                 f"got {type(self.revision).__name__}"
             )
+        if self.connector_id is not None:
+            _require_text(self.connector_id, "connector_id")

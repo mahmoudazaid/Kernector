@@ -192,3 +192,32 @@ def test_catalog_document_rejects_non_string_revision() -> None:
             error=None,
             revision=42,  # type: ignore[arg-type]
         )
+
+
+def test_catalog_document_connector_id_defaults_to_none() -> None:
+    document = CatalogDocument(
+        reference=_reference(),
+        file_name="guide.md",
+        title=None,
+        content_format=None,
+        status=CatalogStatus.READY,
+        uploaded_at=_aware_now(),
+        chunk_count=1,
+        error=None,
+    )
+    assert document.connector_id is None
+
+
+def test_catalog_document_rejects_blank_connector_id() -> None:
+    with pytest.raises(DomainValidationError, match="connector_id"):
+        CatalogDocument(
+            reference=_reference(),
+            file_name="guide.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.READY,
+            uploaded_at=_aware_now(),
+            chunk_count=1,
+            error=None,
+            connector_id="   ",
+        )

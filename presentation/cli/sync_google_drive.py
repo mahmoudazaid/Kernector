@@ -33,7 +33,9 @@ def main() -> int:
         return 1
 
     print(f"ingested={response.ingested_count}")
+    print(f"updated={response.updated_count}")
     print(f"skipped={response.skipped_count}")
+    print(f"removed={response.removed_count}")
     print(f"failed={response.failed_count}")
     for outcome in response.outcomes:
         if outcome.status is ConnectorSyncStatus.FAILED:

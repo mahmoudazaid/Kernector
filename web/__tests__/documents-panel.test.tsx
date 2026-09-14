@@ -44,6 +44,23 @@ vi.mock("@/lib/api/connectors", async (importOriginal) => {
       .mockResolvedValue({ items: [], next_page_token: null }),
     googleDriveOAuthStartUrl: (baseUrl: string) =>
       `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/google-drive/oauth/start`,
+    getGitHubStatus: vi.fn().mockResolvedValue({
+      configured: false,
+      available: true,
+      connected: false,
+      oauth_ready: true,
+      account_login: null,
+      document_count: 0,
+      owner: null,
+      repo: null,
+      last_sync: null,
+      reauthorization_required: false,
+      connection_state: "disconnected",
+    }),
+    syncGitHub: vi.fn(),
+    disconnectGitHub: vi.fn(),
+    githubOAuthStartUrl: (baseUrl: string) =>
+      `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/github/oauth/start`,
   };
 });
 
@@ -345,7 +362,7 @@ describe("DocumentsPanel", () => {
     await user.click(screen.getByRole("button", { name: /^upload new$/i }));
 
     const dialog = await screen.findByRole("dialog");
-    const alert = await screen.findByRole("alert");
+    const alert = await within(dialog).findByRole("alert");
     expect(dialog.contains(alert)).toBe(true);
     expect(alert).toHaveTextContent(/document upload failed/i);
     expect(dialog).toHaveAttribute("aria-describedby", "hub-upload-error");
@@ -452,6 +469,8 @@ describe("DocumentsPanel", () => {
       name: /delete document/i,
     });
     expect(dialog).toHaveTextContent(/cannot be undone/i);
+    expect(dialog).toHaveTextContent(/Delete “spec.md”\?/i);
+    expect(dialog).not.toHaveTextContent(/src-1/);
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
 
     expect(remove).toHaveBeenCalledWith(
@@ -460,6 +479,43 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByText(/deleted document src-1/i),
     ).toBeInTheDocument();
+  });
+
+  it("formats GitHub delete confirms without raw repo:path source ids", async () => {
+    const user = userEvent.setup();
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={vi.fn().mockResolvedValue(
+          listResponse([
+            doc({
+              source_id:
+                "mahmoudazaid/Kernector:.agents/skills/fastapi/references/dependencies.md",
+              source_type: "github",
+              file_name: "dependencies.md",
+            }),
+          ]),
+        )}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    await openDocumentsTab(user);
+    expect(
+      await screen.findByText(
+        "mahmoudazaid/Kernector · .agents/skills/fastapi/references/dependencies.md",
+      ),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /delete dependencies\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /delete document/i,
+    });
+    expect(dialog).toHaveTextContent(
+      /Delete “dependencies\.md” from mahmoudazaid\/Kernector \(\.agents\/skills\/fastapi\/references\/dependencies\.md\)\?/,
+    );
+    expect(dialog).not.toHaveTextContent(/Kernector:\.agents/);
   });
 
   it("does not delete when row confirmation is cancelled", async () => {
@@ -633,8 +689,9 @@ describe("DocumentsPanel", () => {
     await user.click(await screen.findByRole("button", { name: /^browse$/i }));
 
     await screen.findByRole("dialog");
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByText(/document operation failed/i)).toBeNull();
+    expect(
+      screen.queryByText(/document operation failed/i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows sanitized per-document warning from error_summary", async () => {
@@ -899,9 +956,9 @@ describe("DocumentsPanel", () => {
     expect(
       await screen.findByRole("button", { name: /^checking/i }),
     ).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      /settings catalog unavailable/i,
-    );
+    expect(
+      screen.getByText(/settings catalog unavailable/i).closest('[role="alert"]'),
+    ).toHaveTextContent(/settings catalog unavailable/i);
 
     finishReload(SETTINGS);
 
@@ -1295,9 +1352,16 @@ describe("DocumentsPanel", () => {
       />,
     );
 
-    expect(
-      await screen.findByRole("link", { name: /^connect$/i }),
-    ).toHaveAttribute(
+    const connectLinks = await screen.findAllByRole("link", {
+      name: /^connect$/i,
+    });
+    const driveConnect = connectLinks.find((link) =>
+      link
+        .getAttribute("href")
+        ?.includes("/api/v1/connectors/google-drive/oauth/start"),
+    );
+    expect(driveConnect).toBeDefined();
+    expect(driveConnect).toHaveAttribute(
       "href",
       "http://api.test/api/v1/connectors/google-drive/oauth/start",
     );
@@ -1305,6 +1369,7 @@ describe("DocumentsPanel", () => {
       name: "Available connectors",
     }).parentElement?.nextElementSibling;
     expect(available?.textContent).toMatch(/google drive/i);
+    expect(available?.textContent).toMatch(/github/i);
     expect(
       screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
@@ -2414,7 +2479,12 @@ describe("DocumentsPanel", () => {
 
     await openDocumentsTab(user);
     await screen.findByText("drive-note.md");
-    expect(screen.getByText(/managed by google drive sync/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/managed by google drive sync/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/managed by github sync/i),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /^preview drive-note\.md$/i }),
     ).not.toBeInTheDocument();

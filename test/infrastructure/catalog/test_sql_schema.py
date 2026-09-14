@@ -23,10 +23,10 @@ def test_missing_database_reports_version_zero_without_creating_file(
     assert not path.parent.exists()
 
 
-def test_apply_shipped_migration_advances_to_version_one(tmp_path: Path) -> None:
+def test_apply_shipped_migration_advances_to_version_two(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
     apply_migrations(path)
-    assert current_schema_version(path) == 1
+    assert current_schema_version(path) == 2
     assert path.is_file()
 
 
@@ -65,7 +65,7 @@ def test_sqlite_error_during_migration_is_catalog_error(
     assert current_schema_version(path) == 0
 
 
-def test_failing_second_migration_rolls_back_and_keeps_v1_catalog(
+def test_failing_second_migration_rolls_back_and_keeps_prior_catalog(
     tmp_path: Path,
 ) -> None:
     from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
@@ -77,19 +77,19 @@ def test_failing_second_migration_rolls_back_and_keeps_v1_catalog(
     )
     from datetime import UTC, datetime
 
-    shipped = (
+    shipped_dir = (
         Path(__file__).resolve().parents[3]
         / "infrastructure"
         / "catalog"
         / "migrations"
-        / "001_catalog_documents.sql"
     )
     migrations = tmp_path / "migrations"
     migrations.mkdir()
-    (migrations / "001_catalog_documents.sql").write_text(
-        shipped.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    (migrations / "002_rename_then_fail.sql").write_text(
+    for name in ("001_catalog_documents.sql", "002_catalog_connector_id.sql"):
+        (migrations / name).write_text(
+            (shipped_dir / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    (migrations / "003_rename_then_fail.sql").write_text(
         "ALTER TABLE catalog_documents RENAME TO catalog_documents_renamed;\n"
         "THIS IS NOT VALID SQL;\n",
         encoding="utf-8",
@@ -97,7 +97,7 @@ def test_failing_second_migration_rolls_back_and_keeps_v1_catalog(
     path = tmp_path / "catalog.sqlite"
     with pytest.raises(CatalogError):
         apply_migrations(path, migrations_dir=migrations)
-    assert current_schema_version(path) == 1
+    assert current_schema_version(path) == 2
 
     catalog = SqlDocumentCatalog(path, "ws-a")
     document = CatalogDocument(
@@ -110,6 +110,7 @@ def test_failing_second_migration_rolls_back_and_keeps_v1_catalog(
         chunk_count=2,
         error=None,
         revision="1",
+        connector_id="connector-a",
     )
     catalog.upsert(document)
     assert catalog.get(document.reference) == document
@@ -130,7 +131,7 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
         for future in futures:
             future.result(timeout=15)
 
-    assert current_schema_version(path) == 1
+    assert current_schema_version(path) == 2
     connection = sqlite3.connect(path)
     try:
         recorded_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]

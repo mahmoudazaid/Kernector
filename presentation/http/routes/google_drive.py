@@ -116,7 +116,7 @@ def google_drive_connector_sync(
 def google_drive_connector_disconnect(
     disconnect: GoogleDriveDisconnectDep,
 ) -> None:
-    """Revoke and delete the stored user grant. Indexed documents stay."""
+    """Revoke and delete the stored user grant. Synced documents are removed."""
     disconnect()
 
 

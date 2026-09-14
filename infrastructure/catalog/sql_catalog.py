@@ -154,6 +154,7 @@ def _document_from_row(row: sqlite3.Row) -> CatalogDocument:
     content_format = row["content_format"]
     error = row["error"]
     revision = row["revision"]
+    connector_id = row["connector_id"]
     return CatalogDocument(
         reference=SourceReference(str(row["source_id"]), str(row["source_type"])),
         file_name=str(row["file_name"]),
@@ -164,4 +165,5 @@ def _document_from_row(row: sqlite3.Row) -> CatalogDocument:
         chunk_count=int(row["chunk_count"]),
         error=None if error is None else str(error),
         revision=None if revision is None else str(revision),
+        connector_id=None if connector_id is None else str(connector_id),
     )

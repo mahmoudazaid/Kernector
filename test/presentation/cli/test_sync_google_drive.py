@@ -56,7 +56,9 @@ def test_all_ingested_returns_zero(
     captured = capsys.readouterr()
     assert code == 0
     assert "ingested=2" in captured.out
+    assert "updated=0" in captured.out
     assert "skipped=0" in captured.out
+    assert "removed=0" in captured.out
     assert "failed=0" in captured.out
     assert captured.err == ""
     assert SECRET not in captured.out

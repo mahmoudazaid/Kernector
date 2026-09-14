@@ -42,6 +42,7 @@ def _document(
     chunk_count: int = 2,
     error: str | None = None,
     revision: str | None = None,
+    connector_id: str | None = None,
 ) -> CatalogDocument:
     return CatalogDocument(
         reference=_reference(source_id, source_type),
@@ -53,6 +54,7 @@ def _document(
         chunk_count=chunk_count,
         error=error,
         revision=revision,
+        connector_id=connector_id,
     )
 
 
@@ -242,3 +244,32 @@ def test_failed_write_preserves_prior_readable_state(
     fail_writes = False
     assert catalog.all() == (document,)
     assert catalog.get(document.reference) == document
+
+
+def test_connector_id_round_trip_and_workspace_isolation(tmp_path: Path) -> None:
+    path = tmp_path / "catalog.sqlite"
+    left = SqlDocumentCatalog(path, "ws-a")
+    right = SqlDocumentCatalog(path, "ws-b")
+    shared_ref = _reference("repo:README.md", SourceType.GITHUB)
+    left_doc = _document(
+        source_id="repo:README.md",
+        source_type=SourceType.GITHUB,
+        file_name="README.md",
+        connector_id="connector-a",
+    )
+    right_doc = _document(
+        source_id="repo:README.md",
+        source_type=SourceType.GITHUB,
+        file_name="README.md",
+        connector_id="connector-b",
+        title="Other workspace",
+    )
+    left.upsert(left_doc)
+    right.upsert(right_doc)
+
+    assert left.get(shared_ref) == left_doc
+    assert right.get(shared_ref) == right_doc
+    left.delete(shared_ref)
+    assert left.get(shared_ref) is None
+    assert right.get(shared_ref) == right_doc
+

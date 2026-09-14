@@ -1,1 +1,1 @@
-"""Google Drive connector adapters."""
+"""Provider connector adapters (Google Drive, GitHub, …)."""
