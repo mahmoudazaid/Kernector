@@ -200,10 +200,21 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     setError(null);
     setConfirmNote(null);
     try {
-      const ready = await confirmTestDesignDraft({
+      // Persist checkbox selection first — confirm reads the store, not local state.
+      const saved = await patchTestDesignDraft({
         baseUrl: apiBaseUrl,
         draftId: draft.draft_id,
-        body: { expected_version: draft.version },
+        body: {
+          expected_version: draft.version,
+          candidates: draft.candidates,
+          scenarios: draft.scenarios,
+        },
+      });
+      setDraft(saved);
+      const ready = await confirmTestDesignDraft({
+        baseUrl: apiBaseUrl,
+        draftId: saved.draft_id,
+        body: { expected_version: saved.version },
       });
       setDraft(ready);
       const originatingId = ready.conversation_id;
@@ -235,6 +246,10 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError("Version conflict while confirming. Reload and try again.");
+      } else if (caught instanceof ApiError && caught.status === 422) {
+        setError(
+          "Select at least one candidate, then confirm again.",
+        );
       } else {
         setError("Could not confirm draft.");
       }
@@ -319,7 +334,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       ) : null}
 
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
-        <legend>Coverage</legend>
+        <legend>Candidates</legend>
         <p className="kern-settings-hint">
           Select candidates to keep, then save or confirm the draft.
         </p>

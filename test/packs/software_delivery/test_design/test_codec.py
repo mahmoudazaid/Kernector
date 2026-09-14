@@ -121,3 +121,52 @@ def test_decode_rejects_invalid_draft_shape() -> None:
     )
     with pytest.raises(TestDesignValidationError, match="ticket_identifier"):
         decode_draft_payload(payload, draft_id="draft-1", version=1)
+
+
+def test_decode_maps_legacy_categories() -> None:
+    payload = json.dumps(
+        {
+            "schema_version": DRAFT_SCHEMA_VERSION,
+            "workspace_id": "ws-1",
+            "conversation_id": "conv-1",
+            "source_reference": {"source_type": "jira", "source_id": "PROJ-42"},
+            "ticket_identifier": "KERN-293",
+            "status": "coverage_review",
+            "candidates": [
+                {
+                    "candidate_id": "cand-1",
+                    "title": "Legacy happy path",
+                    "category": "happy_path",
+                    "rationale": "old allowlist",
+                    "evidence_references": [
+                        {"source_type": "jira", "source_id": "PROJ-42"}
+                    ],
+                    "selected": False,
+                    "origin": "suggested",
+                },
+                {
+                    "candidate_id": "cand-2",
+                    "title": "Legacy ACL",
+                    "category": "permission_security",
+                    "rationale": "old allowlist",
+                    "evidence_references": [
+                        {"source_type": "jira", "source_id": "PROJ-42"}
+                    ],
+                    "selected": False,
+                    "origin": "suggested",
+                },
+            ],
+            "scenarios": [],
+            "coverage_gaps": [
+                {
+                    "category": "integration",
+                    "detail": "legacy gap",
+                }
+            ],
+        }
+    )
+    restored = decode_draft_payload(payload, draft_id="draft-1", version=1)
+
+    assert restored.candidates[0].category == "positive"
+    assert restored.candidates[1].category == "negative"
+    assert restored.coverage_gaps[0].category == "positive"

@@ -9,6 +9,8 @@ from typing import Any
 from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.models import (
+    COVERAGE_CATEGORIES,
+    COVERAGE_CATEGORIES_DISPLAY,
     CoverageGap,
     TestCandidate,
     TestCoverageDraft,
@@ -16,6 +18,25 @@ from packs.software_delivery.test_design.models import (
 )
 
 DRAFT_SCHEMA_VERSION = 1
+
+# Older drafts used a wider category allowlist; map on decode so GET stays loadable.
+_LEGACY_CATEGORY_MAP: dict[str, str] = {
+    "happy_path": "positive",
+    "integration": "positive",
+    "permission_security": "negative",
+    "failure_recovery": "edge_case",
+}
+
+
+def _normalize_stored_category(raw: str) -> str:
+    if raw in COVERAGE_CATEGORIES:
+        return raw
+    mapped = _LEGACY_CATEGORY_MAP.get(raw)
+    if mapped is not None:
+        return mapped
+    raise TestDesignValidationError(
+        f"category must be one of {COVERAGE_CATEGORIES_DISPLAY}"
+    )
 
 
 def encode_draft_payload(draft: TestCoverageDraft) -> str:
@@ -133,7 +154,7 @@ def _decode_candidate(raw: object) -> TestCandidate:
     return TestCandidate(
         candidate_id=_require_str(data, "candidate_id"),
         title=_require_str(data, "title"),
-        category=_require_str(data, "category"),  # type: ignore[arg-type]
+        category=_normalize_stored_category(_require_str(data, "category")),  # type: ignore[arg-type]
         rationale=_require_str(data, "rationale"),
         evidence_references=_decode_references(data.get("evidence_references")),
         selected=_require_bool(data, "selected"),
@@ -147,7 +168,7 @@ def _decode_scenario(raw: object) -> TestScenario:
         scenario_id=_require_str(data, "scenario_id"),
         candidate_id=_require_str(data, "candidate_id"),
         title=_require_str(data, "title"),
-        category=_require_str(data, "category"),  # type: ignore[arg-type]
+        category=_normalize_stored_category(_require_str(data, "category")),  # type: ignore[arg-type]
         preconditions=tuple(_require_str_list(data, "preconditions")),
         steps=tuple(_require_str_list(data, "steps")),
         expected_result=_require_str(data, "expected_result"),
@@ -158,7 +179,7 @@ def _decode_scenario(raw: object) -> TestScenario:
 def _decode_gap(raw: object) -> CoverageGap:
     data = _require_mapping(raw, "coverage_gaps item")
     return CoverageGap(
-        category=_require_str(data, "category"),  # type: ignore[arg-type]
+        category=_normalize_stored_category(_require_str(data, "category")),  # type: ignore[arg-type]
         detail=_require_str(data, "detail"),
     )
 
