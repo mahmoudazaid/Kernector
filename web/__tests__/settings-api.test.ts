@@ -28,6 +28,7 @@ const CATALOG = {
     },
   ],
   enabled_packs: [],
+  short_term_memory_enabled: false,
   constraints: {
     max_input_length: 10000,
     max_upload_bytes: 5242880,

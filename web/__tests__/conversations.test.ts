@@ -10,6 +10,7 @@ import {
   listConversations,
   markConversationRead,
   migrateLegacyTranscripts,
+  newConversationId,
   renameConversation,
   resetConversationsSnapshotForTests,
   subscribeConversations,
@@ -27,6 +28,18 @@ describe("conversation store", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("exports newConversationId and honors an explicit createConversation id", () => {
+    const id = newConversationId();
+    expect(id.length).toBeGreaterThan(0);
+    const created = createConversation({
+      id,
+      title: "explicit",
+      messages: [],
+      draft: "",
+    });
+    expect(created.id).toBe(id);
   });
 
   it("creates a conversation and makes it listable and retrievable", () => {

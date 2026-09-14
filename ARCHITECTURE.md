@@ -303,6 +303,13 @@ intent always ``None`` (#285), flipping the flag has no observable effect until
 a real tool and matcher land. Keep the deterministic chain as the default until
 the agent path is proven.
 
+**Short-term thread memory (#213):** when the agent loop is on, composition owns
+a process-scoped ``InMemorySaver`` (``composition/short_term_memory.py``) keyed
+by server ``workspace_id`` + client ``conversation_id``. Checkpoints are
+**process-local** — restart, Reset agent context, or deleting a conversation
+drops them; there is no TTL/pruner in this issue. Long-term memory is deferred
+to #299. Absent ``conversation_id``, the agent stays stateless.
+
 Two properties are worth naming because they are easy to lose:
 
 - **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it

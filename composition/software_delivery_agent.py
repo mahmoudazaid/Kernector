@@ -81,6 +81,7 @@ def build_agent_orchestrate(
         generate_tests: bool,
         output_style: str,
         invoke: OpaqueInvoke,
+        conversation_id: str | None = None,
     ):
         from packs.software_delivery.evidence_bundle import (
             evidence_bundle_from_hits,
@@ -154,7 +155,9 @@ def build_agent_orchestrate(
             )
 
         goal = _agent_goal(target=target, hits=hits, generate_tests=generate_tests)
-        turn = run_agent.execute(goal, tools, max_steps=max_steps)
+        turn = run_agent.execute(
+            goal, tools, max_steps=max_steps, conversation_id=conversation_id
+        )
 
         return OrchestrateSoftwareDeliveryResponse(
             summary=_summary_from_outcomes(

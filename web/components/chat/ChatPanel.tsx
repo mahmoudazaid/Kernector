@@ -12,6 +12,7 @@ import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
   askChat,
+  clearChatCheckpointBestEffort,
   type AskChatOptions,
   type ChatAskResponse,
 } from "@/lib/api/chat";
@@ -43,11 +44,13 @@ import {
   deleteConversation,
   getConversation,
   migrateLegacyTranscripts,
+  newConversationId,
   subscribeConversations,
   titleFromMessages,
   updateConversation,
 } from "@/lib/session/conversations";
 import { startConversationRun } from "@/lib/session/conversation-runs";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
 const SEND_ICON = (
@@ -426,6 +429,9 @@ export function ChatPanel({
   const [sending, setSending] = useState(boot.sending);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetFeedback, setResetFeedback] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const {
     catalog,
     error: settingsError,
@@ -433,6 +439,7 @@ export function ChatPanel({
     reload: reloadSettings,
   } = useRuntimeCatalog(apiBaseUrl, loadSettings);
   const maxInputLength = catalog?.constraints.max_input_length ?? null;
+  const shortTermMemoryEnabled = catalog?.short_term_memory_enabled === true;
 
   const composerTouchedRef = useRef(false);
   const skipNextPersistRef = useRef(false);
@@ -685,7 +692,9 @@ export function ChatPanel({
 
     if (isLanding) {
       const withUser = appendUserMessage([], query);
+      const conversationIdForRun = newConversationId();
       const created = createConversation({
+        id: conversationIdForRun,
         title: titleFromMessages(toPersisted(withUser)),
         messages: toPersisted(withUser),
         draft: "",
@@ -748,6 +757,10 @@ export function ChatPanel({
       const discard = !conversation || conversation.messages.length === 0;
       if (discard && conversation) {
         deleteConversation(id);
+        void clearChatCheckpointBestEffort({
+          baseUrl: apiBaseUrl,
+          conversationId: id,
+        });
       }
       // Store already recorded the outcome on `id`; never mutate another thread's UI.
       if (boundIdRef.current !== id) {
@@ -801,6 +814,26 @@ export function ChatPanel({
     }
   }
 
+  async function confirmResetAgentContext(): Promise<void> {
+    const id = boundIdRef.current ?? conversationId;
+    if (!id || resetting) {
+      return;
+    }
+    setResetting(true);
+    setResetFeedback(null);
+    const ok = await clearChatCheckpointBestEffort({
+      baseUrl: apiBaseUrl,
+      conversationId: id,
+    });
+    setResetting(false);
+    setResetConfirmOpen(false);
+    setResetFeedback(
+      ok
+        ? "Agent context cleared for this chat."
+        : "Could not clear agent context. Try again.",
+    );
+  }
+
   // Empty-hero (centered composer) is landing-only. Conversation routes always
   // use the main full-height layout: transcript scrolls, composer pinned.
   const isEmptyHero = isLanding;
@@ -827,7 +860,35 @@ export function ChatPanel({
     <section className={`kern-chat${isEmptyHero ? " kern-chat--empty" : ""}`}>
       <header className="kern-chat-header">
         <h1>Chat</h1>
+        {!isLanding && shortTermMemoryEnabled && boundId ? (
+          <Button
+            variant="secondary"
+            type="button"
+            disabled={sending || resetting}
+            onClick={() => setResetConfirmOpen(true)}
+          >
+            Reset agent context
+          </Button>
+        ) : null}
       </header>
+
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        title="Reset agent context?"
+        description="Clears short-term agent memory for this chat. Your transcript stays."
+        confirmLabel="Reset"
+        busy={resetting}
+        onConfirm={() => {
+          void confirmResetAgentContext();
+        }}
+        onCancel={() => setResetConfirmOpen(false)}
+      />
+
+      {resetFeedback ? (
+        <p className="kern-chat-inline-error" role="status">
+          {resetFeedback}
+        </p>
+      ) : null}
 
       <div className="kern-chat-body">
         {settingsError ? (

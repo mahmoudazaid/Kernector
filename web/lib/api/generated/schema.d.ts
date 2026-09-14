@@ -24,6 +24,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/chat/threads/{conversation_id}/checkpoint": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Clear Chat Thread Checkpoint
+     * @description Clear short-term agent checkpoints for ``conversation_id`` (idempotent).
+     */
+    delete: operations["clear_chat_thread_checkpoint_api_v1_chat_threads__conversation_id__checkpoint_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connectors/github": {
     parameters: {
       query?: never;
@@ -544,6 +564,8 @@ export interface components {
      * @description Wire body for ``POST /api/v1/chat/ask``.
      */
     ChatAskRequest: {
+      /** Conversation Id */
+      conversation_id?: string | null;
       /** History */
       history?: components["schemas"]["ChatHistoryMessage"][];
       /** Query */
@@ -1212,6 +1234,11 @@ export interface components {
       openrouter: components["schemas"]["OpenRouterSettingsResponse"];
       /** Providers */
       providers: string[];
+      /**
+       * Short Term Memory Enabled
+       * @default false
+       */
+      short_term_memory_enabled: boolean;
     };
     /**
      * SourceReferenceResponse
@@ -1371,6 +1398,62 @@ export interface operations {
       };
       /** @description Provider error */
       502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  clear_chat_thread_checkpoint_api_v1_chat_threads__conversation_id__checkpoint_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversation_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
         headers: {
           [name: string]: unknown;
         };

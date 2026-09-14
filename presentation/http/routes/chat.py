@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 
 from application.contracts import AskRequest
 from domain.models import Message
-from presentation.http.deps import AskFactoryDep
+from presentation.http.deps import AskFactoryDep, ClearAgentThreadDep
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     ChatAskRequest,
@@ -36,6 +36,7 @@ def chat_ask(
         history=tuple(
             Message(role=item.role, content=item.content) for item in body.history
         ),
+        conversation_id=body.conversation_id,
     )
     settings = None if runtime is None else dict(runtime.settings)
     response = ask.execute(request, settings)
@@ -48,3 +49,17 @@ def chat_ask(
         run=run_meta_response(response.run),
         tool_run=None if tool_view is None else tool_run_response(tool_view),
     )
+
+
+@router.delete(
+    "/chat/threads/{conversation_id}/checkpoint",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=problem_responses(405, 409, 422, 500),
+)
+def clear_chat_thread_checkpoint(
+    conversation_id: str,
+    clear_thread: ClearAgentThreadDep,
+) -> Response:
+    """Clear short-term agent checkpoints for ``conversation_id`` (idempotent)."""
+    clear_thread.execute(conversation_id=conversation_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

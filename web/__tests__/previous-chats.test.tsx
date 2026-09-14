@@ -11,6 +11,18 @@ import {
   listConversations,
 } from "@/lib/session/conversations";
 
+const clearCheckpointMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(true),
+);
+
+vi.mock("@/lib/api/chat", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/chat")>();
+  return {
+    ...actual,
+    clearChatCheckpointBestEffort: clearCheckpointMock,
+  };
+});
+
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -39,6 +51,8 @@ const GLOBALS_CSS = readFileSync(
 describe("PreviousChats", () => {
   beforeEach(() => {
     localStorage.clear();
+    clearCheckpointMock.mockClear();
+    clearCheckpointMock.mockResolvedValue(true);
   });
 
   it("hides the Chats heading for the empty state and shows it when history exists", () => {
@@ -311,6 +325,33 @@ describe("PreviousChats", () => {
 
     await waitFor(() => {
       expect(listConversations()).toEqual([]);
+    });
+  });
+
+  it("clears the server checkpoint when deleting with an api base URL", async () => {
+    const user = userEvent.setup();
+    const created = createConversation({
+      title: "Remove with checkpoint",
+      messages: [{ id: "1", role: "user", content: "Remove with checkpoint" }],
+      draft: "",
+    });
+
+    render(<PreviousChats apiBaseUrl="http://127.0.0.1:8000" />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Conversation actions for Remove with checkpoint",
+      }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: /^delete$/i }));
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => {
+      expect(listConversations()).toEqual([]);
+    });
+    expect(clearCheckpointMock).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:8000",
+      conversationId: created.id,
     });
   });
 

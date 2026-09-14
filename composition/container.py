@@ -3239,6 +3239,7 @@ def build_tool_augmented_ask(
     provider: str | None = None,
     model: str | None = None,
     base_url: str | None = None,
+    short_term_memory: object | None = None,
 ) -> GroundedAsk:
     """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
 
@@ -3261,6 +3262,10 @@ def build_tool_augmented_ask(
         provider (str | None): Per-request provider override (same as chat model).
         model (str | None): Per-request model override.
         base_url (str | None): Per-request Ollama base URL override.
+        short_term_memory (object | None): Optional
+            :class:`~composition.short_term_memory.ShortTermMemoryRuntime`.
+            When omitted and the agent loop is on, a fresh runtime is built for
+            this stack (tests should inject a shared runtime for continuity).
 
     Returns:
         GroundedAsk: ``CorrelatedAsk`` around ``AskKnowledge`` or
@@ -3302,10 +3307,19 @@ def build_tool_augmented_ask(
 
     if settings.domain_tools.agent_loop:
         from application.untrusted_text import agent_tool_system_prompt
-        from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+        from composition.short_term_memory import (
+            ShortTermMemoryRuntime,
+            build_short_term_memory_runtime,
+        )
 
+        runtime = short_term_memory
+        if runtime is None:
+            runtime = build_short_term_memory_runtime(settings)
+        if not isinstance(runtime, ShortTermMemoryRuntime):
+            raise TypeError("short_term_memory must be a ShortTermMemoryRuntime")
         orchestrate = build_agent_orchestrate(
-            LangGraphToolAgent(
+            runtime.bind_tool_agent(
+                system_prompt=agent_tool_system_prompt(),
                 model_factory=_software_delivery_agent_model_factory(
                     settings,
                     recorder=model_calls,
@@ -3313,7 +3327,6 @@ def build_tool_augmented_ask(
                     model=model,
                     base_url=base_url,
                 ),
-                system_prompt=agent_tool_system_prompt(),
             )
         )
     else:
@@ -3325,7 +3338,9 @@ def build_tool_augmented_ask(
             generate_tests: bool,
             output_style: str,
             invoke: OpaqueInvoke,
+            conversation_id: str | None = None,
         ):
+            del conversation_id
             from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
             from packs.software_delivery.orchestration_contracts import (
                 OrchestrateSoftwareDeliveryRequest,

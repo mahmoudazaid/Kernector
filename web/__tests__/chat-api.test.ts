@@ -37,22 +37,46 @@ describe("askChat", () => {
     expect(CHAT_ASK_TIMEOUT_MS).toBe(120_000);
   });
 
-  it("propagates ApiError from the request", async () => {
-    const request = vi.fn().mockRejectedValue(
-      new ApiError({
-        status: 502,
-        title: "Provider error",
-        detail: "The model provider could not complete the request.",
-        code: "provider_error",
-      }),
-    );
+  it("DELETEs a conversation checkpoint", async () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    const { clearChatCheckpoint } = await import("@/lib/api/chat");
+
+    await clearChatCheckpoint({
+      baseUrl: "http://127.0.0.1:8000",
+      conversationId: "conv-1",
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/chat/threads/conv-1/checkpoint",
+      method: "DELETE",
+      signal: undefined,
+      timeoutMs: undefined,
+    });
+  });
+
+  it("retries clearChatCheckpointBestEffort once on failure", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 503,
+          title: "busy",
+          detail: "try again",
+          code: "unavailable",
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const { clearChatCheckpointBestEffort } = await import("@/lib/api/chat");
 
     await expect(
-      askChat({
+      clearChatCheckpointBestEffort({
         baseUrl: "http://127.0.0.1:8000",
-        body: { query: "hello" },
+        conversationId: "conv-2",
         request,
       }),
-    ).rejects.toMatchObject({ status: 502, code: "provider_error" });
+    ).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });

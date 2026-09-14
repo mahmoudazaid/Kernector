@@ -65,6 +65,7 @@ const CATALOG: RuntimeSettingsResponse = {
     },
   ],
   enabled_packs: ["software-delivery"],
+  short_term_memory_enabled: false,
   constraints: {
     max_input_length: 10000,
     max_upload_bytes: 5242880,

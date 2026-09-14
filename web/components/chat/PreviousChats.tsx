@@ -25,6 +25,7 @@ import {
   subscribeConversations,
   type Conversation,
 } from "@/lib/session/conversations";
+import { clearChatCheckpointBestEffort } from "@/lib/api/chat";
 
 function OverflowMenu({
   conversation,
@@ -180,9 +181,12 @@ function RowStatusBesideTitle({
  */
 export function PreviousChats({
   onSelectConversation,
+  apiBaseUrl,
 }: {
   /** When set, opens via callback instead of a hard Link navigation. */
   onSelectConversation?: (conversationId: string) => void;
+  /** API base for clearing short-term agent checkpoints on delete. */
+  apiBaseUrl?: string;
 } = {}) {
   const conversations = useSyncExternalStore(
     subscribeConversations,
@@ -216,6 +220,12 @@ export function PreviousChats({
     setPendingDelete(null);
     if (loadActiveSession().activeConversationId === id) {
       setActiveConversationId(null);
+    }
+    if (apiBaseUrl) {
+      void clearChatCheckpointBestEffort({
+        baseUrl: apiBaseUrl,
+        conversationId: id,
+      });
     }
   }
 

@@ -417,3 +417,129 @@ def test_langgraph_tool_agent_binds_empty_args_schema() -> None:
 
     schema = chat.bound_tools[0].args_schema.model_json_schema()  # type: ignore[union-attr]
     assert schema.get("properties", {}) == {}
+
+
+def test_langgraph_tool_agent_reuses_messages_on_same_workspace_conversation() -> None:
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from infrastructure.agents.langgraph_tool_agent import (
+        STABLE_SYSTEM_MESSAGE_ID,
+        LangGraphToolAgent,
+    )
+
+    saver = InMemorySaver()
+    chat = _ScriptedChat([_ai_text("first"), _ai_text("second")])
+    agent = LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat),
+        checkpointer=saver,
+        workspace_id="ws-a",
+    )
+
+    assert agent.run(
+        "goal-one", [_RecordingTool()], max_steps=2, conversation_id="conv-1"
+    ).content == "first"
+    assert agent.run(
+        "goal-two", [_RecordingTool()], max_steps=2, conversation_id="conv-1"
+    ).content == "second"
+
+    follow_up = chat.invoke_messages[1]
+    assert any(
+        isinstance(m, HumanMessage) and m.content == "goal-one" for m in follow_up
+    )
+    assert any(
+        isinstance(m, HumanMessage) and m.content == "goal-two" for m in follow_up
+    )
+    systems = [m for m in follow_up if isinstance(m, SystemMessage)]
+    assert len(systems) == 1
+    assert systems[0].id == STABLE_SYSTEM_MESSAGE_ID
+
+
+def test_langgraph_tool_agent_resets_step_budget_each_turn() -> None:
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    saver = InMemorySaver()
+    tool = _RecordingTool()
+    # Turn 1: tool then final. Turn 2: tool then final — each turn max_steps=2.
+    chat = _ScriptedChat(
+        [
+            _ai_tool_call(name=tool.name, call_id="t1"),
+            _ai_text("done-1"),
+            _ai_tool_call(name=tool.name, call_id="t2"),
+            _ai_text("done-2"),
+        ]
+    )
+    agent = LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat),
+        checkpointer=saver,
+        workspace_id="ws-a",
+    )
+
+    first = agent.run("one", [tool], max_steps=2, conversation_id="conv-1")
+    second = agent.run("two", [tool], max_steps=2, conversation_id="conv-1")
+
+    assert first.content == "done-1"
+    assert first.truncated is False
+    assert second.content == "done-2"
+    assert second.truncated is False
+    assert len(tool.calls) == 2
+
+
+def test_langgraph_tool_agent_isolates_same_conversation_across_workspaces() -> None:
+    from langchain_core.messages import HumanMessage
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    saver = InMemorySaver()
+    chat_a = _ScriptedChat([_ai_text("a1")])
+    LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat_a),
+        checkpointer=saver,
+        workspace_id="ws-a",
+    ).run("from-a", [_RecordingTool()], max_steps=2, conversation_id="shared")
+
+    chat_b = _ScriptedChat([_ai_text("b1")])
+    LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat_b),
+        checkpointer=saver,
+        workspace_id="ws-b",
+    ).run("from-b", [_RecordingTool()], max_steps=2, conversation_id="shared")
+
+    first_b = chat_b.invoke_messages[0]
+    assert not any(
+        isinstance(m, HumanMessage) and m.content == "from-a" for m in first_b
+    )
+    assert any(
+        isinstance(m, HumanMessage) and m.content == "from-b" for m in first_b
+    )
+
+
+def test_langgraph_tool_agent_without_conversation_id_stays_stateless() -> None:
+    from langchain_core.messages import HumanMessage
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    saver = InMemorySaver()
+    chat = _ScriptedChat([_ai_text("one"), _ai_text("two")])
+    agent = LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat),
+        checkpointer=saver,
+        workspace_id="ws-a",
+    )
+
+    agent.run("first", [_RecordingTool()], max_steps=2)
+    agent.run("second", [_RecordingTool()], max_steps=2)
+
+    second = chat.invoke_messages[1]
+    assert not any(
+        isinstance(m, HumanMessage) and m.content == "first" for m in second
+    )
