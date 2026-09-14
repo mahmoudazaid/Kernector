@@ -47,6 +47,15 @@ def test_accepts_duplicate_mentions_of_same_issue() -> None:
     assert parsed.canonical == "mahmoudazaid/Kernector#293"
 
 
+def test_accepts_long_valid_owner_repo_locator() -> None:
+    owner = "o" * 39
+    repo = "r" * 100
+    parsed = parse_github_issue_locator(f"{owner}/{repo}#123456")
+
+    assert parsed is not None
+    assert parsed.canonical == f"{owner}/{repo}#123456"
+
+
 def test_rejects_multiple_distinct_issues() -> None:
     with pytest.raises(AmbiguousGitHubIssueLocatorError):
         extract_github_issue_locator(
@@ -59,10 +68,36 @@ def test_rejects_bare_number() -> None:
     assert extract_github_issue_locator("Design tests for 293") is None
 
 
-def test_rejects_malformed_locator() -> None:
-    assert parse_github_issue_locator("not-a-locator") is None
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "not-a-locator",
+        "mahmoudazaid/Kernector#0",
+        "https://github.com/mahmoudazaid/Kernector/issues/0",
+        "https://github.com/mahmoudazaid/Kernector/issues/12/extra",
+        "https://gitlab.com/mahmoudazaid/Kernector/issues/12",
+        "../Kernector#12",
+        "mahmoudazaid/.#12",
+        f"{'o' * 40}/Kernector#12",
+        f"mahmoudazaid/{'r' * 101}#12",
+    ],
+)
+def test_rejects_malformed_locator(locator: str) -> None:
+    assert parse_github_issue_locator(locator) is None
+
+
+def test_canonicalize_rejects_malformed_locator() -> None:
     with pytest.raises(InvalidGitHubIssueLocatorError):
         canonicalize_github_issue_locator("not-a-locator")
+
+
+def test_extract_does_not_accept_url_with_extra_path() -> None:
+    assert (
+        extract_github_issue_locator(
+            "Design tests for https://github.com/a/b/issues/12/extra"
+        )
+        is None
+    )
 
 
 def test_canonicalize_normalizes_url_to_owner_repo_hash() -> None:

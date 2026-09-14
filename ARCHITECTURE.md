@@ -196,11 +196,13 @@ workflow (#293) is pack-local (not an agent `Tool`): Chat handoff detects Test
 Design intent plus exactly one GitHub Issue reference **before** grounded RAG,
 returns a fixed server answer and `Start Test Design` action with a canonical
 `source_locator`, then create fetches that Issue live via `LiveSourceReader`
-(OAuth preflight first; no catalog/vector/RAG). Coverage planning and scenario
-generation under `packs/software_delivery/test_design/` see only
-`SourceDocument` evidence, persisted via a namespaced versioned workspace store,
-exposed on always-mounted `/api/v1/test-design/*` routes that return
-`test_design_unavailable` when the pack is off. Enable via
+(OAuth preflight first; no catalog/vector/RAG). Coverage planning under
+`packs/software_delivery/test_design/` sees only `SourceDocument` evidence,
+persists candidates and coverage gaps via a namespaced versioned workspace
+store, and supports edit/select/save/confirm through `ready` (coverage
+selection confirmed — not detailed test-case generation; that remains #300).
+Always-mounted `/api/v1/test-design/*` routes return `test_design_unavailable`
+when the pack is off. Enable via
 `DOMAIN_TOOL_PACKS=software-delivery`
 (CSV; default empty). Composition loads packs through an explicit allowlist
 manifest and `importlib` only for configured IDs — a disabled pack is neither

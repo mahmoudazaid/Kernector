@@ -98,17 +98,17 @@ class ConnectorNotFoundError(ConnectorError):
     """The requested remote resource does not exist."""
 
 
-class ConnectorRateLimitError(ConnectorError):
+class ConnectorUnavailableError(ConnectorError):
+    """The provider is temporarily unreachable or throttling requests."""
+
+
+class ConnectorRateLimitError(ConnectorUnavailableError):
     """The provider rejected the call due to rate limiting."""
 
 
-class ConnectorTimeoutError(ConnectorError):
+class ConnectorTimeoutError(ConnectorUnavailableError):
     """The provider request timed out."""
 
 
-class ConnectorNetworkError(ConnectorError):
+class ConnectorNetworkError(ConnectorUnavailableError):
     """A transport-level failure prevented reaching the provider."""
-
-
-class ConnectorUnavailableError(ConnectorError):
-    """The provider is temporarily unreachable or throttling requests."""

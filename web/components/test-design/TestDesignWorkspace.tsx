@@ -8,6 +8,7 @@ import { Loader } from "@/components/ui/Loader";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
+  confirmTestDesignDraft,
   getTestDesignDraft,
   patchTestDesignDraft,
   type TestCoverageDraftResponse,
@@ -73,12 +74,18 @@ function newManualCandidateId(): string {
 
 export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const router = useRouter();
-  const { catalog, loading: catalogLoading } = useRuntimeCatalog(apiBaseUrl);
+  const {
+    catalog,
+    error: catalogError,
+    loading: catalogLoading,
+    reload: reloadCatalog,
+  } = useRuntimeCatalog(apiBaseUrl);
   const packEnabled = catalog?.enabled_packs.includes(PACK_ID) ?? false;
   const [draft, setDraft] = useState<TestCoverageDraftResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!packEnabled) {
@@ -94,6 +101,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         if (!cancelled) {
           setDraft(loaded);
           setError(null);
+          setDirty(false);
         }
       } catch (caught) {
         if (!cancelled) {
@@ -110,7 +118,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     };
   }, [apiBaseUrl, draftId, packEnabled]);
 
-  if (catalogLoading) {
+  if (catalogLoading && !catalog) {
     return (
       <section className="kern-test-design" aria-busy="true">
         <header className="kern-hub-head">
@@ -123,7 +131,32 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     );
   }
 
-  if (!packEnabled) {
+  if (catalogError) {
+    return (
+      <section className="kern-test-design">
+        <header className="kern-hub-head">
+          <h1>Test Design</h1>
+        </header>
+        <div className="kern-content-state">
+          <UnavailableState
+            title="Test Design unavailable"
+            description={catalogError}
+          >
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={catalogLoading}
+              onClick={reloadCatalog}
+            >
+              {catalogLoading ? "Checking..." : "Retry"}
+            </Button>
+          </UnavailableState>
+        </div>
+      </section>
+    );
+  }
+
+  if (catalog && !packEnabled) {
     return (
       <section className="kern-test-design">
         <header className="kern-hub-head">
@@ -134,6 +167,19 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
             title="Test Design unavailable"
             description="Enable the Software Delivery pack to use Test Design."
           />
+        </div>
+      </section>
+    );
+  }
+
+  if (!catalog) {
+    return (
+      <section className="kern-test-design" aria-busy="true">
+        <header className="kern-hub-head">
+          <h1>Test Design</h1>
+        </header>
+        <div className="kern-content-state">
+          <LoadingState label="Loading Test Design" />
         </div>
       </section>
     );
@@ -191,6 +237,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       });
       setDraft(saved);
       setSaveNote("Draft saved.");
+      setDirty(false);
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError(
@@ -207,6 +254,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   function markDirty() {
     setSaveNote(null);
     setError(null);
+    setDirty(true);
   }
 
   function toggleCandidate(candidateId: string) {
@@ -283,7 +331,62 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     });
   }
 
+  function removeCandidate(candidateId: string) {
+    markDirty();
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      const candidate = current.candidates.find(
+        (item) => item.candidate_id === candidateId,
+      );
+      if (candidate?.origin !== "manual") {
+        return current;
+      }
+      const candidates = current.candidates.filter(
+        (item) => item.candidate_id !== candidateId,
+      );
+      return {
+        ...current,
+        candidates,
+        selected_candidate_ids: candidates
+          .filter((item) => item.selected)
+          .map((item) => item.candidate_id),
+      };
+    });
+  }
+
+  async function confirmDraft() {
+    if (!draft || dirty || selectedCount === 0) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSaveNote(null);
+    try {
+      const confirmed = await confirmTestDesignDraft({
+        baseUrl: apiBaseUrl,
+        draftId: draft.draft_id,
+        body: { expected_version: draft.version },
+      });
+      setDraft(confirmed);
+      setDirty(false);
+      setSaveNote("Draft confirmed.");
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        setError(
+          "This draft changed elsewhere. Your unsaved edits are still on screen — reload to discard them, or refresh before confirming.",
+        );
+      } else {
+        setError("Could not confirm draft.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
+  const canConfirm = selectedCount > 0 && !busy && !dirty;
   const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
 
   return (
@@ -432,6 +535,20 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                             </svg>
                           </div>
                         </div>
+                        {candidate.origin === "manual" ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="kern-test-design-candidate__remove"
+                            disabled={busy}
+                            aria-label={`Remove candidate ${candidate.title || candidate.category}`}
+                            onClick={() =>
+                              removeCandidate(candidate.candidate_id)
+                            }
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
                       </div>
                     </li>
                   ))}
@@ -452,6 +569,20 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         </div>
       </fieldset>
 
+      {draft.coverage_gaps.length > 0 ? (
+        <section className="kern-settings-fieldset kern-test-design-panel">
+          <h2>Coverage gaps</h2>
+          <ul className="kern-test-design-gaps">
+            {draft.coverage_gaps.map((gap) => (
+              <li key={`${gap.category}-${gap.detail}`}>
+                <strong>{formatCategory(gap.category)}</strong>
+                <span>{gap.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <footer className="kern-test-design-actions">
         <div className="kern-test-design-actions__primary">
           <Button
@@ -460,6 +591,13 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
             onClick={() => void saveDraft()}
           >
             Save draft
+          </Button>
+          <Button
+            type="button"
+            disabled={!canConfirm}
+            onClick={() => void confirmDraft()}
+          >
+            Confirm
           </Button>
         </div>
         <Button

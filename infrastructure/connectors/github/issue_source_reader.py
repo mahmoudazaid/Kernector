@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from domain.errors import ConnectorError
 from domain.knowledge import (
@@ -30,6 +30,14 @@ ISSUE_SOURCE_ID_PREFIX = "issue:"
 
 class GitHubIssueEmptyBodyError(ConnectorError):
     """Issue exists but has no body text usable as planning evidence."""
+
+
+class GitHubIssueNotIssueError(ConnectorError):
+    """The requested GitHub number resolved to a Pull Request payload."""
+
+
+class GitHubIssueLocatorMismatchError(ConnectorError):
+    """The REST Issue payload does not match the requested locator."""
 
 
 class GitHubIssueSourceReader:
@@ -62,15 +70,15 @@ def issue_payload_to_source_document(
     match ``expected``.
     """
     if "pull_request" in payload:
-        raise ConnectorError(_MSG_NOT_ISSUE)
+        raise GitHubIssueNotIssueError(_MSG_NOT_ISSUE)
     number = payload.get("number")
     if not isinstance(number, int) or number != expected.number:
-        raise ConnectorError(_MSG_LOCATOR_MISMATCH)
+        raise GitHubIssueLocatorMismatchError(_MSG_LOCATOR_MISMATCH)
     repo_full = _repository_full_name(payload)
     if repo_full is None or repo_full.casefold() != (
         f"{expected.owner}/{expected.repo}".casefold()
     ):
-        raise ConnectorError(_MSG_LOCATOR_MISMATCH)
+        raise GitHubIssueLocatorMismatchError(_MSG_LOCATOR_MISMATCH)
     node_id = payload.get("node_id")
     if not isinstance(node_id, str) or not node_id.strip():
         raise ConnectorError(_MSG_REQUEST_FAILED)
@@ -85,19 +93,26 @@ def issue_payload_to_source_document(
         raise GitHubIssueEmptyBodyError(_MSG_EMPTY_BODY)
     if not isinstance(body, str):
         raise ConnectorError(_MSG_REQUEST_FAILED)
-    html_url = payload.get("html_url")
-    issue_url = (
-        html_url.strip()
-        if isinstance(html_url, str) and html_url.strip()
-        else f"https://github.com/{expected.owner}/{expected.repo}/issues/{expected.number}"
-    )
+    issue_url = _canonical_issue_url(payload.get("html_url"), expected)
+    state = _optional_text(payload.get("state")) or "unknown"
+    created_at = _optional_text(payload.get("created_at")) or ""
+    closed_at = _optional_text(payload.get("closed_at")) or ""
+    labels = _names_from_nodes(payload.get("labels"), "name")
+    assignees = _names_from_nodes(payload.get("assignees"), "login")
+    milestone = _milestone_title(payload.get("milestone"))
     content = _markdown_for_issue(
         title=title.strip(),
         body=body.strip(),
-        state=_optional_text(payload.get("state")) or "unknown",
+        state=state,
+        labels=labels,
+        assignees=assignees,
+        milestone=milestone,
         repository=repo_full,
         url=issue_url,
+        created_at=created_at,
         updated_at=updated_at.strip(),
+        closed_at=closed_at,
+        revision=updated_at.strip(),
     )
     source_id = f"{ISSUE_SOURCE_ID_PREFIX}{node_id.strip()}"
     return SourceDocument(
@@ -111,8 +126,14 @@ def issue_payload_to_source_document(
                 "github_issue_id": source_id,
                 "github_issue_number": str(expected.number),
                 "github_issue_url": issue_url,
+                "github_issue_state": state,
+                "github_labels": ",".join(labels),
+                "github_assignees": ",".join(assignees),
+                "github_milestone": milestone or "",
                 "github_repository": repo_full,
+                "github_created_at": created_at,
                 "github_updated_at": updated_at.strip(),
+                "github_closed_at": closed_at,
                 "revision": updated_at.strip(),
             },
         ),
@@ -143,32 +164,86 @@ def _repository_full_name(payload: Mapping[str, object]) -> str | None:
     return None
 
 
+def _canonical_issue_url(
+    value: object,
+    expected: ParsedGitHubIssueLocator,
+) -> str:
+    canonical = (
+        f"https://github.com/{expected.owner}/{expected.repo}/issues/{expected.number}"
+    )
+    if not isinstance(value, str) or not value.strip():
+        return canonical
+    parsed = parse_github_issue_locator(value.strip())
+    if parsed is None or parsed.key != expected.key:
+        raise GitHubIssueLocatorMismatchError(_MSG_LOCATOR_MISMATCH)
+    return canonical
+
+
 def _markdown_for_issue(
     *,
     title: str,
     body: str,
     state: str,
+    labels: Sequence[str],
+    assignees: Sequence[str],
+    milestone: str | None,
     repository: str,
     url: str,
+    created_at: str,
     updated_at: str,
+    closed_at: str,
+    revision: str,
 ) -> str:
-    return "\n".join(
+    lines = [
+        f"# {title}",
+        "",
+        f"- State: {state}",
+        f"- Labels: {', '.join(labels)}" if labels else "- Labels: none",
+        f"- Assignees: {', '.join(assignees)}" if assignees else "- Assignees: none",
+        f"- Milestone: {milestone}" if milestone else "- Milestone: none",
+        f"- Repository: {repository}",
+        f"- URL: {url}",
+    ]
+    if created_at:
+        lines.append(f"- Created: {created_at}")
+    lines.append(f"- Updated: {updated_at}")
+    if closed_at:
+        lines.append(f"- Closed: {closed_at}")
+    lines.extend(
         [
-            f"# {title}",
-            "",
-            f"- State: {state}",
-            f"- Repository: {repository}",
-            f"- URL: {url}",
-            f"- Updated: {updated_at}",
+            f"- Revision: {revision}",
             "",
             "## Body",
             "",
             body,
         ]
     )
+    return "\n".join(lines)
 
 
 def _optional_text(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _names_from_nodes(value: object, key: str) -> tuple[str, ...]:
+    nodes: object = value
+    if isinstance(value, Mapping):
+        nodes = value.get("nodes")
+    if isinstance(nodes, (str, bytes)) or not isinstance(nodes, Sequence):
+        return ()
+    names: list[str] = []
+    for item in nodes:
+        if not isinstance(item, Mapping):
+            continue
+        name = item.get(key)
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip())
+    return tuple(names)
+
+
+def _milestone_title(value: object) -> str | None:
+    if not isinstance(value, Mapping):
+        return None
+    return _optional_text(value.get("title"))

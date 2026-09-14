@@ -547,10 +547,7 @@ def get_test_design_facade(
     """Build the test-design facade for this request (pack gated at call time)."""
     from composition.container import build_test_design_facade
 
-    return build_test_design_facade(
-        settings,
-        vector_store=get_vector_store(),
-    )
+    return build_test_design_facade(settings)
 
 
 TestDesignFacadeDep = Annotated[object, Depends(get_test_design_facade)]

@@ -36,6 +36,7 @@ CoverageCategory = Literal[
     "negative",
     "edge_case",
 ]
+_TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
 
 OAuthPreflight = Callable[[], str]
 LiveSourceReaderFactory = Callable[[str], LiveSourceReader]
@@ -239,6 +240,8 @@ class TestDesignFacade:
         reader = self._live_source_reader_factory(access_token.strip())
         from infrastructure.connectors.github.issue_source_reader import (
             GitHubIssueEmptyBodyError,
+            GitHubIssueLocatorMismatchError,
+            GitHubIssueNotIssueError,
         )
 
         try:
@@ -252,29 +255,31 @@ class TestDesignFacade:
             raise InsufficientEvidenceError(
                 "No usable grounded evidence for test coverage planning."
             ) from error
-        except Exception as error:
-            message = str(error)
-            if "Pull Request" in message or "did not match" in message:
-                raise TestDesignValidationError(message) from error
-            raise
+        except (GitHubIssueNotIssueError, GitHubIssueLocatorMismatchError) as error:
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
         if not document.content.strip():
             raise InsufficientEvidenceError(
                 "No usable grounded evidence for test coverage planning."
             )
         draft_id = str(uuid.uuid4())
-        PlanCoverage, PlanCoverageRequest, CoverageEvidenceItem = (
+        (
+            PlanCoverage,
+            PlanCoverageRequest,
+            CoverageEvidenceItem,
+            budget_source_document_text,
+        ) = (
             self._load_plan_coverage()
         )
-        evidence = (
-            CoverageEvidenceItem(
-                reference=document.reference,
-                text=document.content,
-            ),
-        )
-        chat_model = self._build_chat_model()
-        repo = self._repository()
-        use_case = PlanCoverage(chat_model=chat_model, repository=repo)
         try:
+            evidence = (
+                CoverageEvidenceItem(
+                    reference=document.reference,
+                    text=budget_source_document_text(document),
+                ),
+            )
+            chat_model = self._build_chat_model()
+            repo = self._repository()
+            use_case = PlanCoverage(chat_model=chat_model, repository=repo)
             draft = use_case.execute(
                 PlanCoverageRequest(
                     draft_id=draft_id,
@@ -290,19 +295,32 @@ class TestDesignFacade:
                     evidence=evidence,
                 )
             )
+        except TestDesignValidationError:
+            raise
         except Exception as error:
             from packs.software_delivery.test_design.plan_coverage import (
                 TestDesignInsufficientEvidenceError,
             )
+            from packs.software_delivery.test_design.errors import (
+                TestDesignValidationError as PackTestDesignValidationError,
+            )
 
             if isinstance(error, TestDesignInsufficientEvidenceError):
                 raise InsufficientEvidenceError(str(error)) from error
+            if isinstance(error, PackTestDesignValidationError):
+                raise TestDesignValidationError(
+                    _TEST_DESIGN_VALIDATION_DETAIL
+                ) from error
             raise
         return _draft_view(draft)
 
     def get_draft(self, draft_id: str) -> TestCoverageDraftView:
         self._require_enabled()
-        draft = self._repository().get(draft_id)
+        try:
+            draft = self._repository().get(draft_id)
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
         if draft is None:
             raise TestDesignNotFoundError("draft not found")
         return _draft_view(draft)
@@ -313,37 +331,63 @@ class TestDesignFacade:
         self._require_enabled()
         TestCandidate, TestCoverageDraft, _CoverageGap = self._load_models()
         repo = self._repository()
-        current = repo.get(draft_id)
+        try:
+            current = repo.get(draft_id)
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
         if current is None:
             raise TestDesignNotFoundError("draft not found")
         candidates = current.candidates
         if request.candidates is not None:
-            candidates = tuple(
-                TestCandidate(
-                    candidate_id=item.candidate_id,
-                    title=item.title,
-                    category=item.category,
-                    rationale=item.rationale,
-                    evidence_references=tuple(
-                        SourceReference(ref.source_id, ref.source_type)
-                        for ref in item.evidence_references
-                    ),
-                    selected=item.selected,
-                    origin=item.origin,
+            try:
+                candidates = tuple(
+                    TestCandidate(
+                        candidate_id=item.candidate_id,
+                        title=item.title,
+                        category=item.category,
+                        rationale=item.rationale,
+                        evidence_references=tuple(
+                            SourceReference(ref.source_id, ref.source_type)
+                            for ref in item.evidence_references
+                        ),
+                        selected=item.selected,
+                        origin=item.origin,
+                    )
+                    for item in request.candidates
                 )
-                for item in request.candidates
+            except Exception as error:
+                from packs.software_delivery.test_design.errors import (
+                    TestDesignValidationError as PackTestDesignValidationError,
+                )
+
+                if isinstance(error, PackTestDesignValidationError):
+                    raise TestDesignValidationError(
+                        _TEST_DESIGN_VALIDATION_DETAIL
+                    ) from error
+                raise
+        try:
+            updated = TestCoverageDraft(
+                draft_id=current.draft_id,
+                workspace_id=current.workspace_id,
+                conversation_id=current.conversation_id,
+                source_reference=current.source_reference,
+                ticket_identifier=current.ticket_identifier,
+                status=current.status,
+                candidates=candidates,
+                coverage_gaps=current.coverage_gaps,
+                version=current.version,
             )
-        updated = TestCoverageDraft(
-            draft_id=current.draft_id,
-            workspace_id=current.workspace_id,
-            conversation_id=current.conversation_id,
-            source_reference=current.source_reference,
-            ticket_identifier=current.ticket_identifier,
-            status=current.status,
-            candidates=candidates,
-            coverage_gaps=current.coverage_gaps,
-            version=current.version,
-        )
+        except Exception as error:
+            from packs.software_delivery.test_design.errors import (
+                TestDesignValidationError as PackTestDesignValidationError,
+            )
+
+            if isinstance(error, PackTestDesignValidationError):
+                raise TestDesignValidationError(
+                    _TEST_DESIGN_VALIDATION_DETAIL
+                ) from error
+            raise
         try:
             saved = repo.update(
                 updated, expected_version=request.expected_version
@@ -352,6 +396,9 @@ class TestDesignFacade:
             raise TestDesignNotFoundError("draft not found") from error
         except VersionedStoreVersionConflictError as error:
             raise TestDesignVersionConflictError("version conflict") from error
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
         return _draft_view(saved)
 
     def confirm_draft(
@@ -360,7 +407,11 @@ class TestDesignFacade:
         self._require_enabled()
         _TestCandidate, TestCoverageDraft, _CoverageGap = self._load_models()
         repo = self._repository()
-        current = repo.get(draft_id)
+        try:
+            current = repo.get(draft_id)
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
         if current is None:
             raise TestDesignNotFoundError("draft not found")
         if current.status == "ready" and current.version == expected_version:
@@ -386,6 +437,9 @@ class TestDesignFacade:
             raise TestDesignNotFoundError("draft not found") from error
         except VersionedStoreVersionConflictError as error:
             raise TestDesignVersionConflictError("version conflict") from error
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
         return _draft_view(saved)
 
     def _require_enabled(self) -> None:
@@ -420,9 +474,15 @@ class TestDesignFacade:
             CoverageEvidenceItem,
             PlanCoverage,
             PlanCoverageRequest,
+            budget_source_document_text,
         )
 
-        return PlanCoverage, PlanCoverageRequest, CoverageEvidenceItem
+        return (
+            PlanCoverage,
+            PlanCoverageRequest,
+            CoverageEvidenceItem,
+            budget_source_document_text,
+        )
 
     @staticmethod
     def _load_models():
@@ -474,6 +534,15 @@ def _require_text(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise TestDesignValidationError(f"{field_name} must be non-empty")
     return value.strip()
+
+
+def _raise_composition_validation_if_pack_error(error: BaseException) -> None:
+    from packs.software_delivery.test_design.errors import (
+        TestDesignValidationError as PackTestDesignValidationError,
+    )
+
+    if isinstance(error, PackTestDesignValidationError):
+        raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
 
 
 def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:

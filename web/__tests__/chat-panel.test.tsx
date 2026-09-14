@@ -1234,7 +1234,15 @@ describe("ChatPanel", () => {
     const stored = getConversation(created.id);
     const action = stored?.messages
       .map((message) => message.action)
-      .find((item) => item?.kind === "open_workflow");
+      .find((item): item is { kind: string } => {
+        return (
+          typeof item === "object" &&
+          item !== null &&
+          "kind" in item &&
+          typeof (item as { kind: unknown }).kind === "string"
+        );
+      });
+    expect(action?.kind).toBe("open_workflow");
     expect(action).toEqual(
       expect.objectContaining({
         kind: "open_workflow",

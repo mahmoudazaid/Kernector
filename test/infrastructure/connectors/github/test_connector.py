@@ -8,7 +8,14 @@ import json
 import httpx
 import pytest
 
-from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
+from domain.errors import (
+    ConnectorAuthError,
+    ConnectorError,
+    ConnectorNetworkError,
+    ConnectorRateLimitError,
+    ConnectorTimeoutError,
+    ConnectorUnavailableError,
+)
 from domain.knowledge import (
     ConnectorDocument,
     SourceDocument,
@@ -17,6 +24,7 @@ from domain.knowledge import (
     SourceType,
 )
 from infrastructure.connectors.github.client import HttpGitHubClient
+from infrastructure.connectors.github.client import _map_httpx_error
 from infrastructure.connectors.github.connector import GitHubKnowledgeConnector
 
 SECRET = "ghp_SECRET_SHOULD_NOT_LEAK"
@@ -231,6 +239,35 @@ def test_http_client_mid_pagination_rate_limit_raises_without_partial() -> None:
 
     assert SECRET not in str(raised.value)
     assert calls == 2
+
+
+@pytest.mark.parametrize(
+    "mapped",
+    [
+        ConnectorRateLimitError("rate"),
+        ConnectorTimeoutError("timeout"),
+        ConnectorNetworkError("network"),
+        ConnectorUnavailableError("unavailable"),
+    ],
+)
+def test_sync_retryable_connector_errors_inherit_unavailable(mapped: ConnectorError) -> None:
+    assert isinstance(mapped, ConnectorUnavailableError)
+
+
+def test_httpx_error_mapping_keeps_retryable_errors_unavailable() -> None:
+    request = httpx.Request("GET", "https://example.test")
+    response = httpx.Response(500, request=request)
+    status_error = httpx.HTTPStatusError("boom", request=request, response=response)
+
+    assert isinstance(_map_httpx_error(status_error, httpx), ConnectorUnavailableError)
+    assert isinstance(
+        _map_httpx_error(httpx.TimeoutException("timeout", request=request), httpx),
+        ConnectorUnavailableError,
+    )
+    assert isinstance(
+        _map_httpx_error(httpx.ConnectError("network", request=request), httpx),
+        ConnectorUnavailableError,
+    )
 
 
 def test_http_client_redacts_auth_error_detail() -> None:

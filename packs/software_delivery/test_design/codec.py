@@ -101,8 +101,7 @@ def decode_draft_payload(
     schema_version = raw.get("schema_version")
     if schema_version != DRAFT_SCHEMA_VERSION:
         raise TestDesignValidationError(
-            f"unsupported schema_version {schema_version!r}; "
-            f"expected {DRAFT_SCHEMA_VERSION}"
+            "unsupported schema_version; expected the current draft schema"
         )
     try:
         return TestCoverageDraft(

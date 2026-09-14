@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_OWNER_REPO = r"(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)"
+_OWNER_REPO = r"(?P<owner>[A-Za-z0-9_.-]{1,39})/(?P<repo>[A-Za-z0-9_.-]{1,100})"
 _URL_PATTERN = re.compile(
-    rf"https?://(?:www\.)?github\.com/{_OWNER_REPO}/issues/(?P<number>\d+)\b",
+    rf"https?://(?:www\.)?github\.com/{_OWNER_REPO}/issues/(?P<number>\d+)(?![\w/])",
     re.IGNORECASE,
 )
 _HASH_PATTERN = re.compile(rf"\b{_OWNER_REPO}#(?P<number>\d+)\b")
@@ -50,7 +50,10 @@ def parse_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
         # Allow optional trailing punctuation stripped by callers; try patterns
         # that match the whole string only.
         return None
-    return _from_match(match)
+    try:
+        return _from_match(match)
+    except InvalidGitHubIssueLocatorError:
+        return None
 
 
 def canonicalize_github_issue_locator(text: str) -> str:
@@ -74,7 +77,10 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
     found: list[ParsedGitHubIssueLocator] = []
     for pattern in (_URL_PATTERN, _HASH_PATTERN):
         for match in pattern.finditer(text):
-            found.append(_from_match(match))
+            try:
+                found.append(_from_match(match))
+            except InvalidGitHubIssueLocatorError:
+                continue
     if not found:
         return None
     unique: dict[tuple[str, str, int], ParsedGitHubIssueLocator] = {}
@@ -88,8 +94,19 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
 
 
 def _from_match(match: re.Match[str]) -> ParsedGitHubIssueLocator:
+    number = int(match.group("number"))
+    owner = match.group("owner")
+    repo = match.group("repo")
+    if number < 1 or not _valid_segment(owner) or not _valid_segment(repo):
+        raise InvalidGitHubIssueLocatorError(
+            "GitHub Issue locator must use a valid owner, repo, and number"
+        )
     return ParsedGitHubIssueLocator(
-        owner=match.group("owner"),
-        repo=match.group("repo"),
-        number=int(match.group("number")),
+        owner=owner,
+        repo=repo,
+        number=number,
     )
+
+
+def _valid_segment(value: str) -> bool:
+    return bool(value.strip()) and value.strip(".") != ""

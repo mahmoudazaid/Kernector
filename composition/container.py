@@ -450,17 +450,11 @@ def build_rewrite_and_retrieve_knowledge(
 def build_test_design_facade(
     settings: Settings,
     *,
-    vector_store: VectorStore | None = None,
     connection_store=None,
     oauth_gateway=None,
     client_factory=None,
 ):
-    """Wire the test-design HTTP facade (pack gated at call time).
-
-    ``vector_store`` is accepted for call-site compatibility and ignored: Test
-    Design create uses a live GitHub Issue read, not RAG retrieval.
-    """
-    del vector_store
+    """Wire the test-design HTTP facade (pack gated at call time)."""
     from pathlib import Path
 
     from application.errors import GitHubNotConnectedError

@@ -35,14 +35,14 @@ prompts always stay on grounded RAG.
 Pack-local interactive workflow under `test_design/` — **not** a registered
 agent `Tool`. Create starts from a **live GitHub Issue** (`source_locator`),
 not catalog RAG. Evidence is a single `SourceDocument` from the connector
-reader; the pack plans coverage candidates, persists a workspace-scoped draft,
-generates scenarios for selected candidates only, and confirms a portable draft.
+reader; the pack plans coverage candidates and typed coverage gaps, persists a
+workspace-scoped draft, and confirms coverage selection (`status: ready`).
+Detailed manual/Cucumber scenario generation is deferred to #300.
 
 | Module | Responsibility |
 | --- | --- |
-| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, `TestScenario`, gaps, allowlists |
+| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, `CoverageGap`, allowlists |
 | `test_design/plan_coverage.py` | Evidence → coverage_review draft via `ChatModel` |
-| `test_design/generate_scenarios.py` | Selected-only missing scenario generation |
 | `test_design/codec.py` / `repository.py` | Opaque payload codec + repository Protocol |
 
 HTTP routes under `/api/v1/test-design/*` are always mounted; when the pack is

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-MAX_TICKET_IDENTIFIER_CHARS = 64
+MAX_TICKET_IDENTIFIER_CHARS = 160
 MAX_CANDIDATES = 40
 MAX_SUGGESTED_CANDIDATES = 12
 MAX_TITLE_CHARS = 200

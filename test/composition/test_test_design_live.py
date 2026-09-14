@@ -16,8 +16,11 @@ from application.errors import (
 from composition import container as composition_container
 from composition.test_design import (
     CreateTestDesignDraftRequest,
+    PatchTestDesignDraftRequest,
     SourceLocatorView,
+    SourceReferenceView,
     TEST_DESIGN_HANDOFF_ANSWER,
+    TestCandidateView,
     TestDesignFacade,
     try_test_design_chat_handoff,
 )
@@ -30,6 +33,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
+from domain.models import AskResult
 from infrastructure.config import (
     DomainToolSettings,
     GitHubOAuthSettings,
@@ -157,6 +161,117 @@ def test_blank_body_does_not_persist_draft(tmp_path: Path, monkeypatch: pytest.M
     assert facade._repository().get("anything") is None or True
     # No drafts created: repository list via get of known id
     assert reader.calls
+
+
+def test_pack_validation_error_is_wrapped_with_sanitized_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _RecordingReader(document=_doc())
+    facade = TestDesignFacade(
+        settings=_settings(),
+        store_path=tmp_path / "ws.sqlite",
+        workspace_id="default",
+        oauth_preflight=lambda: "token",
+        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(
+        facade,
+        "_build_chat_model",
+        lambda: type(
+            "FakeChat",
+            (),
+            {
+                "complete": lambda self, *_args, **_kwargs: AskResult(
+                    content=(
+                        '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
+                        '"category":"positive","rationale":"Grounded.",'
+                        '"evidence_references":[{"source_type":"github",'
+                        '"source_id":"issue:I_kwDOExample"}]}],"coverage_gaps":[]}'
+                    ),
+                    model="fake",
+                )
+            },
+        )(),
+    )
+    draft = facade.create_draft(
+        CreateTestDesignDraftRequest(
+            conversation_id="conv-1",
+            source_locator=SourceLocatorView(
+                provider="github", locator="mahmoudazaid/Kernector#293"
+            ),
+        )
+    )
+
+    with pytest.raises(TestDesignValidationError) as raised:
+        facade.patch_draft(
+            draft.draft_id,
+            PatchTestDesignDraftRequest(
+                expected_version=draft.version,
+                candidates=(
+                    TestCandidateView(
+                        candidate_id="cand-1",
+                        title="secret-body " * 30,
+                        category="positive",
+                        rationale="Grounded.",
+                        evidence_references=(
+                            SourceReferenceView("issue:I_kwDOExample", "github"),
+                        ),
+                        selected=False,
+                        origin="suggested",
+                    ),
+                    TestCandidateView(
+                        candidate_id="cand-1",
+                        title="Other",
+                        category="positive",
+                        rationale="Grounded.",
+                        evidence_references=(
+                            SourceReferenceView("issue:I_kwDOExample", "github"),
+                        ),
+                        selected=False,
+                        origin="suggested",
+                    ),
+                ),
+            ),
+        )
+
+    assert str(raised.value) == "The test-design request was invalid."
+    assert "secret-body" not in str(raised.value)
+
+
+def test_issue_pr_and_mismatch_errors_are_sanitized(
+    tmp_path: Path,
+) -> None:
+    from infrastructure.connectors.github.issue_source_reader import (
+        GitHubIssueLocatorMismatchError,
+        GitHubIssueNotIssueError,
+    )
+
+    for error in (
+        GitHubIssueNotIssueError("raw Pull Request detail"),
+        GitHubIssueLocatorMismatchError("raw locator detail"),
+    ):
+        facade = TestDesignFacade(
+            settings=_settings(),
+            store_path=tmp_path / f"{type(error).__name__}.sqlite",
+            workspace_id="default",
+            oauth_preflight=lambda: "token",
+            live_source_reader_factory=lambda _token, error=error: _RecordingReader(
+                error=error
+            ),  # type: ignore[arg-type]
+        )
+
+        with pytest.raises(TestDesignValidationError) as raised:
+            facade.create_draft(
+                CreateTestDesignDraftRequest(
+                    conversation_id="conv-1",
+                    source_locator=SourceLocatorView(
+                        provider="github", locator="mahmoudazaid/Kernector#293"
+                    ),
+                )
+            )
+
+        assert str(raised.value) == "The test-design request was invalid."
 
 
 def test_chat_handoff_returns_fixed_answer_without_rag(
@@ -317,3 +432,23 @@ def test_live_reader_marks_reauth_when_refresh_token_missing(tmp_path: Path) -> 
     saved = tokens.load()
     assert saved is not None
     assert saved.reauthorization_required is True
+
+
+def test_build_test_design_facade_does_not_require_vector_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from presentation import http
+    from presentation.http import deps as http_deps
+
+    settings = _oauth_settings(tmp_path)
+    _save_grant(tmp_path, refresh_token="ghr-refresh-secret")
+
+    def explode():
+        raise AssertionError("vector store must not be instantiated")
+
+    monkeypatch.setattr(http_deps, "get_vector_store", explode)
+    facade = http_deps.get_test_design_facade(settings)
+
+    assert facade is not None
+    assert http is not None

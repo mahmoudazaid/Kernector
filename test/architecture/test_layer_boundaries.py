@@ -322,6 +322,17 @@ def test_software_delivery_test_design_pack_does_not_import_github() -> None:
         assert "HttpGitHubClient" not in text
 
 
+def test_only_infrastructure_imports_google_drive_client() -> None:
+    """The Google Drive SDK must stay behind infrastructure adapters."""
+    forbidden = {"googleapiclient", "httplib2"}
+    for layer in ("application", "composition", "domain", "packs", "presentation"):
+        for module_path in _modules(layer):
+            hits = find_forbidden_imports(module_path, forbidden)
+            assert not hits, (
+                f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
+            )
+
+
 def test_drive_sync_cli_reaches_the_connector_only_through_composition() -> None:
     cli = REPO_ROOT / "presentation" / "cli" / "sync_google_drive.py"
     assert not find_forbidden_imports(

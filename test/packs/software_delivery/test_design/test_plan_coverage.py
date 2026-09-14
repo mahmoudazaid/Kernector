@@ -9,17 +9,19 @@ import pytest
 
 from application.grounded_rag_policy import CONTEXT_CLOSE, CONTEXT_OPEN
 from domain.errors import ToolFailureError
-from domain.knowledge import SourceReference
+from domain.knowledge import SourceDocument, SourceMetadata, SourceReference, SourceType
 from domain.models import AskResult, Message
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.models import TestCoverageDraft
 from packs.software_delivery.test_design.plan_coverage import (
     CONTEXT_CLOSE as PACK_CONTEXT_CLOSE,
     CONTEXT_OPEN as PACK_CONTEXT_OPEN,
+    TRUNCATION_MARKER,
     CoverageEvidenceItem,
     PlanCoverage,
     PlanCoverageRequest,
     TestDesignInsufficientEvidenceError,
+    budget_source_document_text,
 )
 
 
@@ -94,6 +96,23 @@ def _model_payload(**overrides: object) -> str:
     return json.dumps(body)
 
 
+def _source_document(*, title: str = "Live Issue", body: str = "Body") -> SourceDocument:
+    return SourceDocument(
+        SourceMetadata(
+            reference=SourceReference("issue:I_123", SourceType.GITHUB),
+            title=title,
+            provider="github",
+            content_format="markdown",
+            extra={
+                "github_issue_number": "293",
+                "github_repository": "mahmoudazaid/Kernector",
+                "revision": "2026-09-14T12:00:00Z",
+            },
+        ),
+        body,
+    )
+
+
 def _request(
     *,
     evidence: Sequence[CoverageEvidenceItem] | None = None,
@@ -146,6 +165,16 @@ def test_grounded_evidence_persists_coverage_review_draft() -> None:
     assert repo.get("draft-1") == draft
     assert len(chat.calls) == 1
     assert chat.calls[0][2]["max_tokens"] == 4096
+
+
+def test_model_receives_instruction_to_return_coverage_gaps() -> None:
+    chat = _FakeChat(content=_model_payload(coverage_gaps=[]))
+    use_case = PlanCoverage(chat_model=chat, repository=_MemoryRepo())
+
+    use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert '"candidates"' in chat.calls[0][0]
+    assert '"coverage_gaps"' in chat.calls[0][0]
 
 
 def test_accepts_fenced_model_json() -> None:
@@ -250,7 +279,7 @@ def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
     assert draft.candidates[0].evidence_references[0].source_type == "github"
 
 
-def test_ignores_model_coverage_gaps() -> None:
+def test_persists_model_coverage_gaps() -> None:
     payload = _model_payload(
         coverage_gaps=[
             {
@@ -265,7 +294,105 @@ def test_ignores_model_coverage_gaps() -> None:
     draft = use_case.execute(_request(evidence=(_evidence(),)))
 
     assert len(draft.candidates) == 1
-    assert draft.coverage_gaps == ()
+    assert len(draft.coverage_gaps) == 1
+    assert draft.coverage_gaps[0].category == "negative"
+    assert draft.coverage_gaps[0].detail == "No ACL acceptance criteria found."
+
+
+def test_rejects_invalid_model_coverage_gap() -> None:
+    payload = _model_payload(
+        coverage_gaps=[
+            {
+                "category": "security",
+                "detail": "No ACL acceptance criteria found.",
+            }
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = PlanCoverage(chat_model=chat, repository=_MemoryRepo())
+
+    with pytest.raises(ToolFailureError, match="coverage_gaps"):
+        use_case.execute(_request(evidence=(_evidence(),)))
+
+
+def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "candidate_id": "cand-2",
+                "title": "Valid login",
+                "category": "positive",
+                "rationale": "Acceptance criteria describe successful login.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "title": "Invalid login",
+                "category": "negative",
+                "rationale": "Acceptance criteria mention credential checks.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = PlanCoverage(chat_model=chat, repository=_MemoryRepo())
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert [candidate.candidate_id for candidate in draft.candidates] == [
+        "cand-2",
+        "cand-1",
+    ]
+
+
+def test_duplicate_model_supplied_candidate_ids_are_rejected() -> None:
+    payload = _model_payload(
+        candidates=[
+            {
+                "candidate_id": "model-id",
+                "title": "Valid login",
+                "category": "positive",
+                "rationale": "Acceptance criteria describe successful login.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+            {
+                "candidate_id": "model-id",
+                "title": "Invalid login",
+                "category": "negative",
+                "rationale": "Acceptance criteria mention credential checks.",
+                "evidence_references": [
+                    {"source_type": "jira", "source_id": "PROJ-42"}
+                ],
+            },
+        ]
+    )
+    chat = _FakeChat(content=payload)
+    use_case = PlanCoverage(chat_model=chat, repository=_MemoryRepo())
+
+    with pytest.raises(ToolFailureError, match="unique candidate_id"):
+        use_case.execute(_request(evidence=(_evidence(),)))
+
+
+def test_budget_source_document_text_preserves_prefix_and_truncates_body() -> None:
+    text = budget_source_document_text(_source_document(body="B" * 20_000))
+
+    assert len(text) <= 10_000
+    assert "# Live Issue" in text
+    assert "github_repository: mahmoudazaid/Kernector" in text
+    assert TRUNCATION_MARKER in text
+
+
+def test_budget_source_document_text_does_not_truncate_near_limit_body() -> None:
+    body = "B" * 9_000
+    text = budget_source_document_text(_source_document(body=body))
+
+    assert text.endswith(body)
+    assert TRUNCATION_MARKER not in text
 
 
 def test_invalid_model_json_does_not_persist_draft() -> None:
