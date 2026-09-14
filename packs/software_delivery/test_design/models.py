@@ -12,14 +12,9 @@ from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.limits import (
     MAX_CANDIDATES,
     MAX_EVIDENCE_REFS,
-    MAX_EXPECTED_CHARS,
     MAX_GAP_DETAIL_CHARS,
     MAX_ID_CHARS,
-    MAX_PRECONDITIONS,
     MAX_RATIONALE_CHARS,
-    MAX_SCENARIOS,
-    MAX_STEP_CHARS,
-    MAX_STEPS,
     MAX_TICKET_IDENTIFIER_CHARS,
     MAX_TITLE_CHARS,
 )
@@ -29,7 +24,7 @@ CoverageCategory = Literal[
     "negative",
     "edge_case",
 ]
-DraftStatus = Literal["coverage_review", "scenario_editing", "ready"]
+DraftStatus = Literal["coverage_review", "ready"]
 CandidateOrigin = Literal["suggested", "manual"]
 
 COVERAGE_CATEGORIES: frozenset[str] = frozenset(
@@ -41,9 +36,7 @@ COVERAGE_CATEGORIES: frozenset[str] = frozenset(
 )
 COVERAGE_CATEGORIES_DISPLAY = str(sorted(COVERAGE_CATEGORIES))
 
-DRAFT_STATUSES: frozenset[str] = frozenset(
-    {"coverage_review", "scenario_editing", "ready"}
-)
+DRAFT_STATUSES: frozenset[str] = frozenset({"coverage_review", "ready"})
 DRAFT_STATUSES_DISPLAY = str(sorted(DRAFT_STATUSES))
 
 CANDIDATE_ORIGINS: frozenset[str] = frozenset({"suggested", "manual"})
@@ -165,30 +158,6 @@ def _normalize_references(
     return _sorted_unique_references(normalized)
 
 
-def _normalize_text_sequence(
-    value: object,
-    *,
-    field_name: str,
-    max_items: int,
-    max_item_chars: int,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    items = _require_sequence(value, field_name)
-    if len(items) == 0:
-        if allow_empty:
-            return ()
-        raise TestDesignValidationError(f"{field_name} must be non-empty")
-    if len(items) > max_items:
-        raise TestDesignValidationError(
-            f"{field_name} must have at most {max_items} items, got {len(items)}"
-        )
-    normalized: list[str] = []
-    for item in items:
-        text = _require_bounded_text(item, field_name, max_item_chars)
-        normalized.append(text)
-    return tuple(normalized)
-
-
 def _require_ticket_identifier(value: object) -> str:
     text = _require_bounded_text(
         value, "ticket_identifier", MAX_TICKET_IDENTIFIER_CHARS
@@ -240,57 +209,6 @@ class TestCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class TestScenario:
-    """Detailed scenario for one coverage candidate."""
-
-    __test__ = False
-
-    scenario_id: str
-    candidate_id: str
-    title: str
-    category: CoverageCategory
-    preconditions: Sequence[str]
-    steps: Sequence[str]
-    expected_result: str
-    evidence_references: Sequence[SourceReference]
-
-    def __post_init__(self) -> None:
-        _require_bounded_text(self.scenario_id, "scenario_id", MAX_ID_CHARS)
-        _require_bounded_text(self.candidate_id, "candidate_id", MAX_ID_CHARS)
-        _require_bounded_text(self.title, "title", MAX_TITLE_CHARS)
-        _require_category(self.category)
-        object.__setattr__(
-            self,
-            "preconditions",
-            _normalize_text_sequence(
-                self.preconditions,
-                field_name="preconditions",
-                max_items=MAX_PRECONDITIONS,
-                max_item_chars=MAX_STEP_CHARS,
-                allow_empty=True,
-            ),
-        )
-        object.__setattr__(
-            self,
-            "steps",
-            _normalize_text_sequence(
-                self.steps,
-                field_name="steps",
-                max_items=MAX_STEPS,
-                max_item_chars=MAX_STEP_CHARS,
-            ),
-        )
-        _require_bounded_text(
-            self.expected_result, "expected_result", MAX_EXPECTED_CHARS
-        )
-        object.__setattr__(
-            self,
-            "evidence_references",
-            _normalize_references(self.evidence_references, allow_empty=True),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class CoverageGap:
     """Typed gap where evidence does not support a coverage category."""
 
@@ -304,7 +222,11 @@ class CoverageGap:
 
 @dataclass(frozen=True, slots=True)
 class TestCoverageDraft:
-    """Workspace-scoped interactive test-coverage draft."""
+    """Workspace-scoped interactive coverage-candidate draft.
+
+    Status ``ready`` means coverage selection is confirmed — not that detailed
+    test cases have been generated (#300).
+    """
 
     __test__ = False
 
@@ -315,7 +237,6 @@ class TestCoverageDraft:
     ticket_identifier: str
     status: DraftStatus
     candidates: Sequence[TestCandidate]
-    scenarios: Sequence[TestScenario]
     coverage_gaps: Sequence[CoverageGap]
     version: int
 
@@ -364,32 +285,6 @@ class TestCoverageDraft:
             normalized_candidates.append(item)
         object.__setattr__(self, "candidates", tuple(normalized_candidates))
 
-        scenarios = _require_sequence(self.scenarios, "scenarios")
-        if len(scenarios) > MAX_SCENARIOS:
-            raise TestDesignValidationError(
-                f"scenarios must have at most {MAX_SCENARIOS} items, "
-                f"got {len(scenarios)}"
-            )
-        seen_scenario_ids: set[str] = set()
-        normalized_scenarios: list[TestScenario] = []
-        for item in scenarios:
-            if not isinstance(item, TestScenario):
-                raise TestDesignValidationError(
-                    "scenarios items must be TestScenario, "
-                    f"got {type(item).__name__}"
-                )
-            if item.scenario_id in seen_scenario_ids:
-                raise TestDesignValidationError(
-                    "scenarios items must have unique scenario_id"
-                )
-            if item.candidate_id not in seen_candidate_ids:
-                raise TestDesignValidationError(
-                    "scenarios items must reference a known candidate_id"
-                )
-            seen_scenario_ids.add(item.scenario_id)
-            normalized_scenarios.append(item)
-        object.__setattr__(self, "scenarios", tuple(normalized_scenarios))
-
         gaps = _require_sequence(self.coverage_gaps, "coverage_gaps")
         normalized_gaps: list[CoverageGap] = []
         for item in gaps:
@@ -403,7 +298,7 @@ class TestCoverageDraft:
 
     @property
     def selected_candidate_ids(self) -> tuple[str, ...]:
-        """Stable ids of candidates currently selected for scenario work."""
+        """Stable ids of candidates currently selected for coverage confirm."""
         return tuple(
             candidate.candidate_id
             for candidate in self.candidates

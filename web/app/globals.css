@@ -3299,10 +3299,9 @@ a.kern-btn {
 }
 
 .kern-test-design-candidate {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--kern-space-3);
+  display: flex;
   align-items: center;
+  gap: var(--kern-space-3);
   width: 100%;
   margin: 0;
   padding: var(--kern-space-3);
@@ -3329,6 +3328,15 @@ a.kern-btn {
     var(--kern-accent-soft);
 }
 
+.kern-test-design-candidate__select {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-height: 44px;
+}
+
 .kern-test-design-check input {
   appearance: none;
   position: absolute;
@@ -3347,7 +3355,7 @@ a.kern-btn {
 
 .kern-test-design-check {
   position: relative;
-  display: inline-grid;
+  display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
@@ -3388,8 +3396,7 @@ a.kern-btn {
 }
 
 .kern-test-design-candidate__body {
-  display: grid;
-  gap: var(--kern-space-1);
+  flex: 1;
   min-width: 0;
 }
 

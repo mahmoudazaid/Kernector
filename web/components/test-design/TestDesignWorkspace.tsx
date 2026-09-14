@@ -369,37 +369,37 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                   {group.candidates.map((candidate) => (
                     <li key={candidate.candidate_id}>
                       <div className="kern-test-design-candidate">
-                        <label
-                          className="kern-test-design-check"
-                          htmlFor={`candidate-selected-${candidate.candidate_id}`}
-                        >
-                          <span className="visually-hidden">
-                            Keep {candidate.title || "candidate"}
-                          </span>
-                          <input
-                            id={`candidate-selected-${candidate.candidate_id}`}
-                            type="checkbox"
-                            checked={candidate.selected}
-                            onChange={() =>
-                              toggleCandidate(candidate.candidate_id)
-                            }
-                          />
-                          <svg
-                            className="kern-test-design-check__mark"
-                            viewBox="0 0 16 16"
-                            aria-hidden="true"
-                            focusable="false"
+                        <div className="kern-test-design-candidate__select">
+                          <label
+                            className="kern-test-design-check"
+                            htmlFor={`candidate-selected-${candidate.candidate_id}`}
                           >
-                            <path
-                              d="M3.5 8.2 6.4 11l6.1-6.6"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
+                            <input
+                              id={`candidate-selected-${candidate.candidate_id}`}
+                              type="checkbox"
+                              checked={candidate.selected}
+                              aria-label={`Keep ${candidate.title || "candidate"}`}
+                              onChange={() =>
+                                toggleCandidate(candidate.candidate_id)
+                              }
                             />
-                          </svg>
-                        </label>
+                            <svg
+                              className="kern-test-design-check__mark"
+                              viewBox="0 0 16 16"
+                              aria-hidden="true"
+                              focusable="false"
+                            >
+                              <path
+                                d="M3.5 8.2 6.4 11l6.1-6.6"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </label>
+                        </div>
                         <div className="kern-test-design-candidate__body">
                           <div className="kern-test-design-candidate__title-control">
                             <input
