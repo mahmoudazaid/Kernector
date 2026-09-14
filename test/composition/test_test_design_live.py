@@ -8,7 +8,12 @@ import pytest
 
 from dataclasses import replace
 
-from application.errors import GitHubNotConnectedError, InsufficientEvidenceError
+from application.errors import (
+    GitHubNotConnectedError,
+    GitHubReauthorizationRequiredError,
+    InsufficientEvidenceError,
+)
+from composition import container as composition_container
 from composition.test_design import (
     CreateTestDesignDraftRequest,
     SourceLocatorView,
@@ -17,6 +22,7 @@ from composition.test_design import (
     try_test_design_chat_handoff,
 )
 from composition.test_design_errors import TestDesignValidationError
+from domain.errors import ConnectorAuthError
 from domain.knowledge import (
     SourceDocument,
     SourceLocator,
@@ -24,7 +30,17 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
-from infrastructure.config import DomainToolSettings, Settings
+from infrastructure.config import (
+    DomainToolSettings,
+    GitHubOAuthSettings,
+    load_settings,
+    Settings,
+)
+from infrastructure.connectors.github.oauth import (
+    GitHubOAuthConnection,
+    GitHubOAuthConnectionStore,
+    GitHubOAuthGrant,
+)
 from presentation.http.deps import get_settings
 
 
@@ -93,8 +109,6 @@ def test_missing_connection_never_fetches(tmp_path: Path) -> None:
 
 
 def test_reauthorization_required_never_fetches(tmp_path: Path) -> None:
-    from application.errors import GitHubReauthorizationRequiredError
-
     reader = _RecordingReader(document=_doc())
     facade = TestDesignFacade(
         settings=_settings(),
@@ -176,3 +190,130 @@ def test_chat_handoff_rejects_distinct_multi_refs() -> None:
             settings=_settings(),
             query="Design tests for mahmoudazaid/Kernector#293 and other/repo#1",
         )
+
+
+class _FakeRefreshGateway:
+    def __init__(self) -> None:
+        self.refresh_calls: list[str] = []
+
+    def refresh(self, refresh_token: str) -> GitHubOAuthGrant:
+        self.refresh_calls.append(refresh_token)
+        return GitHubOAuthGrant(
+            access_token="gho-refreshed-secret",
+            refresh_token=refresh_token,
+        )
+
+
+class _FlakyAuthClient:
+    def __init__(self, access_token: str, *, fail_tokens: set[str]) -> None:
+        self.access_token = access_token
+        self._fail_tokens = fail_tokens
+
+    def get_issue(self, owner: str, repo: str, issue_number: int) -> dict[str, object]:
+        if self.access_token in self._fail_tokens:
+            raise ConnectorAuthError("expired")
+        return {
+            "number": issue_number,
+            "node_id": "I_kwDOExample",
+            "title": "Live",
+            "body": "Acceptance criteria for coverage.",
+            "updated_at": "2026-09-14T12:00:00Z",
+            "html_url": f"https://github.com/{owner}/{repo}/issues/{issue_number}",
+            "repository": {"full_name": f"{owner}/{repo}"},
+            "user": {"login": "ada"},
+            "state": "open",
+            "labels": [],
+        }
+
+
+def _oauth_settings(tmp_path: Path) -> Settings:
+    loaded = load_settings()
+    packs = ("software-delivery",)
+    return replace(
+        loaded,
+        domain_tools=DomainToolSettings(enabled_packs=packs),
+        github_oauth=GitHubOAuthSettings(
+            client_id="client-id",
+            client_secret="client-secret",
+            redirect_uri="http://127.0.0.1:8000/api/v1/connectors/github/oauth/callback",
+            frontend_redirect="http://localhost:3000/documents",
+            token_path=tmp_path / "github-oauth-connection.json",
+            state_path=tmp_path / "github-oauth-state.json",
+            state_ttl_seconds=600,
+        ),
+    )
+
+
+def _save_grant(tmp_path: Path, *, refresh_token: str | None) -> GitHubOAuthConnectionStore:
+    settings = _oauth_settings(tmp_path)
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.save(
+        GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=refresh_token,
+            account_login="ada",
+            owner=None,
+            repo=None,
+            project_owner=None,
+            project_number=None,
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    return tokens
+
+
+def test_live_reader_refreshes_token_then_retries(tmp_path: Path) -> None:
+    settings = _oauth_settings(tmp_path)
+    tokens = _save_grant(tmp_path, refresh_token="ghr-refresh-secret")
+    gateway = _FakeRefreshGateway()
+    seen: list[str] = []
+
+    def client_factory(access_token: str):
+        seen.append(access_token)
+        return _FlakyAuthClient(access_token, fail_tokens={"gho-access-secret"})
+
+    facade = composition_container.build_test_design_facade(
+        settings,
+        connection_store=tokens,
+        oauth_gateway=gateway,
+        client_factory=client_factory,
+    )
+    reader = facade._live_source_reader_factory("gho-access-secret")
+    document = reader.fetch(
+        SourceLocator(provider="github", locator="mahmoudazaid/Kernector#293")
+    )
+    assert document.reference.source_id == "issue:I_kwDOExample"
+    assert gateway.refresh_calls == ["ghr-refresh-secret"]
+    assert seen == ["gho-access-secret", "gho-refreshed-secret"]
+    saved = tokens.load()
+    assert saved is not None
+    assert saved.access_token == "gho-refreshed-secret"
+    assert saved.reauthorization_required is False
+
+
+def test_live_reader_marks_reauth_when_refresh_token_missing(tmp_path: Path) -> None:
+    settings = _oauth_settings(tmp_path)
+    tokens = _save_grant(tmp_path, refresh_token=None)
+
+    def client_factory(access_token: str):
+        return _FlakyAuthClient(access_token, fail_tokens={access_token})
+
+    facade = composition_container.build_test_design_facade(
+        settings,
+        connection_store=tokens,
+        client_factory=client_factory,
+    )
+    reader = facade._live_source_reader_factory("gho-access-secret")
+    with pytest.raises(GitHubReauthorizationRequiredError):
+        reader.fetch(
+            SourceLocator(provider="github", locator="mahmoudazaid/Kernector#293")
+        )
+    saved = tokens.load()
+    assert saved is not None
+    assert saved.reauthorization_required is True

@@ -8,7 +8,6 @@ from packs.software_delivery.test_design.models import (
     CoverageGap,
     TestCandidate,
     TestCoverageDraft,
-    TestScenario,
 )
 
 __all__ = [
@@ -19,5 +18,4 @@ __all__ = [
     "TestCandidate",
     "TestCoverageDraft",
     "TestDesignValidationError",
-    "TestScenario",
 ]

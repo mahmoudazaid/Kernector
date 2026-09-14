@@ -29,7 +29,7 @@ from infrastructure.workspace_store.errors import (
     VersionedStoreVersionConflictError,
 )
 
-DraftStatus = Literal["coverage_review", "scenario_editing", "ready"]
+DraftStatus = Literal["coverage_review", "ready"]
 CandidateOrigin = Literal["suggested", "manual"]
 CoverageCategory = Literal[
     "positive",
@@ -89,20 +89,6 @@ class TestCandidateView:
 
 
 @dataclass(frozen=True, slots=True)
-class TestScenarioView:
-    __test__ = False
-
-    scenario_id: str
-    candidate_id: str
-    title: str
-    category: CoverageCategory
-    preconditions: tuple[str, ...]
-    steps: tuple[str, ...]
-    expected_result: str
-    evidence_references: tuple[SourceReferenceView, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class TestCoverageDraftView:
     __test__ = False
 
@@ -113,7 +99,6 @@ class TestCoverageDraftView:
     ticket_identifier: str
     status: DraftStatus
     candidates: tuple[TestCandidateView, ...]
-    scenarios: tuple[TestScenarioView, ...]
     coverage_gaps: tuple[CoverageGapView, ...]
     version: int
     selected_candidate_ids: tuple[str, ...]
@@ -129,7 +114,6 @@ class CreateTestDesignDraftRequest:
 class PatchTestDesignDraftRequest:
     expected_version: int
     candidates: tuple[TestCandidateView, ...] | None = None
-    scenarios: tuple[TestScenarioView, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,15 +311,12 @@ class TestDesignFacade:
         self, draft_id: str, request: PatchTestDesignDraftRequest
     ) -> TestCoverageDraftView:
         self._require_enabled()
-        TestCandidate, TestScenario, TestCoverageDraft, _CoverageGap = (
-            self._load_models()
-        )
+        TestCandidate, TestCoverageDraft, _CoverageGap = self._load_models()
         repo = self._repository()
         current = repo.get(draft_id)
         if current is None:
             raise TestDesignNotFoundError("draft not found")
         candidates = current.candidates
-        scenarios = current.scenarios
         if request.candidates is not None:
             candidates = tuple(
                 TestCandidate(
@@ -352,35 +333,14 @@ class TestDesignFacade:
                 )
                 for item in request.candidates
             )
-        if request.scenarios is not None:
-            scenarios = tuple(
-                TestScenario(
-                    scenario_id=item.scenario_id,
-                    candidate_id=item.candidate_id,
-                    title=item.title,
-                    category=item.category,
-                    preconditions=item.preconditions,
-                    steps=item.steps,
-                    expected_result=item.expected_result,
-                    evidence_references=tuple(
-                        SourceReference(ref.source_id, ref.source_type)
-                        for ref in item.evidence_references
-                    ),
-                )
-                for item in request.scenarios
-            )
-        status = current.status
-        if request.scenarios is not None and scenarios:
-            status = "scenario_editing"
         updated = TestCoverageDraft(
             draft_id=current.draft_id,
             workspace_id=current.workspace_id,
             conversation_id=current.conversation_id,
             source_reference=current.source_reference,
             ticket_identifier=current.ticket_identifier,
-            status=status,
+            status=current.status,
             candidates=candidates,
-            scenarios=scenarios,
             coverage_gaps=current.coverage_gaps,
             version=current.version,
         )
@@ -394,42 +354,11 @@ class TestDesignFacade:
             raise TestDesignVersionConflictError("version conflict") from error
         return _draft_view(saved)
 
-    def generate_scenarios(
-        self, draft_id: str, *, expected_version: int
-    ) -> TestCoverageDraftView:
-        self._require_enabled()
-        GenerateScenarios, GenerateScenariosRequest = self._load_generate()
-        from packs.software_delivery.test_design.errors import (
-            TestDesignValidationError as PackValidationError,
-        )
-
-        use_case = GenerateScenarios(
-            chat_model=self._build_chat_model(),
-            repository=self._repository(),
-        )
-        try:
-            draft = use_case.execute(
-                GenerateScenariosRequest(
-                    draft_id=draft_id, expected_version=expected_version
-                )
-            )
-        except PackValidationError as error:
-            if "draft" in str(error).lower():
-                raise TestDesignNotFoundError("draft not found") from error
-            raise TestDesignValidationError(str(error)) from error
-        except VersionedStoreNotFoundError as error:
-            raise TestDesignNotFoundError("draft not found") from error
-        except VersionedStoreVersionConflictError as error:
-            raise TestDesignVersionConflictError("version conflict") from error
-        return _draft_view(draft)
-
     def confirm_draft(
         self, draft_id: str, *, expected_version: int
     ) -> TestCoverageDraftView:
         self._require_enabled()
-        _TestCandidate, _TestScenario, TestCoverageDraft, _CoverageGap = (
-            self._load_models()
-        )
+        _TestCandidate, TestCoverageDraft, _CoverageGap = self._load_models()
         repo = self._repository()
         current = repo.get(draft_id)
         if current is None:
@@ -448,7 +377,6 @@ class TestDesignFacade:
             ticket_identifier=current.ticket_identifier,
             status="ready",
             candidates=current.candidates,
-            scenarios=current.scenarios,
             coverage_gaps=current.coverage_gaps,
             version=current.version,
         )
@@ -497,24 +425,14 @@ class TestDesignFacade:
         return PlanCoverage, PlanCoverageRequest, CoverageEvidenceItem
 
     @staticmethod
-    def _load_generate():
-        from packs.software_delivery.test_design.generate_scenarios import (
-            GenerateScenarios,
-            GenerateScenariosRequest,
-        )
-
-        return GenerateScenarios, GenerateScenariosRequest
-
-    @staticmethod
     def _load_models():
         from packs.software_delivery.test_design.models import (
             CoverageGap,
             TestCandidate,
             TestCoverageDraft,
-            TestScenario,
         )
 
-        return TestCandidate, TestScenario, TestCoverageDraft, CoverageGap
+        return TestCandidate, TestCoverageDraft, CoverageGap
 
 
 def _draft_view(draft: object) -> TestCoverageDraftView:
@@ -542,22 +460,6 @@ def _draft_view(draft: object) -> TestCoverageDraftView:
                 origin=item.origin,
             )
             for item in draft.candidates  # type: ignore[attr-defined]
-        ),
-        scenarios=tuple(
-            TestScenarioView(
-                scenario_id=item.scenario_id,
-                candidate_id=item.candidate_id,
-                title=item.title,
-                category=item.category,
-                preconditions=tuple(item.preconditions),
-                steps=tuple(item.steps),
-                expected_result=item.expected_result,
-                evidence_references=tuple(
-                    SourceReferenceView(ref.source_id, ref.source_type)
-                    for ref in item.evidence_references
-                ),
-            )
-            for item in draft.scenarios  # type: ignore[attr-defined]
         ),
         coverage_gaps=tuple(
             CoverageGapView(category=gap.category, detail=gap.detail)
@@ -609,7 +511,6 @@ __all__ = [
     "TestCoverageDraftView",
     "TestDesignChatHandoffView",
     "TestDesignFacade",
-    "TestScenarioView",
     "resolve_start_test_design_action",
     "try_test_design_chat_handoff",
 ]

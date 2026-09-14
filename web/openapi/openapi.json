@@ -1489,20 +1489,6 @@
             "minimum": 1.0,
             "title": "Expected Version",
             "type": "integer"
-          },
-          "scenarios": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/TestScenarioResponse"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scenarios"
           }
         },
         "required": ["expected_version"],
@@ -2009,13 +1995,6 @@
             "title": "Draft Id",
             "type": "string"
           },
-          "scenarios": {
-            "items": {
-              "$ref": "#/components/schemas/TestScenarioResponse"
-            },
-            "title": "Scenarios",
-            "type": "array"
-          },
           "selected_candidate_ids": {
             "items": {
               "type": "string"
@@ -2051,70 +2030,11 @@
           "ticket_identifier",
           "status",
           "candidates",
-          "scenarios",
           "coverage_gaps",
           "version",
           "selected_candidate_ids"
         ],
         "title": "TestCoverageDraftResponse",
-        "type": "object"
-      },
-      "TestScenarioResponse": {
-        "description": "One detailed scenario on a test-design draft.",
-        "properties": {
-          "candidate_id": {
-            "title": "Candidate Id",
-            "type": "string"
-          },
-          "category": {
-            "title": "Category",
-            "type": "string"
-          },
-          "evidence_references": {
-            "items": {
-              "$ref": "#/components/schemas/SourceReferenceResponse"
-            },
-            "title": "Evidence References",
-            "type": "array"
-          },
-          "expected_result": {
-            "title": "Expected Result",
-            "type": "string"
-          },
-          "preconditions": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Preconditions",
-            "type": "array"
-          },
-          "scenario_id": {
-            "title": "Scenario Id",
-            "type": "string"
-          },
-          "steps": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Steps",
-            "type": "array"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "scenario_id",
-          "candidate_id",
-          "title",
-          "category",
-          "preconditions",
-          "steps",
-          "expected_result",
-          "evidence_references"
-        ],
-        "title": "TestScenarioResponse",
         "type": "object"
       },
       "ToolCallResponse": {
@@ -4284,7 +4204,7 @@
         "tags": ["test-design"]
       },
       "patch": {
-        "description": "Save draft selection, title edits, manual adds, and scenario edits.",
+        "description": "Save draft selection, title edits, and manual candidate adds.",
         "operationId": "patch_draft_api_v1_test_design_drafts__draft_id__patch",
         "parameters": [
           {
@@ -4461,107 +4381,6 @@
           }
         },
         "summary": "Confirm Draft",
-        "tags": ["test-design"]
-      }
-    },
-    "/api/v1/test-design/drafts/{draft_id}/scenarios": {
-      "post": {
-        "description": "Generate scenarios for selected candidates that are still missing them.",
-        "operationId": "generate_scenarios_api_v1_test_design_drafts__draft_id__scenarios_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "draft_id",
-            "required": true,
-            "schema": {
-              "title": "Draft Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExpectedVersionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Not found"
-          },
-          "405": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Method not allowed"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Validation error"
-          },
-          "500": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Server error"
-          },
-          "502": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Provider error"
-          }
-        },
-        "summary": "Generate Scenarios",
         "tags": ["test-design"]
       }
     },

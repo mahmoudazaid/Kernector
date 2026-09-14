@@ -63,23 +63,6 @@ export async function patchTestDesignDraft(
   } satisfies ApiRequestOptions);
 }
 
-export async function generateTestDesignScenarios(
-  options: BaseOptions & {
-    draftId: string;
-    body: ExpectedVersionRequest;
-  },
-): Promise<TestCoverageDraftResponse> {
-  const request = options.request ?? apiRequest;
-  return request<TestCoverageDraftResponse>({
-    baseUrl: options.baseUrl,
-    path: `/api/v1/test-design/drafts/${encodeURIComponent(options.draftId)}/scenarios`,
-    method: "POST",
-    body: options.body,
-    signal: options.signal,
-    timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
-  } satisfies ApiRequestOptions);
-}
-
 export async function confirmTestDesignDraft(
   options: BaseOptions & {
     draftId: string;

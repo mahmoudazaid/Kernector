@@ -187,7 +187,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         body: {
           expected_version: draft.version,
           candidates: draft.candidates,
-          scenarios: draft.scenarios,
         },
       });
       setDraft(saved);

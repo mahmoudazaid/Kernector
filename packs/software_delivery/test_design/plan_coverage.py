@@ -156,7 +156,6 @@ class PlanCoverage:
             ticket_identifier=ticket_identifier,
             status="coverage_review",
             candidates=candidates,
-            scenarios=(),
             coverage_gaps=(),
             version=1,
         )

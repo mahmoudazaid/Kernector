@@ -55,11 +55,6 @@ class _StubFacade:
             raise TestDesignVersionConflictError("stale")
         return self.get_draft(draft_id)
 
-    def generate_scenarios(
-        self, draft_id: str, *, expected_version: int
-    ) -> TestCoverageDraftView:
-        return self.get_draft(draft_id)
-
     def confirm_draft(
         self, draft_id: str, *, expected_version: int
     ) -> TestCoverageDraftView:
@@ -85,7 +80,6 @@ def _draft_view() -> TestCoverageDraftView:
                 origin="suggested",
             ),
         ),
-        scenarios=(),
         coverage_gaps=(
             CoverageGapView(
                 category="negative",
@@ -108,7 +102,7 @@ def test_openapi_always_lists_test_design_paths_and_chat_action() -> None:
     paths = schema["paths"]
     assert "/api/v1/test-design/drafts" in paths
     assert "/api/v1/test-design/drafts/{draft_id}" in paths
-    assert "/api/v1/test-design/drafts/{draft_id}/scenarios" in paths
+    assert "/api/v1/test-design/drafts/{draft_id}/scenarios" not in paths
     assert "/api/v1/test-design/drafts/{draft_id}/confirm" in paths
     components = schema["components"]["schemas"]
     assert "ChatWorkflowActionResponse" in components

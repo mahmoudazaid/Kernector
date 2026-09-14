@@ -17,7 +17,6 @@ from packs.software_delivery.test_design.models import (
     CoverageGap,
     TestCandidate,
     TestCoverageDraft,
-    TestScenario,
 )
 
 
@@ -44,7 +43,6 @@ def _draft(**overrides: object) -> TestCoverageDraft:
                 origin="suggested",
             ),
         ),
-        "scenarios": (),
         "coverage_gaps": (
             CoverageGap(
                 category="negative",
@@ -58,28 +56,32 @@ def _draft(**overrides: object) -> TestCoverageDraft:
 
 
 def test_encode_decode_round_trip_preserves_draft() -> None:
-    draft = _draft(
-        status="scenario_editing",
-        scenarios=(
-            TestScenario(
-                scenario_id="scen-1",
-                candidate_id="cand-1",
-                title="Valid login",
-                category="positive",
-                preconditions=("User exists",),
-                steps=("Open login", "Submit"),
-                expected_result="Dashboard shown",
-                evidence_references=(_ref(),),
-            ),
-        ),
-        version=3,
-    )
+    draft = _draft(status="ready", version=3)
     payload = encode_draft_payload(draft)
     restored = decode_draft_payload(payload, draft_id=draft.draft_id, version=draft.version)
 
     assert restored == draft
     parsed = json.loads(payload)
     assert parsed["schema_version"] == DRAFT_SCHEMA_VERSION
+    assert "scenarios" not in parsed
+
+
+def test_decode_maps_legacy_scenario_editing_status_and_ignores_scenarios() -> None:
+    payload = json.dumps(
+        {
+            "schema_version": DRAFT_SCHEMA_VERSION,
+            "workspace_id": "ws-1",
+            "conversation_id": "conv-1",
+            "source_reference": {"source_type": "jira", "source_id": "PROJ-42"},
+            "ticket_identifier": "KERN-293",
+            "status": "scenario_editing",
+            "candidates": [],
+            "scenarios": [{"scenario_id": "scen-1"}],
+            "coverage_gaps": [],
+        }
+    )
+    restored = decode_draft_payload(payload, draft_id="draft-1", version=1)
+    assert restored.status == "ready"
 
 
 def test_decode_rejects_unknown_schema_version() -> None:
@@ -92,7 +94,6 @@ def test_decode_rejects_unknown_schema_version() -> None:
             "ticket_identifier": "KERN-293",
             "status": "coverage_review",
             "candidates": [],
-            "scenarios": [],
             "coverage_gaps": [],
         }
     )
@@ -115,7 +116,6 @@ def test_decode_rejects_invalid_draft_shape() -> None:
             "ticket_identifier": "293",
             "status": "coverage_review",
             "candidates": [],
-            "scenarios": [],
             "coverage_gaps": [],
         }
     )

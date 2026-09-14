@@ -54,7 +54,6 @@ def _draft(
                 origin="suggested",
             ),
         ),
-        scenarios=(),
         coverage_gaps=(
             CoverageGap(
                 category="negative",
@@ -90,11 +89,11 @@ def test_update_cas_increments_version(tmp_path: Path) -> None:
     store = VersionedWorkspaceStore(tmp_path / "store.sqlite", "ws-a")
     repo = VersionedTestCoverageDraftRepository(store)
     created = repo.create(_draft())
-    updated_input = _draft(status="scenario_editing", version=created.version)
+    updated_input = _draft(status="ready", version=created.version)
     updated = repo.update(updated_input, expected_version=created.version)
 
     assert updated.version == 2
-    assert updated.status == "scenario_editing"
+    assert updated.status == "ready"
     assert repo.get("draft-1") == updated
 
 
@@ -102,7 +101,7 @@ def test_update_version_conflict(tmp_path: Path) -> None:
     store = VersionedWorkspaceStore(tmp_path / "store.sqlite", "ws-a")
     repo = VersionedTestCoverageDraftRepository(store)
     repo.create(_draft())
-    repo.update(_draft(status="scenario_editing", version=1), expected_version=1)
+    repo.update(_draft(status="ready", version=1), expected_version=1)
     with pytest.raises(VersionedStoreVersionConflictError):
         repo.update(_draft(status="ready", version=1), expected_version=1)
 

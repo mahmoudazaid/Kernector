@@ -489,19 +489,6 @@ class TestCandidateResponse(BaseModel):
     origin: str
 
 
-class TestScenarioResponse(BaseModel):
-    """One detailed scenario on a test-design draft."""
-
-    scenario_id: str
-    candidate_id: str
-    title: str
-    category: str
-    preconditions: list[str]
-    steps: list[str]
-    expected_result: str
-    evidence_references: list[SourceReferenceResponse]
-
-
 class CoverageGapResponse(BaseModel):
     """Typed coverage gap where evidence does not support a category."""
 
@@ -519,7 +506,6 @@ class TestCoverageDraftResponse(BaseModel):
     ticket_identifier: str
     status: str
     candidates: list[TestCandidateResponse]
-    scenarios: list[TestScenarioResponse]
     coverage_gaps: list[CoverageGapResponse]
     version: int
     selected_candidate_ids: list[str]
@@ -537,7 +523,6 @@ class PatchTestDesignDraftRequest(BaseModel):
 
     expected_version: int = Field(ge=1)
     candidates: list[TestCandidateResponse] | None = None
-    scenarios: list[TestScenarioResponse] | None = None
 
 
 class ExpectedVersionRequest(BaseModel):
@@ -596,24 +581,6 @@ def test_coverage_draft_response(view: object) -> TestCoverageDraftResponse:
                 origin=item.origin,
             )
             for item in view.candidates  # type: ignore[attr-defined]
-        ],
-        scenarios=[
-            TestScenarioResponse(
-                scenario_id=item.scenario_id,
-                candidate_id=item.candidate_id,
-                title=item.title,
-                category=item.category,
-                preconditions=list(item.preconditions),
-                steps=list(item.steps),
-                expected_result=item.expected_result,
-                evidence_references=[
-                    SourceReferenceResponse(
-                        source_id=ref.source_id, source_type=ref.source_type
-                    )
-                    for ref in item.evidence_references
-                ],
-            )
-            for item in view.scenarios  # type: ignore[attr-defined]
         ],
         coverage_gaps=[
             CoverageGapResponse(category=gap.category, detail=gap.detail)

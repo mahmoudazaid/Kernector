@@ -11,10 +11,11 @@ from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.models import (
     COVERAGE_CATEGORIES,
     COVERAGE_CATEGORIES_DISPLAY,
+    DRAFT_STATUSES,
+    DRAFT_STATUSES_DISPLAY,
     CoverageGap,
     TestCandidate,
     TestCoverageDraft,
-    TestScenario,
 )
 
 DRAFT_SCHEMA_VERSION = 1
@@ -39,6 +40,17 @@ def _normalize_stored_category(raw: str) -> str:
     )
 
 
+def _normalize_stored_status(raw: str) -> str:
+    # Pre-#300 drafts used scenario_editing after confirm; treat as ready.
+    if raw == "scenario_editing":
+        return "ready"
+    if raw not in DRAFT_STATUSES:
+        raise TestDesignValidationError(
+            f"status must be one of {DRAFT_STATUSES_DISPLAY}"
+        )
+    return raw
+
+
 def encode_draft_payload(draft: TestCoverageDraft) -> str:
     """Encode a typed draft into an opaque JSON payload with schema_version."""
     body = {
@@ -52,7 +64,6 @@ def encode_draft_payload(draft: TestCoverageDraft) -> str:
         "ticket_identifier": draft.ticket_identifier,
         "status": draft.status,
         "candidates": [_encode_candidate(item) for item in draft.candidates],
-        "scenarios": [_encode_scenario(item) for item in draft.scenarios],
         "coverage_gaps": [
             {"category": gap.category, "detail": gap.detail}
             for gap in draft.coverage_gaps
@@ -68,6 +79,9 @@ def decode_draft_payload(
     version: int,
 ) -> TestCoverageDraft:
     """Decode an opaque payload into a typed draft.
+
+    Legacy ``scenarios`` keys are ignored. ``scenario_editing`` status maps to
+    ``ready``.
 
     Raises:
         TestDesignValidationError: Payload JSON or draft shape is invalid.
@@ -97,13 +111,10 @@ def decode_draft_payload(
             conversation_id=_require_str(raw, "conversation_id"),
             source_reference=_decode_reference(raw.get("source_reference")),
             ticket_identifier=_require_str(raw, "ticket_identifier"),
-            status=_require_str(raw, "status"),  # type: ignore[arg-type]
+            status=_normalize_stored_status(_require_str(raw, "status")),  # type: ignore[arg-type]
             candidates=tuple(
                 _decode_candidate(item)
                 for item in _require_list(raw, "candidates")
-            ),
-            scenarios=tuple(
-                _decode_scenario(item) for item in _require_list(raw, "scenarios")
             ),
             coverage_gaps=tuple(
                 _decode_gap(item) for item in _require_list(raw, "coverage_gaps")
@@ -133,22 +144,6 @@ def _encode_candidate(candidate: TestCandidate) -> dict[str, Any]:
     }
 
 
-def _encode_scenario(scenario: TestScenario) -> dict[str, Any]:
-    return {
-        "scenario_id": scenario.scenario_id,
-        "candidate_id": scenario.candidate_id,
-        "title": scenario.title,
-        "category": scenario.category,
-        "preconditions": list(scenario.preconditions),
-        "steps": list(scenario.steps),
-        "expected_result": scenario.expected_result,
-        "evidence_references": [
-            {"source_type": ref.source_type, "source_id": ref.source_id}
-            for ref in scenario.evidence_references
-        ],
-    }
-
-
 def _decode_candidate(raw: object) -> TestCandidate:
     data = _require_mapping(raw, "candidates item")
     return TestCandidate(
@@ -159,20 +154,6 @@ def _decode_candidate(raw: object) -> TestCandidate:
         evidence_references=_decode_references(data.get("evidence_references")),
         selected=_require_bool(data, "selected"),
         origin=_require_str(data, "origin"),  # type: ignore[arg-type]
-    )
-
-
-def _decode_scenario(raw: object) -> TestScenario:
-    data = _require_mapping(raw, "scenarios item")
-    return TestScenario(
-        scenario_id=_require_str(data, "scenario_id"),
-        candidate_id=_require_str(data, "candidate_id"),
-        title=_require_str(data, "title"),
-        category=_normalize_stored_category(_require_str(data, "category")),  # type: ignore[arg-type]
-        preconditions=tuple(_require_str_list(data, "preconditions")),
-        steps=tuple(_require_str_list(data, "steps")),
-        expected_result=_require_str(data, "expected_result"),
-        evidence_references=_decode_references(data.get("evidence_references")),
     )
 
 
@@ -218,18 +199,6 @@ def _require_list(data: Mapping[str, Any], field_name: str) -> Sequence[Any]:
             f"{field_name} must be a list, got {type(value).__name__}"
         )
     return value
-
-
-def _require_str_list(data: Mapping[str, Any], field_name: str) -> list[str]:
-    items = _require_list(data, field_name)
-    result: list[str] = []
-    for item in items:
-        if not isinstance(item, str):
-            raise TestDesignValidationError(
-                f"{field_name} items must be strings, got {type(item).__name__}"
-            )
-        result.append(item)
-    return result
 
 
 def _require_str(data: Mapping[str, Any], field_name: str) -> str:

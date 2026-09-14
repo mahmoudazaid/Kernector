@@ -279,10 +279,12 @@ function MessageRow({
   message,
   apiBaseUrl,
   conversationId,
+  onTestDesignStarted,
 }: {
   message: ChatMessage;
   apiBaseUrl: string;
   conversationId: string | null;
+  onTestDesignStarted: (messageId: string, draftId: string) => void;
 }) {
   const router = useRouter();
   const [starting, setStarting] = useState(false);
@@ -326,6 +328,9 @@ function MessageRow({
           source_locator: action.source_locator,
         },
       });
+      // Persist open_workflow before navigation so returning to chat resumes
+      // the same draft instead of offering Start again.
+      onTestDesignStarted(message.id, draft.draft_id);
       await router.push(`/test-design/${encodeURIComponent(draft.draft_id)}`);
     } catch (caught) {
       if (caught instanceof ApiError) {
@@ -378,6 +383,21 @@ function MessageRow({
       ) : null}
     </article>
   );
+}
+
+const OPEN_TEST_DESIGN_LABEL = "Open Test Design";
+
+function promoteStartActionToOpen(
+  action: ChatWorkflowAction,
+  draftId: string,
+): ChatWorkflowAction {
+  return {
+    kind: "open_workflow",
+    workflow_id: action.workflow_id,
+    label: OPEN_TEST_DESIGN_LABEL,
+    draft_id: draftId,
+    source_locator: action.source_locator ?? null,
+  };
 }
 
 function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
@@ -670,6 +690,26 @@ export function ChatPanel({
     });
   }
 
+  function handleTestDesignStarted(messageId: string, draftId: string): void {
+    setMessages((current) => {
+      const next = current.map((message) => {
+        if (message.id !== messageId || message.action?.kind !== "start_workflow") {
+          return message;
+        }
+        return {
+          ...message,
+          action: promoteStartActionToOpen(message.action, draftId),
+        };
+      });
+      if (boundIdRef.current) {
+        // Write through immediately — navigation may unmount before the
+        // messages effect runs.
+        persistBound(boundIdRef.current, next, draftRef.current);
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (isLanding || !hydrated || !boundId) {
       return;
@@ -939,6 +979,7 @@ export function ChatPanel({
               message={message}
               apiBaseUrl={apiBaseUrl}
               conversationId={boundId}
+              onTestDesignStarted={handleTestDesignStarted}
             />
           ))}
           {sending ? (

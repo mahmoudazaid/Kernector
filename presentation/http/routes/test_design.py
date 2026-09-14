@@ -10,7 +10,6 @@ from composition.test_design import (
     SourceLocatorView,
     SourceReferenceView,
     TestCandidateView,
-    TestScenarioView,
 )
 from presentation.http.deps import TestDesignFacadeDep
 from presentation.http.errors import problem_responses
@@ -67,7 +66,7 @@ def patch_draft(
     body: PatchTestDesignDraftRequest,
     facade: TestDesignFacadeDep,
 ) -> TestCoverageDraftResponse:
-    """Save draft selection, title edits, manual adds, and scenario edits."""
+    """Save draft selection, title edits, and manual candidate adds."""
     candidates = None
     if body.candidates is not None:
         candidates = tuple(
@@ -85,47 +84,12 @@ def patch_draft(
             )
             for item in body.candidates
         )
-    scenarios = None
-    if body.scenarios is not None:
-        scenarios = tuple(
-            TestScenarioView(
-                scenario_id=item.scenario_id,
-                candidate_id=item.candidate_id,
-                title=item.title,
-                category=item.category,  # type: ignore[arg-type]
-                preconditions=tuple(item.preconditions),
-                steps=tuple(item.steps),
-                expected_result=item.expected_result,
-                evidence_references=tuple(
-                    SourceReferenceView(ref.source_id, ref.source_type)
-                    for ref in item.evidence_references
-                ),
-            )
-            for item in body.scenarios
-        )
     view = facade.patch_draft(
         draft_id,
         PatchDraftFacadeRequest(
             expected_version=body.expected_version,
             candidates=candidates,
-            scenarios=scenarios,
         ),
-    )
-    return test_coverage_draft_response(view)
-
-
-@router.post(
-    "/drafts/{draft_id}/scenarios",
-    responses=problem_responses(404, 405, 409, 422, 500, 502),
-)
-def generate_scenarios(
-    draft_id: str,
-    body: ExpectedVersionRequest,
-    facade: TestDesignFacadeDep,
-) -> TestCoverageDraftResponse:
-    """Generate scenarios for selected candidates that are still missing them."""
-    view = facade.generate_scenarios(
-        draft_id, expected_version=body.expected_version
     )
     return test_coverage_draft_response(view)
 
