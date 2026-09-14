@@ -78,7 +78,7 @@ def _draft_view() -> TestCoverageDraftView:
             TestCandidateView(
                 candidate_id="cand-1",
                 title="Valid login",
-                category="happy_path",
+                category="positive",
                 rationale="AC",
                 evidence_references=(SourceReferenceView("PROJ-42", "jira"),),
                 selected=True,
@@ -88,7 +88,7 @@ def _draft_view() -> TestCoverageDraftView:
         scenarios=(),
         coverage_gaps=(
             CoverageGapView(
-                category="permission_security",
+                category="negative",
                 detail="No ACL criteria.",
             ),
         ),

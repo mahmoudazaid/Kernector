@@ -41,7 +41,7 @@ def _candidate(
     *,
     candidate_id: str = "cand-1",
     title: str = "Login succeeds with valid credentials",
-    category: str = "happy_path",
+    category: str = "positive",
     rationale: str = "Happy path login is in acceptance criteria.",
     evidence_references: list[SourceReference] | None = None,
     selected: bool = True,
@@ -65,7 +65,7 @@ def _scenario(
     scenario_id: str = "scen-1",
     candidate_id: str = "cand-1",
     title: str = "Valid login",
-    category: str = "happy_path",
+    category: str = "positive",
     preconditions: list[str] | None = None,
     steps: list[str] | None = None,
     expected_result: str = "User reaches the dashboard",
@@ -91,7 +91,7 @@ def test_candidate_stores_allowlisted_fields() -> None:
 
     assert candidate.candidate_id == "cand-1"
     assert candidate.title == "Login succeeds with valid credentials"
-    assert candidate.category == "happy_path"
+    assert candidate.category == "positive"
     assert candidate.rationale == "Happy path login is in acceptance criteria."
     assert candidate.selected is False
     assert candidate.origin == "manual"
@@ -176,12 +176,9 @@ def test_candidate_allows_empty_evidence_for_manual() -> None:
 def test_coverage_categories_are_the_locked_allowlist() -> None:
     assert COVERAGE_CATEGORIES == frozenset(
         {
-            "happy_path",
+            "positive",
             "negative",
             "edge_case",
-            "integration",
-            "permission_security",
-            "failure_recovery",
         }
     )
 
@@ -239,10 +236,10 @@ def test_scenario_rejects_too_many_preconditions() -> None:
 
 def test_coverage_gap_stores_category_and_detail() -> None:
     gap = CoverageGap(
-        category="permission_security",
+        category="negative",
         detail="No ACL acceptance criteria found for admin roles.",
     )
-    assert gap.category == "permission_security"
+    assert gap.category == "negative"
     assert gap.detail == "No ACL acceptance criteria found for admin roles."
 
 
@@ -253,7 +250,7 @@ def test_coverage_gap_rejects_unknown_category() -> None:
 
 def test_draft_constructs_coverage_review_state() -> None:
     candidates = (
-        _candidate(candidate_id="cand-1", category="happy_path"),
+        _candidate(candidate_id="cand-1", category="positive"),
         _candidate(
             candidate_id="cand-2",
             category="negative",
@@ -263,7 +260,7 @@ def test_draft_constructs_coverage_review_state() -> None:
     )
     gaps = (
         CoverageGap(
-            category="permission_security",
+            category="negative",
             detail="No ACL acceptance criteria found.",
         ),
     )

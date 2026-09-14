@@ -82,17 +82,11 @@ def _model_payload(**overrides: object) -> str:
             {
                 "candidate_id": "cand-login",
                 "title": "Login succeeds with valid credentials",
-                "category": "happy_path",
+                "category": "positive",
                 "rationale": "Acceptance criteria describe successful login.",
                 "evidence_references": [
                     {"source_type": "jira", "source_id": "PROJ-42"}
                 ],
-            }
-        ],
-        "coverage_gaps": [
-            {
-                "category": "permission_security",
-                "detail": "No ACL acceptance criteria found for admin roles.",
             }
         ],
     }
@@ -133,7 +127,7 @@ def test_pack_context_delimiters_match_application_policy() -> None:
     assert PACK_CONTEXT_CLOSE == CONTEXT_CLOSE
 
 
-def test_grounded_evidence_persists_coverage_review_draft_with_gaps() -> None:
+def test_grounded_evidence_persists_coverage_review_draft() -> None:
     chat = _FakeChat(content=_model_payload())
     repo = _MemoryRepo()
     use_case = PlanCoverage(chat_model=chat, repository=repo)
@@ -145,10 +139,10 @@ def test_grounded_evidence_persists_coverage_review_draft_with_gaps() -> None:
     assert draft.ticket_identifier == "KERN-293"
     assert len(draft.candidates) == 1
     assert draft.candidates[0].candidate_id == "cand-login"
-    assert draft.candidates[0].category == "happy_path"
+    assert draft.candidates[0].category == "positive"
     assert draft.candidates[0].origin == "suggested"
-    assert draft.candidates[0].selected is True
-    assert draft.coverage_gaps[0].category == "permission_security"
+    assert draft.candidates[0].selected is False
+    assert draft.coverage_gaps == ()
     assert repo.get("draft-1") == draft
     assert len(chat.calls) == 1
     assert chat.calls[0][2]["max_tokens"] == 4096
@@ -190,7 +184,7 @@ def test_rejects_model_citations_outside_multi_source_evidence_bundle() -> None:
             {
                 "candidate_id": "cand-1",
                 "title": "Invented behaviour",
-                "category": "happy_path",
+                "category": "positive",
                 "rationale": "Model hallucinated a source.",
                 "evidence_references": [
                     {"source_type": "jira", "source_id": "OTHER-99"}
@@ -225,7 +219,7 @@ def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
             {
                 "candidate_id": "cand-1",
                 "title": "Issue coverage",
-                "category": "happy_path",
+                "category": "positive",
                 "rationale": "Grounded in the attached issue.",
                 "evidence_references": [
                     {"source_type": "github", "source_id": "issue-8"}
@@ -256,16 +250,13 @@ def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
     assert draft.candidates[0].evidence_references[0].source_type == "github"
 
 
-def test_skips_malformed_coverage_gaps_without_failing_draft() -> None:
+def test_ignores_model_coverage_gaps() -> None:
     payload = _model_payload(
         coverage_gaps=[
-            {"detail": "Missing ACL criteria without a category key."},
             {
-                "type": "permission_security",
-                "description": "No ACL acceptance criteria found.",
-            },
-            "bare string gap",
-            {"category": "not_a_real_category", "detail": "bad category"},
+                "category": "negative",
+                "detail": "No ACL acceptance criteria found.",
+            }
         ]
     )
     chat = _FakeChat(content=payload)
@@ -274,9 +265,7 @@ def test_skips_malformed_coverage_gaps_without_failing_draft() -> None:
     draft = use_case.execute(_request(evidence=(_evidence(),)))
 
     assert len(draft.candidates) == 1
-    assert len(draft.coverage_gaps) == 1
-    assert draft.coverage_gaps[0].category == "permission_security"
-    assert "ACL" in draft.coverage_gaps[0].detail
+    assert draft.coverage_gaps == ()
 
 
 def test_invalid_model_json_does_not_persist_draft() -> None:

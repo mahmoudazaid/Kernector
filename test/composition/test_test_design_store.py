@@ -47,7 +47,7 @@ def _draft(
             TestCandidate(
                 candidate_id="cand-1",
                 title="Valid login",
-                category="happy_path",
+                category="positive",
                 rationale="AC covers login.",
                 evidence_references=(_ref(),),
                 selected=True,
@@ -57,7 +57,7 @@ def _draft(
         scenarios=(),
         coverage_gaps=(
             CoverageGap(
-                category="permission_security",
+                category="negative",
                 detail="No ACL criteria.",
             ),
         ),

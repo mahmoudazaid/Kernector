@@ -25,24 +25,18 @@ from packs.software_delivery.test_design.limits import (
 )
 
 CoverageCategory = Literal[
-    "happy_path",
+    "positive",
     "negative",
     "edge_case",
-    "integration",
-    "permission_security",
-    "failure_recovery",
 ]
 DraftStatus = Literal["coverage_review", "scenario_editing", "ready"]
 CandidateOrigin = Literal["suggested", "manual"]
 
 COVERAGE_CATEGORIES: frozenset[str] = frozenset(
     {
-        "happy_path",
+        "positive",
         "negative",
         "edge_case",
-        "integration",
-        "permission_security",
-        "failure_recovery",
     }
 )
 COVERAGE_CATEGORIES_DISPLAY = str(sorted(COVERAGE_CATEGORIES))

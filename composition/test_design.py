@@ -32,12 +32,9 @@ from infrastructure.workspace_store.errors import (
 DraftStatus = Literal["coverage_review", "scenario_editing", "ready"]
 CandidateOrigin = Literal["suggested", "manual"]
 CoverageCategory = Literal[
-    "happy_path",
+    "positive",
     "negative",
     "edge_case",
-    "integration",
-    "permission_security",
-    "failure_recovery",
 ]
 
 OAuthPreflight = Callable[[], str]

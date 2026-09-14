@@ -3273,8 +3273,23 @@ a.kern-btn {
   width: 100%;
 }
 
+.kern-test-design-groups {
+  display: grid;
+  gap: var(--kern-space-3);
+}
+
+.kern-test-design-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-space-3);
+}
+
+.kern-test-design-group__title {
+  text-transform: capitalize;
+}
+
 .kern-test-design-candidates,
-.kern-test-design-gaps,
 .kern-test-design-scenarios {
   list-style: none;
   margin: 0;
@@ -3393,22 +3408,6 @@ a.kern-btn {
 }
 
 .kern-test-design-candidate__rationale {
-  color: var(--kern-muted);
-  font-size: var(--kern-text-sm);
-  line-height: 1.5;
-}
-
-.kern-test-design-gaps > li {
-  display: grid;
-  gap: var(--kern-space-2);
-  padding: var(--kern-space-3);
-  border: 1px solid color-mix(in srgb, var(--kern-line) 70%, transparent);
-  border-radius: 14px;
-  background: var(--kern-surface-2);
-}
-
-.kern-test-design-gaps > li > p {
-  margin: 0;
   color: var(--kern-muted);
   font-size: var(--kern-text-sm);
   line-height: 1.5;

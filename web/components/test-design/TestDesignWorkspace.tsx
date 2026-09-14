@@ -24,10 +24,18 @@ import type { StoredChatMessage } from "@/lib/settings/runtime-settings-storage"
 
 const PACK_ID = "software-delivery";
 
+const CATEGORY_ORDER = [
+  "positive",
+  "negative",
+  "edge_case",
+] as const;
+
 type Props = {
   apiBaseUrl: string;
   draftId: string;
 };
+
+type DraftCandidate = TestCoverageDraftResponse["candidates"][number];
 
 function formatCategory(value: string): string {
   return value.replaceAll("_", " ");
@@ -35,6 +43,29 @@ function formatCategory(value: string): string {
 
 function formatStatus(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function groupCandidatesByCategory(
+  candidates: readonly DraftCandidate[],
+): { category: string; candidates: DraftCandidate[] }[] {
+  const byCategory = new Map<string, DraftCandidate[]>();
+  for (const candidate of candidates) {
+    const list = byCategory.get(candidate.category) ?? [];
+    list.push(candidate);
+    byCategory.set(candidate.category, list);
+  }
+  const ordered: { category: string; candidates: DraftCandidate[] }[] = [];
+  for (const category of CATEGORY_ORDER) {
+    const group = byCategory.get(category);
+    if (group && group.length > 0) {
+      ordered.push({ category, candidates: group });
+      byCategory.delete(category);
+    }
+  }
+  for (const [category, group] of byCategory) {
+    ordered.push({ category, candidates: group });
+  }
+  return ordered;
 }
 
 export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
@@ -310,65 +341,73 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
         <legend>Coverage</legend>
         <p className="kern-settings-hint">
-          Select candidates to keep. Gaps mark categories the ticket evidence
-          does not support.
+          Select candidates to keep, then generate scenarios for the selected
+          ones.
         </p>
-        <ul className="kern-test-design-candidates">
-          {draft.candidates.map((candidate) => (
-            <li key={candidate.candidate_id}>
-              <label className="kern-test-design-candidate">
-                <span className="kern-test-design-check">
-                  <input
-                    type="checkbox"
-                    checked={candidate.selected}
-                    onChange={() => toggleCandidate(candidate.candidate_id)}
-                  />
-                  <svg
-                    className="kern-test-design-check__mark"
-                    viewBox="0 0 16 16"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path
-                      d="M3.5 8.2 6.4 11l6.1-6.6"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                <span className="kern-test-design-candidate__body">
-                  <span className="kern-test-design-candidate__title">
-                    <strong>{candidate.title}</strong>
-                    <span className="kern-status">
-                      {formatCategory(candidate.category)}
-                    </span>
+        <div className="kern-test-design-groups">
+          {groupCandidatesByCategory(draft.candidates).map((group) => {
+            const selectedInGroup = group.candidates.filter(
+              (candidate) => candidate.selected,
+            ).length;
+            return (
+              <details
+                key={group.category}
+                className="kern-settings-details kern-test-design-group"
+                open
+              >
+                <summary>
+                  <span className="kern-test-design-group__title">
+                    {formatCategory(group.category)}
                   </span>
-                  <span className="kern-test-design-candidate__rationale">
-                    {candidate.rationale}
+                  <span className="kern-status">
+                    {selectedInGroup}/{group.candidates.length} selected
                   </span>
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
+                </summary>
+                <ul className="kern-test-design-candidates">
+                  {group.candidates.map((candidate) => (
+                    <li key={candidate.candidate_id}>
+                      <label className="kern-test-design-candidate">
+                        <span className="kern-test-design-check">
+                          <input
+                            type="checkbox"
+                            checked={candidate.selected}
+                            onChange={() =>
+                              toggleCandidate(candidate.candidate_id)
+                            }
+                          />
+                          <svg
+                            className="kern-test-design-check__mark"
+                            viewBox="0 0 16 16"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path
+                              d="M3.5 8.2 6.4 11l6.1-6.6"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                        <span className="kern-test-design-candidate__body">
+                          <span className="kern-test-design-candidate__title">
+                            <strong>{candidate.title}</strong>
+                          </span>
+                          <span className="kern-test-design-candidate__rationale">
+                            {candidate.rationale}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })}
+        </div>
       </fieldset>
-
-      {draft.coverage_gaps.length > 0 ? (
-        <fieldset className="kern-settings-fieldset kern-test-design-panel">
-          <legend>Coverage gaps</legend>
-          <ul className="kern-test-design-gaps">
-            {draft.coverage_gaps.map((gap) => (
-              <li key={`${gap.category}-${gap.detail}`}>
-                <span className="kern-status">{formatCategory(gap.category)}</span>
-                <p>{gap.detail}</p>
-              </li>
-            ))}
-          </ul>
-        </fieldset>
-      ) : null}
 
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
         <legend>Scenarios</legend>

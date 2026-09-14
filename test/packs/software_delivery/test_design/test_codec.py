@@ -37,7 +37,7 @@ def _draft(**overrides: object) -> TestCoverageDraft:
             TestCandidate(
                 candidate_id="cand-1",
                 title="Valid login",
-                category="happy_path",
+                category="positive",
                 rationale="AC covers login.",
                 evidence_references=(_ref(),),
                 selected=True,
@@ -47,7 +47,7 @@ def _draft(**overrides: object) -> TestCoverageDraft:
         "scenarios": (),
         "coverage_gaps": (
             CoverageGap(
-                category="permission_security",
+                category="negative",
                 detail="No ACL criteria.",
             ),
         ),
@@ -65,7 +65,7 @@ def test_encode_decode_round_trip_preserves_draft() -> None:
                 scenario_id="scen-1",
                 candidate_id="cand-1",
                 title="Valid login",
-                category="happy_path",
+                category="positive",
                 preconditions=("User exists",),
                 steps=("Open login", "Submit"),
                 expected_result="Dashboard shown",
