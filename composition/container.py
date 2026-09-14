@@ -2014,7 +2014,8 @@ def put_google_drive_selection(
 
     Dropped exact file selections are purged from the catalog immediately.
     Clearing every root purges all Google Drive documents. Folder drops that
-    leave remaining roots are cleaned up by the next OAuth sync reconcile.
+    leave remaining roots are cleaned up by the next OAuth sync reconcile,
+    which only runs after a complete listing (inaccessible selected roots raise).
 
     Args:
         settings (Settings): Loaded environment settings.

@@ -251,6 +251,21 @@ def test_sync_google_drive_wraps_listing_failure(settings: Settings) -> None:
     assert raised.value.__cause__ is error
 
 
+def test_reconcile_does_not_delete_when_listing_fails(settings: Settings) -> None:
+    listed = _listed()
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_ready_row(listed))
+    error = ConnectorError("selected root inaccessible")
+    with pytest.raises(ConnectorSyncError):
+        sync_google_drive(
+            settings,
+            connector=RecordingConnector(list_error=error),
+            catalog=catalog,
+            reconcile_missing=True,
+        )
+    assert catalog.get(listed.reference) is not None
+
+
 def test_sync_google_drive_wraps_catalog_failure(settings: Settings) -> None:
     listed = _listed()
 

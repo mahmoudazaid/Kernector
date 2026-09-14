@@ -182,13 +182,17 @@ class GoogleDriveConnector:
 
         Folder listing is direct-child-only unless ``recursive`` is true.
         Duplicate Drive IDs (a file selected directly and also found under a
-        folder) appear once. Trashed, inaccessible, and unsupported items are
-        skipped; catalog rows are never deleted here.
+        folder) appear once. Unsupported and trashed items are skipped.
+
+        A selected root folder or exact file that returns 403/404 on first
+        access raises so callers that reconcile missing catalog rows never
+        treat an incomplete listing as an empty Drive.
 
         Raises:
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
-            ConnectorError: Listing failed or a supported entry was unusable.
+            ConnectorError: Listing failed, a selected root/file is inaccessible,
+                or a supported entry was unusable.
         """
         documents: dict[str, ConnectorDocument] = {}
         visited_folders: set[str] = set()
@@ -199,8 +203,7 @@ class GoogleDriveConnector:
                 if file_id in documents:
                     continue
                 document = self._document_from_id(file_id)
-                if document is not None:
-                    documents[document.source_id] = document
+                documents[document.source_id] = document
         except ConnectorError:
             raise
         except Exception as error:
@@ -278,19 +281,15 @@ class GoogleDriveConnector:
         folder_id: str,
         documents: dict[str, ConnectorDocument],
         visited: set[str],
-        *,
-        is_root: bool = True,
     ) -> None:
         if folder_id in visited:
             return
         visited.add(folder_id)
         child_folders: list[str] = []
         page_token: str | None = None
-        pages_ok = 0
         try:
             while True:
                 payload = self._list_children(folder_id, page_token)
-                pages_ok += 1
                 files = payload.get("files", ())
                 if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
                     raise ConnectorError(_MSG_REQUEST_FAILED)
@@ -312,23 +311,9 @@ class GoogleDriveConnector:
                 page_token = next_token
             if self._recursive:
                 for child_id in child_folders:
-                    self._collect_folder(
-                        child_id, documents, visited, is_root=False
-                    )
+                    self._collect_folder(child_id, documents, visited)
         except HttpError as error:
-            mapped = _map_google_error(error)
-            status = _http_status(error)
-            if status == 401 or isinstance(mapped, ConnectorUnavailableError):
-                raise mapped from error
-            if status == 404:
-                if pages_ok == 0:
-                    return
-                raise mapped from error
-            if status == 403:
-                if is_root and pages_ok == 0:
-                    return
-                raise mapped from error
-            raise mapped from error
+            raise _map_google_error(error) from error
 
     def _list_children(self, folder_id: str, page_token: str | None) -> Mapping[str, object]:
         escaped = _escape_drive_query_value(folder_id)
@@ -343,22 +328,19 @@ class GoogleDriveConnector:
         )
         return _execute(request)
 
-    def _document_from_id(self, file_id: str) -> ConnectorDocument | None:
+    def _document_from_id(self, file_id: str) -> ConnectorDocument:
         try:
             entry = self._get_file(file_id)
         except HttpError as error:
-            mapped = _map_google_error(error)
-            status = _http_status(error)
-            if status == 401 or isinstance(mapped, ConnectorUnavailableError):
-                raise mapped from error
-            if status in {403, 404}:
-                return None
-            raise mapped from error
+            raise _map_google_error(error) from error
         if entry.get("trashed") is True:
-            return None
+            raise ConnectorError(_MSG_REQUEST_FAILED)
         if entry.get("mimeType") == _FOLDER_MIME:
-            return None
-        return _document_from_file(entry)
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        document = _document_from_file(entry)
+        if document is None:
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        return document
 
     def _get_file(self, file_id: str) -> Mapping[str, object]:
         request = self._files.get(
