@@ -11,6 +11,10 @@ from domain.knowledge import SourceReference
 from domain.models import AskResult, Message
 from domain.ports import ChatModel
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.test_design.limits import (
+    SCENARIO_GENERATION_MODEL_SETTINGS,
+)
+from packs.software_delivery.test_design.model_json import loads_model_json_object
 from packs.software_delivery.test_design.models import (
     TestCandidate,
     TestCoverageDraft,
@@ -23,15 +27,15 @@ You are a software-delivery scenario author. Generate detailed editable test \
 scenarios only for the selected coverage candidates provided in the request.
 
 Rules:
-- Return strict JSON only with key "scenarios".
+- Return compact JSON only (no markdown fences, no commentary) with key \
+"scenarios".
 - Each scenario needs scenario_id, candidate_id, title, category, \
 preconditions, steps, expected_result, and evidence_references.
+- Keep steps and expected_result concise.
 - Use only candidate ids supplied in the request.
 - Cite only evidence_references already attached to those candidates.
 - Do not invent unsupported behaviour.
 """
-
-_MODEL_SETTINGS: Mapping[str, object] = {"temperature": 0, "max_tokens": 2048}
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +90,7 @@ class GenerateScenarios:
             result = self._chat_model.complete(
                 SCENARIO_GENERATION_SYSTEM,
                 (_candidates_message(missing),),
-                _MODEL_SETTINGS,
+                SCENARIO_GENERATION_MODEL_SETTINGS,
             )
             allowed_refs = {
                 candidate.candidate_id: {
@@ -165,16 +169,10 @@ def _parse_scenarios(
     allowed_refs_by_candidate: Mapping[str, set[tuple[str, str]]],
     candidates_by_id: Mapping[str, TestCandidate],
 ) -> tuple[TestScenario, ...]:
-    if not isinstance(result.content, str) or not result.content.strip():
-        raise ToolFailureError("Scenario generation result was empty")
-    try:
-        data = json.loads(result.content)
-    except json.JSONDecodeError as error:
-        raise ToolFailureError(
-            "Scenario generation result was not valid JSON"
-        ) from error
-    if not isinstance(data, Mapping):
-        raise ToolFailureError("Scenario generation result must be a JSON object")
+    data = loads_model_json_object(
+        result.content if isinstance(result.content, str) else "",
+        failure_prefix="Scenario generation result",
+    )
     raw = data.get("scenarios")
     if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
         raise ToolFailureError("scenarios must be a sequence")

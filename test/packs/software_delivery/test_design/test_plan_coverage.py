@@ -151,6 +151,18 @@ def test_grounded_evidence_persists_coverage_review_draft_with_gaps() -> None:
     assert draft.coverage_gaps[0].category == "permission_security"
     assert repo.get("draft-1") == draft
     assert len(chat.calls) == 1
+    assert chat.calls[0][2]["max_tokens"] == 4096
+
+
+def test_accepts_fenced_model_json() -> None:
+    chat = _FakeChat(content=f"```json\n{_model_payload()}\n```")
+    repo = _MemoryRepo()
+    use_case = PlanCoverage(chat_model=chat, repository=repo)
+
+    draft = use_case.execute(_request(evidence=(_evidence(),)))
+
+    assert draft.candidates[0].candidate_id == "cand-login"
+    assert repo.get("draft-1") == draft
 
 
 def test_model_receives_evidence_inside_context_delimiters() -> None:

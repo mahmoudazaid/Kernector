@@ -452,12 +452,8 @@ def build_test_design_facade(
     """Wire the test-design HTTP facade (pack gated at call time)."""
     from pathlib import Path
 
-    from application.contracts import RetrieveRequest
     from composition.test_design import TestDesignFacade
 
-    rewrite_and_retrieve = build_rewrite_and_retrieve_knowledge(
-        settings, vector_store=vector_store
-    )
     try:
         workspace_id = parse_workspace_id(settings.document_catalog.workspace_id)
     except ValueError as error:
@@ -472,12 +468,9 @@ def build_test_design_facade(
             settings.document_catalog.sql_path.parent / "workspace_store.sqlite"
         )
 
-    def retrieve(query: str):
-        return rewrite_and_retrieve.execute(RetrieveRequest(query=query)).hits
-
     return TestDesignFacade(
         settings=settings,
-        retrieve=retrieve,
+        retrieve=_relevant_retrieve(settings, vector_store=vector_store),
         store_path=store_path,
         workspace_id=workspace_id,
     )
