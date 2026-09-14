@@ -296,7 +296,7 @@ describe("GitHubPanel", () => {
     ).toBeInTheDocument();
 
     await user.click(
-      within(confirm).getByRole("button", { name: /remove documents/i }),
+      within(confirm).getByRole("button", { name: /^remove$/i }),
     );
     await waitFor(() =>
       expect(saveSelection).toHaveBeenCalledWith(

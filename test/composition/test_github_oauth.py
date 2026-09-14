@@ -140,6 +140,53 @@ def test_disconnect_revokes_and_clears(settings) -> None:
         disconnect_github_oauth(settings, connection_store=tokens, gateway=gateway)
 
 
+def test_disconnect_github_oauth_purges_repo_and_issue_docs(settings) -> None:
+    from composition import disconnect_github_oauth
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner="acme",
+            repo="docs",
+            project_owner="acme",
+            project_number=16,
+            connector_id="connector-a",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_github_catalog_row("acme/docs:README.md"))
+    catalog.upsert(_github_catalog_row("issue:ISSUE_1"))
+    catalog.upsert(
+        _github_catalog_row("other/repo:kept.md", connector_id="connector-b")
+    )
+    store = InMemoryVectorStore()
+    gateway = FakeGateway()
+
+    disconnect_github_oauth(
+        settings,
+        connection_store=tokens,
+        gateway=gateway,
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    assert tokens.load() is None
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"other/repo:kept.md"}
+
+
 def test_oauth_sync_persists_counts(settings, monkeypatch: pytest.MonkeyPatch) -> None:
     tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
     tokens.save(

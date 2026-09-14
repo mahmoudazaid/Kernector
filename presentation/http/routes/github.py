@@ -224,5 +224,5 @@ def github_connector_sync(
 def github_connector_disconnect(
     disconnect: GitHubDisconnectDep,
 ) -> None:
-    """Revoke and delete the stored user grant. Indexed documents stay."""
+    """Revoke and delete the stored user grant. Synced documents are removed."""
     disconnect()

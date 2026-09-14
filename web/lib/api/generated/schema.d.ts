@@ -40,7 +40,7 @@ export interface paths {
     post?: never;
     /**
      * Github Connector Disconnect
-     * @description Revoke and delete the stored user grant. Indexed documents stay.
+     * @description Revoke and delete the stored user grant. Synced documents are removed.
      */
     delete: operations["github_connector_disconnect_api_v1_connectors_github_delete"];
     options?: never;

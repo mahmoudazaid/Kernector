@@ -701,7 +701,7 @@ export function GitHubPanel({
             ? purgeSelectionDescription(pendingDrops)
             : "Synced documents for the removed sources will be deleted from the knowledge base."
         }
-        confirmLabel="Remove documents"
+        confirmLabel="Remove"
         cancelLabel="Cancel"
         tone="danger"
         busy={busy}
@@ -712,7 +712,7 @@ export function GitHubPanel({
       <ConfirmDialog
         open={confirmOpen}
         title="Disconnect GitHub?"
-        description="This removes the stored GitHub grant from this workspace. Indexed documents stay until you delete them or the next sync reconciles removals."
+        description="This removes the stored GitHub grant and deletes synced repository and project documents from this workspace."
         confirmLabel="Disconnect"
         cancelLabel="Cancel"
         tone="danger"

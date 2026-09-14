@@ -1460,8 +1460,16 @@ def disconnect_github_oauth(
     *,
     connection_store=None,
     gateway=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> None:
-    """Revoke the stored access token and delete the local grant."""
+    """Revoke the stored access token, delete the local grant, and purge docs.
+
+    Synced GitHub catalog rows for this connection's ``connector_id`` (repository
+    files and ProjectV2 issues) are removed from the catalog and vector store.
+    """
     tokens_store = (
         connection_store
         if connection_store is not None
@@ -1475,8 +1483,17 @@ def disconnect_github_oauth(
     oauth_gateway = gateway if gateway is not None else HttpGitHubOAuthGateway(
         settings.github_oauth
     )
+    connector_id = connection.connector_id
     oauth_gateway.revoke(connection.access_token)
     tokens_store.clear()
+    _purge_github_connector_docs(
+        settings,
+        connector_id=connector_id,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
 
 
 def list_github_repositories(
@@ -1738,6 +1755,61 @@ def _github_row_in_connector_scope(
     return row.connector_id in connector_ids
 
 
+def _purge_github_connector_docs(
+    settings: Settings,
+    *,
+    connector_id: str | None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+    source_id_prefixes: tuple[str, ...] | None = None,
+) -> None:
+    """Delete GitHub catalog+vector rows for ``connector_id``.
+
+    When ``source_id_prefixes`` is set, only matching source ids are removed.
+    Otherwise every GitHub row in connector scope is removed (disconnect).
+    """
+    working = _resolve_catalog(
+        settings, catalog=catalog, catalog_factory=catalog_factory
+    )
+    connector_ids = (
+        frozenset({connector_id.strip()})
+        if isinstance(connector_id, str) and connector_id.strip()
+        else frozenset()
+    )
+    prefixes = source_id_prefixes
+    targets = [
+        row
+        for row in working.all()
+        if row.reference.source_type == SourceType.GITHUB
+        and (
+            prefixes is None
+            or any(
+                row.reference.source_id.startswith(prefix) for prefix in prefixes
+            )
+        )
+        and _github_row_in_connector_scope(row, connector_ids)
+    ]
+    if not targets:
+        return
+
+    get_store = _lazy_vector_store(
+        settings,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
+    store = get_store()
+    try:
+        for row in targets:
+            store.delete_source(row.reference)
+            working.delete(row.reference)
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except VectorStoreError as error:
+        raise DocumentOperationError(str(error)) from error
+
+
 def _purge_github_dropped_selection_docs(
     settings: Settings,
     *,
@@ -1774,40 +1846,15 @@ def _purge_github_dropped_selection_docs(
     if not prefixes:
         return
 
-    working = _resolve_catalog(
-        settings, catalog=catalog, catalog_factory=catalog_factory
-    )
-    connector_ids = (
-        frozenset({connector_id.strip()})
-        if isinstance(connector_id, str) and connector_id.strip()
-        else frozenset()
-    )
-    targets = [
-        row
-        for row in working.all()
-        if row.reference.source_type == SourceType.GITHUB
-        and any(
-            row.reference.source_id.startswith(prefix) for prefix in prefixes
-        )
-        and _github_row_in_connector_scope(row, connector_ids)
-    ]
-    if not targets:
-        return
-
-    get_store = _lazy_vector_store(
+    _purge_github_connector_docs(
         settings,
+        connector_id=connector_id,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
         vector_store=vector_store,
         vector_store_factory=vector_store_factory,
+        source_id_prefixes=tuple(prefixes),
     )
-    store = get_store()
-    try:
-        for row in targets:
-            store.delete_source(row.reference)
-            working.delete(row.reference)
-    except CatalogError as error:
-        raise DocumentOperationError(str(error)) from error
-    except VectorStoreError as error:
-        raise DocumentOperationError(str(error)) from error
 
 
 def _github_picker_client(

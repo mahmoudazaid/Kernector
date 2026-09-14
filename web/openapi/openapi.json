@@ -1979,7 +1979,7 @@
     },
     "/api/v1/connectors/github": {
       "delete": {
-        "description": "Revoke and delete the stored user grant. Indexed documents stay.",
+        "description": "Revoke and delete the stored user grant. Synced documents are removed.",
         "operationId": "github_connector_disconnect_api_v1_connectors_github_delete",
         "responses": {
           "204": {
