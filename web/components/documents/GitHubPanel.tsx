@@ -86,6 +86,67 @@ const CALLBACK_ERRORS: Record<string, string> = {
   unconfigured: "GitHub OAuth is not configured on the server.",
 };
 
+type SelectionDraft = {
+  owner: string | null;
+  repo: string | null;
+  project_owner: string | null;
+  project_number: number | null;
+};
+
+function normalizeSelectionDraft(next: {
+  owner: string | null;
+  repo: string | null;
+  project_owner?: string | null;
+  project_number?: number | null;
+}): SelectionDraft {
+  return {
+    owner: next.owner,
+    repo: next.repo,
+    project_owner: next.project_owner ?? null,
+    project_number: next.project_number ?? null,
+  };
+}
+
+function droppedGithubSources(
+  previous: GitHubSelectionResponse,
+  next: SelectionDraft,
+): { repo: string | null; project: string | null } {
+  let repo: string | null = null;
+  if (previous.owner && previous.repo) {
+    const same =
+      next.owner === previous.owner && next.repo === previous.repo;
+    if (!same) {
+      repo = `${previous.owner}/${previous.repo}`;
+    }
+  }
+  let project: string | null = null;
+  if (previous.project_owner && previous.project_number != null) {
+    const same =
+      next.project_owner === previous.project_owner &&
+      next.project_number === previous.project_number;
+    if (!same) {
+      project = `${previous.project_owner}#${previous.project_number}`;
+    }
+  }
+  return { repo, project };
+}
+
+function purgeSelectionDescription(dropped: {
+  repo: string | null;
+  project: string | null;
+}): string {
+  const parts: string[] = [];
+  if (dropped.repo) {
+    parts.push(`repository ${dropped.repo}`);
+  }
+  if (dropped.project) {
+    parts.push(`project ${dropped.project}`);
+  }
+  const sources = parts.join(" and ");
+  const determiner = parts.length > 1 ? "their" : "its";
+  return `Removing ${sources} will delete ${determiner} synced documents from the knowledge base. This cannot be undone from here.`;
+}
+
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -126,6 +187,13 @@ export function GitHubPanel({
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
+  const [pendingSelection, setPendingSelection] =
+    useState<SelectionDraft | null>(null);
+  const [pendingDrops, setPendingDrops] = useState<{
+    repo: string | null;
+    project: string | null;
+  } | null>(null);
   const [internalPickerOpen, setInternalPickerOpen] = useState(false);
   const pickerOpen = onPickerOpenChange
     ? (pickerOpenProp ?? false)
@@ -307,16 +375,14 @@ export function GitHubPanel({
     }
   }
 
-  async function onSaveSelection(next: {
-    owner: string | null;
-    repo: string | null;
-    project_owner?: string | null;
-    project_number?: number | null;
-  }) {
+  async function onSaveSelection(next: SelectionDraft) {
     if (busyRef.current) {
       return;
     }
     busyRef.current = true;
+    setPurgeConfirmOpen(false);
+    setPendingSelection(null);
+    setPendingDrops(null);
     setPickerOpen(false);
     setBusy(true);
     setPickerNotice(null);
@@ -347,6 +413,40 @@ export function GitHubPanel({
       busyRef.current = false;
       setBusy(false);
     }
+  }
+
+  function onPickerConfirm(next: {
+    owner: string | null;
+    repo: string | null;
+    project_owner?: string | null;
+    project_number?: number | null;
+  }) {
+    const draft = normalizeSelectionDraft(next);
+    const dropped = droppedGithubSources(selection, draft);
+    const hasDrop = Boolean(dropped.repo || dropped.project);
+    const documentCount =
+      view.kind === "ready" ? view.status.document_count : 0;
+    if (hasDrop && documentCount > 0) {
+      setPendingSelection(draft);
+      setPendingDrops(dropped);
+      setPurgeConfirmOpen(true);
+      return;
+    }
+    void onSaveSelection(draft);
+  }
+
+  function onPurgeCancel() {
+    setPurgeConfirmOpen(false);
+    setPendingSelection(null);
+    setPendingDrops(null);
+  }
+
+  function onPurgeConfirm() {
+    if (pendingSelection == null) {
+      onPurgeCancel();
+      return;
+    }
+    void onSaveSelection(pendingSelection);
   }
 
   async function onDisconnect() {
@@ -585,10 +685,29 @@ export function GitHubPanel({
           listRepos={listRepos}
           listProjects={listProjects}
           notice={pickerNotice}
-          onCancel={() => setPickerOpen(false)}
-          onConfirm={(next) => void onSaveSelection(next)}
+          onCancel={() => {
+            onPurgeCancel();
+            setPickerOpen(false);
+          }}
+          onConfirm={onPickerConfirm}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={purgeConfirmOpen}
+        title="Remove synced GitHub documents?"
+        description={
+          pendingDrops
+            ? purgeSelectionDescription(pendingDrops)
+            : "Synced documents for the removed sources will be deleted from the knowledge base."
+        }
+        confirmLabel="Remove documents"
+        cancelLabel="Cancel"
+        tone="danger"
+        busy={busy}
+        onCancel={onPurgeCancel}
+        onConfirm={onPurgeConfirm}
+      />
 
       <ConfirmDialog
         open={confirmOpen}

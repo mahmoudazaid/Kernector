@@ -230,4 +230,200 @@ describe("GitHubPanel", () => {
       await screen.findByText(/authorization was cancelled/i),
     ).toBeInTheDocument();
   });
+
+  it("warns before clearing a selected repo when documents exist", async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn().mockResolvedValue({
+      owner: null,
+      repo: null,
+      project_owner: "acme",
+      project_number: 16,
+    });
+    const syncNow = vi.fn().mockResolvedValue({});
+    render(
+      <GitHubPanel
+        apiBaseUrl="http://api"
+        getStatus={async () => ({
+          ...connected,
+          project_owner: "acme",
+          project_number: 16,
+          document_count: 3,
+        })}
+        loadSelection={async () => ({
+          owner: "acme",
+          repo: "docs",
+          project_owner: "acme",
+          project_number: 16,
+        })}
+        listRepos={async () => ({
+          items: [
+            {
+              owner: "acme",
+              name: "docs",
+              full_name: "acme/docs",
+              private: false,
+            },
+          ],
+          has_next: false,
+        })}
+        listProjects={async () => ({
+          items: [
+            { owner_login: "acme", number: 16, title: "Board" },
+          ],
+          next_cursor: null,
+        })}
+        saveSelection={saveSelection}
+        syncNow={syncNow}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Browse" }));
+    const picker = await screen.findByRole("dialog", {
+      name: /choose github sources/i,
+    });
+    await user.click(
+      await within(picker).findByRole("radio", { name: /acme\/docs/i }),
+    );
+    await user.click(within(picker).getByRole("button", { name: /^save$/i }));
+
+    const confirm = await screen.findByRole("dialog", {
+      name: /remove synced github documents/i,
+    });
+    expect(confirm).toHaveTextContent(/repository acme\/docs/i);
+    expect(saveSelection).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: /choose github sources/i }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(confirm).getByRole("button", { name: /remove documents/i }),
+    );
+    await waitFor(() =>
+      expect(saveSelection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selection: {
+            owner: null,
+            repo: null,
+            project_owner: "acme",
+            project_number: 16,
+          },
+        }),
+      ),
+    );
+    await waitFor(() => expect(syncNow).toHaveBeenCalled());
+  });
+
+  it("cancels purge confirm without saving and keeps the picker open", async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn();
+    render(
+      <GitHubPanel
+        apiBaseUrl="http://api"
+        getStatus={async () => connected}
+        loadSelection={async () => ({
+          owner: "acme",
+          repo: "docs",
+          project_owner: null,
+          project_number: null,
+        })}
+        listRepos={async () => ({
+          items: [
+            {
+              owner: "acme",
+              name: "docs",
+              full_name: "acme/docs",
+              private: false,
+            },
+            {
+              owner: "acme",
+              name: "handbook",
+              full_name: "acme/handbook",
+              private: false,
+            },
+          ],
+          has_next: false,
+        })}
+        listProjects={async () => ({ items: [], next_cursor: null })}
+        saveSelection={saveSelection}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Browse" }));
+    const picker = await screen.findByRole("dialog", {
+      name: /choose github sources/i,
+    });
+    await user.click(
+      await within(picker).findByRole("radio", { name: /acme\/handbook/i }),
+    );
+    await user.click(within(picker).getByRole("button", { name: /^save$/i }));
+
+    const confirm = await screen.findByRole("dialog", {
+      name: /remove synced github documents/i,
+    });
+    await user.click(within(confirm).getByRole("button", { name: /^cancel$/i }));
+
+    expect(saveSelection).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: /choose github sources/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", {
+        name: /remove synced github documents/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves immediately when clearing a source with zero documents", async () => {
+    const user = userEvent.setup();
+    const saveSelection = vi.fn().mockResolvedValue({
+      owner: null,
+      repo: null,
+      project_owner: null,
+      project_number: null,
+    });
+    render(
+      <GitHubPanel
+        apiBaseUrl="http://api"
+        getStatus={async () => ({
+          ...connected,
+          document_count: 0,
+        })}
+        loadSelection={async () => ({
+          owner: "acme",
+          repo: "docs",
+          project_owner: null,
+          project_number: null,
+        })}
+        listRepos={async () => ({
+          items: [
+            {
+              owner: "acme",
+              name: "docs",
+              full_name: "acme/docs",
+              private: false,
+            },
+          ],
+          has_next: false,
+        })}
+        listProjects={async () => ({ items: [], next_cursor: null })}
+        saveSelection={saveSelection}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Browse" }));
+    const picker = await screen.findByRole("dialog", {
+      name: /choose github sources/i,
+    });
+    await user.click(
+      await within(picker).findByRole("radio", { name: /acme\/docs/i }),
+    );
+    await user.click(within(picker).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(saveSelection).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("dialog", {
+        name: /remove synced github documents/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
 });

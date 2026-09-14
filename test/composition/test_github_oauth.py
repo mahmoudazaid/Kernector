@@ -657,3 +657,231 @@ def test_list_github_projects_maps_connector_error(settings) -> None:
             connection_store=tokens,
             client_factory=lambda _token: FailingClient(),
         )
+
+
+def _seed_github_connection(settings, *, owner, repo, project_owner, project_number):
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    tokens.mutate(
+        lambda _current: GitHubOAuthConnection(
+            access_token="gho-access-secret",
+            refresh_token=None,
+            account_login="ada",
+            owner=owner,
+            repo=repo,
+            project_owner=project_owner,
+            project_number=project_number,
+            connector_id="connector-a",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_removed=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+        )
+    )
+    return tokens
+
+
+def _github_catalog_row(
+    source_id: str,
+    *,
+    connector_id: str | None = "connector-a",
+):
+    from datetime import UTC, datetime
+
+    from domain.knowledge import (
+        CatalogDocument,
+        CatalogStatus,
+        SourceReference,
+        SourceType,
+    )
+
+    return CatalogDocument(
+        reference=SourceReference(source_id, SourceType.GITHUB),
+        file_name=f"{source_id.split(':')[-1]}.md",
+        title=source_id,
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        uploaded_at=datetime(2026, 1, 1, tzinfo=UTC),
+        chunk_count=1,
+        error=None,
+        revision="1",
+        connector_id=connector_id,
+    )
+
+
+class _AcceptClient:
+    def get_repository(self, owner: str, repo: str):
+        return {"full_name": f"{owner}/{repo}"}
+
+    def resolve_project_v2_id(self, owner_login: str, number: int) -> str:
+        return f"PVT_{owner_login}_{number}"
+
+
+def test_put_github_selection_clears_repo_purges_repo_docs_only(settings) -> None:
+    from composition import put_github_selection
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = _seed_github_connection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner="acme",
+        project_number=16,
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_github_catalog_row("acme/docs:README.md"))
+    catalog.upsert(_github_catalog_row("issue:ISSUE_1"))
+    store = InMemoryVectorStore()
+
+    put_github_selection(
+        settings,
+        owner=None,
+        repo=None,
+        project_owner="acme",
+        project_number=16,
+        connection_store=tokens,
+        client_factory=lambda _token: _AcceptClient(),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"issue:ISSUE_1"}
+
+
+def test_put_github_selection_clears_project_purges_issue_docs_only(settings) -> None:
+    from composition import put_github_selection
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = _seed_github_connection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner="acme",
+        project_number=16,
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_github_catalog_row("acme/docs:README.md"))
+    catalog.upsert(_github_catalog_row("issue:ISSUE_1"))
+    store = InMemoryVectorStore()
+
+    put_github_selection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner=None,
+        project_number=None,
+        connection_store=tokens,
+        client_factory=lambda _token: _AcceptClient(),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"acme/docs:README.md"}
+
+
+def test_put_github_selection_switch_repo_purges_old_prefix(settings) -> None:
+    from composition import put_github_selection
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = _seed_github_connection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner=None,
+        project_number=None,
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_github_catalog_row("acme/docs:README.md"))
+    catalog.upsert(_github_catalog_row("acme/handbook:GUIDE.md"))
+    store = InMemoryVectorStore()
+
+    put_github_selection(
+        settings,
+        owner="acme",
+        repo="handbook",
+        project_owner=None,
+        project_number=None,
+        connection_store=tokens,
+        client_factory=lambda _token: _AcceptClient(),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"acme/handbook:GUIDE.md"}
+
+
+def test_put_github_selection_clears_both_purges_all_scoped_docs(settings) -> None:
+    from composition import put_github_selection
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = _seed_github_connection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner="acme",
+        project_number=16,
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_github_catalog_row("acme/docs:README.md"))
+    catalog.upsert(_github_catalog_row("issue:ISSUE_1"))
+    catalog.upsert(
+        _github_catalog_row("other/repo:kept.md", connector_id="connector-b")
+    )
+    store = InMemoryVectorStore()
+
+    put_github_selection(
+        settings,
+        owner=None,
+        repo=None,
+        project_owner=None,
+        project_number=None,
+        connection_store=tokens,
+        client_factory=lambda _token: _AcceptClient(),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"other/repo:kept.md"}
+
+
+def test_put_github_selection_unchanged_does_not_purge(settings) -> None:
+    from composition import put_github_selection
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = _seed_github_connection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner="acme",
+        project_number=16,
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_github_catalog_row("acme/docs:README.md"))
+    catalog.upsert(_github_catalog_row("issue:ISSUE_1"))
+    store = InMemoryVectorStore()
+
+    put_github_selection(
+        settings,
+        owner="acme",
+        repo="docs",
+        project_owner="acme",
+        project_number=16,
+        connection_store=tokens,
+        client_factory=lambda _token: _AcceptClient(),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"acme/docs:README.md", "issue:ISSUE_1"}
