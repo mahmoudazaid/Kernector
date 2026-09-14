@@ -637,8 +637,10 @@ class ConnectorSyncStatus(StrEnum):
     """Per-document result of one connector synchronization run."""
 
     INGESTED = "ingested"
+    UPDATED = "updated"
     SKIPPED = "skipped"
     FAILED = "failed"
+    REMOVED = "removed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -650,8 +652,9 @@ class ConnectorSyncOutcome:
 
     Args:
         source_id (str): Connector identity of the listed document.
-        status (ConnectorSyncStatus): Ingested, skipped, or failed.
-        chunk_count (int): Chunks stored for ingested/skipped rows; ``0`` when failed.
+        status (ConnectorSyncStatus): Ingested, updated, skipped, failed, or removed.
+        chunk_count (int): Chunks stored for ingested/updated/skipped rows;
+            ``0`` when failed or removed.
         error_type (str | None): Exception class name when ``status`` is failed.
     """
 
@@ -676,8 +679,12 @@ class ConnectorSyncOutcome:
 class ConnectorSyncResponse:
     """Ordered per-document outcomes of a connector sync run.
 
+    Listing outcomes come first (in listing order). Removals, when present,
+    are appended after the listing outcomes and sorted by ``source_id``.
+
     Args:
-        outcomes (Sequence[ConnectorSyncOutcome]): Results in listing order.
+        outcomes (Sequence[ConnectorSyncOutcome]): Listing results, then
+            optional removals sorted by ``source_id``.
     """
 
     outcomes: Sequence[ConnectorSyncOutcome]
@@ -694,11 +701,20 @@ class ConnectorSyncResponse:
 
     @property
     def ingested_count(self) -> int:
-        """Number of documents ingested in this run."""
+        """Number of documents first-time ingested (or recovered) in this run."""
         return sum(
             1
             for outcome in self.outcomes
             if outcome.status is ConnectorSyncStatus.INGESTED
+        )
+
+    @property
+    def updated_count(self) -> int:
+        """Number of documents re-ingested over a previously READY row."""
+        return sum(
+            1
+            for outcome in self.outcomes
+            if outcome.status is ConnectorSyncStatus.UPDATED
         )
 
     @property
@@ -717,4 +733,13 @@ class ConnectorSyncResponse:
             1
             for outcome in self.outcomes
             if outcome.status is ConnectorSyncStatus.FAILED
+        )
+
+    @property
+    def removed_count(self) -> int:
+        """Number of catalog rows hard-deleted by reconcile in this run."""
+        return sum(
+            1
+            for outcome in self.outcomes
+            if outcome.status is ConnectorSyncStatus.REMOVED
         )

@@ -212,31 +212,8 @@ def create_document(
     return catalog_document_response(document)
 
 
-@router.put(
-    "/documents/{source_id}",
-    responses=problem_responses(404, 405, 409, 413, 422, 500),
-)
-def replace_document(
-    source_id: str,
-    ops: DocumentOperationsDep,
-    file: UploadFile | None = File(default=None),
-) -> CatalogDocumentResponse:
-    """Replace document content under the same source ID."""
-    source_id = _require_source_id(source_id)
-    payload = _read_upload(
-        file,
-        max_upload_bytes=ops.max_upload_bytes,
-        supported_suffixes=ops.supported_suffixes,
-    )
-    document = ops.replace(
-        SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT),
-        payload,
-    )
-    return catalog_document_response(document)
-
-
 @router.get(
-    "/documents/{source_id}/content",
+    "/documents/{source_id:path}/content",
     response_class=Response,
     responses={
         200: _content_success_response("Original document content"),
@@ -251,7 +228,7 @@ def get_document_content(source_id: str, ops: DocumentOperationsDep) -> Response
 
 
 @router.get(
-    "/documents/{source_id}/download",
+    "/documents/{source_id:path}/download",
     response_class=Response,
     responses={
         200: _content_success_response(
@@ -267,20 +244,8 @@ def download_document(source_id: str, ops: DocumentOperationsDep) -> Response:
     )
 
 
-@router.delete(
-    "/documents/{source_id}",
-    status_code=204,
-    responses=problem_responses(405, 409, 422, 500),
-)
-def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
-    """Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op."""
-    source_id = _require_source_id(source_id)
-    ops.delete(SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT))
-    return Response(status_code=204)
-
-
 @router.get(
-    "/documents/{source_id}/chunks",
+    "/documents/{source_id:path}/chunks",
     responses=problem_responses(404, 405, 422, 500),
 )
 def list_document_chunks(
@@ -305,3 +270,42 @@ def list_document_chunks(
         chunks=[document_chunk_response(chunk) for chunk in page.chunks],
         has_more=page.has_more,
     )
+
+
+@router.put(
+    "/documents/{source_id:path}",
+    responses=problem_responses(404, 405, 409, 413, 422, 500),
+)
+def replace_document(
+    source_id: str,
+    ops: DocumentOperationsDep,
+    file: UploadFile | None = File(default=None),
+) -> CatalogDocumentResponse:
+    """Replace document content under the same source ID."""
+    source_id = _require_source_id(source_id)
+    payload = _read_upload(
+        file,
+        max_upload_bytes=ops.max_upload_bytes,
+        supported_suffixes=ops.supported_suffixes,
+    )
+    document = ops.replace(
+        SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT),
+        payload,
+    )
+    return catalog_document_response(document)
+
+
+@router.delete(
+    "/documents/{source_id:path}",
+    status_code=204,
+    responses=problem_responses(405, 409, 422, 500),
+)
+def delete_document(source_id: str, ops: DocumentOperationsDep) -> Response:
+    """Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.
+
+    ``source_id`` uses a path converter so GitHub ids that contain ``/``
+    (``owner/repo:path/to/file``) still route after percent-decoding.
+    """
+    source_id = _require_source_id(source_id)
+    ops.delete(SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT))
+    return Response(status_code=204)

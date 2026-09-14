@@ -15,6 +15,14 @@ _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/connectors/google-drive/sync": ("post", ("405", "409", "500", "502")),
     "/api/v1/connectors/google-drive/oauth/start": ("get", ("405", "500")),
     "/api/v1/connectors/google-drive/oauth/callback": ("get", ("405", "500")),
+    "/api/v1/connectors/github": ("get", ("405", "500")),
+    "/api/v1/connectors/github/last-sync": ("get", ("405", "500")),
+    "/api/v1/connectors/github/repos": ("get", ("405", "409", "500", "502")),
+    "/api/v1/connectors/github/projects": ("get", ("405", "409", "422", "500", "502")),
+    "/api/v1/connectors/github/selection": ("get", ("405", "409", "500")),
+    "/api/v1/connectors/github/sync": ("post", ("405", "409", "500", "502")),
+    "/api/v1/connectors/github/oauth/start": ("get", ("405", "500")),
+    "/api/v1/connectors/github/oauth/callback": ("get", ("405", "500")),
     "/api/v1/test-design/drafts": ("post", ("404", "405", "409", "422", "500", "502")),
 }
 
@@ -96,6 +104,7 @@ def test_openapi_hub_source_type_is_named_component() -> None:
     assert set(components["HubSourceType"]["enum"]) == {
         "knowledge_document",
         "google_drive",
+        "github",
     }
     chunks = schema["paths"]["/api/v1/documents/{source_id}/chunks"]["get"]
     source_type = next(

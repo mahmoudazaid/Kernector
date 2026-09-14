@@ -414,7 +414,7 @@
             "type": "string"
           },
           "status": {
-            "enum": ["ingested", "skipped", "failed"],
+            "enum": ["ingested", "updated", "skipped", "failed", "removed"],
             "title": "Status",
             "type": "string"
           }
@@ -573,6 +573,418 @@
         },
         "required": ["expected_version"],
         "title": "ExpectedVersionRequest",
+        "type": "object"
+      },
+      "GitHubLastSyncResponse": {
+        "description": "Last GitHub user-OAuth sync summary. Counts are honest; no secrets.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "new_count": {
+            "title": "New Count",
+            "type": "integer"
+          },
+          "removed_count": {
+            "title": "Removed Count",
+            "type": "integer"
+          },
+          "synced_at": {
+            "title": "Synced At",
+            "type": "string"
+          },
+          "unchanged_count": {
+            "title": "Unchanged Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "synced_at",
+          "new_count",
+          "updated_count",
+          "unchanged_count",
+          "removed_count",
+          "failed_count"
+        ],
+        "title": "GitHubLastSyncResponse",
+        "type": "object"
+      },
+      "GitHubProjectItemResponse": {
+        "description": "One ProjectV2 row for the Hub picker.",
+        "properties": {
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "owner_login": {
+            "title": "Owner Login",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": ["owner_login", "number", "title"],
+        "title": "GitHubProjectItemResponse",
+        "type": "object"
+      },
+      "GitHubProjectPageResponse": {
+        "description": "One page of ProjectV2 projects for the Hub picker.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubProjectItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items"],
+        "title": "GitHubProjectPageResponse",
+        "type": "object"
+      },
+      "GitHubRepoItemResponse": {
+        "description": "One repository row for the Hub picker.",
+        "properties": {
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "private": {
+            "default": false,
+            "title": "Private",
+            "type": "boolean"
+          }
+        },
+        "required": ["owner", "name", "full_name"],
+        "title": "GitHubRepoItemResponse",
+        "type": "object"
+      },
+      "GitHubRepoPageResponse": {
+        "description": "One page of repositories for the Hub picker.",
+        "properties": {
+          "has_next": {
+            "default": false,
+            "title": "Has Next",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubRepoItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          }
+        },
+        "required": ["items"],
+        "title": "GitHubRepoPageResponse",
+        "type": "object"
+      },
+      "GitHubSelectionRequest": {
+        "description": "Replace the saved GitHub sync selection.",
+        "properties": {
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "project_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Number"
+          },
+          "project_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Owner"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          }
+        },
+        "title": "GitHubSelectionRequest",
+        "type": "object"
+      },
+      "GitHubSelectionResponse": {
+        "description": "Saved Hub sync targets (no tokens).",
+        "properties": {
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "project_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Number"
+          },
+          "project_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Owner"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          }
+        },
+        "title": "GitHubSelectionResponse",
+        "type": "object"
+      },
+      "GitHubStatusResponse": {
+        "description": "GitHub connector presence and user OAuth connection (no secrets).",
+        "properties": {
+          "account_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Login"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "connected": {
+            "default": false,
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "connection_state": {
+            "default": "disconnected",
+            "title": "Connection State",
+            "type": "string"
+          },
+          "document_count": {
+            "default": 0,
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "last_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GitHubLastSyncResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oauth_ready": {
+            "default": false,
+            "title": "Oauth Ready",
+            "type": "boolean"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "project_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Number"
+          },
+          "project_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Owner"
+          },
+          "reauthorization_required": {
+            "default": false,
+            "title": "Reauthorization Required",
+            "type": "boolean"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "setup_required": {
+            "default": false,
+            "title": "Setup Required",
+            "type": "boolean"
+          },
+          "sync_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Scope"
+          }
+        },
+        "required": ["configured", "available"],
+        "title": "GitHubStatusResponse",
+        "type": "object"
+      },
+      "GitHubSyncResponse": {
+        "description": "Projected GitHub sync counts and per-document outcomes.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "ingested_count": {
+            "title": "Ingested Count",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorSyncOutcomeResponse"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "removed_count": {
+            "default": 0,
+            "title": "Removed Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "default": 0,
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ingested_count",
+          "skipped_count",
+          "failed_count",
+          "outcomes"
+        ],
+        "title": "GitHubSyncResponse",
         "type": "object"
       },
       "GoogleDriveBrowseItemResponse": {
@@ -872,8 +1284,18 @@
             "title": "Outcomes",
             "type": "array"
           },
+          "removed_count": {
+            "default": 0,
+            "title": "Removed Count",
+            "type": "integer"
+          },
           "skipped_count": {
             "title": "Skipped Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "default": 0,
+            "title": "Updated Count",
             "type": "integer"
           }
         },
@@ -914,7 +1336,7 @@
       },
       "HubSourceType": {
         "description": "Hub catalog kinds accepted by chunk-inspect query params.\n\nMirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so\nthe wire contract stays documented and does not silently widen with\n``SourceType``.",
-        "enum": ["knowledge_document", "google_drive"],
+        "enum": ["knowledge_document", "google_drive", "github"],
         "title": "HubSourceType",
         "type": "string"
       },
@@ -1932,9 +2354,641 @@
         "tags": ["chat"]
       }
     },
+    "/api/v1/connectors/github": {
+      "delete": {
+        "description": "Revoke and delete the stored user grant. Synced documents are removed.",
+        "operationId": "github_connector_disconnect_api_v1_connectors_github_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Connector Disconnect",
+        "tags": ["connectors"]
+      },
+      "get": {
+        "description": "Return presentation-safe GitHub PAT flags and user OAuth connection.",
+        "operationId": "github_connector_status_api_v1_connectors_github_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Connector Status",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/last-sync": {
+      "get": {
+        "description": "Return the last persisted GitHub sync summary, if present.",
+        "operationId": "github_connector_last_sync_api_v1_connectors_github_last_sync_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GitHubLastSyncResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Github Connector Last Sync Api V1 Connectors Github Last Sync Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Connector Last Sync",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/oauth/callback": {
+      "get": {
+        "description": "Validate state, exchange the code server-side, and return to the Hub.",
+        "operationId": "github_oauth_callback_api_v1_connectors_github_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Oauth Callback",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/oauth/start": {
+      "get": {
+        "description": "Issue CSRF state and redirect the browser to GitHub, or back to the Hub.",
+        "operationId": "github_oauth_start_api_v1_connectors_github_oauth_start_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Oauth Start",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/projects": {
+      "get": {
+        "description": "List ProjectV2 projects for a login using the stored grant.",
+        "operationId": "github_connector_projects_api_v1_connectors_github_projects_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner_login",
+            "required": true,
+            "schema": {
+              "title": "Owner Login",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubProjectPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Projects",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/repos": {
+      "get": {
+        "description": "List repositories visible to the stored grant for the Hub picker.",
+        "operationId": "github_connector_repos_api_v1_connectors_github_repos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepoPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Repos",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/selection": {
+      "get": {
+        "description": "Return the saved repository and optional ProjectV2 selection.",
+        "operationId": "github_connector_get_selection_api_v1_connectors_github_selection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Github Connector Get Selection",
+        "tags": ["connectors"]
+      },
+      "put": {
+        "description": "Validate access and atomically replace the saved GitHub selection.",
+        "operationId": "github_connector_put_selection_api_v1_connectors_github_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Put Selection",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/github/sync": {
+      "post": {
+        "description": "Synchronize GitHub for the stored user OAuth grant.",
+        "operationId": "github_connector_sync_api_v1_connectors_github_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Github Connector Sync",
+        "tags": ["connectors"]
+      }
+    },
     "/api/v1/connectors/google-drive": {
       "delete": {
-        "description": "Revoke and delete the stored user grant. Indexed documents stay.",
+        "description": "Revoke and delete the stored user grant. Synced documents are removed.",
         "operationId": "google_drive_connector_disconnect_api_v1_connectors_google_drive_delete",
         "responses": {
           "204": {
@@ -2586,7 +3640,7 @@
     },
     "/api/v1/documents/{source_id}": {
       "delete": {
-        "description": "Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.",
+        "description": "Delete chunks and catalog row. Unknown IDs are a deliberate 204 no-op.\n\n``source_id`` uses a path converter so GitHub ids that contain ``/``\n(``owner/repo:path/to/file``) still route after percent-decoding.",
         "operationId": "delete_document_api_v1_documents__source_id__delete",
         "parameters": [
           {

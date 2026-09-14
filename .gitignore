@@ -49,6 +49,7 @@ data/catalog/
 data/uploads/
 data/secrets/
 **/google-oauth-*.json
+**/github-oauth-*.json
 
 # Local scratch output
 .tmp-*
