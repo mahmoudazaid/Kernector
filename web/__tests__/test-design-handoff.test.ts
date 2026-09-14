@@ -2,34 +2,37 @@ import { describe, expect, it } from "vitest";
 import {
   buildTestDesignHandoff,
   softwareDeliveryPackEnabled,
-  ticketIdentifierFromFileName,
 } from "@/lib/chat/test-design-handoff";
+import { extractGitHubIssueLocator } from "@/lib/chat/github-issue-locator";
 
 describe("test-design-handoff", () => {
-  it("derives ticket ids from file names and rejects bare numbers", () => {
-    expect(ticketIdentifierFromFileName("issue-8.md")).toBe("issue-8");
-    expect(ticketIdentifierFromFileName("KERN-293.md")).toBe("KERN-293");
-    expect(ticketIdentifierFromFileName("8.md")).toBeNull();
-    expect(ticketIdentifierFromFileName("  ")).toBeNull();
+  it("builds a handoff from a canonical GitHub Issue locator", () => {
+    expect(buildTestDesignHandoff("mahmoudazaid/Kernector#293")).toEqual({
+      source_locator: {
+        provider: "github",
+        locator: "mahmoudazaid/Kernector#293",
+      },
+    });
+    expect(buildTestDesignHandoff("293")).toBeNull();
+    expect(buildTestDesignHandoff(null)).toBeNull();
   });
 
-  it("builds a handoff only when source and non-bare ticket are present", () => {
+  it("parses issue URLs and owner/repo#N for the display chip", () => {
     expect(
-      buildTestDesignHandoff(
-        { source_id: "issue:I_1", source_type: "github" },
-        "issue-8",
-      ),
-    ).toEqual({
-      source_reference: { source_id: "issue:I_1", source_type: "github" },
-      ticket_identifier: "issue-8",
-    });
+      extractGitHubIssueLocator(
+        "Design tests for https://github.com/mahmoudazaid/Kernector/issues/293",
+      )?.canonical,
+    ).toBe("mahmoudazaid/Kernector#293");
     expect(
-      buildTestDesignHandoff(
-        { source_id: "issue:I_1", source_type: "github" },
-        "8",
+      extractGitHubIssueLocator(
+        "Design tests for mahmoudazaid/Kernector#293 and again mahmoudazaid/Kernector#293",
+      )?.canonical,
+    ).toBe("mahmoudazaid/Kernector#293");
+    expect(
+      extractGitHubIssueLocator(
+        "Design tests for mahmoudazaid/Kernector#293 and other/repo#1",
       ),
     ).toBeNull();
-    expect(buildTestDesignHandoff(null, "issue-8")).toBeNull();
   });
 
   it("detects the software-delivery pack flag", () => {

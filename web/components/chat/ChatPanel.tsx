@@ -12,10 +12,6 @@ import { Button } from "@/components/ui/Button";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
-  ChatTestDesignAttach,
-  type ChatTestDesignAttachProps,
-} from "@/components/chat/ChatTestDesignAttach";
-import {
   askChat,
   type AskChatOptions,
   type ChatAskResponse,
@@ -26,12 +22,14 @@ import type {
   GetRuntimeSettingsOptions,
   RuntimeSettingsResponse,
 } from "@/lib/api/settings";
+import { extractGitHubIssueLocator } from "@/lib/chat/github-issue-locator";
 import {
   evaluateHistoryLength,
   evaluateInputLength,
 } from "@/lib/chat/input-length";
 import { runDetailLines } from "@/lib/chat/run-details";
 import {
+  buildTestDesignHandoff,
   softwareDeliveryPackEnabled,
   type TestDesignHandoff,
 } from "@/lib/chat/test-design-handoff";
@@ -45,6 +43,7 @@ import {
   type ToolRun,
   type ToolUsed,
 } from "@/lib/chat/turn";
+import { ChatIssueLocatorChip } from "@/components/chat/ChatIssueLocatorChip";
 import {
   loadRuntimeSettings,
   type StoredChatMessage,
@@ -103,8 +102,6 @@ export type ChatPanelProps = {
   loadSettings?: (
     options: GetRuntimeSettingsOptions,
   ) => Promise<RuntimeSettingsResponse>;
-  /** Optional documents loader for the Test Design attach control. */
-  listDocuments?: ChatTestDesignAttachProps["listDocs"];
 };
 
 type CloseHandoffNotice = {
@@ -321,8 +318,7 @@ function MessageRow({
     if (
       action.kind !== "start_workflow" ||
       action.workflow_id !== "software-delivery.test-design" ||
-      !action.source_reference ||
-      !action.ticket_identifier ||
+      !action.source_locator ||
       !conversationId
     ) {
       return;
@@ -334,8 +330,7 @@ function MessageRow({
         baseUrl: apiBaseUrl,
         body: {
           conversation_id: conversationId,
-          source_reference: action.source_reference,
-          ticket_identifier: action.ticket_identifier,
+          source_locator: action.source_locator,
         },
       });
       await router.push(`/test-design/${encodeURIComponent(draft.draft_id)}`);
@@ -502,7 +497,6 @@ export function ChatPanel({
   onConversationClosed,
   ask = askChat,
   loadSettings,
-  listDocuments,
 }: ChatPanelProps) {
   const isLanding = variant === "landing";
   const bootRef = useRef<ConversationUiState | null>(null);
@@ -533,14 +527,12 @@ export function ChatPanel({
   const onClosedRef = useRef(onConversationClosed);
   /** Survives close→landing so draft/error are not wiped by route sync. */
   const closeHandoffRef = useRef<CloseHandoffNotice | null>(null);
-  const testDesignHandoffRef = useRef<TestDesignHandoff | null>(null);
-  const onTestDesignHandoffChange = useRef(
-    (handoff: TestDesignHandoff | null) => {
-      testDesignHandoffRef.current = handoff;
-    },
-  ).current;
-  const showTestDesignAttach = softwareDeliveryPackEnabled(
-    catalog?.enabled_packs,
+  const [chipDismissed, setChipDismissed] = useState(false);
+  const showIssueChip = softwareDeliveryPackEnabled(catalog?.enabled_packs);
+  const parsedIssue =
+    showIssueChip && !chipDismissed ? extractGitHubIssueLocator(draft) : null;
+  const issueHandoff: TestDesignHandoff | null = buildTestDesignHandoff(
+    parsedIssue?.canonical ?? null,
   );
   const routeKey = isLanding ? "landing" : (conversationId ?? "none");
   const [routeStateKey, setRouteStateKey] = useState(routeKey);
@@ -782,7 +774,8 @@ export function ChatPanel({
     composerTouchedRef.current = true;
     setUnavailable(false);
     setDraft("");
-    const handoff = testDesignHandoffRef.current;
+    setChipDismissed(false);
+    const handoff = issueHandoff;
 
     if (isLanding) {
       const withUser = appendUserMessage([], query);
@@ -804,8 +797,7 @@ export function ChatPanel({
         baseUrl: apiBaseUrl,
         ask,
         runtime: runtimeFromSettings(),
-        source_reference: handoff?.source_reference ?? null,
-        ticket_identifier: handoff?.ticket_identifier ?? null,
+        source_locator: handoff?.source_locator ?? null,
       });
       onCreatedRef.current?.(created.id);
       const result = await runPromise;
@@ -837,8 +829,7 @@ export function ChatPanel({
       baseUrl: apiBaseUrl,
       ask,
       runtime: runtimeFromSettings(),
-      source_reference: handoff?.source_reference ?? null,
-      ticket_identifier: handoff?.ticket_identifier ?? null,
+      source_locator: handoff?.source_locator ?? null,
     });
     await applyConversationRunResult(id, query, result);
   }
@@ -983,12 +974,13 @@ export function ChatPanel({
         </p>
       ) : null}
 
-      {showTestDesignAttach ? (
-        <ChatTestDesignAttach
-          apiBaseUrl={apiBaseUrl}
+      {showIssueChip ? (
+        <ChatIssueLocatorChip
+          handoff={issueHandoff}
           disabled={sending || historyBlocked}
-          listDocs={listDocuments}
-          onHandoffChange={onTestDesignHandoffChange}
+          onClear={() => {
+            setChipDismissed(true);
+          }}
         />
       ) : null}
 

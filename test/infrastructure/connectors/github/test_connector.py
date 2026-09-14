@@ -224,7 +224,9 @@ def test_http_client_mid_pagination_rate_limit_raises_without_partial() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    with pytest.raises(ConnectorUnavailableError) as raised:
+    from domain.errors import ConnectorRateLimitError
+
+    with pytest.raises(ConnectorRateLimitError) as raised:
         client.get_project_v2_items("PVT_1")
 
     assert SECRET not in str(raised.value)

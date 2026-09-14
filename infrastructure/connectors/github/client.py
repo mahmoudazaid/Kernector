@@ -6,9 +6,21 @@ import base64
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
+from domain.errors import (
+    ConnectorAuthError,
+    ConnectorError,
+    ConnectorNetworkError,
+    ConnectorNotFoundError,
+    ConnectorRateLimitError,
+    ConnectorTimeoutError,
+    ConnectorUnavailableError,
+)
 
 _MSG_AUTH = "GitHub rejected the connector credentials or permissions."
+_MSG_NOT_FOUND = "The GitHub resource was not found."
+_MSG_RATE_LIMIT = "GitHub rate limit was exceeded."
+_MSG_TIMEOUT = "The GitHub request timed out."
+_MSG_NETWORK = "The GitHub network request failed."
 _MSG_UNAVAILABLE = "GitHub is temporarily unavailable."
 _MSG_REQUEST_FAILED = "The GitHub request failed."
 _MSG_INCOMPLETE_TREE = "GitHub returned an incomplete repository listing."
@@ -91,6 +103,12 @@ class GitHubClient(Protocol):
         """Resolve a user/org ProjectV2 number to its node id."""
         ...
 
+    def get_issue(
+        self, owner: str, repo: str, issue_number: int
+    ) -> Mapping[str, object]:
+        """Return one Issue (or Pull Request) REST payload by number."""
+        ...
+
 
 class HttpGitHubClient:
     """HTTP implementation of the GitHub client protocol."""
@@ -159,6 +177,13 @@ class HttpGitHubClient:
 
     def get_repository(self, owner: str, repo: str) -> Mapping[str, object]:
         return self._get_json(f"/repos/{owner}/{repo}")
+
+    def get_issue(
+        self, owner: str, repo: str, issue_number: int
+    ) -> Mapping[str, object]:
+        if issue_number < 1:
+            raise ConnectorError(_MSG_REQUEST_FAILED)
+        return self._get_json(f"/repos/{owner}/{repo}/issues/{issue_number}")
 
     def list_repositories(
         self,
@@ -408,17 +433,24 @@ def _optional_nested_mapping(
 def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorError:
     http_status_error = getattr(httpx_module, "HTTPStatusError")
     request_error = getattr(httpx_module, "RequestError")
+    timeout_error = getattr(httpx_module, "TimeoutException", ())
     if isinstance(error, http_status_error):
         status = int(error.response.status_code)
         if status in {401, 403}:
             return ConnectorAuthError(_MSG_AUTH)
+        if status == 404:
+            return ConnectorNotFoundError(_MSG_NOT_FOUND)
         if status == 409:
             return GitHubEmptyRepositoryError(_MSG_EMPTY_REPOSITORY)
-        if status == 429 or status >= 500:
+        if status == 429:
+            return ConnectorRateLimitError(_MSG_RATE_LIMIT)
+        if status >= 500:
             return ConnectorUnavailableError(_MSG_UNAVAILABLE)
         return ConnectorError(_MSG_REQUEST_FAILED)
+    if timeout_error and isinstance(error, timeout_error):
+        return ConnectorTimeoutError(_MSG_TIMEOUT)
     if isinstance(error, request_error):
-        return ConnectorUnavailableError(_MSG_UNAVAILABLE)
+        return ConnectorNetworkError(_MSG_NETWORK)
     if isinstance(error, ConnectorError):
         return error
     return ConnectorError(_MSG_REQUEST_FAILED)

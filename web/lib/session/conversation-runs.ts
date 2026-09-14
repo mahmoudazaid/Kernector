@@ -47,9 +47,8 @@ export type StartConversationRunOptions = {
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
   /** Optional runtime body forwarded to askChat. */
   runtime?: AskChatOptions["body"]["runtime"];
-  /** Explicit Test Design handoff; omit or null when not attaching a ticket. */
-  source_reference?: AskChatOptions["body"]["source_reference"];
-  ticket_identifier?: AskChatOptions["body"]["ticket_identifier"];
+  /** Optional Issue locator for chip sync; server reparses query. */
+  source_locator?: AskChatOptions["body"]["source_locator"];
 };
 
 function toChatMessages(
@@ -169,8 +168,7 @@ export async function startConversationRun(
     baseUrl,
     ask = askChat,
     runtime = null,
-    source_reference = null,
-    ticket_identifier = null,
+    source_locator = null,
   } = options;
 
   const existing = getConversation(conversationId);
@@ -195,8 +193,7 @@ export async function startConversationRun(
         query,
         history,
         runtime,
-        source_reference,
-        ticket_identifier,
+        source_locator,
       },
     });
     const conversation = getConversation(conversationId);

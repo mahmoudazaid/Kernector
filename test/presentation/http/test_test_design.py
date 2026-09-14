@@ -154,10 +154,11 @@ def test_get_draft_returns_projection() -> None:
     assert body["candidates"][0]["candidate_id"] == "cand-1"
 
 
-def test_resolve_action_helper_requires_pack_and_explicit_context(
+def test_resolve_action_helper_requires_pack_and_locator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from composition import test_design as module
+    from composition.test_design import SourceLocatorView
 
     settings = get_settings()
 
@@ -167,8 +168,9 @@ def test_resolve_action_helper_requires_pack_and_explicit_context(
     assert (
         module.resolve_start_test_design_action(
             settings=settings,
-            source_reference=SourceReferenceView("PROJ-42", "jira"),
-            ticket_identifier="KERN-293",
+            source_locator=SourceLocatorView(
+                provider="github", locator="mahmoudazaid/Kernector#293"
+            ),
         )
         is None
     )
@@ -178,21 +180,22 @@ def test_resolve_action_helper_requires_pack_and_explicit_context(
     )
     action = module.resolve_start_test_design_action(
         settings=settings,
-        source_reference=SourceReferenceView("PROJ-42", "jira"),
-        ticket_identifier="KERN-293",
+        source_locator=SourceLocatorView(
+            provider="github", locator="mahmoudazaid/Kernector#293"
+        ),
     )
     assert action == ChatWorkflowActionView(
         kind="start_workflow",
         workflow_id="software-delivery.test-design",
         label="Start Test Design",
-        source_reference=SourceReferenceView("PROJ-42", "jira"),
-        ticket_identifier="KERN-293",
+        source_locator=SourceLocatorView(
+            provider="github", locator="mahmoudazaid/Kernector#293"
+        ),
     )
     assert (
         module.resolve_start_test_design_action(
             settings=settings,
-            source_reference=SourceReferenceView("PROJ-42", "jira"),
-            ticket_identifier="293",
+            source_locator=None,
         )
         is None
     )

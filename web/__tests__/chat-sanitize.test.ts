@@ -50,16 +50,20 @@ describe("sanitizeStoredChatMessage", () => {
         kind: "start_workflow",
         workflow_id: "software-delivery.test-design",
         label: "Start Test Design",
-        ticket_identifier: "KERN-293",
-        source_reference: { source_id: "PROJ-42", source_type: "jira" },
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
       },
     });
     expect(kept?.action).toEqual({
       kind: "start_workflow",
       workflow_id: "software-delivery.test-design",
       label: "Start Test Design",
-      ticket_identifier: "KERN-293",
-      source_reference: { source_id: "PROJ-42", source_type: "jira" },
+      source_locator: {
+        provider: "github",
+        locator: "mahmoudazaid/Kernector#293",
+      },
     });
 
     const dropped = sanitizeStoredChatMessage({

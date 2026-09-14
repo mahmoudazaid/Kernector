@@ -446,13 +446,20 @@ def build_rewrite_and_retrieve_knowledge(
     )
 
 
-def build_test_design_facade(
-    settings: Settings, *, vector_store: VectorStore | None = None
-):
-    """Wire the test-design HTTP facade (pack gated at call time)."""
+def build_test_design_facade(settings: Settings, *, vector_store: VectorStore | None = None):
+    """Wire the test-design HTTP facade (pack gated at call time).
+
+    ``vector_store`` is accepted for call-site compatibility and ignored: Test
+    Design create uses a live GitHub Issue read, not RAG retrieval.
+    """
+    del vector_store
     from pathlib import Path
 
+    from application.errors import GitHubNotConnectedError
     from composition.test_design import TestDesignFacade
+    from infrastructure.connectors.github.issue_source_reader import (
+        GitHubIssueSourceReader,
+    )
 
     try:
         workspace_id = parse_workspace_id(settings.document_catalog.workspace_id)
@@ -468,11 +475,23 @@ def build_test_design_facade(
             settings.document_catalog.sql_path.parent / "workspace_store.sqlite"
         )
 
+    def oauth_preflight() -> str:
+        _tokens_store, connection = _require_github_grant(settings)
+        token = connection.access_token
+        if not isinstance(token, str) or not token.strip():
+            raise GitHubNotConnectedError("GitHub is not connected")
+        return token.strip()
+
+    def live_source_reader_factory(access_token: str):
+        client = _github_picker_client(settings, access_token=access_token)
+        return GitHubIssueSourceReader(client)
+
     return TestDesignFacade(
         settings=settings,
-        retrieve=_relevant_retrieve(settings, vector_store=vector_store),
         store_path=store_path,
         workspace_id=workspace_id,
+        oauth_preflight=oauth_preflight,
+        live_source_reader_factory=live_source_reader_factory,
     )
 
 

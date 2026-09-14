@@ -145,26 +145,15 @@
               }
             ]
           },
-          "source_reference": {
+          "source_locator": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SourceReferenceRequest"
+                "$ref": "#/components/schemas/SourceLocatorRequest"
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "ticket_identifier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ticket Identifier"
           }
         },
         "required": ["query"],
@@ -301,7 +290,7 @@
         "type": "object"
       },
       "ChatWorkflowActionResponse": {
-        "description": "Allowlisted chat handoff action (never inferred from prose).",
+        "description": "Allowlisted chat handoff action (never inferred from prose alone).",
         "properties": {
           "draft_id": {
             "anyOf": [
@@ -323,26 +312,15 @@
             "title": "Label",
             "type": "string"
           },
-          "source_reference": {
+          "source_locator": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SourceReferenceResponse"
+                "$ref": "#/components/schemas/SourceLocatorRequest"
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "ticket_identifier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ticket Identifier"
           },
           "workflow_id": {
             "title": "Workflow Id",
@@ -447,20 +425,11 @@
             "title": "Conversation Id",
             "type": "string"
           },
-          "source_reference": {
-            "$ref": "#/components/schemas/SourceReferenceRequest"
-          },
-          "ticket_identifier": {
-            "minLength": 1,
-            "title": "Ticket Identifier",
-            "type": "string"
+          "source_locator": {
+            "$ref": "#/components/schemas/SourceLocatorRequest"
           }
         },
-        "required": [
-          "conversation_id",
-          "source_reference",
-          "ticket_identifier"
-        ],
+        "required": ["conversation_id", "source_locator"],
         "title": "CreateTestDesignDraftRequest",
         "type": "object"
       },
@@ -1885,22 +1854,22 @@
         "title": "RuntimeSettingsResponse",
         "type": "object"
       },
-      "SourceReferenceRequest": {
-        "description": "Explicit source identity for chat handoff / test-design create.",
+      "SourceLocatorRequest": {
+        "description": "Provider-neutral live source locator for chat handoff / create.",
         "properties": {
-          "source_id": {
+          "locator": {
             "minLength": 1,
-            "title": "Source Id",
+            "title": "Locator",
             "type": "string"
           },
-          "source_type": {
+          "provider": {
             "minLength": 1,
-            "title": "Source Type",
+            "title": "Provider",
             "type": "string"
           }
         },
-        "required": ["source_id", "source_type"],
-        "title": "SourceReferenceRequest",
+        "required": ["provider", "locator"],
+        "title": "SourceLocatorRequest",
         "type": "object"
       },
       "SourceReferenceResponse": {
@@ -2276,7 +2245,7 @@
   "paths": {
     "/api/v1/chat/ask": {
       "post": {
-        "description": "Run one grounded ask turn through composition.",
+        "description": "Run one grounded ask turn, or a RAG-free Test Design handoff.",
         "operationId": "chat_ask_api_v1_chat_ask_post",
         "requestBody": {
           "content": {
@@ -4156,7 +4125,7 @@
     },
     "/api/v1/test-design/drafts": {
       "post": {
-        "description": "Create a coverage-planning draft from explicit source + ticket context.",
+        "description": "Create a coverage-planning draft from a live GitHub Issue locator.",
         "operationId": "create_draft_api_v1_test_design_drafts_post",
         "requestBody": {
           "content": {

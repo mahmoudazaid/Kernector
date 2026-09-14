@@ -6,8 +6,8 @@ from fastapi import APIRouter
 
 from application.contracts import AskRequest
 from composition.test_design import (
-    SourceReferenceView,
-    resolve_start_test_design_action,
+    SourceLocatorView,
+    try_test_design_chat_handoff,
 )
 from domain.models import Message
 from presentation.http.deps import AskFactoryDep, SettingsDep
@@ -34,7 +34,28 @@ def chat_ask(
     ask_factory: AskFactoryDep,
     settings: SettingsDep,
 ) -> ChatAskResponse:
-    """Run one grounded ask turn through composition."""
+    """Run one grounded ask turn, or a RAG-free Test Design handoff."""
+    locator_view = None
+    if body.source_locator is not None:
+        locator_view = SourceLocatorView(
+            provider=body.source_locator.provider,
+            locator=body.source_locator.locator,
+        )
+    handoff = try_test_design_chat_handoff(
+        settings=settings,
+        query=body.query,
+        source_locator=locator_view,
+    )
+    if handoff is not None:
+        return ChatAskResponse(
+            answer=handoff.answer,
+            citations=[],
+            tools_used=[],
+            run=None,
+            tool_run=None,
+            action=chat_workflow_action_response(handoff.action),
+        )
+
     runtime = body.runtime
     ask = ask_factory(runtime)
     request = AskRequest(
@@ -47,22 +68,11 @@ def chat_ask(
     response = ask.execute(request, ask_settings)
     consume = getattr(ask, "consume_tool_run_view", None)
     tool_view = consume() if callable(consume) else None
-    source_view = None
-    if body.source_reference is not None:
-        source_view = SourceReferenceView(
-            source_id=body.source_reference.source_id,
-            source_type=body.source_reference.source_type,
-        )
-    action = resolve_start_test_design_action(
-        settings=settings,
-        source_reference=source_view,
-        ticket_identifier=body.ticket_identifier,
-    )
     return ChatAskResponse(
         answer=response.answer,
         citations=[citation_response(c) for c in response.citations],
         tools_used=tools_used_response(response.tool_outputs),
         run=run_meta_response(response.run),
         tool_run=None if tool_view is None else tool_run_response(tool_view),
-        action=None if action is None else chat_workflow_action_response(action),
+        action=None,
     )

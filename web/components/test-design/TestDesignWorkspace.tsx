@@ -212,8 +212,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           workflow_id: "software-delivery.test-design",
           label: "Open Test Design draft",
           draft_id: ready.draft_id,
-          ticket_identifier: ready.ticket_identifier,
-          source_reference: ready.source_reference,
         },
       };
       updateConversation(originatingId, {

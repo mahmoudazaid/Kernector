@@ -342,8 +342,15 @@ class ChatRuntimeRequest(BaseModel):
     settings: dict[str, int | float] = Field(default_factory=dict)
 
 
+class SourceLocatorRequest(BaseModel):
+    """Provider-neutral live source locator for chat handoff / create."""
+
+    provider: str = Field(min_length=1)
+    locator: str = Field(min_length=1)
+
+
 class SourceReferenceRequest(BaseModel):
-    """Explicit source identity for chat handoff / test-design create."""
+    """Explicit source identity retained for draft projections."""
 
     source_id: str = Field(min_length=1)
     source_type: str = Field(min_length=1)
@@ -355,8 +362,7 @@ class ChatAskRequest(BaseModel):
     query: str = Field(min_length=1)
     history: list[ChatHistoryMessage] = Field(default_factory=list)
     runtime: ChatRuntimeRequest | None = None
-    source_reference: SourceReferenceRequest | None = None
-    ticket_identifier: str | None = None
+    source_locator: SourceLocatorRequest | None = None
 
 
 class CitationResponse(BaseModel):
@@ -451,13 +457,12 @@ class ToolRunResponse(BaseModel):
 
 
 class ChatWorkflowActionResponse(BaseModel):
-    """Allowlisted chat handoff action (never inferred from prose)."""
+    """Allowlisted chat handoff action (never inferred from prose alone)."""
 
     kind: Literal["start_workflow", "open_workflow"]
     workflow_id: str
     label: str
-    source_reference: SourceReferenceResponse | None = None
-    ticket_identifier: str | None = None
+    source_locator: SourceLocatorRequest | None = None
     draft_id: str | None = None
 
 
@@ -524,8 +529,7 @@ class CreateTestDesignDraftRequest(BaseModel):
     """Wire body for ``POST /api/v1/test-design/drafts``."""
 
     conversation_id: str = Field(min_length=1)
-    source_reference: SourceReferenceRequest
-    ticket_identifier: str = Field(min_length=1)
+    source_locator: SourceLocatorRequest
 
 
 class PatchTestDesignDraftRequest(BaseModel):
@@ -546,20 +550,19 @@ def chat_workflow_action_response(
     view: object,
 ) -> ChatWorkflowActionResponse:
     """Project a composition chat action view onto the wire schema."""
-    source = getattr(view, "source_reference", None)
+    locator = getattr(view, "source_locator", None)
     return ChatWorkflowActionResponse(
         kind=view.kind,  # type: ignore[attr-defined]
         workflow_id=view.workflow_id,  # type: ignore[attr-defined]
         label=view.label,  # type: ignore[attr-defined]
-        source_reference=(
+        source_locator=(
             None
-            if source is None
-            else SourceReferenceResponse(
-                source_id=source.source_id,
-                source_type=source.source_type,
+            if locator is None
+            else SourceLocatorRequest(
+                provider=locator.provider,
+                locator=locator.locator,
             )
         ),
-        ticket_identifier=getattr(view, "ticket_identifier", None),
         draft_id=getattr(view, "draft_id", None),
     )
 

@@ -292,29 +292,23 @@ function sanitizeChatAction(value: unknown): Record<string, unknown> | undefined
     workflow_id: value.workflow_id,
     label: value.label,
   };
-  if (value.ticket_identifier !== undefined && value.ticket_identifier !== null) {
-    if (typeof value.ticket_identifier !== "string") {
-      return undefined;
-    }
-    action.ticket_identifier = value.ticket_identifier;
-  }
   if (value.draft_id !== undefined && value.draft_id !== null) {
     if (typeof value.draft_id !== "string") {
       return undefined;
     }
     action.draft_id = value.draft_id;
   }
-  if (value.source_reference !== undefined && value.source_reference !== null) {
+  if (value.source_locator !== undefined && value.source_locator !== null) {
     if (
-      !isPlainObject(value.source_reference) ||
-      typeof value.source_reference.source_id !== "string" ||
-      typeof value.source_reference.source_type !== "string"
+      !isPlainObject(value.source_locator) ||
+      typeof value.source_locator.provider !== "string" ||
+      typeof value.source_locator.locator !== "string"
     ) {
       return undefined;
     }
-    action.source_reference = {
-      source_id: value.source_reference.source_id,
-      source_type: value.source_reference.source_type,
+    action.source_locator = {
+      provider: value.source_locator.provider,
+      locator: value.source_locator.locator,
     };
   }
   return action;

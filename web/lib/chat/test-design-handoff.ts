@@ -1,52 +1,34 @@
 /**
  * Client helpers for the Test Design chat handoff (#293).
  *
- * The ask wire requires an explicit SourceReference plus a non-bare ticket
- * identifier. Chat never infers these from message prose.
+ * The ask wire may include an optional `source_locator` for chip sync; the
+ * server reparses `query` and rejects mismatches. Chat never trusts the chip alone.
  */
 
-export type TestDesignSourceRef = {
-  source_id: string;
-  source_type: string;
+export type TestDesignSourceLocator = {
+  provider: string;
+  locator: string;
 };
 
 export type TestDesignHandoff = {
-  source_reference: TestDesignSourceRef;
-  ticket_identifier: string;
+  source_locator: TestDesignSourceLocator;
 };
 
 /**
- * Derive a default ticket id from a catalog file name (e.g. ``issue-8.md`` →
- * ``issue-8``). Returns ``null`` when blank or digits-only (bare numbers are
- * rejected by the server handoff contract).
- */
-export function ticketIdentifierFromFileName(fileName: string): string | null {
-  const base = fileName.trim().replace(/\.[^.]+$/u, "").trim();
-  if (!base || /^\d+$/u.test(base)) {
-    return null;
-  }
-  return base;
-}
-
-/**
- * Build a handoff payload when both source and ticket are present and valid.
+ * Build a handoff payload when a canonical GitHub Issue locator is present.
  */
 export function buildTestDesignHandoff(
-  source: TestDesignSourceRef | null,
-  ticketIdentifier: string,
+  locator: string | null,
 ): TestDesignHandoff | null {
-  if (source === null) {
+  if (locator === null) {
     return null;
   }
-  const sourceId = source.source_id.trim();
-  const sourceType = source.source_type.trim();
-  const ticket = ticketIdentifier.trim();
-  if (!sourceId || !sourceType || !ticket || /^\d+$/u.test(ticket)) {
+  const trimmed = locator.trim();
+  if (!trimmed || /^\d+$/u.test(trimmed)) {
     return null;
   }
   return {
-    source_reference: { source_id: sourceId, source_type: sourceType },
-    ticket_identifier: ticket,
+    source_locator: { provider: "github", locator: trimmed },
   };
 }
 

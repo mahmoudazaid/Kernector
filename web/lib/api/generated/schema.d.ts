@@ -15,7 +15,7 @@ export interface paths {
     put?: never;
     /**
      * Chat Ask
-     * @description Run one grounded ask turn through composition.
+     * @description Run one grounded ask turn, or a RAG-free Test Design handoff.
      */
     post: operations["chat_ask_api_v1_chat_ask_post"];
     delete?: never;
@@ -482,7 +482,7 @@ export interface paths {
     put?: never;
     /**
      * Create Draft
-     * @description Create a coverage-planning draft from explicit source + ticket context.
+     * @description Create a coverage-planning draft from a live GitHub Issue locator.
      */
     post: operations["create_draft_api_v1_test_design_drafts_post"];
     delete?: never;
@@ -633,9 +633,7 @@ export interface components {
       /** Query */
       query: string;
       runtime?: components["schemas"]["ChatRuntimeRequest"] | null;
-      source_reference?: components["schemas"]["SourceReferenceRequest"] | null;
-      /** Ticket Identifier */
-      ticket_identifier?: string | null;
+      source_locator?: components["schemas"]["SourceLocatorRequest"] | null;
     };
     /**
      * ChatAskResponse
@@ -683,7 +681,7 @@ export interface components {
     };
     /**
      * ChatWorkflowActionResponse
-     * @description Allowlisted chat handoff action (never inferred from prose).
+     * @description Allowlisted chat handoff action (never inferred from prose alone).
      */
     ChatWorkflowActionResponse: {
       /** Draft Id */
@@ -695,10 +693,7 @@ export interface components {
       kind: "start_workflow" | "open_workflow";
       /** Label */
       label: string;
-      source_reference?:
-        components["schemas"]["SourceReferenceResponse"] | null;
-      /** Ticket Identifier */
-      ticket_identifier?: string | null;
+      source_locator?: components["schemas"]["SourceLocatorRequest"] | null;
       /** Workflow Id */
       workflow_id: string;
     };
@@ -750,9 +745,7 @@ export interface components {
     CreateTestDesignDraftRequest: {
       /** Conversation Id */
       conversation_id: string;
-      source_reference: components["schemas"]["SourceReferenceRequest"];
-      /** Ticket Identifier */
-      ticket_identifier: string;
+      source_locator: components["schemas"]["SourceLocatorRequest"];
     };
     /**
      * DocumentChunkListResponse
@@ -1364,14 +1357,14 @@ export interface components {
       providers: string[];
     };
     /**
-     * SourceReferenceRequest
-     * @description Explicit source identity for chat handoff / test-design create.
+     * SourceLocatorRequest
+     * @description Provider-neutral live source locator for chat handoff / create.
      */
-    SourceReferenceRequest: {
-      /** Source Id */
-      source_id: string;
-      /** Source Type */
-      source_type: string;
+    SourceLocatorRequest: {
+      /** Locator */
+      locator: string;
+      /** Provider */
+      provider: string;
     };
     /**
      * SourceReferenceResponse

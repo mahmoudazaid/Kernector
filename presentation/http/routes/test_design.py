@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from composition.test_design import (
     CreateTestDesignDraftRequest as CreateDraftFacadeRequest,
     PatchTestDesignDraftRequest as PatchDraftFacadeRequest,
+    SourceLocatorView,
     SourceReferenceView,
     TestCandidateView,
     TestScenarioView,
@@ -32,15 +33,14 @@ def create_draft(
     body: CreateTestDesignDraftRequest,
     facade: TestDesignFacadeDep,
 ) -> TestCoverageDraftResponse:
-    """Create a coverage-planning draft from explicit source + ticket context."""
+    """Create a coverage-planning draft from a live GitHub Issue locator."""
     view = facade.create_draft(
         CreateDraftFacadeRequest(
             conversation_id=body.conversation_id,
-            source_reference=SourceReferenceView(
-                source_id=body.source_reference.source_id,
-                source_type=body.source_reference.source_type,
+            source_locator=SourceLocatorView(
+                provider=body.source_locator.provider,
+                locator=body.source_locator.locator,
             ),
-            ticket_identifier=body.ticket_identifier,
         )
     )
     return test_coverage_draft_response(view)

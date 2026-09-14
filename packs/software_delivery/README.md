@@ -33,9 +33,10 @@ prompts always stay on grounded RAG.
 ## Test Design workflow (#293)
 
 Pack-local interactive workflow under `test_design/` — **not** a registered
-agent `Tool`. It plans coverage candidates from grounded ticket evidence,
-persists a workspace-scoped draft, generates scenarios for selected candidates
-only, and confirms a portable draft.
+agent `Tool`. Create starts from a **live GitHub Issue** (`source_locator`),
+not catalog RAG. Evidence is a single `SourceDocument` from the connector
+reader; the pack plans coverage candidates, persists a workspace-scoped draft,
+generates scenarios for selected candidates only, and confirms a portable draft.
 
 | Module | Responsibility |
 | --- | --- |
@@ -47,5 +48,6 @@ only, and confirms a portable draft.
 HTTP routes under `/api/v1/test-design/*` are always mounted; when the pack is
 disabled they return `test_design_unavailable` without importing this pack.
 Composition namespace for persistence: `software-delivery:test-design`.
+Chat handoff bypasses grounded RAG when intent + one Issue ref are present.
 
 Enable with `DOMAIN_TOOL_PACKS=software-delivery`.

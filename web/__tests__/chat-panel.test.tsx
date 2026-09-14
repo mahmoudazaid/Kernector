@@ -1103,7 +1103,7 @@ describe("ChatPanel", () => {
     expect(input).toHaveValue("hello");
   });
 
-  it("shows Test Design attach when pack is enabled and sends handoff on ask", async () => {
+  it("shows Issue chip when pack is enabled and sends source_locator on ask", async () => {
     const user = userEvent.setup();
     const ask = vi.fn().mockResolvedValue({
       ...SUCCESS,
@@ -1111,24 +1111,11 @@ describe("ChatPanel", () => {
         kind: "start_workflow",
         workflow_id: "software-delivery.test-design",
         label: "Start Test Design",
-        source_reference: { source_id: "issue:I_1", source_type: "github" },
-        ticket_identifier: "issue-8",
-      },
-    });
-    const listDocuments = vi.fn().mockResolvedValue({
-      documents: [
-        {
-          source_id: "issue:I_1",
-          source_type: "github",
-          file_name: "issue-8.md",
-          title: "Story prompts",
-          status: "ready",
-          has_error: false,
-          chunk_count: 3,
-          uploaded_at: "2026-09-14T00:00:00Z",
-          has_stored_content: true,
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
         },
-      ],
+      },
     });
 
     const created = createConversation({
@@ -1142,7 +1129,6 @@ describe("ChatPanel", () => {
         conversationId={created.id}
         variant="conversation"
         ask={ask}
-        listDocuments={listDocuments}
         loadSettings={async () => ({
           ...catalogWithLimit(10_000),
           enabled_packs: ["software-delivery"],
@@ -1150,33 +1136,13 @@ describe("ChatPanel", () => {
       />,
     );
 
-    expect(
-      await screen.findByText(/Test Design context/i),
-    ).toBeInTheDocument();
-    const sourceTrigger = await screen.findByRole("combobox", {
-      name: /source document/i,
-    });
-    await waitFor(() => {
-      expect(sourceTrigger).toHaveAttribute("aria-expanded", "false");
-    });
-    await user.click(sourceTrigger);
-    const option = await screen.findByRole("option", {
-      name: /issue-8\.md — Story prompts/i,
-    });
-    await user.click(option);
-    await waitFor(() => {
-      expect(screen.getByLabelText(/ticket identifier/i)).toHaveValue(
-        "issue-8",
-      );
-      expect(
-        screen.getByText(/Start Test Design action for this ticket/i),
-      ).toBeInTheDocument();
-    });
-
     await user.type(
       screen.getByLabelText(/message/i),
-      "plan tests for this ticket",
+      "Design tests for mahmoudazaid/Kernector#293",
     );
+    expect(await screen.findByText("mahmoudazaid/Kernector#293")).toBeInTheDocument();
+    expect(screen.getByText(/GitHub Issue/i)).toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
@@ -1184,11 +1150,10 @@ describe("ChatPanel", () => {
     });
     expect(ask.mock.calls[0]?.[0]?.body).toEqual(
       expect.objectContaining({
-        source_reference: {
-          source_id: "issue:I_1",
-          source_type: "github",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
         },
-        ticket_identifier: "issue-8",
       }),
     );
     expect(

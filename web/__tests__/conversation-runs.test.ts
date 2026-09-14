@@ -88,7 +88,7 @@ describe("conversation run coordinator", () => {
     expect(listConversations()).toHaveLength(1);
   });
 
-  it("forwards explicit Test Design handoff fields and persists action", async () => {
+  it("forwards optional source_locator and persists action", async () => {
     const created = createConversation({
       title: "A",
       messages: [{ id: "u1", role: "user", content: "plan tests" }],
@@ -101,26 +101,32 @@ describe("conversation run coordinator", () => {
         kind: "start_workflow" as const,
         workflow_id: "software-delivery.test-design",
         label: "Start Test Design",
-        source_reference: { source_id: "issue:I_1", source_type: "github" },
-        ticket_identifier: "issue-8",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
       },
     }));
 
     await startConversationRun({
       conversationId: created.id,
-      query: "plan tests",
+      query: "Design tests for mahmoudazaid/Kernector#293",
       history: [],
       baseUrl: "http://127.0.0.1:8000",
       ask,
-      source_reference: { source_id: "issue:I_1", source_type: "github" },
-      ticket_identifier: "issue-8",
+      source_locator: {
+        provider: "github",
+        locator: "mahmoudazaid/Kernector#293",
+      },
     });
 
     expect(ask).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
-          source_reference: { source_id: "issue:I_1", source_type: "github" },
-          ticket_identifier: "issue-8",
+          source_locator: {
+            provider: "github",
+            locator: "mahmoudazaid/Kernector#293",
+          },
         }),
       }),
     );
@@ -128,8 +134,10 @@ describe("conversation run coordinator", () => {
       kind: "start_workflow",
       workflow_id: "software-delivery.test-design",
       label: "Start Test Design",
-      source_reference: { source_id: "issue:I_1", source_type: "github" },
-      ticket_identifier: "issue-8",
+      source_locator: {
+        provider: "github",
+        locator: "mahmoudazaid/Kernector#293",
+      },
     });
   });
 
