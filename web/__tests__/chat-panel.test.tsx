@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat/ChatPanel";
 import { ApiError } from "@/lib/api/errors";
 import type { ChatAskResponse } from "@/lib/api/chat";
@@ -20,6 +20,10 @@ import {
   CHAT_MESSAGES_STORAGE_KEY,
   saveRuntimeSettings,
 } from "@/lib/settings/runtime-settings-storage";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}));
 
 function catalogWithLimit(maxInputLength: number): RuntimeSettingsResponse {
   return {
@@ -98,6 +102,10 @@ const SUCCESS: ChatAskResponse = {
 describe("ChatPanel", () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   function renderOpenConversation(
@@ -1093,5 +1101,95 @@ describe("ChatPanel", () => {
     const input = await screen.findByLabelText(/message/i);
     await user.type(input, "hello");
     expect(input).toHaveValue("hello");
+  });
+
+  it("shows Test Design attach when pack is enabled and sends handoff on ask", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue({
+      ...SUCCESS,
+      action: {
+        kind: "start_workflow",
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        source_reference: { source_id: "issue:I_1", source_type: "github" },
+        ticket_identifier: "issue-8",
+      },
+    });
+    const listDocuments = vi.fn().mockResolvedValue({
+      documents: [
+        {
+          source_id: "issue:I_1",
+          source_type: "github",
+          file_name: "issue-8.md",
+          title: "Story prompts",
+          status: "ready",
+          has_error: false,
+          chunk_count: 3,
+          uploaded_at: "2026-09-14T00:00:00Z",
+          has_stored_content: true,
+        },
+      ],
+    });
+
+    const created = createConversation({
+      title: "open",
+      messages: [],
+      draft: "",
+    });
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={created.id}
+        variant="conversation"
+        ask={ask}
+        listDocuments={listDocuments}
+        loadSettings={async () => ({
+          ...catalogWithLimit(10_000),
+          enabled_packs: ["software-delivery"],
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/Test Design context/i),
+    ).toBeInTheDocument();
+    const sourceSelect = await screen.findByLabelText(/source document/i);
+    await waitFor(() => {
+      expect(sourceSelect).not.toBeDisabled();
+      expect(
+        screen.getByRole("option", { name: /issue-8\.md/i }),
+      ).toBeInTheDocument();
+    });
+    await user.selectOptions(sourceSelect, "github::issue:I_1");
+    await waitFor(() => {
+      expect(screen.getByLabelText(/ticket identifier/i)).toHaveValue(
+        "issue-8",
+      );
+      expect(
+        screen.getByText(/Start Test Design action for this ticket/i),
+      ).toBeInTheDocument();
+    });
+
+    await user.type(
+      screen.getByLabelText(/message/i),
+      "plan tests for this ticket",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(ask).toHaveBeenCalled();
+    });
+    expect(ask.mock.calls[0]?.[0]?.body).toEqual(
+      expect.objectContaining({
+        source_reference: {
+          source_id: "issue:I_1",
+          source_type: "github",
+        },
+        ticket_identifier: "issue-8",
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: /start test design/i }),
+    ).toBeInTheDocument();
   });
 });

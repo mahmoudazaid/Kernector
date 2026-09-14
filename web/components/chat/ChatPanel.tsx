@@ -12,6 +12,10 @@ import { Button } from "@/components/ui/Button";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
+  ChatTestDesignAttach,
+  type ChatTestDesignAttachProps,
+} from "@/components/chat/ChatTestDesignAttach";
+import {
   askChat,
   type AskChatOptions,
   type ChatAskResponse,
@@ -26,6 +30,10 @@ import {
   evaluateInputLength,
 } from "@/lib/chat/input-length";
 import { runDetailLines } from "@/lib/chat/run-details";
+import {
+  softwareDeliveryPackEnabled,
+  type TestDesignHandoff,
+} from "@/lib/chat/test-design-handoff";
 import {
   appendUserMessage,
   historyForModel,
@@ -94,6 +102,8 @@ export type ChatPanelProps = {
   loadSettings?: (
     options: GetRuntimeSettingsOptions,
   ) => Promise<RuntimeSettingsResponse>;
+  /** Optional documents loader for the Test Design attach control. */
+  listDocuments?: ChatTestDesignAttachProps["listDocs"];
 };
 
 type CloseHandoffNotice = {
@@ -487,6 +497,7 @@ export function ChatPanel({
   onConversationClosed,
   ask = askChat,
   loadSettings,
+  listDocuments,
 }: ChatPanelProps) {
   const isLanding = variant === "landing";
   const bootRef = useRef<ConversationUiState | null>(null);
@@ -517,6 +528,15 @@ export function ChatPanel({
   const onClosedRef = useRef(onConversationClosed);
   /** Survives close→landing so draft/error are not wiped by route sync. */
   const closeHandoffRef = useRef<CloseHandoffNotice | null>(null);
+  const testDesignHandoffRef = useRef<TestDesignHandoff | null>(null);
+  const onTestDesignHandoffChange = useRef(
+    (handoff: TestDesignHandoff | null) => {
+      testDesignHandoffRef.current = handoff;
+    },
+  ).current;
+  const showTestDesignAttach = softwareDeliveryPackEnabled(
+    catalog?.enabled_packs,
+  );
   const routeKey = isLanding ? "landing" : (conversationId ?? "none");
   const [routeStateKey, setRouteStateKey] = useState(routeKey);
   if (routeKey !== routeStateKey) {
@@ -757,6 +777,7 @@ export function ChatPanel({
     composerTouchedRef.current = true;
     setUnavailable(false);
     setDraft("");
+    const handoff = testDesignHandoffRef.current;
 
     if (isLanding) {
       const withUser = appendUserMessage([], query);
@@ -778,6 +799,8 @@ export function ChatPanel({
         baseUrl: apiBaseUrl,
         ask,
         runtime: runtimeFromSettings(),
+        source_reference: handoff?.source_reference ?? null,
+        ticket_identifier: handoff?.ticket_identifier ?? null,
       });
       onCreatedRef.current?.(created.id);
       const result = await runPromise;
@@ -809,6 +832,8 @@ export function ChatPanel({
       baseUrl: apiBaseUrl,
       ask,
       runtime: runtimeFromSettings(),
+      source_reference: handoff?.source_reference ?? null,
+      ticket_identifier: handoff?.ticket_identifier ?? null,
     });
     await applyConversationRunResult(id, query, result);
   }
@@ -951,6 +976,15 @@ export function ChatPanel({
         <p className="kern-chat-inline-error" role="alert">
           {inlineError}
         </p>
+      ) : null}
+
+      {showTestDesignAttach ? (
+        <ChatTestDesignAttach
+          apiBaseUrl={apiBaseUrl}
+          disabled={sending || historyBlocked}
+          listDocs={listDocuments}
+          onHandoffChange={onTestDesignHandoffChange}
+        />
       ) : null}
 
       <form className="kern-chat-composer" onSubmit={handleSubmit}>

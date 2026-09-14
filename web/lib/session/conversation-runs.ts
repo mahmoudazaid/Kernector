@@ -47,6 +47,9 @@ export type StartConversationRunOptions = {
   ask?: (options: AskChatOptions) => Promise<ChatAskResponse>;
   /** Optional runtime body forwarded to askChat. */
   runtime?: AskChatOptions["body"]["runtime"];
+  /** Explicit Test Design handoff; omit or null when not attaching a ticket. */
+  source_reference?: AskChatOptions["body"]["source_reference"];
+  ticket_identifier?: AskChatOptions["body"]["ticket_identifier"];
 };
 
 function toChatMessages(
@@ -61,6 +64,7 @@ function toChatMessages(
     toolsUsed: message.toolsUsed as ChatMessage["toolsUsed"],
     run: (message.run as ChatMessage["run"]) ?? null,
     toolRun: (message.toolRun as ChatMessage["toolRun"]) ?? null,
+    action: (message.action as ChatMessage["action"]) ?? null,
   }));
 }
 
@@ -74,6 +78,7 @@ function toStored(messages: readonly ChatMessage[]): StoredChatMessage[] {
     toolsUsed: message.toolsUsed,
     run: message.run ?? null,
     toolRun: message.toolRun ?? null,
+    action: message.action ?? null,
   }));
 }
 
@@ -164,6 +169,8 @@ export async function startConversationRun(
     baseUrl,
     ask = askChat,
     runtime = null,
+    source_reference = null,
+    ticket_identifier = null,
   } = options;
 
   const existing = getConversation(conversationId);
@@ -188,6 +195,8 @@ export async function startConversationRun(
         query,
         history,
         runtime,
+        source_reference,
+        ticket_identifier,
       },
     });
     const conversation = getConversation(conversationId);
