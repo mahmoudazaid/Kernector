@@ -75,6 +75,26 @@ const EMPTY_SELECTION: GoogleDriveSelectionResponse = {
   files: [],
 };
 
+function selectionIds(selection: GoogleDriveSelectionResponse): Set<string> {
+  return new Set([
+    ...(selection.folders ?? []).map((item) => item.id),
+    ...(selection.files ?? []).map((item) => item.id),
+  ]);
+}
+
+function droppedDriveSelection(
+  previous: GoogleDriveSelectionResponse,
+  next: GoogleDriveSelectionResponse,
+): boolean {
+  const nextIds = selectionIds(next);
+  for (const id of selectionIds(previous)) {
+    if (!nextIds.has(id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -116,6 +136,9 @@ export function GoogleDrivePanel({
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
+  const [pendingSelection, setPendingSelection] =
+    useState<GoogleDriveSelectionResponse | null>(null);
   const [internalPickerOpen, setInternalPickerOpen] = useState(false);
   const pickerOpen = onPickerOpenChange
     ? (pickerOpenProp ?? false)
@@ -314,6 +337,8 @@ export function GoogleDrivePanel({
       return;
     }
     busyRef.current = true;
+    setPurgeConfirmOpen(false);
+    setPendingSelection(null);
     setPickerOpen(false);
     setBusy(true);
     setActionError(null);
@@ -344,6 +369,30 @@ export function GoogleDrivePanel({
       busyRef.current = false;
       setBusy(false);
     }
+  }
+
+  function onPickerConfirm(next: GoogleDriveSelectionResponse) {
+    const documentCount =
+      view.kind === "ready" ? view.status.document_count : 0;
+    if (droppedDriveSelection(selection, next) && documentCount > 0) {
+      setPendingSelection(next);
+      setPurgeConfirmOpen(true);
+      return;
+    }
+    void onAddSelection(next);
+  }
+
+  function onPurgeCancel() {
+    setPurgeConfirmOpen(false);
+    setPendingSelection(null);
+  }
+
+  function onPurgeConfirm() {
+    if (pendingSelection == null) {
+      onPurgeCancel();
+      return;
+    }
+    void onAddSelection(pendingSelection);
   }
 
   async function onDisconnect() {
@@ -566,9 +615,10 @@ export function GoogleDrivePanel({
           selectionLoading={!selectionReady}
           busy={busy}
           listItems={listItems}
-          onConfirm={(next) => void onAddSelection(next)}
+          onConfirm={onPickerConfirm}
           notice={pickerNotice}
           onCancel={() => {
+            onPurgeCancel();
             setActionError(null);
             setPickerNotice(null);
             setPickerOpen(false);
@@ -577,9 +627,21 @@ export function GoogleDrivePanel({
       ) : null}
 
       <ConfirmDialog
+        open={purgeConfirmOpen}
+        title="Remove synced Google Drive documents?"
+        description="Removing selected folders or files will delete their synced documents from the knowledge base. This cannot be undone from here."
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        tone="danger"
+        busy={busy}
+        onCancel={onPurgeCancel}
+        onConfirm={onPurgeConfirm}
+      />
+
+      <ConfirmDialog
         open={confirmOpen}
         title="Disconnect Google Drive?"
-        description="Indexed documents stay in the catalog. You can connect again later."
+        description="This removes the stored Google Drive grant and deletes synced Drive documents from this workspace."
         confirmLabel="Disconnect"
         tone="danger"
         busy={busy}

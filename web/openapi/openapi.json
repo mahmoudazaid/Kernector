@@ -2611,7 +2611,7 @@
     },
     "/api/v1/connectors/google-drive": {
       "delete": {
-        "description": "Revoke and delete the stored user grant. Indexed documents stay.",
+        "description": "Revoke and delete the stored user grant. Synced documents are removed.",
         "operationId": "google_drive_connector_disconnect_api_v1_connectors_google_drive_delete",
         "responses": {
           "204": {

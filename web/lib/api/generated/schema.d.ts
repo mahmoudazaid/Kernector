@@ -208,7 +208,7 @@ export interface paths {
     post?: never;
     /**
      * Google Drive Connector Disconnect
-     * @description Revoke and delete the stored user grant. Indexed documents stay.
+     * @description Revoke and delete the stored user grant. Synced documents are removed.
      */
     delete: operations["google_drive_connector_disconnect_api_v1_connectors_google_drive_delete"];
     options?: never;

@@ -1298,15 +1298,23 @@ def disconnect_google_drive_oauth(
     *,
     connection_store=None,
     gateway=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> None:
-    """Revoke the stored refresh token and delete the local grant.
+    """Revoke the stored refresh token, delete the local grant, and purge docs.
 
-    Indexed Drive catalog rows are left in place.
+    Synced Google Drive catalog rows are removed from the catalog and vector store.
 
     Args:
         settings (Settings): Loaded environment settings.
         connection_store: Injected connection store for tests.
         gateway: Injected Google token gateway for tests.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog.
+        vector_store (VectorStore | None): Injected store for tests.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store.
 
     Raises:
         GoogleDriveNotConnectedError: No stored grant.
@@ -1324,6 +1332,13 @@ def disconnect_google_drive_oauth(
     )
     oauth_gateway.revoke(connection.refresh_token)
     tokens_store.clear()
+    _purge_google_drive_docs(
+        settings,
+        catalog=catalog,
+        catalog_factory=catalog_factory,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
 
 
 def _require_drive_grant(settings: Settings, *, connection_store=None):
@@ -1990,8 +2005,16 @@ def put_google_drive_selection(
     files: Sequence[GoogleDriveSelectedItem],
     connection_store=None,
     connector_factory=None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> GoogleDriveSelection:
     """Validate access and atomically replace the saved Drive selection.
+
+    Dropped exact file selections are purged from the catalog immediately.
+    Clearing every root purges all Google Drive documents. Folder drops that
+    leave remaining roots are cleaned up by the next OAuth sync reconcile.
 
     Args:
         settings (Settings): Loaded environment settings.
@@ -1999,6 +2022,10 @@ def put_google_drive_selection(
         files (Sequence[GoogleDriveSelectedItem]): Exact file IDs.
         connection_store: Injected grant store for tests.
         connector_factory: Injected ``get_item`` factory for tests.
+        catalog (DocumentCatalog | None): Injected catalog for tests.
+        catalog_factory (Callable[[], DocumentCatalog] | None): Lazy catalog.
+        vector_store (VectorStore | None): Injected store for tests.
+        vector_store_factory (Callable[[], VectorStore] | None): Lazy store.
 
     Returns:
         GoogleDriveSelection: The persisted roots.
@@ -2017,6 +2044,7 @@ def put_google_drive_selection(
     tokens_store, connection = _require_drive_grant(
         settings, connection_store=connection_store
     )
+    previous_file_ids = frozenset(item.id for item in connection.files)
     try:
         resolved_folders, resolved_files = _validate_selection_items(
             settings,
@@ -2049,7 +2077,69 @@ def put_google_drive_selection(
         )
 
     tokens_store.mutate(_apply)
+    new_file_ids = frozenset(item.id for item in resolved_files)
+    if not resolved_folders and not resolved_files:
+        _purge_google_drive_docs(
+            settings,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
+    else:
+        dropped_files = previous_file_ids - new_file_ids
+        if dropped_files:
+            _purge_google_drive_docs(
+                settings,
+                source_ids=dropped_files,
+                catalog=catalog,
+                catalog_factory=catalog_factory,
+                vector_store=vector_store,
+                vector_store_factory=vector_store_factory,
+            )
     return GoogleDriveSelection(folders=resolved_folders, files=resolved_files)
+
+
+def _purge_google_drive_docs(
+    settings: Settings,
+    *,
+    source_ids: frozenset[str] | None = None,
+    catalog: DocumentCatalog | None = None,
+    catalog_factory: Callable[[], DocumentCatalog] | None = None,
+    vector_store: VectorStore | None = None,
+    vector_store_factory: Callable[[], VectorStore] | None = None,
+) -> None:
+    """Delete Google Drive catalog+vector rows.
+
+    When ``source_ids`` is None, every Drive row is removed. Otherwise only
+    rows whose ``source_id`` is in ``source_ids`` are removed.
+    """
+    working = _resolve_catalog(
+        settings, catalog=catalog, catalog_factory=catalog_factory
+    )
+    targets = [
+        row
+        for row in working.all()
+        if row.reference.source_type == SourceType.GOOGLE_DRIVE
+        and (source_ids is None or row.reference.source_id in source_ids)
+    ]
+    if not targets:
+        return
+
+    get_store = _lazy_vector_store(
+        settings,
+        vector_store=vector_store,
+        vector_store_factory=vector_store_factory,
+    )
+    store = get_store()
+    try:
+        for row in targets:
+            store.delete_source(row.reference)
+            working.delete(row.reference)
+    except CatalogError as error:
+        raise DocumentOperationError(str(error)) from error
+    except VectorStoreError as error:
+        raise DocumentOperationError(str(error)) from error
 
 
 def _dedupe_selected(
@@ -2309,6 +2399,7 @@ def sync_google_drive_oauth(
             catalog=working_catalog,
             vector_store=vector_store,
             vector_store_factory=vector_store_factory,
+            reconcile_missing=True,
         )
     except ConnectorSyncError as error:
         if isinstance(error.__cause__, ConnectorAuthError):
@@ -2374,6 +2465,7 @@ def sync_google_drive(
     catalog: DocumentCatalog | None = None,
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
+    reconcile_missing: bool = False,
 ) -> ConnectorSyncResponse:
     """Synchronize the configured Drive folder into the knowledge base.
 
@@ -2387,6 +2479,8 @@ def sync_google_drive(
         vector_store (VectorStore | None): Shared store for the run, if already built.
         vector_store_factory (Callable[[], VectorStore] | None): Lazy store builder
             used by ingest instead of constructing the store up front.
+        reconcile_missing (bool): When True, remove Google Drive catalog rows
+            absent from the current listing (OAuth Hub sync).
 
     Returns:
         ConnectorSyncResponse: Per-document outcomes in listing order.
@@ -2406,6 +2500,16 @@ def sync_google_drive(
             vector_store_factory=vector_store_factory,
         )
 
+        reconcile_kwargs: dict[str, object] = {}
+        if reconcile_missing:
+            # Empty prefix matches every source_id; scoped by source_type only.
+            reconcile_kwargs = {
+                "reconcile_missing": True,
+                "reconcile_source_types": frozenset({SourceType.GOOGLE_DRIVE}),
+                "reconcile_source_id_prefixes": frozenset({""}),
+                "vector_store_factory": get_store,
+            }
+
         return SyncConnectorDocuments(
             connector=connector,
             catalog=catalog,
@@ -2413,6 +2517,7 @@ def sync_google_drive(
                 settings,
                 vector_store=get_store(),
             ),
+            **reconcile_kwargs,
         ).execute()
     except ConnectorError as error:
         raise ConnectorSyncError(_DRIVE_SYNC_MESSAGE) from error

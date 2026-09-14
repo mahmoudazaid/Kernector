@@ -7,6 +7,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -590,6 +591,199 @@ def test_disconnect_revokes_and_clears(settings) -> None:
         disconnect_google_drive_oauth(
             settings, connection_store=tokens, gateway=gateway
         )
+
+
+def test_disconnect_purges_google_drive_docs(settings) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import (
+        CatalogDocument,
+        CatalogStatus,
+        SourceReference,
+        SourceType,
+    )
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+            files=(StoredItem(id="file-9", name="guide.md"),),
+        )
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("file-9", SourceType.GOOGLE_DRIVE),
+            file_name="guide.md",
+            title="guide",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+            revision="1",
+        )
+    )
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("upload-1", SourceType.KNOWLEDGE_DOCUMENT),
+            file_name="note.md",
+            title="note",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+            revision="1",
+        )
+    )
+    store = InMemoryVectorStore()
+    gateway = FakeGateway()
+
+    disconnect_google_drive_oauth(
+        settings,
+        connection_store=tokens,
+        gateway=gateway,
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    assert tokens.load() is None
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"upload-1"}
+
+
+def test_put_google_drive_selection_clears_all_purges_drive_docs(settings) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import (
+        CatalogDocument,
+        CatalogStatus,
+        SourceReference,
+        SourceType,
+    )
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+            files=(StoredItem(id="file-9", name="guide.md"),),
+        )
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        CatalogDocument(
+            reference=SourceReference("file-9", SourceType.GOOGLE_DRIVE),
+            file_name="guide.md",
+            title="guide",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            chunk_count=1,
+            error=None,
+            revision="1",
+        )
+    )
+    store = InMemoryVectorStore()
+
+    put_google_drive_selection(
+        settings,
+        folders=(),
+        files=(),
+        connection_store=tokens,
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    assert catalog.all() == ()
+
+
+def test_put_google_drive_selection_drops_file_purges_that_doc(settings) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import (
+        CatalogDocument,
+        CatalogStatus,
+        SourceReference,
+        SourceType,
+    )
+    from test.document_doubles import InMemoryDocumentCatalog
+    from test.doubles import InMemoryVectorStore
+
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token=None,
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+            files=(
+                StoredItem(id="file-9", name="guide.md"),
+                StoredItem(id="file-keep", name="keep.md"),
+            ),
+        )
+    )
+    catalog = InMemoryDocumentCatalog()
+    for source_id, name in (("file-9", "guide.md"), ("file-keep", "keep.md")):
+        catalog.upsert(
+            CatalogDocument(
+                reference=SourceReference(source_id, SourceType.GOOGLE_DRIVE),
+                file_name=name,
+                title=name,
+                content_format="markdown",
+                status=CatalogStatus.READY,
+                uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+                chunk_count=1,
+                error=None,
+                revision="1",
+            )
+        )
+    store = InMemoryVectorStore()
+
+    class Connector:
+        def get_item(self, item_id: str):
+            assert item_id == "file-keep"
+            return SimpleNamespace(
+                id="file-keep", name="keep.md", kind="file", supported=True
+            )
+
+    put_google_drive_selection(
+        settings,
+        folders=(),
+        files=(GoogleDriveSelectedItem(id="file-keep", name="keep.md"),),
+        connection_store=tokens,
+        connector_factory=lambda: Connector(),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    ids = {row.reference.source_id for row in catalog.all()}
+    assert ids == {"file-keep"}
 
 
 def test_oauth_sync_persists_last_sync_counts(
