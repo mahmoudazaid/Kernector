@@ -1224,6 +1224,12 @@ describe("ChatPanel", () => {
     expect(
       screen.queryByRole("button", { name: /start test design/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Your Test Design draft is ready/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Use Start Test Design to fetch/i),
+    ).not.toBeInTheDocument();
 
     const stored = getConversation(created.id);
     const action = stored?.messages
@@ -1236,5 +1242,10 @@ describe("ChatPanel", () => {
         label: "Open Test Design",
       }),
     );
+    expect(
+      stored?.messages.some((message) =>
+        message.content.includes("Your Test Design draft is ready"),
+      ),
+    ).toBe(true);
   });
 });

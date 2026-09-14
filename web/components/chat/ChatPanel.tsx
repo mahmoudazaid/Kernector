@@ -386,6 +386,8 @@ function MessageRow({
 }
 
 const OPEN_TEST_DESIGN_LABEL = "Open Test Design";
+const OPEN_TEST_DESIGN_ANSWER =
+  "Your Test Design draft is ready. Use Open Test Design to continue coverage planning.";
 
 function promoteStartActionToOpen(
   action: ChatWorkflowAction,
@@ -698,6 +700,7 @@ export function ChatPanel({
         }
         return {
           ...message,
+          content: OPEN_TEST_DESIGN_ANSWER,
           action: promoteStartActionToOpen(message.action, draftId),
         };
       });
