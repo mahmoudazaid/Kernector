@@ -11,6 +11,8 @@ export type Citation = components["schemas"]["CitationResponse"];
 export type ToolUsed = components["schemas"]["ToolUsedResponse"];
 export type RunMeta = components["schemas"]["RunMetaResponse"];
 export type ToolRun = components["schemas"]["ToolRunResponse"];
+export type ChatWorkflowAction =
+  components["schemas"]["ChatWorkflowActionResponse"];
 
 export type ChatMessage = {
   id: string;
@@ -21,6 +23,7 @@ export type ChatMessage = {
   toolsUsed?: ToolUsed[];
   run?: RunMeta | null;
   toolRun?: ToolRun | null;
+  action?: ChatWorkflowAction | null;
 };
 
 export type HistoryTurn = {
@@ -117,6 +120,7 @@ export function applyTurnResult(
       toolsUsed: response.tools_used,
       run: response.run ?? null,
       toolRun: response.tool_run ?? null,
+      action: response.action ?? null,
     })!;
     return [
       ...messages,
@@ -128,6 +132,8 @@ export function applyTurnResult(
         toolsUsed: sanitized.toolsUsed as ToolUsed[] | undefined,
         run: (sanitized.run as RunMeta | null | undefined) ?? null,
         toolRun: (sanitized.toolRun as ToolRun | null | undefined) ?? null,
+        action:
+          (sanitized.action as ChatWorkflowAction | null | undefined) ?? null,
       },
     ];
   }

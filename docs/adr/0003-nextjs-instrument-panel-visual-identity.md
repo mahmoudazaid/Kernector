@@ -88,6 +88,17 @@ inventing a local look.
    for product UI. File inputs, checkboxes, radios, and range thumbs need the
    emboss recipe (or SoftSelect for listboxes). Custom listboxes use
    `web/components/ui/SoftSelect.tsx` rather than a second select pattern.
+
+   **Checkboxes (required checked mark)** — Every product checkbox uses the
+   Instrument emboss face (`appearance: none`, soft-glass fill, inset
+   highlight). When **checked**, show a clear **check mark** (✓ path) — white
+   stroke on the teal accent fill — never an empty filled square, a native
+   OS glyph, or a second icon system. Prefer the shared recipe already used
+   by Settings (`.kern-settings-radio input[type="checkbox"]:checked` SVG
+   background) or an equivalent inline SVG mark that toggles with
+   `:checked` / `:has(input:checked)` (as on Test Design candidate rows).
+   Do not invent per-page checkbox chrome.
+
    **Do not use `window.confirm`, `window.alert`, or `window.prompt`** for
    product flows — they break Instrument panel identity. Use
    `web/components/ui/ConfirmDialog.tsx` or `DialogFrame` (soft-glass panel,
@@ -230,10 +241,10 @@ inventing a local look.
 
 - PRs that add or restyle `web/` UI are incomplete if controls look native or
   flat relative to Settings / Chat / Knowledge Hub under the same theme, if
-  workspace pages leave unused side gutters from an artificial content
-  `max-width`, if confirms use browser system dialogs, or if a new connector
-  ships a divergent card metrics layout or an inline / non-`DialogFrame`
-  browse picker.
+  checkboxes omit a visible check mark when selected, if workspace pages leave
+  unused side gutters from an artificial content `max-width`, if confirms use
+  browser system dialogs, or if a new connector ships a divergent card metrics
+  layout or an inline / non-`DialogFrame` browse picker.
 - Changing the identity (palette, emboss model, type, main-pane fill,
   dialog recipe, or connector card / picker recipe) requires updating this
   ADR (or a superseding ADR), `tokens.css`, `web/README.md` Visual

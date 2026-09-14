@@ -11,6 +11,7 @@ import {
   markConversationRead,
   migrateLegacyTranscripts,
   newConversationId,
+  recordTestDesignCoverageConfirmed,
   renameConversation,
   resetConversationsSnapshotForTests,
   subscribeConversations,
@@ -113,6 +114,60 @@ describe("conversation store", () => {
       ],
       updatedAt: 1_700_000_000_500,
     });
+  });
+
+  it("records coverage confirmation on the open_workflow message without adding a card", () => {
+    const created = createConversation({
+      title: "Design",
+      messages: [
+        { id: "u1", role: "user", content: "Design tests for owner/repo#1" },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Your Test Design draft is ready.",
+          action: {
+            kind: "open_workflow",
+            workflow_id: "software-delivery.test-design",
+            label: "Open Test Design",
+            draft_id: "draft-1",
+          },
+        },
+      ],
+      draft: "",
+    });
+
+    expect(
+      recordTestDesignCoverageConfirmed({
+        conversationId: created.id,
+        draftId: "draft-1",
+        ticketIdentifier: "owner/repo#1",
+        selectedCount: 3,
+        coverageGapCount: 1,
+      }),
+    ).toBe(true);
+
+    const messages = getConversation(created.id)?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.content).toBe(
+      "Coverage confirmed for owner/repo#1: 3 tests selected, 1 coverage gaps.",
+    );
+    expect(messages[1]?.action).toMatchObject({
+      kind: "open_workflow",
+      draft_id: "draft-1",
+      label: "Open Test Design",
+    });
+  });
+
+  it("leaves confirm successful when the conversation or action is missing", () => {
+    expect(
+      recordTestDesignCoverageConfirmed({
+        conversationId: "missing",
+        draftId: "draft-1",
+        ticketIdentifier: "owner/repo#1",
+        selectedCount: 1,
+        coverageGapCount: 0,
+      }),
+    ).toBe(false);
   });
 
   it("deletes a conversation so it is no longer retrievable", () => {

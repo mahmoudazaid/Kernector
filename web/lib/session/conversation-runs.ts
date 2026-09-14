@@ -61,6 +61,7 @@ function toChatMessages(
     toolsUsed: message.toolsUsed as ChatMessage["toolsUsed"],
     run: (message.run as ChatMessage["run"]) ?? null,
     toolRun: (message.toolRun as ChatMessage["toolRun"]) ?? null,
+    action: (message.action as ChatMessage["action"]) ?? null,
   }));
 }
 
@@ -74,6 +75,7 @@ function toStored(messages: readonly ChatMessage[]): StoredChatMessage[] {
     toolsUsed: message.toolsUsed,
     run: message.run ?? null,
     toolRun: message.toolRun ?? null,
+    action: message.action ?? null,
   }));
 }
 

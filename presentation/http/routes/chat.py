@@ -5,12 +5,17 @@ from __future__ import annotations
 from fastapi import APIRouter, Response, status
 
 from application.contracts import AskRequest
+from composition.test_design import (
+    SourceLocatorView,
+    try_test_design_chat_handoff,
+)
 from domain.models import Message
-from presentation.http.deps import AskFactoryDep, ClearAgentThreadDep
+from presentation.http.deps import AskFactoryDep, ClearAgentThreadDep, SettingsDep
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     ChatAskRequest,
     ChatAskResponse,
+    chat_workflow_action_response,
     citation_response,
     run_meta_response,
     tool_run_response,
@@ -27,8 +32,30 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 def chat_ask(
     body: ChatAskRequest,
     ask_factory: AskFactoryDep,
+    settings: SettingsDep,
 ) -> ChatAskResponse:
-    """Run one grounded ask turn through composition."""
+    """Run one grounded ask turn, or a RAG-free Test Design handoff."""
+    locator_view = None
+    if body.source_locator is not None:
+        locator_view = SourceLocatorView(
+            provider=body.source_locator.provider,
+            locator=body.source_locator.locator,
+        )
+    handoff = try_test_design_chat_handoff(
+        settings=settings,
+        query=body.query,
+        source_locator=locator_view,
+    )
+    if handoff is not None:
+        return ChatAskResponse(
+            answer=handoff.answer,
+            citations=[],
+            tools_used=[],
+            run=None,
+            tool_run=None,
+            action=chat_workflow_action_response(handoff.action),
+        )
+
     runtime = body.runtime
     ask = ask_factory(runtime)
     request = AskRequest(
@@ -38,8 +65,8 @@ def chat_ask(
         ),
         conversation_id=body.conversation_id,
     )
-    settings = None if runtime is None else dict(runtime.settings)
-    response = ask.execute(request, settings)
+    ask_settings = None if runtime is None else dict(runtime.settings)
+    response = ask.execute(request, ask_settings)
     consume = getattr(ask, "consume_tool_run_view", None)
     tool_view = consume() if callable(consume) else None
     return ChatAskResponse(
@@ -48,6 +75,7 @@ def chat_ask(
         tools_used=tools_used_response(response.tool_outputs),
         run=run_meta_response(response.run),
         tool_run=None if tool_view is None else tool_run_response(tool_view),
+        action=None,
     )
 
 

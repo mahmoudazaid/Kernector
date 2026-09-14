@@ -11,6 +11,7 @@ from domain.knowledge import (
     EmbeddedChunk,
     ScoredChunk,
     SourceDocument,
+    SourceLocator,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -335,5 +336,23 @@ class KnowledgeConnector(Protocol):
             ConnectorError: The file could not be read without exposing provider details.
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
+        """
+        ...
+
+
+class LiveSourceReader(Protocol):
+    """Fetches one live remote source by locator (no catalog / vector store)."""
+
+    def fetch(self, locator: SourceLocator) -> SourceDocument:
+        """Return the current document for ``locator``.
+
+        Raises:
+            ConnectorError: Fetch failed without exposing provider details.
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorNotFoundError: The remote resource does not exist.
+            ConnectorRateLimitError: The provider rate-limited the call.
+            ConnectorTimeoutError: The provider request timed out.
+            ConnectorNetworkError: Transport failed before a usable response.
+            ConnectorUnavailableError: The provider is temporarily unreachable.
         """
         ...

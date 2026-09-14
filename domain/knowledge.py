@@ -90,6 +90,18 @@ def _require_vector(value: object, field_name: str) -> None:
         raise DomainValidationError(f"{field_name} must contain only numeric values")
 
 @dataclass(frozen=True, slots=True)
+class SourceLocator:
+    """Provider-neutral pointer to a live remote source (not a catalog id)."""
+
+    provider: str
+    locator: str
+
+    def __post_init__(self) -> None:
+        _require_text(self.provider, "provider")
+        _require_text(self.locator, "locator")
+
+
+@dataclass(frozen=True, slots=True)
 class SourceReference:
     """Points back at the source a chunk or citation came from."""
 
