@@ -342,7 +342,8 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       <fieldset className="kern-settings-fieldset kern-test-design-panel">
         <legend>Candidates</legend>
         <p className="kern-settings-hint">
-          Edit titles or add candidates, select which to keep, then save.
+          Titles are editable fields. Change a title or add a candidate, select
+          which to keep, then save.
         </p>
         <div className="kern-test-design-groups">
           {groupCandidatesByCategory(draft.candidates).map((group) => {
@@ -400,24 +401,37 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                           </svg>
                         </label>
                         <div className="kern-test-design-candidate__body">
-                          <input
-                            id={`candidate-title-${candidate.candidate_id}`}
-                            className="kern-test-design-candidate__title-input"
-                            type="text"
-                            value={candidate.title}
-                            maxLength={MAX_TITLE_CHARS}
-                            placeholder="Test title"
-                            aria-label="Candidate title"
-                            onChange={(event) =>
-                              updateCandidateTitle(
-                                candidate.candidate_id,
-                                event.target.value,
-                              )
-                            }
-                          />
-                          <p className="kern-test-design-candidate__rationale">
-                            {candidate.rationale}
-                          </p>
+                          <div className="kern-test-design-candidate__title-control">
+                            <input
+                              id={`candidate-title-${candidate.candidate_id}`}
+                              className="kern-settings-input kern-test-design-candidate__title-input"
+                              type="text"
+                              value={candidate.title}
+                              maxLength={MAX_TITLE_CHARS}
+                              placeholder="Enter or edit test title"
+                              aria-label="Test title"
+                              onChange={(event) =>
+                                updateCandidateTitle(
+                                  candidate.candidate_id,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                            <svg
+                              className="kern-test-design-candidate__edit-icon"
+                              viewBox="0 0 16 16"
+                              aria-hidden="true"
+                              focusable="false"
+                            >
+                              <path
+                                d="M11.3 2.3a1.2 1.2 0 0 1 1.7 1.7L5.8 11.2 3 12l.8-2.8 7.5-6.9Z"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.4"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </div>
                         </div>
                       </div>
                     </li>
@@ -451,7 +465,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         </div>
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
           disabled={busy}
           onClick={() => router.push(chatHref)}
         >
