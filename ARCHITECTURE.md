@@ -321,8 +321,9 @@ a process-scoped ``InMemorySaver`` (``composition/short_term_memory.py``) keyed
 as ``{workspace_id}:{conversation_id}`` where ``workspace_id`` comes only from
 trusted server config (``DOCUMENT_CATALOG_WORKSPACE_ID``) and ``conversation_id``
 is the client thread id from #246. Checkpoints are **process-local** and are
-**lost on process restart**. Deleting a conversation clears only that thread's
-checkpoint (idempotent; missing checkpoint is success); there is no workspace-wide
+**lost on process restart**. Deleting a conversation *best-effort* clears only
+that thread's checkpoint (idempotent; missing checkpoint is success); a failed
+clear leaves the checkpoint until process restart. There is no workspace-wide
 or global clear and no normal-UI "reset memory" control. Long-term memory is
 deferred to #299. Absent ``conversation_id``, the agent stays stateless.
 
