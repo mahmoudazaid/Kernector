@@ -226,6 +226,17 @@ class GoogleDriveBrowsePageResponse(BaseModel):
     next_page_token: str | None = None
 
 
+class GoogleDriveCreateFolderRequest(BaseModel):
+    """Create a Drive folder under an existing parent (or My Drive)."""
+
+    name: str = Field(min_length=1, max_length=256)
+    parent_id: str | None = Field(
+        default=None,
+        max_length=128,
+        pattern=r"^(root|[A-Za-z0-9_-]{1,128})$",
+    )
+
+
 class GoogleDriveSelectedItemResponse(BaseModel):
     """Saved sync root: Drive ID plus a presentation name."""
 

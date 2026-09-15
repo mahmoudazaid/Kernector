@@ -47,6 +47,11 @@ export type ListGoogleDriveItemsOptions = GetGoogleDriveStatusOptions & {
   pageToken?: string | null;
 };
 
+export type CreateGoogleDriveFolderOptions = GetGoogleDriveStatusOptions & {
+  name: string;
+  parentId?: string | null;
+};
+
 export type PutGoogleDriveSelectionOptions = GetGoogleDriveStatusOptions & {
   selection: GoogleDriveSelectionResponse;
 };
@@ -98,6 +103,27 @@ export async function listGoogleDriveItems(
     baseUrl: options.baseUrl,
     path: itemsPath(options),
     method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Create a Drive folder via
+ * ``POST /api/v1/connectors/google-drive/folders``.
+ */
+export async function createGoogleDriveFolder(
+  options: CreateGoogleDriveFolderOptions,
+): Promise<GoogleDriveBrowseItemResponse> {
+  const request = options.request ?? apiRequest;
+  return request<GoogleDriveBrowseItemResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/google-drive/folders",
+    method: "POST",
+    body: {
+      name: options.name,
+      parent_id: options.parentId ?? null,
+    },
     signal: options.signal,
     timeoutMs: options.timeoutMs,
   } satisfies ApiRequestOptions);

@@ -357,7 +357,7 @@ describe("TestDesignWorkspace", () => {
     });
   });
 
-  it("disables export without a selection, while busy, and while dirty", async () => {
+  it("disables export without a selection, and auto-saves before opening the picker", async () => {
     const user = userEvent.setup();
     vi.mocked(getTestDesignDraft).mockResolvedValueOnce(
       draft({
@@ -370,12 +370,13 @@ describe("TestDesignWorkspace", () => {
     expect(screen.getByRole("button", { name: /export to google drive/i })).toBeDisabled();
 
     await user.click(screen.getByRole("checkbox", { name: /keep covers happy path/i }));
-    expect(screen.getByRole("button", { name: /export to google drive/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /export to google drive/i })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: /save draft/i }));
+    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /export to google drive/i })).toBeEnabled();
+      expect(patchTestDesignDraft).toHaveBeenCalled();
     });
+    expect(await screen.findByRole("dialog", { name: /export to google drive/i })).toBeInTheDocument();
   });
 
 

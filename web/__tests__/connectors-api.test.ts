@@ -5,6 +5,7 @@ import {
   GOOGLE_DRIVE_OAUTH_START_PATH,
   GOOGLE_DRIVE_SELECTION_ITEM_MAX,
   GOOGLE_DRIVE_SELECTION_TIMEOUT_MS,
+  createGoogleDriveFolder,
   disconnectGoogleDrive,
   getGoogleDriveSelection,
   getGoogleDriveStatus,
@@ -107,6 +108,33 @@ describe("google drive connector wrappers", () => {
       }),
     );
     expect(String(request.mock.calls[0][0].path)).not.toMatch(/ya29|1\/\//);
+  });
+
+  it("creates a Drive folder under a parent without exposing tokens", async () => {
+    const request = vi.fn().mockResolvedValue({
+      id: "folder-new",
+      name: "Exports",
+      kind: "folder",
+      mime_type: "application/vnd.google-apps.folder",
+      supported: true,
+      modified_at: null,
+    });
+
+    await createGoogleDriveFolder({
+      baseUrl: "http://api.test",
+      name: "Exports",
+      parentId: "folder-parent",
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/api/v1/connectors/google-drive/folders",
+        method: "POST",
+        body: { name: "Exports", parent_id: "folder-parent" },
+      }),
+    );
+    expect(JSON.stringify(request.mock.calls)).not.toMatch(/ya29|1\/\//);
   });
 
   it("loads and replaces selection by Drive ID", async () => {

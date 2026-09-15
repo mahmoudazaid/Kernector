@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from composition import GoogleDriveSelectedItem, GoogleDriveStatus
 from presentation.http.deps import (
     GoogleDriveBrowseDep,
+    GoogleDriveCreateFolderDep,
     GoogleDriveDisconnectDep,
     GoogleDriveOAuthCallbackDep,
     GoogleDriveOAuthStartDep,
@@ -18,6 +19,7 @@ from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     GoogleDriveBrowseItemResponse,
     GoogleDriveBrowsePageResponse,
+    GoogleDriveCreateFolderRequest,
     GoogleDriveLastSyncResponse,
     GoogleDriveSelectedItemResponse,
     GoogleDriveSelectionRequest,
@@ -151,6 +153,26 @@ def google_drive_connector_items(
             for item in page.items
         ],
         next_page_token=page.next_page_token,
+    )
+
+
+@router.post(
+    "/connectors/google-drive/folders",
+    responses=problem_responses(405, 409, 422, 500, 502),
+)
+def google_drive_connector_create_folder(
+    body: GoogleDriveCreateFolderRequest,
+    create_folder: GoogleDriveCreateFolderDep,
+) -> GoogleDriveBrowseItemResponse:
+    """Create a Drive folder for the export picker. No tokens on the wire."""
+    item = create_folder(name=body.name, parent_id=body.parent_id)
+    return GoogleDriveBrowseItemResponse(
+        id=item.id,
+        name=item.name,
+        kind=item.kind,
+        mime_type=item.mime_type,
+        supported=item.supported,
+        modified_at=item.modified_at,
     )
 
 

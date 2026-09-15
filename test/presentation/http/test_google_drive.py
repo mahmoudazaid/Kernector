@@ -30,6 +30,7 @@ from presentation.http.deps import (
     get_google_drive_selection_read,
     get_google_drive_selection_write,
     get_google_drive_browse,
+    get_google_drive_create_folder,
     get_google_drive_status,
     get_google_drive_sync,
     get_settings,
@@ -548,6 +549,57 @@ def test_items_return_presentation_rows_without_tokens() -> None:
     for key in _SECRET_KEYS:
         assert key not in body
         assert key not in str(body)
+
+
+def test_create_folder_returns_presentation_row_without_tokens() -> None:
+    app = create_app()
+    app.dependency_overrides[get_google_drive_create_folder] = lambda: (
+        lambda **_kwargs: SimpleNamespace(
+            id="folder-new",
+            name="Exports",
+            kind="folder",
+            mime_type="application/vnd.google-apps.folder",
+            supported=True,
+            modified_at="2026-09-15T12:00:00.000Z",
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/connectors/google-drive/folders",
+        json={"name": "Exports", "parent_id": "folder-parent"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "id": "folder-new",
+        "name": "Exports",
+        "kind": "folder",
+        "mime_type": "application/vnd.google-apps.folder",
+        "supported": True,
+        "modified_at": "2026-09-15T12:00:00.000Z",
+    }
+    for key in _SECRET_KEYS:
+        assert key not in body
+        assert key not in str(body)
+
+
+def test_create_folder_rejects_blank_name() -> None:
+    app = create_app()
+    called: list[object] = []
+    app.dependency_overrides[get_google_drive_create_folder] = lambda: (
+        lambda **kwargs: called.append(kwargs)
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/connectors/google-drive/folders",
+        json={"name": ""},
+    )
+
+    assert response.status_code == 422
+    assert called == []
 
 
 def test_get_selection_returns_saved_ids_not_names_as_identity() -> None:

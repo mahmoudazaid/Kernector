@@ -214,9 +214,9 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     );
   }
 
-  async function saveDraft() {
+  async function saveDraft(): Promise<boolean> {
     if (!draft) {
-      return;
+      return false;
     }
     const blankTitle = draft.candidates.find(
       (candidate) => !candidate.title.trim(),
@@ -224,7 +224,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     if (blankTitle) {
       setError("Every candidate needs a title before saving.");
       setSaveNote(null);
-      return;
+      return false;
     }
     setBusy(true);
     setError(null);
@@ -241,6 +241,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       setDraft(saved);
       setSaveNote("Draft saved.");
       setDirty(false);
+      return true;
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError(
@@ -249,9 +250,24 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       } else {
         setError("Could not save draft.");
       }
+      return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  async function openExportDialog() {
+    if (!draft || selectedCount === 0 || busy) {
+      return;
+    }
+    setError(null);
+    if (dirty) {
+      const saved = await saveDraft();
+      if (!saved) {
+        return;
+      }
+    }
+    setExportOpen(true);
   }
 
   function markDirty() {
@@ -360,7 +376,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   }
 
   async function exportSelectedFolder(folderId: string, folderName: string) {
-    if (!draft || dirty || selectedCount === 0) {
+    if (!draft || selectedCount === 0) {
       return;
     }
     setBusy(true);
@@ -401,7 +417,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   }
 
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
-  const canExport = selectedCount > 0 && !busy && !dirty;
+  const canExport = selectedCount > 0 && !busy;
   const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
 
   return (
@@ -600,10 +616,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
             type="button"
             variant="secondary"
             disabled={!canExport}
-            onClick={() => {
-              setError(null);
-              setExportOpen(true);
-            }}
+            onClick={() => void openExportDialog()}
           >
             Export to Google Drive
           </Button>
@@ -634,7 +647,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           }
         }}
         onConfirm={(selection) => {
-          const folder = selection.folders[0];
+          const folder = selection.folders?.[0];
           if (!folder) {
             return;
           }

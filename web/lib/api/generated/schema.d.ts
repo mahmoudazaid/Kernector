@@ -236,6 +236,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connectors/google-drive/folders": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Google Drive Connector Create Folder
+     * @description Create a Drive folder for the export picker. No tokens on the wire.
+     */
+    post: operations["google_drive_connector_create_folder_api_v1_connectors_google_drive_folders_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connectors/google-drive/items": {
     parameters: {
       query?: never;
@@ -555,6 +575,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/test-design/drafts/{draft_id}/export/google-drive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Export Draft Google Drive
+     * @description Export selected titles into a user-chosen Google Drive folder.
+     */
+    post: operations["export_draft_google_drive_api_v1_test_design_drafts__draft_id__export_google_drive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -794,6 +834,26 @@ export interface components {
       expected_version: number;
     };
     /**
+     * ExportTestDesignGoogleDriveRequest
+     * @description Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/google-drive``.
+     */
+    ExportTestDesignGoogleDriveRequest: {
+      /** File Name */
+      file_name?: string | null;
+      /** Folder Id */
+      folder_id: string;
+    };
+    /**
+     * ExportTestDesignGoogleDriveResponse
+     * @description Safe receipt after exporting selected titles to Google Drive.
+     */
+    ExportTestDesignGoogleDriveResponse: {
+      /** File Id */
+      file_id: string;
+      /** File Name */
+      file_name: string;
+    };
+    /**
      * GitHubLastSyncResponse
      * @description Last GitHub user-OAuth sync summary. Counts are honest; no secrets.
      */
@@ -1002,6 +1062,16 @@ export interface components {
       items: components["schemas"]["GoogleDriveBrowseItemResponse"][];
       /** Next Page Token */
       next_page_token?: string | null;
+    };
+    /**
+     * GoogleDriveCreateFolderRequest
+     * @description Create a Drive folder under an existing parent (or My Drive).
+     */
+    GoogleDriveCreateFolderRequest: {
+      /** Name */
+      name: string;
+      /** Parent Id */
+      parent_id?: string | null;
     };
     /**
      * GoogleDriveLastSyncResponse
@@ -2228,6 +2298,75 @@ export interface operations {
       };
     };
   };
+  google_drive_connector_create_folder_api_v1_connectors_google_drive_folders_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GoogleDriveCreateFolderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoogleDriveBrowseItemResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   google_drive_connector_items_api_v1_connectors_google_drive_items_get: {
     parameters: {
       query?: {
@@ -3337,6 +3476,77 @@ export interface operations {
       };
       /** @description Server error */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  export_draft_google_drive_api_v1_test_design_drafts__draft_id__export_google_drive_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExportTestDesignGoogleDriveRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExportTestDesignGoogleDriveResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
         headers: {
           [name: string]: unknown;
         };

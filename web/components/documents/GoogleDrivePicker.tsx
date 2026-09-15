@@ -6,8 +6,10 @@ import { DialogFrame } from "@/components/ui/DialogFrame";
 import { Loader } from "@/components/ui/Loader";
 import { ApiError, isAbortError } from "@/lib/api/errors";
 import {
+  createGoogleDriveFolder,
   listGoogleDriveItems,
   GOOGLE_DRIVE_SELECTION_ITEM_MAX,
+  type CreateGoogleDriveFolderOptions,
   type GoogleDriveBrowseItemResponse,
   type GoogleDriveSelectionResponse,
   type ListGoogleDriveItemsOptions,
@@ -28,6 +30,9 @@ export type GoogleDrivePickerProps = {
     items: GoogleDriveBrowseItemResponse[];
     next_page_token?: string | null;
   }>;
+  createFolder?: (
+    options: CreateGoogleDriveFolderOptions,
+  ) => Promise<GoogleDriveBrowseItemResponse>;
   onConfirm: (selection: GoogleDriveSelectionResponse) => void;
   onCancel: () => void;
   notice?: string | null;
@@ -172,6 +177,20 @@ function CloseGlyph() {
   );
 }
 
+function ChevronGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M7.5 4.5 13 10l-5.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function GoogleDrivePicker({
   open,
   apiBaseUrl,
@@ -184,6 +203,7 @@ export function GoogleDrivePicker({
   description = "Select the files or folders Kernector should keep synchronized.",
   confirmLabel = "Save",
   listItems = listGoogleDriveItems,
+  createFolder = createGoogleDriveFolder,
   onConfirm,
   onCancel,
   notice = null,
@@ -191,14 +211,23 @@ export function GoogleDrivePicker({
   const titleId = useId();
   const descriptionId = useId();
   const searchId = useId();
+  const newFolderId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
+  const newFolderRef = useRef<HTMLInputElement>(null);
+
+  const destinationMode = foldersOnly && singleSelect;
 
   const [crumbs, setCrumbs] = useState<Crumb[]>([ROOT]);
   const [search, setSearch] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [view, setView] = useState<BrowseView>({ kind: "loading" });
   const [selected, setSelected] = useState(() => selectedMap(initialSelection));
+  const [destination, setDestination] = useState<Crumb>(ROOT);
   const [appliedKey, setAppliedKey] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const dirtyRef = useRef(false);
   const loadSeqRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -317,8 +346,21 @@ export function GoogleDrivePicker({
     setCrumbs([ROOT]);
     setSearch("");
     setSubmittedQuery("");
+    setCreating(false);
+    setNewFolderName("");
+    setCreateError(null);
+    setCreateBusy(false);
+    setDestination(ROOT);
     setSelected(selectedMap(initialSelectionRef.current));
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !destinationMode) {
+      return;
+    }
+    const current = crumbs[crumbs.length - 1] ?? ROOT;
+    setDestination(current);
+  }, [open, destinationMode, crumbs]);
 
   useEffect(() => {
     if (!open) {
@@ -331,23 +373,41 @@ export function GoogleDrivePicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on browse identity
   }, [open, parentId, submittedQuery]);
 
+  useEffect(() => {
+    if (creating) {
+      newFolderRef.current?.focus();
+    }
+  }, [creating]);
+
   const countLabel =
     selected.size === 0
       ? foldersOnly
         ? "No folder selected"
         : "No items selected"
       : `${selected.size} selected`;
+
+  const destinationPathLabel = (() => {
+    const currentId = crumbs[crumbs.length - 1]?.id ?? "root";
+    if (destination.id === currentId) {
+      return `Exporting to: ${crumbs.map((crumb) => crumb.name).join(" / ")}`;
+    }
+    const base = crumbs.map((crumb) => crumb.name).join(" / ");
+    return `Exporting to: ${base} / ${destination.name}`;
+  })();
+
   const atListCap = singleSelect
     ? false
     : countKind(selected, "folder") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX ||
       countKind(selected, "file") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX;
   const selectionUnchanged = sameSelection(selected, initialSelection);
-  const confirmDisabled =
-    busy ||
-    selectionLoading ||
-    (singleSelect
-      ? countKind(selected, "folder") !== 1
-      : selectionUnchanged);
+  const confirmDisabled = destinationMode
+    ? busy || selectionLoading || createBusy || !destination.id
+    : busy ||
+      selectionLoading ||
+      createBusy ||
+      (singleSelect
+        ? countKind(selected, "folder") !== 1
+        : selectionUnchanged);
 
   function toggle(item: GoogleDriveBrowseItemResponse) {
     if (foldersOnly && item.kind !== "folder") {
@@ -374,6 +434,60 @@ export function GoogleDrivePicker({
     });
   }
 
+  function selectDestination(item: Crumb) {
+    dirtyRef.current = true;
+    setDestination(item);
+  }
+
+  function openFolder(item: Crumb) {
+    setSubmittedQuery("");
+    setSearch("");
+    setCreating(false);
+    setCreateError(null);
+    setCrumbs((current) => [...current, item]);
+  }
+
+  function goToCrumb(index: number) {
+    setSubmittedQuery("");
+    setSearch("");
+    setCreating(false);
+    setCreateError(null);
+    setCrumbs((current) => {
+      if (index < 0 || index >= current.length) {
+        return current;
+      }
+      if (current.length === index + 1) {
+        return current;
+      }
+      return current.slice(0, index + 1);
+    });
+  }
+
+  async function submitNewFolder() {
+    const name = newFolderName.trim();
+    if (!name || createBusy) {
+      return;
+    }
+    setCreateBusy(true);
+    setCreateError(null);
+    try {
+      const created = await createFolder({
+        baseUrl: apiBaseUrl,
+        name,
+        parentId,
+      });
+      setCreating(false);
+      setNewFolderName("");
+      dirtyRef.current = true;
+      setDestination({ id: created.id, name: created.name });
+      await loadPage();
+    } catch (error) {
+      setCreateError(browseErrorMessage(error).message);
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
   const listLoading = selectionLoading || view.kind === "loading";
   const rows =
     view.kind === "ready"
@@ -398,7 +512,7 @@ export function GoogleDrivePicker({
       open={open}
       titleId={titleId}
       descriptionId={descriptionId}
-      panelClassName="kern-picker-dialog"
+      panelClassName="kern-picker-dialog kern-drive-picker"
       initialFocusRef={searchRef}
       onDismiss={onCancel}
     >
@@ -455,138 +569,303 @@ export function GoogleDrivePicker({
         </div>
       ) : null}
 
-      {query || listLoading ? null : (
-        <nav className="kern-picker-crumbs" aria-label="Current Drive folder">
-          {crumbs.map((crumb, index) => (
-            <span key={crumb.id}>
-              {index > 0 ? <span aria-hidden="true"> / </span> : null}
-              {index === crumbs.length - 1 ? (
-                <strong>{crumb.name}</strong>
-              ) : (
-                <button
-                  type="button"
-                  className="kern-picker-crumb"
-                  onClick={() => setCrumbs(crumbs.slice(0, index + 1))}
-                >
-                  {crumb.name}
-                </button>
-              )}
-            </span>
-          ))}
-        </nav>
-      )}
-
-      <div
-        className={
-          listLoading ? "kern-picker-list is-loading" : "kern-picker-list"
-        }
-      >
-        {listLoading ? (
-          <div className="kern-picker-loading">
-            <Loader label="Loading Google Drive" />
-          </div>
-        ) : null}
-        {view.kind === "error" && !selectionLoading ? (
-          <div
-            className="kern-settings-callout kern-settings-callout--error"
-            role="status"
+      <div className="kern-drive-picker-body">
+        <aside className="kern-drive-picker-rail" aria-label="Drive locations">
+          <button
+            type="button"
+            className={
+              crumbs.length === 1 && !query
+                ? "kern-drive-rail-item is-active"
+                : "kern-drive-rail-item"
+            }
+            onClick={() => goToCrumb(0)}
           >
-            <p>
-              {view.code === "google_drive_reauthorization_required"
-                ? "Google Drive authorization was revoked. Connect again."
-                : view.message}
-            </p>
-            <Button variant="secondary" onClick={() => void loadPage()}>
-              Retry
-            </Button>
-          </div>
-        ) : null}
-        {view.kind === "ready" && !selectionLoading && rows.length === 0 ? (
-          <p role="status">
-            {query
-              ? "No matching Drive items."
-              : foldersOnly
-                ? "This folder has no subfolders."
-                : "This folder has no items you can select."}
-          </p>
-        ) : null}
-        {view.kind === "ready" && !selectionLoading
-          ? rows.map((item) => {
-              const itemKind = item.kind === "folder" ? "folder" : "file";
-              const navigable = itemKind === "folder" && !query;
-              const checked = selected.has(item.id);
-              return (
-                <div
-                  className={
-                    checked ? "kern-drive-item is-checked" : "kern-drive-item"
-                  }
-                  key={item.id}
-                >
-                  <label className="kern-drive-item-select">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={itemKind === "file" && item.supported === false}
-                      onChange={() => toggle(item)}
-                    />
-                    <span className="kern-drive-item-icon">
-                      {itemKind === "folder" ? <FolderGlyph /> : <FileGlyph />}
-                    </span>
-                    <span className="kern-drive-item-copy">
-                      <strong>{item.name}</strong>
-                      <span className="kern-drive-item-meta">
-                        {itemKind === "folder"
-                          ? "Includes future files and updates"
-                          : (item.mime_type ?? "File")}
+            <span className="kern-drive-item-icon">
+              <FolderGlyph />
+            </span>
+            <span>My Drive</span>
+          </button>
+        </aside>
+
+        <div className="kern-drive-picker-main">
+          {query ? null : (
+            <div className="kern-drive-picker-toolbar">
+              <nav
+                className="kern-picker-crumbs"
+                aria-label="Current Drive folder"
+              >
+                {crumbs.map((crumb, index) => (
+                  <span key={`${crumb.id}-${index}`} className="kern-picker-crumb-segment">
+                    {index > 0 ? (
+                      <span className="kern-picker-crumb-sep" aria-hidden="true">
+                        /
                       </span>
-                    </span>
-                  </label>
-                  {navigable ? (
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        setCrumbs((current) => [
-                          ...current,
-                          { id: item.id, name: item.name },
-                        ])
-                      }
-                    >
-                      Open
-                    </Button>
-                  ) : null}
-                </div>
-              );
-            })
-          : null}
-        {nextPageKind && nextPageToken && !selectionLoading ? (
-          <Button
-            variant="secondary"
-            onClick={() =>
-              void loadPage({
-                pageToken: nextPageToken,
-                pageKind: nextPageKind,
-              })
+                    ) : null}
+                    {index === crumbs.length - 1 ? (
+                      <strong>{crumb.name}</strong>
+                    ) : (
+                      <button
+                        type="button"
+                        className="kern-picker-crumb"
+                        onClick={() => goToCrumb(index)}
+                      >
+                        {crumb.name}
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </nav>
+              {destinationMode ? (
+                <Button
+                  variant="secondary"
+                  disabled={busy || createBusy || listLoading || creating}
+                  onClick={() => {
+                    setCreating(true);
+                    setNewFolderName("Untitled folder");
+                    setCreateError(null);
+                  }}
+                >
+                  New folder
+                </Button>
+              ) : null}
+            </div>
+          )}
+
+          {createError ? (
+            <div
+              className="kern-settings-callout kern-settings-callout--error"
+              role="alert"
+            >
+              <p>{createError}</p>
+            </div>
+          ) : null}
+
+          <div
+            className={
+              listLoading ? "kern-picker-list is-loading" : "kern-picker-list"
             }
           >
-            Load more
-          </Button>
-        ) : null}
+            {listLoading ? (
+              <div className="kern-picker-loading">
+                <Loader label="Loading Google Drive" />
+              </div>
+            ) : null}
+            {view.kind === "error" && !selectionLoading ? (
+              <div
+                className="kern-settings-callout kern-settings-callout--error"
+                role="status"
+              >
+                <p>
+                  {view.code === "google_drive_reauthorization_required"
+                    ? "Google Drive authorization was revoked. Connect again."
+                    : view.message}
+                </p>
+                <Button variant="secondary" onClick={() => void loadPage()}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            {creating && !listLoading ? (
+              <form
+                className="kern-drive-item is-creating"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitNewFolder();
+                }}
+              >
+                <span className="kern-drive-item-icon">
+                  <FolderGlyph />
+                </span>
+                <label htmlFor={newFolderId} className="visually-hidden">
+                  New folder name
+                </label>
+                <input
+                  ref={newFolderRef}
+                  id={newFolderId}
+                  type="text"
+                  className="kern-settings-input kern-drive-rename-input"
+                  value={newFolderName}
+                  maxLength={256}
+                  disabled={createBusy}
+                  aria-invalid={createError ? true : undefined}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setCreating(false);
+                      setNewFolderName("");
+                      setCreateError(null);
+                    }
+                  }}
+                />
+                <Button
+                  type="submit"
+                  disabled={createBusy || !newFolderName.trim()}
+                >
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={createBusy}
+                  onClick={() => {
+                    setCreating(false);
+                    setNewFolderName("");
+                    setCreateError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </form>
+            ) : null}
+            {view.kind === "ready" &&
+            !selectionLoading &&
+            !creating &&
+            rows.length === 0 ? (
+              <div className="kern-drive-empty" role="status">
+                <p>
+                  {query
+                    ? "No matching Drive items."
+                    : destinationMode
+                      ? "No subfolders here. Export to this location, or use New folder above."
+                      : foldersOnly
+                        ? "This folder has no subfolders."
+                        : "This folder has no items you can select."}
+                </p>
+              </div>
+            ) : null}
+            {view.kind === "ready" && !selectionLoading
+              ? rows.map((item) => {
+                  const itemKind = item.kind === "folder" ? "folder" : "file";
+                  const navigable = itemKind === "folder" && !query;
+                  const checked = destinationMode
+                    ? destination.id === item.id
+                    : selected.has(item.id);
+                  return (
+                    <div
+                      className={
+                        checked
+                          ? "kern-drive-item is-checked"
+                          : "kern-drive-item"
+                      }
+                      key={item.id}
+                    >
+                      {destinationMode && itemKind === "folder" ? (
+                        <label className="kern-drive-item-select">
+                          <input
+                            type="radio"
+                            name="kern-drive-destination"
+                            checked={checked}
+                            onChange={() =>
+                              selectDestination({
+                                id: item.id,
+                                name: item.name,
+                              })
+                            }
+                          />
+                          <span className="kern-drive-item-icon">
+                            <FolderGlyph />
+                          </span>
+                          <span className="kern-drive-item-copy">
+                            <strong>{item.name}</strong>
+                            {checked ? (
+                              <span className="kern-drive-item-meta">
+                                Selected destination
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                      ) : (
+                        <label className="kern-drive-item-select">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={
+                              itemKind === "file" && item.supported === false
+                            }
+                            onChange={() => toggle(item)}
+                          />
+                          <span className="kern-drive-item-icon">
+                            {itemKind === "folder" ? (
+                              <FolderGlyph />
+                            ) : (
+                              <FileGlyph />
+                            )}
+                          </span>
+                          <span className="kern-drive-item-copy">
+                            <strong>{item.name}</strong>
+                            <span className="kern-drive-item-meta">
+                              {itemKind === "folder"
+                                ? "Includes future files and updates"
+                                : (item.mime_type ?? "File")}
+                            </span>
+                          </span>
+                        </label>
+                      )}
+                      {navigable ? (
+                        <Button
+                          variant="ghost"
+                          className="kern-drive-open"
+                          aria-label={`Open ${item.name}`}
+                          onClick={() =>
+                            openFolder({ id: item.id, name: item.name })
+                          }
+                        >
+                          <span className="kern-drive-open-label">Open</span>
+                          <ChevronGlyph />
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })
+              : null}
+            {nextPageKind && nextPageToken && !selectionLoading ? (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void loadPage({
+                    pageToken: nextPageToken,
+                    pageKind: nextPageKind,
+                  })
+                }
+              >
+                Load more
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       <div className="kern-picker-foot">
         <span aria-live="polite">
-          {countLabel}
-          {atListCap
+          {destinationMode ? destinationPathLabel : countLabel}
+          {!destinationMode && atListCap
             ? ` · at most ${GOOGLE_DRIVE_SELECTION_ITEM_MAX} folders or files each`
             : ""}
         </span>
         <div className="kern-dialog-actions">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          <Button
+            variant="secondary"
+            onClick={onCancel}
+            disabled={busy || createBusy}
+          >
             Cancel
           </Button>
           <Button
             disabled={confirmDisabled}
-            onClick={() => onConfirm(toSelection(selected))}
+            onClick={() => {
+              if (destinationMode) {
+                onConfirm({
+                  folders: [
+                    { id: destination.id, name: destination.name },
+                  ],
+                  files: [],
+                });
+                return;
+              }
+              onConfirm(toSelection(selected));
+            }}
           >
             {confirmLabel}
           </Button>

@@ -2122,6 +2122,121 @@ def browse_google_drive_items(
     )
 
 
+_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def create_google_drive_folder(
+    settings: Settings,
+    *,
+    name: str,
+    parent_id: str | None = None,
+    connection_store=None,
+    files_factory=None,
+) -> GoogleDriveBrowseItem:
+    """Create a Drive folder under ``parent_id`` using the Hub OAuth grant.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        name (str): Folder display name.
+        parent_id (str | None): Parent folder ID. Defaults to My Drive (``root``).
+        connection_store: Injected grant store for tests.
+        files_factory: Injected ``(oauth_settings, refresh_token, scopes) -> files``
+            factory for tests.
+
+    Returns:
+        GoogleDriveBrowseItem: The created folder row (id + name).
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Grant rejected or missing
+            ``drive.file``.
+        InputRejectedError: ``name`` or ``parent_id`` is invalid.
+        GoogleDriveConnectorError: Create failed at the Google boundary.
+    """
+    if not isinstance(name, str):
+        raise InputRejectedError("name must be a non-empty string.")
+    stripped_name = name.strip()
+    if not stripped_name:
+        raise InputRejectedError("name must be a non-empty string.")
+    if len(stripped_name) > _DRIVE_ITEM_NAME_MAX:
+        raise InputRejectedError("name is too long.")
+    resolved_parent = (
+        "root" if parent_id is None or not parent_id.strip() else parent_id.strip()
+    )
+    if not _DRIVE_ITEM_ID.fullmatch(resolved_parent):
+        raise InputRejectedError("parent_id must be a Drive folder ID.")
+
+    tokens_store, connection = _require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    from infrastructure.connectors.google_drive.oauth import (
+        DRIVE_FILE_SCOPE,
+        build_oauth_drive_files,
+    )
+    from infrastructure.connectors.google_drive.http_errors import (
+        map_google_error,
+    )
+
+    if DRIVE_FILE_SCOPE not in connection.granted_scopes:
+        raise GoogleDriveReauthorizationRequiredError(
+            "Google Drive authorization was revoked"
+        )
+
+    factory = files_factory
+    if factory is None:
+
+        def factory(oauth_settings, refresh_token, scopes):
+            return build_oauth_drive_files(
+                oauth_settings,
+                refresh_token=refresh_token,
+                scopes=scopes,
+            )
+
+    try:
+        files = factory(
+            settings.google_oauth,
+            connection.refresh_token,
+            tuple(sorted(connection.granted_scopes)),
+        )
+        request = files.create(
+            body={
+                "name": stripped_name,
+                "mimeType": _DRIVE_FOLDER_MIME,
+                "parents": [resolved_parent],
+            },
+            fields="id,name,mimeType,modifiedTime",
+            supportsAllDrives=True,
+        )
+        raw = request.execute()  # type: ignore[attr-defined]
+    except ConnectorAuthError as error:
+        _mark_reauth(tokens_store, error)
+    except ConnectorError as error:
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
+    except Exception as error:  # noqa: BLE001 - map provider failures
+        mapped = map_google_error(error)
+        if isinstance(mapped, ConnectorAuthError):
+            _mark_reauth(tokens_store, mapped)
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
+
+    if not isinstance(raw, dict):
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE)
+    folder_id = raw.get("id")
+    folder_name = raw.get("name")
+    if not isinstance(folder_id, str) or not folder_id.strip():
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE)
+    if not isinstance(folder_name, str) or not folder_name.strip():
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE)
+    modified = raw.get("modifiedTime")
+    return GoogleDriveBrowseItem(
+        id=folder_id.strip(),
+        name=folder_name.strip(),
+        kind="folder",
+        mime_type=_DRIVE_FOLDER_MIME,
+        supported=True,
+        modified_at=modified if isinstance(modified, str) else None,
+    )
+
+
 def get_google_drive_selection(
     settings: Settings,
     *,

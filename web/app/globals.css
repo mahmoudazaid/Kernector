@@ -1396,6 +1396,12 @@ a.kern-btn {
   gap: var(--kern-space-3);
 }
 
+.kern-dialog.kern-picker-dialog.kern-drive-picker {
+  width: min(calc(100vw - 2rem), 64rem);
+  height: min(88vh, 46rem);
+  max-height: min(88vh, 46rem);
+}
+
 .kern-picker-head {
   display: grid;
   gap: var(--kern-space-3);
@@ -1435,10 +1441,113 @@ a.kern-btn {
   min-width: 0;
 }
 
+.kern-drive-picker-body {
+  display: grid;
+  grid-template-columns: 11.5rem minmax(0, 1fr);
+  gap: var(--kern-space-3);
+  flex: 1;
+  min-height: 0;
+}
+
+.kern-drive-picker-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--kern-line) 85%, transparent);
+  border-radius: var(--kern-radius);
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+  min-height: 0;
+  overflow: auto;
+}
+
+.kern-drive-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--kern-radius-pill);
+  background: transparent;
+  color: var(--kern-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--kern-duration) var(--kern-ease),
+    border-color var(--kern-duration) var(--kern-ease),
+    box-shadow var(--kern-duration-emphasis) var(--kern-ease-out);
+}
+
+.kern-drive-rail-item:hover,
+.kern-drive-rail-item:focus-visible {
+  border-color: color-mix(in srgb, var(--kern-line) 80%, transparent);
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+}
+
+.kern-drive-rail-item:focus-visible {
+  outline: 2px solid var(--kern-focus);
+  outline-offset: 2px;
+}
+
+.kern-drive-rail-item.is-active {
+  border-color: color-mix(in srgb, var(--kern-accent) 22%, transparent);
+  background:
+    var(--kern-control-sheen),
+    var(--kern-accent-soft);
+  box-shadow: var(--kern-control-emboss);
+  font-weight: 500;
+}
+
+.kern-drive-picker-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kern-space-2);
+  min-width: 0;
+  min-height: 0;
+}
+
+.kern-drive-picker-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-space-3);
+  flex-shrink: 0;
+}
+
 .kern-picker-crumbs {
   color: var(--kern-muted);
   font-size: var(--kern-text-sm);
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+}
+
+.kern-picker-crumb-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kern-picker-crumb-sep {
+  color: var(--kern-muted);
+  opacity: 0.7;
+}
+
+.kern-picker-crumbs strong {
+  color: var(--kern-ink);
+  font-weight: 600;
 }
 
 .kern-picker-crumb {
@@ -1452,6 +1561,19 @@ a.kern-btn {
   text-underline-offset: 2px;
 }
 
+.kern-drive-item.is-creating {
+  background: color-mix(in srgb, var(--kern-accent) 10%, var(--kern-surface));
+  margin: 0;
+}
+
+.kern-drive-rename-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
 .kern-picker-list {
   display: grid;
   align-content: start;
@@ -1461,8 +1583,9 @@ a.kern-btn {
   overflow: auto;
   padding: 6px;
   border: 1px solid color-mix(in srgb, var(--kern-line) 85%, transparent);
-  border-radius: 16px;
+  border-radius: var(--kern-radius);
   background: var(--kern-surface-2);
+  box-shadow: inset 0 1px 1px var(--kern-control-highlight);
 }
 
 .kern-picker-list.is-loading {
@@ -1474,6 +1597,18 @@ a.kern-btn {
 .kern-picker-loading {
   display: grid;
   place-items: center;
+}
+
+.kern-drive-empty {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 16px 12px;
+  color: var(--kern-muted);
+}
+
+.kern-drive-empty p {
+  margin: 0;
 }
 
 .kern-drive-item {
@@ -1516,6 +1651,62 @@ a.kern-btn {
   flex: 1;
   min-width: 0;
   cursor: pointer;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.kern-drive-item-select input[type="radio"],
+.kern-drive-item-select input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid color-mix(in srgb, var(--kern-muted) 55%, var(--kern-line));
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: inset 0 1px 1px var(--kern-control-highlight);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.kern-drive-item-select input[type="radio"] {
+  border-radius: 50%;
+}
+
+.kern-drive-item-select input[type="checkbox"] {
+  border-radius: 5px;
+}
+
+.kern-drive-item-select input[type="radio"]:checked {
+  border-color: var(--kern-accent);
+  background:
+    radial-gradient(
+      circle at center,
+      var(--kern-accent) 0 38%,
+      transparent 42%
+    ),
+    var(--kern-control-sheen),
+    var(--kern-surface);
+}
+
+.kern-drive-item-select input[type="checkbox"]:checked {
+  border-color: var(--kern-accent);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2 6.4 11l6.1-6.6' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 12px 12px no-repeat,
+    var(--kern-control-sheen-fill),
+    var(--kern-accent);
+  box-shadow: var(--kern-control-emboss-press);
+}
+
+.kern-drive-item-select input:focus-visible {
+  outline: 2px solid var(--kern-focus);
+  outline-offset: 2px;
 }
 
 .kern-drive-item-copy {
@@ -1534,6 +1725,18 @@ a.kern-btn {
   font-size: var(--kern-text-sm);
 }
 
+.kern-drive-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kern-drive-open svg {
+  width: 14px;
+  height: 14px;
+}
+
 .kern-picker-foot {
   display: flex;
   justify-content: space-between;
@@ -1541,6 +1744,26 @@ a.kern-btn {
   gap: var(--kern-space-3);
   flex-wrap: wrap;
   flex-shrink: 0;
+}
+
+@media (max-width: 680px) {
+  .kern-drive-picker-body {
+    grid-template-columns: 1fr;
+  }
+
+  .kern-drive-picker-rail {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .kern-drive-rail-item {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .kern-drive-open-label {
+    display: none;
+  }
 }
 
 .kern-dialog.kern-github-sources-dialog {
