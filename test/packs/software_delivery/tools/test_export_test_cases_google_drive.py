@@ -210,14 +210,13 @@ def test_oversized_render_output_fails_before_upload() -> None:
     assert uploader.calls == []
 
 
-def test_uploader_auth_error_maps_to_tool_failure() -> None:
+def test_uploader_auth_error_propagates() -> None:
     uploader = _FakeUploader()
     uploader.error = ConnectorAuthError("token ya29.secret")
     tool, _ = _tool(uploader=uploader)
-    with pytest.raises(ToolFailureError, match="authorization") as raised:
+    with pytest.raises(ConnectorAuthError, match="ya29") as raised:
         tool.run(_valid_arguments())
-    assert "ya29" not in str(raised.value)
-    assert isinstance(raised.value.__cause__, ConnectorAuthError)
+    assert raised.value is uploader.error
 
 
 def test_uploader_generic_error_maps_to_tool_failure() -> None:

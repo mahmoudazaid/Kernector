@@ -502,6 +502,17 @@ class TestCandidateResponse(BaseModel):
     origin: str
 
 
+class CoverageGapResponse(BaseModel):
+    """Typed coverage gap where evidence does not support a category.
+
+    Kept on ``/api/v1`` as an empty list for backward compatibility after the
+    workspace stopped emitting gaps; drop in ``/api/v2``.
+    """
+
+    category: str
+    detail: str
+
+
 class TestCoverageDraftResponse(BaseModel):
     """Workspace-scoped test-design draft."""
 
@@ -512,6 +523,7 @@ class TestCoverageDraftResponse(BaseModel):
     ticket_identifier: str
     status: str
     candidates: list[TestCandidateResponse]
+    coverage_gaps: list[CoverageGapResponse]
     version: int
     selected_candidate_ids: list[str]
 
@@ -601,6 +613,7 @@ def test_coverage_draft_response(view: object) -> TestCoverageDraftResponse:
             )
             for item in view.candidates  # type: ignore[attr-defined]
         ],
+        coverage_gaps=[],
         version=view.version,  # type: ignore[attr-defined]
         selected_candidate_ids=list(view.selected_candidate_ids),  # type: ignore[attr-defined]
     )

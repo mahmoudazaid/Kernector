@@ -150,26 +150,20 @@ class GoogleDriveSettings:
 
 @dataclass(frozen=True, slots=True)
 class GoogleDriveExportSettings:
-    """Hub OAuth outbound export limits (destination folder is chosen in UI).
+    """Hub OAuth outbound export destination (folder chosen in UI).
 
     Optional ``folder_id`` remains loadable for backward compatibility but is
     unused by registration; it is never included in ``__repr__`` / logs.
 
     Args:
         folder_id (str | None): Deprecated unused destination; prefer UI picker.
-        max_artifact_bytes (int): Soft cap mirrored for composition wiring.
     """
 
     folder_id: str | None = None
-    max_artifact_bytes: int = 1_048_576
 
     def __repr__(self) -> str:
         configured = self.folder_id is not None
-        return (
-            "GoogleDriveExportSettings("
-            f"folder_id_configured={configured}, "
-            f"max_artifact_bytes={self.max_artifact_bytes})"
-        )
+        return f"GoogleDriveExportSettings(folder_id_configured={configured})"
 
     @property
     def is_complete(self) -> bool:
@@ -711,14 +705,8 @@ def _load_google_drive_export_settings() -> GoogleDriveExportSettings:
             raise ValueError(
                 str(exc).replace("GOOGLE_DRIVE_FOLDER_ID", "GOOGLE_DRIVE_EXPORT_FOLDER_ID")
             ) from exc
-    max_bytes = _env_int("GOOGLE_DRIVE_EXPORT_MAX_BYTES", str(1_048_576))
-    if max_bytes <= 0:
-        raise ValueError(
-            f"GOOGLE_DRIVE_EXPORT_MAX_BYTES must be > 0, got {max_bytes}"
-        )
     return GoogleDriveExportSettings(
         folder_id=folder_id,
-        max_artifact_bytes=max_bytes,
     )
 
 

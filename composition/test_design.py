@@ -12,6 +12,7 @@ from typing import Literal
 from application.errors import (
     GitHubNotConnectedError,
     GitHubReauthorizationRequiredError,
+    GoogleDriveNotConnectedError,
     InsufficientEvidenceError,
 )
 from composition.software_delivery_tools import software_delivery_tools_enabled
@@ -462,10 +463,21 @@ class TestDesignFacade:
         import json
 
         from application.contracts import InvokeToolRequest
-        from application.errors import ApplicationValidationError
+        from application.errors import (
+            ApplicationValidationError,
+            GoogleDriveReauthorizationRequiredError,
+        )
         from composition.container import build_invoke_tool
-        from domain.errors import ToolArgumentValidationError, ToolFailureError
+        from dataclasses import replace
+        from domain.errors import (
+            ConnectorAuthError,
+            ToolArgumentValidationError,
+            ToolFailureError,
+        )
         from infrastructure.connectors.google_drive.folder import is_drive_folder_id
+        from infrastructure.connectors.google_drive.oauth import (
+            GoogleOAuthConnectionStore,
+        )
         from packs.software_delivery.tools.export_test_cases_google_drive import (
             TOOL_NAME,
         )
@@ -508,6 +520,22 @@ class TestDesignFacade:
         except ToolArgumentValidationError as error:
             raise TestDesignValidationError(
                 _TEST_DESIGN_VALIDATION_DETAIL
+            ) from error
+        except ConnectorAuthError as error:
+            tokens_store = GoogleOAuthConnectionStore(
+                self._settings.google_oauth.token_path
+            )
+            if tokens_store.load() is None:
+                raise GoogleDriveNotConnectedError(
+                    "Google Drive is not connected"
+                ) from error
+            tokens_store.mutate(
+                lambda current: None
+                if current is None
+                else replace(current, reauthorization_required=True)
+            )
+            raise GoogleDriveReauthorizationRequiredError(
+                "Google Drive authorization was revoked"
             ) from error
         except ToolFailureError:
             raise

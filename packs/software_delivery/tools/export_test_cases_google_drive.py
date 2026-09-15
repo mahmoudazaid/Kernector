@@ -36,7 +36,6 @@ _ALLOWED_ROOT_KEYS = frozenset(
 _ALLOWED_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_ROOT_KEYS))
 _MARKDOWN_MEDIA_TYPE = "text/markdown"
 _MSG_RENDER_FAILED = "Markdown rendering failed."
-_MSG_UPLOAD_AUTH = "Google Drive authorization is required before export."
 _MSG_UPLOAD_UNAVAILABLE = "Google Drive is temporarily unavailable."
 _MSG_UPLOAD_FAILED = "Google Drive export failed."
 _UNSAFE_FILE_CHARS = frozenset('<>:"|?*')
@@ -72,6 +71,7 @@ class ExportTestCasesGoogleDriveTool:
 
         Raises:
             GoogleDriveExportValidationError: Invalid or incomplete arguments.
+            ConnectorAuthError: Propagated so composition can surface reauth.
             ToolFailureError: Render or upload failed after valid arguments.
         """
         document_title, titles, file_name, folder_id = _parse_request(arguments)
@@ -95,8 +95,8 @@ class ExportTestCasesGoogleDriveTool:
             receipt = self._uploader.upload(artifact, parent_id=folder_id)
         except ToolFailureError:
             raise
-        except ConnectorAuthError as exc:
-            raise ToolFailureError(_MSG_UPLOAD_AUTH) from exc
+        except ConnectorAuthError:
+            raise
         except ConnectorUnavailableError as exc:
             raise ToolFailureError(_MSG_UPLOAD_UNAVAILABLE) from exc
         except ConnectorError as exc:

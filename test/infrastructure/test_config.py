@@ -36,7 +36,6 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_EXPORT_FOLDER_ID", raising=False)
-    monkeypatch.delenv("GOOGLE_DRIVE_EXPORT_MAX_BYTES", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)

@@ -412,6 +412,22 @@
         "title": "ConnectorSyncOutcomeResponse",
         "type": "object"
       },
+      "CoverageGapResponse": {
+        "description": "Typed coverage gap where evidence does not support a category.\n\nKept on ``/api/v1`` as an empty list for backward compatibility after the\nworkspace stopped emitting gaps; drop in ``/api/v2``.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": ["category", "detail"],
+        "title": "CoverageGapResponse",
+        "type": "object"
+      },
       "CreateTestDesignDraftRequest": {
         "description": "Wire body for ``POST /api/v1/test-design/drafts``.",
         "properties": {
@@ -2053,6 +2069,13 @@
             "title": "Conversation Id",
             "type": "string"
           },
+          "coverage_gaps": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageGapResponse"
+            },
+            "title": "Coverage Gaps",
+            "type": "array"
+          },
           "draft_id": {
             "title": "Draft Id",
             "type": "string"
@@ -2092,6 +2115,7 @@
           "ticket_identifier",
           "status",
           "candidates",
+          "coverage_gaps",
           "version",
           "selected_candidate_ids"
         ],

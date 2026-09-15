@@ -8,6 +8,7 @@ import { Loader } from "@/components/ui/Loader";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
+  confirmTestDesignDraft,
   exportTestDesignGoogleDrive,
   getTestDesignDraft,
   patchTestDesignDraft,
@@ -375,6 +376,41 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     });
   }
 
+  async function confirmDraft() {
+    if (!draft || dirty || selectedCount === 0) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSaveNote(null);
+    try {
+      const confirmed = await confirmTestDesignDraft({
+        baseUrl: apiBaseUrl,
+        draftId: draft.draft_id,
+        body: { expected_version: draft.version },
+      });
+      recordTestDesignCoverageConfirmed({
+        conversationId: confirmed.conversation_id,
+        draftId: confirmed.draft_id,
+        ticketIdentifier: confirmed.ticket_identifier,
+        selectedCount: confirmed.selected_candidate_ids.length,
+      });
+      setDraft(confirmed);
+      setDirty(false);
+      setSaveNote("Draft confirmed.");
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        setError(
+          "This draft changed elsewhere. Your unsaved edits are still on screen — reload to discard them, or refresh before confirming.",
+        );
+      } else {
+        setError("Could not confirm draft.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function exportSelectedFolder(folderId: string, folderName: string) {
     if (!draft || selectedCount === 0) {
       return;
@@ -388,18 +424,15 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         draftId: draft.draft_id,
         body: { folder_id: folderId },
       });
-      recordTestDesignCoverageConfirmed({
-        conversationId: draft.conversation_id,
-        draftId: draft.draft_id,
-        ticketIdentifier: draft.ticket_identifier,
-        selectedCount: draft.selected_candidate_ids.length,
-      });
       setExportOpen(false);
       setSaveNote(
         `Exported ${receipt.file_name} to ${folderName}.`,
       );
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 405) {
+      if (
+        caught instanceof ApiError &&
+        caught.code === "test_design_unavailable"
+      ) {
         setError("Google Drive export is unavailable.");
       } else if (
         caught instanceof ApiError &&
@@ -417,6 +450,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   }
 
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
+  const canConfirm = selectedCount > 0 && !busy && !dirty;
   const canExport = selectedCount > 0 && !busy;
   const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
 
@@ -611,6 +645,13 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
             onClick={() => void saveDraft()}
           >
             Save draft
+          </Button>
+          <Button
+            type="button"
+            disabled={!canConfirm}
+            onClick={() => void confirmDraft()}
+          >
+            Confirm
           </Button>
           <Button
             type="button"

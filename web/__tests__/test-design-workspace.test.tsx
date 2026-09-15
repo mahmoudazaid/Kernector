@@ -5,6 +5,7 @@ import { TestDesignWorkspace } from "@/components/test-design/TestDesignWorkspac
 import { ApiError } from "@/lib/api/errors";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
+  confirmTestDesignDraft,
   exportTestDesignGoogleDrive,
   getTestDesignDraft,
   patchTestDesignDraft,
@@ -20,6 +21,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/api/test-design", () => ({
+  confirmTestDesignDraft: vi.fn(),
   exportTestDesignGoogleDrive: vi.fn(),
   getTestDesignDraft: vi.fn(),
   patchTestDesignDraft: vi.fn(),
@@ -134,6 +136,7 @@ function draft(
       }),
     ],
     selected_candidate_ids: ["cand-positive", "manual-1"],
+    coverage_gaps: [],
     source_reference: { source_id: "issue-293", source_type: "github_issue" },
     version: 3,
     ...overrides,
@@ -155,9 +158,13 @@ describe("TestDesignWorkspace", () => {
     runtimeCatalogState.reload = reload;
     vi.mocked(getTestDesignDraft).mockReset();
     vi.mocked(patchTestDesignDraft).mockReset();
+    vi.mocked(confirmTestDesignDraft).mockReset();
     vi.mocked(exportTestDesignGoogleDrive).mockReset();
     vi.mocked(getTestDesignDraft).mockResolvedValue(draft());
     vi.mocked(patchTestDesignDraft).mockResolvedValue(draft({ version: 4 }));
+    vi.mocked(confirmTestDesignDraft).mockResolvedValue(
+      draft({ status: "ready", version: 4 }),
+    );
     vi.mocked(exportTestDesignGoogleDrive).mockResolvedValue({
       file_id: "drive-1",
       file_name: "mahmoudazaid-Kernector-293.md",
@@ -312,7 +319,7 @@ describe("TestDesignWorkspace", () => {
     expect(patchTestDesignDraft).toHaveBeenCalled();
   });
 
-  it("records coverage confirmation into the originating conversation on export", async () => {
+  it("records coverage confirmation into the originating conversation on confirm", async () => {
     const user = userEvent.setup();
     const {
       createConversation,
@@ -347,14 +354,58 @@ describe("TestDesignWorkspace", () => {
     expect(created.id).toBeTruthy();
 
     await renderWorkspace();
-    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
-    await user.click(screen.getByRole("button", { name: /^export$/i }));
+    await user.click(screen.getByRole("button", { name: /^confirm$/i }));
 
     await waitFor(() => {
       expect(getConversation("conv-1")?.messages[0]?.content).toBe(
         "Coverage confirmed for mahmoudazaid/Kernector#293: 2 tests selected.",
       );
     });
+    expect(confirmTestDesignDraft).toHaveBeenCalled();
+  });
+
+  it("exports without rewriting the conversation card", async () => {
+    const user = userEvent.setup();
+    const {
+      createConversation,
+      getConversation,
+      resetConversationsSnapshotForTests,
+      CONVERSATIONS_STORAGE_KEY,
+    } = await import("@/lib/session/conversations");
+    localStorage.clear();
+    resetConversationsSnapshotForTests();
+    createConversation({
+      title: "Design",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Your Test Design draft is ready.",
+          action: {
+            kind: "open_workflow",
+            workflow_id: "software-delivery.test-design",
+            label: "Open Test Design",
+            draft_id: "draft-1",
+          },
+        },
+      ],
+      draft: "",
+    });
+    const raw = JSON.parse(localStorage.getItem(CONVERSATIONS_STORAGE_KEY)!);
+    raw.conversations[0].id = "conv-1";
+    localStorage.setItem(CONVERSATIONS_STORAGE_KEY, JSON.stringify(raw));
+    resetConversationsSnapshotForTests();
+
+    await renderWorkspace();
+    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
+    await user.click(screen.getByRole("button", { name: /^export$/i }));
+
+    await waitFor(() => {
+      expect(exportTestDesignGoogleDrive).toHaveBeenCalled();
+    });
+    expect(getConversation("conv-1")?.messages[0]?.content).toBe(
+      "Your Test Design draft is ready.",
+    );
   });
 
   it("disables export without a selection, and auto-saves before opening the picker", async () => {
