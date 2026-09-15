@@ -26,6 +26,17 @@ def test_markdown_section_rejects_blank_bullet_item(blank: str) -> None:
         MarkdownSection(heading="Cases", bullet_items=(blank,))
 
 
+@pytest.mark.parametrize("bad", [None, 42, True])
+def test_markdown_section_rejects_non_string_paragraph(bad: object) -> None:
+    with pytest.raises(ApplicationValidationError, match="paragraphs"):
+        MarkdownSection(heading="Notes", paragraphs=(bad,))  # type: ignore[arg-type]
+
+
+def test_markdown_section_allows_blank_paragraph_strings() -> None:
+    section = MarkdownSection(heading="Notes", paragraphs=("", "   "))
+    assert section.paragraphs == ("", "   ")
+
+
 def test_render_markdown_title_only() -> None:
     document = MarkdownDocument(title="Export")
     assert render_markdown(document) == "# Export\n"
@@ -58,9 +69,9 @@ def test_render_markdown_section_paragraphs() -> None:
         "\n"
         "## Notes\n"
         "\n"
-        "First note.\n"
+        "First note\\.\n"
         "\n"
-        "Second note.\n"
+        "Second note\\.\n"
     )
 
 
@@ -172,6 +183,45 @@ def test_render_markdown_escapes_structural_specials() -> None:
         "Has \\_emphasis\\_ and \\\\ slash\n"
         "\n"
         "- Item with \\# hash\n"
+    )
+
+
+def test_render_markdown_escapes_block_leaders_and_html() -> None:
+    document = MarkdownDocument(
+        title="Export",
+        sections=(
+            MarkdownSection(
+                heading="Notes",
+                paragraphs=(
+                    "- fake bullet",
+                    "> fake quote",
+                    "1. fake ordered",
+                    "---",
+                    "| a | b |",
+                    "<script>alert(1)</script>",
+                    "+ plus list",
+                ),
+            ),
+        ),
+    )
+    assert render_markdown(document) == (
+        "# Export\n"
+        "\n"
+        "## Notes\n"
+        "\n"
+        "\\- fake bullet\n"
+        "\n"
+        "\\> fake quote\n"
+        "\n"
+        "1\\. fake ordered\n"
+        "\n"
+        "\\-\\-\\-\n"
+        "\n"
+        "\\| a \\| b \\|\n"
+        "\n"
+        "\\<script\\>alert(1)\\</script\\>\n"
+        "\n"
+        "\\+ plus list\n"
     )
 
 

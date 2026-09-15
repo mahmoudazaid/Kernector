@@ -30,6 +30,15 @@ def _require_text(value: object, field_name: str) -> str:
     return value
 
 
+def _require_string(value: object, field_name: str) -> str:
+    """Reject non-strings; blank strings remain allowed."""
+    if not isinstance(value, str):
+        raise ApplicationValidationError(
+            f"{field_name} must be a string, got {type(value).__name__}"
+        )
+    return value
+
+
 def _require_sequence(value: object, field_name: str) -> Sequence[object]:
     """Reject non-sequence collections (and strings/bytes)."""
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
@@ -53,6 +62,8 @@ class MarkdownSection:
         bullet_items = _require_sequence(self.bullet_items, "bullet_items")
         object.__setattr__(self, "paragraphs", tuple(paragraphs))
         object.__setattr__(self, "bullet_items", tuple(bullet_items))
+        for index, paragraph in enumerate(self.paragraphs):
+            _require_string(paragraph, f"paragraphs[{index}]")
         for index, item in enumerate(self.bullet_items):
             _require_text(item, f"bullet_items[{index}]")
 
@@ -85,7 +96,8 @@ _LINE_BREAKS = str.maketrans(
     }
 )
 
-_MARKDOWN_SPECIALS = frozenset("\\`*_[]#")
+# Inline specials plus block leaders / HTML so field text cannot inject structure.
+_MARKDOWN_SPECIALS = frozenset("\\`*_[]#-+>|.<")
 
 
 def _normalize_text(value: str) -> str:
