@@ -20,6 +20,7 @@ import pytest
 from test.architecture.import_scan import (
     find_forbidden_imports,
     find_forbidden_module_prefixes,
+    find_non_allowed_imports,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -304,6 +305,22 @@ def test_chat_intent_imports_only_domain_and_stdlib() -> None:
     assert not forbidden, (
         f"{module_path.relative_to(REPO_ROOT)} imports {sorted(forbidden)}, "
         "which packs/ may not depend on"
+    )
+
+
+def test_markdown_renderer_imports_only_application_and_stdlib() -> None:
+    """Shared Markdown renderer stays pure: no packs, I/O, or frameworks."""
+    module_path = REPO_ROOT / "application/markdown.py"
+
+    hits = find_non_allowed_imports(
+        module_path,
+        allowed={"__future__", "application", "collections", "dataclasses"},
+        forbidden=LAYER_RULES["application"],
+    )
+
+    assert not hits, (
+        f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}; "
+        "markdown renderer may only use application + stdlib"
     )
 
 

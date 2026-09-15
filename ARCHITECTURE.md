@@ -191,7 +191,11 @@ enabled prompt packs.
 workflows. The first is `packs/software_delivery/`. Its scaffolding
 risk/generate/export tools are retired (#285); `build_tools` returns an empty
 registry and chat intent never matches, so General chat stays on grounded RAG.
-Future tools land under `packs/software_delivery/tools/`. The **Test Design**
+Future tools land under `packs/software_delivery/tools/`. Shared
+`application/markdown.py` (#305) is a reusable deterministic CommonMark
+renderer for typed documents — not an agent-callable Tool, not Drive- or
+pack-specific; later export flows (for example #197) map content into its
+neutral contracts. The **Test Design**
 workflow (#293) is pack-local (not an agent `Tool`): Chat handoff detects Test
 Design intent plus exactly one GitHub Issue reference **before** grounded RAG,
 returns a fixed server answer and `Start Test Design` action with a canonical
