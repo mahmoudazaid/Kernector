@@ -8,12 +8,13 @@ import { Loader } from "@/components/ui/Loader";
 import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
-  confirmTestDesignDraft,
+  exportTestDesignGoogleDrive,
   getTestDesignDraft,
   patchTestDesignDraft,
   type TestCoverageDraftResponse,
 } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
+import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { recordTestDesignCoverageConfirmed } from "@/lib/session/conversations";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
@@ -87,6 +88,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const [busy, setBusy] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     if (!packEnabled) {
@@ -357,7 +359,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     });
   }
 
-  async function confirmDraft() {
+  async function exportSelectedFolder(folderId: string, folderName: string) {
     if (!draft || dirty || selectedCount === 0) {
       return;
     }
@@ -365,28 +367,33 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     setError(null);
     setSaveNote(null);
     try {
-      const confirmed = await confirmTestDesignDraft({
+      const receipt = await exportTestDesignGoogleDrive({
         baseUrl: apiBaseUrl,
         draftId: draft.draft_id,
-        body: { expected_version: draft.version },
+        body: { folder_id: folderId },
       });
       recordTestDesignCoverageConfirmed({
-        conversationId: confirmed.conversation_id,
-        draftId: confirmed.draft_id,
-        ticketIdentifier: confirmed.ticket_identifier,
-        selectedCount: confirmed.selected_candidate_ids.length,
-        coverageGapCount: confirmed.coverage_gaps.length,
+        conversationId: draft.conversation_id,
+        draftId: draft.draft_id,
+        ticketIdentifier: draft.ticket_identifier,
+        selectedCount: draft.selected_candidate_ids.length,
       });
-      setDraft(confirmed);
-      setDirty(false);
-      setSaveNote("Draft confirmed.");
+      setExportOpen(false);
+      setSaveNote(
+        `Exported ${receipt.file_name} to ${folderName}.`,
+      );
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409) {
-        setError(
-          "This draft changed elsewhere. Your unsaved edits are still on screen — reload to discard them, or refresh before confirming.",
-        );
+      if (caught instanceof ApiError && caught.status === 405) {
+        setError("Google Drive export is unavailable.");
+      } else if (
+        caught instanceof ApiError &&
+        caught.code === "google_drive_reauthorization_required"
+      ) {
+        setError("Google Drive authorization was revoked. Connect again.");
+      } else if (caught instanceof ApiError && caught.status === 422) {
+        setError(caught.detail);
       } else {
-        setError("Could not confirm draft.");
+        setError("Could not export to Google Drive.");
       }
     } finally {
       setBusy(false);
@@ -394,7 +401,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   }
 
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
-  const canConfirm = selectedCount > 0 && !busy && !dirty;
+  const canExport = selectedCount > 0 && !busy && !dirty;
   const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
 
   return (
@@ -579,19 +586,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         </div>
       </fieldset>
 
-      {draft.coverage_gaps.length > 0 ? (
-        <section className="kern-settings-fieldset kern-test-design-panel">
-          <h2>Coverage gaps</h2>
-          <ul className="kern-test-design-gaps">
-            {draft.coverage_gaps.map((gap) => (
-              <li key={`${gap.category}-${gap.detail}`}>
-                <strong>{formatCategory(gap.category)}</strong>
-                <span>{gap.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <footer className="kern-test-design-actions">
         <div className="kern-test-design-actions__primary">
@@ -604,10 +598,14 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           </Button>
           <Button
             type="button"
-            disabled={!canConfirm}
-            onClick={() => void confirmDraft()}
+            variant="secondary"
+            disabled={!canExport}
+            onClick={() => {
+              setError(null);
+              setExportOpen(true);
+            }}
           >
-            Confirm
+            Export to Google Drive
           </Button>
         </div>
         <Button
@@ -619,6 +617,30 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           Back to chat
         </Button>
       </footer>
+
+      <GoogleDrivePicker
+        open={exportOpen}
+        apiBaseUrl={apiBaseUrl}
+        initialSelection={{ folders: [], files: [] }}
+        busy={busy}
+        foldersOnly
+        singleSelect
+        title="Export to Google Drive"
+        description="Choose the Drive folder that should receive the Markdown export."
+        confirmLabel="Export"
+        onCancel={() => {
+          if (!busy) {
+            setExportOpen(false);
+          }
+        }}
+        onConfirm={(selection) => {
+          const folder = selection.folders[0];
+          if (!folder) {
+            return;
+          }
+          void exportSelectedFolder(folder.id, folder.name);
+        }}
+      />
     </section>
   );
 }

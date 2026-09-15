@@ -1287,7 +1287,6 @@ describe("ChatPanel", () => {
       ticket_identifier: "mahmoudazaid/Kernector#293",
       status: "coverage_review",
       candidates: [],
-      coverage_gaps: [],
       version: 1,
       selected_candidate_ids: [],
     });

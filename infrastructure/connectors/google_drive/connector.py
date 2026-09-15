@@ -9,22 +9,12 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
-from google.auth.exceptions import (
-    RefreshError,
-    TimeoutError as GoogleAuthTimeoutError,
-    TransportError,
-)
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
-from httplib2 import HttpLib2Error
 
-from domain.errors import (
-    ConnectorAuthError,
-    ConnectorError,
-    ConnectorUnavailableError,
-)
+from domain.errors import ConnectorError
 from domain.knowledge import (
     ConnectorDocument,
     SourceDocument,
@@ -35,6 +25,10 @@ from domain.knowledge import (
 )
 from domain.ports import DocumentExtractor
 from infrastructure.config import GoogleDriveSettings
+from infrastructure.connectors.google_drive.http_errors import (
+    MSG_REQUEST_FAILED as _MSG_REQUEST_FAILED,
+    map_google_error as _map_google_error,
+)
 from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
@@ -50,18 +44,6 @@ _FILE_FIELDS = (
     "capabilities(canDownload)"
 )
 _LIST_FIELDS = f"nextPageToken,files({_FILE_FIELDS})"
-_RATE_LIMIT_REASONS = frozenset(
-    {
-        "rateLimitExceeded",
-        "userRateLimitExceeded",
-        "quotaExceeded",
-        "dailyLimitExceeded",
-        "sharingRateLimitExceeded",
-    }
-)
-_MSG_AUTH = "Google Drive rejected the connector credentials or permissions."
-_MSG_UNAVAILABLE = "Google Drive is temporarily unavailable."
-_MSG_REQUEST_FAILED = "The Google Drive request failed."
 _MSG_UNREADABLE = "A Google Drive file could not be read as text."
 _MSG_TOO_LARGE = "A Google Drive file exceeded the configured size limit."
 _MSG_CONFIG = "Google Drive connector configuration is invalid."
@@ -594,69 +576,3 @@ def _normalize_source(
         ),
         extracted.content,
     )
-
-
-def _map_google_error(error: BaseException) -> ConnectorError:
-    if isinstance(error, RefreshError):
-        return ConnectorAuthError(_MSG_AUTH)
-    if isinstance(error, HttpError):
-        return _map_http_error(error)
-    if isinstance(
-        error,
-        (
-            TimeoutError,
-            ConnectionError,
-            OSError,
-            HttpLib2Error,
-            TransportError,
-            GoogleAuthTimeoutError,
-        ),
-    ):
-        return ConnectorUnavailableError(_MSG_UNAVAILABLE)
-    return ConnectorError(_MSG_REQUEST_FAILED)
-
-
-def _map_http_error(error: HttpError) -> ConnectorError:
-    status = _http_status(error)
-    if status == 401:
-        return ConnectorAuthError(_MSG_AUTH)
-    if status == 403:
-        reasons = _http_reasons(error)
-        if reasons & _RATE_LIMIT_REASONS:
-            return ConnectorUnavailableError(_MSG_UNAVAILABLE)
-        return ConnectorAuthError(_MSG_AUTH)
-    if status in {408, 429} or (status is not None and status >= 500):
-        return ConnectorUnavailableError(_MSG_UNAVAILABLE)
-    return ConnectorError(_MSG_REQUEST_FAILED)
-
-
-def _http_status(error: HttpError) -> int | None:
-    raw = getattr(error.resp, "status", None)
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
-def _http_reasons(error: HttpError) -> set[str]:
-    try:
-        payload = json.loads(error.content.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-        return set()
-    if not isinstance(payload, dict):
-        return set()
-    body = payload.get("error")
-    if not isinstance(body, dict):
-        return set()
-    reasons: set[str] = set()
-    errors = body.get("errors")
-    if isinstance(errors, list):
-        for item in errors:
-            if isinstance(item, Mapping):
-                reason = item.get("reason")
-                if isinstance(reason, str):
-                    reasons.add(reason)
-    reason = body.get("reason")
-    if isinstance(reason, str):
-        reasons.add(reason)
-    return reasons

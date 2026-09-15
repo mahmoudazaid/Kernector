@@ -19,6 +19,11 @@ export type GoogleDrivePickerProps = {
   initialSelection: GoogleDriveSelectionResponse;
   selectionLoading?: boolean;
   busy?: boolean;
+  foldersOnly?: boolean;
+  singleSelect?: boolean;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
   listItems?: (options: ListGoogleDriveItemsOptions) => Promise<{
     items: GoogleDriveBrowseItemResponse[];
     next_page_token?: string | null;
@@ -173,6 +178,11 @@ export function GoogleDrivePicker({
   initialSelection,
   selectionLoading = false,
   busy = false,
+  foldersOnly = false,
+  singleSelect = false,
+  title = "Choose from Google Drive",
+  description = "Select the files or folders Kernector should keep synchronized.",
+  confirmLabel = "Save",
   listItems = listGoogleDriveItems,
   onConfirm,
   onCancel,
@@ -256,13 +266,15 @@ export function GoogleDrivePicker({
           query: query || undefined,
           signal,
         }),
-        listItems({
-          baseUrl: apiBaseUrl,
-          parentId,
-          kind: "files",
-          query: query || undefined,
-          signal,
-        }),
+        foldersOnly
+          ? Promise.resolve({ items: [], next_page_token: null })
+          : listItems({
+              baseUrl: apiBaseUrl,
+              parentId,
+              kind: "files",
+              query: query || undefined,
+              signal,
+            }),
       ]);
       if (seq !== loadSeqRef.current || signal?.aborted) {
         return;
@@ -320,38 +332,66 @@ export function GoogleDrivePicker({
   }, [open, parentId, submittedQuery]);
 
   const countLabel =
-    selected.size === 0 ? "No items selected" : `${selected.size} selected`;
-  const atListCap =
-    countKind(selected, "folder") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX ||
-    countKind(selected, "file") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX;
+    selected.size === 0
+      ? foldersOnly
+        ? "No folder selected"
+        : "No items selected"
+      : `${selected.size} selected`;
+  const atListCap = singleSelect
+    ? false
+    : countKind(selected, "folder") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX ||
+      countKind(selected, "file") >= GOOGLE_DRIVE_SELECTION_ITEM_MAX;
   const selectionUnchanged = sameSelection(selected, initialSelection);
+  const confirmDisabled =
+    busy ||
+    selectionLoading ||
+    (singleSelect
+      ? countKind(selected, "folder") !== 1
+      : selectionUnchanged);
 
   function toggle(item: GoogleDriveBrowseItemResponse) {
+    if (foldersOnly && item.kind !== "folder") {
+      return;
+    }
     const kind = item.kind === "folder" ? "folder" : "file";
     dirtyRef.current = true;
     setSelected((current) => {
       const next = new Map(current);
       if (next.has(item.id)) {
         next.delete(item.id);
-      } else if (countKind(next, kind) >= GOOGLE_DRIVE_SELECTION_ITEM_MAX) {
-        return current;
-      } else {
-        next.set(item.id, { id: item.id, name: item.name, kind });
+        return next;
       }
+      if (singleSelect) {
+        next.clear();
+        next.set(item.id, { id: item.id, name: item.name, kind });
+        return next;
+      }
+      if (countKind(next, kind) >= GOOGLE_DRIVE_SELECTION_ITEM_MAX) {
+        return current;
+      }
+      next.set(item.id, { id: item.id, name: item.name, kind });
       return next;
     });
   }
 
   const listLoading = selectionLoading || view.kind === "loading";
-  const rows = view.kind === "ready" ? mixedRows(view.folders, view.files) : [];
+  const rows =
+    view.kind === "ready"
+      ? foldersOnly
+        ? view.folders
+        : mixedRows(view.folders, view.files)
+      : [];
   const nextPageKind =
     view.kind === "ready" && view.nextFolderToken
       ? "folders"
-      : view.kind === "ready" && view.nextFileToken
+      : view.kind === "ready" && view.nextFileToken && !foldersOnly
         ? "files"
         : null;
   const nextPageToken =
-    view.kind === "ready" ? (view.nextFolderToken ?? view.nextFileToken) : null;
+    view.kind === "ready"
+      ? (view.nextFolderToken ??
+        (foldersOnly ? null : view.nextFileToken))
+      : null;
 
   return (
     <DialogFrame
@@ -366,10 +406,10 @@ export function GoogleDrivePicker({
         <div className="kern-picker-title-row">
           <div>
             <h2 id={titleId} className="kern-dialog-title">
-              Choose from Google Drive
+              {title}
             </h2>
             <p id={descriptionId} className="kern-dialog-body">
-              Select the files or folders Kernector should keep synchronized.
+              {description}
             </p>
           </div>
           <Button
@@ -465,7 +505,9 @@ export function GoogleDrivePicker({
           <p role="status">
             {query
               ? "No matching Drive items."
-              : "This folder has no items you can select."}
+              : foldersOnly
+                ? "This folder has no subfolders."
+                : "This folder has no items you can select."}
           </p>
         ) : null}
         {view.kind === "ready" && !selectionLoading
@@ -543,10 +585,10 @@ export function GoogleDrivePicker({
             Cancel
           </Button>
           <Button
-            disabled={busy || selectionLoading || selectionUnchanged}
+            disabled={confirmDisabled}
             onClick={() => onConfirm(toSelection(selected))}
           >
-            Save
+            {confirmLabel}
           </Button>
         </div>
       </div>

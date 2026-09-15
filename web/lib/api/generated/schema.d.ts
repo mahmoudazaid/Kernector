@@ -731,16 +731,6 @@ export interface components {
       status: "ingested" | "updated" | "skipped" | "failed" | "removed";
     };
     /**
-     * CoverageGapResponse
-     * @description Typed coverage gap where evidence does not support a category.
-     */
-    CoverageGapResponse: {
-      /** Category */
-      category: string;
-      /** Detail */
-      detail: string;
-    };
-    /**
      * CreateTestDesignDraftRequest
      * @description Wire body for ``POST /api/v1/test-design/drafts``.
      */
@@ -1434,8 +1424,6 @@ export interface components {
       candidates: components["schemas"]["TestCandidateResponse"][];
       /** Conversation Id */
       conversation_id: string;
-      /** Coverage Gaps */
-      coverage_gaps: components["schemas"]["CoverageGapResponse"][];
       /** Draft Id */
       draft_id: string;
       /** Selected Candidate Ids */

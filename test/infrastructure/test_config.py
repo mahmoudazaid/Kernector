@@ -35,6 +35,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.delenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_FOLDER_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_EXPORT_FOLDER_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_EXPORT_MAX_BYTES", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
@@ -532,6 +534,29 @@ def test_google_drive_folder_id_stores_drive_url_for_connector_build(
     raw = "https://drive.google.com/drive/folders/abc123"
     env.setenv("GOOGLE_DRIVE_FOLDER_ID", raw)
     assert load_settings().google_drive.folder_id == raw
+
+
+def test_google_drive_export_defaults_absent(env: pytest.MonkeyPatch) -> None:
+    export = load_settings().google_drive_export
+    assert export.folder_id is None
+    assert export.is_complete is False
+    assert "folder_id=" not in repr(export)
+
+
+def test_google_drive_export_folder_id_is_validated(env: pytest.MonkeyPatch) -> None:
+    env.setenv("GOOGLE_DRIVE_EXPORT_FOLDER_ID", "exportFolder_123")
+    export = load_settings().google_drive_export
+    assert export.folder_id == "exportFolder_123"
+    assert export.is_complete is True
+    assert "exportFolder_123" not in repr(export)
+
+
+def test_google_drive_export_rejects_malformed_folder_id(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("GOOGLE_DRIVE_EXPORT_FOLDER_ID", "not a valid id!")
+    with pytest.raises(ValueError, match="GOOGLE_DRIVE_EXPORT_FOLDER_ID"):
+        load_settings()
 
 
 def test_load_settings_does_not_read_credential_json(

@@ -79,3 +79,30 @@ export async function confirmTestDesignDraft(
     timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
+
+export type ExportTestDesignGoogleDriveRequest = {
+  folder_id: string;
+  file_name?: string | null;
+};
+
+export type ExportTestDesignGoogleDriveResponse = {
+  file_id: string;
+  file_name: string;
+};
+
+export async function exportTestDesignGoogleDrive(
+  options: BaseOptions & {
+    draftId: string;
+    body: ExportTestDesignGoogleDriveRequest;
+  },
+): Promise<ExportTestDesignGoogleDriveResponse> {
+  const request = options.request ?? apiRequest;
+  return request<ExportTestDesignGoogleDriveResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/test-design/drafts/${encodeURIComponent(options.draftId)}/export/google-drive`,
+    method: "POST",
+    body: options.body,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}

@@ -3436,30 +3436,6 @@ a.kern-btn {
   margin-top: var(--kern-space-3);
 }
 
-.kern-test-design-gaps {
-  display: grid;
-  gap: var(--kern-space-2);
-  margin: var(--kern-space-3) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.kern-test-design-gaps > li {
-  display: grid;
-  gap: var(--kern-space-1);
-  padding: var(--kern-space-3);
-  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
-  border-radius: 16px;
-  background:
-    var(--kern-control-sheen),
-    var(--kern-surface);
-  box-shadow: var(--kern-control-emboss);
-}
-
-.kern-test-design-gaps strong {
-  text-transform: capitalize;
-}
-
 .kern-test-design-scenarios > li {
   display: grid;
   gap: var(--kern-space-2);

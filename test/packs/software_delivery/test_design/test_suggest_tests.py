@@ -177,20 +177,17 @@ def test_grounded_evidence_persists_coverage_review_draft() -> None:
     assert draft.candidates[0].category == "positive"
     assert draft.candidates[0].origin == "suggested"
     assert draft.candidates[0].selected is False
-    assert draft.coverage_gaps == ()
     assert repo.get("draft-1") == draft
     assert len(chat.calls) == 1
     assert chat.calls[0][2]["max_tokens"] == 4096
 
 
-def test_model_receives_instruction_to_return_coverage_gaps() -> None:
-    chat = _FakeChat(content=_model_payload(coverage_gaps=[]))
+def test_model_prompt_does_not_request_coverage_gaps() -> None:
+    chat = _FakeChat(content=_model_payload())
     use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
     use_case.execute(_request(evidence=(_evidence(),)))
-
+    assert '"coverage_gaps"' not in chat.calls[0][0]
     assert '"candidates"' in chat.calls[0][0]
-    assert '"coverage_gaps"' in chat.calls[0][0]
 
 
 def test_accepts_fenced_model_json() -> None:
@@ -236,7 +233,6 @@ def test_rejects_model_citations_outside_multi_source_evidence_bundle() -> None:
                 ],
             }
         ],
-        coverage_gaps=[],
     )
     chat = _FakeChat(content=payload)
     repo = _MemoryRepo()
@@ -271,7 +267,6 @@ def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
                 ],
             }
         ],
-        coverage_gaps=[],
     )
     chat = _FakeChat(content=payload)
     repo = _MemoryRepo()
@@ -295,40 +290,7 @@ def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
     assert draft.candidates[0].evidence_references[0].source_type == "github"
 
 
-def test_persists_model_coverage_gaps() -> None:
-    payload = _model_payload(
-        coverage_gaps=[
-            {
-                "category": "negative",
-                "detail": "No ACL acceptance criteria found.",
-            }
-        ]
-    )
-    chat = _FakeChat(content=payload)
-    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
 
-    draft = use_case.execute(_request(evidence=(_evidence(),)))
-
-    assert len(draft.candidates) == 1
-    assert len(draft.coverage_gaps) == 1
-    assert draft.coverage_gaps[0].category == "negative"
-    assert draft.coverage_gaps[0].detail == "No ACL acceptance criteria found."
-
-
-def test_rejects_invalid_model_coverage_gap() -> None:
-    payload = _model_payload(
-        coverage_gaps=[
-            {
-                "category": "security",
-                "detail": "No ACL acceptance criteria found.",
-            }
-        ]
-    )
-    chat = _FakeChat(content=payload)
-    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
-    with pytest.raises(ToolFailureError, match="coverage_gaps"):
-        use_case.execute(_request(evidence=(_evidence(),)))
 
 
 def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:

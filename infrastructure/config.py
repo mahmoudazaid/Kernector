@@ -149,6 +149,34 @@ class GoogleDriveSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class GoogleDriveExportSettings:
+    """Hub OAuth outbound export limits (destination folder is chosen in UI).
+
+    Optional ``folder_id`` remains loadable for backward compatibility but is
+    unused by registration; it is never included in ``__repr__`` / logs.
+
+    Args:
+        folder_id (str | None): Deprecated unused destination; prefer UI picker.
+        max_artifact_bytes (int): Soft cap mirrored for composition wiring.
+    """
+
+    folder_id: str | None = None
+    max_artifact_bytes: int = 1_048_576
+
+    def __repr__(self) -> str:
+        configured = self.folder_id is not None
+        return (
+            "GoogleDriveExportSettings("
+            f"folder_id_configured={configured}, "
+            f"max_artifact_bytes={self.max_artifact_bytes})"
+        )
+
+    @property
+    def is_complete(self) -> bool:
+        return isinstance(self.folder_id, str) and bool(self.folder_id.strip())
+
+
+@dataclass(frozen=True, slots=True)
 class GitHubSettings:
     """GitHub connector configuration. Tokens are never persisted by settings."""
 
@@ -354,6 +382,9 @@ class Settings:
     domain_tools: DomainToolSettings
     http: HttpAdapterSettings
     google_drive: GoogleDriveSettings = field(default_factory=GoogleDriveSettings)
+    google_drive_export: GoogleDriveExportSettings = field(
+        default_factory=GoogleDriveExportSettings
+    )
     github: GitHubSettings = field(default_factory=GitHubSettings)
     rag_judge: RagJudgeSettings = field(default_factory=RagJudgeSettings)
     google_oauth: GoogleOAuthSettings = field(default_factory=GoogleOAuthSettings)
@@ -399,6 +430,7 @@ def load_settings() -> Settings:
         domain_tools=_load_domain_tool_settings(),
         http=_load_http_adapter_settings(),
         google_drive=_load_google_drive_settings(),
+        google_drive_export=_load_google_drive_export_settings(),
         github=_load_github_settings(),
         rag_judge=_load_rag_judge_settings(),
         google_oauth=_load_google_oauth_settings(),
@@ -663,6 +695,30 @@ def _load_google_drive_settings() -> GoogleDriveSettings:
         service_account_file=service_account_file,
         folder_id=folder_id,
         page_size=page_size,
+    )
+
+
+def _load_google_drive_export_settings() -> GoogleDriveExportSettings:
+    """Parse Hub OAuth export destination; validate ID charset when present."""
+    from infrastructure.connectors.google_drive.folder import require_drive_folder_id
+
+    raw = _optional_env("GOOGLE_DRIVE_EXPORT_FOLDER_ID")
+    folder_id = None
+    if raw is not None:
+        try:
+            folder_id = require_drive_folder_id(raw)
+        except ValueError as exc:
+            raise ValueError(
+                str(exc).replace("GOOGLE_DRIVE_FOLDER_ID", "GOOGLE_DRIVE_EXPORT_FOLDER_ID")
+            ) from exc
+    max_bytes = _env_int("GOOGLE_DRIVE_EXPORT_MAX_BYTES", str(1_048_576))
+    if max_bytes <= 0:
+        raise ValueError(
+            f"GOOGLE_DRIVE_EXPORT_MAX_BYTES must be > 0, got {max_bytes}"
+        )
+    return GoogleDriveExportSettings(
+        folder_id=folder_id,
+        max_artifact_bytes=max_bytes,
     )
 
 

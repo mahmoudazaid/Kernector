@@ -9,32 +9,21 @@ from typing import Any
 from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.models import (
-    COVERAGE_CATEGORIES,
     COVERAGE_CATEGORIES_DISPLAY,
     DRAFT_STATUSES,
     DRAFT_STATUSES_DISPLAY,
-    CoverageGap,
     TestCandidate,
     TestCoverageDraft,
+    coerce_coverage_category,
 )
 
 DRAFT_SCHEMA_VERSION = 1
 
-# Older drafts used a wider category allowlist; map on decode so GET stays loadable.
-_LEGACY_CATEGORY_MAP: dict[str, str] = {
-    "happy_path": "positive",
-    "integration": "positive",
-    "permission_security": "negative",
-    "failure_recovery": "edge_case",
-}
-
 
 def _normalize_stored_category(raw: str) -> str:
-    if raw in COVERAGE_CATEGORIES:
-        return raw
-    mapped = _LEGACY_CATEGORY_MAP.get(raw)
-    if mapped is not None:
-        return mapped
+    coerced = coerce_coverage_category(raw)
+    if coerced is not None:
+        return coerced
     raise TestDesignValidationError(
         f"category must be one of {COVERAGE_CATEGORIES_DISPLAY}"
     )
@@ -64,10 +53,6 @@ def encode_draft_payload(draft: TestCoverageDraft) -> str:
         "ticket_identifier": draft.ticket_identifier,
         "status": draft.status,
         "candidates": [_encode_candidate(item) for item in draft.candidates],
-        "coverage_gaps": [
-            {"category": gap.category, "detail": gap.detail}
-            for gap in draft.coverage_gaps
-        ],
     }
     return json.dumps(body, separators=(",", ":"), sort_keys=True)
 
@@ -80,8 +65,8 @@ def decode_draft_payload(
 ) -> TestCoverageDraft:
     """Decode an opaque payload into a typed draft.
 
-    Legacy ``scenarios`` keys are ignored. ``scenario_editing`` status maps to
-    ``ready``.
+    Legacy ``scenarios`` and ``coverage_gaps`` keys are ignored.
+    ``scenario_editing`` status maps to ``ready``.
 
     Raises:
         TestDesignValidationError: Payload JSON or draft shape is invalid.
@@ -114,9 +99,6 @@ def decode_draft_payload(
             candidates=tuple(
                 _decode_candidate(item)
                 for item in _require_list(raw, "candidates")
-            ),
-            coverage_gaps=tuple(
-                _decode_gap(item) for item in _require_list(raw, "coverage_gaps")
             ),
             version=version,
         )
@@ -156,14 +138,6 @@ def _decode_candidate(raw: object) -> TestCandidate:
     )
 
 
-def _decode_gap(raw: object) -> CoverageGap:
-    data = _require_mapping(raw, "coverage_gaps item")
-    return CoverageGap(
-        category=_normalize_stored_category(_require_str(data, "category")),  # type: ignore[arg-type]
-        detail=_require_str(data, "detail"),
-    )
-
-
 def _decode_references(raw: object) -> tuple[SourceReference, ...]:
     if raw is None:
         return ()
@@ -191,8 +165,8 @@ def _require_mapping(raw: object, field_name: str) -> Mapping[str, Any]:
     return raw
 
 
-def _require_list(data: Mapping[str, Any], field_name: str) -> Sequence[Any]:
-    value = data.get(field_name)
+def _require_list(raw: Mapping[str, Any], field_name: str) -> Sequence[Any]:
+    value = raw.get(field_name)
     if not isinstance(value, list):
         raise TestDesignValidationError(
             f"{field_name} must be a list, got {type(value).__name__}"
@@ -200,8 +174,8 @@ def _require_list(data: Mapping[str, Any], field_name: str) -> Sequence[Any]:
     return value
 
 
-def _require_str(data: Mapping[str, Any], field_name: str) -> str:
-    value = data.get(field_name)
+def _require_str(raw: Mapping[str, Any], field_name: str) -> str:
+    value = raw.get(field_name)
     if not isinstance(value, str):
         raise TestDesignValidationError(
             f"{field_name} must be a string, got {type(value).__name__}"
@@ -209,8 +183,8 @@ def _require_str(data: Mapping[str, Any], field_name: str) -> str:
     return value
 
 
-def _require_bool(data: Mapping[str, Any], field_name: str) -> bool:
-    value = data.get(field_name)
+def _require_bool(raw: Mapping[str, Any], field_name: str) -> bool:
+    value = raw.get(field_name)
     if not isinstance(value, bool):
         raise TestDesignValidationError(
             f"{field_name} must be a bool, got {type(value).__name__}"

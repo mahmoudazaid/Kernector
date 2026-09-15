@@ -1361,7 +1361,11 @@ def start_google_drive_oauth(
 
     store = state_store if state_store is not None else _state_store(settings)
     state = store.issue()
-    return authorization_url(settings.google_oauth, state=state)
+    return authorization_url(
+        settings.google_oauth,
+        state=state,
+        include_drive_file="software-delivery" in settings.domain_tools.enabled_packs,
+    )
 
 
 def complete_google_drive_oauth(
@@ -1437,6 +1441,7 @@ def complete_google_drive_oauth(
                 folders=() if not keep_scope else existing.folders,
                 files=() if not keep_scope else existing.files,
                 account_email_unverified=probe_failed,
+                granted_scopes=grant.granted_scopes,
             )
 
         tokens_store.mutate(_next)
@@ -3278,14 +3283,41 @@ def build_invoke_tool(
 
     Args:
         settings (Settings): Runtime settings including enabled tool packs.
-        chat_model (ChatModel | None): Required when ``software-delivery`` is
-            enabled; injected only, never constructed here.
+        chat_model (ChatModel | None): Optional; required only when a future
+            LLM-backed pack tool needs it. Drive export does not use chat.
 
     Returns:
         InvokeTool: Generic lookup-and-run use case.
     """
-    return InvokeTool(build_tool_registry(settings, chat_model=chat_model))
+    export_render = None
+    export_uploader = None
+    if (
+        "software-delivery" in settings.domain_tools.enabled_packs
+        and _oauth_ready(settings)
+    ):
+        from composition.software_delivery_export import render_export_markdown
+        from infrastructure.connectors.google_drive.artifact_uploader import (
+            GoogleDriveArtifactUploader,
+        )
+        from infrastructure.connectors.google_drive.oauth import (
+            GoogleOAuthConnectionStore,
+        )
 
+        export_render = render_export_markdown
+        export_uploader = GoogleDriveArtifactUploader(
+            oauth_settings=settings.google_oauth,
+            connection_store=GoogleOAuthConnectionStore(
+                settings.google_oauth.token_path
+            ),
+        )
+    return InvokeTool(
+        build_tool_registry(
+            settings,
+            chat_model=chat_model,
+            export_render=export_render,
+            export_uploader=export_uploader,
+        )
+    )
 
 def build_opaque_invoke(
     settings: Settings, *, chat_model: ChatModel | None = None

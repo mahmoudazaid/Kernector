@@ -2,28 +2,54 @@
 
 from collections.abc import Callable, Sequence
 
-from domain.ports import ChatModel, Tool
+from domain.ports import ArtifactUploader, ChatModel, Tool
 from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_intent
 from packs.software_delivery.orchestration import (
     OpaqueInvoke,
     OrchestrateSoftwareDelivery,
 )
+from packs.software_delivery.tools.export_test_cases_google_drive import (
+    ExportTestCasesGoogleDriveTool,
+    RenderExportMarkdown,
+)
 
 SelectChatIntent = Callable[[str], ChatToolSelection | None]
 
 
-def build_tools(*, chat_model: ChatModel) -> Sequence[Tool]:
+class SoftwareDeliveryToolWiringError(ValueError):
+    """Pack registration received an incomplete collaborator set."""
+
+
+def build_tools(
+    *,
+    chat_model: ChatModel | None = None,
+    export_render: RenderExportMarkdown | None = None,
+    export_uploader: ArtifactUploader | None = None,
+) -> Sequence[Tool]:
     """Return tools contributed by this pack.
 
-    The three scaffolding tools (risk score, generate test cases, export
-    markdown) are retired. Future tools land under ``tools/`` and are
-    returned from this function without further structure churn.
+    ``chat_model`` is optional until a tool that needs an LLM is registered.
+    Drive export collaborators must be provided as an atomic pair (both or
+    neither).
 
-    ``chat_model`` remains required so the registry contract stays stable
-    for the next real tool that needs a chat collaborator.
+    Raises:
+        SoftwareDeliveryToolWiringError: Exactly one of the export
+            collaborators was provided.
     """
-    _ = chat_model  # required by registry contract; unused while empty
-    return ()
+    _ = chat_model  # reserved for future LLM-backed tools
+    if (export_render is None) ^ (export_uploader is None):
+        raise SoftwareDeliveryToolWiringError(
+            "export_render and export_uploader must both be provided"
+        )
+    tools: list[Tool] = []
+    if export_render is not None and export_uploader is not None:
+        tools.append(
+            ExportTestCasesGoogleDriveTool(
+                render=export_render,
+                uploader=export_uploader,
+            )
+        )
+    return tuple(tools)
 
 
 def build_orchestrator(*, invoke: OpaqueInvoke) -> OrchestrateSoftwareDelivery:

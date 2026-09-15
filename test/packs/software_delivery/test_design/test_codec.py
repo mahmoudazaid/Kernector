@@ -14,7 +14,6 @@ from packs.software_delivery.test_design.codec import (
 )
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.models import (
-    CoverageGap,
     TestCandidate,
     TestCoverageDraft,
 )
@@ -41,12 +40,6 @@ def _draft(**overrides: object) -> TestCoverageDraft:
                 evidence_references=(_ref(),),
                 selected=True,
                 origin="suggested",
-            ),
-        ),
-        "coverage_gaps": (
-            CoverageGap(
-                category="negative",
-                detail="No ACL criteria.",
             ),
         ),
         "version": 1,
@@ -77,7 +70,6 @@ def test_decode_maps_legacy_scenario_editing_status_and_ignores_scenarios() -> N
             "status": "scenario_editing",
             "candidates": [],
             "scenarios": [{"scenario_id": "scen-1"}],
-            "coverage_gaps": [],
         }
     )
     restored = decode_draft_payload(payload, draft_id="draft-1", version=1)
@@ -94,7 +86,6 @@ def test_decode_rejects_unknown_schema_version() -> None:
             "ticket_identifier": "KERN-293",
             "status": "coverage_review",
             "candidates": [],
-            "coverage_gaps": [],
         }
     )
     with pytest.raises(TestDesignValidationError, match="schema_version"):
@@ -116,7 +107,6 @@ def test_decode_rejects_invalid_draft_shape() -> None:
             "ticket_identifier": "293",
             "status": "coverage_review",
             "candidates": [],
-            "coverage_gaps": [],
         }
     )
     with pytest.raises(TestDesignValidationError, match="ticket_identifier"):
@@ -169,4 +159,3 @@ def test_decode_maps_legacy_categories() -> None:
 
     assert restored.candidates[0].category == "positive"
     assert restored.candidates[1].category == "negative"
-    assert restored.coverage_gaps[0].category == "positive"

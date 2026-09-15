@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
+from domain.artifacts import Artifact, ArtifactReceipt
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -355,4 +356,18 @@ class LiveSourceReader(Protocol):
             ConnectorNetworkError: Transport failed before a usable response.
             ConnectorUnavailableError: The provider is temporarily unreachable.
         """
+        ...
+
+
+class ArtifactUploader(Protocol):
+    """Uploads a typed artifact into a caller-chosen parent container.
+
+    Raises:
+        ConnectorError: Upload failed without exposing provider details.
+        ConnectorAuthError: Credentials or permissions were rejected.
+        ConnectorUnavailableError: The provider is unreachable or throttling.
+    """
+
+    def upload(self, artifact: Artifact, *, parent_id: str) -> ArtifactReceipt:
+        """Persist ``artifact`` under ``parent_id`` and return its receipt."""
         ...

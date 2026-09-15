@@ -2,7 +2,7 @@
 
 Pure shared application helper — not an agent-callable Tool. Callers map domain
 content into ``MarkdownDocument`` / ``MarkdownSection`` and pass the result of
-``render_markdown`` elsewhere (for example Drive upload in a later ticket).
+``render_markdown`` elsewhere (for example Drive export via composition).
 """
 
 from __future__ import annotations

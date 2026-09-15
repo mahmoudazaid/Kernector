@@ -13,11 +13,22 @@ this pack only through [`registration.py`](registration.py).
 The three scaffolding tools (`software_delivery.risk_score`,
 `software_delivery.generate_test_cases`,
 `software_delivery.export_test_cases_markdown`) are **retired** (#285).
-`build_tools(*, chat_model=…)` returns an empty sequence. The `chat_model`
-keyword stays so the next real tool can take a chat collaborator without a
-registry contract change. Retired tool name constants remain in
-`orchestration_policy.py` for dormant chain/projection wiring; they are not
-invokable while the registry is empty.
+`build_tools` registers real tools under `tools/` when collaborators are
+wired. Drive export (`software_delivery.export_test_cases_google_drive`, #197)
+registers when composition supplies both the #305 Markdown render adapter and a
+Google Drive `ArtifactUploader` (Hub OAuth client settings required; destination
+folder is chosen in the Test Design UI). `chat_model` is optional while only
+deterministic tools are registered. Retired tool name constants remain in
+`orchestration_policy.py` for dormant chain/projection wiring.
+
+## Google Drive export (#197)
+
+Titles-only POC: tool args are `document_title`, `titles[]`, required
+`folder_id`, and optional `file_name`. Composition maps titles through
+`application.markdown` and uploads via Hub-user OAuth (`drive.file` preflight).
+The folder is selected in the Test Design export dialog — never returned in
+tool JSON or public errors. Wireframe:
+[`docs/wireframes/export-test-cases-google-drive.html`](../../docs/wireframes/export-test-cases-google-drive.html).
 
 ## Chat-time intent selection
 
@@ -41,7 +52,7 @@ Detailed manual/Cucumber scenario generation is deferred to #300.
 
 | Module | Responsibility |
 | --- | --- |
-| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, `CoverageGap`, allowlists |
+| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, allowlists |
 | `test_design/suggest_tests.py` | Evidence → suggested candidates + gaps → coverage_review draft |
 | `test_design/codec.py` / `repository.py` | Opaque payload codec + repository Protocol |
 
