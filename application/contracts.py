@@ -228,6 +228,8 @@ class AskRequest:
             current use case narrows retrieval with them.
         history (Sequence[Message]): Prior conversation turns.
         retrieval_limit (int | None): Optional positive limit for retrieval.
+        conversation_id (str | None): Optional client conversation id for
+            short-term agent thread memory. Workspace scoping is server-bound.
     """
 
     query: str
@@ -235,6 +237,7 @@ class AskRequest:
     grounding_references: Sequence[SourceReference] = ()
     history: Sequence[Message] = ()
     retrieval_limit: int | None = None
+    conversation_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.prompt_key is not None:
@@ -259,6 +262,14 @@ class AskRequest:
                 )
         object.__setattr__(self, "history", tuple(history))
         _require_retrieval_limit(self.retrieval_limit)
+        if self.conversation_id is not None:
+            from application.thread_memory import require_conversation_id
+
+            object.__setattr__(
+                self,
+                "conversation_id",
+                require_conversation_id(self.conversation_id),
+            )
 
 
 @dataclass(frozen=True, slots=True)

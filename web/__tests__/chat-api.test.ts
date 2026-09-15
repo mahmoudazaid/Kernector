@@ -55,4 +55,47 @@ describe("askChat", () => {
       }),
     ).rejects.toMatchObject({ status: 502, code: "provider_error" });
   });
+
+  it("DELETEs a conversation checkpoint", async () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    const { clearChatCheckpoint } = await import("@/lib/api/chat");
+
+    await clearChatCheckpoint({
+      baseUrl: "http://127.0.0.1:8000",
+      conversationId: "conv-1",
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/chat/threads/conv-1/checkpoint",
+      method: "DELETE",
+      signal: undefined,
+      timeoutMs: undefined,
+    });
+  });
+
+  it("retries clearChatCheckpointBestEffort once on failure", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 503,
+          title: "busy",
+          detail: "try again",
+          code: "unavailable",
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const { clearChatCheckpointBestEffort } = await import("@/lib/api/chat");
+
+    await expect(
+      clearChatCheckpointBestEffort({
+        baseUrl: "http://127.0.0.1:8000",
+        conversationId: "conv-2",
+        request,
+      }),
+    ).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
 });

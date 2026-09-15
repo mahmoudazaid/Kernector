@@ -71,6 +71,7 @@ const SETTINGS: RuntimeSettingsResponse = {
   ollama: { default_base_url: null, default_model: null },
   model_settings: [],
   enabled_packs: [],
+  short_term_memory_enabled: false,
   constraints: {
     max_input_length: 10_000,
     max_upload_bytes: 5_242_880,

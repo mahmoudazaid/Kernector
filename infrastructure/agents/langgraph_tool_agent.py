@@ -1,4 +1,10 @@
-"""LangGraph adapter for the ``ToolCallingAgent`` port."""
+"""LangGraph adapter for the ``ToolCallingAgent`` port.
+
+Short-term thread memory uses an injected LangGraph ``InMemorySaver`` when
+``workspace_id`` and ``conversation_id`` are set. Checkpoints are
+**process-local**: a process restart drops all threads. Suitable for
+testing/debugging; durable stores are deferred (#299).
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.tools import StructuredTool
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, ConfigDict
@@ -26,11 +33,13 @@ from domain.errors import (
 )
 from domain.models import AgentTurnResult
 from domain.ports import Tool
+from domain.thread_memory import scoped_thread_key
 
 _CONNECTION_FAILURE_MESSAGE = "The tool-calling agent provider could not be reached."
 _STEP_LIMIT_CONTENT = "Stopped after reaching the step limit."
 _EMPTY_FINAL_MESSAGE = "The agent finished without a final answer."
 _INVALID_TOOL_ARGS_MESSAGE = "Tool call arguments could not be parsed."
+STABLE_SYSTEM_MESSAGE_ID = "kernector-agent-system"
 
 
 def _provider_or_reraise(exc: BaseException) -> NoReturn:
@@ -71,6 +80,28 @@ def _bind_tool_name(name: str) -> str:
     return name.replace(".", "__")
 
 
+class LangGraphThreadMemory:
+    """``AgentThreadMemory`` adapter over a shared ``InMemorySaver``.
+
+    ``workspace_id`` is bound at construction from trusted server config.
+    ``delete_thread`` is idempotent when nothing is stored.
+    """
+
+    def __init__(
+        self,
+        *,
+        checkpointer: InMemorySaver,
+        workspace_id: str,
+    ) -> None:
+        self._checkpointer = checkpointer
+        self._workspace_id = workspace_id
+
+    def clear(self, *, conversation_id: str) -> None:
+        """Drop short-term checkpoints for ``conversation_id`` (idempotent)."""
+        thread_id = scoped_thread_key(self._workspace_id, conversation_id)
+        self._checkpointer.delete_thread(thread_id)
+
+
 class LangGraphToolAgent:
     """Minimal ReAct-style ``StateGraph`` behind ``ToolCallingAgent``.
 
@@ -78,9 +109,16 @@ class LangGraphToolAgent:
     tools. ``system_prompt`` is required so callers always supply trust-marker
     wording (owned by application/composition).
 
+    When ``checkpointer`` and ``workspace_id`` are set and ``conversation_id``
+    is passed to ``run``, the graph reuses short-term message history keyed by
+    :func:`domain.thread_memory.scoped_thread_key`. Each turn always resets
+    ``steps`` / ``truncated`` and upserts the system message via a stable id.
+
     Args:
         model_factory (_ModelFactory | None): Injectable chat-model factory.
         system_prompt (str): System message for the agent turn.
+        checkpointer (InMemorySaver | None): Optional shared short-term saver.
+        workspace_id (str | None): Server-bound workspace for thread keys.
     """
 
     def __init__(
@@ -88,9 +126,13 @@ class LangGraphToolAgent:
         *,
         system_prompt: str,
         model_factory: _ModelFactory | None = None,
+        checkpointer: InMemorySaver | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         self._model_factory = model_factory or _default_model_factory
         self._system_prompt = system_prompt
+        self._checkpointer = checkpointer
+        self._workspace_id = workspace_id
 
     def run(
         self,
@@ -98,6 +140,7 @@ class LangGraphToolAgent:
         tools: Sequence[Tool],
         *,
         max_steps: int,
+        conversation_id: str | None = None,
     ) -> AgentTurnResult:
         """Run a model ↔ tools loop for ``goal`` with a hard ``max_steps`` stop.
 
@@ -208,19 +251,41 @@ class LangGraphToolAgent:
             {"tools": "tools", "end": END},
         )
         graph.add_edge("tools", "agent")
-        compiled = graph.compile()
+
+        use_memory = (
+            self._checkpointer is not None
+            and self._workspace_id is not None
+            and conversation_id is not None
+            and str(conversation_id).strip() != ""
+        )
+        compiled = (
+            graph.compile(checkpointer=self._checkpointer)
+            if use_memory
+            else graph.compile()
+        )
+        input_state: Mapping[str, object] = {
+            "messages": [
+                SystemMessage(
+                    content=self._system_prompt,
+                    id=STABLE_SYSTEM_MESSAGE_ID,
+                ),
+                HumanMessage(content=goal),
+            ],
+            "steps": 0,
+            "truncated": False,
+        }
 
         try:
-            final_state = compiled.invoke(
-                {
-                    "messages": [
-                        SystemMessage(content=self._system_prompt),
-                        HumanMessage(content=goal),
-                    ],
-                    "steps": 0,
-                    "truncated": False,
-                }
-            )
+            if use_memory:
+                assert self._workspace_id is not None
+                assert conversation_id is not None
+                thread_id = scoped_thread_key(self._workspace_id, conversation_id)
+                final_state = compiled.invoke(
+                    input_state,
+                    {"configurable": {"thread_id": thread_id}},
+                )
+            else:
+                final_state = compiled.invoke(input_state)
         except (ToolArgumentValidationError, ToolFailureError):
             raise
         except ProviderError:
@@ -356,7 +421,17 @@ def _to_langchain_tool(tool: Tool) -> StructuredTool:
 
 
 def _final_text(messages: Sequence[BaseMessage]) -> str | None:
-    for message in reversed(messages):
+    """Return the latest non-blank assistant text from *this* turn only.
+
+    With a checkpointer, ``messages`` spans the whole thread. Bound the scan to
+    messages after the last ``HumanMessage`` so a blank current answer cannot
+    fall through and replay a prior turn's reply.
+    """
+    start = 0
+    for index, message in enumerate(messages):
+        if isinstance(message, HumanMessage):
+            start = index + 1
+    for message in reversed(messages[start:]):
         if not isinstance(message, AIMessage):
             continue
         tool_calls = getattr(message, "tool_calls", None) or ()

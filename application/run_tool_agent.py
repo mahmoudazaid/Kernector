@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from application.errors import ApplicationValidationError
+from application.thread_memory import require_conversation_id
 from domain.models import AgentTurnResult
-from domain.ports import Tool, ToolCallingAgent
+from domain.ports import AgentThreadMemory, Tool, ToolCallingAgent
 
 
 class RunToolAgent:
@@ -21,6 +22,7 @@ class RunToolAgent:
         tools: Sequence[Tool],
         *,
         max_steps: int,
+        conversation_id: str | None = None,
     ) -> AgentTurnResult:
         """Run the agent for ``goal`` with ``tools``.
 
@@ -28,6 +30,8 @@ class RunToolAgent:
             goal (str): Non-blank objective for the agent turn.
             tools (Sequence[Tool]): Bound tools the agent may invoke.
             max_steps (int): Hard cap on agent model steps; must be >= 1.
+            conversation_id (str | None): Optional client conversation key for
+                short-term thread memory.
 
         Returns:
             AgentTurnResult: Final text and optional step count.
@@ -44,4 +48,28 @@ class RunToolAgent:
             raise ApplicationValidationError("goal must be non-empty")
         if not isinstance(max_steps, int) or isinstance(max_steps, bool) or max_steps < 1:
             raise ApplicationValidationError("max_steps must be an integer >= 1")
-        return self._agent.run(goal, tools, max_steps=max_steps)
+        validated_conversation: str | None = None
+        if conversation_id is not None:
+            validated_conversation = require_conversation_id(conversation_id)
+        return self._agent.run(
+            goal,
+            tools,
+            max_steps=max_steps,
+            conversation_id=validated_conversation,
+        )
+
+
+class ClearAgentThread:
+    """Clears short-term agent checkpoints for one conversation id."""
+
+    def __init__(self, memory: AgentThreadMemory) -> None:
+        self._memory = memory
+
+    def execute(self, *, conversation_id: str) -> None:
+        """Clear thread memory for ``conversation_id`` (idempotent).
+
+        Raises:
+            ApplicationValidationError: ``conversation_id`` fails its contract.
+        """
+        validated = require_conversation_id(conversation_id)
+        self._memory.clear(conversation_id=validated)

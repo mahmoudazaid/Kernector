@@ -89,6 +89,7 @@ class RuntimeSettingsResponse(BaseModel):
     model_settings: list[ModelSettingDefResponse]
     enabled_packs: list[str]
     constraints: RuntimeConstraintsResponse
+    short_term_memory_enabled: bool = False
 
 
 class OllamaStatusResponse(BaseModel):
@@ -362,6 +363,7 @@ class ChatAskRequest(BaseModel):
     query: str = Field(min_length=1)
     history: list[ChatHistoryMessage] = Field(default_factory=list)
     runtime: ChatRuntimeRequest | None = None
+    conversation_id: str | None = None
     source_locator: SourceLocatorRequest | None = None
 
 

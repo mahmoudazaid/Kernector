@@ -190,6 +190,7 @@ export async function startConversationRun(
         query,
         history,
         runtime,
+        conversation_id: conversationId,
       },
     });
     const conversation = getConversation(conversationId);

@@ -65,6 +65,7 @@ class _RecordingRunner:
         *,
         generate_tests: bool = True,
         output_style: str = "steps",
+        conversation_id: str | None = None,
     ) -> ToolRunOutcome:
         self.runs.append((target, generate_tests, output_style))
         return self._outcome
@@ -266,6 +267,7 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
             *,
             generate_tests: bool = True,
             output_style: str = "steps",
+            conversation_id: str | None = None,
         ) -> ToolRunOutcome:
             raise InsufficientEvidenceError("nothing cleared the threshold")
 
@@ -545,6 +547,7 @@ def test_tool_turn_logs_path_tools_with_shared_request_id(
             *,
             generate_tests: bool = True,
             output_style: str = "steps",
+            conversation_id: str | None = None,
         ) -> ToolRunOutcome:
             seen["request_id"] = observability.current_request_id()
             return super().run(

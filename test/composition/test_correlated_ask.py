@@ -166,6 +166,7 @@ def test_pack_nested_ops_share_one_request_id(
             *,
             generate_tests: bool = True,
             output_style: str = "steps",
+            conversation_id: str | None = None,
         ) -> ToolRunOutcome:
             seen["runner"] = observability.current_request_id()
             return ToolRunOutcome(answer="ok")
@@ -249,6 +250,7 @@ def test_tools_insufficient_logs_insufficient_with_pack(
             *,
             generate_tests: bool = True,
             output_style: str = "steps",
+            conversation_id: str | None = None,
         ) -> ToolRunOutcome:
             raise InsufficientEvidenceError()
 
@@ -284,5 +286,6 @@ class _RunnerNever:
         *,
         generate_tests: bool = True,
         output_style: str = "steps",
+        conversation_id: str | None = None,
     ) -> ToolRunOutcome:
         raise AssertionError("runner must not be called")

@@ -123,6 +123,17 @@
       "ChatAskRequest": {
         "description": "Wire body for ``POST /api/v1/chat/ask``.",
         "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/ChatHistoryMessage"
@@ -1826,6 +1837,11 @@
             },
             "title": "Providers",
             "type": "array"
+          },
+          "short_term_memory_enabled": {
+            "default": false,
+            "title": "Short Term Memory Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2240,6 +2256,70 @@
           }
         },
         "summary": "Chat Ask",
+        "tags": ["chat"]
+      }
+    },
+    "/api/v1/chat/threads/{conversation_id}/checkpoint": {
+      "delete": {
+        "description": "Clear short-term agent checkpoints for ``conversation_id`` (idempotent).",
+        "operationId": "clear_chat_thread_checkpoint_api_v1_chat_threads__conversation_id__checkpoint_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Clear Chat Thread Checkpoint",
         "tags": ["chat"]
       }
     },
