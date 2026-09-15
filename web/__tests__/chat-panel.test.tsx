@@ -166,28 +166,20 @@ describe("ChatPanel", () => {
     };
   }
 
-  it("hides Reset agent context when short-term memory is disabled", async () => {
-    renderOpenConversation();
-    await screen.findByLabelText(/message/i);
-    expect(
-      screen.queryByRole("button", { name: /reset agent context/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("resets agent context after confirm without clearing the transcript", async () => {
-    const user = userEvent.setup();
-    const created = createConversation({
-      title: "open",
-      messages: [
-        { id: "u1", role: "user", content: "remember this" },
-        { id: "a1", role: "assistant", content: "ok" },
-      ],
-      draft: "",
-    });
+  it("never shows Reset agent context (memory clears only on delete)", async () => {
     render(
       <ChatPanel
         apiBaseUrl="http://127.0.0.1:8000"
-        conversationId={created.id}
+        conversationId={
+          createConversation({
+            title: "open",
+            messages: [
+              { id: "u1", role: "user", content: "remember this" },
+              { id: "a1", role: "assistant", content: "ok" },
+            ],
+            draft: "",
+          }).id
+        }
         variant="conversation"
         ask={async () => SUCCESS}
         loadSettings={async () =>
@@ -195,29 +187,16 @@ describe("ChatPanel", () => {
         }
       />,
     );
-
-    await user.click(
-      await screen.findByRole("button", { name: /reset agent context/i }),
-    );
+    await screen.findByLabelText(/message/i);
     expect(
-      await screen.findByRole("heading", { name: /reset agent context\?/i }),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^reset$/i }));
-
-    await waitFor(() => {
-      expect(clearCheckpointMock).toHaveBeenCalledWith({
-        baseUrl: "http://127.0.0.1:8000",
-        conversationId: created.id,
-      });
-    });
+      screen.queryByRole("button", { name: /reset agent context/i }),
+    ).not.toBeInTheDocument();
     expect(
-      await screen.findByText(/agent context cleared for this chat/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText("remember this")).toBeInTheDocument();
-    expect(screen.getByText("ok")).toBeInTheDocument();
+      screen.queryByText(/agent context cleared/i),
+    ).not.toBeInTheDocument();
   });
 
-  it("clears the checkpoint when a landing first turn is discarded", async () => {
+  it("clears the checkpoint before discarding a landing first turn", async () => {
     const user = userEvent.setup();
     const ask = vi.fn().mockRejectedValue(
       new ApiError({
@@ -227,6 +206,13 @@ describe("ChatPanel", () => {
         code: "invalid_query",
       }),
     );
+
+    clearCheckpointMock.mockImplementation(async (options: {
+      conversationId: string;
+    }) => {
+      expect(getConversation(options.conversationId)).not.toBeNull();
+      return true;
+    });
 
     render(
       <ChatPanel
@@ -250,12 +236,14 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
     });
+    const clearedId = clearCheckpointMock.mock.calls[0][0].conversationId as string;
     expect(clearCheckpointMock.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         baseUrl: "http://127.0.0.1:8000",
         conversationId: expect.any(String),
       }),
     );
+    expect(getConversation(clearedId)).toBeNull();
   });
 
   it("shows an empty prompt before any messages", async () => {

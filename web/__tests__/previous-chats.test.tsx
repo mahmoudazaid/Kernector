@@ -12,14 +12,14 @@ import {
 } from "@/lib/session/conversations";
 
 const clearCheckpointMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue(true),
+  vi.fn().mockResolvedValue(undefined),
 );
 
 vi.mock("@/lib/api/chat", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/chat")>();
   return {
     ...actual,
-    clearChatCheckpointBestEffort: clearCheckpointMock,
+    clearChatCheckpoint: clearCheckpointMock,
   };
 });
 
@@ -52,7 +52,7 @@ describe("PreviousChats", () => {
   beforeEach(() => {
     localStorage.clear();
     clearCheckpointMock.mockClear();
-    clearCheckpointMock.mockResolvedValue(true);
+    clearCheckpointMock.mockResolvedValue(undefined);
   });
 
   it("hides the Chats heading for the empty state and shows it when history exists", () => {
@@ -328,12 +328,22 @@ describe("PreviousChats", () => {
     });
   });
 
-  it("clears the server checkpoint when deleting with an api base URL", async () => {
+  it("clears the server checkpoint before deleting the local transcript", async () => {
     const user = userEvent.setup();
     const created = createConversation({
       title: "Remove with checkpoint",
       messages: [{ id: "1", role: "user", content: "Remove with checkpoint" }],
       draft: "",
+    });
+    const sibling = createConversation({
+      title: "Keep sibling",
+      messages: [{ id: "2", role: "user", content: "Keep sibling" }],
+      draft: "",
+    });
+
+    clearCheckpointMock.mockImplementation(async () => {
+      // Local row must still exist while the server clear runs.
+      expect(getConversation(created.id)).not.toBeNull();
     });
 
     render(<PreviousChats apiBaseUrl="http://127.0.0.1:8000" />);
@@ -347,12 +357,73 @@ describe("PreviousChats", () => {
     await user.click(screen.getByRole("button", { name: /^delete$/i }));
 
     await waitFor(() => {
-      expect(listConversations()).toEqual([]);
+      expect(getConversation(created.id)).toBeNull();
     });
     expect(clearCheckpointMock).toHaveBeenCalledWith({
       baseUrl: "http://127.0.0.1:8000",
       conversationId: created.id,
     });
+    expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
+    expect(getConversation(sibling.id)).not.toBeNull();
+  });
+
+  it("keeps the transcript and shows a sanitized error when checkpoint clear fails", async () => {
+    const user = userEvent.setup();
+    const { ApiError } = await import("@/lib/api/errors");
+    clearCheckpointMock.mockRejectedValue(
+      new ApiError({
+        status: 503,
+        title: "Unavailable",
+        detail: "The request failed. Please try again later.",
+        code: "request_failed",
+      }),
+    );
+    const created = createConversation({
+      title: "Keep on failure",
+      messages: [{ id: "1", role: "user", content: "Keep on failure" }],
+      draft: "",
+    });
+
+    render(<PreviousChats apiBaseUrl="http://127.0.0.1:8000" />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Conversation actions for Keep on failure",
+      }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: /^delete$/i }));
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent(/please try again later/i);
+    expect(getConversation(created.id)).not.toBeNull();
+    expect(listConversations().map((c) => c.id)).toContain(created.id);
+  });
+
+  it("treats a successful clear of a missing checkpoint as delete success", async () => {
+    const user = userEvent.setup();
+    clearCheckpointMock.mockResolvedValue(undefined);
+    const created = createConversation({
+      title: "Never checkpointed",
+      messages: [{ id: "1", role: "user", content: "Never checkpointed" }],
+      draft: "",
+    });
+
+    render(<PreviousChats apiBaseUrl="http://127.0.0.1:8000" />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Conversation actions for Never checkpointed",
+      }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: /^delete$/i }));
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => {
+      expect(getConversation(created.id)).toBeNull();
+    });
+    expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
   });
 
   it("cancels delete without removing the conversation", async () => {

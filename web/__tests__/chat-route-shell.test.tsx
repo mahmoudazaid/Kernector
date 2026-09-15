@@ -252,4 +252,81 @@ describe("ChatRouteClient shell", () => {
     expect(ask).not.toHaveBeenCalled();
     expect(replace).toHaveBeenCalledWith("/chat");
   });
+
+  it("reopens conversation A with only A's transcript and New chat uses a fresh id", async () => {
+    const user = userEvent.setup();
+    const a = createConversation({
+      title: "Alpha only",
+      messages: [
+        { id: "u-a", role: "user", content: "message-from-A" },
+        { id: "a-a", role: "assistant", content: "reply-from-A" },
+      ],
+      draft: "",
+    });
+    const b = createConversation({
+      title: "Beta only",
+      messages: [
+        { id: "u-b", role: "user", content: "message-from-B" },
+        { id: "a-b", role: "assistant", content: "reply-from-B" },
+      ],
+      draft: "",
+    });
+
+    pathname = "/chat";
+    const { rerender } = render(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    await user.click(screen.getByRole("link", { name: /Alpha only/i }));
+    expect(replace).toHaveBeenCalledWith(`/chat/${a.id}`);
+    expect(await screen.findByText("message-from-A")).toBeInTheDocument();
+    expect(screen.getByText("reply-from-A")).toBeInTheDocument();
+    expect(screen.queryByText("message-from-B")).not.toBeInTheDocument();
+
+    pathname = `/chat/${a.id}`;
+    rerender(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+    expect(await screen.findByText("message-from-A")).toBeInTheDocument();
+    expect(screen.queryByText("reply-from-B")).not.toBeInTheDocument();
+
+    pathname = "/chat";
+    rerender(
+      <ChatRouteClient
+        apiBaseUrl="http://127.0.0.1:8000"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-chat-mode="landing"]'),
+      ).not.toBeNull();
+    });
+    await user.type(await screen.findByLabelText(/message/i), "brand-new-thread");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/chat\/.+/),
+      );
+    });
+    const newPath = replace.mock.calls
+      .map((call) => call[0] as string)
+      .filter((path) => path.startsWith("/chat/") && path !== `/chat/${a.id}`)
+      .at(-1);
+    expect(newPath).toBeTruthy();
+    const newId = newPath!.replace("/chat/", "");
+    expect(newId).not.toBe(a.id);
+    expect(newId).not.toBe(b.id);
+    expect(getConversation(a.id)?.messages[0]?.content).toBe("message-from-A");
+    expect(getConversation(b.id)?.messages[0]?.content).toBe("message-from-B");
+  });
 });

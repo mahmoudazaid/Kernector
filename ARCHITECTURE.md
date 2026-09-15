@@ -318,10 +318,13 @@ the agent path is proven.
 
 **Short-term thread memory (#213):** when the agent loop is on, composition owns
 a process-scoped ``InMemorySaver`` (``composition/short_term_memory.py``) keyed
-by server ``workspace_id`` + client ``conversation_id``. Checkpoints are
-**process-local** — restart, Reset agent context, or deleting a conversation
-drops them; there is no TTL/pruner in this issue. Long-term memory is deferred
-to #299. Absent ``conversation_id``, the agent stays stateless.
+as ``{workspace_id}:{conversation_id}`` where ``workspace_id`` comes only from
+trusted server config (``DOCUMENT_CATALOG_WORKSPACE_ID``) and ``conversation_id``
+is the client thread id from #246. Checkpoints are **process-local** and are
+**lost on process restart**. Deleting a conversation clears only that thread's
+checkpoint (idempotent; missing checkpoint is success); there is no workspace-wide
+or global clear and no normal-UI "reset memory" control. Long-term memory is
+deferred to #299. Absent ``conversation_id``, the agent stays stateless.
 
 Two properties are worth naming because they are easy to lose:
 

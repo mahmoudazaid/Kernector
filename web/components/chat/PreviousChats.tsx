@@ -25,7 +25,11 @@ import {
   subscribeConversations,
   type Conversation,
 } from "@/lib/session/conversations";
-import { clearChatCheckpointBestEffort } from "@/lib/api/chat";
+import { clearChatCheckpoint } from "@/lib/api/chat";
+import { ApiError } from "@/lib/api/errors";
+
+const CLEAR_CHECKPOINT_FAILED =
+  "Could not clear agent memory for this chat. Try again.";
 
 function OverflowMenu({
   conversation,
@@ -196,6 +200,8 @@ export function PreviousChats({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function startRename(conversation: Conversation): void {
     setRenamingId(conversation.id);
@@ -211,21 +217,32 @@ export function PreviousChats({
     setRenameValue("");
   }
 
-  function confirmDelete(): void {
-    if (!pendingDelete) {
+  async function confirmDelete(): Promise<void> {
+    if (!pendingDelete || deleting) {
       return;
     }
     const id = pendingDelete.id;
-    deleteConversation(id);
-    setPendingDelete(null);
-    if (loadActiveSession().activeConversationId === id) {
-      setActiveConversationId(null);
-    }
-    if (apiBaseUrl) {
-      void clearChatCheckpointBestEffort({
-        baseUrl: apiBaseUrl,
-        conversationId: id,
-      });
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (apiBaseUrl) {
+        // Idempotent: missing checkpoint is success (204). Local delete only after.
+        await clearChatCheckpoint({
+          baseUrl: apiBaseUrl,
+          conversationId: id,
+        });
+      }
+      deleteConversation(id);
+      setPendingDelete(null);
+      if (loadActiveSession().activeConversationId === id) {
+        setActiveConversationId(null);
+      }
+    } catch (error) {
+      setDeleteError(
+        error instanceof ApiError ? error.detail : CLEAR_CHECKPOINT_FAILED,
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -316,7 +333,10 @@ export function PreviousChats({
                       <OverflowMenu
                         conversation={conversation}
                         onRename={() => startRename(conversation)}
-                        onDelete={() => setPendingDelete(conversation)}
+                        onDelete={() => {
+                          setDeleteError(null);
+                          setPendingDelete(conversation);
+                        }}
                       />
                     </>
                   )}
@@ -336,9 +356,23 @@ export function PreviousChats({
         }
         confirmLabel="Delete"
         tone="danger"
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={confirmDelete}
+        busy={deleting}
+        onCancel={() => {
+          if (deleting) {
+            return;
+          }
+          setPendingDelete(null);
+          setDeleteError(null);
+        }}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
       />
+      {deleteError ? (
+        <p className="kern-chat-inline-error" role="alert">
+          {deleteError}
+        </p>
+      ) : null}
     </section>
   );
 }

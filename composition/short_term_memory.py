@@ -1,9 +1,10 @@
 """Process-scoped short-term agent thread memory runtime (#213).
 
 Owns one ``InMemorySaver`` per process when the Software Delivery agent loop
-is enabled. Checkpoints are process-local and lost on restart; durable stores
-are deferred (#299). Presentation depends on this composition-facing type —
-never on LangGraph directly.
+is enabled. Thread keys are ``{workspace_id}:{conversation_id}`` with
+``workspace_id`` from trusted server config. Checkpoints are process-local and
+lost on restart; durable stores are deferred (#299). Presentation depends on
+this composition-facing type — never on LangGraph directly.
 """
 
 from __future__ import annotations

@@ -178,6 +178,54 @@ describe("conversation store", () => {
     expect(listConversations().map((c) => c.id)).toEqual([b.id]);
   });
 
+  it("keeps conversation ids isolated and does not reuse a deleted id", () => {
+    const a = createConversation({
+      title: "thread-a",
+      messages: [{ id: "1", role: "user", content: "a" }],
+      draft: "",
+    });
+    const b = createConversation({
+      title: "thread-b",
+      messages: [{ id: "2", role: "user", content: "b" }],
+      draft: "",
+    });
+    expect(a.id).not.toBe(b.id);
+    expect(getConversation(a.id)?.messages[0]?.content).toBe("a");
+    expect(getConversation(b.id)?.messages[0]?.content).toBe("b");
+
+    expect(deleteConversation(a.id)).toBe(true);
+    const fresh = createConversation({
+      title: "new-chat",
+      messages: [],
+      draft: "",
+    });
+    expect(fresh.id).not.toBe(a.id);
+    expect(fresh.id).not.toBe(b.id);
+    expect(getConversation(a.id)).toBeNull();
+    expect(getConversation(b.id)?.title).toBe("thread-b");
+  });
+
+  it("allocates a fresh newConversationId for New chat without mutating siblings", () => {
+    const existing = createConversation({
+      title: "keep",
+      messages: [{ id: "1", role: "user", content: "keep" }],
+      draft: "draft-keep",
+    });
+    const landingId = newConversationId();
+    expect(landingId).not.toBe(existing.id);
+    const created = createConversation({
+      id: landingId,
+      title: "fresh",
+      messages: [],
+      draft: "",
+    });
+    expect(created.id).toBe(landingId);
+    expect(getConversation(existing.id)).toMatchObject({
+      draft: "draft-keep",
+      title: "keep",
+    });
+  });
+
   it("returns null from get/rename/update and false from delete for unknown ids", () => {
     expect(getConversation("missing")).toBeNull();
     expect(renameConversation("missing", "x")).toBeNull();

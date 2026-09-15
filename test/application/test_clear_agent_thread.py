@@ -77,6 +77,56 @@ def test_clear_agent_thread_delegates_and_is_idempotent() -> None:
     assert memory.cleared == ["conv-1", "conv-1"]
 
 
+def test_langgraph_clear_a_does_not_touch_b_on_same_workspace() -> None:
+    from langchain_core.messages import HumanMessage
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from infrastructure.agents.langgraph_tool_agent import (
+        LangGraphThreadMemory,
+        LangGraphToolAgent,
+    )
+    from test.infrastructure.agents.test_langgraph_tool_agent import (
+        _RecordingFactory,
+        _RecordingTool,
+        _ScriptedChat,
+        _ai_text,
+    )
+
+    saver = InMemorySaver()
+    chat = _ScriptedChat([_ai_text("a"), _ai_text("b"), _ai_text("reuse-b")])
+    factory = _RecordingFactory(chat)
+    agent = LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=factory,
+        checkpointer=saver,
+        workspace_id="ws-1",
+    )
+    agent.run("keep-a", [_RecordingTool()], max_steps=2, conversation_id="conv-a")
+    agent.run("keep-b", [_RecordingTool()], max_steps=2, conversation_id="conv-b")
+
+    ClearAgentThread(
+        LangGraphThreadMemory(checkpointer=saver, workspace_id="ws-1")
+    ).execute(conversation_id="conv-a")
+    # Missing / already-cleared checkpoint remains success.
+    ClearAgentThread(
+        LangGraphThreadMemory(checkpointer=saver, workspace_id="ws-1")
+    ).execute(conversation_id="conv-a")
+
+    chat_after = _ScriptedChat([_ai_text("again-b")])
+    LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat_after),
+        checkpointer=saver,
+        workspace_id="ws-1",
+    ).run("follow-b", [_RecordingTool()], max_steps=2, conversation_id="conv-b")
+
+    follow = chat_after.invoke_messages[0]
+    assert any(isinstance(m, HumanMessage) and m.content == "keep-b" for m in follow)
+    assert not any(
+        isinstance(m, HumanMessage) and m.content == "keep-a" for m in follow
+    )
+
+
 def test_clear_agent_thread_rejects_malformed_conversation_id() -> None:
     with pytest.raises(InputRejectedError, match="conversation_id"):
         ClearAgentThread(_FakeThreadMemory()).execute(conversation_id="bad:id")
