@@ -37,6 +37,25 @@ describe("askChat", () => {
     expect(CHAT_ASK_TIMEOUT_MS).toBe(120_000);
   });
 
+  it("propagates ApiError from the request", async () => {
+    const request = vi.fn().mockRejectedValue(
+      new ApiError({
+        status: 502,
+        title: "Provider error",
+        detail: "The model provider could not complete the request.",
+        code: "provider_error",
+      }),
+    );
+
+    await expect(
+      askChat({
+        baseUrl: "http://127.0.0.1:8000",
+        body: { query: "hello" },
+        request,
+      }),
+    ).rejects.toMatchObject({ status: 502, code: "provider_error" });
+  });
+
   it("DELETEs a conversation checkpoint", async () => {
     const request = vi.fn().mockResolvedValue(undefined);
     const { clearChatCheckpoint } = await import("@/lib/api/chat");

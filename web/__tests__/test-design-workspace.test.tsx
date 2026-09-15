@@ -54,6 +54,7 @@ const ENABLED_CATALOG: RuntimeSettingsResponse = {
     max_upload_bytes: 5_242_880,
     supported_upload_suffixes: [".md", ".pdf", ".txt"],
   },
+  short_term_memory_enabled: false,
 };
 
 const DISABLED_CATALOG: RuntimeSettingsResponse = {

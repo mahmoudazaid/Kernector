@@ -543,3 +543,29 @@ def test_langgraph_tool_agent_without_conversation_id_stays_stateless() -> None:
     assert not any(
         isinstance(m, HumanMessage) and m.content == "first" for m in second
     )
+
+
+def test_langgraph_tool_agent_blank_final_does_not_replay_prior_turn() -> None:
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    saver = InMemorySaver()
+    chat = _ScriptedChat([_ai_text("Turn one answer."), _ai_text("   ")])
+    agent = LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat),
+        checkpointer=saver,
+        workspace_id="ws",
+    )
+
+    first = agent.run(
+        "first goal", [_RecordingTool()], max_steps=5, conversation_id="conv-1"
+    )
+    second = agent.run(
+        "second goal", [_RecordingTool()], max_steps=5, conversation_id="conv-1"
+    )
+
+    assert first.content == "Turn one answer."
+    assert "without a final answer" in second.content
+    assert second.content != first.content

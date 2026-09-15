@@ -530,7 +530,10 @@ export function ChatPanel({
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  const [resetFeedback, setResetFeedback] = useState<string | null>(null);
+  const [resetFeedback, setResetFeedback] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [resetting, setResetting] = useState(false);
   const {
     catalog,
@@ -565,6 +568,7 @@ export function ChatPanel({
     setSending(next.sending);
     setHydrated(next.hydrated);
     setUnavailable(false);
+    setResetFeedback(null);
     if (handoff) {
       setDraft(handoff.draft);
       setInlineError(handoff.message);
@@ -804,6 +808,7 @@ export function ChatPanel({
     event.preventDefault();
     const query = draft.trim();
     setInlineError(null);
+    setResetFeedback(null);
     if (!query || sending || sendBlocked) {
       return;
     }
@@ -950,8 +955,8 @@ export function ChatPanel({
     setResetConfirmOpen(false);
     setResetFeedback(
       ok
-        ? "Agent context cleared for this chat."
-        : "Could not clear agent context. Try again.",
+        ? { ok: true, message: "Agent context cleared for this chat." }
+        : { ok: false, message: "Could not clear agent context. Try again." },
     );
   }
 
@@ -1006,8 +1011,15 @@ export function ChatPanel({
       />
 
       {resetFeedback ? (
-        <p className="kern-chat-inline-error" role="status">
-          {resetFeedback}
+        <p
+          className={
+            resetFeedback.ok
+              ? "kern-chat-inline-status"
+              : "kern-chat-inline-error"
+          }
+          role="status"
+        >
+          {resetFeedback.message}
         </p>
       ) : null}
 

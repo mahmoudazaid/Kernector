@@ -9,7 +9,6 @@ from presentation.http.app import create_app
 from presentation.http.deps import (
     get_clear_agent_thread,
     get_settings,
-    get_short_term_memory_runtime,
 )
 
 
@@ -45,7 +44,6 @@ def test_clear_checkpoint_rejects_malformed_conversation_id(
 ) -> None:
     monkeypatch.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
     get_settings.cache_clear()
-    get_short_term_memory_runtime.cache_clear()
 
     client = TestClient(create_app(), raise_server_exceptions=False)
     response = client.delete("/api/v1/chat/threads/bad:id/checkpoint")
@@ -59,7 +57,6 @@ def test_clear_checkpoint_noop_when_agent_loop_disabled(
 ) -> None:
     monkeypatch.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
     get_settings.cache_clear()
-    get_short_term_memory_runtime.cache_clear()
 
     client = TestClient(create_app(), raise_server_exceptions=False)
     response = client.delete("/api/v1/chat/threads/conv-1/checkpoint")

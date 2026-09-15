@@ -421,7 +421,17 @@ def _to_langchain_tool(tool: Tool) -> StructuredTool:
 
 
 def _final_text(messages: Sequence[BaseMessage]) -> str | None:
-    for message in reversed(messages):
+    """Return the latest non-blank assistant text from *this* turn only.
+
+    With a checkpointer, ``messages`` spans the whole thread. Bound the scan to
+    messages after the last ``HumanMessage`` so a blank current answer cannot
+    fall through and replay a prior turn's reply.
+    """
+    start = 0
+    for index, message in enumerate(messages):
+        if isinstance(message, HumanMessage):
+            start = index + 1
+    for message in reversed(messages[start:]):
         if not isinstance(message, AIMessage):
             continue
         tool_calls = getattr(message, "tool_calls", None) or ()
