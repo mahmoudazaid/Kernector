@@ -101,12 +101,15 @@ def test_build_runtime_disabled_when_agent_loop_off(
 
 def test_build_runtime_disabled_when_workspace_id_missing(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
-    runtime = build_short_term_memory_runtime(load_settings())
+    with caplog.at_level("WARNING", logger="composition.short_term_memory"):
+        runtime = build_short_term_memory_runtime(load_settings())
     assert runtime.enabled is False
     assert runtime.short_term_memory_enabled is False
+    assert any("Short-term memory disabled" in record.message for record in caplog.records)
     runtime.clear_use_case().execute(conversation_id="conv-1")
 
 

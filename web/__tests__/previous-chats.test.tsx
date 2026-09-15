@@ -328,7 +328,7 @@ describe("PreviousChats", () => {
     });
   });
 
-  it("clears the server checkpoint before deleting the local transcript", async () => {
+  it("deletes the local transcript and clears the server checkpoint in the background", async () => {
     const user = userEvent.setup();
     const created = createConversation({
       title: "Remove with checkpoint",
@@ -341,11 +341,13 @@ describe("PreviousChats", () => {
       draft: "",
     });
 
-    clearCheckpointMock.mockImplementation(async () => {
-      // Local row must still exist while the server clear runs.
-      expect(getConversation(created.id)).not.toBeNull();
-      return true;
-    });
+    let resolveClear: ((value: boolean) => void) | undefined;
+    clearCheckpointMock.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveClear = resolve;
+        }),
+    );
 
     render(<PreviousChats apiBaseUrl="http://127.0.0.1:8000" />);
 
@@ -357,15 +359,18 @@ describe("PreviousChats", () => {
     await user.click(screen.getByRole("menuitem", { name: /^delete$/i }));
     await user.click(screen.getByRole("button", { name: /^delete$/i }));
 
+    // Local delete must not wait on the background clear.
+    expect(getConversation(created.id)).toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(getConversation(created.id)).toBeNull();
+      expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
     });
     expect(clearCheckpointMock).toHaveBeenCalledWith({
       baseUrl: "http://127.0.0.1:8000",
       conversationId: created.id,
     });
-    expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
     expect(getConversation(sibling.id)).not.toBeNull();
+    resolveClear?.(true);
   });
 
   it("deletes the local transcript even when checkpoint clear fails", async () => {

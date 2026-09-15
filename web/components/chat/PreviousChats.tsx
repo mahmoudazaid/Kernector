@@ -196,7 +196,6 @@ export function PreviousChats({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   function startRename(conversation: Conversation): void {
     setRenamingId(conversation.id);
@@ -212,27 +211,23 @@ export function PreviousChats({
     setRenameValue("");
   }
 
-  async function confirmDelete(): Promise<void> {
-    if (!pendingDelete || deleting) {
+  function confirmDelete(): void {
+    if (!pendingDelete) {
       return;
     }
     const id = pendingDelete.id;
-    setDeleting(true);
-    try {
-      if (apiBaseUrl) {
-        // Prefer clearing server memory first, but never block local delete.
-        await clearChatCheckpointBestEffort({
-          baseUrl: apiBaseUrl,
-          conversationId: id,
-        });
-      }
-      deleteConversation(id);
-      setPendingDelete(null);
-      if (loadActiveSession().activeConversationId === id) {
-        setActiveConversationId(null);
-      }
-    } finally {
-      setDeleting(false);
+    // Drop the local transcript immediately; clear server memory in the
+    // background so a hung backend cannot freeze the confirm dialog.
+    deleteConversation(id);
+    setPendingDelete(null);
+    if (loadActiveSession().activeConversationId === id) {
+      setActiveConversationId(null);
+    }
+    if (apiBaseUrl) {
+      void clearChatCheckpointBestEffort({
+        baseUrl: apiBaseUrl,
+        conversationId: id,
+      });
     }
   }
 
@@ -343,16 +338,8 @@ export function PreviousChats({
         }
         confirmLabel="Delete"
         tone="danger"
-        busy={deleting}
-        onCancel={() => {
-          if (deleting) {
-            return;
-          }
-          setPendingDelete(null);
-        }}
-        onConfirm={() => {
-          void confirmDelete();
-        }}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
       />
     </section>
   );

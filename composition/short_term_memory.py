@@ -9,12 +9,15 @@ this composition-facing type — never on LangGraph directly.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
 from application.run_tool_agent import ClearAgentThread
 from domain.ports import AgentThreadMemory, ToolCallingAgent
 from infrastructure.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class _NoOpThreadMemory:
@@ -98,7 +101,8 @@ def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntim
 
     try:
         workspace_id = require_workspace_id(settings.document_catalog.workspace_id)
-    except ValueError:
+    except ValueError as error:
+        logger.warning("Short-term memory disabled: %s", error)
         return disabled
 
     checkpointer = InMemorySaver()
