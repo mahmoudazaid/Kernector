@@ -178,7 +178,7 @@ def test_render_markdown_escapes_structural_specials() -> None:
     assert render_markdown(document) == (
         "# \\# Spoof \\*Title\\*\n"
         "\n"
-        "## Link \\[me\\](/x) and \\`code\\`\n"
+        "## Link \\[me\\](/x\\) and \\`code\\`\n"
         "\n"
         "Has \\_emphasis\\_ and \\\\ slash\n"
         "\n"
@@ -196,10 +196,12 @@ def test_render_markdown_escapes_block_leaders_and_html() -> None:
                     "- fake bullet",
                     "> fake quote",
                     "1. fake ordered",
+                    "1) fake ordered",
                     "---",
                     "| a | b |",
                     "<script>alert(1)</script>",
                     "+ plus list",
+                    "~~~",
                 ),
             ),
         ),
@@ -215,13 +217,17 @@ def test_render_markdown_escapes_block_leaders_and_html() -> None:
         "\n"
         "1\\. fake ordered\n"
         "\n"
+        "1\\) fake ordered\n"
+        "\n"
         "\\-\\-\\-\n"
         "\n"
         "\\| a \\| b \\|\n"
         "\n"
-        "\\<script\\>alert(1)\\</script\\>\n"
+        "\\<script\\>alert(1\\)\\</script\\>\n"
         "\n"
         "\\+ plus list\n"
+        "\n"
+        "\\~\\~\\~\n"
     )
 
 

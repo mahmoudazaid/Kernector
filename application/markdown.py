@@ -97,7 +97,7 @@ _LINE_BREAKS = str.maketrans(
 )
 
 # Inline specials plus block leaders / HTML so field text cannot inject structure.
-_MARKDOWN_SPECIALS = frozenset("\\`*_[]#-+>|.<")
+_MARKDOWN_SPECIALS = frozenset("\\`*_[]#-+>|.<)~")
 
 
 def _normalize_text(value: str) -> str:
