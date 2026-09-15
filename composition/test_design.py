@@ -462,14 +462,11 @@ class TestDesignFacade:
         import json
 
         from application.contracts import InvokeToolRequest
-        from application.errors import (
-            ApplicationValidationError,
-            GoogleDriveReauthorizationRequiredError,
-        )
+        from application.errors import ApplicationValidationError
         from composition.container import (
-            _mark_reauth,
-            _require_drive_grant,
             build_invoke_tool,
+            mark_drive_reauth,
+            require_drive_export_grant,
         )
         from domain.errors import (
             ConnectorAuthError,
@@ -477,7 +474,6 @@ class TestDesignFacade:
             ToolFailureError,
         )
         from infrastructure.connectors.google_drive.folder import is_drive_folder_id
-        from infrastructure.connectors.google_drive.oauth import DRIVE_FILE_SCOPE
         from packs.software_delivery.tools.export_test_cases_google_drive import (
             TOOL_NAME,
         )
@@ -503,13 +499,7 @@ class TestDesignFacade:
             raise TestDesignValidationError(
                 "select at least one candidate before export"
             )
-        # Mirror create_google_drive_folder: missing drive.file is a local
-        # precondition — raise reauth without mutating a valid readonly grant.
-        tokens_store, connection = _require_drive_grant(self._settings)
-        if DRIVE_FILE_SCOPE not in connection.granted_scopes:
-            raise GoogleDriveReauthorizationRequiredError(
-                "Google Drive authorization was revoked"
-            )
+        tokens_store, _connection = require_drive_export_grant(self._settings)
         arguments: dict[str, object] = {
             "document_title": current.ticket_identifier,
             "titles": list(selected_titles),
@@ -529,7 +519,7 @@ class TestDesignFacade:
                 _TEST_DESIGN_VALIDATION_DETAIL
             ) from error
         except ConnectorAuthError as error:
-            _mark_reauth(tokens_store, error)
+            mark_drive_reauth(tokens_store, error)
         except ToolFailureError:
             raise
         try:

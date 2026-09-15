@@ -1498,7 +1498,8 @@ def disconnect_google_drive_oauth(
     )
 
 
-def _require_drive_grant(settings: Settings, *, connection_store=None):
+def require_drive_grant(settings: Settings, *, connection_store=None):
+    """Load a usable Hub Drive grant, or raise a typed connection error."""
     tokens_store = (
         connection_store if connection_store is not None else _connection_store(settings)
     )
@@ -1512,7 +1513,26 @@ def _require_drive_grant(settings: Settings, *, connection_store=None):
     return tokens_store, connection
 
 
-def _mark_reauth(tokens_store, error: BaseException) -> NoReturn:
+def require_drive_export_grant(settings: Settings, *, connection_store=None):
+    """Require a Drive grant that includes ``drive.file`` for outbound writes.
+
+    Missing ``drive.file`` is a local precondition — it raises without mutating
+    a still-valid readonly grant.
+    """
+    from infrastructure.connectors.google_drive.oauth import DRIVE_FILE_SCOPE
+
+    tokens_store, connection = require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    if DRIVE_FILE_SCOPE not in connection.granted_scopes:
+        raise GoogleDriveReauthorizationRequiredError(
+            "Google Drive authorization was revoked"
+        )
+    return tokens_store, connection
+
+
+def mark_drive_reauth(tokens_store, error: BaseException) -> NoReturn:
+    """Persist ``reauthorization_required`` and raise the typed Hub error."""
     tokens_store.mutate(
         lambda current: None
         if current is None
@@ -1521,6 +1541,11 @@ def _mark_reauth(tokens_store, error: BaseException) -> NoReturn:
     raise GoogleDriveReauthorizationRequiredError(
         "Google Drive authorization was revoked"
     ) from error
+
+
+# Compat aliases for remaining intra-module call sites.
+_require_drive_grant = require_drive_grant
+_mark_reauth = mark_drive_reauth
 
 
 def _require_github_grant(settings: Settings, *, connection_store=None):
@@ -2166,21 +2191,15 @@ def create_google_drive_folder(
     if not _DRIVE_ITEM_ID.fullmatch(resolved_parent):
         raise InputRejectedError("parent_id must be a Drive folder ID.")
 
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_export_grant(
         settings, connection_store=connection_store
     )
     from infrastructure.connectors.google_drive.oauth import (
-        DRIVE_FILE_SCOPE,
         build_oauth_drive_files,
     )
     from infrastructure.connectors.google_drive.http_errors import (
         map_google_error,
     )
-
-    if DRIVE_FILE_SCOPE not in connection.granted_scopes:
-        raise GoogleDriveReauthorizationRequiredError(
-            "Google Drive authorization was revoked"
-        )
 
     factory = files_factory
     if factory is None:
@@ -2209,13 +2228,13 @@ def create_google_drive_folder(
         )
         raw = request.execute()  # type: ignore[attr-defined]
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, error)
+        mark_drive_reauth(tokens_store, error)
     except ConnectorError as error:
         raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
     except Exception as error:  # noqa: BLE001 - map provider failures
         mapped = map_google_error(error)
         if isinstance(mapped, ConnectorAuthError):
-            _mark_reauth(tokens_store, mapped)
+            mark_drive_reauth(tokens_store, mapped)
         raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
 
     if not isinstance(raw, dict):
