@@ -15,7 +15,6 @@ from infrastructure.workspace_store.errors import (
 from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.models import (
-    CoverageGap,
     TestCandidate,
     TestCoverageDraft,
 )
@@ -52,12 +51,6 @@ def _draft(
                 evidence_references=(_ref(),),
                 selected=True,
                 origin="suggested",
-            ),
-        ),
-        coverage_gaps=(
-            CoverageGap(
-                category="negative",
-                detail="No ACL criteria.",
             ),
         ),
         version=version,

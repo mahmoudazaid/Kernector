@@ -16,6 +16,8 @@ from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     CreateTestDesignDraftRequest,
     ExpectedVersionRequest,
+    ExportTestDesignGoogleDriveRequest,
+    ExportTestDesignGoogleDriveResponse,
     PatchTestDesignDraftRequest,
     TestCoverageDraftResponse,
     test_coverage_draft_response,
@@ -108,3 +110,24 @@ def confirm_draft(
         draft_id, expected_version=body.expected_version
     )
     return test_coverage_draft_response(view)
+
+
+@router.post(
+    "/drafts/{draft_id}/export/google-drive",
+    responses=problem_responses(404, 405, 409, 422, 500),
+)
+def export_draft_google_drive(
+    draft_id: str,
+    body: ExportTestDesignGoogleDriveRequest,
+    facade: TestDesignFacadeDep,
+) -> ExportTestDesignGoogleDriveResponse:
+    """Export selected titles into a user-chosen Google Drive folder."""
+    receipt = facade.export_to_google_drive(
+        draft_id,
+        folder_id=body.folder_id,
+        file_name=body.file_name,
+    )
+    return ExportTestDesignGoogleDriveResponse(
+        file_id=receipt.file_id,
+        file_name=receipt.file_name,
+    )

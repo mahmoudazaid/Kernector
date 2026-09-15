@@ -12,6 +12,7 @@ from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from application.run_tool_agent import ClearAgentThread
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
+    GoogleDriveBrowseItem,
     GoogleDriveBrowsePage,
     GoogleDriveSelection,
     GoogleDriveSelectedItem,
@@ -24,6 +25,7 @@ from composition import (
     Settings,
     ShortTermMemoryRuntime,
     browse_google_drive_items,
+    create_google_drive_folder,
     build_chat_model,
     build_document_catalog,
     build_prompt_repository,
@@ -413,6 +415,25 @@ def get_google_drive_browse(
     return browse
 
 
+def get_google_drive_create_folder(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., GoogleDriveBrowseItem]:
+    """Return a Drive folder-create callable bound to this process."""
+
+    def create(
+        *,
+        name: str,
+        parent_id: str | None = None,
+    ) -> GoogleDriveBrowseItem:
+        return create_google_drive_folder(
+            settings,
+            name=name,
+            parent_id=parent_id,
+        )
+
+    return create
+
+
 def get_google_drive_selection_read(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Callable[[], GoogleDriveSelection]:
@@ -546,6 +567,9 @@ GitHubDisconnectDep = Annotated[
 ]
 GoogleDriveBrowseDep = Annotated[
     Callable[..., GoogleDriveBrowsePage], Depends(get_google_drive_browse)
+]
+GoogleDriveCreateFolderDep = Annotated[
+    Callable[..., GoogleDriveBrowseItem], Depends(get_google_drive_create_folder)
 ]
 GoogleDriveSelectionReadDep = Annotated[
     Callable[[], GoogleDriveSelection], Depends(get_google_drive_selection_read)

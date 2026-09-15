@@ -248,6 +248,14 @@ Google may require app verification and, when restricted-scope data is stored
 or transmitted by the server, a security assessment. `drive.file` cannot
 truthfully support recursive folder sync.
 
+When the Software Delivery pack is enabled and Google OAuth is configured,
+Connect also requests least-privilege
+`https://www.googleapis.com/auth/drive.file` via incremental authorization
+(`include_granted_scopes=true`) so Test Design can export Markdown into a
+user-chosen Drive folder. List `drive.file` on the Google Cloud OAuth consent
+screen before enabling export. Existing sync-only grants must re-consent once
+before export succeeds; ingest/browse keep working on readonly alone.
+
 A selected **folder** is a durable root (recursive, add/update-only). A selected
 **file** tracks that exact Drive ID. Duplicate IDs are ingested once. Identity is
 the Drive file ID; renames do not create a second catalog document. Moved,

@@ -226,6 +226,17 @@ class GoogleDriveBrowsePageResponse(BaseModel):
     next_page_token: str | None = None
 
 
+class GoogleDriveCreateFolderRequest(BaseModel):
+    """Create a Drive folder under an existing parent (or My Drive)."""
+
+    name: str = Field(min_length=1, max_length=256)
+    parent_id: str | None = Field(
+        default=None,
+        max_length=128,
+        pattern=r"^(root|[A-Za-z0-9_-]{1,128})$",
+    )
+
+
 class GoogleDriveSelectedItemResponse(BaseModel):
     """Saved sync root: Drive ID plus a presentation name."""
 
@@ -492,7 +503,11 @@ class TestCandidateResponse(BaseModel):
 
 
 class CoverageGapResponse(BaseModel):
-    """Typed coverage gap where evidence does not support a category."""
+    """Typed coverage gap where evidence does not support a category.
+
+    Kept on ``/api/v1`` as an empty list for backward compatibility after the
+    workspace stopped emitting gaps; drop in ``/api/v2``.
+    """
 
     category: str
     detail: str
@@ -531,6 +546,20 @@ class ExpectedVersionRequest(BaseModel):
     """Mutating body that only carries compare-and-swap version."""
 
     expected_version: int = Field(ge=1)
+
+
+class ExportTestDesignGoogleDriveRequest(BaseModel):
+    """Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/google-drive``."""
+
+    folder_id: str = Field(min_length=1, max_length=128)
+    file_name: str | None = Field(default=None, max_length=255)
+
+
+class ExportTestDesignGoogleDriveResponse(BaseModel):
+    """Safe receipt after exporting selected titles to Google Drive."""
+
+    file_id: str
+    file_name: str
 
 
 def chat_workflow_action_response(
@@ -584,10 +613,7 @@ def test_coverage_draft_response(view: object) -> TestCoverageDraftResponse:
             )
             for item in view.candidates  # type: ignore[attr-defined]
         ],
-        coverage_gaps=[
-            CoverageGapResponse(category=gap.category, detail=gap.detail)
-            for gap in view.coverage_gaps  # type: ignore[attr-defined]
-        ],
+        coverage_gaps=[],
         version=view.version,  # type: ignore[attr-defined]
         selected_candidate_ids=list(view.selected_candidate_ids),  # type: ignore[attr-defined]
     )

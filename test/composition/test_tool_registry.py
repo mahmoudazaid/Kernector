@@ -3,7 +3,6 @@
 import os
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,7 +10,6 @@ import pytest
 
 from application.errors import ConfigurationError
 from composition.tool_registry import build_tool_registry, enabled_domain_tool_packs
-from domain.models import AskResult, Message
 from infrastructure.config import DomainToolSettings, load_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -20,16 +18,6 @@ RETIRED_TOOLS = (
     "software_delivery.generate_test_cases",
     "software_delivery.export_test_cases_markdown",
 )
-
-
-class _FakeChat:
-    def complete(
-        self,
-        system: str,
-        messages: Sequence[Message],
-        settings: Mapping[str, object],
-    ) -> AskResult:
-        return AskResult(content="{}")
 
 
 @pytest.fixture
@@ -45,25 +33,68 @@ def test_empty_config_builds_empty_registry(env: pytest.MonkeyPatch) -> None:
     assert registry.names() == ()
 
 
-def test_software_delivery_registers_no_tools_with_injected_chat(
+def test_software_delivery_registers_no_tools_without_export_wiring(
     env: pytest.MonkeyPatch,
 ) -> None:
     env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     settings = load_settings()
-    registry = build_tool_registry(settings, chat_model=_FakeChat())
+    registry = build_tool_registry(settings)
     assert registry.names() == ()
     assert len(registry) == 0
     for name in RETIRED_TOOLS:
         assert name not in registry
 
 
-def test_enabled_pack_without_chat_model_is_configuration_error(
+def test_software_delivery_registers_without_chat_model(
     env: pytest.MonkeyPatch,
 ) -> None:
     env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     settings = load_settings()
-    with pytest.raises(ConfigurationError, match="chat_model"):
-        build_tool_registry(settings)
+    registry = build_tool_registry(settings, chat_model=None)
+    assert registry.names() == ()
+
+
+def test_export_tool_registers_with_atomic_collaborators(
+    env: pytest.MonkeyPatch,
+) -> None:
+    from domain.artifacts import Artifact, ArtifactReceipt
+    from packs.software_delivery.tools.export_test_cases_google_drive import (
+        TOOL_NAME,
+    )
+
+    class _Uploader:
+        def upload(self, artifact: Artifact, *, parent_id: str) -> ArtifactReceipt:
+            return ArtifactReceipt(
+                artifact_id="id-1",
+                file_name=artifact.file_name,
+            )
+
+    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    settings = load_settings()
+    registry = build_tool_registry(
+        settings,
+        export_render=lambda title, titles: f"# {title}\n",
+        export_uploader=_Uploader(),
+    )
+    assert TOOL_NAME in registry
+    assert RETIRED_TOOLS[0] not in registry
+
+
+def test_partial_export_collaborators_are_configuration_error(
+    env: pytest.MonkeyPatch,
+) -> None:
+    from domain.artifacts import Artifact, ArtifactReceipt
+
+    class _Uploader:
+        def upload(self, artifact: Artifact, *, parent_id: str) -> ArtifactReceipt:
+            return ArtifactReceipt(artifact_id="id", file_name=artifact.file_name)
+
+    env.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    settings = load_settings()
+    with pytest.raises(ConfigurationError, match="both"):
+        build_tool_registry(settings, export_render=lambda *_a: "#\n")
+    with pytest.raises(ConfigurationError, match="both"):
+        build_tool_registry(settings, export_uploader=_Uploader())
 
 
 def test_unknown_pack_id_is_configuration_error(env: pytest.MonkeyPatch) -> None:

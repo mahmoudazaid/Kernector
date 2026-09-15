@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from composition.test_design import (
     ChatWorkflowActionView,
-    CoverageGapView,
     CreateTestDesignDraftRequest,
     PatchTestDesignDraftRequest,
     SourceReferenceView,
@@ -84,12 +83,6 @@ def _draft_view() -> TestCoverageDraftView:
                 origin="suggested",
             ),
         ),
-        coverage_gaps=(
-            CoverageGapView(
-                category="negative",
-                detail="No ACL criteria.",
-            ),
-        ),
         version=1,
         selected_candidate_ids=("cand-1",),
     )
@@ -122,7 +115,7 @@ class _HTTPChat:
                 '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
                 '"category":"positive","rationale":"Grounded.",'
                 '"evidence_references":[{"source_type":"github",'
-                '"source_id":"issue:I_http"}]}],"coverage_gaps":[]}'
+                '"source_id":"issue:I_http"}]}]}'
             ),
             model="fake",
         )
@@ -172,9 +165,12 @@ def test_openapi_always_lists_test_design_paths_and_chat_action() -> None:
     assert "/api/v1/test-design/drafts/{draft_id}" in paths
     assert "/api/v1/test-design/drafts/{draft_id}/scenarios" not in paths
     assert "/api/v1/test-design/drafts/{draft_id}/confirm" in paths
+    assert "/api/v1/test-design/drafts/{draft_id}/export/google-drive" in paths
     components = schema["components"]["schemas"]
     assert "ChatWorkflowActionResponse" in components
     assert "TestCoverageDraftResponse" in components
+    assert "ExportTestDesignGoogleDriveRequest" in components
+    assert "ExportTestDesignGoogleDriveResponse" in components
     ask = components["ChatAskResponse"]["properties"]
     assert "action" in ask
 

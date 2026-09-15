@@ -10,7 +10,6 @@ from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.limits import (
     MAX_CANDIDATES,
-    MAX_GAP_DETAIL_CHARS,
     MAX_ID_CHARS,
     MAX_RATIONALE_CHARS,
     MAX_TITLE_CHARS,
@@ -18,7 +17,6 @@ from packs.software_delivery.test_design.limits import (
 from packs.software_delivery.test_design.models import (
     COVERAGE_CATEGORIES,
     DRAFT_STATUSES,
-    CoverageGap,
     TestCandidate,
     TestCoverageDraft,
 )
@@ -51,7 +49,6 @@ def _draft(**overrides: object) -> TestCoverageDraft:
         "ticket_identifier": "KERN-293",
         "status": "coverage_review",
         "candidates": (_candidate(),),
-        "coverage_gaps": (),
         "version": 1,
     }
     base.update(overrides)
@@ -89,10 +86,6 @@ def test_candidate_requires_evidence_for_suggested() -> None:
     with pytest.raises(TestDesignValidationError, match="evidence_references"):
         _candidate(origin="suggested", evidence_references=())
 
-
-def test_gap_rejects_oversized_detail() -> None:
-    with pytest.raises(TestDesignValidationError, match="detail"):
-        CoverageGap(category="negative", detail="x" * (MAX_GAP_DETAIL_CHARS + 1))
 
 
 def test_draft_selected_candidate_ids() -> None:

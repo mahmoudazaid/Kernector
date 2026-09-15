@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api/errors";
 import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
   confirmTestDesignDraft,
+  exportTestDesignGoogleDrive,
   getTestDesignDraft,
   patchTestDesignDraft,
   type TestCoverageDraftResponse,
@@ -21,8 +22,47 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api/test-design", () => ({
   confirmTestDesignDraft: vi.fn(),
+  exportTestDesignGoogleDrive: vi.fn(),
   getTestDesignDraft: vi.fn(),
   patchTestDesignDraft: vi.fn(),
+}));
+
+vi.mock("@/components/documents/GoogleDrivePicker", () => ({
+  GoogleDrivePicker: ({
+    open,
+    onConfirm,
+    onCancel,
+    title,
+    confirmLabel = "Export",
+  }: {
+    open: boolean;
+    onConfirm: (selection: {
+      folders: { id: string; name: string }[];
+      files: { id: string; name: string }[];
+    }) => void;
+    onCancel: () => void;
+    title?: string;
+    confirmLabel?: string;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label={title ?? "picker"}>
+        <h2>{title}</h2>
+        <button
+          type="button"
+          onClick={() =>
+            onConfirm({
+              folders: [{ id: "folderExport123", name: "Exports" }],
+              files: [],
+            })
+          }
+        >
+          {confirmLabel}
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null,
 }));
 
 const runtimeCatalogState = vi.hoisted(() => ({
@@ -95,8 +135,8 @@ function draft(
         origin: "manual",
       }),
     ],
-    coverage_gaps: [],
     selected_candidate_ids: ["cand-positive", "manual-1"],
+    coverage_gaps: [],
     source_reference: { source_id: "issue-293", source_type: "github_issue" },
     version: 3,
     ...overrides,
@@ -119,11 +159,16 @@ describe("TestDesignWorkspace", () => {
     vi.mocked(getTestDesignDraft).mockReset();
     vi.mocked(patchTestDesignDraft).mockReset();
     vi.mocked(confirmTestDesignDraft).mockReset();
+    vi.mocked(exportTestDesignGoogleDrive).mockReset();
     vi.mocked(getTestDesignDraft).mockResolvedValue(draft());
     vi.mocked(patchTestDesignDraft).mockResolvedValue(draft({ version: 4 }));
     vi.mocked(confirmTestDesignDraft).mockResolvedValue(
       draft({ status: "ready", version: 4 }),
     );
+    vi.mocked(exportTestDesignGoogleDrive).mockResolvedValue({
+      file_id: "drive-1",
+      file_name: "mahmoudazaid-Kernector-293.md",
+    });
   });
 
   it("removes manually added blank candidates without losing other edits", async () => {
@@ -166,37 +211,42 @@ describe("TestDesignWorkspace", () => {
     expect(screen.getByRole("checkbox", { name: /keep covers happy path/i })).toBeInTheDocument();
   });
 
-  it("confirms selected saved drafts and displays ready status", async () => {
+  it("exports selected drafts after choosing a Drive folder", async () => {
     const user = userEvent.setup();
     await renderWorkspace();
 
-    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
+    await user.click(screen.getByRole("button", { name: /^export$/i }));
 
-    expect(confirmTestDesignDraft).toHaveBeenCalledWith(
+    expect(exportTestDesignGoogleDrive).toHaveBeenCalledWith(
       expect.objectContaining({
         draftId: "draft-1",
-        body: { expected_version: 3 },
+        body: { folder_id: "folderExport123" },
       }),
     );
-    expect(await screen.findByText("ready")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/exported mahmoudazaid-kernector-293\.md to exports/i),
+    ).toBeInTheDocument();
   });
 
-  it("keeps unsaved edits on confirm version conflicts", async () => {
+  it("shows an error when export fails", async () => {
     const user = userEvent.setup();
-    vi.mocked(confirmTestDesignDraft).mockRejectedValueOnce(
+    vi.mocked(exportTestDesignGoogleDrive).mockRejectedValueOnce(
       new ApiError({
-        status: 409,
-        title: "Conflict",
-        detail: "Version conflict.",
-        code: "version_conflict",
+        status: 500,
+        title: "Tool failure",
+        detail: "Tool failure.",
+        code: "tool_failure",
       }),
     );
     await renderWorkspace();
 
-    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
+    await user.click(screen.getByRole("button", { name: /^export$/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/changed elsewhere/i);
-    expect(screen.getByDisplayValue("Manual edge case")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /could not export to google drive/i,
+    );
   });
 
   it("disables candidate title and selection controls while save is in flight", async () => {
@@ -264,12 +314,12 @@ describe("TestDesignWorkspace", () => {
     await user.click(screen.getByRole("button", { name: /save draft/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /confirm/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /export to google drive/i })).toBeEnabled();
     });
     expect(patchTestDesignDraft).toHaveBeenCalled();
   });
 
-  it("records coverage confirmation into the originating conversation", async () => {
+  it("records coverage confirmation into the originating conversation on confirm", async () => {
     const user = userEvent.setup();
     const {
       createConversation,
@@ -303,27 +353,62 @@ describe("TestDesignWorkspace", () => {
     expect(getConversation("conv-1")?.id).toBe("conv-1");
     expect(created.id).toBeTruthy();
 
-    vi.mocked(confirmTestDesignDraft).mockResolvedValueOnce(
-      draft({
-        status: "ready",
-        version: 4,
-        selected_candidate_ids: ["cand-positive", "manual-1"],
-        coverage_gaps: [
-          { category: "negative", detail: "No evidence for auth failure paths." },
-        ],
-      }),
-    );
     await renderWorkspace();
-    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    await user.click(screen.getByRole("button", { name: /^confirm$/i }));
 
     await waitFor(() => {
       expect(getConversation("conv-1")?.messages[0]?.content).toBe(
-        "Coverage confirmed for mahmoudazaid/Kernector#293: 2 tests selected, 1 coverage gaps.",
+        "Coverage confirmed for mahmoudazaid/Kernector#293: 2 tests selected.",
       );
     });
+    expect(confirmTestDesignDraft).toHaveBeenCalled();
   });
 
-  it("disables confirm without a selection, while busy, and while dirty", async () => {
+  it("exports without rewriting the conversation card", async () => {
+    const user = userEvent.setup();
+    const {
+      createConversation,
+      getConversation,
+      resetConversationsSnapshotForTests,
+      CONVERSATIONS_STORAGE_KEY,
+    } = await import("@/lib/session/conversations");
+    localStorage.clear();
+    resetConversationsSnapshotForTests();
+    createConversation({
+      title: "Design",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Your Test Design draft is ready.",
+          action: {
+            kind: "open_workflow",
+            workflow_id: "software-delivery.test-design",
+            label: "Open Test Design",
+            draft_id: "draft-1",
+          },
+        },
+      ],
+      draft: "",
+    });
+    const raw = JSON.parse(localStorage.getItem(CONVERSATIONS_STORAGE_KEY)!);
+    raw.conversations[0].id = "conv-1";
+    localStorage.setItem(CONVERSATIONS_STORAGE_KEY, JSON.stringify(raw));
+    resetConversationsSnapshotForTests();
+
+    await renderWorkspace();
+    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
+    await user.click(screen.getByRole("button", { name: /^export$/i }));
+
+    await waitFor(() => {
+      expect(exportTestDesignGoogleDrive).toHaveBeenCalled();
+    });
+    expect(getConversation("conv-1")?.messages[0]?.content).toBe(
+      "Your Test Design draft is ready.",
+    );
+  });
+
+  it("disables export without a selection, and auto-saves before opening the picker", async () => {
     const user = userEvent.setup();
     vi.mocked(getTestDesignDraft).mockResolvedValueOnce(
       draft({
@@ -333,31 +418,18 @@ describe("TestDesignWorkspace", () => {
     );
     await renderWorkspace();
 
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /export to google drive/i })).toBeDisabled();
 
     await user.click(screen.getByRole("checkbox", { name: /keep covers happy path/i }));
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /export to google drive/i })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: /save draft/i }));
+    await user.click(screen.getByRole("button", { name: /export to google drive/i }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /confirm/i })).toBeEnabled();
+      expect(patchTestDesignDraft).toHaveBeenCalled();
     });
+    expect(await screen.findByRole("dialog", { name: /export to google drive/i })).toBeInTheDocument();
   });
 
-  it("renders coverage gaps from the draft", async () => {
-    vi.mocked(getTestDesignDraft).mockResolvedValueOnce(
-      draft({
-        coverage_gaps: [
-          { category: "negative", detail: "No evidence for auth failure paths." },
-        ],
-      }),
-    );
-    await renderWorkspace();
-
-    expect(screen.getByText("Coverage gaps")).toBeInTheDocument();
-    expect(screen.getAllByText("negative")).toHaveLength(2);
-    expect(screen.getByText("No evidence for auth failure paths.")).toBeInTheDocument();
-  });
 
   it("shows loading while runtime settings load", () => {
     runtimeCatalogState.catalog = null;

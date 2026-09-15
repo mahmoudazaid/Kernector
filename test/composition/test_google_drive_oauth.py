@@ -24,6 +24,7 @@ from application.errors import (
 )
 from composition import (
     browse_google_drive_items,
+    create_google_drive_folder,
     complete_google_drive_oauth,
     delete_uploaded_document,
     disconnect_google_drive_oauth,
@@ -39,7 +40,7 @@ from composition.container import (
     _DRIVE_SELECTION_VALIDATE_WORKERS,
     build_google_drive_oauth_connector,
 )
-from composition.errors import DocumentOperationError
+from composition.errors import DocumentOperationError, GoogleDriveConnectorError
 from domain.errors import ConnectorAuthError, ConnectorError
 from domain.knowledge import (
     CatalogDocument,
@@ -49,6 +50,8 @@ from domain.knowledge import (
 )
 from infrastructure.config import GoogleOAuthSettings, load_settings
 from infrastructure.connectors.google_drive.oauth import (
+    DRIVE_FILE_SCOPE,
+    DRIVE_READ_SCOPE,
     GoogleDriveSelectedItem as StoredItem,
     GoogleOAuthConnection,
     GoogleOAuthConnectionStore,
@@ -1432,3 +1435,166 @@ def test_delete_drive_document_drops_file_from_selection(
     loaded = tokens.load()
     assert loaded is not None
     assert [item.id for item in loaded.files] == ["keep"]
+
+
+class _CreateFolderRequest:
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+
+    def execute(self) -> object:
+        return self._payload
+
+
+class _FakeCreateFolderFiles:
+    def __init__(self, *, payload: object | None = None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._payload = payload if payload is not None else {
+            "id": "folder-new",
+            "name": "Exports",
+            "mimeType": "application/vnd.google-apps.folder",
+            "modifiedTime": "2026-09-15T12:00:00.000Z",
+        }
+
+    def create(self, **kwargs: object) -> _CreateFolderRequest:
+        self.calls.append(kwargs)
+        return _CreateFolderRequest(self._payload)
+
+
+def _save_drive_connection(
+    settings,
+    *,
+    granted_scopes: frozenset[str] | None = None,
+) -> GoogleOAuthConnectionStore:
+    tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
+    scopes = granted_scopes if granted_scopes is not None else frozenset(
+        {DRIVE_READ_SCOPE, DRIVE_FILE_SCOPE}
+    )
+    tokens.save(
+        GoogleOAuthConnection(
+            refresh_token="1//refresh-secret",
+            access_token="ya29.access-secret",
+            account_email="ada@example.com",
+            last_synced_at=None,
+            last_sync_new=None,
+            last_sync_updated=None,
+            last_sync_unchanged=None,
+            last_sync_failed=None,
+            reauthorization_required=False,
+            granted_scopes=scopes,
+        )
+    )
+    return tokens
+
+
+def test_create_folder_under_parent(settings) -> None:
+    tokens = _save_drive_connection(settings)
+    files = _FakeCreateFolderFiles()
+    factory_calls: list[tuple[object, ...]] = []
+
+    def files_factory(oauth_settings, refresh_token, scopes):
+        factory_calls.append((oauth_settings, refresh_token, tuple(scopes)))
+        return files
+
+    item = create_google_drive_folder(
+        settings,
+        name="  Exports  ",
+        parent_id="folder-parent",
+        connection_store=tokens,
+        files_factory=files_factory,
+    )
+
+    assert item.id == "folder-new"
+    assert item.name == "Exports"
+    assert item.kind == "folder"
+    assert item.mime_type == "application/vnd.google-apps.folder"
+    assert files.calls[0]["body"] == {
+        "name": "Exports",
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": ["folder-parent"],
+    }
+    assert DRIVE_FILE_SCOPE in factory_calls[0][2]
+    assert "ya29.access-secret" not in repr(item)
+    assert "1//refresh-secret" not in repr(item)
+
+
+def test_create_folder_defaults_parent_to_root(settings) -> None:
+    tokens = _save_drive_connection(settings)
+    files = _FakeCreateFolderFiles()
+
+    create_google_drive_folder(
+        settings,
+        name="Exports",
+        connection_store=tokens,
+        files_factory=lambda *_args: files,
+    )
+
+    assert files.calls[0]["body"]["parents"] == ["root"]
+
+
+def test_create_folder_rejects_blank_name(settings) -> None:
+    tokens = _save_drive_connection(settings)
+    with pytest.raises(InputRejectedError, match="name"):
+        create_google_drive_folder(
+            settings,
+            name="   ",
+            connection_store=tokens,
+            files_factory=lambda *_args: _FakeCreateFolderFiles(),
+        )
+
+
+def test_create_folder_rejects_invalid_parent(settings) -> None:
+    tokens = _save_drive_connection(settings)
+    with pytest.raises(InputRejectedError, match="parent_id"):
+        create_google_drive_folder(
+            settings,
+            name="Exports",
+            parent_id="not a valid id!",
+            connection_store=tokens,
+            files_factory=lambda *_args: _FakeCreateFolderFiles(),
+        )
+
+
+def test_create_folder_requires_drive_file_scope(settings) -> None:
+    tokens = _save_drive_connection(
+        settings, granted_scopes=frozenset({DRIVE_READ_SCOPE})
+    )
+    with pytest.raises(GoogleDriveReauthorizationRequiredError):
+        create_google_drive_folder(
+            settings,
+            name="Exports",
+            connection_store=tokens,
+            files_factory=lambda *_args: _FakeCreateFolderFiles(),
+        )
+
+
+def test_create_folder_maps_auth_failure_to_reauth(settings) -> None:
+    tokens = _save_drive_connection(settings)
+
+    class AuthFailFiles:
+        def create(self, **_kwargs: object) -> object:
+            raise ConnectorAuthError("nope")
+
+    with pytest.raises(GoogleDriveReauthorizationRequiredError):
+        create_google_drive_folder(
+            settings,
+            name="Exports",
+            connection_store=tokens,
+            files_factory=lambda *_args: AuthFailFiles(),
+        )
+    assert tokens.load().reauthorization_required is True
+
+
+def test_create_folder_maps_connector_failure(settings) -> None:
+    tokens = _save_drive_connection(settings)
+
+    class FailFiles:
+        def create(self, **_kwargs: object) -> object:
+            raise ConnectorError("nope")
+
+    with pytest.raises(GoogleDriveConnectorError, match="Google Drive request failed"):
+        create_google_drive_folder(
+            settings,
+            name="Exports",
+            connection_store=tokens,
+            files_factory=lambda *_args: FailFiles(),
+        )

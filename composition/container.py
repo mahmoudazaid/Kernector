@@ -1361,7 +1361,11 @@ def start_google_drive_oauth(
 
     store = state_store if state_store is not None else _state_store(settings)
     state = store.issue()
-    return authorization_url(settings.google_oauth, state=state)
+    return authorization_url(
+        settings.google_oauth,
+        state=state,
+        include_drive_file="software-delivery" in settings.domain_tools.enabled_packs,
+    )
 
 
 def complete_google_drive_oauth(
@@ -1437,6 +1441,7 @@ def complete_google_drive_oauth(
                 folders=() if not keep_scope else existing.folders,
                 files=() if not keep_scope else existing.files,
                 account_email_unverified=probe_failed,
+                granted_scopes=grant.granted_scopes,
             )
 
         tokens_store.mutate(_next)
@@ -1493,7 +1498,8 @@ def disconnect_google_drive_oauth(
     )
 
 
-def _require_drive_grant(settings: Settings, *, connection_store=None):
+def require_drive_grant(settings: Settings, *, connection_store=None):
+    """Load a usable Hub Drive grant, or raise a typed connection error."""
     tokens_store = (
         connection_store if connection_store is not None else _connection_store(settings)
     )
@@ -1507,7 +1513,26 @@ def _require_drive_grant(settings: Settings, *, connection_store=None):
     return tokens_store, connection
 
 
-def _mark_reauth(tokens_store, error: BaseException) -> NoReturn:
+def require_drive_export_grant(settings: Settings, *, connection_store=None):
+    """Require a Drive grant that includes ``drive.file`` for outbound writes.
+
+    Missing ``drive.file`` is a local precondition — it raises without mutating
+    a still-valid readonly grant.
+    """
+    from infrastructure.connectors.google_drive.oauth import DRIVE_FILE_SCOPE
+
+    tokens_store, connection = require_drive_grant(
+        settings, connection_store=connection_store
+    )
+    if DRIVE_FILE_SCOPE not in connection.granted_scopes:
+        raise GoogleDriveReauthorizationRequiredError(
+            "Google Drive authorization was revoked"
+        )
+    return tokens_store, connection
+
+
+def mark_drive_reauth(tokens_store, error: BaseException) -> NoReturn:
+    """Persist ``reauthorization_required`` and raise the typed Hub error."""
     tokens_store.mutate(
         lambda current: None
         if current is None
@@ -2082,7 +2107,7 @@ def browse_google_drive_items(
         raise InputRejectedError("query is too long.")
     if page_token is not None and (not page_token.strip() or len(page_token) > 1024):
         raise InputRejectedError("page_token is invalid.")
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     try:
@@ -2098,7 +2123,7 @@ def browse_google_drive_items(
             page_token=None if page_token is None else page_token.strip(),
         )
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, error)
+        mark_drive_reauth(tokens_store, error)
     except ConnectorError as error:
         raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
     return GoogleDriveBrowsePage(
@@ -2114,6 +2139,115 @@ def browse_google_drive_items(
             for item in page.items
         ),
         next_page_token=page.next_page_token,
+    )
+
+
+_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def create_google_drive_folder(
+    settings: Settings,
+    *,
+    name: str,
+    parent_id: str | None = None,
+    connection_store=None,
+    files_factory=None,
+) -> GoogleDriveBrowseItem:
+    """Create a Drive folder under ``parent_id`` using the Hub OAuth grant.
+
+    Args:
+        settings (Settings): Loaded environment settings.
+        name (str): Folder display name.
+        parent_id (str | None): Parent folder ID. Defaults to My Drive (``root``).
+        connection_store: Injected grant store for tests.
+        files_factory: Injected ``(oauth_settings, refresh_token, scopes) -> files``
+            factory for tests.
+
+    Returns:
+        GoogleDriveBrowseItem: The created folder row (id + name).
+
+    Raises:
+        GoogleDriveNotConnectedError: No stored grant.
+        GoogleDriveReauthorizationRequiredError: Grant rejected or missing
+            ``drive.file``.
+        InputRejectedError: ``name`` or ``parent_id`` is invalid.
+        GoogleDriveConnectorError: Create failed at the Google boundary.
+    """
+    if not isinstance(name, str):
+        raise InputRejectedError("name must be a non-empty string.")
+    stripped_name = name.strip()
+    if not stripped_name:
+        raise InputRejectedError("name must be a non-empty string.")
+    if len(stripped_name) > _DRIVE_ITEM_NAME_MAX:
+        raise InputRejectedError("name is too long.")
+    resolved_parent = (
+        "root" if parent_id is None or not parent_id.strip() else parent_id.strip()
+    )
+    if not _DRIVE_ITEM_ID.fullmatch(resolved_parent):
+        raise InputRejectedError("parent_id must be a Drive folder ID.")
+
+    tokens_store, connection = require_drive_export_grant(
+        settings, connection_store=connection_store
+    )
+    from infrastructure.connectors.google_drive.oauth import (
+        build_oauth_drive_files,
+    )
+    from infrastructure.connectors.google_drive.http_errors import (
+        map_google_error,
+    )
+
+    factory = files_factory
+    if factory is None:
+
+        def factory(oauth_settings, refresh_token, scopes):
+            return build_oauth_drive_files(
+                oauth_settings,
+                refresh_token=refresh_token,
+                scopes=scopes,
+            )
+
+    try:
+        files = factory(
+            settings.google_oauth,
+            connection.refresh_token,
+            tuple(sorted(connection.granted_scopes)),
+        )
+        request = files.create(
+            body={
+                "name": stripped_name,
+                "mimeType": _DRIVE_FOLDER_MIME,
+                "parents": [resolved_parent],
+            },
+            fields="id,name,mimeType,modifiedTime",
+            supportsAllDrives=True,
+        )
+        raw = request.execute()  # type: ignore[attr-defined]
+    except ConnectorAuthError as error:
+        mark_drive_reauth(tokens_store, error)
+    except ConnectorError as error:
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
+    except Exception as error:  # noqa: BLE001 - map provider failures
+        mapped = map_google_error(error)
+        if isinstance(mapped, ConnectorAuthError):
+            mark_drive_reauth(tokens_store, mapped)
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
+
+    if not isinstance(raw, dict):
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE)
+    folder_id = raw.get("id")
+    folder_name = raw.get("name")
+    if not isinstance(folder_id, str) or not folder_id.strip():
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE)
+    if not isinstance(folder_name, str) or not folder_name.strip():
+        raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE)
+    modified = raw.get("modifiedTime")
+    return GoogleDriveBrowseItem(
+        id=folder_id.strip(),
+        name=folder_name.strip(),
+        kind="folder",
+        mime_type=_DRIVE_FOLDER_MIME,
+        supported=True,
+        modified_at=modified if isinstance(modified, str) else None,
     )
 
 
@@ -2135,7 +2269,7 @@ def get_google_drive_selection(
         GoogleDriveNotConnectedError: No stored grant.
         GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
     """
-    _tokens_store, connection = _require_drive_grant(
+    _tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     return GoogleDriveSelection(
@@ -2194,7 +2328,7 @@ def put_google_drive_selection(
     folder_ids = {item.id for item in folder_items}
     if folder_ids & {item.id for item in file_items}:
         raise InputRejectedError(_SELECTION_KIND_DETAIL)
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     previous_file_ids = frozenset(item.id for item in connection.files)
@@ -2207,7 +2341,7 @@ def put_google_drive_selection(
             connector_factory=connector_factory,
         )
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, error)
+        mark_drive_reauth(tokens_store, error)
     except ConnectorError as error:
         raise InputRejectedError(_SELECTION_INACCESSIBLE_DETAIL) from error
     from infrastructure.connectors.google_drive.oauth import GoogleDriveSelectedItem as StoredItem
@@ -2528,7 +2662,7 @@ def sync_google_drive_oauth(
     """
     from datetime import datetime, timezone
 
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     if not connection.folders and not connection.files:
@@ -2556,7 +2690,7 @@ def sync_google_drive_oauth(
         )
     except ConnectorSyncError as error:
         if isinstance(error.__cause__, ConnectorAuthError):
-            _mark_reauth(tokens_store, error)
+            mark_drive_reauth(tokens_store, error)
         raise
     new_count = result.ingested_count
     updated_count = result.updated_count
@@ -3278,14 +3412,41 @@ def build_invoke_tool(
 
     Args:
         settings (Settings): Runtime settings including enabled tool packs.
-        chat_model (ChatModel | None): Required when ``software-delivery`` is
-            enabled; injected only, never constructed here.
+        chat_model (ChatModel | None): Optional; required only when a future
+            LLM-backed pack tool needs it. Drive export does not use chat.
 
     Returns:
         InvokeTool: Generic lookup-and-run use case.
     """
-    return InvokeTool(build_tool_registry(settings, chat_model=chat_model))
+    export_render = None
+    export_uploader = None
+    if (
+        "software-delivery" in settings.domain_tools.enabled_packs
+        and _oauth_ready(settings)
+    ):
+        from composition.software_delivery_export import render_export_markdown
+        from infrastructure.connectors.google_drive.artifact_uploader import (
+            GoogleDriveArtifactUploader,
+        )
+        from infrastructure.connectors.google_drive.oauth import (
+            GoogleOAuthConnectionStore,
+        )
 
+        export_render = render_export_markdown
+        export_uploader = GoogleDriveArtifactUploader(
+            oauth_settings=settings.google_oauth,
+            connection_store=GoogleOAuthConnectionStore(
+                settings.google_oauth.token_path
+            ),
+        )
+    return InvokeTool(
+        build_tool_registry(
+            settings,
+            chat_model=chat_model,
+            export_render=export_render,
+            export_uploader=export_uploader,
+        )
+    )
 
 def build_opaque_invoke(
     settings: Settings, *, chat_model: ChatModel | None = None

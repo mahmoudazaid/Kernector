@@ -142,14 +142,13 @@ describe("conversation store", () => {
         draftId: "draft-1",
         ticketIdentifier: "owner/repo#1",
         selectedCount: 3,
-        coverageGapCount: 1,
       }),
     ).toBe(true);
 
     const messages = getConversation(created.id)?.messages ?? [];
     expect(messages).toHaveLength(2);
     expect(messages[1]?.content).toBe(
-      "Coverage confirmed for owner/repo#1: 3 tests selected, 1 coverage gaps.",
+      "Coverage confirmed for owner/repo#1: 3 tests selected.",
     );
     expect(messages[1]?.action).toMatchObject({
       kind: "open_workflow",
@@ -165,7 +164,6 @@ describe("conversation store", () => {
         draftId: "draft-1",
         ticketIdentifier: "owner/repo#1",
         selectedCount: 1,
-        coverageGapCount: 0,
       }),
     ).toBe(false);
   });

@@ -12,7 +12,7 @@ import os
 import secrets
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -26,7 +26,8 @@ _LOG = logging.getLogger(__name__)
 _AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 _REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
-_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+DRIVE_READ_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 _DRIVE_HTTP_TIMEOUT_SECONDS = 20
 _ABOUT_ENDPOINT = "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)"
 _REDACTED = "***"
@@ -57,6 +58,7 @@ class GoogleOAuthGrant:
 
     access_token: str
     refresh_token: str
+    granted_scopes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +77,7 @@ class GoogleOAuthConnection:
     folders: tuple[GoogleDriveSelectedItem, ...] = ()
     files: tuple[GoogleDriveSelectedItem, ...] = ()
     account_email_unverified: bool = False
+    granted_scopes: frozenset[str] = frozenset()
 
     def __repr__(self) -> str:
         return (
@@ -83,6 +86,7 @@ class GoogleOAuthConnection:
             f"account_email={self.account_email!r}, "
             f"account_email_unverified={self.account_email_unverified}, "
             f"folders={len(self.folders)}, files={len(self.files)}, "
+            f"granted_scopes={len(self.granted_scopes)}, "
             f"last_synced_at={self.last_synced_at!r}, "
             f"reauthorization_required={self.reauthorization_required})"
         )
@@ -211,6 +215,7 @@ class GoogleOAuthConnectionStore:
             folders=_parse_selected_items(raw.get("folders")),
             files=_parse_selected_items(raw.get("files")),
             account_email_unverified=bool(raw.get("account_email_unverified")),
+            granted_scopes=_parse_granted_scopes(raw.get("granted_scopes")),
         )
 
 
@@ -224,20 +229,35 @@ class GoogleOAuthGateway(Protocol):
     def revoke(self, token: str) -> None: ...
 
 
-def authorization_url(settings: GoogleOAuthSettings, *, state: str) -> str:
-    """Build Google's authorization URL. ``redirect_uri`` is used exactly."""
+def authorization_url(
+    settings: GoogleOAuthSettings,
+    *,
+    state: str,
+    include_drive_file: bool = False,
+) -> str:
+    """Build Google's authorization URL. ``redirect_uri`` is used exactly.
+
+    Args:
+        settings: OAuth client settings.
+        state: CSRF state token.
+        include_drive_file: When True, request ``DRIVE_FILE_SCOPE`` in addition
+            to ``DRIVE_READ_SCOPE`` (incremental auth for export).
+    """
     if (
         settings.client_id is None
         or settings.client_secret is None
         or settings.redirect_uri is None
     ):
         raise GoogleOAuthError("OAuth client is not configured")
+    scopes = [DRIVE_READ_SCOPE]
+    if include_drive_file:
+        scopes.append(DRIVE_FILE_SCOPE)
     query = urlencode(
         {
             "client_id": settings.client_id,
             "redirect_uri": settings.redirect_uri,
             "response_type": "code",
-            "scope": _DRIVE_SCOPE,
+            "scope": " ".join(scopes),
             "access_type": "offline",
             "include_granted_scopes": "true",
             "prompt": "consent",
@@ -278,7 +298,11 @@ class HttpGoogleOAuthGateway:
             raise GoogleOAuthError("token endpoint omitted access_token")
         if not isinstance(refresh, str) or not refresh:
             raise GoogleOAuthError("token endpoint omitted refresh_token")
-        return GoogleOAuthGrant(access_token=access, refresh_token=refresh)
+        return GoogleOAuthGrant(
+            access_token=access,
+            refresh_token=refresh,
+            granted_scopes=_normalize_scope_string(payload.get("scope")),
+        )
 
     def fetch_account_email(self, access_token: str) -> str | None:
         """Read the Drive account email with the existing readonly scope."""
@@ -307,8 +331,17 @@ class HttpGoogleOAuthGateway:
             _LOG.info("Google token revoke failed; local grant will still be cleared")
 
 
-def build_oauth_drive_files(settings: GoogleOAuthSettings, *, refresh_token: str):
-    """Build a Drive ``files`` resource from a stored refresh token."""
+def build_oauth_drive_files(
+    settings: GoogleOAuthSettings,
+    *,
+    refresh_token: str,
+    scopes: Sequence[str] | None = None,
+):
+    """Build a Drive ``files`` resource from a stored refresh token.
+
+    Credentials use the **stored** granted scopes after preflight. Requesting
+    scopes during refresh must never be treated as granting new permissions.
+    """
     from google.oauth2.credentials import Credentials
     from google_auth_httplib2 import AuthorizedHttp
     from googleapiclient.discovery import build
@@ -316,13 +349,14 @@ def build_oauth_drive_files(settings: GoogleOAuthSettings, *, refresh_token: str
 
     if settings.client_id is None or settings.client_secret is None:
         raise GoogleOAuthError("OAuth client is not configured")
+    credential_scopes = tuple(scopes) if scopes is not None else (DRIVE_READ_SCOPE,)
     credentials = Credentials(
         token=None,
         refresh_token=refresh_token,
         token_uri=_TOKEN_ENDPOINT,
         client_id=settings.client_id,
         client_secret=settings.client_secret,
-        scopes=(_DRIVE_SCOPE,),
+        scopes=credential_scopes,
     )
     base = build_http()
     base.timeout = _DRIVE_HTTP_TIMEOUT_SECONDS
@@ -382,7 +416,29 @@ def _connection_payload(connection: GoogleOAuthConnection) -> dict[str, object]:
         "last_sync_failed": connection.last_sync_failed,
         "reauthorization_required": connection.reauthorization_required,
         "account_email_unverified": connection.account_email_unverified,
+        "granted_scopes": sorted(connection.granted_scopes),
     }
+
+
+def _normalize_scope_string(raw: object) -> frozenset[str]:
+    if not isinstance(raw, str) or not raw.strip():
+        return frozenset()
+    return frozenset(part for part in raw.split() if part)
+
+
+def _parse_granted_scopes(raw: object) -> frozenset[str]:
+    """Parse persisted scopes; missing/invalid → empty (write grant unknown)."""
+    if raw is None:
+        return frozenset()
+    if isinstance(raw, str):
+        return _normalize_scope_string(raw)
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        scopes: set[str] = set()
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                scopes.add(item.strip())
+        return frozenset(scopes)
+    return frozenset()
 
 
 def _parse_selected_items(raw: object) -> tuple[GoogleDriveSelectedItem, ...]:

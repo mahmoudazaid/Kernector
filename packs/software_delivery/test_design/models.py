@@ -12,7 +12,6 @@ from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.limits import (
     MAX_CANDIDATES,
     MAX_EVIDENCE_REFS,
-    MAX_GAP_DETAIL_CHARS,
     MAX_ID_CHARS,
     MAX_RATIONALE_CHARS,
     MAX_TICKET_IDENTIFIER_CHARS,
@@ -35,6 +34,32 @@ COVERAGE_CATEGORIES: frozenset[str] = frozenset(
     }
 )
 COVERAGE_CATEGORIES_DISPLAY = str(sorted(COVERAGE_CATEGORIES))
+
+# Common model / legacy labels → canonical CoverageCategory.
+_CATEGORY_ALIASES: dict[str, str] = {
+    "happy_path": "positive",
+    "happy": "positive",
+    "integration": "positive",
+    "permission_security": "negative",
+    "security": "negative",
+    "auth": "negative",
+    "failure_recovery": "edge_case",
+    "edge": "edge_case",
+    "edgecase": "edge_case",
+}
+
+
+def coerce_coverage_category(raw: object) -> str | None:
+    """Return a canonical coverage category, or ``None`` if unrecoverable."""
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().lower().replace(" ", "_").replace("-", "_")
+    if not value:
+        return None
+    if value in COVERAGE_CATEGORIES:
+        return value
+    return _CATEGORY_ALIASES.get(value)
+
 
 DRAFT_STATUSES: frozenset[str] = frozenset({"coverage_review", "ready"})
 DRAFT_STATUSES_DISPLAY = str(sorted(DRAFT_STATUSES))
@@ -209,18 +234,6 @@ class TestCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class CoverageGap:
-    """Typed gap where evidence does not support a coverage category."""
-
-    category: CoverageCategory
-    detail: str
-
-    def __post_init__(self) -> None:
-        _require_category(self.category)
-        _require_bounded_text(self.detail, "detail", MAX_GAP_DETAIL_CHARS)
-
-
-@dataclass(frozen=True, slots=True)
 class TestCoverageDraft:
     """Workspace-scoped interactive coverage-candidate draft.
 
@@ -237,7 +250,6 @@ class TestCoverageDraft:
     ticket_identifier: str
     status: DraftStatus
     candidates: Sequence[TestCandidate]
-    coverage_gaps: Sequence[CoverageGap]
     version: int
 
     def __post_init__(self) -> None:
@@ -284,17 +296,6 @@ class TestCoverageDraft:
             seen_candidate_ids.add(item.candidate_id)
             normalized_candidates.append(item)
         object.__setattr__(self, "candidates", tuple(normalized_candidates))
-
-        gaps = _require_sequence(self.coverage_gaps, "coverage_gaps")
-        normalized_gaps: list[CoverageGap] = []
-        for item in gaps:
-            if not isinstance(item, CoverageGap):
-                raise TestDesignValidationError(
-                    "coverage_gaps items must be CoverageGap, "
-                    f"got {type(item).__name__}"
-                )
-            normalized_gaps.append(item)
-        object.__setattr__(self, "coverage_gaps", tuple(normalized_gaps))
 
     @property
     def selected_candidate_ids(self) -> tuple[str, ...]:
