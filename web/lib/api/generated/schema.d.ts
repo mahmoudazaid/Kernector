@@ -3542,6 +3542,15 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Validation error */
       422: {
         headers: {
@@ -3553,15 +3562,6 @@ export interface operations {
       };
       /** @description Server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
-        };
-      };
-      /** @description Provider error */
-      502: {
         headers: {
           [name: string]: unknown;
         };

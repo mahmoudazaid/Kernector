@@ -12,7 +12,6 @@ from typing import Literal
 from application.errors import (
     GitHubNotConnectedError,
     GitHubReauthorizationRequiredError,
-    GoogleDriveNotConnectedError,
     InsufficientEvidenceError,
 )
 from composition.software_delivery_tools import software_delivery_tools_enabled
@@ -467,17 +466,18 @@ class TestDesignFacade:
             ApplicationValidationError,
             GoogleDriveReauthorizationRequiredError,
         )
-        from composition.container import build_invoke_tool
-        from dataclasses import replace
+        from composition.container import (
+            _mark_reauth,
+            _require_drive_grant,
+            build_invoke_tool,
+        )
         from domain.errors import (
             ConnectorAuthError,
             ToolArgumentValidationError,
             ToolFailureError,
         )
         from infrastructure.connectors.google_drive.folder import is_drive_folder_id
-        from infrastructure.connectors.google_drive.oauth import (
-            GoogleOAuthConnectionStore,
-        )
+        from infrastructure.connectors.google_drive.oauth import DRIVE_FILE_SCOPE
         from packs.software_delivery.tools.export_test_cases_google_drive import (
             TOOL_NAME,
         )
@@ -503,6 +503,13 @@ class TestDesignFacade:
             raise TestDesignValidationError(
                 "select at least one candidate before export"
             )
+        # Mirror create_google_drive_folder: missing drive.file is a local
+        # precondition — raise reauth without mutating a valid readonly grant.
+        tokens_store, connection = _require_drive_grant(self._settings)
+        if DRIVE_FILE_SCOPE not in connection.granted_scopes:
+            raise GoogleDriveReauthorizationRequiredError(
+                "Google Drive authorization was revoked"
+            )
         arguments: dict[str, object] = {
             "document_title": current.ticket_identifier,
             "titles": list(selected_titles),
@@ -522,21 +529,7 @@ class TestDesignFacade:
                 _TEST_DESIGN_VALIDATION_DETAIL
             ) from error
         except ConnectorAuthError as error:
-            tokens_store = GoogleOAuthConnectionStore(
-                self._settings.google_oauth.token_path
-            )
-            if tokens_store.load() is None:
-                raise GoogleDriveNotConnectedError(
-                    "Google Drive is not connected"
-                ) from error
-            tokens_store.mutate(
-                lambda current: None
-                if current is None
-                else replace(current, reauthorization_required=True)
-            )
-            raise GoogleDriveReauthorizationRequiredError(
-                "Google Drive authorization was revoked"
-            ) from error
+            _mark_reauth(tokens_store, error)
         except ToolFailureError:
             raise
         try:

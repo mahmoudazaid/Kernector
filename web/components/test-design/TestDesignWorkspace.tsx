@@ -436,6 +436,11 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         setError("Google Drive export is unavailable.");
       } else if (
         caught instanceof ApiError &&
+        caught.code === "google_drive_not_connected"
+      ) {
+        setError("Google Drive is not connected.");
+      } else if (
+        caught instanceof ApiError &&
         caught.code === "google_drive_reauthorization_required"
       ) {
         setError("Google Drive authorization was revoked. Connect again.");

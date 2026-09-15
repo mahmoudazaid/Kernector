@@ -4669,6 +4669,16 @@
             },
             "description": "Method not allowed"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -4688,16 +4698,6 @@
               }
             },
             "description": "Server error"
-          },
-          "502": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Provider error"
           }
         },
         "summary": "Export Draft Google Drive",

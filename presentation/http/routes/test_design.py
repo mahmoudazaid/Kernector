@@ -114,7 +114,7 @@ def confirm_draft(
 
 @router.post(
     "/drafts/{draft_id}/export/google-drive",
-    responses=problem_responses(404, 405, 422, 500, 502),
+    responses=problem_responses(404, 405, 409, 422, 500),
 )
 def export_draft_google_drive(
     draft_id: str,
