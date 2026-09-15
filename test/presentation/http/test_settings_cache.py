@@ -19,7 +19,7 @@ def test_get_settings_calls_load_runtime_settings_once(monkeypatch) -> None:
     calls: list[object] = []
     sentinel = SimpleNamespace(
         provider="openrouter",
-        domain_tools=SimpleNamespace(enabled_packs=()),
+        domain_tools=SimpleNamespace(enabled_packs=(), agent_loop=False),
     )
 
     def _load() -> SimpleNamespace:
@@ -40,7 +40,7 @@ def test_settings_uses_cached_settings_across_requests(monkeypatch) -> None:
     calls: list[int] = []
     sentinel = SimpleNamespace(
         provider="ollama",
-        domain_tools=SimpleNamespace(enabled_packs=()),
+        domain_tools=SimpleNamespace(enabled_packs=(), agent_loop=False),
     )
 
     def _load() -> SimpleNamespace:

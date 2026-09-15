@@ -375,3 +375,37 @@ def test_run_meta_projection_omits_query_and_chunk_markers() -> None:
     assert "error_type" not in run
     assert "source_type" not in run
 
+
+def test_chat_ask_forwards_conversation_id() -> None:
+    ask = _StubAsk(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(request_id="req-c", outcome="success"),
+        )
+    )
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "What is the policy?", "conversation_id": "conv-99"},
+    )
+
+    assert response.status_code == 200
+    assert ask.last_request is not None
+    assert ask.last_request.conversation_id == "conv-99"
+
+
+def test_chat_ask_rejects_malformed_conversation_id() -> None:
+    ask = _StubAsk(
+        AskResponse(answer="ok", run=RunMeta(request_id="req-c", outcome="success"))
+    )
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "What is the policy?", "conversation_id": "bad:id"},
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+

@@ -230,16 +230,30 @@ class ToolCallingAgent(Protocol):
         tools: Sequence[Tool],
         *,
         max_steps: int,
+        conversation_id: str | None = None,
     ) -> AgentTurnResult:
         """Run the agent for ``goal`` with ``tools``, stopping by ``max_steps``.
 
         Bound tools are plain ``Tool`` ports (name, description, invoke), not
-        vendor SDK objects.
+        vendor SDK objects. Optional ``conversation_id`` selects short-term
+        thread memory when the adapter is configured with a checkpointer;
+        workspace binding stays in composition/infrastructure.
 
         Raises:
             ProviderError: The model or agent runtime failed.
             ToolArgumentValidationError: A tool rejected its arguments.
             ToolFailureError: A tool failed after accepting arguments.
+        """
+        ...
+
+
+class AgentThreadMemory(Protocol):
+    """Clears short-term agent thread state for a client conversation id."""
+
+    def clear(self, *, conversation_id: str) -> None:
+        """Drop checkpoints for ``conversation_id`` (idempotent).
+
+        Workspace scoping is bound by the adapter at construction time.
         """
         ...
 

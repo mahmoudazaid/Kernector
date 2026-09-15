@@ -77,6 +77,12 @@ describe("conversation run coordinator", () => {
     resolveAsk(SUCCESS);
     await done;
 
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ conversation_id: created.id }),
+      }),
+    );
+
     const conversation = getConversation(created.id);
     expect(conversation?.runStatus).toBe("idle");
     expect(conversation?.unread).toBe(true);

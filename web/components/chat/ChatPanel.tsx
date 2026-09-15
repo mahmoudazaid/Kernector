@@ -13,6 +13,7 @@ import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
   askChat,
+  clearChatCheckpointBestEffort,
   type AskChatOptions,
   type ChatAskResponse,
 } from "@/lib/api/chat";
@@ -47,6 +48,7 @@ import {
   deleteConversation,
   getConversation,
   migrateLegacyTranscripts,
+  newConversationId,
   subscribeConversations,
   titleFromMessages,
   updateConversation,
@@ -806,7 +808,9 @@ export function ChatPanel({
 
     if (isLanding) {
       const withUser = appendUserMessage([], query);
+      const conversationIdForRun = newConversationId();
       const created = createConversation({
+        id: conversationIdForRun,
         title: titleFromMessages(toPersisted(withUser)),
         messages: toPersisted(withUser),
         draft: "",
@@ -868,7 +872,13 @@ export function ChatPanel({
       const conversation = getConversation(id);
       const discard = !conversation || conversation.messages.length === 0;
       if (discard && conversation) {
+        // Drop the empty local shell immediately; clear server memory in
+        // the background so a hung backend cannot keep `sending` stuck.
         deleteConversation(id);
+        void clearChatCheckpointBestEffort({
+          baseUrl: apiBaseUrl,
+          conversationId: id,
+        });
       }
       // Store already recorded the outcome on `id`; never mutate another thread's UI.
       if (boundIdRef.current !== id) {

@@ -109,7 +109,10 @@ export function ChatRouteClient({
       />
       {isLanding ? (
         <div className="kern-chat-landing-history">
-          <PreviousChats onSelectConversation={openConversation} />
+          <PreviousChats
+            apiBaseUrl={apiBaseUrl}
+            onSelectConversation={openConversation}
+          />
         </div>
       ) : null}
     </div>

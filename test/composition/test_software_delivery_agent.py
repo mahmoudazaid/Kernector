@@ -69,7 +69,9 @@ class _OrderedFakeAgent:
         tools: Sequence[Tool],
         *,
         max_steps: int,
+        conversation_id: str | None = None,
     ) -> AgentTurnResult:
+        del conversation_id
         self.goals.append(goal)
         self.max_steps_seen.append(max_steps)
         by_name = {tool.name: tool for tool in tools}

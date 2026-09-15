@@ -70,6 +70,10 @@ from composition.container import (
     google_drive_status,
     sync_google_drive,
 )
+from composition.short_term_memory import (
+    ShortTermMemoryRuntime,
+    build_short_term_memory_runtime,
+)
 from composition.software_delivery_tools import (
     RiskFactorView,
     RiskScoreView,
@@ -169,6 +173,8 @@ __all__ = [
     "build_tool_registry",
     "build_vector_store",
     "build_chroma_vector_store",
+    "build_short_term_memory_runtime",
+    "ShortTermMemoryRuntime",
     "create_uploaded_document",
     "delete_uploaded_document",
     "get_uploaded_document_content",

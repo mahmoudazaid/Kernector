@@ -316,6 +316,17 @@ intent always ``None`` (#285), flipping the flag has no observable effect until
 a real tool and matcher land. Keep the deterministic chain as the default until
 the agent path is proven.
 
+**Short-term thread memory (#213):** when the agent loop is on, composition owns
+a process-scoped ``InMemorySaver`` (``composition/short_term_memory.py``) keyed
+as ``{workspace_id}:{conversation_id}`` where ``workspace_id`` comes only from
+trusted server config (``DOCUMENT_CATALOG_WORKSPACE_ID``) and ``conversation_id``
+is the client thread id from #246. Checkpoints are **process-local** and are
+**lost on process restart**. Deleting a conversation *best-effort* clears only
+that thread's checkpoint (idempotent; missing checkpoint is success); a failed
+clear leaves the checkpoint until process restart. There is no workspace-wide
+or global clear and no normal-UI "reset memory" control. Long-term memory is
+deferred to #299. Absent ``conversation_id``, the agent stays stateless.
+
 Two properties are worth naming because they are easy to lose:
 
 - **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it

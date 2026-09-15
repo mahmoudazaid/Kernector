@@ -118,6 +118,7 @@ class ToolRunner(Protocol):
         *,
         generate_tests: bool = True,
         output_style: str = "steps",
+        conversation_id: str | None = None,
     ) -> ToolRunOutcome:
         """Run the chain and project its typed results onto one outcome."""
 
@@ -229,6 +230,7 @@ class ToolAugmentedAsk:
                 request.query,
                 generate_tests=selection.generate_tests,
                 output_style=selection.output_style,
+                conversation_id=request.conversation_id,
             )
         except InsufficientEvidenceError:
             log_operation(

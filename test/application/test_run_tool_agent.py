@@ -14,7 +14,7 @@ from domain.ports import Tool
 
 class _FakeAgent:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[str, ...], int]] = []
+        self.calls: list[tuple[str, tuple[str, ...], int, str | None]] = []
 
     def run(
         self,
@@ -22,8 +22,9 @@ class _FakeAgent:
         tools: Sequence[Tool],
         *,
         max_steps: int,
+        conversation_id: str | None = None,
     ) -> AgentTurnResult:
-        self.calls.append((goal, tuple(t.name for t in tools), max_steps))
+        self.calls.append((goal, tuple(t.name for t in tools), max_steps, conversation_id))
         return AgentTurnResult(content="done", steps=1)
 
 
@@ -47,7 +48,7 @@ def test_run_tool_agent_delegates_to_port() -> None:
     result = use_case.execute("goal text", [_Tool()], max_steps=4)
 
     assert result == AgentTurnResult(content="done", steps=1)
-    assert agent.calls == [("goal text", ("t",), 4)]
+    assert agent.calls == [("goal text", ("t",), 4, None)]
 
 
 def test_run_tool_agent_rejects_blank_goal() -> None:

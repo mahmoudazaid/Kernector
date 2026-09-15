@@ -31,3 +31,49 @@ export async function askChat(
     timeoutMs: options.timeoutMs ?? CHAT_ASK_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
+
+export type ClearChatCheckpointOptions = {
+  baseUrl: string;
+  conversationId: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  request?: typeof apiRequest;
+};
+
+/**
+ * Clear short-term agent checkpoints via
+ * ``DELETE /api/v1/chat/threads/{conversation_id}/checkpoint``.
+ */
+export async function clearChatCheckpoint(
+  options: ClearChatCheckpointOptions,
+): Promise<void> {
+  const request = options.request ?? apiRequest;
+  const id = encodeURIComponent(options.conversationId);
+  await request<undefined>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/chat/threads/${id}/checkpoint`,
+    method: "DELETE",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/**
+ * Best-effort clear with one retry on transient failure.
+ * Returns true when the server accepted the clear (204).
+ */
+export async function clearChatCheckpointBestEffort(
+  options: ClearChatCheckpointOptions,
+): Promise<boolean> {
+  try {
+    await clearChatCheckpoint(options);
+    return true;
+  } catch {
+    try {
+      await clearChatCheckpoint(options);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

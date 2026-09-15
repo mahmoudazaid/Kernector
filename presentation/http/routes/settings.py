@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from presentation.http.deps import RuntimeSettingsDep
+from presentation.http.deps import RuntimeSettingsDep, ShortTermMemoryRuntimeDep
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     ModelSettingDefResponse,
@@ -19,7 +19,10 @@ router = APIRouter(prefix="/api/v1", tags=["settings"])
     "/settings",
     responses=problem_responses(405, 500),
 )
-def runtime_settings(use_case: RuntimeSettingsDep) -> RuntimeSettingsResponse:
+def runtime_settings(
+    use_case: RuntimeSettingsDep,
+    short_term_memory: ShortTermMemoryRuntimeDep,
+) -> RuntimeSettingsResponse:
     """Expose the client-facing runtime contract for Settings / Chat / Documents."""
     catalog = use_case.execute()
     return RuntimeSettingsResponse(
@@ -55,4 +58,5 @@ def runtime_settings(use_case: RuntimeSettingsDep) -> RuntimeSettingsResponse:
                 catalog.constraints.supported_upload_suffixes
             ),
         ),
+        short_term_memory_enabled=short_term_memory.short_term_memory_enabled,
     )

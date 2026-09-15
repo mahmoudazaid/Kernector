@@ -9,6 +9,7 @@ from fastapi import Depends
 
 from application.contracts import ConnectorSyncResponse
 from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
+from application.run_tool_agent import ClearAgentThread
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
     GoogleDriveBrowsePage,
@@ -21,12 +22,14 @@ from composition import (
     GitHubStatus,
     GroundedAsk,
     Settings,
+    ShortTermMemoryRuntime,
     browse_google_drive_items,
     build_chat_model,
     build_document_catalog,
     build_prompt_repository,
     build_probe_ollama_status,
     build_runtime_settings,
+    build_short_term_memory_runtime,
     build_tool_augmented_ask,
     build_vector_store,
     create_uploaded_document,
@@ -111,10 +114,19 @@ class AskFactory(Protocol):
     def __call__(self, runtime: ChatRuntimeRequest | None) -> GroundedAsk: ...
 
 
+@lru_cache(maxsize=1)
+def get_short_term_memory_runtime() -> ShortTermMemoryRuntime:
+    """Process-cached short-term agent memory runtime (InMemorySaver)."""
+    return build_short_term_memory_runtime(get_settings())
+
+
 def get_ask_factory(
     settings: Annotated[Settings, Depends(get_settings)],
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
     prompt_repository: Annotated[PromptRepository, Depends(get_prompt_repository)],
+    short_term_memory: Annotated[
+        ShortTermMemoryRuntime, Depends(get_short_term_memory_runtime)
+    ],
 ) -> AskFactory:
     """Return a factory that builds ask with per-request provider/model overrides."""
 
@@ -136,9 +148,19 @@ def get_ask_factory(
             provider=provider,
             model=model,
             base_url=base_url,
+            short_term_memory=short_term_memory,
         )
 
     return factory
+
+
+def get_clear_agent_thread(
+    short_term_memory: Annotated[
+        ShortTermMemoryRuntime, Depends(get_short_term_memory_runtime)
+    ],
+) -> ClearAgentThread:
+    """Clear use case bound to the process short-term memory runtime."""
+    return short_term_memory.clear_use_case()
 
 
 class ListDocumentChunks(Protocol):
@@ -485,6 +507,10 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
 AskFactoryDep = Annotated[AskFactory, Depends(get_ask_factory)]
+ClearAgentThreadDep = Annotated[ClearAgentThread, Depends(get_clear_agent_thread)]
+ShortTermMemoryRuntimeDep = Annotated[
+    ShortTermMemoryRuntime, Depends(get_short_term_memory_runtime)
+]
 DocumentOperationsDep = Annotated[
     DocumentOperations, Depends(get_document_operations)
 ]

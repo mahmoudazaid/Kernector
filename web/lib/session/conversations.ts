@@ -49,6 +49,8 @@ export type ConversationWrite = {
   title: string;
   messages: StoredChatMessage[];
   draft: string;
+  /** Optional explicit id (shared generator); otherwise allocated here. */
+  id?: string;
   runStatus?: ConversationRunStatus;
   requestStartedAt?: number | null;
   runHeartbeatAt?: number | null;
@@ -186,11 +188,19 @@ function writePayload(payload: ConversationsPayload): void {
   notifyListeners();
 }
 
-function newId(): string {
+/**
+ * Allocate a conversation id (UUID when available; `conv-…` fallback).
+ * Shared by `createConversation` and first-submit landing flows.
+ */
+export function newConversationId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
   return `conv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function newId(): string {
+  return newConversationId();
 }
 
 /** Truncate the first user turn into a default title. */
@@ -242,7 +252,7 @@ export function getConversation(id: string): Conversation | null {
  */
 export function createConversation(input: ConversationWrite): Conversation {
   const conversation: Conversation = {
-    id: newId(),
+    id: input.id?.trim() || newId(),
     title: input.title.trim() || titleFromMessages(input.messages),
     messages: parseMessages(input.messages),
     draft: input.draft,
