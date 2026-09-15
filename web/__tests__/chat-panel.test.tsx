@@ -196,7 +196,7 @@ describe("ChatPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clears the checkpoint before discarding a landing first turn", async () => {
+  it("clears the checkpoint when discarding a landing first turn", async () => {
     const user = userEvent.setup();
     const ask = vi.fn().mockRejectedValue(
       new ApiError({
@@ -207,12 +207,13 @@ describe("ChatPanel", () => {
       }),
     );
 
-    clearCheckpointMock.mockImplementation(async (options: {
-      conversationId: string;
-    }) => {
-      expect(getConversation(options.conversationId)).not.toBeNull();
-      return true;
-    });
+    let resolveClear: ((value: boolean) => void) | undefined;
+    clearCheckpointMock.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveClear = resolve;
+        }),
+    );
 
     render(
       <ChatPanel
@@ -230,20 +231,23 @@ describe("ChatPanel", () => {
     );
     await user.click(screen.getByRole("button", { name: /send/i }));
 
+    // UI restores without waiting for the background clear.
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /cannot be processed/i,
     );
     await waitFor(() => {
       expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
     });
-    const clearedId = clearCheckpointMock.mock.calls[0][0].conversationId as string;
+    const clearedId = clearCheckpointMock.mock.calls[0][0]
+      .conversationId as string;
+    expect(getConversation(clearedId)).toBeNull();
     expect(clearCheckpointMock.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         baseUrl: "http://127.0.0.1:8000",
         conversationId: expect.any(String),
       }),
     );
-    expect(getConversation(clearedId)).toBeNull();
+    resolveClear?.(true);
   });
 
   it("shows an empty prompt before any messages", async () => {

@@ -12,7 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from application.errors import ConfigurationError
 from application.run_tool_agent import ClearAgentThread
 from domain.ports import AgentThreadMemory, ToolCallingAgent
 from infrastructure.config import Settings
@@ -75,21 +74,23 @@ def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntim
     When ``SOFTWARE_DELIVERY_AGENT_LOOP`` is off, returns a disabled runtime
     with a no-op clear (still validates conversation ids in the use case).
 
-    When on, requires a valid ``DOCUMENT_CATALOG_WORKSPACE_ID`` and creates a
-    fresh ``InMemorySaver`` for this runtime instance. Process reuse comes from
-    the presentation/composition cache that holds one runtime, not from this
+    When on and ``DOCUMENT_CATALOG_WORKSPACE_ID`` is valid, creates a fresh
+    ``InMemorySaver`` for this runtime instance. Process reuse comes from the
+    presentation/composition cache that holds one runtime, not from this
     builder inventing a hidden global.
 
-    Raises:
-        ConfigurationError: Agent loop is on and workspace id is absent/invalid.
+    When the agent loop is on but the workspace id is absent/invalid, returns a
+    disabled runtime instead of raising so core HTTP routes (settings, ask)
+    stay available and degrade rather than 500.
     """
+    disabled = ShortTermMemoryRuntime(
+        enabled=False,
+        workspace_id=None,
+        _checkpointer=None,
+        _clear=ClearAgentThread(_NoOpThreadMemory()),
+    )
     if not settings.domain_tools.agent_loop:
-        return ShortTermMemoryRuntime(
-            enabled=False,
-            workspace_id=None,
-            _checkpointer=None,
-            _clear=ClearAgentThread(_NoOpThreadMemory()),
-        )
+        return disabled
 
     from infrastructure.agents.langgraph_tool_agent import LangGraphThreadMemory
     from infrastructure.catalog.workspace import require_workspace_id
@@ -97,10 +98,8 @@ def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntim
 
     try:
         workspace_id = require_workspace_id(settings.document_catalog.workspace_id)
-    except ValueError as error:
-        raise ConfigurationError(
-            f"DOCUMENT_CATALOG_WORKSPACE_ID {error}"
-        ) from error
+    except ValueError:
+        return disabled
 
     checkpointer = InMemorySaver()
     memory: AgentThreadMemory = LangGraphThreadMemory(

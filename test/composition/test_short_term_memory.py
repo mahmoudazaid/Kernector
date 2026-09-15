@@ -99,6 +99,17 @@ def test_build_runtime_disabled_when_agent_loop_off(
     runtime.clear_use_case().execute(conversation_id="conv-1")
 
 
+def test_build_runtime_disabled_when_workspace_id_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
+    runtime = build_short_term_memory_runtime(load_settings())
+    assert runtime.enabled is False
+    assert runtime.short_term_memory_enabled is False
+    runtime.clear_use_case().execute(conversation_id="conv-1")
+
+
 def test_shared_runtime_reuses_state_across_independently_built_stacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

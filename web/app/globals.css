@@ -2453,7 +2453,6 @@ a.kern-btn {
   .kern-chat-header,
   .kern-chat-body,
   .kern-chat-inline-error,
-  .kern-chat-inline-status,
   .kern-chat-composer
 ) {
   max-width: var(--kern-chat-col);
@@ -2839,7 +2838,7 @@ a.kern-btn {
   --kern-chat-col: 48rem;
 }
 
-.kern-chat :is(.kern-chat-header, .kern-chat-body, .kern-chat-inline-error, .kern-chat-inline-status, .kern-chat-composer) {
+.kern-chat :is(.kern-chat-header, .kern-chat-body, .kern-chat-inline-error, .kern-chat-composer) {
   width: 100%;
   max-width: var(--kern-chat-col);
   margin-inline: auto;
@@ -3190,11 +3189,6 @@ a.kern-btn {
 
 .kern-chat-inline-error {
   color: var(--kern-danger, #b42318);
-  flex-shrink: 0;
-}
-
-.kern-chat-inline-status {
-  color: var(--kern-text-muted, #667085);
   flex-shrink: 0;
 }
 

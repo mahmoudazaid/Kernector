@@ -872,12 +872,13 @@ export function ChatPanel({
       const conversation = getConversation(id);
       const discard = !conversation || conversation.messages.length === 0;
       if (discard && conversation) {
-        // Clear server checkpoint before dropping the empty local shell.
-        await clearChatCheckpointBestEffort({
+        // Drop the empty local shell immediately; clear server memory in
+        // the background so a hung backend cannot keep `sending` stuck.
+        deleteConversation(id);
+        void clearChatCheckpointBestEffort({
           baseUrl: apiBaseUrl,
           conversationId: id,
         });
-        deleteConversation(id);
       }
       // Store already recorded the outcome on `id`; never mutate another thread's UI.
       if (boundIdRef.current !== id) {

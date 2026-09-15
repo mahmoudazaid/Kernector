@@ -25,11 +25,7 @@ import {
   subscribeConversations,
   type Conversation,
 } from "@/lib/session/conversations";
-import { clearChatCheckpoint } from "@/lib/api/chat";
-import { ApiError } from "@/lib/api/errors";
-
-const CLEAR_CHECKPOINT_FAILED =
-  "Could not clear agent memory for this chat. Try again.";
+import { clearChatCheckpointBestEffort } from "@/lib/api/chat";
 
 function OverflowMenu({
   conversation,
@@ -201,7 +197,6 @@ export function PreviousChats({
   const [renameValue, setRenameValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function startRename(conversation: Conversation): void {
     setRenamingId(conversation.id);
@@ -223,11 +218,10 @@ export function PreviousChats({
     }
     const id = pendingDelete.id;
     setDeleting(true);
-    setDeleteError(null);
     try {
       if (apiBaseUrl) {
-        // Idempotent: missing checkpoint is success (204). Local delete only after.
-        await clearChatCheckpoint({
+        // Prefer clearing server memory first, but never block local delete.
+        await clearChatCheckpointBestEffort({
           baseUrl: apiBaseUrl,
           conversationId: id,
         });
@@ -237,10 +231,6 @@ export function PreviousChats({
       if (loadActiveSession().activeConversationId === id) {
         setActiveConversationId(null);
       }
-    } catch (error) {
-      setDeleteError(
-        error instanceof ApiError ? error.detail : CLEAR_CHECKPOINT_FAILED,
-      );
     } finally {
       setDeleting(false);
     }
@@ -333,10 +323,7 @@ export function PreviousChats({
                       <OverflowMenu
                         conversation={conversation}
                         onRename={() => startRename(conversation)}
-                        onDelete={() => {
-                          setDeleteError(null);
-                          setPendingDelete(conversation);
-                        }}
+                        onDelete={() => setPendingDelete(conversation)}
                       />
                     </>
                   )}
@@ -362,17 +349,11 @@ export function PreviousChats({
             return;
           }
           setPendingDelete(null);
-          setDeleteError(null);
         }}
         onConfirm={() => {
           void confirmDelete();
         }}
       />
-      {deleteError ? (
-        <p className="kern-chat-inline-error" role="alert">
-          {deleteError}
-        </p>
-      ) : null}
     </section>
   );
 }
