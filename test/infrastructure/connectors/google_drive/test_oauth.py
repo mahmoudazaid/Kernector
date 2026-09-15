@@ -155,6 +155,7 @@ def test_authorization_url_uses_exact_redirect_and_readonly_scope() -> None:
     assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
     assert "client-secret" not in url
     assert "drive.readonly" in url
+    assert "drive.file" not in url
     assert "access_type=offline" in url
     assert "state=csrf-state" in url
     assert (
@@ -162,6 +163,53 @@ def test_authorization_url_uses_exact_redirect_and_readonly_scope() -> None:
         "%2Fgoogle-drive%2Foauth%2Fcallback"
         in url
     )
+
+
+def test_authorization_url_includes_drive_file_when_requested() -> None:
+    settings = GoogleOAuthSettings(
+        client_id="client.apps.googleusercontent.com",
+        client_secret="client-secret",
+        redirect_uri="http://127.0.0.1:8000/callback",
+    )
+    url = authorization_url(settings, state="s", include_drive_file=True)
+    assert "drive.readonly" in url
+    assert "drive.file" in url
+    assert "include_granted_scopes=true" in url
+
+
+def test_connection_store_round_trip_with_granted_scopes(tmp_path: Path) -> None:
+    path = tmp_path / "conn.json"
+    store = GoogleOAuthConnectionStore(path)
+    store.save(
+        _connection(
+            granted_scopes=frozenset(
+                {
+                    oauth_mod.DRIVE_READ_SCOPE,
+                    oauth_mod.DRIVE_FILE_SCOPE,
+                }
+            )
+        )
+    )
+    loaded = store.load()
+    assert loaded is not None
+    assert oauth_mod.DRIVE_FILE_SCOPE in loaded.granted_scopes
+    assert oauth_mod.DRIVE_READ_SCOPE in loaded.granted_scopes
+
+
+def test_connection_store_missing_scopes_defaults_empty(tmp_path: Path) -> None:
+    path = tmp_path / "conn.json"
+    path.write_text(
+        '{"refresh_token":"1//r","access_token":null,"account_email":"a@b.c",'
+        '"folders":[],"files":[],"last_synced_at":null,"last_sync_new":null,'
+        '"last_sync_updated":null,"last_sync_unchanged":null,'
+        '"last_sync_failed":null,"reauthorization_required":false,'
+        '"account_email_unverified":false}',
+        encoding="utf-8",
+    )
+    loaded = GoogleOAuthConnectionStore(path).load()
+    assert loaded is not None
+    assert loaded.granted_scopes == frozenset()
+    assert loaded.refresh_token == "1//r"
 
 
 def test_exchange_logs_omit_tokens(

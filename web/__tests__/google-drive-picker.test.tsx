@@ -193,6 +193,130 @@ describe("GoogleDrivePicker", () => {
     ).toBeInTheDocument();
   });
 
+  it("exports into My Drive when destination mode has no subfolders", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderPicker({
+      foldersOnly: true,
+      singleSelect: true,
+      title: "Export to Google Drive",
+      confirmLabel: "Export",
+      listItems: async () => ({ items: [], next_page_token: null }),
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: /export to google drive/i,
+    });
+    expect(
+      await within(dialog).findByText(/no subfolders here/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /new folder/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/exporting to: my drive/i),
+    ).toBeInTheDocument();
+    const exportButton = within(dialog).getByRole("button", {
+      name: /^export$/i,
+    });
+    expect(exportButton).toBeEnabled();
+    await user.click(exportButton);
+    expect(onConfirm).toHaveBeenCalledWith({
+      folders: [{ id: "root", name: "My Drive" }],
+      files: [],
+    });
+  });
+
+  it("navigates hierarchy and keeps the current folder as destination", async () => {
+    const user = userEvent.setup();
+    const child: GoogleDriveBrowseItemResponse = {
+      ...FOLDER,
+      id: "folder-child",
+      name: "Skating",
+    };
+    const listItems = vi.fn(async (options: { parentId?: string; kind?: string }) => {
+      if (options.kind === "files") {
+        return { items: [], next_page_token: null };
+      }
+      if (options.parentId === "folder-child") {
+        return { items: [], next_page_token: null };
+      }
+      return { items: [child], next_page_token: null };
+    });
+    const { onConfirm } = renderPicker({
+      foldersOnly: true,
+      singleSelect: true,
+      title: "Export to Google Drive",
+      confirmLabel: "Export",
+      listItems,
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: /export to google drive/i,
+    });
+    expect(await within(dialog).findByText("Skating")).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: /open skating/i }),
+    );
+    expect(
+      await within(dialog).findByText(/no subfolders here/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/exporting to: my drive \/ skating/i),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^export$/i }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      folders: [{ id: "folder-child", name: "Skating" }],
+      files: [],
+    });
+  });
+
+  it("creates a folder and selects it as the export destination", async () => {
+    const user = userEvent.setup();
+    const created: GoogleDriveBrowseItemResponse = {
+      ...FOLDER,
+      id: "folder-created",
+      name: "Exports",
+    };
+    const listItems = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [], next_page_token: null })
+      .mockResolvedValue({ items: [created], next_page_token: null });
+    const createFolder = vi.fn(async () => created);
+    const { onConfirm } = renderPicker({
+      foldersOnly: true,
+      singleSelect: true,
+      title: "Export to Google Drive",
+      confirmLabel: "Export",
+      listItems,
+      createFolder,
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: /export to google drive/i,
+    });
+    await within(dialog).findByText(/no subfolders here/i);
+    await user.click(
+      within(dialog).getByRole("button", { name: /new folder/i }),
+    );
+    const nameInput = within(dialog).getByLabelText(/new folder name/i);
+    expect(nameInput).toHaveValue("Untitled folder");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Exports");
+    await user.click(within(dialog).getByRole("button", { name: /^save$/i }));
+    expect(createFolder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Exports",
+        parentId: "root",
+      }),
+    );
+    expect(await within(dialog).findByText("Exports")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/exporting to: my drive \/ exports/i),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^export$/i }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      folders: [{ id: "folder-created", name: "Exports" }],
+      files: [],
+    });
+  });
+
   it("retries after a permission error", async () => {
     const user = userEvent.setup();
     const listItems = vi

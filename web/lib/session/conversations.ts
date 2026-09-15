@@ -360,7 +360,6 @@ export function recordTestDesignCoverageConfirmed(input: {
   draftId: string;
   ticketIdentifier: string;
   selectedCount: number;
-  coverageGapCount: number;
 }): boolean {
   const conversation = getConversation(input.conversationId);
   if (conversation == null) {
@@ -369,8 +368,7 @@ export function recordTestDesignCoverageConfirmed(input: {
   let found = false;
   const summary =
     `Coverage confirmed for ${input.ticketIdentifier}: ` +
-    `${input.selectedCount} tests selected, ` +
-    `${input.coverageGapCount} coverage gaps.`;
+    `${input.selectedCount} tests selected.`;
   const messages = conversation.messages.map((message) => {
     const action = message.action;
     if (

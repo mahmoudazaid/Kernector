@@ -187,7 +187,7 @@ def test_pack_validation_error_is_wrapped_with_sanitized_message(
                         '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
                         '"category":"positive","rationale":"Grounded.",'
                         '"evidence_references":[{"source_type":"github",'
-                        '"source_id":"issue:I_kwDOExample"}]}],"coverage_gaps":[]}'
+                        '"source_id":"issue:I_kwDOExample"}]}]}'
                     ),
                     model="fake",
                 )
@@ -263,7 +263,7 @@ def test_patch_demotes_ready_draft_when_candidates_change(
                         '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
                         '"category":"positive","rationale":"Grounded.",'
                         '"evidence_references":[{"source_type":"github",'
-                        '"source_id":"issue:I_kwDOExample"}]}],"coverage_gaps":[]}'
+                        '"source_id":"issue:I_kwDOExample"}]}]}'
                     ),
                     model="fake",
                 )

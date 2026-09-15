@@ -9,11 +9,13 @@ import { LoadingState } from "@/components/states/LoadingState";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import {
   confirmTestDesignDraft,
+  exportTestDesignGoogleDrive,
   getTestDesignDraft,
   patchTestDesignDraft,
   type TestCoverageDraftResponse,
 } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
+import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { recordTestDesignCoverageConfirmed } from "@/lib/session/conversations";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
 
@@ -87,6 +89,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const [busy, setBusy] = useState(false);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     if (!packEnabled) {
@@ -212,9 +215,9 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     );
   }
 
-  async function saveDraft() {
+  async function saveDraft(): Promise<boolean> {
     if (!draft) {
-      return;
+      return false;
     }
     const blankTitle = draft.candidates.find(
       (candidate) => !candidate.title.trim(),
@@ -222,7 +225,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     if (blankTitle) {
       setError("Every candidate needs a title before saving.");
       setSaveNote(null);
-      return;
+      return false;
     }
     setBusy(true);
     setError(null);
@@ -239,6 +242,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       setDraft(saved);
       setSaveNote("Draft saved.");
       setDirty(false);
+      return true;
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setError(
@@ -247,9 +251,24 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       } else {
         setError("Could not save draft.");
       }
+      return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  async function openExportDialog() {
+    if (!draft || selectedCount === 0 || busy) {
+      return;
+    }
+    setError(null);
+    if (dirty) {
+      const saved = await saveDraft();
+      if (!saved) {
+        return;
+      }
+    }
+    setExportOpen(true);
   }
 
   function markDirty() {
@@ -375,7 +394,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         draftId: confirmed.draft_id,
         ticketIdentifier: confirmed.ticket_identifier,
         selectedCount: confirmed.selected_candidate_ids.length,
-        coverageGapCount: confirmed.coverage_gaps.length,
       });
       setDraft(confirmed);
       setDirty(false);
@@ -393,8 +411,52 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     }
   }
 
+  async function exportSelectedFolder(folderId: string, folderName: string) {
+    if (!draft || selectedCount === 0) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSaveNote(null);
+    try {
+      const receipt = await exportTestDesignGoogleDrive({
+        baseUrl: apiBaseUrl,
+        draftId: draft.draft_id,
+        body: { folder_id: folderId },
+      });
+      setExportOpen(false);
+      setSaveNote(
+        `Exported ${receipt.file_name} to ${folderName}.`,
+      );
+    } catch (caught) {
+      if (
+        caught instanceof ApiError &&
+        caught.code === "test_design_unavailable"
+      ) {
+        setError("Google Drive export is unavailable.");
+      } else if (
+        caught instanceof ApiError &&
+        caught.code === "google_drive_not_connected"
+      ) {
+        setError("Google Drive is not connected.");
+      } else if (
+        caught instanceof ApiError &&
+        caught.code === "google_drive_reauthorization_required"
+      ) {
+        setError("Google Drive authorization was revoked. Connect again.");
+      } else if (caught instanceof ApiError && caught.status === 422) {
+        setError(caught.detail);
+      } else {
+        setError("Could not export to Google Drive.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
   const canConfirm = selectedCount > 0 && !busy && !dirty;
+  const canExport = selectedCount > 0 && !busy;
   const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
 
   return (
@@ -579,19 +641,6 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         </div>
       </fieldset>
 
-      {draft.coverage_gaps.length > 0 ? (
-        <section className="kern-settings-fieldset kern-test-design-panel">
-          <h2>Coverage gaps</h2>
-          <ul className="kern-test-design-gaps">
-            {draft.coverage_gaps.map((gap) => (
-              <li key={`${gap.category}-${gap.detail}`}>
-                <strong>{formatCategory(gap.category)}</strong>
-                <span>{gap.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <footer className="kern-test-design-actions">
         <div className="kern-test-design-actions__primary">
@@ -609,6 +658,14 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           >
             Confirm
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!canExport}
+            onClick={() => void openExportDialog()}
+          >
+            Export to Google Drive
+          </Button>
         </div>
         <Button
           type="button"
@@ -619,6 +676,30 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           Back to chat
         </Button>
       </footer>
+
+      <GoogleDrivePicker
+        open={exportOpen}
+        apiBaseUrl={apiBaseUrl}
+        initialSelection={{ folders: [], files: [] }}
+        busy={busy}
+        foldersOnly
+        singleSelect
+        title="Export to Google Drive"
+        description="Choose the Drive folder that should receive the Markdown export."
+        confirmLabel="Export"
+        onCancel={() => {
+          if (!busy) {
+            setExportOpen(false);
+          }
+        }}
+        onConfirm={(selection) => {
+          const folder = selection.folders?.[0];
+          if (!folder) {
+            return;
+          }
+          void exportSelectedFolder(folder.id, folder.name);
+        }}
+      />
     </section>
   );
 }

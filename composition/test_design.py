@@ -71,12 +71,6 @@ class SourceReferenceView:
 
 
 @dataclass(frozen=True, slots=True)
-class CoverageGapView:
-    category: CoverageCategory
-    detail: str
-
-
-@dataclass(frozen=True, slots=True)
 class TestCandidateView:
     __test__ = False
 
@@ -100,7 +94,6 @@ class TestCoverageDraftView:
     ticket_identifier: str
     status: DraftStatus
     candidates: tuple[TestCandidateView, ...]
-    coverage_gaps: tuple[CoverageGapView, ...]
     version: int
     selected_candidate_ids: tuple[str, ...]
 
@@ -115,6 +108,12 @@ class CreateTestDesignDraftRequest:
 class PatchTestDesignDraftRequest:
     expected_version: int
     candidates: tuple[TestCandidateView, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleDriveExportReceiptView:
+    file_id: str
+    file_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,7 +333,7 @@ class TestDesignFacade:
         self, draft_id: str, request: PatchTestDesignDraftRequest
     ) -> TestCoverageDraftView:
         self._require_enabled()
-        TestCandidate, TestCoverageDraft, _CoverageGap = self._load_models()
+        TestCandidate, TestCoverageDraft = self._load_models()
         repo = self._repository()
         try:
             current = repo.get(draft_id)
@@ -387,7 +386,6 @@ class TestDesignFacade:
                 ticket_identifier=current.ticket_identifier,
                 status=next_status,
                 candidates=candidates,
-                coverage_gaps=current.coverage_gaps,
                 version=current.version,
             )
         except Exception as error:
@@ -417,7 +415,7 @@ class TestDesignFacade:
         self, draft_id: str, *, expected_version: int
     ) -> TestCoverageDraftView:
         self._require_enabled()
-        _TestCandidate, TestCoverageDraft, _CoverageGap = self._load_models()
+        _TestCandidate, TestCoverageDraft = self._load_models()
         repo = self._repository()
         try:
             current = repo.get(draft_id)
@@ -440,7 +438,6 @@ class TestDesignFacade:
             ticket_identifier=current.ticket_identifier,
             status="ready",
             candidates=current.candidates,
-            coverage_gaps=current.coverage_gaps,
             version=current.version,
         )
         try:
@@ -453,6 +450,94 @@ class TestDesignFacade:
             _raise_composition_validation_if_pack_error(error)
             raise
         return _draft_view(saved)
+
+    def export_to_google_drive(
+        self,
+        draft_id: str,
+        *,
+        folder_id: str,
+        file_name: str | None = None,
+    ) -> GoogleDriveExportReceiptView:
+        """Export selected titles into a user-chosen Google Drive folder."""
+        import json
+
+        from application.contracts import InvokeToolRequest
+        from application.errors import ApplicationValidationError
+        from composition.container import (
+            build_invoke_tool,
+            mark_drive_reauth,
+            require_drive_export_grant,
+        )
+        from domain.errors import (
+            ConnectorAuthError,
+            ToolArgumentValidationError,
+            ToolFailureError,
+        )
+        from infrastructure.connectors.google_drive.folder import is_drive_folder_id
+        from packs.software_delivery.tools.export_test_cases_google_drive import (
+            TOOL_NAME,
+        )
+
+        self._require_enabled()
+        if not isinstance(folder_id, str) or not is_drive_folder_id(folder_id.strip()):
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+        folder_id = folder_id.strip()
+        repo = self._repository()
+        try:
+            current = repo.get(draft_id)
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+        if current is None:
+            raise TestDesignNotFoundError("draft not found")
+        selected_titles = tuple(
+            candidate.title
+            for candidate in current.candidates
+            if candidate.selected and candidate.title.strip()
+        )
+        if not selected_titles:
+            raise TestDesignValidationError(
+                "select at least one candidate before export"
+            )
+        tokens_store, _connection = require_drive_export_grant(self._settings)
+        arguments: dict[str, object] = {
+            "document_title": current.ticket_identifier,
+            "titles": list(selected_titles),
+            "folder_id": folder_id,
+        }
+        if file_name is not None:
+            arguments["file_name"] = file_name
+        invoke = build_invoke_tool(self._settings)
+        try:
+            response = invoke.execute(InvokeToolRequest(TOOL_NAME, arguments))
+        except ApplicationValidationError as error:
+            raise TestDesignUnavailableError(
+                "Google Drive export is unavailable"
+            ) from error
+        except ToolArgumentValidationError as error:
+            raise TestDesignValidationError(
+                _TEST_DESIGN_VALIDATION_DETAIL
+            ) from error
+        except ConnectorAuthError as error:
+            mark_drive_reauth(tokens_store, error)
+        except ToolFailureError:
+            raise
+        try:
+            payload = json.loads(response.result)
+        except (TypeError, ValueError) as error:
+            raise ToolFailureError("Google Drive export failed.") from error
+        if not isinstance(payload, dict):
+            raise ToolFailureError("Google Drive export failed.")
+        file_id = payload.get("file_id")
+        exported_name = payload.get("file_name")
+        if not isinstance(file_id, str) or not file_id.strip():
+            raise ToolFailureError("Google Drive export failed.")
+        if not isinstance(exported_name, str) or not exported_name.strip():
+            raise ToolFailureError("Google Drive export failed.")
+        return GoogleDriveExportReceiptView(
+            file_id=file_id.strip(),
+            file_name=exported_name.strip(),
+        )
 
     def _require_enabled(self) -> None:
         if not software_delivery_tools_enabled(self._settings):
@@ -499,12 +584,11 @@ class TestDesignFacade:
     @staticmethod
     def _load_models():
         from packs.software_delivery.test_design.models import (
-            CoverageGap,
             TestCandidate,
             TestCoverageDraft,
         )
 
-        return TestCandidate, TestCoverageDraft, CoverageGap
+        return TestCandidate, TestCoverageDraft
 
 
 def _draft_view(draft: object) -> TestCoverageDraftView:
@@ -532,10 +616,6 @@ def _draft_view(draft: object) -> TestCoverageDraftView:
                 origin=item.origin,
             )
             for item in draft.candidates  # type: ignore[attr-defined]
-        ),
-        coverage_gaps=tuple(
-            CoverageGapView(category=gap.category, detail=gap.detail)
-            for gap in draft.coverage_gaps  # type: ignore[attr-defined]
         ),
         version=draft.version,  # type: ignore[attr-defined]
         selected_candidate_ids=tuple(draft.selected_candidate_ids),  # type: ignore[attr-defined]
@@ -609,7 +689,6 @@ def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:
 __all__ = [
     "ChatWorkflowActionView",
     "CreateTestDesignDraftRequest",
-    "CoverageGapView",
     "GitHubNotConnectedError",
     "GitHubReauthorizationRequiredError",
     "PatchTestDesignDraftRequest",

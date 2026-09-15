@@ -334,7 +334,7 @@ def test_build_ask_knowledge_routes_generation_through_ask_service(
     assert isinstance(ask._ask_service, AskService)
 
 
-def test_build_invoke_tool_registers_empty_software_delivery_registry(
+def test_build_invoke_tool_registers_no_export_without_oauth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
@@ -342,6 +342,9 @@ def test_build_invoke_tool_registers_empty_software_delivery_registry(
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
     monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
 
     invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
 

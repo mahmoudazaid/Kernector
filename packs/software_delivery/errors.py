@@ -21,5 +21,9 @@ class MarkdownExportValidationError(ToolArgumentValidationError):
     """Invalid caller arguments for Software Delivery Markdown export."""
 
 
+class GoogleDriveExportValidationError(ToolArgumentValidationError):
+    """Invalid caller arguments for Software Delivery Google Drive export."""
+
+
 class OrchestrationValidationError(DomainValidationError):
     """Invalid Software Delivery orchestration request or response."""
