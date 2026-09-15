@@ -1543,11 +1543,6 @@ def mark_drive_reauth(tokens_store, error: BaseException) -> NoReturn:
     ) from error
 
 
-# Compat aliases for remaining intra-module call sites.
-_require_drive_grant = require_drive_grant
-_mark_reauth = mark_drive_reauth
-
-
 def _require_github_grant(settings: Settings, *, connection_store=None):
     tokens_store = (
         connection_store
@@ -2112,7 +2107,7 @@ def browse_google_drive_items(
         raise InputRejectedError("query is too long.")
     if page_token is not None and (not page_token.strip() or len(page_token) > 1024):
         raise InputRejectedError("page_token is invalid.")
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     try:
@@ -2128,7 +2123,7 @@ def browse_google_drive_items(
             page_token=None if page_token is None else page_token.strip(),
         )
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, error)
+        mark_drive_reauth(tokens_store, error)
     except ConnectorError as error:
         raise GoogleDriveConnectorError(_DRIVE_REQUEST_MESSAGE) from error
     return GoogleDriveBrowsePage(
@@ -2274,7 +2269,7 @@ def get_google_drive_selection(
         GoogleDriveNotConnectedError: No stored grant.
         GoogleDriveReauthorizationRequiredError: Stored grant was rejected.
     """
-    _tokens_store, connection = _require_drive_grant(
+    _tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     return GoogleDriveSelection(
@@ -2333,7 +2328,7 @@ def put_google_drive_selection(
     folder_ids = {item.id for item in folder_items}
     if folder_ids & {item.id for item in file_items}:
         raise InputRejectedError(_SELECTION_KIND_DETAIL)
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     previous_file_ids = frozenset(item.id for item in connection.files)
@@ -2346,7 +2341,7 @@ def put_google_drive_selection(
             connector_factory=connector_factory,
         )
     except ConnectorAuthError as error:
-        _mark_reauth(tokens_store, error)
+        mark_drive_reauth(tokens_store, error)
     except ConnectorError as error:
         raise InputRejectedError(_SELECTION_INACCESSIBLE_DETAIL) from error
     from infrastructure.connectors.google_drive.oauth import GoogleDriveSelectedItem as StoredItem
@@ -2667,7 +2662,7 @@ def sync_google_drive_oauth(
     """
     from datetime import datetime, timezone
 
-    tokens_store, connection = _require_drive_grant(
+    tokens_store, connection = require_drive_grant(
         settings, connection_store=connection_store
     )
     if not connection.folders and not connection.files:
@@ -2695,7 +2690,7 @@ def sync_google_drive_oauth(
         )
     except ConnectorSyncError as error:
         if isinstance(error.__cause__, ConnectorAuthError):
-            _mark_reauth(tokens_store, error)
+            mark_drive_reauth(tokens_store, error)
         raise
     new_count = result.ingested_count
     updated_count = result.updated_count

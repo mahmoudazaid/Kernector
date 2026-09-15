@@ -97,7 +97,6 @@ def test_build_invoke_tool_registers_export_when_oauth_ready(
     from composition.container import build_invoke_tool
 
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
-    monkeypatch.delenv("GOOGLE_DRIVE_EXPORT_FOLDER_ID", raising=False)
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client.apps.googleusercontent.com")
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret")
     monkeypatch.setenv(
