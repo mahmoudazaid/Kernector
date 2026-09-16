@@ -3710,8 +3710,9 @@ def build_tool_augmented_ask(
             output_style: str,
             invoke: OpaqueInvoke,
             conversation_id: str | None = None,
+            response_style: object = None,
         ):
-            del conversation_id
+            del conversation_id, response_style
             from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
             from packs.software_delivery.orchestration_contracts import (
                 OrchestrateSoftwareDeliveryRequest,

@@ -150,6 +150,7 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
         "hit_count": 4,
         "citation_count": 1,
         "tools": ["software_delivery.risk_score"],
+        "response_style": None,
     }
     assert "settings" not in body["run"]
     assert "error_type" not in body["run"]
@@ -157,6 +158,76 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
     assert ask.last_request is not None
     assert ask.last_request.query == "What is the policy?"
     assert ask.last_settings == {"temperature": 0.3, "max_tokens": 1000}
+
+
+def test_chat_ask_forwards_response_style_onto_ask_request() -> None:
+    from application.response_style_policy import ResponseStyle
+
+    ask = _StubAsk(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(
+                request_id="req-style",
+                outcome="success",
+                response_style="friendly",
+            ),
+        )
+    )
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "What is the policy?",
+            "runtime": {"response_style": "friendly"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert ask.last_request is not None
+    assert ask.last_request.response_style is ResponseStyle.FRIENDLY
+    assert response.json()["run"]["response_style"] == "friendly"
+
+
+def test_chat_ask_omitted_response_style_preserves_none() -> None:
+    ask = _StubAsk(AskResponse(answer="ok"))
+    client = _client_with_ask(ask)
+
+    response = client.post("/api/v1/chat/ask", json={"query": "What is the policy?"})
+
+    assert response.status_code == 200
+    assert ask.last_request is not None
+    assert ask.last_request.response_style is None
+
+
+def test_chat_ask_null_response_style_preserves_none() -> None:
+    ask = _StubAsk(AskResponse(answer="ok"))
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "What is the policy?", "runtime": {"response_style": None}},
+    )
+
+    assert response.status_code == 200
+    assert ask.last_request is not None
+    assert ask.last_request.response_style is None
+
+
+def test_chat_ask_invalid_response_style_returns_422() -> None:
+    ask = _StubAsk(AskResponse(answer="ok"))
+    client = _client_with_ask(ask)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "What is the policy?",
+            "runtime": {"response_style": "sarcastic"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert ask.last_request is None
 
 
 def test_insufficient_evidence_is_200_not_422() -> None:

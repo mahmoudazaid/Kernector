@@ -852,6 +852,18 @@ a {
   overscroll-behavior: contain;
 }
 
+.kern-select-menu--top:not(.kern-select-menu--fixed) {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.kern-select-menu--fixed {
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+}
+
 .kern-select-option {
   display: flex;
   align-items: center;
@@ -3914,19 +3926,23 @@ a.kern-btn {
   flex-shrink: 0;
   margin-top: auto;
   padding-top: var(--kern-space-2);
+  position: relative;
+  z-index: 5;
+  overflow: visible;
 }
 
 .kern-chat-composer-bar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--kern-space-2);
   width: 100%;
   min-height: 64px;
-  padding: 12px 10px 12px var(--kern-space-5);
+  padding: 12px 10px 10px var(--kern-space-5);
   border: 1px solid color-mix(in srgb, var(--kern-line) 90%, transparent);
   /* Fixed radius — pill (999px) becomes a circle when the bar grows multi-line. */
   border-radius: 24px;
-  overflow: hidden;
+  overflow: visible;
   background:
     var(--kern-control-sheen),
     var(--kern-surface);
@@ -3936,6 +3952,67 @@ a.kern-btn {
 .kern-chat-composer-bar:focus-within {
   outline: 2px solid var(--kern-focus);
   outline-offset: 2px;
+}
+
+.kern-chat-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-space-2);
+  min-height: 40px;
+  position: relative;
+  z-index: 1;
+}
+
+.kern-chat-style {
+  display: flex;
+  align-items: center;
+  gap: var(--kern-space-2);
+  min-width: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.kern-chat-style-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--kern-muted);
+}
+
+.kern-chat-style .kern-settings-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--kern-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.kern-chat-style .kern-settings-field > label {
+  margin: 0;
+  color: var(--kern-muted);
+  font-size: var(--kern-text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.kern-chat-style .kern-select {
+  position: relative;
+  min-width: 7.5rem;
+}
+
+.kern-chat-style .kern-select-trigger {
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
+  background: color-mix(in srgb, var(--kern-surface) 88%, var(--kern-ink) 4%);
+  box-shadow: none;
+}
+
+.kern-chat-style .kern-select-value {
+  font-size: var(--kern-text-sm);
 }
 
 .kern-chat-counter {
@@ -3974,6 +4051,7 @@ a.kern-btn {
 
 .kern-chat-input {
   flex: 1;
+  width: 100%;
   min-width: 0;
   min-height: 40px;
   max-height: 8rem;

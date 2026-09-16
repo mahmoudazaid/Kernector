@@ -35,6 +35,7 @@ def _merge_run(
     prompt_key: str | None = None,
     hit_count: int | None = None,
     citation_count: int | None = None,
+    response_style: object = None,
 ) -> RunMeta:
     """Overlay route fields onto an existing or empty ``RunMeta``."""
     base = run if run is not None else RunMeta()
@@ -53,6 +54,9 @@ def _merge_run(
         updates["hit_count"] = hit_count
     if citation_count is not None:
         updates["citation_count"] = citation_count
+    style_value = getattr(response_style, "value", response_style)
+    if isinstance(style_value, str) and style_value.strip():
+        updates["response_style"] = style_value
     return replace(base, **updates)
 
 
@@ -113,6 +117,7 @@ class ToolRunner(Protocol):
         generate_tests: bool = True,
         output_style: str = "steps",
         conversation_id: str | None = None,
+        response_style: object = None,
     ) -> ToolRunOutcome:
         """Run the chain and project its typed results onto one outcome."""
 
@@ -225,6 +230,7 @@ class ToolAugmentedAsk:
                 generate_tests=selection.generate_tests,
                 output_style=selection.output_style,
                 conversation_id=request.conversation_id,
+                response_style=request.response_style,
             )
         except InsufficientEvidenceError:
             log_operation(
@@ -244,6 +250,7 @@ class ToolAugmentedAsk:
                     pack=self._pack_id,
                     hit_count=0,
                     citation_count=0,
+                    response_style=request.response_style,
                 ),
             )
         log_operation(
@@ -275,5 +282,6 @@ class ToolAugmentedAsk:
                 path="tools",
                 pack=self._pack_id,
                 tools=_tool_names(outcome.tool_outputs),
+                response_style=request.response_style,
             ),
         )

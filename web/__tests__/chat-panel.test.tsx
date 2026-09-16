@@ -1459,4 +1459,141 @@ describe("ChatPanel", () => {
       screen.queryByRole("heading", { name: /^test design$/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("offers Style SoftSelect on landing and omits response_style for Default", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue(SUCCESS);
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        variant="landing"
+        ask={ask}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(screen.getByLabelText(/^style$/i)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /^style$/i })).toHaveTextContent(
+      "Default",
+    );
+
+    await user.type(
+      await screen.findByLabelText(/message/i),
+      "What is the policy?",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => expect(ask).toHaveBeenCalled());
+    const body = ask.mock.calls[0]?.[0]?.body;
+    expect(body.runtime?.response_style).toBeUndefined();
+    const created = listConversations()[0];
+    expect(created?.responseStyle).toBe("default");
+  });
+
+  it("forwards conversation Style on ask and keeps an in-flight snapshot", async () => {
+    const user = userEvent.setup();
+    let resolveAsk: ((value: ChatAskResponse) => void) | null = null;
+    const ask = vi.fn().mockImplementation(
+      () =>
+        new Promise<ChatAskResponse>((resolve) => {
+          resolveAsk = resolve;
+        }),
+    );
+    const { id } = renderOpenConversation({ ask });
+
+    const style = await screen.findByRole("combobox", { name: /^style$/i });
+    await user.click(style);
+    await user.click(await screen.findByRole("option", { name: "Concise" }));
+    expect(getConversation(id)?.responseStyle).toBe("concise");
+
+    await user.type(
+      await screen.findByLabelText(/message/i),
+      "What is the policy?",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask.mock.calls[0]?.[0]?.body.runtime?.response_style).toBe("concise");
+
+    await user.click(screen.getByRole("combobox", { name: /^style$/i }));
+    await user.click(await screen.findByRole("option", { name: "Formal" }));
+    expect(getConversation(id)?.responseStyle).toBe("formal");
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask.mock.calls[0]?.[0]?.body.runtime?.response_style).toBe("concise");
+
+    resolveAsk?.(SUCCESS);
+    await screen.findByText("Grounded answer from the corpus.");
+  });
+
+  it("shows response_style in Run details when present", async () => {
+    const ask = vi.fn().mockResolvedValue({
+      ...SUCCESS,
+      run: {
+        ...(SUCCESS.run ?? {}),
+        response_style: "formal",
+      },
+    });
+    renderOpenConversation({ ask });
+    const user = userEvent.setup();
+    await user.type(
+      await screen.findByLabelText(/message/i),
+      "What is the policy?",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByText("Grounded answer from the corpus.");
+    await user.click(screen.getByText(/Run details/));
+    expect(screen.getByText(/Response style: formal/)).toBeInTheDocument();
+  });
+
+  it("does not leak Style across conversations", async () => {
+    const user = userEvent.setup();
+    const a = createConversation({
+      title: "A",
+      messages: [],
+      draft: "",
+      responseStyle: "friendly",
+    });
+    const b = createConversation({
+      title: "B",
+      messages: [],
+      draft: "",
+      responseStyle: "formal",
+    });
+
+    const { rerender } = render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={a.id}
+        variant="conversation"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("combobox", { name: /^style$/i }),
+    ).toHaveTextContent("Friendly");
+
+    rerender(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={b.id}
+        variant="conversation"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("combobox", { name: /^style$/i }),
+    ).toHaveTextContent("Formal");
+    expect(getConversation(a.id)?.responseStyle).toBe("friendly");
+    expect(getConversation(b.id)?.responseStyle).toBe("formal");
+
+    await user.click(screen.getByRole("combobox", { name: /^style$/i }));
+    await user.click(await screen.findByRole("option", { name: "Concise" }));
+    expect(getConversation(b.id)?.responseStyle).toBe("concise");
+    expect(getConversation(a.id)?.responseStyle).toBe("friendly");
+  });
 });

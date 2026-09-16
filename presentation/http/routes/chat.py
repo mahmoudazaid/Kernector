@@ -6,6 +6,7 @@ from fastapi import APIRouter, Response, status
 
 from application.contracts import AskRequest
 from application.decide_tool_approval import DecideToolApprovalRequest
+from application.response_style_policy import ResponseStyle
 from composition.test_design import (
     SourceLocatorView,
     try_test_design_chat_handoff,
@@ -71,12 +72,16 @@ def chat_ask(
 
     runtime = body.runtime
     ask = ask_factory(runtime)
+    style = None
+    if runtime is not None and runtime.response_style is not None:
+        style = ResponseStyle(runtime.response_style)
     request = AskRequest(
         query=body.query,
         history=tuple(
             Message(role=item.role, content=item.content) for item in body.history
         ),
         conversation_id=body.conversation_id,
+        response_style=style,
     )
     ask_settings = None if runtime is None else dict(runtime.settings)
     response = ask.execute(request, ask_settings)

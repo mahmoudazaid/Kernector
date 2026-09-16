@@ -26,10 +26,12 @@ class _FakeAgent:
         *,
         max_steps: int,
         conversation_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> AgentTurnResult:
         self.calls.append(
             (goal, tuple(t.name for t in tools), max_steps, conversation_id)
         )
+        del system_prompt
         return AgentTurnResult(content="done", steps=1)
 
 

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { SoftSelect } from "@/components/ui/SoftSelect";
 import { UnavailableState } from "@/components/states/UnavailableState";
 import { KernectorThinkingMark } from "@/components/shell/KernectorThinkingMark";
 import {
@@ -54,9 +55,56 @@ import {
   subscribeConversations,
   titleFromMessages,
   updateConversation,
+  type ConversationResponseStyle,
 } from "@/lib/session/conversations";
 import { startConversationRun } from "@/lib/session/conversation-runs";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
+
+const RESPONSE_STYLE_OPTIONS = [
+  "Default",
+  "Formal",
+  "Friendly",
+  "Concise",
+] as const;
+
+const STYLE_ICON = (
+  <svg
+    className="kern-chat-style-icon"
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+  >
+    <path
+      d="M5 6.5h9.5a3.5 3.5 0 0 1 0 7H12l-3.5 3.5V13.5H5A3.5 3.5 0 0 1 5 6.5Z"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M14 11.5h5a2.5 2.5 0 0 1 0 5h-1.2L15.5 19v-2.5H14a2.5 2.5 0 0 1 0-5Z"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+function styleLabel(value: ConversationResponseStyle): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function parseStyleLabel(label: string): ConversationResponseStyle {
+  const lower = label.trim().toLowerCase();
+  if (
+    lower === "formal" ||
+    lower === "friendly" ||
+    lower === "concise" ||
+    lower === "default"
+  ) {
+    return lower;
+  }
+  return "default";
+}
 
 const SEND_ICON = (
   <svg
@@ -605,6 +653,8 @@ export function ChatPanel({
   const [hydrated, setHydrated] = useState(boot.hydrated);
   const [draft, setDraft] = useState(boot.draft);
   const [sending, setSending] = useState(boot.sending);
+  const [responseStyle, setResponseStyle] =
+    useState<ConversationResponseStyle>("default");
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const {
@@ -639,6 +689,11 @@ export function ChatPanel({
     setSending(next.sending);
     setHydrated(next.hydrated);
     setUnavailable(false);
+    setResponseStyle(
+      isLanding || !conversationId
+        ? "default"
+        : (getConversation(conversationId)?.responseStyle ?? "default"),
+    );
     if (handoff) {
       setDraft(handoff.draft);
       setInlineError(handoff.message);
@@ -713,12 +768,14 @@ export function ChatPanel({
         skipNextPersistRef.current = true;
         setMessages(fromPersisted(conversation.messages));
         setSending(conversation.runStatus === "pending");
+        setResponseStyle(conversation.responseStyle);
         if (!composerTouchedRef.current) {
           setDraft(conversation.draft);
         }
       } else {
         setMessages([]);
         setSending(false);
+        setResponseStyle("default");
         if (!composerTouchedRef.current) {
           setDraft("");
         }
@@ -727,6 +784,7 @@ export function ChatPanel({
       setActiveConversationId(null);
       setMessages([]);
       setSending(false);
+      setResponseStyle("default");
       if (!composerTouchedRef.current) {
         setDraft("");
       }
@@ -747,6 +805,7 @@ export function ChatPanel({
       if (!conversation) {
         setMessages([]);
         setSending(false);
+        setResponseStyle("default");
         if (!composerTouchedRef.current) {
           setDraft("");
         }
@@ -756,6 +815,7 @@ export function ChatPanel({
       skipNextPersistRef.current = true;
       setMessages(fromPersisted(conversation.messages));
       setSending(conversation.runStatus === "pending");
+      setResponseStyle(conversation.responseStyle);
       if (!composerTouchedRef.current) {
         setDraft(conversation.draft);
       }
@@ -884,20 +944,37 @@ export function ChatPanel({
   const statusGuidance =
     lengthFeedback?.guidance ?? historyFeedback?.guidance ?? null;
 
-  function runtimeFromSettings(): AskChatOptions["body"]["runtime"] {
+  function runtimeFromSettings(
+    style: ConversationResponseStyle,
+  ): AskChatOptions["body"]["runtime"] {
     const stored = loadRuntimeSettings();
-    if (!stored) {
-      return null;
+    const base =
+      stored === null
+        ? null
+        : {
+            provider:
+              stored.provider === "ollama" || stored.provider === "openrouter"
+                ? stored.provider
+                : null,
+            model: stored.model,
+            settings: stored.settings,
+          };
+    if (style === "default") {
+      return base;
     }
-    const provider =
-      stored.provider === "ollama" || stored.provider === "openrouter"
-        ? stored.provider
-        : null;
     return {
-      provider,
-      model: stored.model,
-      settings: stored.settings,
+      ...(base ?? {}),
+      response_style: style,
     };
+  }
+
+  function handleResponseStyleChange(label: string): void {
+    const next = parseStyleLabel(label);
+    setResponseStyle(next);
+    const id = boundIdRef.current ?? conversationId;
+    if (id) {
+      updateConversation(id, { responseStyle: next }, { touchUpdatedAt: false });
+    }
   }
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -910,6 +987,10 @@ export function ChatPanel({
     composerTouchedRef.current = true;
     setUnavailable(false);
     setDraft("");
+    // Snapshot style for this submit — later SoftSelect changes do not rewrite
+    // an in-flight ask body.
+    const styleSnapshot = responseStyle;
+    const runtime = runtimeFromSettings(styleSnapshot);
 
     if (isLanding) {
       const withUser = appendUserMessage([], query);
@@ -922,6 +1003,7 @@ export function ChatPanel({
         runStatus: "pending",
         requestStartedAt: Date.now(),
         unread: false,
+        responseStyle: styleSnapshot,
       });
       setActiveConversationId(created.id);
       // Register the live run before navigation/shell effects so
@@ -932,7 +1014,7 @@ export function ChatPanel({
         history: [],
         baseUrl: apiBaseUrl,
         ask,
-        runtime: runtimeFromSettings(),
+        runtime,
       });
       onCreatedRef.current?.(created.id);
       const result = await runPromise;
@@ -955,6 +1037,7 @@ export function ChatPanel({
       runStatus: "pending",
       requestStartedAt: Date.now(),
       unread: false,
+      responseStyle: styleSnapshot,
     });
     setSending(true);
     const result = await startConversationRun({
@@ -963,7 +1046,7 @@ export function ChatPanel({
       history,
       baseUrl: apiBaseUrl,
       ask,
-      runtime: runtimeFromSettings(),
+      runtime,
     });
     await applyConversationRunResult(id, query, result);
   }
@@ -1137,14 +1220,28 @@ export function ChatPanel({
             }}
             onKeyDown={handleComposerKeyDown}
           />
-          <button
-            type="submit"
-            className="kern-chat-send"
-            aria-label="Send"
-            disabled={sending || !draft.trim() || sendBlocked}
-          >
-            {SEND_ICON}
-          </button>
+          <div className="kern-chat-composer-toolbar">
+            <div className="kern-chat-style">
+              {STYLE_ICON}
+              <SoftSelect
+                id="chat-response-style"
+                label="Style"
+                value={styleLabel(responseStyle)}
+                options={[...RESPONSE_STYLE_OPTIONS]}
+                onChange={handleResponseStyleChange}
+                menuPlacement="top"
+                menuStrategy="fixed"
+              />
+            </div>
+            <button
+              type="submit"
+              className="kern-chat-send"
+              aria-label="Send"
+              disabled={sending || !draft.trim() || sendBlocked}
+            >
+              {SEND_ICON}
+            </button>
+          </div>
         </div>
         {lengthFeedback || statusGuidance ? (
           <div id="chat-input-length" className="kern-chat-counter-block">
