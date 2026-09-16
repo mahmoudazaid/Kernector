@@ -64,6 +64,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/chat/threads/{conversation_id}/export-destination": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Put Chat Export Destination
+     * @description Save the Google Drive export folder for this conversation (no upload).
+     */
+    put: operations["put_chat_export_destination_api_v1_chat_threads__conversation_id__export_destination_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connectors/github": {
     parameters: {
       query?: never;
@@ -713,6 +733,24 @@ export interface components {
       tool_run?: components["schemas"]["ToolRunResponse"] | null;
       /** Tools Used */
       tools_used: components["schemas"]["ToolUsedResponse"][];
+    };
+    /**
+     * ChatExportDestinationRequest
+     * @description Persist a Drive folder for chat agent export / HITL prepare.
+     */
+    ChatExportDestinationRequest: {
+      /** Destination Label */
+      destination_label?: string | null;
+      /** Folder Id */
+      folder_id: string;
+    };
+    /**
+     * ChatExportDestinationResponse
+     * @description Confirmation after saving an export destination (no folder id echo).
+     */
+    ChatExportDestinationResponse: {
+      /** Destination Label */
+      destination_label: string;
     };
     /**
      * ChatHistoryMessage
@@ -1836,6 +1874,68 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  put_chat_export_destination_api_v1_chat_threads__conversation_id__export_destination_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversation_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChatExportDestinationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChatExportDestinationResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
       };
       /** @description Validation error */
       422: {

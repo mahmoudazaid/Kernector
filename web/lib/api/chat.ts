@@ -9,6 +9,10 @@ export type ToolApprovalDecisionRequest =
   components["schemas"]["ToolApprovalDecisionRequest"];
 export type ToolApprovalDecisionResponse =
   components["schemas"]["ToolApprovalDecisionResponse"];
+export type ChatExportDestinationRequest =
+  components["schemas"]["ChatExportDestinationRequest"];
+export type ChatExportDestinationResponse =
+  components["schemas"]["ChatExportDestinationResponse"];
 
 /** Grounded ask turns routinely exceed the default 10s client timeout. */
 export const CHAT_ASK_TIMEOUT_MS = 120_000;
@@ -113,15 +117,6 @@ export async function decideToolApproval(
     timeoutMs: options.timeoutMs ?? CHAT_ASK_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
-
-export type ChatExportDestinationRequest = {
-  folder_id: string;
-  destination_label?: string | null;
-};
-
-export type ChatExportDestinationResponse = {
-  destination_label: string;
-};
 
 export type PutChatExportDestinationOptions = {
   baseUrl: string;

@@ -128,6 +128,7 @@ class LangGraphToolAgent:
         approval_hints: MutableMapping[str, ApprovalHints] | None = None,
         tools_by_conversation: MutableMapping[str, dict[str, Tool]] | None = None,
         approval_results: MutableMapping[str, str] | None = None,
+        approvals_by_conversation: MutableMapping[str, set[str]] | None = None,
     ) -> None:
         self._model_factory = model_factory or _default_model_factory
         self._system_prompt = system_prompt
@@ -145,6 +146,11 @@ class LangGraphToolAgent:
         )
         self._approval_results: MutableMapping[str, str] = (
             approval_results if approval_results is not None else {}
+        )
+        self._approvals_by_conversation: MutableMapping[str, set[str]] = (
+            approvals_by_conversation
+            if approvals_by_conversation is not None
+            else {}
         )
 
     def run(
@@ -274,6 +280,12 @@ class LangGraphToolAgent:
         pending_args = self._pending_args
         hints_by_name = self._approval_hints
         approval_results = self._approval_results
+        approvals_by_conversation = self._approvals_by_conversation
+        conversation_key = (
+            conversation_id.strip()
+            if isinstance(conversation_id, str) and conversation_id.strip()
+            else None
+        )
 
         def call_model(state: _AgentState) -> Mapping[str, object]:
             steps = int(state.get("steps", 0)) + 1
@@ -348,6 +360,10 @@ class LangGraphToolAgent:
                     )
                     if approval_id not in pending_args:
                         pending_args[approval_id] = dict(projection_args)
+                    if conversation_key is not None:
+                        approvals_by_conversation.setdefault(
+                            conversation_key, set()
+                        ).add(approval_id)
                     pending = project_pending_approval(
                         approval_id=approval_id,
                         tool_name=tool.name,

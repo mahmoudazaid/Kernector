@@ -31,6 +31,23 @@ class _NoOpThreadMemory:
         del conversation_id
 
 
+class _HitlAwareThreadMemory:
+    """Clear checkpoints and the matching process-local HITL maps together."""
+
+    def __init__(
+        self,
+        *,
+        inner: AgentThreadMemory,
+        runtime: ShortTermMemoryRuntime,
+    ) -> None:
+        self._inner = inner
+        self._runtime = runtime
+
+    def clear(self, *, conversation_id: str) -> None:
+        self._runtime.clear_hitl_state(conversation_id)
+        self._inner.clear(conversation_id=conversation_id)
+
+
 @dataclass
 class ShortTermMemoryRuntime:
     """Composition-owned short-term memory handle for ask + clear + HITL."""
@@ -49,6 +66,7 @@ class ShortTermMemoryRuntime:
     _approval_hints: dict[str, ApprovalHints] = field(default_factory=dict)
     _tools_by_conversation: dict[str, dict[str, Tool]] = field(default_factory=dict)
     _approval_results: dict[str, str] = field(default_factory=dict)
+    _approvals_by_conversation: dict[str, set[str]] = field(default_factory=dict)
     _last_system_prompt: str = "system"
     _last_model_factory: object | None = field(default=None, repr=False)
 
@@ -59,6 +77,17 @@ class ShortTermMemoryRuntime:
     def clear_use_case(self) -> ClearAgentThread:
         """Return the clear use case bound to this runtime (may be a no-op)."""
         return self._clear
+
+    def clear_hitl_state(self, conversation_id: str) -> None:
+        """Drop process-local HITL maps for ``conversation_id`` (idempotent)."""
+        key = conversation_id.strip()
+        if not key:
+            return
+        self._tools_by_conversation.pop(key, None)
+        for approval_id in self._approvals_by_conversation.pop(key, set()):
+            self._pending_args.pop(approval_id, None)
+            self._approval_results.pop(approval_id, None)
+            self._approval_ledger.forget(approval_id)
 
     def bind_tool_agent(
         self,
@@ -81,6 +110,7 @@ class ShortTermMemoryRuntime:
                 approval_hints=self._approval_hints,
                 tools_by_conversation=self._tools_by_conversation,
                 approval_results=self._approval_results,
+                approvals_by_conversation=self._approvals_by_conversation,
             )
         return LangGraphToolAgent(
             system_prompt=system_prompt,
@@ -92,6 +122,7 @@ class ShortTermMemoryRuntime:
             approval_hints=self._approval_hints,
             tools_by_conversation=self._tools_by_conversation,
             approval_results=self._approval_results,
+            approvals_by_conversation=self._approvals_by_conversation,
         )
 
     def decide_tool_approval(self) -> DecideToolApproval:
@@ -129,13 +160,17 @@ def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntim
         return disabled
 
     checkpointer = InMemorySaver()
-    memory: AgentThreadMemory = LangGraphThreadMemory(
+    inner: AgentThreadMemory = LangGraphThreadMemory(
         checkpointer=checkpointer,
         workspace_id=workspace_id,
     )
-    return ShortTermMemoryRuntime(
+    runtime = ShortTermMemoryRuntime(
         enabled=True,
         workspace_id=workspace_id,
         _checkpointer=checkpointer,
-        _clear=ClearAgentThread(memory),
+        _clear=ClearAgentThread(_NoOpThreadMemory()),
     )
+    runtime._clear = ClearAgentThread(
+        _HitlAwareThreadMemory(inner=inner, runtime=runtime)
+    )
+    return runtime

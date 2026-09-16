@@ -237,6 +237,44 @@
         "title": "ChatAskResponse",
         "type": "object"
       },
+      "ChatExportDestinationRequest": {
+        "description": "Persist a Drive folder for chat agent export / HITL prepare.",
+        "properties": {
+          "destination_label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Label"
+          },
+          "folder_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Folder Id",
+            "type": "string"
+          }
+        },
+        "required": ["folder_id"],
+        "title": "ChatExportDestinationRequest",
+        "type": "object"
+      },
+      "ChatExportDestinationResponse": {
+        "description": "Confirmation after saving an export destination (no folder id echo).",
+        "properties": {
+          "destination_label": {
+            "title": "Destination Label",
+            "type": "string"
+          }
+        },
+        "required": ["destination_label"],
+        "title": "ChatExportDestinationResponse",
+        "type": "object"
+      },
       "ChatHistoryMessage": {
         "description": "One prior conversation turn for grounded ask.",
         "properties": {
@@ -2618,6 +2656,87 @@
           }
         },
         "summary": "Clear Chat Thread Checkpoint",
+        "tags": ["chat"]
+      }
+    },
+    "/api/v1/chat/threads/{conversation_id}/export-destination": {
+      "put": {
+        "description": "Save the Google Drive export folder for this conversation (no upload).",
+        "operationId": "put_chat_export_destination_api_v1_chat_threads__conversation_id__export_destination_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatExportDestinationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatExportDestinationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Put Chat Export Destination",
         "tags": ["chat"]
       }
     },

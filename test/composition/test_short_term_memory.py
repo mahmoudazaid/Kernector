@@ -161,6 +161,33 @@ def test_shared_runtime_reuses_state_across_independently_built_stacks(
     assert any("Score the risk for AUTH-101" in str(getattr(m, "content", "")) for m in follow)
 
 
+def test_clear_thread_evicts_hitl_maps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "test-workspace")
+    runtime = build_short_term_memory_runtime(load_settings())
+    assert runtime.enabled is True
+
+    runtime._pending_args["appr-A"] = {"folder_id": "SECRET", "titles": ["t1"]}
+    runtime._approval_results["appr-A"] = '{"file_id":"f1"}'
+    runtime._approvals_by_conversation["conv-A"] = {"appr-A"}
+    runtime._tools_by_conversation["conv-A"] = {"tool": object()}  # type: ignore[dict-item]
+    runtime._approval_ledger.record("appr-A", "approve")
+    runtime._pending_args["appr-B"] = {"folder_id": "other"}
+    runtime._approvals_by_conversation["conv-B"] = {"appr-B"}
+
+    runtime.clear_use_case().execute(conversation_id="conv-A")
+
+    assert "appr-A" not in runtime._pending_args
+    assert "appr-A" not in runtime._approval_results
+    assert "conv-A" not in runtime._tools_by_conversation
+    assert "conv-A" not in runtime._approvals_by_conversation
+    assert runtime._approval_ledger.recorded("appr-A") is None
+    assert runtime._pending_args["appr-B"]["folder_id"] == "other"
+    assert runtime._approvals_by_conversation["conv-B"] == {"appr-B"}
+
+
 def test_fresh_runtime_does_not_see_prior_checkpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

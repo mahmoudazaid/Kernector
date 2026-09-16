@@ -122,3 +122,7 @@ class ToolApprovalDecisionLedger:
 
     def record(self, approval_id: str, decision: Decision) -> None:
         self._decisions[approval_id] = decision
+
+    def forget(self, approval_id: str) -> None:
+        """Drop a recorded decision (e.g. when the thread is cleared)."""
+        self._decisions.pop(approval_id, None)
