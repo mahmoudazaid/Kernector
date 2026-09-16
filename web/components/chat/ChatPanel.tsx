@@ -17,6 +17,8 @@ import {
   type AskChatOptions,
   type ChatAskResponse,
 } from "@/lib/api/chat";
+import { ToolApprovalCard, ExportDestinationRequiredPanel } from "@/components/chat/ToolApprovalCard";
+import type { ApprovalResolution } from "@/components/chat/ToolApprovalCard";
 import { createTestDesignDraft } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
 import type {
@@ -146,7 +148,13 @@ function ToolsUsedBlock({ tools }: { tools: ToolUsed[] }) {
   );
 }
 
-function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
+function ToolRunBlock({
+  toolRun,
+  answerContent,
+}: {
+  toolRun: ToolRun;
+  answerContent?: string;
+}) {
   const calls = Array.isArray(toolRun.calls)
     ? toolRun.calls.filter(Boolean)
     : [];
@@ -158,6 +166,10 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
     : [];
   const summary =
     typeof toolRun.summary === "string" ? toolRun.summary : undefined;
+  const showSummary =
+    summary !== undefined &&
+    summary.trim() !== "" &&
+    summary.trim() !== (answerContent ?? "").trim();
   const markdown =
     typeof toolRun.markdown === "string" ? toolRun.markdown : undefined;
   const riskScore =
@@ -172,6 +184,15 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
     typeof toolRun.test_cases?.output_style === "string"
       ? toolRun.test_cases.output_style
       : undefined;
+  const hasBody =
+    calls.length > 0 ||
+    showSummary ||
+    Boolean(toolRun.risk) ||
+    Boolean(toolRun.test_cases) ||
+    Boolean(markdown);
+  if (!hasBody) {
+    return null;
+  }
 
   return (
     <div className="kern-chat-tool-run">
@@ -191,7 +212,7 @@ function ToolRunBlock({ toolRun }: { toolRun: ToolRun }) {
           </ul>
         </>
       ) : null}
-      {summary ? <p className="kern-chat-caption">{summary}</p> : null}
+      {showSummary ? <p className="kern-chat-caption">{summary}</p> : null}
       {toolRun.risk ? (
         <div>
           <p className="kern-chat-label">Risk</p>
@@ -281,12 +302,23 @@ function MessageRow({
   message,
   apiBaseUrl,
   conversationId,
+  testDesignHref,
   onTestDesignStarted,
+  onApprovalResolved,
 }: {
   message: ChatMessage;
   apiBaseUrl: string;
   conversationId: string | null;
+  testDesignHref?: string | null;
   onTestDesignStarted: (messageId: string, draftId: string) => void;
+  onApprovalResolved: (
+    messageId: string,
+    result: {
+      answer: string;
+      cancelled: boolean;
+      resolution: ApprovalResolution;
+    },
+  ) => void;
 }) {
   const router = useRouter();
   const [starting, setStarting] = useState(false);
@@ -344,16 +376,41 @@ function MessageRow({
     }
   }
 
+  const destinationRequired =
+    message.toolRun?.export_destination_required === true;
+
   return (
-    <article
-      className="kern-chat-msg kern-chat-msg--assistant"
-      data-role="assistant"
-    >
-      <div className="kern-chat-answer">{message.content}</div>
-      <CitationsBlock citations={message.citations ?? []} />
-      <ToolsUsedBlock tools={message.toolsUsed ?? []} />
-      {message.toolRun ? <ToolRunBlock toolRun={message.toolRun} /> : null}
-      <RunDetailsBlock run={message.run} />
+    <article className="kern-chat-turn" data-role="assistant">
+      <div className="kern-chat-msg kern-chat-msg--assistant">
+        <div className="kern-chat-answer">{message.content}</div>
+        <CitationsBlock citations={message.citations ?? []} />
+        <ToolsUsedBlock tools={message.toolsUsed ?? []} />
+        {message.toolRun && !destinationRequired ? (
+          <ToolRunBlock
+            toolRun={message.toolRun}
+            answerContent={message.content}
+          />
+        ) : null}
+        <RunDetailsBlock run={message.run} />
+      </div>
+      {destinationRequired ? (
+        <ExportDestinationRequiredPanel
+          testDesignHref={testDesignHref ?? null}
+          apiBaseUrl={apiBaseUrl}
+          conversationId={conversationId}
+        />
+      ) : null}
+      {message.pendingApproval && conversationId ? (
+        <ToolApprovalCard
+          baseUrl={apiBaseUrl}
+          conversationId={conversationId}
+          pending={message.pendingApproval}
+          resolution={message.approvalResolution}
+          onResolved={(result) => {
+            onApprovalResolved(message.id, result);
+          }}
+        />
+      ) : null}
       {message.action?.kind === "start_workflow" &&
       message.action.workflow_id === "software-delivery.test-design" ? (
         <div className="kern-chat-action">
@@ -374,12 +431,12 @@ function MessageRow({
           <Button
             type="button"
             onClick={() => {
-              router.push(
+              void router.push(
                 `/test-design/${encodeURIComponent(message.action!.draft_id!)}`,
               );
             }}
           >
-            {message.action.label}
+            {message.action.label || OPEN_TEST_DESIGN_LABEL}
           </Button>
         </div>
       ) : null}
@@ -404,6 +461,23 @@ function promoteStartActionToOpen(
   };
 }
 
+function latestTestDesignHref(
+  messages: readonly ChatMessage[],
+): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const action = messages[index]?.action;
+    if (
+      action?.kind === "open_workflow" &&
+      action.workflow_id === "software-delivery.test-design" &&
+      typeof action.draft_id === "string" &&
+      action.draft_id.trim()
+    ) {
+      return `/test-design/${encodeURIComponent(action.draft_id)}`;
+    }
+  }
+  return null;
+}
+
 function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
   return messages.map((message) => ({
     id: message.id,
@@ -415,6 +489,8 @@ function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
     run: message.run,
     toolRun: message.toolRun,
     action: message.action,
+    pendingApproval: message.pendingApproval,
+    approvalResolution: message.approvalResolution,
   }));
 }
 
@@ -429,6 +505,9 @@ function fromPersisted(messages: StoredChatMessage[]): ChatMessage[] {
     run: message.run as ChatMessage["run"],
     toolRun: message.toolRun as ChatMessage["toolRun"],
     action: message.action as ChatMessage["action"],
+    pendingApproval: message.pendingApproval as ChatMessage["pendingApproval"],
+    approvalResolution:
+      message.approvalResolution as ChatMessage["approvalResolution"],
   }));
 }
 
@@ -715,6 +794,32 @@ export function ChatPanel({
     });
   }
 
+  function handleApprovalResolved(
+    messageId: string,
+    result: {
+      answer: string;
+      cancelled: boolean;
+      resolution: ApprovalResolution;
+    },
+  ): void {
+    setMessages((current) => {
+      const next = current.map((message) => {
+        if (message.id !== messageId) {
+          return message;
+        }
+        return {
+          ...message,
+          content: result.answer || message.content,
+          approvalResolution: result.resolution,
+        };
+      });
+      if (boundIdRef.current) {
+        persistBound(boundIdRef.current, next, draftRef.current);
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (isLanding || !hydrated || !boundId) {
       return;
@@ -992,7 +1097,9 @@ export function ChatPanel({
               message={message}
               apiBaseUrl={apiBaseUrl}
               conversationId={boundId}
+              testDesignHref={latestTestDesignHref(messages)}
               onTestDesignStarted={handleTestDesignStarted}
+              onApprovalResolved={handleApprovalResolved}
             />
           ))}
           {sending ? (

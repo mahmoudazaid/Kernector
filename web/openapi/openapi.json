@@ -195,6 +195,16 @@
             "title": "Citations",
             "type": "array"
           },
+          "pending_approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingToolApprovalResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "run": {
             "anyOf": [
               {
@@ -558,6 +568,18 @@
       "ExportTestDesignGoogleDriveRequest": {
         "description": "Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/google-drive``.",
         "properties": {
+          "destination_label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Label"
+          },
           "file_name": {
             "anyOf": [
               {
@@ -1575,6 +1597,68 @@
         "title": "PatchTestDesignDraftRequest",
         "type": "object"
       },
+      "PendingToolApprovalResponse": {
+        "description": "Safe HITL projection; never includes raw Tool arguments or secrets.",
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "destination_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Label"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name"
+          },
+          "selected_title_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Title Count"
+          },
+          "status": {
+            "default": "pending",
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": ["approval_id", "tool_name", "title", "summary"],
+        "title": "PendingToolApprovalResponse",
+        "type": "object"
+      },
       "Problem": {
         "description": "RFC 9457 Problem Details plus Kernector extensions.",
         "properties": {
@@ -2122,6 +2206,56 @@
         "title": "TestCoverageDraftResponse",
         "type": "object"
       },
+      "ToolApprovalDecisionRequest": {
+        "description": "Wire body for approving or rejecting a pending tool call.",
+        "properties": {
+          "decision": {
+            "enum": ["approve", "reject"],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": ["decision"],
+        "title": "ToolApprovalDecisionRequest",
+        "type": "object"
+      },
+      "ToolApprovalDecisionResponse": {
+        "description": "Result after resuming a pending tool approval.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "cancelled": {
+            "default": false,
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "pending_approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingToolApprovalResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["answer"],
+        "title": "ToolApprovalDecisionResponse",
+        "type": "object"
+      },
       "ToolCallResponse": {
         "description": "One projected tool invocation (authored summary, never opaque payload).",
         "properties": {
@@ -2152,6 +2286,21 @@
             },
             "title": "Calls",
             "type": "array"
+          },
+          "drive_file_id": {
+            "default": "",
+            "title": "Drive File Id",
+            "type": "string"
+          },
+          "drive_file_name": {
+            "default": "",
+            "title": "Drive File Name",
+            "type": "string"
+          },
+          "export_destination_required": {
+            "default": false,
+            "title": "Export Destination Required",
+            "type": "boolean"
           },
           "markdown": {
             "default": "",
@@ -2328,6 +2477,106 @@
         "tags": ["chat"]
       }
     },
+    "/api/v1/chat/threads/{conversation_id}/approvals/{approval_id}": {
+      "post": {
+        "description": "Approve or reject a pending high-impact tool call on this thread.",
+        "operationId": "decide_tool_approval_api_v1_chat_threads__conversation_id__approvals__approval_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolApprovalDecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Decide Tool Approval",
+        "tags": ["chat"]
+      }
+    },
     "/api/v1/chat/threads/{conversation_id}/checkpoint": {
       "delete": {
         "description": "Clear short-term agent checkpoints for ``conversation_id`` (idempotent).",
@@ -2346,26 +2595,6 @@
         "responses": {
           "204": {
             "description": "Successful Response"
-          },
-          "405": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Method not allowed"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Conflict"
           },
           "422": {
             "content": {

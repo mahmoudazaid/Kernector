@@ -120,15 +120,23 @@ RetrieveHits = Callable[[str], Sequence[ScoredChunk]]
 Orchestrate = Callable[..., _PackResponse]
 
 
-def require_evidence(hits: Sequence[ScoredChunk]) -> tuple[ScoredChunk, ...]:
+def require_evidence(
+    hits: Sequence[ScoredChunk],
+    *,
+    allow_empty: bool = False,
+) -> tuple[ScoredChunk, ...]:
     """Return ``hits``, or refuse the run when nothing cleared the threshold.
 
     The guard has to fire *before* the evidence bundle is built: an empty bundle
     surfaces as the pack's ``OrchestrationValidationError("items must be
     non-empty")``, which tells a chat user nothing about what went wrong.
+
+    Args:
+        hits: Retrieval results already filtered by relevance.
+        allow_empty: When True (draft-based agent export), empty hits are OK.
     """
     evidence = tuple(hits)
-    if not evidence:
+    if not evidence and not allow_empty:
         raise InsufficientEvidenceError(_NO_EVIDENCE_MESSAGE)
     return evidence
 
@@ -152,6 +160,14 @@ def tool_run_answer(
     """
     sections = [response.summary]
     for outcome in response.outcomes:
+        if getattr(outcome, "outcome", None) == "export_destination_required":
+            continue
+        file_id = getattr(outcome, "file_id", None)
+        file_name = getattr(outcome, "file_name", None)
+        if file_id is not None or file_name is not None:
+            name = file_name if isinstance(file_name, str) and file_name else "file"
+            sections.append(f"Exported **{name}** to Google Drive.")
+            continue
         assessment = getattr(outcome, "assessment", None)
         if assessment is not None:
             sections.append(
@@ -192,8 +208,32 @@ def project_software_delivery_run_view(
     risk: RiskScoreView | None = None
     test_cases: TestCasesView | None = None
     markdown = ""
+    export_destination_required = False
+    drive_file_id = ""
+    drive_file_name = ""
+    drive_destination_label = ""
 
     for outcome in response.outcomes:
+        if getattr(outcome, "outcome", None) == "export_destination_required":
+            export_destination_required = True
+            continue
+
+        file_id = getattr(outcome, "file_id", None)
+        file_name = getattr(outcome, "file_name", None)
+        if file_id is not None or file_name is not None:
+            drive_file_id = file_id if isinstance(file_id, str) else ""
+            drive_file_name = file_name if isinstance(file_name, str) else ""
+            label = getattr(outcome, "destination_label", "")
+            drive_destination_label = label if isinstance(label, str) else ""
+            calls.append(
+                ToolCallView(
+                    "software_delivery.export_test_cases_google_drive",
+                    ok=True,
+                    summary="Exported test cases to Google Drive",
+                )
+            )
+            continue
+
         assessment = getattr(outcome, "assessment", None)
         if assessment is not None:
             factors = tuple(
@@ -267,6 +307,11 @@ def project_software_delivery_run_view(
         risk=risk,
         test_cases=test_cases,
         markdown=markdown,
+        export_destination_required=export_destination_required,
+        drive_file_id=drive_file_id,
+        drive_file_name=drive_file_name,
+        drive_destination_label=drive_destination_label,
+        pending_approval=getattr(response, "pending_approval", None),
     )
 
 
@@ -324,7 +369,12 @@ class PackSoftwareDeliveryChat:
         if self._model_calls is not None:
             self._model_calls.clear()
         try:
-            hits = require_evidence(self._retrieve(target))
+            allow_empty = (
+                conversation_id is not None and str(conversation_id).strip() != ""
+            )
+            hits = require_evidence(
+                self._retrieve(target), allow_empty=allow_empty
+            )
             recorder = ToolCallRecorder(self._invoke)
             try:
                 response = self._orchestrate(
@@ -364,6 +414,7 @@ class PackSoftwareDeliveryChat:
                     citations=citations,
                 ),
                 run_view=run_view,
+                pending_approval=getattr(response, "pending_approval", None),
             )
         finally:
             if self._model_calls is not None:

@@ -19,6 +19,8 @@ from application.errors import (
     InsufficientEvidenceError,
     MissingProviderCredentialsError,
     OllamaNotConfiguredError,
+    ToolApprovalConflictError,
+    ToolApprovalNotFoundError,
     UploadTooLargeError,
 )
 from application.manage_documents import PartialCreateFailure
@@ -297,6 +299,24 @@ def problem_from_exception(
             detail=DOCUMENT_PARTIAL_DETAILS.get(
                 operation, _DOCUMENT_PARTIAL_FALLBACK
             ),
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ToolApprovalNotFoundError):
+        return _problem(
+            code="tool_approval_not_found",
+            title="Pending approval not found",
+            status=404,
+            detail=str(exc) or "No pending approval for this conversation.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, ToolApprovalConflictError):
+        return _problem(
+            code="tool_approval_conflict",
+            title="Approval decision conflict",
+            status=409,
+            detail=str(exc) or "This approval was already decided differently.",
             instance=instance,
             request_id=request_id,
         )

@@ -5,18 +5,30 @@ from __future__ import annotations
 from fastapi import APIRouter, Response, status
 
 from application.contracts import AskRequest
+from application.decide_tool_approval import DecideToolApprovalRequest
 from composition.test_design import (
     SourceLocatorView,
     try_test_design_chat_handoff,
 )
 from domain.models import Message
-from presentation.http.deps import AskFactoryDep, ClearAgentThreadDep, SettingsDep
+from presentation.http.deps import (
+    AskFactoryDep,
+    ClearAgentThreadDep,
+    SettingsDep,
+    ShortTermMemoryRuntimeDep,
+    TestDesignFacadeDep,
+)
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     ChatAskRequest,
     ChatAskResponse,
+    ChatExportDestinationRequest,
+    ChatExportDestinationResponse,
+    ToolApprovalDecisionRequest,
+    ToolApprovalDecisionResponse,
     chat_workflow_action_response,
     citation_response,
+    pending_tool_approval_response,
     run_meta_response,
     tool_run_response,
     tools_used_response,
@@ -54,6 +66,7 @@ def chat_ask(
             run=None,
             tool_run=None,
             action=chat_workflow_action_response(handoff.action),
+            pending_approval=None,
         )
 
     runtime = body.runtime
@@ -69,6 +82,7 @@ def chat_ask(
     response = ask.execute(request, ask_settings)
     consume = getattr(ask, "consume_tool_run_view", None)
     tool_view = consume() if callable(consume) else None
+    pending = None if tool_view is None else getattr(tool_view, "pending_approval", None)
     return ChatAskResponse(
         answer=response.answer,
         citations=[citation_response(c) for c in response.citations],
@@ -76,13 +90,69 @@ def chat_ask(
         run=run_meta_response(response.run),
         tool_run=None if tool_view is None else tool_run_response(tool_view),
         action=None,
+        pending_approval=pending_tool_approval_response(pending),
     )
+
+
+@router.post(
+    "/chat/threads/{conversation_id}/approvals/{approval_id}",
+    responses=problem_responses(404, 409, 422, 500, 502),
+)
+def decide_tool_approval(
+    conversation_id: str,
+    approval_id: str,
+    body: ToolApprovalDecisionRequest,
+    short_term_memory: ShortTermMemoryRuntimeDep,
+) -> ToolApprovalDecisionResponse:
+    """Approve or reject a pending high-impact tool call on this thread."""
+    result = short_term_memory.decide_tool_approval().execute(
+        DecideToolApprovalRequest(
+            conversation_id=conversation_id,
+            approval_id=approval_id,
+            decision=body.decision,
+        )
+    )
+    if result.cancelled:
+        answer = (
+            "Understood. I cancelled the export and did not write anything "
+            "to Google Drive."
+        )
+    else:
+        answer = (
+            "Export finished. The Markdown file is in your Google Drive "
+            "destination."
+        )
+    return ToolApprovalDecisionResponse(
+        answer=answer,
+        cancelled=result.cancelled,
+        pending_approval=pending_tool_approval_response(result.pending_approval),
+        tool_run=None,
+    )
+
+
+@router.put(
+    "/chat/threads/{conversation_id}/export-destination",
+    responses=problem_responses(404, 405, 422, 500),
+)
+def put_chat_export_destination(
+    conversation_id: str,
+    body: ChatExportDestinationRequest,
+    facade: TestDesignFacadeDep,
+) -> ChatExportDestinationResponse:
+    """Save the Google Drive export folder for this conversation (no upload)."""
+    label = facade.set_export_destination(
+        conversation_id,
+        folder_id=body.folder_id,
+        destination_label=body.destination_label,
+    )
+    return ChatExportDestinationResponse(destination_label=label)
 
 
 @router.delete(
     "/chat/threads/{conversation_id}/checkpoint",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=problem_responses(405, 409, 422, 500),
+    responses=problem_responses(422, 500),
+    response_class=Response,
 )
 def clear_chat_thread_checkpoint(
     conversation_id: str,

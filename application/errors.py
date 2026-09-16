@@ -1,6 +1,10 @@
 """Application-layer errors."""
 
-from domain.errors import ConfigurationBoundaryError
+from domain.errors import (
+    ConfigurationBoundaryError,
+    ToolApprovalConflictError,
+    ToolApprovalNotFoundError,
+)
 
 
 class ApplicationValidationError(ValueError):
@@ -124,3 +128,6 @@ class InsufficientEvidenceError(RuntimeError):
     a model call. Presentation maps this type to a fixed user-safe sentence;
     diagnostic detail belongs on ``__cause__`` alone.
     """
+
+
+    """A conflicting decision was submitted for an already-resolved approval."""

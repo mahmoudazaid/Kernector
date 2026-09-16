@@ -1,19 +1,20 @@
-"""Process-scoped short-term agent thread memory runtime (#213).
+"""Process-scoped short-term agent thread memory runtime (#213 / #214).
 
 Owns one ``InMemorySaver`` per process when the Software Delivery agent loop
 is enabled. Thread keys are ``{workspace_id}:{conversation_id}`` with
-``workspace_id`` from trusted server config. Checkpoints are process-local and
-lost on restart; durable stores are deferred (#299). Presentation depends on
-this composition-facing type — never on LangGraph directly.
+``workspace_id`` from trusted server config. Checkpoints and pending tool
+approvals are process-local and lost on restart; durable stores are deferred.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
+from application.decide_tool_approval import DecideToolApproval
 from application.run_tool_agent import ClearAgentThread
+from domain.tool_approval import ToolApprovalDecisionLedger, ToolApprovalPolicy
 from domain.ports import AgentThreadMemory, ToolCallingAgent
 from infrastructure.config import Settings
 
@@ -27,19 +28,22 @@ class _NoOpThreadMemory:
         del conversation_id
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class ShortTermMemoryRuntime:
-    """Composition-owned short-term memory handle for ask + clear.
-
-    Attributes:
-        enabled (bool): True when agent-loop memory is active.
-        workspace_id (str | None): Bound server workspace when enabled.
-    """
+    """Composition-owned short-term memory handle for ask + clear + HITL."""
 
     enabled: bool
     workspace_id: str | None
     _checkpointer: object | None
     _clear: ClearAgentThread
+    _pending_args: dict = field(default_factory=dict)
+    _approval_ledger: ToolApprovalDecisionLedger = field(
+        default_factory=ToolApprovalDecisionLedger
+    )
+    _approval_policy: ToolApprovalPolicy = field(
+        default_factory=lambda: ToolApprovalPolicy()
+    )
+    _bound_agent: object | None = field(default=None, repr=False)
 
     @property
     def short_term_memory_enabled(self) -> bool:
@@ -59,33 +63,44 @@ class ShortTermMemoryRuntime:
         from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
         if not self.enabled or self._checkpointer is None or self.workspace_id is None:
-            return LangGraphToolAgent(
+            agent = LangGraphToolAgent(
                 system_prompt=system_prompt,
                 model_factory=model_factory,  # type: ignore[arg-type]
+                approval_policy=self._approval_policy,
+                pending_args=self._pending_args,
             )
-        return LangGraphToolAgent(
+            self._bound_agent = agent
+            return agent
+        agent = LangGraphToolAgent(
             system_prompt=system_prompt,
             model_factory=model_factory,  # type: ignore[arg-type]
             checkpointer=self._checkpointer,  # type: ignore[arg-type]
             workspace_id=self.workspace_id,
+            approval_policy=self._approval_policy,
+            pending_args=self._pending_args,
         )
+        self._bound_agent = agent
+        return agent
+
+    def decide_tool_approval(self) -> DecideToolApproval:
+        """Return the HITL resume use case bound to the last bound agent."""
+        agent = self._bound_agent
+        if agent is None:
+            from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+            agent = LangGraphToolAgent(
+                system_prompt="system",
+                checkpointer=self._checkpointer,  # type: ignore[arg-type]
+                workspace_id=self.workspace_id,
+                approval_policy=self._approval_policy,
+                pending_args=self._pending_args,
+            )
+            self._bound_agent = agent
+        return DecideToolApproval(resumer=agent, ledger=self._approval_ledger)
 
 
 def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntime:
-    """Construct a short-term memory runtime from settings.
-
-    When ``SOFTWARE_DELIVERY_AGENT_LOOP`` is off, returns a disabled runtime
-    with a no-op clear (still validates conversation ids in the use case).
-
-    When on and ``DOCUMENT_CATALOG_WORKSPACE_ID`` is valid, creates a fresh
-    ``InMemorySaver`` for this runtime instance. Process reuse comes from the
-    presentation/composition cache that holds one runtime, not from this
-    builder inventing a hidden global.
-
-    When the agent loop is on but the workspace id is absent/invalid, returns a
-    disabled runtime instead of raising so core HTTP routes (settings, ask)
-    stay available and degrade rather than 500.
-    """
+    """Construct a short-term memory runtime from settings."""
     disabled = ShortTermMemoryRuntime(
         enabled=False,
         workspace_id=None,
@@ -116,9 +131,3 @@ def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntim
         _checkpointer=checkpointer,
         _clear=ClearAgentThread(memory),
     )
-
-
-class ShortTermMemoryRuntimeFactory(Protocol):
-    """Builds or returns the process short-term memory runtime."""
-
-    def __call__(self, settings: Settings) -> ShortTermMemoryRuntime: ...

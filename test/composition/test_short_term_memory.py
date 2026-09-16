@@ -14,6 +14,7 @@ from composition.short_term_memory import (
     ShortTermMemoryRuntime,
     build_short_term_memory_runtime,
 )
+from composition.prepare_drive_export import PreparedDriveExportCall
 from composition.software_delivery_agent import build_agent_orchestrate
 from composition.software_delivery_chat import PackSoftwareDeliveryChat
 from composition.tool_augmented_ask import ToolAugmentedAsk
@@ -26,6 +27,7 @@ from domain.knowledge import (
 from domain.models import AgentTurnResult
 from infrastructure.config import load_settings
 from packs.software_delivery.chat_intent import ChatToolSelection
+from packs.software_delivery.tools.export_test_cases_google_drive import TOOL_NAME
 
 
 class _ScriptedChat:
@@ -65,6 +67,19 @@ def _hit() -> ScoredChunk:
     )
 
 
+def _prepared(_conversation_id: str) -> PreparedDriveExportCall:
+    return PreparedDriveExportCall(
+        tool_name=TOOL_NAME,
+        arguments={
+            "document_title": "KERN-482",
+            "titles": ["Login MFA"],
+            "folder_id": "folder-abc",
+        },
+        destination_label="QA",
+        selected_title_count=1,
+    )
+
+
 def _ask_stack(
     runtime: ShortTermMemoryRuntime,
     chat: _ScriptedChat,
@@ -75,8 +90,12 @@ def _ask_stack(
     )
     runner = PackSoftwareDeliveryChat(
         retrieve=lambda _target: (_hit(),),
-        invoke=lambda _name, _args: "{}",
-        orchestrate=build_agent_orchestrate(agent, max_steps=4),
+        invoke=lambda _name, _args: (
+            '{"file_id":"f1","file_name":"x.md"}'
+        ),
+        orchestrate=build_agent_orchestrate(
+            agent, prepare_export=_prepared, max_steps=4
+        ),
     )
     return ToolAugmentedAsk(
         ask=lambda request, settings=None: (_ for _ in ()).throw(
@@ -84,7 +103,7 @@ def _ask_stack(
         ),
         runner=runner,
         select=lambda _query: ChatToolSelection(
-            generate_tests=False, output_style="steps"
+            generate_tests=True, output_style="steps"
         ),
         pack_id="software-delivery",
     )

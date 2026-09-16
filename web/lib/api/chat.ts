@@ -3,6 +3,12 @@ import type { components } from "@/lib/api/generated/schema";
 
 export type ChatAskRequest = components["schemas"]["ChatAskRequest"];
 export type ChatAskResponse = components["schemas"]["ChatAskResponse"];
+export type PendingToolApprovalResponse =
+  components["schemas"]["PendingToolApprovalResponse"];
+export type ToolApprovalDecisionRequest =
+  components["schemas"]["ToolApprovalDecisionRequest"];
+export type ToolApprovalDecisionResponse =
+  components["schemas"]["ToolApprovalDecisionResponse"];
 
 /** Grounded ask turns routinely exceed the default 10s client timeout. */
 export const CHAT_ASK_TIMEOUT_MS = 120_000;
@@ -76,4 +82,71 @@ export async function clearChatCheckpointBestEffort(
       return false;
     }
   }
+}
+
+export type DecideToolApprovalOptions = {
+  baseUrl: string;
+  conversationId: string;
+  approvalId: string;
+  body: ToolApprovalDecisionRequest;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  request?: typeof apiRequest;
+};
+
+/**
+ * Approve or reject a pending tool call via
+ * ``POST /api/v1/chat/threads/{conversation_id}/approvals/{approval_id}``.
+ */
+export async function decideToolApproval(
+  options: DecideToolApprovalOptions,
+): Promise<ToolApprovalDecisionResponse> {
+  const request = options.request ?? apiRequest;
+  const conversationId = encodeURIComponent(options.conversationId);
+  const approvalId = encodeURIComponent(options.approvalId);
+  return request<ToolApprovalDecisionResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/chat/threads/${conversationId}/approvals/${approvalId}`,
+    method: "POST",
+    body: options.body,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? CHAT_ASK_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}
+
+export type ChatExportDestinationRequest = {
+  folder_id: string;
+  destination_label?: string | null;
+};
+
+export type ChatExportDestinationResponse = {
+  destination_label: string;
+};
+
+export type PutChatExportDestinationOptions = {
+  baseUrl: string;
+  conversationId: string;
+  body: ChatExportDestinationRequest;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  request?: typeof apiRequest;
+};
+
+/**
+ * Persist Drive export folder via
+ * ``PUT /api/v1/chat/threads/{conversation_id}/export-destination``.
+ */
+export async function putChatExportDestination(
+  options: PutChatExportDestinationOptions,
+): Promise<ChatExportDestinationResponse> {
+  const request = options.request ?? apiRequest;
+  const conversationId = encodeURIComponent(options.conversationId);
+  return request<ChatExportDestinationResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/chat/threads/${conversationId}/export-destination`,
+    method: "PUT",
+    body: options.body,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
 }
