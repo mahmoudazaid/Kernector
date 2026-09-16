@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping, Sequence
 from typing import Annotated, Any, NoReturn, Protocol, TypedDict
+from uuid import uuid4
 
 from langchain_core.messages import (
     AIMessage,
@@ -124,7 +125,9 @@ class LangGraphToolAgent:
         workspace_id: str | None = None,
         approval_policy: ToolApprovalPolicy | None = None,
         pending_args: MutableMapping[str, Mapping[str, object]] | None = None,
-        approval_hints: Mapping[str, ApprovalHints] | None = None,
+        approval_hints: MutableMapping[str, ApprovalHints] | None = None,
+        tools_by_conversation: MutableMapping[str, dict[str, Tool]] | None = None,
+        approval_results: MutableMapping[str, str] | None = None,
     ) -> None:
         self._model_factory = model_factory or _default_model_factory
         self._system_prompt = system_prompt
@@ -134,8 +137,15 @@ class LangGraphToolAgent:
         self._pending_args: MutableMapping[str, Mapping[str, object]] = (
             pending_args if pending_args is not None else {}
         )
-        self._approval_hints = dict(approval_hints or {})
-        self._last_tools_by_name: dict[str, Tool] = {}
+        self._approval_hints: MutableMapping[str, ApprovalHints] = (
+            approval_hints if approval_hints is not None else {}
+        )
+        self._tools_by_conversation: MutableMapping[str, dict[str, Tool]] = (
+            tools_by_conversation if tools_by_conversation is not None else {}
+        )
+        self._approval_results: MutableMapping[str, str] = (
+            approval_results if approval_results is not None else {}
+        )
 
     def run(
         self,
@@ -146,13 +156,22 @@ class LangGraphToolAgent:
         conversation_id: str | None = None,
     ) -> AgentTurnResult:
         """Run a model ↔ tools loop for ``goal`` with a hard ``max_steps`` stop."""
-        self._last_tools_by_name = {tool.name: tool for tool in tools}
+        tools_by_name = {tool.name: tool for tool in tools}
         for tool in tools:
             hints = getattr(tool, "approval_hints", None)
             if isinstance(hints, ApprovalHints):
                 self._approval_hints[tool.name] = hints
+        conversation_key = (
+            conversation_id.strip()
+            if isinstance(conversation_id, str) and conversation_id.strip()
+            else None
+        )
+        if conversation_key is not None:
+            self._tools_by_conversation[conversation_key] = tools_by_name
 
-        compiled, use_memory = self._compile(tools, max_steps=max_steps)
+        compiled, use_memory = self._compile(
+            tools, max_steps=max_steps, conversation_id=conversation_key
+        )
         input_state: Mapping[str, object] = {
             "messages": [
                 SystemMessage(
@@ -166,9 +185,10 @@ class LangGraphToolAgent:
         }
 
         try:
-            if use_memory and conversation_id is not None and str(conversation_id).strip():
+            if use_memory:
                 assert self._workspace_id is not None
-                thread_id = scoped_thread_key(self._workspace_id, conversation_id)
+                assert conversation_key is not None
+                thread_id = scoped_thread_key(self._workspace_id, conversation_key)
                 final_state = compiled.invoke(
                     input_state,
                     {"configurable": {"thread_id": thread_id}},
@@ -196,7 +216,8 @@ class LangGraphToolAgent:
             raise ToolApprovalNotFoundError("No pending approval for this conversation.")
         if not conversation_id.strip():
             raise ToolApprovalNotFoundError("No pending approval for this conversation.")
-        thread_id = scoped_thread_key(self._workspace_id, conversation_id)
+        conversation_key = conversation_id.strip()
+        thread_id = scoped_thread_key(self._workspace_id, conversation_key)
         config = {"configurable": {"thread_id": thread_id}}
         snapshot = self._checkpointer.get_tuple(config)
         if snapshot is None:
@@ -215,8 +236,11 @@ class LangGraphToolAgent:
             values = snapshot.checkpoint.get("channel_values", {})
             return self._result_from_state(values)
 
-        tools = list(self._last_tools_by_name.values())
-        compiled, _ = self._compile(tools, max_steps=32)
+        tools_by_name = self._tools_by_conversation.get(conversation_key) or {}
+        tools = list(tools_by_name.values())
+        compiled, _ = self._compile(
+            tools, max_steps=32, conversation_id=conversation_key
+        )
         try:
             final_state = compiled.invoke(
                 Command(resume={"decision": decision, "approval_id": approval_id}),
@@ -230,7 +254,13 @@ class LangGraphToolAgent:
             _provider_or_reraise(exc)
         return self._result_from_state(final_state)
 
-    def _compile(self, tools: Sequence[Tool], *, max_steps: int):
+    def _compile(
+        self,
+        tools: Sequence[Tool],
+        *,
+        max_steps: int,
+        conversation_id: str | None,
+    ):
         lc_tools = [_to_langchain_tool(tool) for tool in tools]
         tools_by_bind_name = {_bind_tool_name(tool.name): tool for tool in tools}
         try:
@@ -243,6 +273,7 @@ class LangGraphToolAgent:
         policy = self._approval_policy
         pending_args = self._pending_args
         hints_by_name = self._approval_hints
+        approval_results = self._approval_results
 
         def call_model(state: _AgentState) -> Mapping[str, object]:
             steps = int(state.get("steps", 0)) + 1
@@ -338,6 +369,7 @@ class LangGraphToolAgent:
                     decision_name = _decision_from_resume(decision, approval_id)
                     if decision_name == "reject":
                         pending_args.pop(approval_id, None)
+                        approval_results.pop(approval_id, None)
                         outputs.append(
                             ToolMessage(
                                 content=_CANCELLED_TOOL_CONTENT,
@@ -348,6 +380,7 @@ class LangGraphToolAgent:
                         continue
                     stored = pending_args.pop(approval_id, dict(args))
                     result = tool.run(stored)
+                    approval_results[approval_id] = result
                 else:
                     result = tool.run(args)
                 outputs.append(
@@ -378,7 +411,10 @@ class LangGraphToolAgent:
         graph.add_edge("tools", "agent")
 
         use_memory = (
-            self._checkpointer is not None and self._workspace_id is not None
+            self._checkpointer is not None
+            and self._workspace_id is not None
+            and conversation_id is not None
+            and str(conversation_id).strip() != ""
         )
         compiled = (
             graph.compile(checkpointer=self._checkpointer)
@@ -386,6 +422,10 @@ class LangGraphToolAgent:
             else graph.compile()
         )
         return compiled, use_memory
+
+    def take_approval_result(self, approval_id: str) -> str | None:
+        """Return and clear a post-approve tool result string, if any."""
+        return self._approval_results.pop(approval_id, None)
 
     def _result_from_state(self, final_state: Mapping[str, object]) -> AgentTurnResult:
         interrupts = final_state.get("__interrupt__")
@@ -479,25 +519,39 @@ def _tool_call_id(call: Mapping[str, object], index: int) -> str:
     raw = call.get("id")
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
-    return f"call-{index}"
+    return f"call_{index}_{uuid4().hex[:8]}"
 
 
 def _final_text(messages: Sequence[object]) -> str | None:
-    for message in reversed(tuple(messages)):
-        if isinstance(message, AIMessage):
-            content = message.content
-            if isinstance(content, str) and content.strip():
-                return content.strip()
-            if isinstance(content, list):
-                parts = [
-                    part.get("text", "")
-                    if isinstance(part, Mapping)
-                    else str(part)
-                    for part in content
-                ]
-                joined = "".join(parts).strip()
-                if joined:
-                    return joined
+    """Return the latest non-blank assistant text from *this* turn only.
+
+    With a checkpointer, ``messages`` spans the whole thread. Bound the scan to
+    messages after the last ``HumanMessage`` so a blank current answer cannot
+    fall through and replay a prior turn's reply.
+    """
+    start = 0
+    for index, message in enumerate(messages):
+        if isinstance(message, HumanMessage):
+            start = index + 1
+    for message in reversed(tuple(messages)[start:]):
+        if not isinstance(message, AIMessage):
+            continue
+        tool_calls = getattr(message, "tool_calls", None) or ()
+        if tool_calls:
+            continue
+        content = message.content
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        if isinstance(content, list):
+            parts = [
+                part.get("text", "")
+                if isinstance(part, Mapping)
+                else str(part)
+                for part in content
+            ]
+            joined = "".join(parts).strip()
+            if joined:
+                return joined
     return None
 
 

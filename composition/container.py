@@ -3664,6 +3664,28 @@ def build_tool_augmented_ask(
             runtime = build_short_term_memory_runtime(settings)
         if not isinstance(runtime, ShortTermMemoryRuntime):
             raise TypeError("short_term_memory must be a ShortTermMemoryRuntime")
+        try:
+            drafts = _agent_draft_repository(settings)
+            destinations = _agent_export_destination_repository(settings)
+        except ConfigurationError as error:
+            # Match short-term memory: missing/invalid workspace degrades so
+            # /chat/ask stays available instead of 500.
+            logger.warning(
+                "Agent draft/destination stores disabled: %s", error
+            )
+
+            class _EmptyDrafts:
+                def find_by_conversation_id(self, conversation_id: str):
+                    del conversation_id
+                    return None
+
+            class _EmptyDestinations:
+                def get(self, conversation_id: str):
+                    del conversation_id
+                    return None
+
+            drafts = _EmptyDrafts()
+            destinations = _EmptyDestinations()
         orchestrate = build_agent_orchestrate(
             runtime.bind_tool_agent(
                 system_prompt=agent_tool_system_prompt(),
@@ -3675,8 +3697,8 @@ def build_tool_augmented_ask(
                     base_url=base_url,
                 ),
             ),
-            drafts=_agent_draft_repository(settings),
-            destinations=_agent_export_destination_repository(settings),
+            drafts=drafts,
+            destinations=destinations,
         )
     else:
 
@@ -3720,13 +3742,17 @@ def build_tool_augmented_ask(
         invoke=build_opaque_invoke(settings, chat_model=model_calls),
         orchestrate=orchestrate,
         model_calls=model_calls,
+        allow_empty_evidence=settings.domain_tools.agent_loop,
     )
 
+    select = registration.build_chat_intent_selector(
+        export_intent_enabled=settings.domain_tools.agent_loop
+    )
     return CorrelatedAsk(
         ToolAugmentedAsk(
             ask,
             runner=runner,
-            select=registration.build_chat_intent_selector(),
+            select=select,
             pack_id="software-delivery",
         )
     )

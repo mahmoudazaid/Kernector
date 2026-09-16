@@ -112,21 +112,66 @@ def decide_tool_approval(
             decision=body.decision,
         )
     )
+    tool_view = None
+    take_result = getattr(short_term_memory, "take_approval_result", None)
+    raw_result = take_result(approval_id) if callable(take_result) else None
+    if raw_result is not None:
+        tool_view = _tool_run_view_from_approval_result(raw_result)
+
     if result.cancelled:
         answer = (
             "Understood. I cancelled the export and did not write anything "
             "to Google Drive."
         )
-    else:
+    elif result.pending_approval is not None:
+        answer = result.turn.content
+    elif tool_view is not None and tool_view.drive_file_id:
         answer = (
             "Export finished. The Markdown file is in your Google Drive "
             "destination."
         )
+    else:
+        # Prefer the resumed turn text so we never claim success after a no-op.
+        answer = result.turn.content
+
     return ToolApprovalDecisionResponse(
         answer=answer,
         cancelled=result.cancelled,
         pending_approval=pending_tool_approval_response(result.pending_approval),
-        tool_run=None,
+        tool_run=None if tool_view is None else tool_run_response(tool_view),
+    )
+
+
+def _tool_run_view_from_approval_result(raw: str):
+    """Best-effort Drive receipt projection from a resumed tool JSON string."""
+    import json
+
+    from composition.software_delivery_tools import SoftwareDeliveryRunView
+    from composition.tool_runs import ToolCallView
+
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    file_id = payload.get("file_id")
+    file_name = payload.get("file_name")
+    if not isinstance(file_id, str) and not isinstance(file_name, str):
+        return None
+    drive_file_id = file_id if isinstance(file_id, str) else ""
+    drive_file_name = file_name if isinstance(file_name, str) else ""
+    return SoftwareDeliveryRunView(
+        summary="Exported test cases to Google Drive",
+        calls=(
+            ToolCallView(
+                "software_delivery.export_test_cases_google_drive",
+                ok=True,
+                summary="Exported test cases to Google Drive",
+            ),
+        ),
+        drive_file_id=drive_file_id,
+        drive_file_name=drive_file_name,
     )
 
 

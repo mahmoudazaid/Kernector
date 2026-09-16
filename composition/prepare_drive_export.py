@@ -15,13 +15,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from packs.software_delivery.tools.export_test_cases_google_drive import (
-    TOOL_NAME,
-    default_export_file_name,
-)
-
 DEFAULT_DRIVE_FOLDER_ID = "root"
 DEFAULT_DRIVE_DESTINATION_LABEL = "Home"
+# Composition-local constant — avoid importing the pack at module load.
+TOOL_NAME = "software_delivery.export_test_cases_google_drive"
 
 
 class _DraftLike(Protocol):
@@ -112,6 +109,10 @@ def prepare_drive_export_call(
         if destination is not None
         else DEFAULT_DRIVE_DESTINATION_LABEL
     )
+    from packs.software_delivery.tools.export_test_cases_google_drive import (
+        default_export_file_name,
+    )
+
     file_name = default_export_file_name(draft.ticket_identifier)
 
     arguments: dict[str, object] = {

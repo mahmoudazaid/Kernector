@@ -30,7 +30,10 @@ from composition.software_delivery_chat import OpaqueInvoke, Orchestrate
 from domain.knowledge import ScoredChunk
 from domain.ports import Tool, ToolCallingAgent
 from domain.tool_approval import PendingToolApproval
-from packs.software_delivery.tools.export_test_cases_google_drive import TOOL_NAME
+
+# Keep the tool name as a composition-local constant so this module never
+# imports ``packs`` at load time (lazy boundary).
+TOOL_NAME = "software_delivery.export_test_cases_google_drive"
 
 _DEFAULT_MAX_STEPS = 8
 _NO_TOOLS_INVOKED = "No software-delivery tools were invoked."

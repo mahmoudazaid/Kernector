@@ -329,6 +329,9 @@ class PackSoftwareDeliveryChat:
             calls made inside tools (e.g. test generation). Cleared at run
             start and on every exit; consumed metadata is merged into
             ``ToolRunOutcome.run`` with retrieval/citation counts.
+        allow_empty_evidence (bool): When True (agent export path), empty
+            retrieval hits are OK. Must not be derived from conversation_id —
+            the web client always sends one.
     """
 
     def __init__(
@@ -338,11 +341,13 @@ class PackSoftwareDeliveryChat:
         invoke: OpaqueInvoke,
         orchestrate: Orchestrate,
         model_calls: ModelCallRecorder | None = None,
+        allow_empty_evidence: bool = False,
     ) -> None:
         self._retrieve = retrieve
         self._invoke = invoke
         self._orchestrate = orchestrate
         self._model_calls = model_calls
+        self._allow_empty_evidence = allow_empty_evidence
 
     def run(
         self,
@@ -369,11 +374,9 @@ class PackSoftwareDeliveryChat:
         if self._model_calls is not None:
             self._model_calls.clear()
         try:
-            allow_empty = (
-                conversation_id is not None and str(conversation_id).strip() != ""
-            )
             hits = require_evidence(
-                self._retrieve(target), allow_empty=allow_empty
+                self._retrieve(target),
+                allow_empty=self._allow_empty_evidence,
             )
             recorder = ToolCallRecorder(self._invoke)
             try:

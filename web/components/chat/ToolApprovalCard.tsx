@@ -7,6 +7,7 @@ import {
   putChatExportDestination,
   type PendingToolApprovalResponse,
 } from "@/lib/api/chat";
+import { ApiError } from "@/lib/api/errors";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { Button } from "@/components/ui/Button";
 
@@ -78,6 +79,7 @@ export function ToolApprovalCard({
       return;
     }
     setBusy(true);
+    setDestNote(null);
     try {
       const result = await decideToolApproval({
         baseUrl,
@@ -100,6 +102,16 @@ export function ToolApprovalCard({
         cancelled: result.cancelled,
         resolution: next,
       });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setDestNote(
+          "This approval was already decided differently. Refresh and try again.",
+        );
+      } else if (error instanceof ApiError && error.status === 404) {
+        setDestNote("This approval is no longer available.");
+      } else {
+        setDestNote("Could not submit decision. Try again.");
+      }
     } finally {
       setBusy(false);
     }

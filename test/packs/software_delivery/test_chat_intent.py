@@ -47,6 +47,9 @@ def test_an_unknown_style_cannot_be_constructed() -> None:
 def test_registration_exposes_the_chat_intent_selector() -> None:
     from packs.software_delivery.registration import build_chat_intent_selector
 
-    select = build_chat_intent_selector()
+    disabled = build_chat_intent_selector(export_intent_enabled=False)
+    assert disabled("Export to Google Drive") is None
+
+    select = build_chat_intent_selector(export_intent_enabled=True)
     assert select("Export to Google Drive") is not None
     assert select("Create test cases for AUTH-101") is None

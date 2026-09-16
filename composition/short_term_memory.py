@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Protocol
 
 from application.decide_tool_approval import DecideToolApproval
 from application.run_tool_agent import ClearAgentThread
-from domain.tool_approval import ToolApprovalDecisionLedger, ToolApprovalPolicy
-from domain.ports import AgentThreadMemory, ToolCallingAgent
+from domain.tool_approval import (
+    ApprovalHints,
+    ToolApprovalDecisionLedger,
+    ToolApprovalPolicy,
+)
+from domain.ports import AgentThreadMemory, Tool, ToolCallingAgent
 from infrastructure.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -43,7 +46,11 @@ class ShortTermMemoryRuntime:
     _approval_policy: ToolApprovalPolicy = field(
         default_factory=lambda: ToolApprovalPolicy()
     )
-    _bound_agent: object | None = field(default=None, repr=False)
+    _approval_hints: dict[str, ApprovalHints] = field(default_factory=dict)
+    _tools_by_conversation: dict[str, dict[str, Tool]] = field(default_factory=dict)
+    _approval_results: dict[str, str] = field(default_factory=dict)
+    _last_system_prompt: str = "system"
+    _last_model_factory: object | None = field(default=None, repr=False)
 
     @property
     def short_term_memory_enabled(self) -> bool:
@@ -62,41 +69,42 @@ class ShortTermMemoryRuntime:
         """Build a ``LangGraphToolAgent`` sharing this runtime's checkpointer."""
         from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 
+        self._last_system_prompt = system_prompt
+        self._last_model_factory = model_factory
+
         if not self.enabled or self._checkpointer is None or self.workspace_id is None:
-            agent = LangGraphToolAgent(
+            return LangGraphToolAgent(
                 system_prompt=system_prompt,
                 model_factory=model_factory,  # type: ignore[arg-type]
                 approval_policy=self._approval_policy,
                 pending_args=self._pending_args,
+                approval_hints=self._approval_hints,
+                tools_by_conversation=self._tools_by_conversation,
+                approval_results=self._approval_results,
             )
-            self._bound_agent = agent
-            return agent
-        agent = LangGraphToolAgent(
+        return LangGraphToolAgent(
             system_prompt=system_prompt,
             model_factory=model_factory,  # type: ignore[arg-type]
             checkpointer=self._checkpointer,  # type: ignore[arg-type]
             workspace_id=self.workspace_id,
             approval_policy=self._approval_policy,
             pending_args=self._pending_args,
+            approval_hints=self._approval_hints,
+            tools_by_conversation=self._tools_by_conversation,
+            approval_results=self._approval_results,
         )
-        self._bound_agent = agent
-        return agent
 
     def decide_tool_approval(self) -> DecideToolApproval:
-        """Return the HITL resume use case bound to the last bound agent."""
-        agent = self._bound_agent
-        if agent is None:
-            from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
-
-            agent = LangGraphToolAgent(
-                system_prompt="system",
-                checkpointer=self._checkpointer,  # type: ignore[arg-type]
-                workspace_id=self.workspace_id,
-                approval_policy=self._approval_policy,
-                pending_args=self._pending_args,
-            )
-            self._bound_agent = agent
+        """Return the HITL resume use case on a shared-state agent."""
+        agent = self.bind_tool_agent(
+            system_prompt=self._last_system_prompt,
+            model_factory=self._last_model_factory,
+        )
         return DecideToolApproval(resumer=agent, ledger=self._approval_ledger)
+
+    def take_approval_result(self, approval_id: str) -> str | None:
+        """Return and clear a post-approve tool result string, if any."""
+        return self._approval_results.pop(approval_id, None)
 
 
 def build_short_term_memory_runtime(settings: Settings) -> ShortTermMemoryRuntime:

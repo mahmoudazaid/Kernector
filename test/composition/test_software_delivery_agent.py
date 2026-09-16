@@ -103,6 +103,7 @@ def test_agent_defaults_to_home_destination_when_none_persisted() -> None:
 
     agent = _OrderedFakeAgent((TOOL_NAME,))
     runner = PackSoftwareDeliveryChat(
+        allow_empty_evidence=True,
         retrieve=lambda _target: (),
         invoke=_home_invoke,
         orchestrate=build_agent_orchestrate(
@@ -133,6 +134,7 @@ def test_agent_exports_drive_when_prepared_call_available() -> None:
     )
     agent = _OrderedFakeAgent((TOOL_NAME,))
     runner = PackSoftwareDeliveryChat(
+        allow_empty_evidence=True,
         retrieve=lambda _target: (),
         invoke=_invoke,
         orchestrate=build_agent_orchestrate(
@@ -166,6 +168,7 @@ def test_agent_does_not_bind_retired_tools() -> None:
     )
     agent = _OrderedFakeAgent((TOOL_NAME,))
     PackSoftwareDeliveryChat(
+        allow_empty_evidence=True,
         retrieve=lambda _target: (),
         invoke=_invoke,
         orchestrate=build_agent_orchestrate(
@@ -182,6 +185,7 @@ def test_agent_does_not_bind_retired_tools() -> None:
 def test_agent_draft_unavailable_skips_tools() -> None:
     agent = _OrderedFakeAgent((TOOL_NAME,))
     outcome = PackSoftwareDeliveryChat(
+        allow_empty_evidence=True,
         retrieve=lambda _target: (),
         invoke=_invoke,
         orchestrate=build_agent_orchestrate(
