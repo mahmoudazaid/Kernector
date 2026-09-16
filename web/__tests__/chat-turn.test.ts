@@ -108,6 +108,30 @@ describe("applyTurnResult", () => {
     expect(next[1].displayOnly).toBeUndefined();
   });
 
+  it("carries pending_approval onto the assistant row", () => {
+    const messages = [user("export")];
+    const response: ChatAskResponse = {
+      answer: "Waiting for approval before continuing.",
+      citations: [],
+      tools_used: [],
+      run: null,
+      tool_run: null,
+      pending_approval: {
+        approval_id: "c1",
+        tool_name: "software_delivery.export_test_cases_google_drive",
+        title: "Export test cases to Google Drive",
+        summary: "Write selected titles as Markdown.",
+        status: "pending",
+        destination_label: "QA / Sprint 3",
+        file_name: "issue-482.md",
+        selected_title_count: 2,
+      },
+    };
+
+    const next = applyTurnResult(messages, { kind: "success", response });
+    expect(next[1].pendingApproval).toEqual(response.pending_approval);
+  });
+
   it("drops malformed response projections instead of crashing render", () => {
     const messages = [user("q")];
     const response = {

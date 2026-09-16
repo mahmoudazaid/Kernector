@@ -203,6 +203,21 @@ function sanitizeToolRun(
     toolRun.test_cases = testCases;
   }
 
+  delete toolRun.export_destination_required;
+  if (typeof value.export_destination_required === "boolean") {
+    toolRun.export_destination_required = value.export_destination_required;
+  }
+
+  delete toolRun.drive_file_id;
+  if (typeof value.drive_file_id === "string") {
+    toolRun.drive_file_id = value.drive_file_id;
+  }
+
+  delete toolRun.drive_file_name;
+  if (typeof value.drive_file_name === "string") {
+    toolRun.drive_file_name = value.drive_file_name;
+  }
+
   return toolRun;
 }
 
@@ -269,8 +284,82 @@ export function sanitizeStoredChatMessage(
       message.action = action;
     }
   }
+  if ("pendingApproval" in value) {
+    const pending = sanitizePendingApproval(value.pendingApproval);
+    if (pending !== undefined) {
+      message.pendingApproval = pending;
+    }
+  }
+  if ("approvalResolution" in value) {
+    const resolution = sanitizeApprovalResolution(value.approvalResolution);
+    if (resolution !== undefined) {
+      message.approvalResolution = resolution;
+    }
+  }
 
   return message;
+}
+
+function sanitizeApprovalResolution(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  if (value.status !== "approved" && value.status !== "rejected") {
+    return undefined;
+  }
+  const resolution: Record<string, unknown> = { status: value.status };
+  if (typeof value.fileName === "string") {
+    resolution.fileName = value.fileName;
+  }
+  if (typeof value.fileId === "string") {
+    resolution.fileId = value.fileId;
+  }
+  return resolution;
+}
+
+function sanitizePendingApproval(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  if (
+    typeof value.approval_id !== "string" ||
+    typeof value.tool_name !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.summary !== "string"
+  ) {
+    return undefined;
+  }
+  const pending: Record<string, unknown> = {
+    approval_id: value.approval_id,
+    tool_name: value.tool_name,
+    title: value.title,
+    summary: value.summary,
+    status: typeof value.status === "string" ? value.status : "pending",
+  };
+  if (typeof value.destination_label === "string") {
+    pending.destination_label = value.destination_label;
+  }
+  if (typeof value.file_name === "string") {
+    pending.file_name = value.file_name;
+  }
+  if (
+    typeof value.selected_title_count === "number" &&
+    Number.isFinite(value.selected_title_count) &&
+    value.selected_title_count >= 0
+  ) {
+    pending.selected_title_count = value.selected_title_count;
+  }
+  return pending;
 }
 
 function sanitizeChatAction(value: unknown): Record<string, unknown> | undefined {

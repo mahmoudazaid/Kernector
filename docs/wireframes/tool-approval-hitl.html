@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tool approval (HITL) — wireframe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --kern-bg: #f1f4f6;
+        --kern-surface: #ffffff;
+        --kern-surface-2: #e6ebef;
+        --kern-ink: #1a232b;
+        --kern-muted: #5a6a76;
+        --kern-line: #c9d3db;
+        --kern-accent: #0f766e;
+        --kern-accent-soft: #d5f0ec;
+        --kern-danger: #b42318;
+        --kern-success: #2f6f4e;
+        --kern-warn: #b45309;
+        --kern-radius: 8px;
+        --kern-radius-pill: 999px;
+        --kern-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+        --kern-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+        --kern-space-2: 8px;
+        --kern-space-3: 12px;
+        --kern-space-4: 16px;
+        --kern-space-5: 22px;
+        --kern-control-sheen: linear-gradient(
+          115deg,
+          rgb(255 255 255 / 0.55) 0%,
+          rgb(255 255 255 / 0.08) 42%,
+          rgb(255 255 255 / 0.28) 100%
+        );
+        --kern-control-sheen-fill: linear-gradient(
+          115deg,
+          rgb(255 255 255 / 0.22) 0%,
+          rgb(255 255 255 / 0.04) 45%,
+          rgb(255 255 255 / 0.12) 100%
+        );
+        --kern-control-highlight: rgb(255 255 255 / 0.55);
+        --kern-control-shade: rgb(15 20 24 / 0.12);
+        --kern-control-emboss:
+          inset 0 1px 1px var(--kern-control-highlight),
+          inset 0 -1px 1px var(--kern-control-shade), 0 1px 2px rgb(15 20 24 / 0.06);
+        --kern-shadow-1: 0 1px 2px rgb(15 20 24 / 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: var(--kern-font-sans);
+        font-size: 14px;
+        color: var(--kern-ink);
+        background: var(--kern-bg);
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 232px 1fr;
+        min-height: 100vh;
+      }
+
+      @media (max-width: 800px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .nav {
+          display: none;
+        }
+      }
+
+      .nav {
+        border-right: 1px solid var(--kern-line);
+        background: var(--kern-surface);
+        padding: var(--kern-space-4);
+      }
+
+      .nav__brand {
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin-bottom: var(--kern-space-5);
+      }
+
+      .nav a {
+        display: block;
+        color: var(--kern-muted);
+        text-decoration: none;
+        padding: 8px 10px;
+        border-radius: var(--kern-radius-pill);
+        margin-bottom: 4px;
+      }
+
+      .nav a[aria-current="page"] {
+        color: var(--kern-ink);
+        background: var(--kern-accent-soft);
+        font-weight: 500;
+      }
+
+      .main {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        max-width: 760px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 16px 20px 28px;
+      }
+
+      .demo-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+        opacity: 0.75;
+      }
+
+      .demo-bar button {
+        appearance: none;
+        border: 1px solid var(--kern-line);
+        background: var(--kern-surface);
+        color: var(--kern-muted);
+        border-radius: var(--kern-radius-pill);
+        padding: 4px 10px;
+        font: 500 11px var(--kern-font-sans);
+        cursor: pointer;
+      }
+
+      .demo-bar button[aria-pressed="true"] {
+        color: var(--kern-ink);
+        border-color: color-mix(in srgb, var(--kern-accent) 35%, var(--kern-line));
+        background: var(--kern-accent-soft);
+      }
+
+      .wire-note {
+        margin: 0 0 16px;
+        padding: 10px 12px;
+        border-radius: var(--kern-radius);
+        border: 1px dashed var(--kern-line);
+        background: var(--kern-surface);
+        color: var(--kern-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .wire-note strong {
+        color: var(--kern-ink);
+        font-weight: 500;
+      }
+
+      .chat-shell {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border: 1px solid var(--kern-line);
+        border-radius: 12px;
+        background: var(--kern-surface);
+        box-shadow: var(--kern-shadow-1);
+        overflow: hidden;
+      }
+
+      .chat-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--kern-line);
+      }
+
+      .chat-head h1 {
+        margin: 0;
+        font-size: 1.05rem;
+        letter-spacing: -0.02em;
+      }
+
+      .chat-head p {
+        margin: 2px 0 0;
+        color: var(--kern-muted);
+        font-size: 12px;
+      }
+
+      .kern-status {
+        font-family: var(--kern-font-mono);
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: var(--kern-radius-pill);
+        border: 1px solid var(--kern-line);
+        background: var(--kern-bg);
+        color: var(--kern-muted);
+        white-space: nowrap;
+      }
+
+      .chat-thread {
+        flex: 1;
+        overflow: auto;
+        padding: 18px 16px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        background:
+          linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--kern-bg) 55%, #fff) 0%,
+            var(--kern-surface) 48%
+          );
+      }
+
+      .msg {
+        max-width: 92%;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .msg--user {
+        align-self: flex-end;
+      }
+
+      .msg--assistant {
+        align-self: flex-start;
+      }
+
+      .msg__bubble {
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: 14px;
+        line-height: 1.45;
+        border: 1px solid transparent;
+      }
+
+      .msg--user .msg__bubble {
+        background: var(--kern-accent-soft);
+        border-color: color-mix(in srgb, var(--kern-accent) 22%, transparent);
+        color: var(--kern-ink);
+      }
+
+      .msg--assistant .msg__bubble {
+        background: var(--kern-control-sheen), var(--kern-bg);
+        border-color: color-mix(in srgb, var(--kern-line) 85%, transparent);
+        box-shadow: var(--kern-control-emboss);
+      }
+
+      .msg__meta {
+        font-size: 11px;
+        color: var(--kern-muted);
+        padding: 0 4px;
+      }
+
+      .msg--user .msg__meta {
+        text-align: right;
+      }
+
+      /* Inline tool-approval card (#214) */
+      .approval-card {
+        margin-top: 4px;
+        width: min(100%, 420px);
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid color-mix(in srgb, var(--kern-accent) 28%, var(--kern-line));
+        background: var(--kern-control-sheen), var(--kern-surface);
+        box-shadow: var(--kern-control-emboss);
+      }
+
+      .approval-card.is-new {
+        outline: 2px dashed color-mix(in srgb, var(--kern-accent) 55%, transparent);
+        outline-offset: 3px;
+      }
+
+      .approval-card__eyebrow {
+        margin: 0 0 6px;
+        font-family: var(--kern-font-mono);
+        font-size: 11px;
+        color: var(--kern-accent);
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .approval-card__title {
+        margin: 0 0 10px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .approval-card__summary {
+        margin: 0 0 12px;
+        color: var(--kern-muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .approval-dl {
+        margin: 0 0 14px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 12px;
+        font-size: 13px;
+      }
+
+      .approval-dl dt {
+        margin: 0;
+        color: var(--kern-muted);
+      }
+
+      .approval-dl dd {
+        margin: 0;
+        font-weight: 500;
+        word-break: break-word;
+      }
+
+      .approval-dl code {
+        font-family: var(--kern-font-mono);
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .approval-card__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .approval-card__resolved {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .approval-card__resolved--ok {
+        color: var(--kern-success);
+      }
+
+      .approval-card__resolved--cancel {
+        color: var(--kern-muted);
+      }
+
+      .approval-card[data-busy="true"] .approval-card__actions {
+        opacity: 0.7;
+      }
+
+      .kern-btn,
+      .kern-btn-secondary,
+      .kern-btn-ghost {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0.45em 1.2em;
+        border-radius: var(--kern-radius-pill);
+        font: 500 13px var(--kern-font-sans);
+        letter-spacing: -0.02em;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+
+      .kern-btn {
+        color: #fff;
+        border-color: color-mix(in srgb, var(--kern-accent) 40%, transparent);
+        background:
+          var(--kern-control-sheen-fill),
+          linear-gradient(
+            180deg,
+            color-mix(in srgb, #fff 8%, var(--kern-accent)),
+            color-mix(in srgb, #000 6%, var(--kern-accent))
+          );
+        box-shadow:
+          inset 0 1px 1px var(--kern-control-highlight),
+          inset 0 -1px 1px var(--kern-control-shade),
+          0 4px 12px -3px color-mix(in srgb, var(--kern-accent) 45%, transparent);
+      }
+
+      .kern-btn-secondary {
+        color: var(--kern-ink);
+        border-color: color-mix(in srgb, var(--kern-line) 90%, transparent);
+        background: var(--kern-control-sheen), var(--kern-surface);
+        box-shadow: var(--kern-control-emboss);
+      }
+
+      .kern-btn-ghost {
+        color: var(--kern-muted);
+        background: transparent;
+      }
+
+      .kern-btn:disabled,
+      .kern-btn-secondary:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .dest-required {
+        margin-top: 4px;
+        width: min(100%, 420px);
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid color-mix(in srgb, var(--kern-warn) 40%, var(--kern-line));
+        background: color-mix(in srgb, var(--kern-warn) 10%, #fff);
+        color: var(--kern-warn);
+      }
+
+      .dest-required p {
+        margin: 0 0 10px;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .dest-required p:last-child {
+        margin-bottom: 0;
+      }
+
+      .chat-composer {
+        display: flex;
+        gap: 8px;
+        padding: 12px 14px;
+        border-top: 1px solid var(--kern-line);
+        background: var(--kern-surface);
+      }
+
+      .chat-composer input {
+        flex: 1;
+        min-height: 40px;
+        border: 1px solid var(--kern-line);
+        border-radius: var(--kern-radius-pill);
+        padding: 0 14px;
+        font: inherit;
+        background: var(--kern-bg);
+        color: var(--kern-ink);
+      }
+
+      .chat-composer input:disabled {
+        opacity: 0.55;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="nav" aria-label="App">
+        <div class="nav__brand">Kernector</div>
+        <a href="#" aria-current="page">Chat</a>
+        <a href="#">Documents</a>
+        <a href="#">Test Design</a>
+        <a href="#">Settings</a>
+      </aside>
+
+      <div class="main">
+        <div class="demo-bar" aria-label="Preview states">
+          <button type="button" data-state="destination" aria-pressed="false">
+            Home default
+          </button>
+          <button type="button" data-state="pending" aria-pressed="true">
+            Pending approval
+          </button>
+          <button type="button" data-state="loading" aria-pressed="false">
+            Submitting
+          </button>
+          <button type="button" data-state="rejected" aria-pressed="false">
+            Rejected
+          </button>
+          <button type="button" data-state="approved" aria-pressed="false">
+            Approved
+          </button>
+          <button type="button" data-state="nav" aria-pressed="false">
+            After navigate away
+          </button>
+        </div>
+
+        <p class="wire-note" id="wire-note">
+          <strong>Pending approval (#214).</strong>
+          Safe projection only: action, destination label, file name, selected
+          count. No folder IDs, tokens, Markdown, or raw Tool arguments. Test
+          Design “Export to Google Drive” stays a direct action (no second
+          dialog).
+        </p>
+
+        <section class="chat-shell" aria-label="Conversation">
+          <header class="chat-head">
+            <div>
+              <h1>Issue 482 — MFA login</h1>
+              <p>Trusted conversation · Test Design draft linked</p>
+            </div>
+            <span class="kern-status" id="thread-status">awaiting approval</span>
+          </header>
+
+          <div class="chat-thread">
+            <article class="msg msg--user">
+              <p class="msg__bubble">
+                Export the selected Test Design cases to Google Drive.
+              </p>
+              <span class="msg__meta">You</span>
+            </article>
+
+            <article class="msg msg--assistant">
+              <p class="msg__bubble" id="assistant-copy">
+                I can export the selected titles as Markdown to your saved Google
+                Drive destination. Review the details and approve to continue.
+              </p>
+              <span class="msg__meta">Assistant</span>
+
+              <!-- Legacy dest-required panel kept hidden; Home default uses approval card -->
+              <div
+                id="panel-destination"
+                class="dest-required"
+                role="status"
+                hidden
+              ></div>
+
+              <!-- #214 pending / loading / resolved -->
+              <div
+                id="panel-approval"
+                class="approval-card is-new"
+                role="region"
+                aria-labelledby="approval-title"
+              >
+                <p class="approval-card__eyebrow">Needs approval</p>
+                <h2 class="approval-card__title" id="approval-title">
+                  Export test cases to Google Drive
+                </h2>
+                <p class="approval-card__summary" id="approval-summary">
+                  Write a Markdown file with the selected Test Design titles.
+                  Arguments stay on the server; this card is a safe preview only.
+                </p>
+
+                <dl class="approval-dl" id="approval-details">
+                  <dt>Destination</dt>
+                  <dd>
+                    Home
+                    <button type="button" class="kern-btn-ghost" style="min-height:auto;padding:0.2em 0.65em;font-size:12px;margin-left:8px">
+                      Change
+                    </button>
+                  </dd>
+                  <dt>File</dt>
+                  <dd><code>issue-482-test-cases.md</code></dd>
+                  <dt>Selected</dt>
+                  <dd>3 titles</dd>
+                </dl>
+
+                <div class="approval-card__actions" id="approval-actions">
+                  <button type="button" class="kern-btn" id="btn-approve">
+                    Approve
+                  </button>
+                  <button type="button" class="kern-btn-secondary" id="btn-reject">
+                    Reject
+                  </button>
+                </div>
+
+                <p
+                  class="approval-card__resolved approval-card__resolved--cancel"
+                  id="approval-cancelled"
+                  hidden
+                >
+                  Export cancelled.
+                </p>
+                <p
+                  class="approval-card__resolved approval-card__resolved--ok"
+                  id="approval-receipt"
+                  hidden
+                >
+                  Exported <strong>issue-482-test-cases.md</strong>
+                  <span aria-hidden="true">·</span>
+                  <code>file_id ·····xyz</code>
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <form class="chat-composer" onsubmit="return false;">
+            <input
+              type="text"
+              placeholder="Message…"
+              aria-label="Message"
+              disabled
+            />
+            <button type="button" class="kern-btn" disabled>Send</button>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const notes = {
+        destination: {
+          status: "awaiting approval · Home",
+          note:
+            "<strong>Default destination.</strong> When no folder is saved, prepare uses My Drive <code>root</code> labeled <strong>Home</strong> and interrupts for HITL. No <code>export_destination_required</code> gate. Approval card shows Destination + Change (opens Test Design picker).",
+          assistant:
+            "I can export the selected titles as Markdown to your Google Drive destination. Review the details and approve to continue.",
+        },
+        pending: {
+          status: "awaiting approval",
+          note:
+            "<strong>Pending approval (#214).</strong> Safe projection only: action, destination label, file name, selected count. No folder IDs, tokens, Markdown, or raw Tool arguments. Default destination is Home; Change opens the picker. Test Design “Export to Google Drive” stays a direct action (no second dialog).",
+          assistant:
+            "I can export the selected titles as Markdown to your Google Drive destination. Review the details and approve to continue.",
+        },
+        loading: {
+          status: "submitting decision",
+          note:
+            "<strong>Decision in flight.</strong> Both actions disabled once a decision is accepted. Browser sends approve|reject + opaque approval id only — never replacement Tool arguments.",
+          assistant:
+            "I can export the selected titles as Markdown to your Google Drive destination. Review the details and approve to continue.",
+        },
+        rejected: {
+          status: "export cancelled",
+          note:
+            "<strong>Rejected.</strong> Show “Export cancelled” — not a failure alert. Zero Tool.run / upload / provider calls.",
+          assistant:
+            "Understood. I cancelled the export and did not write anything to Google Drive.",
+        },
+        approved: {
+          status: "export complete",
+          note:
+            "<strong>Approved.</strong> Graph resumes on the same trusted thread; one in-process Tool invocation. Card updates to the safe receipt (file name + opaque file id). No folder id or secrets.",
+          assistant:
+            "Export finished. The Markdown file is in your Google Drive destination.",
+        },
+        nav: {
+          status: "awaiting approval",
+          note:
+            "<strong>Conversation-scoped.</strong> Leaving Chat and returning keeps the pending card on this conversation. It is not a global toast and not attached to Test Design.",
+          assistant:
+            "I can export the selected titles as Markdown to your saved Google Drive destination. Review the details and approve to continue.",
+        },
+      };
+
+      const els = {
+        note: document.getElementById("wire-note"),
+        status: document.getElementById("thread-status"),
+        assistant: document.getElementById("assistant-copy"),
+        dest: document.getElementById("panel-destination"),
+        card: document.getElementById("panel-approval"),
+        details: document.getElementById("approval-details"),
+        summary: document.getElementById("approval-summary"),
+        actions: document.getElementById("approval-actions"),
+        approve: document.getElementById("btn-approve"),
+        reject: document.getElementById("btn-reject"),
+        cancelled: document.getElementById("approval-cancelled"),
+        receipt: document.getElementById("approval-receipt"),
+      };
+
+      function apply(name) {
+        const s = notes[name];
+        els.note.innerHTML = s.note;
+        els.status.textContent = s.status;
+        els.assistant.textContent = s.assistant;
+
+        const showDest = false;
+        const showCard = true;
+        els.dest.hidden = !showDest;
+        els.card.hidden = !showCard;
+
+        const busy = name === "loading";
+        const rejected = name === "rejected";
+        const approved = name === "approved";
+        const pendingLike =
+          name === "pending" ||
+          name === "loading" ||
+          name === "nav" ||
+          name === "destination";
+
+        els.details.hidden = rejected || approved;
+        els.summary.hidden = rejected || approved;
+        els.actions.hidden = rejected || approved;
+        els.cancelled.hidden = !rejected;
+        els.receipt.hidden = !approved;
+
+        els.card.dataset.busy = String(busy);
+        els.card.classList.toggle("is-new", pendingLike && !busy);
+        els.approve.disabled = busy || rejected || approved;
+        els.reject.disabled = busy || rejected || approved;
+        els.approve.textContent = busy ? "Approving…" : "Approve";
+        els.reject.textContent = "Reject";
+
+        document.querySelectorAll(".demo-bar button").forEach((btn) => {
+          btn.setAttribute(
+            "aria-pressed",
+            String(btn.getAttribute("data-state") === name),
+          );
+        });
+      }
+
+      document.querySelectorAll(".demo-bar button").forEach((btn) => {
+        btn.addEventListener("click", () => apply(btn.dataset.state));
+      });
+
+      apply("pending");
+    </script>
+  </body>
+</html>

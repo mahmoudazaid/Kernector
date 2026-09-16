@@ -30,6 +30,29 @@ vi.mock("@/lib/api/test-design", () => ({
   createTestDesignDraft: vi.fn(),
 }));
 
+vi.mock("@/components/documents/GoogleDrivePicker", () => ({
+  GoogleDrivePicker: ({
+    open,
+    title,
+    confirmLabel = "Save",
+    onCancel,
+  }: {
+    open: boolean;
+    title?: string;
+    confirmLabel?: string;
+    onCancel: () => void;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label={title ?? "picker"}>
+        <h2>{title}</h2>
+        <button type="button">{confirmLabel}</button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null,
+}));
+
 function catalogWithLimit(
   maxInputLength: number,
   options: { shortTermMemoryEnabled?: boolean } = {},
@@ -105,6 +128,9 @@ const SUCCESS: ChatAskResponse = {
       ],
     },
     markdown: "# Test Cases\n",
+    export_destination_required: false,
+    drive_file_id: "",
+    drive_file_name: "",
   },
 };
 
@@ -1357,5 +1383,80 @@ describe("ChatPanel", () => {
         message.content.includes("Your Test Design draft is ready"),
       ),
     ).toBe(true);
+  });
+
+  it("shows Open Test Design outside the bubble when coverage is confirmed", async () => {
+    const created = createConversation({
+      title: "hitl-dest",
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content:
+            "Coverage confirmed for mahmoudazaid/business-platform#83: 2 tests selected.",
+          action: {
+            kind: "open_workflow",
+            workflow_id: "software-delivery.test-design",
+            label: "Open Test Design",
+            draft_id: "draft-hitl-1",
+            source_locator: null,
+          },
+        },
+        {
+          id: "u1",
+          role: "user",
+          content: "export to google drive",
+        },
+        {
+          id: "a2",
+          role: "assistant",
+          content:
+            "I can export the selected titles as Markdown to your Google Drive destination. Review the details and approve to continue.",
+          pendingApproval: {
+            approval_id: "appr-1",
+            tool_name: "software_delivery.export_test_cases_google_drive",
+            title: "Export test cases to Google Drive",
+            summary:
+              "Write a Markdown file with the selected Test Design titles.",
+            status: "pending",
+            destination_label: "Home",
+            file_name: "issue-83-test-cases.md",
+            selected_title_count: 2,
+          },
+        },
+      ],
+      draft: "",
+    });
+
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={created.id}
+        variant="conversation"
+        ask={async () => SUCCESS}
+        loadSettings={stubSettings}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: /open test design/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /export test cases/i })).toBeInTheDocument();
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^change$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /open destination picker/i }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector(".kern-dest-required")).toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^change$/i }));
+    expect(
+      screen.getByRole("heading", { name: /choose export destination/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /^test design$/i }),
+    ).not.toBeInTheDocument();
   });
 });

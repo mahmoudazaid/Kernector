@@ -1,12 +1,13 @@
 """Chat-time intent selection for Software Delivery workflows.
 
-Retired (#285, choice A): scaffolding risk/generate/export tools no longer
-match. ``select_chat_intent`` always returns ``None`` so chat stays on the
-grounded-RAG path. ``ChatToolSelection`` remains for registration typing and
-``ToolAugmentedAsk``'s ``SelectToolIntent`` protocol until a real tool lands.
+Scaffolding risk/generate/markdown-export matchers stay retired (#285).
+#309 restores matching only for Google Drive export requests so the agent
+prepared-call path can run when ``SOFTWARE_DELIVERY_AGENT_LOOP`` is on.
 """
 
 from __future__ import annotations
+
+import re
 
 from dataclasses import dataclass
 
@@ -17,14 +18,20 @@ from packs.software_delivery.contracts import (
 )
 from packs.software_delivery.errors import OrchestrationValidationError
 
+_EXPORT_DRIVE = re.compile(
+    r"\bexport\b.*\b(?:google\s+)?drive\b|\b(?:google\s+)?drive\b.*\bexport\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ChatToolSelection:
     """The workflow a chat query asked for.
 
     Attributes:
-        generate_tests (bool): Whether the chain generates and exports cases.
-        output_style (TestCaseStyle): Style for generated cases.
+        generate_tests (bool): Legacy flag; export intent sets this ``True`` so
+            existing ``ToolAugmentedAsk`` / runner wiring stays stable.
+        output_style (TestCaseStyle): Unused for Drive export; kept for protocol.
     """
 
     generate_tests: bool
@@ -48,17 +55,16 @@ class ChatToolSelection:
 
 
 def select_chat_intent(query: str) -> ChatToolSelection | None:
-    """Return ``None`` so every query stays on grounded RAG.
-
-    Former risk/generate matchers are retired with the scaffolding tools.
-    ``query`` is accepted for signature stability with registration and
-    ``ToolAugmentedAsk``.
+    """Match Google Drive export requests; otherwise stay on grounded RAG.
 
     Args:
-        query (str): The user's chat message (unused while intent is retired).
+        query (str): The user's chat message.
 
     Returns:
-        None: Always; leaves the query on the ordinary grounded-RAG path.
+        ChatToolSelection | None: Export selection, or ``None`` for RAG.
     """
-    _ = query
-    return None
+    if not isinstance(query, str) or not query.strip():
+        return None
+    if _EXPORT_DRIVE.search(query) is None:
+        return None
+    return ChatToolSelection(generate_tests=True, output_style="steps")

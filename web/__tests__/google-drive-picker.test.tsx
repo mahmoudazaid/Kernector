@@ -212,7 +212,7 @@ describe("GoogleDrivePicker", () => {
       within(dialog).getByRole("button", { name: /new folder/i }),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/exporting to: my drive/i),
+      within(dialog).getByText(/exporting to: home/i),
     ).toBeInTheDocument();
     const exportButton = within(dialog).getByRole("button", {
       name: /^export$/i,
@@ -220,7 +220,7 @@ describe("GoogleDrivePicker", () => {
     expect(exportButton).toBeEnabled();
     await user.click(exportButton);
     expect(onConfirm).toHaveBeenCalledWith({
-      folders: [{ id: "root", name: "My Drive" }],
+      folders: [{ id: "root", name: "Home" }],
       files: [],
     });
   });
@@ -259,11 +259,11 @@ describe("GoogleDrivePicker", () => {
       await within(dialog).findByText(/no subfolders here/i),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/exporting to: my drive \/ skating/i),
+      within(dialog).getByText(/exporting to: home \/ skating/i),
     ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: /^export$/i }));
     expect(onConfirm).toHaveBeenCalledWith({
-      folders: [{ id: "folder-child", name: "Skating" }],
+      folders: [{ id: "folder-child", name: "Home / Skating" }],
       files: [],
     });
   });
@@ -308,11 +308,11 @@ describe("GoogleDrivePicker", () => {
     );
     expect(await within(dialog).findByText("Exports")).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/exporting to: my drive \/ exports/i),
+      within(dialog).getByText(/exporting to: home \/ exports/i),
     ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: /^export$/i }));
     expect(onConfirm).toHaveBeenCalledWith({
-      folders: [{ id: "folder-created", name: "Exports" }],
+      folders: [{ id: "folder-created", name: "Home / Exports" }],
       files: [],
     });
   });

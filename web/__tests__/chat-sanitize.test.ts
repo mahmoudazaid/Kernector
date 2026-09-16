@@ -75,6 +75,42 @@ describe("sanitizeStoredChatMessage", () => {
     expect(dropped?.action).toBeUndefined();
   });
 
+  it("keeps safe pendingApproval projections and drops malformed ones", () => {
+    const kept = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "Waiting",
+      pendingApproval: {
+        approval_id: "c1",
+        tool_name: "software_delivery.export_test_cases_google_drive",
+        title: "Export test cases to Google Drive",
+        summary: "Write selected titles as Markdown.",
+        status: "pending",
+        destination_label: "QA / Sprint 3",
+        file_name: "issue-482.md",
+        selected_title_count: 3,
+      },
+    });
+    expect(kept?.pendingApproval).toEqual({
+      approval_id: "c1",
+      tool_name: "software_delivery.export_test_cases_google_drive",
+      title: "Export test cases to Google Drive",
+      summary: "Write selected titles as Markdown.",
+      status: "pending",
+      destination_label: "QA / Sprint 3",
+      file_name: "issue-482.md",
+      selected_title_count: 3,
+    });
+
+    const dropped = sanitizeStoredChatMessage({
+      id: "a-2",
+      role: "assistant",
+      content: "Waiting",
+      pendingApproval: { approval_id: "x" },
+    });
+    expect(dropped?.pendingApproval).toBeUndefined();
+  });
+
   it("preserves unknown keys on toolRun, risk, and test_cases", () => {
     const sanitized = sanitizeStoredChatMessage({
       id: "a-1",

@@ -126,6 +126,7 @@ def export_draft_google_drive(
         draft_id,
         folder_id=body.folder_id,
         file_name=body.file_name,
+        destination_label=body.destination_label,
     )
     return ExportTestDesignGoogleDriveResponse(
         file_id=receipt.file_id,

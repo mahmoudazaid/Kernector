@@ -58,11 +58,13 @@ class AgentTurnResult:
         content (str): Final assistant text for the turn.
         steps (int | None): Model steps completed, when known.
         truncated (bool): True when the hard step limit stopped the loop.
+        pending_approval: Optional HITL projection when the graph interrupted.
     """
 
     content: str
     steps: int | None = None
     truncated: bool = False
+    pending_approval: object | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.content, str):

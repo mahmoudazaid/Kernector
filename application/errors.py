@@ -1,6 +1,10 @@
 """Application-layer errors."""
 
-from domain.errors import ConfigurationBoundaryError
+from domain.errors import (
+    ConfigurationBoundaryError,
+    ToolApprovalConflictError,
+    ToolApprovalNotFoundError,
+)
 
 
 class ApplicationValidationError(ValueError):

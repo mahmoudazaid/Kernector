@@ -331,6 +331,14 @@ clear leaves the checkpoint until process restart. There is no workspace-wide
 or global clear and no normal-UI "reset memory" control. Long-term memory is
 deferred to #299. Absent ``conversation_id``, the agent stays stateless.
 
+**HITL tool approval (#214):** allowlisted tools (currently Drive export) pause
+via LangGraph ``interrupt()`` immediately before ``Tool.run``. Pending Tool
+arguments stay in process-local checkpoint/ledger state; the browser sends only
+``approve`` / ``reject``. The same ``InMemorySaver`` process-local limits apply:
+a restart drops pending approvals and decision ledgers. Resume uses
+``Command(resume=...)`` on the same ``{workspace_id}:{conversation_id}`` thread.
+LangGraph stays in infrastructure; packs/domain/application stay free of it.
+
 Two properties are worth naming because they are easy to lose:
 
 - **Input safety still applies.** A tool turn skips ``AskKnowledge``, but it

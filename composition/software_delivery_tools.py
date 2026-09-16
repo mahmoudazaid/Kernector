@@ -70,6 +70,11 @@ class SoftwareDeliveryRunView:
     risk: RiskScoreView | None = None
     test_cases: TestCasesView | None = None
     markdown: str = ""
+    export_destination_required: bool = False
+    drive_file_id: str = ""
+    drive_file_name: str = ""
+    drive_destination_label: str = ""
+    pending_approval: object | None = None
 
 
 def software_delivery_tools_enabled(settings: Settings) -> bool:

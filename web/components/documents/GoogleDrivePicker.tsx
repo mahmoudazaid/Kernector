@@ -386,14 +386,24 @@ export function GoogleDrivePicker({
         : "No items selected"
       : `${selected.size} selected`;
 
-  const destinationPathLabel = (() => {
+  const destinationPathParts = (() => {
     const currentId = crumbs[crumbs.length - 1]?.id ?? "root";
-    if (destination.id === currentId) {
-      return `Exporting to: ${crumbs.map((crumb) => crumb.name).join(" / ")}`;
-    }
-    const base = crumbs.map((crumb) => crumb.name).join(" / ");
-    return `Exporting to: ${base} / ${destination.name}`;
+    const parts =
+      destination.id === currentId
+        ? crumbs.map((crumb) =>
+            crumb.id === "root" ? "Home" : crumb.name,
+          )
+        : [
+            ...crumbs.map((crumb) =>
+              crumb.id === "root" ? "Home" : crumb.name,
+            ),
+            destination.name,
+          ];
+    return parts;
   })();
+
+  const destinationPathLabel = `Exporting to: ${destinationPathParts.join(" / ")}`;
+  const destinationConfirmName = destinationPathParts.join(" / ");
 
   const atListCap = singleSelect
     ? false
@@ -858,7 +868,10 @@ export function GoogleDrivePicker({
               if (destinationMode) {
                 onConfirm({
                   folders: [
-                    { id: destination.id, name: destination.name },
+                    {
+                      id: destination.id,
+                      name: destinationConfirmName,
+                    },
                   ],
                   files: [],
                 });

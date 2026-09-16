@@ -98,4 +98,32 @@ describe("askChat", () => {
     ).resolves.toBe(true);
     expect(request).toHaveBeenCalledTimes(2);
   });
+
+  it("POSTs a tool-approval decision", async () => {
+    const request = vi.fn().mockResolvedValue({
+      answer: "Exported.",
+      citations: [],
+      tools_used: [],
+      cancelled: false,
+      pending_approval: null,
+    });
+    const { decideToolApproval } = await import("@/lib/api/chat");
+
+    await decideToolApproval({
+      baseUrl: "http://127.0.0.1:8000",
+      conversationId: "conv/1",
+      approvalId: "a/1",
+      body: { decision: "approve" },
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/chat/threads/conv%2F1/approvals/a%2F1",
+      method: "POST",
+      body: { decision: "approve" },
+      signal: undefined,
+      timeoutMs: CHAT_ASK_TIMEOUT_MS,
+    });
+  });
 });

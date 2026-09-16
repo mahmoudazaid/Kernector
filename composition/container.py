@@ -447,19 +447,18 @@ def build_rewrite_and_retrieve_knowledge(
     )
 
 
-def build_test_design_facade(
-    settings: Settings,
-    *,
-    connection_store=None,
-    oauth_gateway=None,
-    client_factory=None,
-):
-    """Wire the test-design HTTP facade (pack gated at call time)."""
+def _workspace_store_path(settings: Settings):
     from pathlib import Path
 
-    from application.errors import GitHubNotConnectedError
-    from composition.test_design import TestDesignFacade
+    store_path = Path("data/workspace_store/workspace.sqlite")
+    if settings.document_catalog.sql_path is not None:
+        store_path = (
+            settings.document_catalog.sql_path.parent / "workspace_store.sqlite"
+        )
+    return store_path
 
+
+def _require_workspace_id(settings: Settings) -> str:
     try:
         workspace_id = parse_workspace_id(settings.document_catalog.workspace_id)
     except ValueError as error:
@@ -470,11 +469,46 @@ def build_test_design_facade(
         raise ConfigurationError(
             f"DOCUMENT_CATALOG_WORKSPACE_ID is required; it {WORKSPACE_ID_CONTRACT}"
         )
-    store_path = Path("data/workspace_store/workspace.sqlite")
-    if settings.document_catalog.sql_path is not None:
-        store_path = (
-            settings.document_catalog.sql_path.parent / "workspace_store.sqlite"
+    return workspace_id
+
+
+def _agent_draft_repository(settings: Settings):
+    from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+    from composition.test_design_store import VersionedTestCoverageDraftRepository
+
+    return VersionedTestCoverageDraftRepository(
+        VersionedWorkspaceStore(
+            _workspace_store_path(settings), _require_workspace_id(settings)
         )
+    )
+
+
+def _agent_export_destination_repository(settings: Settings):
+    from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+    from composition.export_destination_store import (
+        VersionedExportDestinationRepository,
+    )
+
+    return VersionedExportDestinationRepository(
+        VersionedWorkspaceStore(
+            _workspace_store_path(settings), _require_workspace_id(settings)
+        )
+    )
+
+
+def build_test_design_facade(
+    settings: Settings,
+    *,
+    connection_store=None,
+    oauth_gateway=None,
+    client_factory=None,
+):
+    """Wire the test-design HTTP facade (pack gated at call time)."""
+    from application.errors import GitHubNotConnectedError
+    from composition.test_design import TestDesignFacade
+
+    workspace_id = _require_workspace_id(settings)
+    store_path = _workspace_store_path(settings)
 
     def oauth_preflight() -> str:
         _tokens_store, connection = _require_github_grant(
@@ -3630,6 +3664,28 @@ def build_tool_augmented_ask(
             runtime = build_short_term_memory_runtime(settings)
         if not isinstance(runtime, ShortTermMemoryRuntime):
             raise TypeError("short_term_memory must be a ShortTermMemoryRuntime")
+        try:
+            drafts = _agent_draft_repository(settings)
+            destinations = _agent_export_destination_repository(settings)
+        except ConfigurationError as error:
+            # Match short-term memory: missing/invalid workspace degrades so
+            # /chat/ask stays available instead of 500.
+            logger.warning(
+                "Agent draft/destination stores disabled: %s", error
+            )
+
+            class _EmptyDrafts:
+                def find_by_conversation_id(self, conversation_id: str):
+                    del conversation_id
+                    return None
+
+            class _EmptyDestinations:
+                def get(self, conversation_id: str):
+                    del conversation_id
+                    return None
+
+            drafts = _EmptyDrafts()
+            destinations = _EmptyDestinations()
         orchestrate = build_agent_orchestrate(
             runtime.bind_tool_agent(
                 system_prompt=agent_tool_system_prompt(),
@@ -3640,7 +3696,9 @@ def build_tool_augmented_ask(
                     model=model,
                     base_url=base_url,
                 ),
-            )
+            ),
+            drafts=drafts,
+            destinations=destinations,
         )
     else:
 
@@ -3684,13 +3742,17 @@ def build_tool_augmented_ask(
         invoke=build_opaque_invoke(settings, chat_model=model_calls),
         orchestrate=orchestrate,
         model_calls=model_calls,
+        allow_empty_evidence=settings.domain_tools.agent_loop,
     )
 
+    select = registration.build_chat_intent_selector(
+        export_intent_enabled=settings.domain_tools.agent_loop
+    )
     return CorrelatedAsk(
         ToolAugmentedAsk(
             ask,
             runner=runner,
-            select=registration.build_chat_intent_selector(),
+            select=select,
             pack_id="software-delivery",
         )
     )

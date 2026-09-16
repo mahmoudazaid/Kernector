@@ -24,6 +24,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/chat/threads/{conversation_id}/approvals/{approval_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Decide Tool Approval
+     * @description Approve or reject a pending high-impact tool call on this thread.
+     */
+    post: operations["decide_tool_approval_api_v1_chat_threads__conversation_id__approvals__approval_id__post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/chat/threads/{conversation_id}/checkpoint": {
     parameters: {
       query?: never;
@@ -39,6 +59,26 @@ export interface paths {
      * @description Clear short-term agent checkpoints for ``conversation_id`` (idempotent).
      */
     delete: operations["clear_chat_thread_checkpoint_api_v1_chat_threads__conversation_id__checkpoint_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/chat/threads/{conversation_id}/export-destination": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Put Chat Export Destination
+     * @description Save the Google Drive export folder for this conversation (no upload).
+     */
+    put: operations["put_chat_export_destination_api_v1_chat_threads__conversation_id__export_destination_put"];
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -687,10 +727,30 @@ export interface components {
       answer: string;
       /** Citations */
       citations: components["schemas"]["CitationResponse"][];
+      pending_approval?:
+        components["schemas"]["PendingToolApprovalResponse"] | null;
       run?: components["schemas"]["RunMetaResponse"] | null;
       tool_run?: components["schemas"]["ToolRunResponse"] | null;
       /** Tools Used */
       tools_used: components["schemas"]["ToolUsedResponse"][];
+    };
+    /**
+     * ChatExportDestinationRequest
+     * @description Persist a Drive folder for chat agent export / HITL prepare.
+     */
+    ChatExportDestinationRequest: {
+      /** Destination Label */
+      destination_label?: string | null;
+      /** Folder Id */
+      folder_id: string;
+    };
+    /**
+     * ChatExportDestinationResponse
+     * @description Confirmation after saving an export destination (no folder id echo).
+     */
+    ChatExportDestinationResponse: {
+      /** Destination Label */
+      destination_label: string;
     };
     /**
      * ChatHistoryMessage
@@ -851,6 +911,8 @@ export interface components {
      * @description Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/google-drive``.
      */
     ExportTestDesignGoogleDriveRequest: {
+      /** Destination Label */
+      destination_label?: string | null;
       /** File Name */
       file_name?: string | null;
       /** Folder Id */
@@ -1304,6 +1366,31 @@ export interface components {
       expected_version: number;
     };
     /**
+     * PendingToolApprovalResponse
+     * @description Safe HITL projection; never includes raw Tool arguments or secrets.
+     */
+    PendingToolApprovalResponse: {
+      /** Approval Id */
+      approval_id: string;
+      /** Destination Label */
+      destination_label?: string | null;
+      /** File Name */
+      file_name?: string | null;
+      /** Selected Title Count */
+      selected_title_count?: number | null;
+      /**
+       * Status
+       * @default pending
+       */
+      status: string;
+      /** Summary */
+      summary: string;
+      /** Title */
+      title: string;
+      /** Tool Name */
+      tool_name: string;
+    };
+    /**
      * Problem
      * @description RFC 9457 Problem Details plus Kernector extensions.
      */
@@ -1524,6 +1611,33 @@ export interface components {
       workspace_id: string;
     };
     /**
+     * ToolApprovalDecisionRequest
+     * @description Wire body for approving or rejecting a pending tool call.
+     */
+    ToolApprovalDecisionRequest: {
+      /**
+       * Decision
+       * @enum {string}
+       */
+      decision: "approve" | "reject";
+    };
+    /**
+     * ToolApprovalDecisionResponse
+     * @description Result after resuming a pending tool approval.
+     */
+    ToolApprovalDecisionResponse: {
+      /** Answer */
+      answer: string;
+      /**
+       * Cancelled
+       * @default false
+       */
+      cancelled: boolean;
+      pending_approval?:
+        components["schemas"]["PendingToolApprovalResponse"] | null;
+      tool_run?: components["schemas"]["ToolRunResponse"] | null;
+    };
+    /**
      * ToolCallResponse
      * @description One projected tool invocation (authored summary, never opaque payload).
      */
@@ -1545,6 +1659,21 @@ export interface components {
     ToolRunResponse: {
       /** Calls */
       calls: components["schemas"]["ToolCallResponse"][];
+      /**
+       * Drive File Id
+       * @default
+       */
+      drive_file_id: string;
+      /**
+       * Drive File Name
+       * @default
+       */
+      drive_file_name: string;
+      /**
+       * Export Destination Required
+       * @default false
+       */
+      export_destination_required: boolean;
       /**
        * Markdown
        * @default
@@ -1656,6 +1785,78 @@ export interface operations {
       };
     };
   };
+  decide_tool_approval_api_v1_chat_threads__conversation_id__approvals__approval_id__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversation_id: string;
+        approval_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ToolApprovalDecisionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ToolApprovalDecisionResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   clear_chat_thread_checkpoint_api_v1_chat_threads__conversation_id__checkpoint_delete: {
     parameters: {
       query?: never;
@@ -1674,8 +1875,8 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Method not allowed */
-      405: {
+      /** @description Validation error */
+      422: {
         headers: {
           [name: string]: unknown;
         };
@@ -1683,8 +1884,52 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
-      /** @description Conflict */
-      409: {
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  put_chat_export_destination_api_v1_chat_threads__conversation_id__export_destination_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversation_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChatExportDestinationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChatExportDestinationResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
         headers: {
           [name: string]: unknown;
         };

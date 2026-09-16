@@ -135,6 +135,23 @@ class VersionedWorkspaceStore:
             return None
         return _record_from_row(row)
 
+    def list_namespace(self, namespace: str) -> tuple[VersionedRecord, ...]:
+        """Return every in-workspace record for ``namespace`` (stable by id)."""
+        namespace = _require_key_part(namespace, "namespace")
+        with self._connect() as connection:
+            try:
+                rows = connection.execute(
+                    f"SELECT {_SELECT_COLUMNS} FROM versioned_workspace_records "
+                    "WHERE workspace_id = ? AND namespace = ? "
+                    "ORDER BY record_id ASC",
+                    (self._workspace_id, namespace),
+                ).fetchall()
+            except sqlite3.Error as error:
+                raise VersionedStoreError(
+                    f"could not list versioned store at {self._path}"
+                ) from error
+        return tuple(_record_from_row(row) for row in rows)
+
     def update(
         self,
         namespace: str,

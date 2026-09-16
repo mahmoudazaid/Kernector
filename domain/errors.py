@@ -112,3 +112,10 @@ class ConnectorTimeoutError(ConnectorUnavailableError):
 
 class ConnectorNetworkError(ConnectorUnavailableError):
     """A transport-level failure prevented reaching the provider."""
+
+class ToolApprovalNotFoundError(DomainValidationError):
+    """No pending approval matches the trusted conversation and approval id."""
+
+
+class ToolApprovalConflictError(DomainValidationError):
+    """A conflicting decision was submitted for an already-resolved approval."""
