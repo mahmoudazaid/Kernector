@@ -1493,11 +1493,13 @@ describe("ChatPanel", () => {
 
   it("forwards conversation Style on ask and keeps an in-flight snapshot", async () => {
     const user = userEvent.setup();
-    let resolveAsk: ((value: ChatAskResponse) => void) | null = null;
+    const pending: {
+      resolve: ((value: ChatAskResponse) => void) | null;
+    } = { resolve: null };
     const ask = vi.fn().mockImplementation(
       () =>
         new Promise<ChatAskResponse>((resolve) => {
-          resolveAsk = resolve;
+          pending.resolve = resolve;
         }),
     );
     const { id } = renderOpenConversation({ ask });
@@ -1522,7 +1524,7 @@ describe("ChatPanel", () => {
     expect(ask).toHaveBeenCalledTimes(1);
     expect(ask.mock.calls[0]?.[0]?.body.runtime?.response_style).toBe("concise");
 
-    resolveAsk?.(SUCCESS);
+    pending.resolve?.(SUCCESS);
     await screen.findByText("Grounded answer from the corpus.");
   });
 

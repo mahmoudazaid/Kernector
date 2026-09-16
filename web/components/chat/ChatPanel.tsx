@@ -948,14 +948,16 @@ export function ChatPanel({
     style: ConversationResponseStyle,
   ): AskChatOptions["body"]["runtime"] {
     const stored = loadRuntimeSettings();
+    const provider: "openrouter" | "ollama" | null =
+      stored !== null &&
+      (stored.provider === "ollama" || stored.provider === "openrouter")
+        ? stored.provider
+        : null;
     const base =
       stored === null
         ? null
         : {
-            provider:
-              stored.provider === "ollama" || stored.provider === "openrouter"
-                ? stored.provider
-                : null,
+            provider,
             model: stored.model,
             settings: stored.settings,
           };

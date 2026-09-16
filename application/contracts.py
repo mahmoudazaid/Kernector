@@ -13,6 +13,8 @@ from application.response_style_policy import ResponseStyle
 from domain.knowledge import ScoredChunk, SourceDocument, SourceReference
 from domain.models import AskResult, Message, Usage
 
+_RESPONSE_STYLE_CHOICES = ("concise", "formal", "friendly")
+
 
 def _require_text(value: object, field_name: str) -> str:
     """Reject anything that is not a non-blank string.
@@ -377,7 +379,7 @@ class RunMeta:
             except ValueError as error:
                 raise ApplicationValidationError(
                     "response_style must be one of "
-                    f"{sorted(style.value for style in ResponseStyle)}"
+                    f'{", ".join(_RESPONSE_STYLE_CHOICES)}'
                 ) from error
         if self.hit_count is not None:
             if not isinstance(self.hit_count, int) or isinstance(
