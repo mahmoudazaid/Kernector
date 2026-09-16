@@ -57,11 +57,16 @@ def build_orchestrator(*, invoke: OpaqueInvoke) -> OrchestrateSoftwareDelivery:
     return OrchestrateSoftwareDelivery(invoke)
 
 
-def build_chat_intent_selector() -> SelectChatIntent:
+def build_chat_intent_selector(
+    *,
+    export_intent_enabled: bool = False,
+) -> SelectChatIntent:
     """Return the pack's chat-time intent policy.
 
-    Takes no collaborators: the policy is a pure function of the query. It is
-    exposed here anyway so composition keeps reaching this pack through exactly
-    one module.
+    ``export_intent_enabled`` must track ``SOFTWARE_DELIVERY_AGENT_LOOP``. When
+    False, the selector always returns ``None`` so export phrasing cannot revive
+    the retired scaffolding chain.
     """
+    if not export_intent_enabled:
+        return lambda _query: None
     return select_chat_intent

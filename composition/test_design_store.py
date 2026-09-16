@@ -43,6 +43,24 @@ class VersionedTestCoverageDraftRepository:
             version=record.version,
         )
 
+    def find_by_conversation_id(self, conversation_id: str) -> TestCoverageDraft | None:
+        """Return the newest draft whose payload matches ``conversation_id``."""
+        if not isinstance(conversation_id, str) or not conversation_id.strip():
+            raise ValueError("conversation_id must be a non-empty string")
+        conversation_id = conversation_id.strip()
+        match: TestCoverageDraft | None = None
+        for record in self._store.list_namespace(TEST_DESIGN_NAMESPACE):
+            draft = decode_draft_payload(
+                record.payload,
+                draft_id=record.record_id,
+                version=record.version,
+            )
+            if draft.conversation_id != conversation_id:
+                continue
+            if match is None or draft.version > match.version:
+                match = draft
+        return match
+
     def update(
         self,
         draft: TestCoverageDraft,

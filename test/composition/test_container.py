@@ -922,7 +922,7 @@ def test_dormant_orchestrate_path_with_stub_intent_and_tools(
     )
     monkeypatch.setattr(
         "packs.software_delivery.registration.build_chat_intent_selector",
-        lambda: (
+        lambda **_kwargs: (
             lambda _query: ChatToolSelection(
                 generate_tests=True, output_style="steps"
             )
@@ -1046,6 +1046,7 @@ print("ok")
 
 def _sd_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    monkeypatch.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
     monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")

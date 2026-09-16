@@ -90,6 +90,17 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [autoExportArmed, setAutoExportArmed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("export") === "1") {
+      setAutoExportArmed(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!packEnabled) {
@@ -121,6 +132,17 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       cancelled = true;
     };
   }, [apiBaseUrl, draftId, packEnabled]);
+
+  useEffect(() => {
+    if (!autoExportArmed || !draft || busy || exportOpen) {
+      return;
+    }
+    setAutoExportArmed(false);
+    void openExportDialog();
+    router.replace(`/test-design/${encodeURIComponent(draftId)}`);
+    // One-shot arming from ?export=1; openExportDialog closes over latest draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoExportArmed, draft, busy, exportOpen, draftId, router]);
 
   if (catalogLoading && !catalog) {
     return (
@@ -422,7 +444,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
       const receipt = await exportTestDesignGoogleDrive({
         baseUrl: apiBaseUrl,
         draftId: draft.draft_id,
-        body: { folder_id: folderId },
+        body: { folder_id: folderId, destination_label: folderName },
       });
       setExportOpen(false);
       setSaveNote(

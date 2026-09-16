@@ -467,6 +467,9 @@ class ToolRunResponse(BaseModel):
     risk: RiskScoreResponse | None = None
     test_cases: TestCasesResponse | None = None
     markdown: str = ""
+    export_destination_required: bool = False
+    drive_file_id: str = ""
+    drive_file_name: str = ""
 
 
 class ChatWorkflowActionResponse(BaseModel):
@@ -488,6 +491,35 @@ class ChatAskResponse(BaseModel):
     run: RunMetaResponse | None = None
     tool_run: ToolRunResponse | None = None
     action: ChatWorkflowActionResponse | None = None
+    pending_approval: PendingToolApprovalResponse | None = None
+
+
+class PendingToolApprovalResponse(BaseModel):
+    """Safe HITL projection; never includes raw Tool arguments or secrets."""
+
+    approval_id: str
+    tool_name: str
+    title: str
+    summary: str
+    status: str = "pending"
+    destination_label: str | None = None
+    file_name: str | None = None
+    selected_title_count: int | None = None
+
+
+class ToolApprovalDecisionRequest(BaseModel):
+    """Wire body for approving or rejecting a pending tool call."""
+
+    decision: Literal["approve", "reject"]
+
+
+class ToolApprovalDecisionResponse(BaseModel):
+    """Result after resuming a pending tool approval."""
+
+    answer: str
+    cancelled: bool = False
+    pending_approval: PendingToolApprovalResponse | None = None
+    tool_run: ToolRunResponse | None = None
 
 
 class TestCandidateResponse(BaseModel):
@@ -553,6 +585,7 @@ class ExportTestDesignGoogleDriveRequest(BaseModel):
 
     folder_id: str = Field(min_length=1, max_length=128)
     file_name: str | None = Field(default=None, max_length=255)
+    destination_label: str | None = Field(default=None, max_length=255)
 
 
 class ExportTestDesignGoogleDriveResponse(BaseModel):
@@ -560,6 +593,19 @@ class ExportTestDesignGoogleDriveResponse(BaseModel):
 
     file_id: str
     file_name: str
+
+
+class ChatExportDestinationRequest(BaseModel):
+    """Persist a Drive folder for chat agent export / HITL prepare."""
+
+    folder_id: str = Field(min_length=1, max_length=128)
+    destination_label: str | None = Field(default=None, max_length=255)
+
+
+class ChatExportDestinationResponse(BaseModel):
+    """Confirmation after saving an export destination (no folder id echo)."""
+
+    destination_label: str
 
 
 def chat_workflow_action_response(
@@ -716,6 +762,27 @@ def tool_run_response(view: SoftwareDeliveryRunView) -> ToolRunResponse:
         risk=risk,
         test_cases=test_cases,
         markdown=view.markdown,
+        export_destination_required=bool(view.export_destination_required),
+        drive_file_id=view.drive_file_id or "",
+        drive_file_name=view.drive_file_name or "",
+    )
+
+
+def pending_tool_approval_response(
+    pending: object | None,
+) -> PendingToolApprovalResponse | None:
+    """Project a domain/application pending approval onto the wire schema."""
+    if pending is None:
+        return None
+    return PendingToolApprovalResponse(
+        approval_id=str(getattr(pending, "approval_id")),
+        tool_name=str(getattr(pending, "tool_name")),
+        title=str(getattr(pending, "title")),
+        summary=str(getattr(pending, "summary")),
+        status=str(getattr(pending, "status", "pending") or "pending"),
+        destination_label=getattr(pending, "destination_label", None),
+        file_name=getattr(pending, "file_name", None),
+        selected_title_count=getattr(pending, "selected_title_count", None),
     )
 
 

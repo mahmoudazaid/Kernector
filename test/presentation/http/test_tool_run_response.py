@@ -81,6 +81,9 @@ def test_tool_run_response_projects_a_typed_view() -> None:
             ],
         },
         "markdown": "# Test Cases\n",
+        "export_destination_required": False,
+        "drive_file_id": "",
+        "drive_file_name": "",
     }
 
 
@@ -97,6 +100,9 @@ def test_tool_run_response_projects_absent_risk_and_test_cases_as_null() -> None
         "risk": None,
         "test_cases": None,
         "markdown": "",
+        "export_destination_required": False,
+        "drive_file_id": "",
+        "drive_file_name": "",
     }
 
 
@@ -142,6 +148,9 @@ def test_tool_run_projection_fields_are_locked() -> None:
             ("risk", RiskScoreResponse | None, False),
             ("test_cases", TestCasesResponse | None, False),
             ("markdown", str, False),
+            ("export_destination_required", bool, False),
+            ("drive_file_id", str, False),
+            ("drive_file_name", str, False),
         },
         RiskScoreResponse: {
             ("score", int, True),

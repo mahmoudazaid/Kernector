@@ -82,17 +82,10 @@ class ToolRunOutcome:
             grounded in.
         tool_outputs (tuple[InvokeToolResponse, ...]): One opaque entry per
             successful tool invocation, in call order.
-        run (RunMeta | None): Observability for the tool turn. Always carries
-            ``hit_count`` / ``citation_count`` when the run completed with
-            evidence. Model latency / tokens are included when a tool invoked
-            the chat model (e.g. test generation). ``query_rewritten`` stays
-            ``None`` on this path (rewrite metadata is not surfaced through
-            the tool retrieve seam). RAG leaves this ``None`` only when the
-            grounded ask did not attach metadata.
+        run (RunMeta | None): Observability for the tool turn.
         run_view (SoftwareDeliveryRunView | None): Typed presentation projection
-            for Software Delivery tool chains. Not placed on ``AskResponse``;
-            callers consume it via the composition side path. RAG leaves this
-            ``None``.
+            for Software Delivery tool chains.
+        pending_approval: Optional HITL projection when a tool awaits approval.
     """
 
     answer: str
@@ -100,6 +93,7 @@ class ToolRunOutcome:
     tool_outputs: tuple[InvokeToolResponse, ...] = ()
     run: RunMeta | None = None
     run_view: SoftwareDeliveryRunView | None = None
+    pending_approval: object | None = None
 
 
 class ToolSelection(Protocol):
@@ -260,6 +254,16 @@ class ToolAugmentedAsk:
             pack=self._pack_id,
         )
         self._pending_run_view = outcome.run_view
+        if (
+            outcome.pending_approval is not None
+            and outcome.run_view is not None
+            and getattr(outcome.run_view, "pending_approval", None) is None
+        ):
+            from dataclasses import replace
+
+            self._pending_run_view = replace(
+                outcome.run_view, pending_approval=outcome.pending_approval
+            )
         return AskResponse(
             answer=outcome.answer,
             citations=outcome.citations,

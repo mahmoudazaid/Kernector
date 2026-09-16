@@ -62,6 +62,12 @@ function toChatMessages(
     run: (message.run as ChatMessage["run"]) ?? null,
     toolRun: (message.toolRun as ChatMessage["toolRun"]) ?? null,
     action: (message.action as ChatMessage["action"]) ?? null,
+    pendingApproval:
+      (message as { pendingApproval?: ChatMessage["pendingApproval"] })
+        .pendingApproval ?? null,
+    approvalResolution:
+      (message as { approvalResolution?: ChatMessage["approvalResolution"] })
+        .approvalResolution ?? null,
   }));
 }
 
@@ -76,6 +82,8 @@ function toStored(messages: readonly ChatMessage[]): StoredChatMessage[] {
     run: message.run ?? null,
     toolRun: message.toolRun ?? null,
     action: message.action ?? null,
+    pendingApproval: message.pendingApproval ?? null,
+    approvalResolution: message.approvalResolution ?? null,
   }));
 }
 

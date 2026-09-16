@@ -221,7 +221,10 @@ describe("TestDesignWorkspace", () => {
     expect(exportTestDesignGoogleDrive).toHaveBeenCalledWith(
       expect.objectContaining({
         draftId: "draft-1",
-        body: { folder_id: "folderExport123" },
+        body: {
+          folder_id: "folderExport123",
+          destination_label: "Exports",
+        },
       }),
     );
     expect(

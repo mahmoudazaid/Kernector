@@ -457,6 +457,7 @@ class TestDesignFacade:
         *,
         folder_id: str,
         file_name: str | None = None,
+        destination_label: str | None = None,
     ) -> GoogleDriveExportReceiptView:
         """Export selected titles into a user-chosen Google Drive folder."""
         import json
@@ -482,6 +483,11 @@ class TestDesignFacade:
         if not isinstance(folder_id, str) or not is_drive_folder_id(folder_id.strip()):
             raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
         folder_id = folder_id.strip()
+        label = (
+            destination_label.strip()
+            if isinstance(destination_label, str) and destination_label.strip()
+            else "Google Drive"
+        )
         repo = self._repository()
         try:
             current = repo.get(draft_id)
@@ -499,6 +505,13 @@ class TestDesignFacade:
             raise TestDesignValidationError(
                 "select at least one candidate before export"
             )
+        # Persist before upload so chat agent HITL can reuse this destination
+        # even when the button-path upload later fails.
+        self._destination_repository().upsert(
+            current.conversation_id,
+            folder_id=folder_id,
+            display_label=label,
+        )
         tokens_store, _connection = require_drive_export_grant(self._settings)
         arguments: dict[str, object] = {
             "document_title": current.ticket_identifier,
@@ -539,6 +552,37 @@ class TestDesignFacade:
             file_name=exported_name.strip(),
         )
 
+    def set_export_destination(
+        self,
+        conversation_id: str,
+        *,
+        folder_id: str,
+        destination_label: str | None = None,
+    ) -> str:
+        """Persist the Drive folder for later agent export / HITL prepare.
+
+        Does not upload. Returns the stored display label.
+        """
+        from infrastructure.connectors.google_drive.folder import is_drive_folder_id
+
+        self._require_enabled()
+        if not isinstance(conversation_id, str) or not conversation_id.strip():
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+        if not isinstance(folder_id, str) or not is_drive_folder_id(folder_id.strip()):
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+        folder_id = folder_id.strip()
+        label = (
+            destination_label.strip()
+            if isinstance(destination_label, str) and destination_label.strip()
+            else ("Home" if folder_id == "root" else "Google Drive")
+        )
+        self._destination_repository().upsert(
+            conversation_id.strip(),
+            folder_id=folder_id,
+            display_label=label,
+        )
+        return label
+
     def _require_enabled(self) -> None:
         if not software_delivery_tools_enabled(self._settings):
             raise TestDesignUnavailableError("test design unavailable")
@@ -559,6 +603,16 @@ class TestDesignFacade:
             store = VersionedWorkspaceStore(self._store_path, self._workspace_id)
             self._repo = VersionedTestCoverageDraftRepository(store)
         return self._repo
+
+    def _destination_repository(self):
+        from composition.export_destination_store import (
+            VersionedExportDestinationRepository,
+        )
+        from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+
+        return VersionedExportDestinationRepository(
+            VersionedWorkspaceStore(self._store_path, self._workspace_id)
+        )
 
     def _build_chat_model(self):
         from composition.container import build_chat_model

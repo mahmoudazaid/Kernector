@@ -83,6 +83,7 @@ export async function confirmTestDesignDraft(
 export type ExportTestDesignGoogleDriveRequest = {
   folder_id: string;
   file_name?: string | null;
+  destination_label?: string | null;
 };
 
 export type ExportTestDesignGoogleDriveResponse = {

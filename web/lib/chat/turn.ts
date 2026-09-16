@@ -13,6 +13,8 @@ export type RunMeta = components["schemas"]["RunMetaResponse"];
 export type ToolRun = components["schemas"]["ToolRunResponse"];
 export type ChatWorkflowAction =
   components["schemas"]["ChatWorkflowActionResponse"];
+export type PendingToolApproval =
+  components["schemas"]["PendingToolApprovalResponse"];
 
 export type ChatMessage = {
   id: string;
@@ -24,6 +26,12 @@ export type ChatMessage = {
   run?: RunMeta | null;
   toolRun?: ToolRun | null;
   action?: ChatWorkflowAction | null;
+  pendingApproval?: PendingToolApproval | null;
+  approvalResolution?: {
+    status: "approved" | "rejected";
+    fileName?: string | null;
+    fileId?: string | null;
+  } | null;
 };
 
 export type HistoryTurn = {
@@ -121,6 +129,7 @@ export function applyTurnResult(
       run: response.run ?? null,
       toolRun: response.tool_run ?? null,
       action: response.action ?? null,
+      pendingApproval: response.pending_approval ?? null,
     })!;
     return [
       ...messages,
@@ -134,6 +143,9 @@ export function applyTurnResult(
         toolRun: (sanitized.toolRun as ToolRun | null | undefined) ?? null,
         action:
           (sanitized.action as ChatWorkflowAction | null | undefined) ?? null,
+        pendingApproval:
+          (sanitized.pendingApproval as PendingToolApproval | null | undefined) ??
+          null,
       },
     ];
   }

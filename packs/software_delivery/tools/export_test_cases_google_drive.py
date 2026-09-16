@@ -221,6 +221,11 @@ def _default_file_name(document_title: str) -> str:
         return DEFAULT_EXPORT_FILE_NAME
 
 
+def default_export_file_name(document_title: str) -> str:
+    """Public default Markdown file name for a document title (HITL preview)."""
+    return _default_file_name(document_title)
+
+
 def _validate_file_name(value: object) -> str:
     if not isinstance(value, str):
         raise GoogleDriveExportValidationError(
