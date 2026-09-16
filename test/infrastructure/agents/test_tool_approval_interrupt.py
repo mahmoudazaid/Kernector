@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+import pytest
+
 from domain.tool_approval import ApprovalHints, ToolApprovalPolicy
 from domain.models import AgentTurnResult
 from domain.ports import Tool
@@ -363,3 +365,58 @@ def test_pending_approval_is_isolated_across_conversations() -> None:
     assert tool_a.calls == 0
     assert tool_b.calls == 0
     assert pending_b.pending_approval is not None
+
+
+def test_resume_rejects_approval_owned_by_another_conversation() -> None:
+    """Cross-conversation approve must not resume the wrong thread (#311)."""
+    from domain.errors import ToolApprovalNotFoundError
+
+    tool = _CountingTool("software_delivery.export_test_cases_google_drive")
+    pending_args: dict[str, Mapping[str, object]] = {}
+    approvals_by_conversation: dict[str, set[str]] = {}
+    tools_by_conversation: dict[str, dict[str, Tool]] = {}
+    checkpointer = InMemorySaver()
+    model = _ScriptedModel(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-A",
+                    }
+                ],
+            ),
+            AIMessage(content="plain answer for B"),
+        ]
+    )
+    agent = LangGraphToolAgent(
+        system_prompt="system",
+        model_factory=lambda **_: model,
+        checkpointer=checkpointer,
+        workspace_id="ws-a",
+        approval_policy=ToolApprovalPolicy(
+            frozenset({"software_delivery.export_test_cases_google_drive"})
+        ),
+        pending_args=pending_args,
+        approvals_by_conversation=approvals_by_conversation,
+        tools_by_conversation=tools_by_conversation,
+    )
+    pending_a = agent.run("export", [tool], max_steps=4, conversation_id="conv-A")
+    assert isinstance(pending_a.pending_approval, PendingToolApproval)
+    approval_id = pending_a.pending_approval.approval_id
+
+    turn_b = agent.run("hello", [tool], max_steps=4, conversation_id="conv-B")
+    assert turn_b.pending_approval is None
+    assert "plain answer for B" in turn_b.content
+
+    with pytest.raises(ToolApprovalNotFoundError):
+        agent.resume_approval(
+            conversation_id="conv-B",
+            approval_id=approval_id,
+            decision="approve",
+        )
+    assert tool.calls == 0
+    assert approval_id in pending_args
+    assert approvals_by_conversation.get("conv-A") == {approval_id}

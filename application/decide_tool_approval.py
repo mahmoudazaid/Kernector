@@ -83,9 +83,9 @@ class DecideToolApproval:
                 decision=request.decision,
             )
         except ToolApprovalNotFoundError:
-            # Roll back ledger so a later valid resume can proceed if this was stale.
-            # Keep recorded if we already committed? Prefer leave recorded to block
-            # conflicting second decisions; not-found means unknown approval.
+            # Roll back so a cross-conversation or stale decide cannot poison
+            # the real owner's later approve/reject.
+            self._ledger.forget(approval_id)
             raise
         return DecideToolApprovalResponse(
             turn=turn,

@@ -10,7 +10,7 @@ from application.decide_tool_approval import (
     DecideToolApproval,
     DecideToolApprovalRequest,
 )
-from domain.errors import ToolApprovalConflictError
+from domain.errors import ToolApprovalConflictError, ToolApprovalNotFoundError
 from domain.models import AgentTurnResult
 from domain.tool_approval import Decision, ToolApprovalDecisionLedger
 
@@ -19,6 +19,7 @@ from domain.tool_approval import Decision, ToolApprovalDecisionLedger
 class _FakeResumer:
     calls: list[tuple[str, str, Decision]]
     turn: AgentTurnResult
+    raise_not_found: bool = False
 
     def resume_approval(
         self,
@@ -28,6 +29,8 @@ class _FakeResumer:
         decision: Decision,
     ) -> AgentTurnResult:
         self.calls.append((conversation_id, approval_id, decision))
+        if self.raise_not_found:
+            raise ToolApprovalNotFoundError("No pending approval for this conversation.")
         return self.turn
 
 
@@ -95,3 +98,20 @@ def test_reject_sets_cancelled() -> None:
     )
     assert result.cancelled is True
     assert isinstance(result.turn, AgentTurnResult)
+
+
+def test_not_found_rolls_back_ledger_so_owner_can_still_decide() -> None:
+    ledger = ToolApprovalDecisionLedger()
+    resumer = _FakeResumer(calls=[], turn=_turn(), raise_not_found=True)
+    use_case = DecideToolApproval(resumer=resumer, ledger=ledger)
+
+    with pytest.raises(ToolApprovalNotFoundError):
+        use_case.execute(
+            DecideToolApprovalRequest(
+                conversation_id="conv-B",
+                approval_id="tc-A",
+                decision="approve",
+            )
+        )
+    assert ledger.recorded("tc-A") is None
+    assert resumer.calls == [("conv-B", "tc-A", "approve")]

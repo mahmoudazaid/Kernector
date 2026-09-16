@@ -238,6 +238,9 @@ class LangGraphToolAgent:
                 break
         if interrupts and not matched:
             raise ToolApprovalNotFoundError("No pending approval for this conversation.")
+        owned = self._approvals_by_conversation.get(conversation_key) or set()
+        if approval_id in self._pending_args and approval_id not in owned:
+            raise ToolApprovalNotFoundError("No pending approval for this conversation.")
         if not interrupts and approval_id not in self._pending_args:
             values = snapshot.checkpoint.get("channel_values", {})
             return self._result_from_state(values)
