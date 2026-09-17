@@ -138,3 +138,38 @@ def test_bare_yes_history_does_not_run_tools() -> None:
     assert response.run is not None
     assert response.run.intent != "tool_workflow"
     assert response.run.path in {"rag", "clarification", "general_answer"}
+
+
+def test_store_persists_clarify_and_clears_on_ready_follow_up() -> None:
+    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.workflow_signals import build_test_design_workflow_signal
+
+    ask = _RecordingAsk()
+    store = InMemoryClarificationContextStore()
+
+    class _Handoff:
+        answer = "handoff"
+        action = object()
+
+    wrapper = ToolAugmentedAsk(
+        ask,
+        runner=_ExplodingRunner(),
+        signals=(build_test_design_workflow_signal(enabled=True),),
+        ask_general=_RecordingAsk(answer="general"),
+        build_test_design_handoff=lambda _request: _Handoff(),
+        clarification_context_store=store,
+    )
+    clarify = wrapper.execute(
+        AskRequest(query="design test cases", conversation_id="c1")
+    )
+    assert clarify.run is not None
+    assert clarify.run.path == "clarification"
+    assert store.get("c1") is not None
+
+    ready = wrapper.execute(
+        AskRequest(query="acme/api#42", conversation_id="c1")
+    )
+    assert ready.run is not None
+    assert ready.run.intent == "tool_workflow"
+    assert store.get("c1") is None
+    assert ask.calls == []

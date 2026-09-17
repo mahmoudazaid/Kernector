@@ -27,6 +27,7 @@ from application.turn_routing import (
     TurnRoutingRequest,
     WorkflowSignal,
 )
+from composition.clarification_context import ClarificationContextStore
 from composition.software_delivery_tools import SoftwareDeliveryRunView
 from composition.workflow_signals import clarification_answer_for
 
@@ -149,7 +150,6 @@ class ToolRunner(Protocol):
 
 SelectToolIntent = Callable[[str], ToolSelection | None]
 TestDesignHandoffBuilder = Callable[[AskRequest], object | None]
-ClarificationContextStore = Callable[[str | None], Mapping[str, object] | None]
 
 
 class ToolAugmentedAsk:
@@ -164,7 +164,8 @@ class ToolAugmentedAsk:
         build_test_design_handoff: Builds handoff view after ``test_design`` ready.
         select: Legacy intent selector used only when ``signals`` is empty
             (unit-test compat for pre-router scaffolding doubles).
-        clarification_context_lookup: Optional structured prior clarify context.
+        clarification_context_store: Optional conversation-scoped prior clarify
+            context (get on route; set on clarify; clear on other paths).
     """
 
     def __init__(
@@ -177,7 +178,7 @@ class ToolAugmentedAsk:
         pack_id: str | None = None,
         build_test_design_handoff: TestDesignHandoffBuilder | None = None,
         select: SelectToolIntent | None = None,
-        clarification_context_lookup: ClarificationContextStore | None = None,
+        clarification_context_store: ClarificationContextStore | None = None,
     ) -> None:
         self._ask = ask
         self._runner = runner
@@ -185,7 +186,7 @@ class ToolAugmentedAsk:
         self._pack_id = pack_id
         self._build_test_design_handoff = build_test_design_handoff
         self._select = select
-        self._clarification_context_lookup = clarification_context_lookup
+        self._clarification_context_store = clarification_context_store
         self._router = TurnRouter(signals=signals)
         self._use_router = bool(signals) or ask_general is not None
         self._pending_run_view: SoftwareDeliveryRunView | None = None
@@ -264,8 +265,8 @@ class ToolAugmentedAsk:
         settings: Mapping[str, object] | None,
     ) -> AskResponse:
         prior = None
-        if self._clarification_context_lookup is not None:
-            prior = self._clarification_context_lookup(request.conversation_id)
+        if self._clarification_context_store is not None:
+            prior = self._clarification_context_store.get(request.conversation_id)
         decision = self._router.classify(
             TurnRoutingRequest(
                 query=request.query,
@@ -277,10 +278,25 @@ class ToolAugmentedAsk:
         if decision.kind is RoutingKind.CLARIFICATION:
             return self._clarification_response(decision, request)
         if decision.kind is RoutingKind.GENERAL_ANSWER:
+            self._clear_clarification_context(request.conversation_id)
             return self._general_response(decision, request, settings)
         if decision.kind is RoutingKind.TOOL_WORKFLOW:
+            self._clear_clarification_context(request.conversation_id)
             return self._tool_workflow_response(decision, request, settings)
+        self._clear_clarification_context(request.conversation_id)
         return self._grounded_response(decision, request, settings)
+
+    def _set_clarification_context(
+        self,
+        conversation_id: str | None,
+        context: Mapping[str, object] | None,
+    ) -> None:
+        if self._clarification_context_store is None:
+            return
+        self._clarification_context_store.set(conversation_id, context)
+
+    def _clear_clarification_context(self, conversation_id: str | None) -> None:
+        self._set_clarification_context(conversation_id, None)
 
     def _clarification_response(
         self,
@@ -289,6 +305,9 @@ class ToolAugmentedAsk:
     ) -> AskResponse:
         answer = clarification_answer_for(decision.reason, decision.workflow_hint)
         self._pending_clarification_context = decision.clarification_context
+        self._set_clarification_context(
+            request.conversation_id, decision.clarification_context
+        )
         log_operation(
             logger,
             operation="ask_turn",

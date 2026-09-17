@@ -128,12 +128,23 @@ def get_short_term_memory_runtime() -> ShortTermMemoryRuntime:
     return build_short_term_memory_runtime(get_settings())
 
 
+@lru_cache(maxsize=1)
+def get_clarification_context_store():
+    """Process-cached clarification context for multi-turn workflow follow-ups."""
+    from composition.clarification_context import InMemoryClarificationContextStore
+
+    return InMemoryClarificationContextStore()
+
+
 def get_ask_factory(
     settings: Annotated[Settings, Depends(get_settings)],
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
     prompt_repository: Annotated[PromptRepository, Depends(get_prompt_repository)],
     short_term_memory: Annotated[
         ShortTermMemoryRuntime, Depends(get_short_term_memory_runtime)
+    ],
+    clarification_context_store: Annotated[
+        object, Depends(get_clarification_context_store)
     ],
 ) -> AskFactory:
     """Return a factory that builds ask with per-request provider/model overrides."""
@@ -162,6 +173,7 @@ def get_ask_factory(
             base_url=base_url,
             short_term_memory=short_term_memory,
             client_source_locator=source_locator,
+            clarification_context_store=clarification_context_store,
         )
 
     return factory

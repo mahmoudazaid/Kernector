@@ -24,8 +24,24 @@ def test_parses_full_github_issue_url() -> None:
     assert parsed.canonical == "mahmoudazaid/Kernector#293"
 
 
-def test_parses_owner_repo_hash_number() -> None:
-    parsed = parse_github_issue_locator("mahmoudazaid/Kernector#293")
+def test_parses_owner_repo_slash_number() -> None:
+    parsed = parse_github_issue_locator("mahmoudazaid/Kernector/293")
+    assert parsed is not None
+    assert parsed.canonical == "mahmoudazaid/Kernector#293"
+
+
+def test_extracts_slash_locator_from_prose() -> None:
+    parsed = extract_github_issue_locator(
+        "please use mahmoudazaid/kernector/218"
+    )
+    assert parsed is not None
+    assert parsed.canonical == "mahmoudazaid/kernector#218"
+
+
+def test_slash_form_does_not_steal_issues_url_path() -> None:
+    parsed = extract_github_issue_locator(
+        "Design tests for https://github.com/mahmoudazaid/Kernector/issues/293"
+    )
     assert parsed is not None
     assert parsed.canonical == "mahmoudazaid/Kernector#293"
 

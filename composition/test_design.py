@@ -165,16 +165,17 @@ def build_test_design_handoff_from_request(
 ) -> TestDesignChatHandoffView | None:
     """Build Test Design handoff **after** a ready ``tool_workflow`` decision.
 
-    Raises TestDesignValidationError for commands with multiple distinct Issues,
-    or for client source_locator mismatch.
+    Accepts command+locator messages and locator-only follow-ups. Raises
+    TestDesignValidationError for explicit commands with multiple distinct
+    Issues, or for client source_locator mismatch. Multi-issue discussion
+    without a command phrase returns ``None`` (falls through).
     """
     if not software_delivery_tools_enabled(settings):
         return None
     query = request.query
     if not isinstance(query, str) or not query.strip():
         return None
-    if _TEST_DESIGN_COMMAND.search(query) is None:
-        return None
+    has_command = _TEST_DESIGN_COMMAND.search(query) is not None
     from infrastructure.connectors.github.issue_locator import (
         AmbiguousGitHubIssueLocatorError,
         extract_github_issue_locator,
@@ -183,11 +184,15 @@ def build_test_design_handoff_from_request(
     try:
         parsed = extract_github_issue_locator(query)
     except AmbiguousGitHubIssueLocatorError as error:
+        if not has_command:
+            return None
         raise TestDesignValidationError(
             "Query must reference exactly one GitHub Issue"
         ) from error
     if parsed is None:
         return None
+    # Locator-only follow-ups (no command phrase) are valid after clarification
+    # when the router already decided tool_workflow/test_design.
     canonical = parsed.canonical
     if source_locator is not None:
         client_locator = _require_github_locator_view(source_locator)

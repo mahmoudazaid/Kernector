@@ -37,6 +37,62 @@ def test_test_design_command_with_issue_is_ready() -> None:
     assert result.readiness is WorkflowReadiness.READY
 
 
+def test_test_design_prior_context_plus_locator_is_ready() -> None:
+    signal = build_test_design_workflow_signal(enabled=True)
+    prior = {
+        "workflow_hint": "test_design",
+        "missing_fields": ("issue_locator",),
+    }
+    for query in (
+        "acme/api#42",
+        "acme/api/42",
+        "https://github.com/acme/api/issues/42",
+    ):
+        result = signal(
+            TurnRoutingRequest(query=query, clarification_context=prior)
+        )
+        assert result is not None, query
+        assert result.readiness is WorkflowReadiness.READY, query
+
+
+def test_test_design_prior_context_plus_bare_number_stays_incomplete() -> None:
+    signal = build_test_design_workflow_signal(enabled=True)
+    prior = {
+        "workflow_hint": "test_design",
+        "missing_fields": ("issue_locator",),
+    }
+    for query in ("218", "yes", "ok", "mahmoudazaid/Kernector"):
+        result = signal(
+            TurnRoutingRequest(query=query, clarification_context=prior)
+        )
+        assert result is not None, query
+        assert result.readiness is WorkflowReadiness.INCOMPLETE, query
+        assert result.reason == "missing_fields", query
+
+
+def test_test_design_prior_context_pivot_question_is_not_a_signal() -> None:
+    signal = build_test_design_workflow_signal(enabled=True)
+    prior = {
+        "workflow_hint": "test_design",
+        "missing_fields": ("issue_locator",),
+    }
+    assert (
+        signal(
+            TurnRoutingRequest(
+                query="What do the docs say about auth?",
+                clarification_context=prior,
+            )
+        )
+        is None
+    )
+
+
+def test_locator_alone_without_prior_is_not_a_signal() -> None:
+    signal = build_test_design_workflow_signal(enabled=True)
+    assert signal(TurnRoutingRequest(query="acme/api#42")) is None
+    assert signal(TurnRoutingRequest(query="acme/api/42")) is None
+
+
 def test_prefixed_test_design_command_with_locator_is_ready() -> None:
     """Polite/prefixed commands with a locator still start the workflow."""
     signal = build_test_design_workflow_signal(enabled=True)

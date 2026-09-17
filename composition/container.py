@@ -3669,6 +3669,7 @@ def build_tool_augmented_ask(
     base_url: str | None = None,
     short_term_memory: object | None = None,
     client_source_locator: object | None = None,
+    clarification_context_store: object | None = None,
 ) -> GroundedAsk:
     """Wire grounded ask with TurnRouter, AskGeneral, and pack workflow signals.
 
@@ -3693,15 +3694,23 @@ def build_tool_augmented_ask(
             this stack (tests should inject a shared runtime for continuity).
         client_source_locator: Optional client Issue locator for Test Design
             handoff mismatch checks.
+        clarification_context_store: Optional conversation-scoped prior
+            clarification context store for follow-up workflow turns.
 
     Returns:
         GroundedAsk: ``CorrelatedAsk`` around ``ToolAugmentedAsk``.
     """
     from application.ask_general import AskGeneral
+    from composition.clarification_context import (
+        InMemoryClarificationContextStore,
+    )
     from composition.workflow_signals import (
         build_drive_export_workflow_signal,
         build_test_design_workflow_signal,
     )
+
+    if clarification_context_store is None:
+        clarification_context_store = InMemoryClarificationContextStore()
 
     if chat_model is None:
         chat_model = build_chat_model(
@@ -3730,6 +3739,7 @@ def build_tool_augmented_ask(
                 runner=_ToolsUnavailableRunner(),
                 signals=(),
                 ask_general=ask_general,
+                clarification_context_store=clarification_context_store,
             )
         )
 
@@ -3871,6 +3881,7 @@ def build_tool_augmented_ask(
             ask_general=ask_general,
             pack_id="software-delivery",
             build_test_design_handoff=build_handoff,
+            clarification_context_store=clarification_context_store,
         )
     )
 

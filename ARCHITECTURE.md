@@ -295,11 +295,14 @@ a draft with selected titles (and agent loop enabled). Partial phrases and
 missing payloads clarify (#304, #310).
 
 **Follow-ups:** bare “yes”/short affirmatives from raw history never promote to
-``tool_workflow``. Structured clarification context is computed on clarify turns
-for observability (``consume_clarification_context``), but a durable
-conversation-scoped store is not wired yet — a clarified Test Design or Drive
-turn must restate the full request (with missing fields supplied) to become
-ready.
+``tool_workflow``. Structured clarification context is stored per
+``conversation_id`` (process-scoped
+``InMemoryClarificationContextStore``) when a turn clarifies. The next turn
+loads that context into WorkflowSignals: a Test Design follow-up that supplies
+a valid Issue locator (URL, ``owner/repo#N``, or ``owner/repo/N``) becomes
+``tool_workflow`` without restating the command phrase; bare numbers or “yes”
+stay on clarification (never RAG). Context is cleared on tool_workflow,
+grounded, or general paths.
 
 **AskGeneral** (``application/ask_general.py``): ``ChatModel``/``AskService``
 only — no retrieve, no citations. System policy forbids project/repository

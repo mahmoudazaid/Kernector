@@ -6,7 +6,7 @@ LangGraph and stay out of ``application/``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import re
 from typing import Protocol
 
@@ -122,11 +122,51 @@ def _draft_has_selected_titles(draft: object | None) -> bool:
     return False
 
 
+_AFFIRMATIVE_FOLLOW_UP = re.compile(
+    r"^\s*(yes|y|ok|okay|sure|please|thanks|thank\s+you)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
+
 def build_test_design_workflow_signal(
     *,
     enabled: bool = True,
 ) -> WorkflowSignal:
     """Return a WorkflowSignal for Test Design command + Issue readiness."""
+
+    def _prior_awaiting_locator(request: TurnRoutingRequest) -> bool:
+        prior = request.clarification_context
+        if not isinstance(prior, Mapping):
+            return False
+        if prior.get("workflow_hint") != "test_design":
+            return False
+        missing = prior.get("missing_fields")
+        if isinstance(missing, str):
+            return missing == "issue_locator"
+        if isinstance(missing, (list, tuple)):
+            return "issue_locator" in missing
+        return False
+
+    def _incomplete_missing_locator() -> WorkflowSignalResult:
+        return WorkflowSignalResult(
+            workflow_hint="test_design",
+            readiness=WorkflowReadiness.INCOMPLETE,
+            reason="missing_fields",
+            missing_fields=("issue_locator",),
+            clarification_context={
+                "workflow_hint": "test_design",
+                "missing_fields": ("issue_locator",),
+            },
+        )
+
+    def _looks_like_locator_follow_up(query: str) -> bool:
+        stripped = query.strip()
+        if not stripped:
+            return False
+        if stripped.isdigit() or _AFFIRMATIVE_FOLLOW_UP.match(stripped):
+            return True
+        lower = stripped.casefold()
+        return "#" in stripped or "/" in stripped or "github.com" in lower
 
     def probe(request: TurnRoutingRequest) -> WorkflowSignalResult | None:
         if not enabled:
@@ -134,10 +174,11 @@ def build_test_design_workflow_signal(
         query = request.query
         if not isinstance(query, str) or not query.strip():
             return None
+        from_prior = _prior_awaiting_locator(request)
         # Unanchored command match (same as main's handoff). Shape guards apply
         # only when no Issue locator is present — a locator is decisive intent.
         match = _TEST_DESIGN_COMMAND.search(query)
-        if match is None:
+        if match is None and not from_prior:
             return None
         from infrastructure.connectors.github.issue_locator import (
             AmbiguousGitHubIssueLocatorError,
@@ -156,22 +197,19 @@ def build_test_design_workflow_signal(
                 readiness=WorkflowReadiness.READY,
                 reason="workflow_ready",
             )
+        if from_prior and match is None:
+            # Locator/affirmative follow-ups stay on clarification; clear pivots
+            # (new questions) fall through so grounded/general can clear context.
+            if _looks_like_locator_follow_up(query):
+                return _incomplete_missing_locator()
+            return None
         # No locator: docs/topical mentions stay on RAG; leading #304 commands
         # without an Issue still clarify.
         if query[: match.start()].strip():
             return None
         if _TEST_DESIGN_TOPIC_QUESTION.search(query) is not None:
             return None
-        return WorkflowSignalResult(
-            workflow_hint="test_design",
-            readiness=WorkflowReadiness.INCOMPLETE,
-            reason="missing_fields",
-            missing_fields=("issue_locator",),
-            clarification_context={
-                "workflow_hint": "test_design",
-                "missing_fields": ("issue_locator",),
-            },
-        )
+        return _incomplete_missing_locator()
 
     return probe
 

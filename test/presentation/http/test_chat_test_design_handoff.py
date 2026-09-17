@@ -51,6 +51,7 @@ def _routed_factory(
     grounded: object | None = None,
     export_enabled: bool = False,
     draft_ready: bool = False,
+    clarification_context_store: object | None = None,
 ):
     grounded_ask = grounded if grounded is not None else _ExplodingAsk()
 
@@ -77,6 +78,7 @@ def _routed_factory(
             ask_general=_ExplodingAsk(),
             pack_id="software-delivery",
             build_test_design_handoff=build_handoff,
+            clarification_context_store=clarification_context_store,
         )
 
     return factory
@@ -376,3 +378,138 @@ def test_bare_issue_number_command_clarifies_not_rag() -> None:
     assert response.status_code == 200
     assert ask.calls == 0
     assert response.json()["run"]["intent"] == "clarification"
+
+
+def test_follow_up_locator_after_clarify_starts_test_design() -> None:
+    from composition.clarification_context import InMemoryClarificationContextStore
+
+    ask = _RecordingAsk()
+    store = InMemoryClarificationContextStore()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask, clarification_context_store=store
+    )
+    client = TestClient(app)
+    first = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "design test cases",
+            "history": [],
+            "conversation_id": "conv-follow-1",
+        },
+    )
+    assert first.status_code == 200
+    assert first.json()["run"]["intent"] == "clarification"
+    assert ask.calls == 0
+
+    second = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "mahmoudazaid/Kernector/218",
+            "history": [],
+            "conversation_id": "conv-follow-1",
+        },
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert ask.calls == 0
+    assert body["run"]["intent"] == "tool_workflow"
+    assert body["action"] is not None
+    assert body["action"]["label"] == "Start Test Design"
+    assert body["action"]["source_locator"]["locator"] == (
+        "mahmoudazaid/Kernector#218"
+    )
+
+
+def test_follow_up_bare_number_after_clarify_stays_clarification() -> None:
+    from composition.clarification_context import InMemoryClarificationContextStore
+
+    ask = _RecordingAsk()
+    store = InMemoryClarificationContextStore()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask, clarification_context_store=store
+    )
+    client = TestClient(app)
+    client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "design test cases",
+            "history": [],
+            "conversation_id": "conv-bare-1",
+        },
+    )
+    second = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "218",
+            "history": [],
+            "conversation_id": "conv-bare-1",
+        },
+    )
+    assert second.status_code == 200
+    assert ask.calls == 0
+    assert second.json()["run"]["intent"] == "clarification"
+    assert second.json()["answer"] == TEST_DESIGN_CLARIFY_ANSWER
+
+
+def test_pivot_after_clarify_clears_context_and_uses_rag() -> None:
+    from composition.clarification_context import InMemoryClarificationContextStore
+
+    ask = _RecordingAsk()
+    store = InMemoryClarificationContextStore()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask, clarification_context_store=store
+    )
+    client = TestClient(app)
+    client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "design test cases",
+            "history": [],
+            "conversation_id": "conv-pivot-1",
+        },
+    )
+    second = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "What do the docs say about auth?",
+            "history": [],
+            "conversation_id": "conv-pivot-1",
+        },
+    )
+    assert second.status_code == 200
+    assert ask.calls == 1
+    assert second.json()["run"]["path"] == "rag"
+    assert store.get("conv-pivot-1") is None
+    # Locator alone after pivot must not revive the workflow.
+    third = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "mahmoudazaid/Kernector#218",
+            "history": [],
+            "conversation_id": "conv-pivot-1",
+        },
+    )
+    assert third.status_code == 200
+    assert ask.calls == 2
+    assert third.json().get("action") is None

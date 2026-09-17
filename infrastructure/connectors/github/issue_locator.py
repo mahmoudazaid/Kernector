@@ -11,6 +11,11 @@ _URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _HASH_PATTERN = re.compile(rf"\b{_OWNER_REPO}#(?P<number>\d+)\b")
+# Slash form (owner/repo/N). Negative lookbehind avoids matching .../issues/N URLs
+# already covered by _URL_PATTERN; negative lookahead skips /pull/ and similar.
+_SLASH_PATTERN = re.compile(
+    rf"(?<![\w./]){_OWNER_REPO}/(?P<number>\d+)\b(?!/)",
+)
 
 
 class InvalidGitHubIssueLocatorError(ValueError):
@@ -45,7 +50,11 @@ def parse_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
     stripped = text.strip()
     if not stripped or stripped.isdigit():
         return None
-    match = _URL_PATTERN.fullmatch(stripped) or _HASH_PATTERN.fullmatch(stripped)
+    match = (
+        _URL_PATTERN.fullmatch(stripped)
+        or _HASH_PATTERN.fullmatch(stripped)
+        or _SLASH_PATTERN.fullmatch(stripped)
+    )
     if match is None:
         # Allow optional trailing punctuation stripped by callers; try patterns
         # that match the whole string only.
@@ -75,7 +84,7 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
     if not isinstance(text, str) or not text.strip():
         return None
     found: list[ParsedGitHubIssueLocator] = []
-    for pattern in (_URL_PATTERN, _HASH_PATTERN):
+    for pattern in (_URL_PATTERN, _HASH_PATTERN, _SLASH_PATTERN):
         for match in pattern.finditer(text):
             try:
                 found.append(_from_match(match))
