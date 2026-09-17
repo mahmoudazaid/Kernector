@@ -189,17 +189,18 @@ enabled prompt packs.
 
 **Executable packs** under `packs/` contribute domain tools and pack-local
 workflows. The first is `packs/software_delivery/`. Its scaffolding
-risk/generate/export tools are retired (#285); `build_tools` returns an empty
-registry and chat intent never matches, so General chat stays on grounded RAG.
-Future tools land under `packs/software_delivery/tools/`. Shared
+risk/generate/export tools are retired (#285). Google Drive export (#309) and
+**Test Design** (#293) are recognized via composition ``WorkflowSignal`` probes
+injected into the pack-neutral ``TurnRouter`` (#312). Incomplete intents
+clarify instead of falling through to grounded RAG (#304, #310). Shared
 `application/markdown.py` (#305) is a reusable deterministic CommonMark
 renderer for typed documents — not an agent-callable Tool, not Drive- or
 pack-specific; later export flows (for example #197) map content into its
 neutral contracts. The **Test Design**
-workflow (#293) is pack-local (not an agent `Tool`): Chat handoff detects Test
-Design intent plus exactly one GitHub Issue reference **before** grounded RAG,
-returns a fixed server answer and `Start Test Design` action with a canonical
-`source_locator`, then create fetches that Issue live via `LiveSourceReader`
+workflow (#293) is pack-local (not an agent `Tool`): after a ready
+``tool_workflow`` decision, composition builds a fixed server answer and
+`Start Test Design` action with a canonical `source_locator`; create then
+fetches that Issue live via `LiveSourceReader`
 (OAuth preflight first; no catalog/vector/RAG). Test candidate suggestion under
 `packs/software_delivery/test_design/` (pack-local use case `SuggestTestCandidates`
 in `suggest_tests.py`, not an agent Tool) sees only `SourceDocument` evidence,
@@ -213,9 +214,9 @@ when the pack is off. Enable via
 manifest and `importlib` only for configured IDs — a disabled pack is neither
 imported nor registered.
 ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) swaps the deterministic
-orchestrate for a LangGraph agent. Dormant with the scaffolding retired (#285):
-the orchestrate callable is only reached on a matched chat intent, so the flag
-has no observable effect until a real tool lands.
+orchestrate for a LangGraph agent on the Drive-export tools path. When the
+loop is off, recognized Drive-export intent clarifies as ``tool_unavailable``
+rather than falling through to RAG.
 
 #### Multi-source tool flow
 
@@ -226,11 +227,12 @@ connector/upload → SourceDocument → chunks/index
        → cited / structured result
 ```
 
-Chat-time tool selection shares one chat surface with grounded RAG.
-With the Software Delivery scaffolding retired, General-mode queries always
-fall through to grounded RAG via ``AskKnowledge`` until a real tool and intent
-policy land. The dormant orchestration/agent wiring stays so the next tool
-re-enters without structure churn.
+Chat-time routing shares one chat surface across grounded RAG, labelled
+non-RAG general answers, clarification, and pack workflows (#312).
+``TurnRouter`` (``application/turn_routing.py``) is the single pre-retrieval
+decision boundary. Domain/application code stays pack- and LangGraph-neutral;
+composition injects ``WorkflowSignal`` probes and builds handoffs/tool runs
+**after** the decision.
 
 The Next.js **Software Delivery tool-result renderers** (#161) expose typed
 composition views — risk score with factor citations, structured test cases,
@@ -259,49 +261,61 @@ and never imports pack-named modules.
 application layer may not import ``packs``, so the vocabulary that recognises a
 tool request cannot live there.
 
-#### Chat-time tool selection (#170)
+#### Conversational intent router (#312)
 
-``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) wraps
-``AskKnowledge`` and asks the enabled pack's deterministic policy —
-``select_chat_intent`` in ``packs/software_delivery/chat_intent.py`` — which
-workflow, if any, a query names. **Selection runs only when no task prompt is
-set** (``AskRequest.prompt_key is None`` — the General chat path). Any non-empty
-``prompt_key`` delegates the original request, history, and generation settings
-unchanged to ``AskKnowledge`` — routing never moves into the Next.js UI.
-Unmatched General queries are delegated to the grounded path verbatim, so
-ordinary chat is unchanged and no tool runs speculatively.
+``TurnRouter`` / ``classify_turn`` (``application/turn_routing.py``) is the
+**single** pre-retrieval routing boundary. It emits a ``RoutingDecision`` with
+``kind`` ∈ ``tool_workflow`` | ``clarification`` | ``grounded_answer`` |
+``general_answer``. ``RunMeta.intent`` is that kind; ``routing_confidence`` is a
+**fixed heuristic score** (not calibrated probability); ``ambiguous`` marks
+conflicts/mixed cues; reasons are allowlisted codes only.
 
-Matched intents are either a generate/risk tool chain or neither. Generation
-wins over risk-only.
+**Pre-routing rule:** non-empty ``AskRequest.prompt_key`` skips the router and
+delegates to ``AskKnowledge`` with ``path=task_prompt``.
 
-The policy is **explicit-request matching, not a classifier**. Test generation
-requires a same-clause creation verb (``create``, ``generate``, ``write``,
-``produce``, ``draft``, ``build``) bound directly to a test artifact, with only
-optional articles, adjectives, or style modifiers between them —
-``gherkin``, ``cucumber``, ``feature file``, ``test plan``, or ``test cases``
-alone are not sufficient, and distant verb∩artifact co-occurrence is ignored.
-Risk routing accepts explicit score/assessment requests (for example
-``assess/score/evaluate the risk``, ``what is the risk score for <target>``,
-``how risky is <target>``) and rejects conceptual or read-only questions.
-Scoped negations cancel only when they govern the matched action in the same
-clause (``Do not create test cases``, ``Never generate tests``, ``Do not assess
-the risk``). Constraint wording after a match (``Create test cases that do not
-require admin access``) and negation in another clause (``Create tests; never
-use production credentials``) do not cancel. Mixed requests keep the
-non-negated intent (``Do not generate tests; assess the risk for AUTH-101``
-selects risk-only). How-to forms and read-only transforms
-(``Create a summary/list of the existing test cases``) never invoke tools. Determinism is the point: a chat-time tool
-call is a side effect, and an explicit table is reproducible, testable offline,
-and narrow in the safe direction — an unmatched query simply stays on the
-grounded path. Vocabulary stays in the pack because "test cases" and "risk
-score" are business terms; composition reaches the policy through
-``registration.build_chat_intent_selector`` and ``importlib``, never at module
-scope.
+**Aggregation (deterministic):**
 
-A matched turn runs through ``PackSoftwareDeliveryChat``
+1. Conflicting workflow signals → ``clarification``
+2. Any incomplete signal (recognized intent, not ready) → ``clarification``
+   (never RAG; never unauthorized tools)
+3. Exactly one ready signal → ``tool_workflow``
+4. No signals → cue heuristics: mixed general+project → clarify; clear general →
+   ``AskGeneral``; project/default → grounded RAG
+5. Disabled/unavailable tools for a recognized workflow → incomplete
+   (``tool_unavailable``), never RAG
+
+**Intent vs readiness:** signals separate “user asked for this workflow” from
+“required inputs exist”. Test Design is ready only with exactly one Issue
+locator; Drive export is ready only with a clear export-to-Drive phrase **and**
+a draft with selected titles (and agent loop enabled). Partial phrases and
+missing payloads clarify (#304, #310).
+
+**Follow-ups:** bare “yes”/short affirmatives from raw history never promote to
+``tool_workflow``. Only structured prior clarification context plus newly
+supplied missing fields (evaluated inside signals) can become ready.
+
+**AskGeneral** (``application/ask_general.py``): ``ChatModel``/``AskService``
+only — no retrieve, no citations. System policy forbids project/repository
+source facts; the router must not choose ``general_answer`` when project cues
+are present.
+
+Composition injects ``WorkflowSignal`` probes
+(``composition/workflow_signals.py``) and builds Test Design handoff actions
+**after** a ready decision. HITL / tool authorization remain separate from
+intent routing. Domain/application never import LangGraph.
+
+#### Chat-time tool execution (#170 / #309)
+
+``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) applies the
+task-prompt pre-rule, runs ``TurnRouter``, then dispatches. Drive
+``tool_workflow`` runs through ``PackSoftwareDeliveryChat`` when the agent loop
+is on. Generation
+wins over risk-only for any residual scaffolding doubles in unit tests.
+
+A matched Drive turn runs through ``PackSoftwareDeliveryChat``
 (``composition/software_delivery_chat.py``): filter-less cross-source retrieval
 with the relevance threshold applied in composition → ``require_evidence`` →
-evidence bundle → ``OrchestrateSoftwareDelivery`` via the opaque tool boundary,
+evidence bundle → agent/orchestrate via the opaque tool boundary,
 wrapped in a ``ToolCallRecorder`` that keeps one ``InvokeToolResponse`` per
 successful call. The reply is composed deterministically from the tools' typed
 results — the export step's Markdown for generated cases, the risk step's score

@@ -1,9 +1,9 @@
-"""Chat-time tool selection layered over the grounded ask path.
+"""Chat-time turn routing layered over grounded ask, general ask, and tools.
 
-``AskKnowledge`` cannot make this decision: ``application/`` may not import
-``packs``, and the vocabulary that recognises a domain workflow request is
-pack-owned. So the routing lives here, in the one layer already allowed to join
-both — the "thin composition wrapper" the story names.
+``AskKnowledge`` cannot make pack workflow decisions: ``application/`` may not
+import ``packs``. :class:`TurnRouter` owns the routing decision; composition
+injects :class:`~application.turn_routing.WorkflowSignal` probes and builds
+handoffs / tool runs **after** the decision.
 
 Request-id correlation is owned by :class:`composition.correlated_ask.CorrelatedAsk`
 outside this router so zero-pack chats are observed the same way.
@@ -20,7 +20,15 @@ from application.contracts import AskRequest, AskResponse, Citation, InvokeToolR
 from application.errors import InsufficientEvidenceError
 from application.grounded_rag_policy import INSUFFICIENT_KNOWLEDGE_ANSWER
 from application.observability import current_request_id, log_operation
+from application.turn_routing import (
+    RoutingDecision,
+    RoutingKind,
+    TurnRouter,
+    TurnRoutingRequest,
+    WorkflowSignal,
+)
 from composition.software_delivery_tools import SoftwareDeliveryRunView
+from composition.workflow_signals import clarification_answer_for
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +44,9 @@ def _merge_run(
     hit_count: int | None = None,
     citation_count: int | None = None,
     response_style: object = None,
+    intent: str | None = None,
+    routing_confidence: float | None = None,
+    ambiguous: bool | None = None,
 ) -> RunMeta:
     """Overlay route fields onto an existing or empty ``RunMeta``."""
     base = run if run is not None else RunMeta()
@@ -57,11 +68,25 @@ def _merge_run(
     style_value = getattr(response_style, "value", response_style)
     if isinstance(style_value, str) and style_value.strip():
         updates["response_style"] = style_value
+    if intent is not None:
+        updates["intent"] = intent
+    if routing_confidence is not None:
+        updates["routing_confidence"] = routing_confidence
+    if ambiguous is not None:
+        updates["ambiguous"] = ambiguous
     return replace(base, **updates)
 
 
 def _tool_names(outputs: Sequence[InvokeToolResponse]) -> tuple[str, ...]:
     return tuple(output.tool_name for output in outputs)
+
+
+def _routing_fields(decision: RoutingDecision) -> dict[str, object]:
+    return {
+        "intent": decision.kind.value,
+        "routing_confidence": decision.routing_confidence,
+        "ambiguous": decision.ambiguous,
+    }
 
 
 class GroundedAsk(Protocol):
@@ -123,18 +148,23 @@ class ToolRunner(Protocol):
 
 
 SelectToolIntent = Callable[[str], ToolSelection | None]
+TestDesignHandoffBuilder = Callable[[AskRequest], object | None]
+ClarificationContextStore = Callable[[str | None], Mapping[str, object] | None]
 
 
 class ToolAugmentedAsk:
-    """Route a chat query to a domain workflow, or to grounded RAG.
+    """Route a chat query via :class:`TurnRouter`, then execute the path.
 
     Args:
-        ask (GroundedAsk): The ordinary grounded path, used verbatim whenever no
-            intent matches.
-        runner (ToolRunner): Retrieves evidence and runs the tool chain for a
-            matched generate/risk intent.
-        select (SelectToolIntent): The pack's deterministic intent policy.
-        pack_id (str | None): Pack identifier logged on tool routes.
+        ask: Grounded RAG path.
+        runner: Tool/workflow runner for ``tool_workflow`` (Drive export).
+        signals: Injected workflow probes (Test Design, Drive, …).
+        ask_general: Labelled non-RAG path for ``general_answer``.
+        pack_id: Pack identifier logged on tool routes.
+        build_test_design_handoff: Builds handoff view after ``test_design`` ready.
+        select: Legacy intent selector used only when ``signals`` is empty
+            (unit-test compat for pre-router scaffolding doubles).
+        clarification_context_lookup: Optional structured prior clarify context.
     """
 
     def __init__(
@@ -142,71 +172,346 @@ class ToolAugmentedAsk:
         ask: GroundedAsk,
         *,
         runner: ToolRunner,
-        select: SelectToolIntent,
+        signals: Sequence[WorkflowSignal] = (),
+        ask_general: GroundedAsk | None = None,
         pack_id: str | None = None,
+        build_test_design_handoff: TestDesignHandoffBuilder | None = None,
+        select: SelectToolIntent | None = None,
+        clarification_context_lookup: ClarificationContextStore | None = None,
     ) -> None:
         self._ask = ask
         self._runner = runner
-        self._select = select
+        self._ask_general = ask_general
         self._pack_id = pack_id
+        self._build_test_design_handoff = build_test_design_handoff
+        self._select = select
+        self._clarification_context_lookup = clarification_context_lookup
+        self._router = TurnRouter(signals=signals)
+        self._use_router = bool(signals) or ask_general is not None
         self._pending_run_view: SoftwareDeliveryRunView | None = None
+        self._pending_workflow_action: object | None = None
+        self._pending_clarification_context: Mapping[str, object] | None = None
 
     def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
-        """Return and clear the typed view from the last tools-path execute.
-
-        Carrier beside ``AskResponse``: presentation reads this after ``execute``
-        so typed views never enter the application contract.
-        """
+        """Return and clear the typed view from the last tools-path execute."""
         view = self._pending_run_view
         self._pending_run_view = None
         return view
+
+    def consume_workflow_action(self) -> object | None:
+        """Return and clear a Test Design (or similar) handoff action."""
+        action = self._pending_workflow_action
+        self._pending_workflow_action = None
+        return action
+
+    def consume_clarification_context(self) -> Mapping[str, object] | None:
+        """Return structured clarification context from the last clarify turn."""
+        context = self._pending_clarification_context
+        self._pending_clarification_context = None
+        return context
 
     def execute(
         self,
         request: AskRequest,
         settings: Mapping[str, object] | None = None,
     ) -> AskResponse:
-        """Run the workflow the query names, or fall through to grounded RAG.
-
-        ``request.history`` is deliberately not forwarded to the tool path: it is
-        grounded in retrieved evidence, not in the conversation.
-
-        An empty corpus answers with the grounded path's own
-        insufficient-knowledge sentence rather than a tool-flavoured variant —
-        one vocabulary for "I don't know", whichever route the turn took.
-
-        Selection runs only in General mode (``prompt_key is None``). A selected
-        task prompt delegates the original ``AskRequest``, history, and
-        generation settings unchanged to ``AskKnowledge`` — routing never moves
-        into the presentation UI.
-
-        Delegation to ``AskKnowledge`` logs ``outcome=delegated``; the nested ask
-        emits the terminal ``success`` / ``insufficient`` / ``error`` event.
-        Tool paths log their own terminal outcomes.
-        """
+        """Apply task_prompt pre-rule, then route and dispatch."""
         self._pending_run_view = None
+        self._pending_workflow_action = None
+        self._pending_clarification_context = None
+
         if request.prompt_key is not None:
-            response = self._ask.execute(request, settings)
+            return self._delegate_task_prompt(request, settings)
+
+        if self._use_router:
+            return self._execute_routed(request, settings)
+        return self._execute_legacy_select(request, settings)
+
+    def _delegate_task_prompt(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
+        response = self._ask.execute(request, settings)
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="delegated",
+            path="task_prompt",
+            prompt_key=request.prompt_key,
+        )
+        return AskResponse(
+            answer=response.answer,
+            citations=response.citations,
+            tool_outputs=response.tool_outputs,
+            generation_hits=response.generation_hits,
+            run=_merge_run(
+                response.run,
+                outcome=(
+                    response.run.outcome
+                    if response.run and response.run.outcome
+                    else "success"
+                ),
+                path="task_prompt",
+                prompt_key=request.prompt_key,
+                intent=None,
+            ),
+        )
+
+    def _execute_routed(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
+        prior = None
+        if self._clarification_context_lookup is not None:
+            prior = self._clarification_context_lookup(request.conversation_id)
+        decision = self._router.classify(
+            TurnRoutingRequest(
+                query=request.query,
+                history=request.history,
+                clarification_context=prior,
+                conversation_id=request.conversation_id,
+            )
+        )
+        if decision.kind is RoutingKind.CLARIFICATION:
+            return self._clarification_response(decision, request)
+        if decision.kind is RoutingKind.GENERAL_ANSWER:
+            return self._general_response(decision, request, settings)
+        if decision.kind is RoutingKind.TOOL_WORKFLOW:
+            return self._tool_workflow_response(decision, request, settings)
+        return self._grounded_response(decision, request, settings)
+
+    def _clarification_response(
+        self,
+        decision: RoutingDecision,
+        request: AskRequest,
+    ) -> AskResponse:
+        answer = clarification_answer_for(decision.reason, decision.workflow_hint)
+        self._pending_clarification_context = decision.clarification_context
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="success",
+            path="clarification",
+            intent=decision.kind.value,
+            reason=decision.reason,
+        )
+        return AskResponse(
+            answer=answer,
+            citations=(),
+            generation_hits=(),
+            run=_merge_run(
+                None,
+                outcome="success",
+                path="clarification",
+                response_style=request.response_style,
+                **_routing_fields(decision),
+            ),
+        )
+
+    def _general_response(
+        self,
+        decision: RoutingDecision,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
+        if self._ask_general is None:
+            return self._grounded_response(decision, request, settings)
+        response = self._ask_general.execute(request, settings)
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="success",
+            path="general_answer",
+            intent=decision.kind.value,
+        )
+        return AskResponse(
+            answer=response.answer,
+            citations=(),
+            generation_hits=(),
+            run=_merge_run(
+                response.run,
+                outcome="success",
+                path="general_answer",
+                response_style=request.response_style,
+                **_routing_fields(decision),
+            ),
+        )
+
+    def _grounded_response(
+        self,
+        decision: RoutingDecision,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
+        response = self._ask.execute(request, settings)
+        log_operation(
+            logger, operation="ask_turn", outcome="delegated", path="rag"
+        )
+        return AskResponse(
+            answer=response.answer,
+            citations=response.citations,
+            tool_outputs=response.tool_outputs,
+            generation_hits=response.generation_hits,
+            run=_merge_run(
+                response.run,
+                outcome=(
+                    response.run.outcome
+                    if response.run and response.run.outcome
+                    else "success"
+                ),
+                path="rag",
+                **_routing_fields(decision),
+            ),
+        )
+
+    def _tool_workflow_response(
+        self,
+        decision: RoutingDecision,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
+        del settings
+        if decision.workflow_hint == "test_design":
+            return self._test_design_handoff(decision, request)
+        return self._run_tools(decision, request)
+
+    def _test_design_handoff(
+        self,
+        decision: RoutingDecision,
+        request: AskRequest,
+    ) -> AskResponse:
+        if self._build_test_design_handoff is None:
+            return AskResponse(
+                answer=clarification_answer_for("tool_unavailable", "test_design"),
+                citations=(),
+                generation_hits=(),
+                run=_merge_run(
+                    None,
+                    outcome="success",
+                    path="clarification",
+                    intent=RoutingKind.CLARIFICATION.value,
+                    routing_confidence=decision.routing_confidence,
+                    ambiguous=False,
+                    response_style=request.response_style,
+                ),
+            )
+        handoff = self._build_test_design_handoff(request)
+        if handoff is None:
+            return AskResponse(
+                answer=clarification_answer_for("tool_unavailable", "test_design"),
+                citations=(),
+                generation_hits=(),
+                run=_merge_run(
+                    None,
+                    outcome="success",
+                    path="clarification",
+                    intent=RoutingKind.CLARIFICATION.value,
+                    routing_confidence=decision.routing_confidence,
+                    ambiguous=False,
+                    response_style=request.response_style,
+                ),
+            )
+        action = getattr(handoff, "action", None)
+        answer = getattr(handoff, "answer", "")
+        self._pending_workflow_action = action
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="success",
+            path="tools",
+            intent=decision.kind.value,
+            pack=self._pack_id,
+        )
+        return AskResponse(
+            answer=answer,
+            citations=(),
+            generation_hits=(),
+            run=_merge_run(
+                None,
+                outcome="success",
+                path="tools",
+                pack=self._pack_id,
+                response_style=request.response_style,
+                **_routing_fields(decision),
+            ),
+        )
+
+    def _run_tools(
+        self,
+        decision: RoutingDecision,
+        request: AskRequest,
+    ) -> AskResponse:
+        try:
+            outcome = self._runner.run(
+                request.query,
+                generate_tests=True,
+                output_style="steps",
+                conversation_id=request.conversation_id,
+                response_style=request.response_style,
+            )
+        except InsufficientEvidenceError:
             log_operation(
                 logger,
                 operation="ask_turn",
-                outcome="delegated",
-                path="task_prompt",
-                prompt_key=request.prompt_key,
+                outcome="insufficient",
+                path="tools",
+                pack=self._pack_id,
             )
             return AskResponse(
-                answer=response.answer,
-                citations=response.citations,
-                tool_outputs=response.tool_outputs,
-                generation_hits=response.generation_hits,
+                answer=INSUFFICIENT_KNOWLEDGE_ANSWER,
+                generation_hits=(),
                 run=_merge_run(
-                    response.run,
-                    outcome=response.run.outcome if response.run and response.run.outcome else "success",
-                    path="task_prompt",
-                    prompt_key=request.prompt_key,
+                    None,
+                    outcome="insufficient",
+                    path="tools",
+                    pack=self._pack_id,
+                    hit_count=0,
+                    citation_count=0,
+                    response_style=request.response_style,
+                    **_routing_fields(decision),
                 ),
             )
-        selection = self._select(request.query)
+        log_operation(
+            logger,
+            operation="ask_turn",
+            outcome="success",
+            path="tools",
+            pack=self._pack_id,
+        )
+        self._pending_run_view = outcome.run_view
+        if (
+            outcome.pending_approval is not None
+            and outcome.run_view is not None
+            and getattr(outcome.run_view, "pending_approval", None) is None
+        ):
+            self._pending_run_view = replace(
+                outcome.run_view, pending_approval=outcome.pending_approval
+            )
+        return AskResponse(
+            answer=outcome.answer,
+            citations=outcome.citations,
+            tool_outputs=outcome.tool_outputs,
+            generation_hits=(),
+            run=_merge_run(
+                outcome.run,
+                outcome="success",
+                path="tools",
+                pack=self._pack_id,
+                tools=_tool_names(outcome.tool_outputs),
+                response_style=request.response_style,
+                **_routing_fields(decision),
+            ),
+        )
+
+    def _execute_legacy_select(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None,
+    ) -> AskResponse:
+        """Pre-router select→tools else RAG path (unit-test doubles)."""
+        selection = None if self._select is None else self._select(request.query)
         if selection is None:
             response = self._ask.execute(request, settings)
             log_operation(
@@ -219,7 +524,11 @@ class ToolAugmentedAsk:
                 generation_hits=response.generation_hits,
                 run=_merge_run(
                     response.run,
-                    outcome=response.run.outcome if response.run and response.run.outcome else "success",
+                    outcome=(
+                        response.run.outcome
+                        if response.run and response.run.outcome
+                        else "success"
+                    ),
                     path="rag",
                 ),
             )
@@ -266,8 +575,6 @@ class ToolAugmentedAsk:
             and outcome.run_view is not None
             and getattr(outcome.run_view, "pending_approval", None) is None
         ):
-            from dataclasses import replace
-
             self._pending_run_view = replace(
                 outcome.run_view, pending_approval=outcome.pending_approval
             )

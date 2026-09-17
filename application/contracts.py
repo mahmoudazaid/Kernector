@@ -317,6 +317,12 @@ class RunMeta:
             exception message.
         response_style (str | None): Allowlisted wording preset applied for
             this turn (``formal`` / ``friendly`` / ``concise``), when any.
+        intent (str | None): Routing kind when a turn router decided the path
+            (``tool_workflow`` / ``clarification`` / ``grounded_answer`` /
+            ``general_answer``).
+        routing_confidence (float | None): Fixed heuristic routing score
+            (not a calibrated probability).
+        ambiguous (bool | None): Whether routing treated the turn as ambiguous.
     """
 
     model: str | None = None
@@ -335,6 +341,9 @@ class RunMeta:
     tools: Sequence[str] = ()
     error_type: str | None = None
     response_style: str | None = None
+    intent: str | None = None
+    routing_confidence: float | None = None
+    ambiguous: bool | None = None
 
     def __post_init__(self) -> None:
         if self.model is not None:
@@ -370,10 +379,39 @@ class RunMeta:
             "prompt_key",
             "source_type",
             "error_type",
+            "intent",
         ):
             value = getattr(self, name)
             if value is not None:
                 _require_text(value, name)
+        if self.intent is not None:
+            allowed_intents = {
+                "tool_workflow",
+                "clarification",
+                "grounded_answer",
+                "general_answer",
+            }
+            if self.intent not in allowed_intents:
+                raise ApplicationValidationError(
+                    "intent must be one of "
+                    f"{sorted(allowed_intents)}, got {self.intent!r}"
+                )
+        if self.routing_confidence is not None:
+            if not isinstance(self.routing_confidence, float) or isinstance(
+                self.routing_confidence, bool
+            ):
+                raise ApplicationValidationError(
+                    "routing_confidence must be a float, "
+                    f"got {type(self.routing_confidence).__name__}"
+                )
+            if not 0.0 <= self.routing_confidence <= 1.0:
+                raise ApplicationValidationError(
+                    "routing_confidence must be between 0 and 1"
+                )
+        if self.ambiguous is not None and not isinstance(self.ambiguous, bool):
+            raise ApplicationValidationError(
+                f"ambiguous must be a bool, got {type(self.ambiguous).__name__}"
+            )
         if self.response_style is not None:
             _require_text(self.response_style, "response_style")
             try:

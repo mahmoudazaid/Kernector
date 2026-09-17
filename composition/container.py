@@ -3668,19 +3668,16 @@ def build_tool_augmented_ask(
     model: str | None = None,
     base_url: str | None = None,
     short_term_memory: object | None = None,
+    client_source_locator: object | None = None,
 ) -> GroundedAsk:
-    """Wire grounded ask, adding chat-time tool selection when a pack is enabled.
+    """Wire grounded ask with TurnRouter, AskGeneral, and pack workflow signals.
 
     Always wraps the result in :class:`CorrelatedAsk` so every chat turn — pack
     enabled or not — shares one ``request_id`` across ask / retrieve / tools.
 
-    With no pack enabled the inner ask is ``build_ask_knowledge``. The gate reads
-    settings only, so a disabled pack is never imported.
-
-    When ``vector_store`` is omitted and a software-delivery pack is enabled,
-    one store is built and shared by grounded ask and pack retrieve so hybrid
-    BM25 hydration runs at most once. FastAPI should inject a
-    process-cached store so uploads mutate the same DualWrite index.
+    ``task_prompt`` short-circuits before the router. Pack workflow detection is
+    injected as WorkflowSignals; handoffs/actions are built after a ready
+    ``tool_workflow`` decision.
 
     Args:
         settings (Settings): Runtime settings including enabled tool packs.
@@ -3694,15 +3691,27 @@ def build_tool_augmented_ask(
             :class:`~composition.short_term_memory.ShortTermMemoryRuntime`.
             When omitted and the agent loop is on, a fresh runtime is built for
             this stack (tests should inject a shared runtime for continuity).
+        client_source_locator: Optional client Issue locator for Test Design
+            handoff mismatch checks.
 
     Returns:
-        GroundedAsk: ``CorrelatedAsk`` around ``AskKnowledge`` or
-        ``ToolAugmentedAsk``.
+        GroundedAsk: ``CorrelatedAsk`` around ``ToolAugmentedAsk``.
     """
+    from application.ask_general import AskGeneral
+    from composition.workflow_signals import (
+        build_drive_export_workflow_signal,
+        build_test_design_workflow_signal,
+    )
+
     if chat_model is None:
         chat_model = build_chat_model(
             settings, provider=provider, model=model, base_url=base_url
         )
+    ask_general = AskGeneral(
+        build_ask_service(chat_model),
+        max_input_length=settings.max_input_length,
+    )
+
     if not software_delivery_tools_enabled(settings):
         ask = build_ask_knowledge(
             settings,
@@ -3710,7 +3719,19 @@ def build_tool_augmented_ask(
             vector_store=vector_store,
             prompt_repository=prompt_repository,
         )
-        return CorrelatedAsk(ask)
+
+        class _ToolsUnavailableRunner:
+            def run(self, *args, **kwargs):  # noqa: ANN002, ANN003
+                raise RuntimeError("domain tools are not enabled")
+
+        return CorrelatedAsk(
+            ToolAugmentedAsk(
+                ask,
+                runner=_ToolsUnavailableRunner(),
+                signals=(),
+                ask_general=ask_general,
+            )
+        )
 
     # Pack path uses grounded ask and a second retrieve; share one store so
     # hybrid BM25 hydration runs at most once when the caller did not inject.
@@ -3723,9 +3744,6 @@ def build_tool_augmented_ask(
         prompt_repository=prompt_repository,
     )
 
-    import importlib
-
-    registration = importlib.import_module("packs.software_delivery.registration")
     # Tools invoke ChatModel through the opaque boundary; record safe RunMeta so
     # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
     # Agent loop accumulates ReAct model turns plus any tool ChatModel calls.
@@ -3733,6 +3751,7 @@ def build_tool_augmented_ask(
         chat_model, accumulate=settings.domain_tools.agent_loop
     )
 
+    drafts = None
     if settings.domain_tools.agent_loop:
         from application.untrusted_text import agent_tool_system_prompt
         from composition.short_term_memory import (
@@ -3827,15 +3846,31 @@ def build_tool_augmented_ask(
         allow_empty_evidence=settings.domain_tools.agent_loop,
     )
 
-    select = registration.build_chat_intent_selector(
-        export_intent_enabled=settings.domain_tools.agent_loop
+    from composition.test_design import build_test_design_handoff_from_request
+
+    signals = (
+        build_test_design_workflow_signal(enabled=True),
+        build_drive_export_workflow_signal(
+            export_enabled=settings.domain_tools.agent_loop,
+            drafts=drafts,
+        ),
     )
+
+    def build_handoff(request):
+        return build_test_design_handoff_from_request(
+            settings=settings,
+            request=request,
+            source_locator=client_source_locator,  # type: ignore[arg-type]
+        )
+
     return CorrelatedAsk(
         ToolAugmentedAsk(
             ask,
             runner=runner,
-            select=select,
+            signals=signals,
+            ask_general=ask_general,
             pack_id="software-delivery",
+            build_test_design_handoff=build_handoff,
         )
     )
 

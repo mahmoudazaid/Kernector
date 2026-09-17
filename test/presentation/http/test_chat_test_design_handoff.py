@@ -1,12 +1,21 @@
-"""Chat ask bypasses RAG when Test Design handoff applies."""
+"""Chat ask routes Test Design via TurnRouter (no presentation pre-handoff)."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
 
+from application.contracts import AskRequest, AskResponse
+from composition.test_design import build_test_design_handoff_from_request
+from composition.tool_augmented_ask import ToolAugmentedAsk
+from composition.workflow_signals import (
+    TEST_DESIGN_CLARIFY_ANSWER,
+    build_drive_export_workflow_signal,
+    build_test_design_workflow_signal,
+)
 from infrastructure.config import DomainToolSettings
 from presentation.http.app import create_app
 from presentation.http.deps import get_ask_factory, get_settings
@@ -14,10 +23,66 @@ from presentation.http.deps import get_ask_factory, get_settings
 
 class _ExplodingAsk:
     def execute(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
-        raise AssertionError("ask.execute must not run on Test Design handoff")
+        raise AssertionError("grounded/general ask must not run on this path")
 
 
-def test_test_design_handoff_does_not_call_ask_execute() -> None:
+class _ExplodingRunner:
+    def run(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("tool runner must not run on this path")
+
+
+class _RecordingAsk:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def execute(
+        self,
+        request: AskRequest,
+        settings: Mapping[str, object] | None = None,
+    ) -> AskResponse:
+        del request, settings
+        self.calls += 1
+        return AskResponse(answer="grounded")
+
+
+def _routed_factory(
+    settings,
+    *,
+    grounded: object | None = None,
+    export_enabled: bool = False,
+    draft_ready: bool = False,
+):
+    grounded_ask = grounded if grounded is not None else _ExplodingAsk()
+
+    def factory(runtime=None, *, source_locator=None):  # noqa: ANN001
+        del runtime
+
+        def build_handoff(request: AskRequest):
+            return build_test_design_handoff_from_request(
+                settings=settings,
+                request=request,
+                source_locator=source_locator,
+            )
+
+        return ToolAugmentedAsk(
+            grounded_ask,  # type: ignore[arg-type]
+            runner=_ExplodingRunner(),
+            signals=(
+                build_test_design_workflow_signal(enabled=True),
+                build_drive_export_workflow_signal(
+                    export_enabled=export_enabled,
+                    draft_ready=lambda _cid: draft_ready,
+                ),
+            ),
+            ask_general=_ExplodingAsk(),
+            pack_id="software-delivery",
+            build_test_design_handoff=build_handoff,
+        )
+
+    return factory
+
+
+def test_test_design_ready_handoff_does_not_call_grounded_ask() -> None:
     base = get_settings()
     settings = replace(
         base,
@@ -25,9 +90,7 @@ def test_test_design_handoff_does_not_call_ask_execute() -> None:
     )
     app = create_app(cors_origins=())
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_ask_factory] = lambda: (
-        lambda _runtime=None: _ExplodingAsk()
-    )
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(settings)
     client = TestClient(app)
     response = client.post(
         "/api/v1/chat/ask",
@@ -44,7 +107,8 @@ def test_test_design_handoff_does_not_call_ask_execute() -> None:
         "locator": "mahmoudazaid/Kernector#293",
     }
     assert body["citations"] == []
-    assert "ask.execute" not in body["answer"]
+    assert body["run"]["intent"] == "tool_workflow"
+    assert body["run"]["path"] == "tools"
 
 
 def test_test_design_handoff_rejects_mismatched_source_locator() -> None:
@@ -55,9 +119,7 @@ def test_test_design_handoff_rejects_mismatched_source_locator() -> None:
     )
     app = create_app(cors_origins=())
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_ask_factory] = lambda: (
-        lambda _runtime=None: _ExplodingAsk()
-    )
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(settings)
     client = TestClient(app)
     response = client.post(
         "/api/v1/chat/ask",
@@ -74,18 +136,8 @@ def test_test_design_handoff_rejects_mismatched_source_locator() -> None:
     assert response.json()["code"] == "validation_error"
 
 
-class _RecordingAsk:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def execute(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
-        from application.contracts import AskResponse
-
-        self.calls += 1
-        return AskResponse(answer="grounded")
-
-
-def _pack_client(*, ask_factory):
+def test_issue_304_command_without_issue_clarifies_without_rag() -> None:
+    ask = _RecordingAsk()
     base = get_settings()
     settings = replace(
         base,
@@ -93,13 +145,120 @@ def _pack_client(*, ask_factory):
     )
     app = create_app(cors_origins=())
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_ask_factory] = ask_factory
-    return TestClient(app)
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "design test", "history": []},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert ask.calls == 0
+    assert body["action"] is None
+    assert body["answer"] == TEST_DESIGN_CLARIFY_ANSWER
+    assert body["run"]["intent"] == "clarification"
+    assert body["run"]["path"] == "clarification"
+
+
+def test_issue_310_partial_export_clarifies_without_rag() -> None:
+    ask = _RecordingAsk()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(
+            enabled_packs=("software-delivery",),
+            agent_loop=True,
+        ),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask, export_enabled=True, draft_ready=True
+    )
+    client = TestClient(app)
+    for query in ("export", "export the selected tests", "send this to Drive"):
+        ask.calls = 0
+        response = client.post(
+            "/api/v1/chat/ask",
+            json={"query": query, "history": [], "conversation_id": "c1"},
+        )
+        assert response.status_code == 200, query
+        body = response.json()
+        assert ask.calls == 0, query
+        assert body["run"]["intent"] == "clarification"
+        assert body["run"]["path"] == "clarification"
+        assert "Google Drive" in body["answer"]
+
+
+def test_issue_310_clear_export_missing_payload_clarifies_without_rag() -> None:
+    ask = _RecordingAsk()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(
+            enabled_packs=("software-delivery",),
+            agent_loop=True,
+        ),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask, export_enabled=True, draft_ready=False
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "export to google drive",
+            "history": [],
+            "conversation_id": "c1",
+        },
+    )
+    assert response.status_code == 200
+    assert ask.calls == 0
+    assert response.json()["run"]["intent"] == "clarification"
+
+
+def test_disabled_drive_export_clarifies_without_rag() -> None:
+    ask = _RecordingAsk()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(
+            enabled_packs=("software-delivery",),
+            agent_loop=False,
+        ),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask, export_enabled=False, draft_ready=True
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "export to google drive", "history": []},
+    )
+    assert response.status_code == 200
+    assert ask.calls == 0
+    assert response.json()["run"]["intent"] == "clarification"
 
 
 def test_test_design_discussion_with_multiple_issues_falls_through_to_ask() -> None:
     ask = _RecordingAsk()
-    client = _pack_client(ask_factory=lambda: (lambda _runtime=None: ask))
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask
+    )
+    client = TestClient(app)
     response = client.post(
         "/api/v1/chat/ask",
         json={
@@ -113,9 +272,15 @@ def test_test_design_discussion_with_multiple_issues_falls_through_to_ask() -> N
 
 
 def test_test_design_explicit_command_with_multiple_issues_returns_422() -> None:
-    client = _pack_client(
-        ask_factory=lambda: (lambda _runtime=None: _ExplodingAsk())
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
     )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(settings)
+    client = TestClient(app)
     response = client.post(
         "/api/v1/chat/ask",
         json={
@@ -133,15 +298,24 @@ def test_test_design_explicit_command_with_multiple_issues_returns_422() -> None
         "How does test design work in this repo?",
         "Who owns test design here?",
         "What do the docs say about test design?",
-        "Design tests for 293",
         "Can you explain the coverage plan we agreed on last sprint?",
     ],
 )
-def test_test_design_topical_phrase_without_issue_falls_through_to_ask(
+def test_test_design_topical_phrase_falls_through_to_grounded_ask(
     query: str,
 ) -> None:
     ask = _RecordingAsk()
-    client = _pack_client(ask_factory=lambda: (lambda _runtime=None: ask))
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask
+    )
+    client = TestClient(app)
     response = client.post(
         "/api/v1/chat/ask",
         json={"query": query, "history": []},
@@ -149,3 +323,25 @@ def test_test_design_topical_phrase_without_issue_falls_through_to_ask(
     assert response.status_code == 200
     assert ask.calls == 1
     assert response.json().get("action") is None
+
+
+def test_bare_issue_number_command_clarifies_not_rag() -> None:
+    ask = _RecordingAsk()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings, grounded=ask
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "Design tests for 293", "history": []},
+    )
+    assert response.status_code == 200
+    assert ask.calls == 0
+    assert response.json()["run"]["intent"] == "clarification"
