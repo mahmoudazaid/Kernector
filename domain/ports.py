@@ -232,6 +232,7 @@ class ToolCallingAgent(Protocol):
         *,
         max_steps: int,
         conversation_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> AgentTurnResult:
         """Run the agent for ``goal`` with ``tools``, stopping by ``max_steps``.
 
@@ -239,6 +240,10 @@ class ToolCallingAgent(Protocol):
         vendor SDK objects. Optional ``conversation_id`` selects short-term
         thread memory when the adapter is configured with a checkpointer;
         workspace binding stays in composition/infrastructure.
+
+        Optional ``system_prompt`` overrides the adapter's base system text for
+        this invocation only (e.g. allowlisted response-style composition).
+        Omitting it keeps the adapter's configured base prompt.
 
         Raises:
             ProviderError: The model or agent runtime failed.

@@ -3,11 +3,14 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 
 export type SoftSelectProps = {
   id: string;
@@ -15,6 +18,13 @@ export type SoftSelectProps = {
   value: string;
   options: string[];
   onChange: (value: string) => void;
+  /**
+   * ``top`` opens above the trigger. With ``fixed``, the menu is portaled so
+   * overflow:hidden ancestors cannot clip options (chat composer).
+   */
+  menuPlacement?: "bottom" | "top";
+  /** Escape clipping parents by positioning against the viewport. */
+  menuStrategy?: "absolute" | "fixed";
 };
 
 function indexOfOption(options: string[], value: string): number {
@@ -28,11 +38,15 @@ export function SoftSelect({
   value,
   options,
   onChange,
+  menuPlacement = "bottom",
+  menuStrategy = "absolute",
 }: SoftSelectProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() =>
     indexOfOption(options, value),
   );
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
+  const [portalReady, setPortalReady] = useState(false);
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -40,6 +54,54 @@ export function SoftSelect({
   const seedRef = useRef({ options, value });
   seedRef.current = { options, value };
   const typeaheadRef = useRef({ buffer: "", at: 0 });
+  const useFixed = menuStrategy === "fixed";
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open || !useFixed) {
+      setMenuStyle(undefined);
+      return;
+    }
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+
+    function placeMenu() {
+      const node = triggerRef.current;
+      if (!node) {
+        return;
+      }
+      const rect = node.getBoundingClientRect();
+      const gap = 6;
+      const next: CSSProperties = {
+        position: "fixed",
+        left: rect.left,
+        width: Math.max(rect.width, 10.5 * 16),
+        zIndex: 80,
+        top: "auto",
+        bottom: "auto",
+        right: "auto",
+      };
+      if (menuPlacement === "top") {
+        next.bottom = window.innerHeight - rect.top + gap;
+      } else {
+        next.top = rect.bottom + gap;
+      }
+      setMenuStyle(next);
+    }
+
+    placeMenu();
+    window.addEventListener("resize", placeMenu);
+    window.addEventListener("scroll", placeMenu, true);
+    return () => {
+      window.removeEventListener("resize", placeMenu);
+      window.removeEventListener("scroll", placeMenu, true);
+    };
+  }, [open, useFixed, menuPlacement, value, options]);
 
   useEffect(() => {
     if (!open) {
@@ -47,7 +109,7 @@ export function SoftSelect({
     }
     const { options: seededOptions, value: seededValue } = seedRef.current;
     setActiveIndex(indexOfOption(seededOptions, seededValue));
-    listRef.current?.focus();
+    listRef.current?.focus({ preventScroll: true });
     typeaheadRef.current = { buffer: "", at: 0 };
   }, [open]);
 
@@ -56,7 +118,7 @@ export function SoftSelect({
       return;
     }
     const option = document.getElementById(`${listId}-${activeIndex}`);
-    option?.scrollIntoView?.({ block: "nearest" });
+    option?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [open, activeIndex, listId]);
 
   useEffect(() => {
@@ -65,9 +127,11 @@ export function SoftSelect({
     }
 
     function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || listRef.current?.contains(target)) {
+        return;
       }
+      setOpen(false);
     }
 
     document.addEventListener("pointerdown", onPointerDown);
@@ -75,7 +139,7 @@ export function SoftSelect({
   }, [open]);
 
   function focusTrigger() {
-    triggerRef.current?.focus();
+    triggerRef.current?.focus({ preventScroll: true });
   }
 
   function choose(next: string) {
@@ -85,9 +149,14 @@ export function SoftSelect({
   }
 
   function onBlur(event: FocusEvent<HTMLDivElement>) {
-    if (!rootRef.current?.contains(event.relatedTarget as Node)) {
-      setOpen(false);
+    const next = event.relatedTarget as Node | null;
+    if (
+      rootRef.current?.contains(next) ||
+      listRef.current?.contains(next)
+    ) {
+      return;
     }
+    setOpen(false);
   }
 
   function moveActive(delta: number) {
@@ -215,6 +284,49 @@ export function SoftSelect({
   const activeOptionId =
     open && options.length > 0 ? `${listId}-${activeIndex}` : undefined;
 
+  const menu = open ? (
+    <ul
+      ref={listRef}
+      id={listId}
+      className={[
+        "kern-select-menu",
+        menuPlacement === "top" ? "kern-select-menu--top" : "",
+        useFixed ? "kern-select-menu--fixed" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      role="listbox"
+      tabIndex={-1}
+      aria-labelledby={id}
+      aria-activedescendant={activeOptionId}
+      onKeyDown={onListKeyDown}
+      style={useFixed ? menuStyle : undefined}
+    >
+      {options.map((option, index) => {
+        const selected = option === value;
+        const active = index === activeIndex;
+        return (
+          <li
+            key={option}
+            id={`${listId}-${index}`}
+            role="option"
+            aria-selected={selected}
+            className={[
+              "kern-select-option",
+              selected ? "is-selected" : "",
+              active ? "is-active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => choose(option)}
+          >
+            {option}
+          </li>
+        );
+      })}
+    </ul>
+  ) : null;
+
   return (
     <div className="kern-settings-field">
       <label htmlFor={id}>{label}</label>
@@ -234,41 +346,11 @@ export function SoftSelect({
           <span className="kern-select-value">{value}</span>
           <span className="kern-select-chevron" aria-hidden="true" />
         </button>
-        {open ? (
-          <ul
-            ref={listRef}
-            id={listId}
-            className="kern-select-menu"
-            role="listbox"
-            tabIndex={-1}
-            aria-labelledby={id}
-            aria-activedescendant={activeOptionId}
-            onKeyDown={onListKeyDown}
-          >
-            {options.map((option, index) => {
-              const selected = option === value;
-              const active = index === activeIndex;
-              return (
-                <li
-                  key={option}
-                  id={`${listId}-${index}`}
-                  role="option"
-                  aria-selected={selected}
-                  className={[
-                    "kern-select-option",
-                    selected ? "is-selected" : "",
-                    active ? "is-active" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => choose(option)}
-                >
-                  {option}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+        {useFixed
+          ? portalReady && menu
+            ? createPortal(menu, document.body)
+            : null
+          : menu}
       </div>
     </div>
   );

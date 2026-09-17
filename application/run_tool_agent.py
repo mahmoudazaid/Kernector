@@ -23,6 +23,7 @@ class RunToolAgent:
         *,
         max_steps: int,
         conversation_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> AgentTurnResult:
         """Run the agent for ``goal`` with ``tools``.
 
@@ -32,6 +33,8 @@ class RunToolAgent:
             max_steps (int): Hard cap on agent model steps; must be >= 1.
             conversation_id (str | None): Optional client conversation key for
                 short-term thread memory.
+            system_prompt (str | None): Optional per-invocation system prompt
+                override (style composition). Does not mutate the agent.
 
         Returns:
             AgentTurnResult: Final text and optional step count.
@@ -56,6 +59,7 @@ class RunToolAgent:
             tools,
             max_steps=max_steps,
             conversation_id=validated_conversation,
+            system_prompt=system_prompt,
         )
 
 

@@ -32,6 +32,13 @@ const DEFAULT_TITLE_MAX = 60;
 
 export type ConversationRunStatus = "idle" | "pending" | "failed";
 
+/** UI preference; ``default`` is omitted from ``runtime.response_style``. */
+export type ConversationResponseStyle =
+  | "default"
+  | "formal"
+  | "friendly"
+  | "concise";
+
 export type Conversation = {
   id: string;
   title: string;
@@ -43,6 +50,8 @@ export type Conversation = {
   /** Owning-tab heartbeat while a run is live; null when idle/failed. */
   runHeartbeatAt: number | null;
   unread: boolean;
+  /** Per-conversation Style SoftSelect (#218). */
+  responseStyle: ConversationResponseStyle;
 };
 
 export type ConversationWrite = {
@@ -55,6 +64,7 @@ export type ConversationWrite = {
   requestStartedAt?: number | null;
   runHeartbeatAt?: number | null;
   unread?: boolean;
+  responseStyle?: ConversationResponseStyle;
 };
 
 export type ConversationPatch = {
@@ -65,6 +75,7 @@ export type ConversationPatch = {
   requestStartedAt?: number | null;
   runHeartbeatAt?: number | null;
   unread?: boolean;
+  responseStyle?: ConversationResponseStyle;
 };
 
 export type MigrateLegacyResult = {
@@ -108,6 +119,18 @@ function parseRunStatus(value: unknown): ConversationRunStatus {
     return value;
   }
   return "idle";
+}
+
+function parseResponseStyle(value: unknown): ConversationResponseStyle {
+  if (
+    value === "formal" ||
+    value === "friendly" ||
+    value === "concise" ||
+    value === "default"
+  ) {
+    return value;
+  }
+  return "default";
 }
 
 function parseMessages(value: unknown): StoredChatMessage[] {
@@ -154,6 +177,7 @@ function parseConversation(value: unknown): Conversation | null {
     requestStartedAt,
     runHeartbeatAt,
     unread: value.unread === true,
+    responseStyle: parseResponseStyle(value.responseStyle),
   };
 }
 
@@ -263,6 +287,7 @@ export function createConversation(input: ConversationWrite): Conversation {
     runHeartbeatAt:
       input.runHeartbeatAt === undefined ? null : input.runHeartbeatAt,
     unread: input.unread === true,
+    responseStyle: input.responseStyle ?? "default",
   };
   const payload = readPayload();
   payload.conversations.push(conversation);
@@ -332,6 +357,10 @@ export function updateConversation(
         ? patch.runHeartbeatAt
         : current.runHeartbeatAt,
     unread: patch.unread !== undefined ? patch.unread : current.unread,
+    responseStyle:
+      patch.responseStyle !== undefined
+        ? patch.responseStyle
+        : current.responseStyle,
     updatedAt:
       options?.touchUpdatedAt === false ? current.updatedAt : Date.now(),
   };

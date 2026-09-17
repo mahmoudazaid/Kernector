@@ -53,8 +53,9 @@ class _OrderedFakeAgent:
         *,
         max_steps: int,
         conversation_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> AgentTurnResult:
-        del goal, max_steps, conversation_id
+        del goal, max_steps, conversation_id, system_prompt
         by_name = {tool.name: tool for tool in tools}
         self.seen_tools = list(by_name)
         for name in self._tool_names:

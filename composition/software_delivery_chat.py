@@ -356,6 +356,7 @@ class PackSoftwareDeliveryChat:
         generate_tests: bool = True,
         output_style: str = "steps",
         conversation_id: str | None = None,
+        response_style: object = None,
     ) -> ToolRunOutcome:
         """Retrieve evidence for ``target``, run the chain, project the result.
 
@@ -387,6 +388,7 @@ class PackSoftwareDeliveryChat:
                     output_style=output_style,
                     invoke=recorder,
                     conversation_id=conversation_id,
+                    response_style=response_style,
                 )
             except ConfigurationError:
                 raise

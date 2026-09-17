@@ -569,3 +569,40 @@ def test_langgraph_tool_agent_blank_final_does_not_replay_prior_turn() -> None:
     assert first.content == "Turn one answer."
     assert "without a final answer" in second.content
     assert second.content != first.content
+
+
+def test_langgraph_tool_agent_applies_system_prompt_per_run_without_mutating_base() -> None:
+    from langchain_core.messages import SystemMessage
+
+    from application.response_style_policy import (
+        CONCISE_STYLE_INSTRUCTION,
+        ResponseStyle,
+        compose_agent_system,
+    )
+    from application.untrusted_text import agent_tool_system_prompt
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    base = agent_tool_system_prompt()
+    styled = compose_agent_system(base, ResponseStyle.CONCISE)
+    chat = _ScriptedChat([_ai_text("styled"), _ai_text("default")])
+    agent = LangGraphToolAgent(
+        system_prompt=base,
+        model_factory=_RecordingFactory(chat),
+    )
+
+    agent.run(
+        "goal-a",
+        [_RecordingTool()],
+        max_steps=3,
+        system_prompt=styled,
+    )
+    agent.run("goal-b", [_RecordingTool()], max_steps=3)
+
+    first_msgs = chat.invoke_messages[0]
+    second_msgs = chat.invoke_messages[1]
+    assert isinstance(first_msgs[0], SystemMessage)
+    assert first_msgs[0].content == styled
+    assert CONCISE_STYLE_INSTRUCTION in first_msgs[0].content
+    assert isinstance(second_msgs[0], SystemMessage)
+    assert second_msgs[0].content == base
+    assert CONCISE_STYLE_INSTRUCTION not in second_msgs[0].content

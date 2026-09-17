@@ -294,7 +294,7 @@
         "type": "object"
       },
       "ChatRuntimeRequest": {
-        "description": "Optional client runtime overrides from Settings localStorage (#237).",
+        "description": "Optional client runtime overrides from Settings localStorage (#237).\n\n``response_style`` is an allowlisted wording/length preset (#218). Omit or\n``null`` for Default (no style instruction). Not stored in numeric\n``settings``.",
         "properties": {
           "model": {
             "anyOf": [
@@ -329,6 +329,18 @@
               }
             ],
             "title": "Provider"
+          },
+          "response_style": {
+            "anyOf": [
+              {
+                "enum": ["formal", "friendly", "concise"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Style"
           },
           "settings": {
             "additionalProperties": {
@@ -1942,6 +1954,18 @@
               }
             ],
             "title": "Request Id"
+          },
+          "response_style": {
+            "anyOf": [
+              {
+                "enum": ["formal", "friendly", "concise"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Style"
           },
           "tools": {
             "items": {

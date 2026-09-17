@@ -10,6 +10,7 @@ export const RUN_STRING_FIELDS = [
   "outcome",
   "model",
   "pack",
+  "response_style",
 ] as const;
 
 export const RUN_NUMBER_FIELDS = [
@@ -60,6 +61,9 @@ export function runDetailLines(run: RunMeta | null | undefined): string[] {
   }
   if (run.pack) {
     lines.push(`Pack: ${run.pack}`);
+  }
+  if (run.response_style) {
+    lines.push(`Response style: ${run.response_style}`);
   }
   if (run.query_rewritten != null) {
     lines.push(`Query rewritten: ${run.query_rewritten ? "yes" : "no"}`);

@@ -243,4 +243,32 @@ describe("SoftSelect", () => {
     expect(screen.getByRole("button", { name: "Next" })).toHaveFocus();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
+
+  it("portals a fixed top menu so overflow parents cannot hide options", async () => {
+    const user = userEvent.setup();
+    render(
+      <div style={{ overflow: "hidden", height: 48 }}>
+        <SoftSelect
+          id="style"
+          label="Style"
+          value="Formal"
+          options={["Default", "Formal", "Friendly", "Concise"]}
+          onChange={() => undefined}
+          menuPlacement="top"
+          menuStrategy="fixed"
+        />
+      </div>,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Style" }));
+    const listbox = screen.getByRole("listbox");
+    expect(listbox).toHaveClass("kern-select-menu--fixed");
+    expect(listbox.parentElement).toBe(document.body);
+    expect(screen.getAllByRole("option").map((el) => el.textContent)).toEqual([
+      "Default",
+      "Formal",
+      "Friendly",
+      "Concise",
+    ]);
+  });
 });

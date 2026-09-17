@@ -10,11 +10,11 @@ from application.errors import ApplicationValidationError, InputRejectedError
 from application.grounded_rag_policy import (
     CONTEXT_CLOSE,
     CONTEXT_OPEN,
-    GROUNDED_RAG_SYSTEM,
     INSUFFICIENT_KNOWLEDGE_ANSWER,
 )
 from application.input_safety import reject_unsafe_query
 from application.observability import current_request_id, log_operation
+from application.response_style_policy import compose_grounded_system
 from application.rewrite_and_retrieve import RewriteAndRetrieveKnowledge
 from domain.knowledge import ScoredChunk
 from domain.models import Message, PromptVariant
@@ -48,7 +48,9 @@ class AskKnowledge:
     wording:
 
     ==========================  ==========================================
-    ``GROUNDED_RAG_SYSTEM``     the ``system`` argument, alone
+    ``GROUNDED_RAG_SYSTEM``     the ``system`` argument (base policy)
+    optional response_style     appended to ``system`` by application
+                                policy (wording/length only)
     retrieved chunks            a delimited message, marked untrusted
     optional task prompt        a message after the context
     ``AskRequest.query``        the final user message
@@ -58,6 +60,9 @@ class AskKnowledge:
     document ingested can choose its words. A pack prompt is author-supplied but
     still lower-trust than platform policy. Neither is concatenated into the
     system string, so neither can impersonate the policy that constrains it.
+    Allowlisted ``response_style`` is application-authored prompt data and may
+    append to the system string for one request without mutating the policy
+    constant.
 
     Generation goes through ``AskService`` rather than ``ChatModel`` directly,
     so the domain settings allowlist is applied in exactly one place.
@@ -186,6 +191,11 @@ class AskKnowledge:
                     query_rewritten=retrieved.was_rewritten,
                     citation_count=0,
                     prompt_key=request.prompt_key,
+                    response_style=(
+                        None
+                        if request.response_style is None
+                        else request.response_style.value
+                    ),
                 ),
                 generation_hits=(),
             )
@@ -195,7 +205,7 @@ class AskKnowledge:
             prelude.append(Message(role="user", content=task.system))
 
         result = self._ask_service.ask(
-            GROUNDED_RAG_SYSTEM,
+            compose_grounded_system(request.response_style),
             request.query,
             settings=settings,
             history=prelude,
@@ -214,6 +224,11 @@ class AskKnowledge:
             citation_count=len(citations),
             prompt_key=request.prompt_key,
             source_type=source_type,
+            response_style=(
+                None
+                if request.response_style is None
+                else request.response_style.value
+            ),
         )
         log_operation(
             logger,

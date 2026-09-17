@@ -4,12 +4,14 @@ Kept as a module constant so ``PROMPT_PACKS`` cannot hide it and the sidebar
 cannot offer it as a selectable Mode. Optional task prompts compose with this
 policy; they must never replace it.
 
-The policy is the *only* text that occupies the system role. Retrieved chunks
-and any selected task prompt are delivered as ordinary conversation messages —
-see ``application.ask_knowledge``. That separation is what makes the trust
-boundary structural: a rule stated in prose can be argued with by text the model
-reads later, but text that never reaches the system role cannot impersonate
-platform policy in the first place.
+The constant is the base of the system role. Allowlisted ``response_style``
+instructions may be appended for one request by
+``application.response_style_policy.compose_grounded_system`` without mutating
+this constant. Retrieved chunks and any selected task prompt are delivered as
+ordinary conversation messages — see ``application.ask_knowledge``. That
+separation is what makes the trust boundary structural: a rule stated in prose
+can be argued with by text the model reads later, but text that never reaches
+the system role cannot impersonate platform policy in the first place.
 
 Lives in ``application`` rather than beside ``REWRITE_SYSTEM`` in
 ``infrastructure/llm`` because the architecture tests forbid

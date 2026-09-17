@@ -57,7 +57,7 @@ class _RecordingRunner:
 
     def __init__(self, outcome: ToolRunOutcome) -> None:
         self._outcome = outcome
-        self.runs: list[tuple[str, bool, str]] = []
+        self.runs: list[tuple[str, bool, str, object]] = []
 
     def run(
         self,
@@ -66,8 +66,10 @@ class _RecordingRunner:
         generate_tests: bool = True,
         output_style: str = "steps",
         conversation_id: str | None = None,
+        response_style: object = None,
     ) -> ToolRunOutcome:
-        self.runs.append((target, generate_tests, output_style))
+        del conversation_id
+        self.runs.append((target, generate_tests, output_style, response_style))
         return self._outcome
 
 
@@ -155,7 +157,7 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
         )
     )
 
-    assert runner.runs == [("Create test cases for AUTH-101", True, "steps")]
+    assert runner.runs == [("Create test cases for AUTH-101", True, "steps", None)]
     assert ask.calls == []
     assert response.answer == outcome.answer
     assert response.citations == outcome.citations
@@ -254,8 +256,30 @@ def test_the_selected_style_reaches_the_chain() -> None:
         )
     )
 
-    assert runner.runs == [("Write gherkin test cases for AUTH-101", True, "gherkin")]
+    assert runner.runs == [("Write gherkin test cases for AUTH-101", True, "gherkin", None)]
 
+
+def test_response_style_reaches_the_tool_runner() -> None:
+    from application.response_style_policy import ResponseStyle
+
+    runner = _RecordingRunner(_outcome())
+    wrapper = ToolAugmentedAsk(
+        _RecordingAsk(),
+        runner=runner,
+        select=lambda query: _Selection(generate_tests=True, output_style="steps"),
+    )
+
+    wrapper.execute(
+        AskRequest(
+            query="Create test cases for AUTH-101",
+            prompt_key=None,
+            response_style=ResponseStyle.FRIENDLY,
+        )
+    )
+
+    assert runner.runs == [
+        ("Create test cases for AUTH-101", True, "steps", ResponseStyle.FRIENDLY)
+    ]
 
 def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -> None:
     """Chat must not invent a second vocabulary for "I don't know"."""
@@ -268,6 +292,7 @@ def test_no_relevant_evidence_falls_back_to_the_grounded_insufficient_answer() -
             generate_tests: bool = True,
             output_style: str = "steps",
             conversation_id: str | None = None,
+            response_style: object = None,
         ) -> ToolRunOutcome:
             raise InsufficientEvidenceError("nothing cleared the threshold")
 
@@ -548,10 +573,15 @@ def test_tool_turn_logs_path_tools_with_shared_request_id(
             generate_tests: bool = True,
             output_style: str = "steps",
             conversation_id: str | None = None,
+            response_style: object = None,
         ) -> ToolRunOutcome:
             seen["request_id"] = observability.current_request_id()
             return super().run(
-                target, generate_tests=generate_tests, output_style=output_style
+                target,
+                generate_tests=generate_tests,
+                output_style=output_style,
+                conversation_id=conversation_id,
+                response_style=response_style,
             )
 
     capturer = _RunnerCapturingId(
