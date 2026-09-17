@@ -53,6 +53,22 @@ def test_test_design_project_question_without_leading_qword_is_not_a_signal() ->
     ) is None
 
 
+def test_test_design_command_with_issue_noun_still_clarifies() -> None:
+    """#304: natural commands that name 'issue'/'docs' still clarify."""
+    signal = build_test_design_workflow_signal(enabled=True)
+    for query in (
+        "Start test design for this issue",
+        "design tests for the login issue",
+        "start test design for our repo",
+        "Design tests for the GitHub issue we discussed",
+        "plan coverage for the docs",
+    ):
+        result = signal(TurnRoutingRequest(query=query))
+        assert result is not None, query
+        assert result.readiness is WorkflowReadiness.INCOMPLETE, query
+        assert result.reason == "missing_fields", query
+
+
 def test_partial_drive_export_is_incomplete() -> None:
     signal = build_drive_export_workflow_signal(
         export_enabled=True, draft_ready=lambda _cid: True
@@ -71,14 +87,30 @@ def test_prose_mention_of_export_is_not_a_drive_signal() -> None:
     for query in (
         "What do our docs say about the export pipeline?",
         "According to the README, how is data export configured?",
+        "According to our docs, how does the export to Google Drive connector work?",
+        "What do the docs say about Google Drive export permissions?",
+        "Explain the Drive export flow in this repo",
     ):
         assert signal(TurnRoutingRequest(query=query)) is None, query
     decision = classify_turn(
-        "What do our docs say about the export pipeline?",
+        "According to our docs, how does the export to Google Drive connector work?",
         signals=(signal,),
         conversation_id="c1",
     )
     assert decision.kind == RoutingKind.GROUNDED_ANSWER
+
+
+def test_drive_docs_prose_stays_on_rag_when_export_disabled() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=False, draft_ready=lambda _cid: False
+    )
+    query = (
+        "According to our docs, how does the export to Google Drive connector work?"
+    )
+    assert signal(TurnRoutingRequest(query=query)) is None
+    decision = classify_turn(query, signals=(signal,), conversation_id="c1")
+    assert decision.kind == RoutingKind.GROUNDED_ANSWER
+    assert decision.reason != "tool_unavailable"
 
 
 def test_clear_drive_export_without_payload_is_incomplete() -> None:

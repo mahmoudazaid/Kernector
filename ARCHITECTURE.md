@@ -213,10 +213,14 @@ when the pack is off. Enable via
 (CSV; default empty). Composition loads packs through an explicit allowlist
 manifest and `importlib` only for configured IDs — a disabled pack is neither
 imported nor registered.
-``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) swaps the deterministic
-orchestrate for a LangGraph agent on the Drive-export tools path. When the
-loop is off, recognized Drive-export intent clarifies as ``tool_unavailable``
-rather than falling through to RAG.
+``SOFTWARE_DELIVERY_AGENT_LOOP`` (default ``false``) selects the LangGraph
+agent on the Drive-export ``tool_workflow`` path when the flag is on. When the
+flag is off, recognized Drive-export intent clarifies as ``tool_unavailable``
+(never RAG for clear/partial export commands; docs/prose mentions of export
+still reach grounded RAG). The deterministic ``orchestrate`` closure remains
+wired for composition provenance but is **dormant from chat**: no WorkflowSignal
+can become READY Drive-export without the agent loop, matching how #285 retired
+the create-test-cases chat-intent path.
 
 #### Multi-source tool flow
 

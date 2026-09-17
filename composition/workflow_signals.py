@@ -15,7 +15,6 @@ from application.turn_routing import (
     WorkflowReadiness,
     WorkflowSignal,
     WorkflowSignalResult,
-    has_project_cues,
 )
 from composition.test_design_errors import TestDesignValidationError
 
@@ -33,6 +32,19 @@ _TEST_DESIGN_COMMAND = re.compile(
 _TEST_DESIGN_TOPIC_QUESTION = re.compile(
     r"^\s*(how|who|what|why|where|when|can\s+you|could\s+you|please\s+explain|"
     r"explain)\b",
+    re.IGNORECASE,
+)
+
+# Docs/prose cues for Drive bail-out. Deliberately omits issue/PR/locator
+# tokens so a dual Test Design + Drive command can still conflict-clarify.
+_DRIVE_DOCS_PROSE_CUES = re.compile(
+    r"\b("
+    r"docs?|documentation|readme|codebase|this\s+project|"
+    r"in\s+this\s+repo|according\s+to|our\s+(?:docs|code|repo)|"
+    r"catalog|ingested|knowledge\s+base|"
+    r"how\s+(?:does|do|is|are|can)|what\s+(?:do|does|is|are)|"
+    r"explain|permissions|configured|connector|pipeline|flow"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -92,6 +104,16 @@ class _DraftRepository(Protocol):
 DraftReadyCheck = Callable[[str | None], bool]
 
 
+def _leading_test_design_match(query: str) -> re.Match[str] | None:
+    """Return the command match only when it is the leading imperative."""
+    match = _TEST_DESIGN_COMMAND.search(query)
+    if match is None:
+        return None
+    if query[: match.start()].strip():
+        return None
+    return match
+
+
 def _draft_has_selected_titles(draft: object | None) -> bool:
     if draft is None:
         return False
@@ -122,7 +144,10 @@ def build_test_design_workflow_signal(
         query = request.query
         if not isinstance(query, str) or not query.strip():
             return None
-        if _TEST_DESIGN_COMMAND.search(query) is None:
+        # Leading command only — embedded "test design" in docs questions stays
+        # on RAG; natural #304 phrasings ("start test design for this issue")
+        # still clarify when no Issue locator is present.
+        if _leading_test_design_match(query) is None:
             return None
         if _TEST_DESIGN_TOPIC_QUESTION.search(query) is not None:
             # Topical discussion about Test Design — not a start-workflow command.
@@ -139,10 +164,6 @@ def build_test_design_workflow_signal(
                 "Query must reference exactly one GitHub Issue"
             ) from error
         if parsed is None:
-            # Project/docs questions that mention Test Design must stay on RAG
-            # (#304 commands without an Issue still clarify when cues are absent).
-            if has_project_cues(query):
-                return None
             return WorkflowSignalResult(
                 workflow_hint="test_design",
                 readiness=WorkflowReadiness.INCOMPLETE,
@@ -190,9 +211,22 @@ def build_drive_export_workflow_signal(
         query = request.query
         if not isinstance(query, str) or not query.strip():
             return None
-        clear = _EXPORT_DRIVE_CLEAR.search(query) is not None
-        partial = (not clear) and _EXPORT_PARTIAL.search(query) is not None
+        clear_match = _EXPORT_DRIVE_CLEAR.search(query)
+        clear = clear_match is not None
+        partial_match = None if clear else _EXPORT_PARTIAL.search(query)
+        partial = partial_match is not None
         if not clear and not partial:
+            return None
+        # Docs/prose questions that mention export+Drive stay on RAG (especially
+        # with agent_loop off, where a signal would otherwise be tool_unavailable).
+        # Issue locators are omitted from this cue set so dual-workflow commands
+        # can still conflict-clarify.
+        intent_match = clear_match or partial_match
+        if (
+            intent_match is not None
+            and query[: intent_match.start()].strip()
+            and _DRIVE_DOCS_PROSE_CUES.search(query) is not None
+        ):
             return None
         if not export_enabled:
             return WorkflowSignalResult(

@@ -496,7 +496,7 @@ def test_build_tool_augmented_ask_adds_tool_selection_when_the_pack_is_enabled(
 def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default #170 path: deterministic orchestrate, agent builder unused."""
+    """Agent builder unused; deterministic orchestrate stays wired but dormant."""
     _sd_env(monkeypatch)
     monkeypatch.delenv("SOFTWARE_DELIVERY_AGENT_LOOP", raising=False)
     monkeypatch.setattr(
@@ -524,7 +524,8 @@ def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
     assert isinstance(ask._ask, ToolAugmentedAsk)
     # Provenance: wired callable came from the local else-branch, not the
     # agent builder (which was never invoked and would have returned the
-    # capturing closure above).
+    # capturing closure above). Chat cannot reach READY Drive-export with the
+    # flag off, so this closure stays dormant (see ARCHITECTURE.md).
     assert ask._ask._runner._orchestrate.__module__ == "composition.container"
     assert ask._ask._runner._orchestrate.__qualname__.endswith(".orchestrate")
     assert "build_agent_orchestrate" not in ask._ask._runner._orchestrate.__qualname__
@@ -871,9 +872,9 @@ def test_dormant_orchestrate_path_with_stub_intent_and_tools(
 ) -> None:
     """#312 TurnRouter supersedes dormant chat-intent select (#285/#170).
 
-    Create-test-cases queries stay on grounded RAG even when a stub selector
-    would have chosen tools — pack WorkflowSignals only recognize Test Design
-    and Drive export.
+    Create-test-cases queries stay on grounded RAG; the deterministic
+    orchestrate closure stays wired when agent_loop is off but is unreachable
+    from chat (no READY Drive-export without the agent loop).
     """
     from packs.software_delivery.chat_intent import ChatToolSelection
 
@@ -910,6 +911,7 @@ def test_dormant_orchestrate_path_with_stub_intent_and_tools(
     assert response.run is not None
     assert response.run.path == "rag"
     assert ask.consume_tool_run_view() is None
+    assert ask._ask._runner._orchestrate.__qualname__.endswith(".orchestrate")
 
 
 def test_a_general_chat_query_never_reaches_a_tool(
