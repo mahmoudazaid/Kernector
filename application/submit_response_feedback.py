@@ -9,7 +9,9 @@ from application.errors import InputRejectedError
 from domain.ports import ResponseFeedbackRepository, RunProvenanceLookup
 from domain.response_feedback import (
     FEEDBACK_RATINGS,
+    FEEDBACK_RATINGS_DISPLAY,
     FEEDBACK_REASONS,
+    FEEDBACK_REASONS_DISPLAY,
     MAX_FEEDBACK_COMMENT_LENGTH,
     FeedbackRating,
     FeedbackReason,
@@ -74,7 +76,7 @@ class SubmitResponseFeedback:
         request_id = _require_text(request.request_id, "request_id")
         if request.rating not in FEEDBACK_RATINGS:
             raise InputRejectedError(
-                f"rating must be one of {sorted(FEEDBACK_RATINGS)}"
+                f"rating must be one of {FEEDBACK_RATINGS_DISPLAY}"
             )
         reason = request.reason
         if reason is not None:
@@ -84,7 +86,7 @@ class SubmitResponseFeedback:
                 )
             if reason not in FEEDBACK_REASONS:
                 raise InputRejectedError(
-                    f"reason must be one of {sorted(FEEDBACK_REASONS)}"
+                    f"reason must be one of {FEEDBACK_REASONS_DISPLAY}"
                 )
         comment = _optional_comment(request.comment)
         conversation_id = _optional_text(request.conversation_id)

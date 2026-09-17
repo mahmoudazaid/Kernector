@@ -19,6 +19,7 @@ FeedbackReason = Literal[
 ]
 
 FEEDBACK_RATINGS: frozenset[str] = frozenset({"positive", "negative"})
+FEEDBACK_RATINGS_DISPLAY = str(sorted(FEEDBACK_RATINGS))
 FEEDBACK_REASONS: frozenset[str] = frozenset(
     {
         "incorrect",
@@ -31,6 +32,7 @@ FEEDBACK_REASONS: frozenset[str] = frozenset(
         "other",
     }
 )
+FEEDBACK_REASONS_DISPLAY = str(sorted(FEEDBACK_REASONS))
 MAX_FEEDBACK_COMMENT_LENGTH = 2000
 
 
@@ -64,13 +66,13 @@ class ResponseFeedback:
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must be a non-empty string")
         if self.rating not in FEEDBACK_RATINGS:
-            raise ValueError(f"rating must be one of {sorted(FEEDBACK_RATINGS)}")
+            raise ValueError(f"rating must be one of {FEEDBACK_RATINGS_DISPLAY}")
         if self.reason is not None:
             if self.rating != "negative":
                 raise ValueError("reason is only allowed when rating is negative")
             if self.reason not in FEEDBACK_REASONS:
                 raise ValueError(
-                    f"reason must be one of {sorted(FEEDBACK_REASONS)}"
+                    f"reason must be one of {FEEDBACK_REASONS_DISPLAY}"
                 )
         if self.comment is not None:
             if not isinstance(self.comment, str):
