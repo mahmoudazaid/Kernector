@@ -37,6 +37,24 @@ def test_test_design_command_with_issue_is_ready() -> None:
     assert result.readiness is WorkflowReadiness.READY
 
 
+def test_prefixed_test_design_command_with_locator_is_ready() -> None:
+    """Polite/prefixed commands with a locator still start the workflow."""
+    signal = build_test_design_workflow_signal(enabled=True)
+    for query in (
+        "Please design tests for acme/api#42",
+        "Can you design tests for acme/api#42?",
+        "Could you start test design for acme/api#42",
+        "I'd like test design for acme/api#42",
+        "For the new auth flow, design tests for acme/api#42",
+        "Now design tests for acme/api#42",
+        "Let's design tests for acme/api#42",
+        "Hi, please start test design for acme/api#42",
+    ):
+        result = signal(TurnRoutingRequest(query=query))
+        assert result is not None, query
+        assert result.readiness is WorkflowReadiness.READY, query
+
+
 def test_test_design_topical_question_is_not_a_workflow_signal() -> None:
     signal = build_test_design_workflow_signal(enabled=True)
     assert signal(

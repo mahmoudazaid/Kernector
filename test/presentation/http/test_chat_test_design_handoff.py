@@ -111,6 +111,36 @@ def test_test_design_ready_handoff_does_not_call_grounded_ask() -> None:
     assert body["run"]["path"] == "tools"
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Please design tests for mahmoudazaid/Kernector#293",
+        "Can you design tests for mahmoudazaid/Kernector#293?",
+        "Could you start test design for mahmoudazaid/Kernector#293",
+    ],
+)
+def test_prefixed_test_design_command_with_locator_starts_workflow(
+    query: str,
+) -> None:
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(settings)
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": query, "history": []},
+    )
+    assert response.status_code == 200, query
+    body = response.json()
+    assert body["action"]["kind"] == "start_workflow", query
+    assert body["run"]["intent"] == "tool_workflow", query
+
+
 def test_test_design_handoff_rejects_mismatched_source_locator() -> None:
     base = get_settings()
     settings = replace(

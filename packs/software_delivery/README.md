@@ -37,7 +37,7 @@ Composition injects `WorkflowSignal` probes (see
 
 | Workflow | Recognized | Ready | Incomplete (clarify, never RAG) |
 | --- | --- | --- | --- |
-| Test Design | Leading command phrases (`design tests`, `start test design`, …); embedded topical mentions excluded | Exactly one GitHub Issue locator | Leading command without Issue (#304) |
+| Test Design | Command phrases (`design tests`, `test design`, …); docs/topical mentions without an Issue locator excluded | Exactly one GitHub Issue locator | Leading command without Issue (#304) |
 | Drive export | Clear or partial export/Drive language (docs/prose mentions excluded) | Clear “export … Drive” **and** draft with selected titles **and** agent loop on | Partial phrase (#310); missing titles; agent loop off (`tool_unavailable`) |
 
 Handoff/`Start Test Design` actions are built **after** a ready `tool_workflow`

@@ -219,13 +219,8 @@ _GENERAL_CUES = re.compile(
 )
 
 
-def has_project_cues(query: str) -> bool:
-    """Return True when ``query`` carries project/docs grounding cues."""
-    return _PROJECT_CUES.search(query) is not None
-
-
 def _has_project_cues(query: str) -> bool:
-    return has_project_cues(query)
+    return _PROJECT_CUES.search(query) is not None
 
 
 def _has_general_cues(query: str) -> bool:
@@ -434,5 +429,4 @@ __all__ = [
     "WorkflowSignal",
     "WorkflowSignalResult",
     "classify_turn",
-    "has_project_cues",
 ]

@@ -104,16 +104,6 @@ class _DraftRepository(Protocol):
 DraftReadyCheck = Callable[[str | None], bool]
 
 
-def _leading_test_design_match(query: str) -> re.Match[str] | None:
-    """Return the command match only when it is the leading imperative."""
-    match = _TEST_DESIGN_COMMAND.search(query)
-    if match is None:
-        return None
-    if query[: match.start()].strip():
-        return None
-    return match
-
-
 def _draft_has_selected_titles(draft: object | None) -> bool:
     if draft is None:
         return False
@@ -144,13 +134,10 @@ def build_test_design_workflow_signal(
         query = request.query
         if not isinstance(query, str) or not query.strip():
             return None
-        # Leading command only — embedded "test design" in docs questions stays
-        # on RAG; natural #304 phrasings ("start test design for this issue")
-        # still clarify when no Issue locator is present.
-        if _leading_test_design_match(query) is None:
-            return None
-        if _TEST_DESIGN_TOPIC_QUESTION.search(query) is not None:
-            # Topical discussion about Test Design — not a start-workflow command.
+        # Unanchored command match (same as main's handoff). Shape guards apply
+        # only when no Issue locator is present — a locator is decisive intent.
+        match = _TEST_DESIGN_COMMAND.search(query)
+        if match is None:
             return None
         from infrastructure.connectors.github.issue_locator import (
             AmbiguousGitHubIssueLocatorError,
@@ -163,21 +150,27 @@ def build_test_design_workflow_signal(
             raise TestDesignValidationError(
                 "Query must reference exactly one GitHub Issue"
             ) from error
-        if parsed is None:
+        if parsed is not None:
             return WorkflowSignalResult(
                 workflow_hint="test_design",
-                readiness=WorkflowReadiness.INCOMPLETE,
-                reason="missing_fields",
-                missing_fields=("issue_locator",),
-                clarification_context={
-                    "workflow_hint": "test_design",
-                    "missing_fields": ("issue_locator",),
-                },
+                readiness=WorkflowReadiness.READY,
+                reason="workflow_ready",
             )
+        # No locator: docs/topical mentions stay on RAG; leading #304 commands
+        # without an Issue still clarify.
+        if query[: match.start()].strip():
+            return None
+        if _TEST_DESIGN_TOPIC_QUESTION.search(query) is not None:
+            return None
         return WorkflowSignalResult(
             workflow_hint="test_design",
-            readiness=WorkflowReadiness.READY,
-            reason="workflow_ready",
+            readiness=WorkflowReadiness.INCOMPLETE,
+            reason="missing_fields",
+            missing_fields=("issue_locator",),
+            clarification_context={
+                "workflow_hint": "test_design",
+                "missing_fields": ("issue_locator",),
+            },
         )
 
     return probe
