@@ -291,8 +291,11 @@ a draft with selected titles (and agent loop enabled). Partial phrases and
 missing payloads clarify (#304, #310).
 
 **Follow-ups:** bare “yes”/short affirmatives from raw history never promote to
-``tool_workflow``. Only structured prior clarification context plus newly
-supplied missing fields (evaluated inside signals) can become ready.
+``tool_workflow``. Structured clarification context is computed on clarify turns
+for observability (``consume_clarification_context``), but a durable
+conversation-scoped store is not wired yet — a clarified Test Design or Drive
+turn must restate the full request (with missing fields supplied) to become
+ready.
 
 **AskGeneral** (``application/ask_general.py``): ``ChatModel``/``AskService``
 only — no retrieve, no citations. System policy forbids project/repository

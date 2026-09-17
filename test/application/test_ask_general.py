@@ -4,6 +4,7 @@ from application.ask_general import AskGeneral
 from application.ask_service import AskService
 from application.contracts import AskRequest, RunMeta
 from application.general_answer_policy import GENERAL_ANSWER_SYSTEM
+from application.response_style_policy import ResponseStyle, compose_agent_system
 from application.turn_routing import (
     CONFIDENCE_GENERAL,
     RoutingKind,
@@ -62,6 +63,24 @@ def test_general_answer_system_refuses_project_facts() -> None:
     assert "must not" in GENERAL_ANSWER_SYSTEM.lower() or "do not" in GENERAL_ANSWER_SYSTEM.lower()
     lowered = GENERAL_ANSWER_SYSTEM.lower()
     assert "repository" in lowered or "project" in lowered or "source" in lowered
+
+
+def test_ask_general_applies_response_style_to_system_prompt() -> None:
+    chat = _RecordingChat()
+    ask = AskGeneral(AskService(chat))
+    response = ask.execute(
+        AskRequest(
+            query="brainstorm taglines",
+            response_style=ResponseStyle.CONCISE,
+        )
+    )
+    system, _messages, _settings = chat.calls[0]
+    assert system == compose_agent_system(
+        GENERAL_ANSWER_SYSTEM, ResponseStyle.CONCISE
+    )
+    assert "Response style" in system
+    assert response.run is not None
+    assert response.run.response_style == ResponseStyle.CONCISE.value
 
 
 def test_ask_general_forwards_history_to_chat_model() -> None:

@@ -393,8 +393,7 @@ class RunMeta:
             }
             if self.intent not in allowed_intents:
                 raise ApplicationValidationError(
-                    "intent must be one of "
-                    f"{sorted(allowed_intents)}, got {self.intent!r}"
+                    "intent is not an allowlisted routing kind"
                 )
         if self.routing_confidence is not None:
             if not isinstance(self.routing_confidence, float) or isinstance(

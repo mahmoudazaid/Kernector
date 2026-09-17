@@ -15,6 +15,7 @@ from application.turn_routing import (
     WorkflowReadiness,
     WorkflowSignal,
     WorkflowSignalResult,
+    has_project_cues,
 )
 from composition.test_design_errors import TestDesignValidationError
 
@@ -41,11 +42,10 @@ _EXPORT_DRIVE_CLEAR = re.compile(
 )
 
 _EXPORT_PARTIAL = re.compile(
-    r"\b("
-    r"export(?:\s+the\s+selected\s+tests?)?|"
-    r"send\s+(?:this|it|them)\s+to\s+drive|"
-    r"send\s+to\s+drive"
-    r")\b",
+    r"(?:"
+    r"^\s*export(?:\s+the\s+selected\s+tests?)?\s*$|"
+    r"\b(?:send\s+(?:this|it|them)\s+to\s+drive|send\s+to\s+drive)\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -139,6 +139,10 @@ def build_test_design_workflow_signal(
                 "Query must reference exactly one GitHub Issue"
             ) from error
         if parsed is None:
+            # Project/docs questions that mention Test Design must stay on RAG
+            # (#304 commands without an Issue still clarify when cues are absent).
+            if has_project_cues(query):
+                return None
             return WorkflowSignalResult(
                 workflow_hint="test_design",
                 readiness=WorkflowReadiness.INCOMPLETE,

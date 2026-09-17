@@ -726,7 +726,7 @@ def test_observing_chat_bind_tools_forwards_extra_options() -> None:
 def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC3: with no pack enabled the chat path is still correlated AskKnowledge."""
+    """AC3: with no pack, chat is still correlated ToolAugmentedAsk→AskKnowledge."""
     monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
@@ -738,7 +738,10 @@ def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
     from composition.correlated_ask import CorrelatedAsk
 
     assert isinstance(ask, CorrelatedAsk)
-    assert isinstance(ask._ask, AskKnowledge)
+    assert isinstance(ask._ask, ToolAugmentedAsk)
+    assert isinstance(ask._ask._ask, AskKnowledge)
+    assert ask._ask._ask_general is not None
+    assert ask._ask._router._signals == ()
 
 
 def test_build_tool_augmented_ask_has_concrete_return_annotation() -> None:
@@ -866,10 +869,11 @@ def test_former_generate_query_uses_grounded_ask_run_meta(
 def test_dormant_orchestrate_path_with_stub_intent_and_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pin container orchestrate closure → pack request → chain → projection.
+    """#312 TurnRouter supersedes dormant chat-intent select (#285/#170).
 
-    Production intent is always ``None`` (#285). This injects a stub selector and
-    scripted tools so the dormant #170 path stays covered until a real tool lands.
+    Create-test-cases queries stay on grounded RAG even when a stub selector
+    would have chosen tools — pack WorkflowSignals only recognize Test Design
+    and Drive export.
     """
     from packs.software_delivery.chat_intent import ChatToolSelection
 
@@ -878,41 +882,10 @@ def test_dormant_orchestrate_path_with_stub_intent_and_tools(
         "composition.container.build_rewrite_and_retrieve_knowledge",
         lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
     )
-    risk = json.dumps(
-        {
-            "score": 62,
-            "level": "high",
-            "rationale": "Acceptance criteria are absent from a complete story.",
-            "factors": [
-                {
-                    "factor_id": "missing_acceptance_criteria",
-                    "weight": 30,
-                    "references": [
-                        {"source_id": "US-1", "source_type": "user_story"}
-                    ],
-                }
-            ],
-        }
-    )
-    generated = json.dumps(
-        {
-            "output_style": "steps",
-            "test_cases": [
-                {
-                    "title": "Lock the account after five failed MFA attempts",
-                    "steps": ["Sign in with a valid password.", "Fail MFA five times."],
-                    "expected": "The account is locked.",
-                    "references": [
-                        {"source_id": "US-1", "source_type": "user_story"}
-                    ],
-                }
-            ],
-        }
-    )
     invoke_tool = _ScriptedInvokeTool(
         {
-            RISK_SCORE_TOOL: risk,
-            GENERATE_TEST_CASES_TOOL: generated,
+            RISK_SCORE_TOOL: "{}",
+            GENERATE_TEST_CASES_TOOL: "{}",
             EXPORT_TEST_CASES_MARKDOWN_TOOL: "# Test Cases\n",
         }
     )
@@ -932,29 +905,11 @@ def test_dormant_orchestrate_path_with_stub_intent_and_tools(
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
     response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
 
-    assert invoke_tool.invoked == [
-        RISK_SCORE_TOOL,
-        GENERATE_TEST_CASES_TOOL,
-        EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    ]
-    assert [output.tool_name for output in response.tool_outputs] == [
-        RISK_SCORE_TOOL,
-        GENERATE_TEST_CASES_TOOL,
-        EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    ]
-    assert response.answer.startswith(
-        "Scored risk, generated test cases, and exported Markdown."
-    )
-    assert "**Risk 62/100 (high)**" in response.answer
-    assert response.answer.endswith("# Test Cases\n")
+    assert invoke_tool.invoked == []
+    assert response.tool_outputs == ()
     assert response.run is not None
-    assert response.run.path == "tools"
-    assert list(response.run.tools) == [
-        RISK_SCORE_TOOL,
-        GENERATE_TEST_CASES_TOOL,
-        EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    ]
-    assert ask.consume_tool_run_view() is not None
+    assert response.run.path == "rag"
+    assert ask.consume_tool_run_view() is None
 
 
 def test_a_general_chat_query_never_reaches_a_tool(

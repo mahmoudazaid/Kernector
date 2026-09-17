@@ -299,6 +299,7 @@ def test_test_design_explicit_command_with_multiple_issues_returns_422() -> None
         "Who owns test design here?",
         "What do the docs say about test design?",
         "Can you explain the coverage plan we agreed on last sprint?",
+        "Summarize our test design guidelines from the docs",
     ],
 )
 def test_test_design_topical_phrase_falls_through_to_grounded_ask(

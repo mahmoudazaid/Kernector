@@ -11,6 +11,7 @@ from application.errors import ApplicationValidationError, InputRejectedError
 from application.general_answer_policy import GENERAL_ANSWER_SYSTEM
 from application.input_safety import reject_unsafe_query
 from application.observability import current_request_id, log_operation
+from application.response_style_policy import compose_agent_system
 from application.turn_routing import CONFIDENCE_GENERAL, RoutingKind
 
 logger = logging.getLogger(__name__)
@@ -81,8 +82,9 @@ class AskGeneral:
         for message in request.history:
             reject_unsafe_query(message.content)
 
+        system = compose_agent_system(GENERAL_ANSWER_SYSTEM, request.response_style)
         result = self._ask_service.ask(
-            GENERAL_ANSWER_SYSTEM,
+            system,
             request.query,
             settings=settings,
             history=request.history,

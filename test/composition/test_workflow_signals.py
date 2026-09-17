@@ -44,6 +44,15 @@ def test_test_design_topical_question_is_not_a_workflow_signal() -> None:
     ) is None
 
 
+def test_test_design_project_question_without_leading_qword_is_not_a_signal() -> None:
+    signal = build_test_design_workflow_signal(enabled=True)
+    assert signal(
+        TurnRoutingRequest(
+            query="Summarize our test design guidelines from the docs"
+        )
+    ) is None
+
+
 def test_partial_drive_export_is_incomplete() -> None:
     signal = build_drive_export_workflow_signal(
         export_enabled=True, draft_ready=lambda _cid: True
@@ -53,6 +62,23 @@ def test_partial_drive_export_is_incomplete() -> None:
         assert result is not None, query
         assert result.readiness is WorkflowReadiness.INCOMPLETE
         assert result.reason == "incomplete_workflow"
+
+
+def test_prose_mention_of_export_is_not_a_drive_signal() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=True, draft_ready=lambda _cid: False
+    )
+    for query in (
+        "What do our docs say about the export pipeline?",
+        "According to the README, how is data export configured?",
+    ):
+        assert signal(TurnRoutingRequest(query=query)) is None, query
+    decision = classify_turn(
+        "What do our docs say about the export pipeline?",
+        signals=(signal,),
+        conversation_id="c1",
+    )
+    assert decision.kind == RoutingKind.GROUNDED_ANSWER
 
 
 def test_clear_drive_export_without_payload_is_incomplete() -> None:

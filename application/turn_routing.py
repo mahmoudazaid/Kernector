@@ -53,8 +53,10 @@ REASON_CODES: frozenset[str] = frozenset(
         "default_grounded",
     }
 )
+REASON_CODES_DISPLAY = str(sorted(REASON_CODES))
 
 WORKFLOW_HINTS: frozenset[str] = frozenset({"test_design", "drive_export"})
+WORKFLOW_HINTS_DISPLAY = str(sorted(WORKFLOW_HINTS))
 
 
 class RoutingKind(StrEnum):
@@ -104,7 +106,7 @@ class WorkflowSignalResult:
     def __post_init__(self) -> None:
         if self.workflow_hint not in WORKFLOW_HINTS:
             raise ApplicationValidationError(
-                f"workflow_hint must be one of {sorted(WORKFLOW_HINTS)}"
+                f"workflow_hint must be one of {WORKFLOW_HINTS_DISPLAY}"
             )
         if not isinstance(self.readiness, WorkflowReadiness):
             raise ApplicationValidationError(
@@ -113,7 +115,7 @@ class WorkflowSignalResult:
             )
         if self.reason not in REASON_CODES:
             raise ApplicationValidationError(
-                f"reason must be one of {sorted(REASON_CODES)}"
+                f"reason must be one of {REASON_CODES_DISPLAY}"
             )
         if not isinstance(self.missing_fields, tuple):
             object.__setattr__(
@@ -179,11 +181,11 @@ class RoutingDecision:
             )
         if self.reason not in REASON_CODES:
             raise ApplicationValidationError(
-                f"reason must be one of {sorted(REASON_CODES)}"
+                f"reason must be one of {REASON_CODES_DISPLAY}"
             )
         if self.workflow_hint is not None and self.workflow_hint not in WORKFLOW_HINTS:
             raise ApplicationValidationError(
-                f"workflow_hint must be one of {sorted(WORKFLOW_HINTS)}"
+                f"workflow_hint must be one of {WORKFLOW_HINTS_DISPLAY}"
             )
         if self.clarification_context is not None:
             if not isinstance(self.clarification_context, Mapping):
@@ -217,8 +219,13 @@ _GENERAL_CUES = re.compile(
 )
 
 
-def _has_project_cues(query: str) -> bool:
+def has_project_cues(query: str) -> bool:
+    """Return True when ``query`` carries project/docs grounding cues."""
     return _PROJECT_CUES.search(query) is not None
+
+
+def _has_project_cues(query: str) -> bool:
+    return has_project_cues(query)
 
 
 def _has_general_cues(query: str) -> bool:
@@ -416,13 +423,16 @@ __all__ = [
     "CONFIDENCE_INCOMPLETE",
     "CONFIDENCE_READY",
     "REASON_CODES",
+    "REASON_CODES_DISPLAY",
     "RoutingDecision",
     "RoutingKind",
     "TurnRouter",
     "TurnRoutingRequest",
     "WORKFLOW_HINTS",
+    "WORKFLOW_HINTS_DISPLAY",
     "WorkflowReadiness",
     "WorkflowSignal",
     "WorkflowSignalResult",
     "classify_turn",
+    "has_project_cues",
 ]
