@@ -24,6 +24,7 @@ from application.errors import (
     UploadTooLargeError,
 )
 from application.manage_documents import PartialCreateFailure
+from application.submit_response_feedback import FeedbackNotFoundError
 from composition.errors import (
     ConnectorSyncError,
     DocumentContentError,
@@ -82,6 +83,7 @@ _MISSING_PROVIDER_CREDENTIALS_DETAIL = (
     "Required LLM provider credentials are missing. Check server configuration."
 )
 _INSUFFICIENT_EVIDENCE_DETAIL = "Not enough relevant knowledge was found."
+_FEEDBACK_NOT_FOUND_DETAIL = "No feedback found for this response."
 _TEST_DESIGN_UNAVAILABLE_DETAIL = "Test Design is not available."
 _TEST_DESIGN_NOT_FOUND_DETAIL = "Test design draft was not found."
 _TEST_DESIGN_VERSION_CONFLICT_DETAIL = (
@@ -260,6 +262,15 @@ def problem_from_exception(
             title="Document not found",
             status=404,
             detail=DOCUMENT_NOT_FOUND_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, FeedbackNotFoundError):
+        return _problem(
+            code="feedback_not_found",
+            title="Feedback not found",
+            status=404,
+            detail=_FEEDBACK_NOT_FOUND_DETAIL,
             instance=instance,
             request_id=request_id,
         )

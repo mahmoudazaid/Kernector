@@ -296,8 +296,26 @@ export function sanitizeStoredChatMessage(
       message.approvalResolution = resolution;
     }
   }
+  if ("feedbackRating" in value) {
+    const rating = sanitizeFeedbackRating(value.feedbackRating);
+    if (rating !== undefined) {
+      message.feedbackRating = rating;
+    }
+  }
 
   return message;
+}
+
+function sanitizeFeedbackRating(
+  value: unknown,
+): "positive" | "negative" | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (value === "positive" || value === "negative") {
+    return value;
+  }
+  return undefined;
 }
 
 function sanitizeApprovalResolution(

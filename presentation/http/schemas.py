@@ -416,6 +416,70 @@ class RunMetaResponse(BaseModel):
     citation_count: int | None = None
     tools: list[str] = Field(default_factory=list)
     response_style: Literal["formal", "friendly", "concise"] | None = None
+    prompt_key: str | None = None
+    prompt_version: str | None = None
+
+
+FeedbackRatingLiteral = Literal["positive", "negative"]
+FeedbackReasonLiteral = Literal[
+    "incorrect",
+    "incomplete",
+    "unsupported",
+    "irrelevant",
+    "wrong_tool",
+    "unclear",
+    "unsafe",
+    "other",
+]
+
+
+class UpsertResponseFeedbackRequest(BaseModel):
+    """Body for creating or updating a response rating."""
+
+    rating: FeedbackRatingLiteral
+    reason: FeedbackReasonLiteral | None = None
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class ResponseFeedbackResponse(BaseModel):
+    """Projected feedback record (no prompts, answers, or credentials)."""
+
+    request_id: str
+    rating: FeedbackRatingLiteral
+    conversation_id: str | None = None
+    client_message_id: str | None = None
+    run_id: str | None = None
+    reason: FeedbackReasonLiteral | None = None
+    comment: str | None = None
+    prompt_key: str | None = None
+    prompt_version: str | None = None
+    model: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+def response_feedback_response(feedback: object) -> ResponseFeedbackResponse:
+    """Project a domain ``ResponseFeedback`` to the HTTP schema."""
+    from domain.response_feedback import ResponseFeedback
+
+    if not isinstance(feedback, ResponseFeedback):
+        raise TypeError("feedback must be a ResponseFeedback")
+    return ResponseFeedbackResponse(
+        request_id=feedback.request_id,
+        rating=feedback.rating,
+        conversation_id=feedback.conversation_id,
+        client_message_id=feedback.client_message_id,
+        run_id=feedback.run_id,
+        reason=feedback.reason,
+        comment=feedback.comment,
+        prompt_key=feedback.prompt_key,
+        prompt_version=feedback.prompt_version,
+        model=feedback.model,
+        tools=list(feedback.tools),
+        created_at=feedback.created_at,
+        updated_at=feedback.updated_at,
+    )
 
 
 class ToolCallResponse(BaseModel):
@@ -717,6 +781,8 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
         citation_count=run.citation_count,
         tools=list(run.tools),
         response_style=style,
+        prompt_key=run.prompt_key,
+        prompt_version=None,
     )
 
 
