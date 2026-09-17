@@ -458,6 +458,68 @@ def _workspace_store_path(settings: Settings):
     return store_path
 
 
+def _response_feedback_path(settings: Settings):
+    from pathlib import Path
+
+    store_path = Path("data/feedback/response_feedback.sqlite")
+    if settings.document_catalog.sql_path is not None:
+        store_path = (
+            settings.document_catalog.sql_path.parent / "response_feedback.sqlite"
+        )
+    return store_path
+
+
+def build_response_feedback_repository(settings: Settings):
+    """Build the workspace-bound SQLite response feedback repository."""
+    from infrastructure.feedback.errors import FeedbackStoreError
+    from infrastructure.feedback.sql_repository import SqlResponseFeedbackRepository
+
+    workspace_id = _require_workspace_id(settings)
+    try:
+        return SqlResponseFeedbackRepository(
+            _response_feedback_path(settings), workspace_id
+        )
+    except FeedbackStoreError as error:
+        raise ConfigurationError(str(error)) from error
+    except OSError as error:
+        raise ConfigurationError(
+            f"could not open response feedback store: {error}"
+        ) from error
+
+
+def build_submit_response_feedback(settings: Settings):
+    """Build the submit-feedback use case for the configured workspace."""
+    from application.submit_response_feedback import (
+        NullRunProvenanceLookup,
+        SubmitResponseFeedback,
+    )
+
+    repository = build_response_feedback_repository(settings)
+    return SubmitResponseFeedback(
+        repository=repository,
+        provenance=NullRunProvenanceLookup(),
+        workspace_id=_require_workspace_id(settings),
+    )
+
+
+def build_clear_response_feedback(settings: Settings):
+    """Build the clear-feedback use case for the configured workspace."""
+    from application.submit_response_feedback import ClearResponseFeedback
+
+    return ClearResponseFeedback(
+        repository=build_response_feedback_repository(settings)
+    )
+
+
+def build_get_response_feedback(settings: Settings):
+    """Build the get-feedback use case for the configured workspace."""
+    from application.submit_response_feedback import GetResponseFeedback
+
+    return GetResponseFeedback(
+        repository=build_response_feedback_repository(settings)
+    )
+
+
 def _require_workspace_id(settings: Settings) -> str:
     try:
         workspace_id = parse_workspace_id(settings.document_catalog.workspace_id)

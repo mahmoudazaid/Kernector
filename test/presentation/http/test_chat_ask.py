@@ -151,6 +151,8 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
         "citation_count": 1,
         "tools": ["software_delivery.risk_score"],
         "response_style": None,
+        "prompt_key": None,
+        "prompt_version": None,
     }
     assert "settings" not in body["run"]
     assert "error_type" not in body["run"]
@@ -445,6 +447,25 @@ def test_run_meta_projection_omits_query_and_chunk_markers() -> None:
     assert "settings" not in run
     assert "error_type" not in run
     assert "source_type" not in run
+
+
+def test_run_meta_projects_prompt_key_and_null_prompt_version() -> None:
+    ask = _StubAsk(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(
+                request_id="req-prompt",
+                outcome="success",
+                prompt_key="software-delivery.grounded",
+            ),
+        )
+    )
+    client = _client_with_ask(ask)
+    response = client.post("/api/v1/chat/ask", json={"query": "hi"})
+    assert response.status_code == 200
+    run = response.json()["run"]
+    assert run["prompt_key"] == "software-delivery.grounded"
+    assert run["prompt_version"] is None
 
 
 def test_chat_ask_forwards_conversation_id() -> None:

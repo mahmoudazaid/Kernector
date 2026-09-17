@@ -19,6 +19,7 @@ from domain.knowledge import (
     Vector,
 )
 from domain.models import AgentTurnResult, AskResult, Message, PromptVariant
+from domain.response_feedback import ResponseFeedback, RunProvenance
 
 
 class ChatModel(Protocol):
@@ -375,4 +376,32 @@ class ArtifactUploader(Protocol):
 
     def upload(self, artifact: Artifact, *, parent_id: str) -> ArtifactReceipt:
         """Persist ``artifact`` under ``parent_id`` and return its receipt."""
+        ...
+
+
+class ResponseFeedbackRepository(Protocol):
+    """Durable store for per-response thumbs ratings.
+
+    ``workspace_id`` is bound by the adapter at construction. Identity is
+    ``(workspace_id, request_id)``.
+    """
+
+    def upsert(self, feedback: ResponseFeedback) -> ResponseFeedback:
+        """Insert or replace the rating for ``feedback.request_id``."""
+        ...
+
+    def get(self, request_id: str) -> ResponseFeedback | None:
+        """Return the in-workspace rating for ``request_id``, or ``None``."""
+        ...
+
+    def delete(self, request_id: str) -> bool:
+        """Remove the in-workspace rating. Return whether a row was deleted."""
+        ...
+
+
+class RunProvenanceLookup(Protocol):
+    """Trusted request_id → run metadata (null until a run ledger exists)."""
+
+    def get(self, request_id: str) -> RunProvenance | None:
+        """Return server-side provenance for ``request_id``, or ``None``."""
         ...

@@ -75,6 +75,62 @@ describe("sanitizeStoredChatMessage", () => {
     expect(dropped?.action).toBeUndefined();
   });
 
+  it("keeps valid feedbackRating values and drops malformed ones", () => {
+    expect(
+      sanitizeStoredChatMessage({
+        id: "a-1",
+        role: "assistant",
+        content: "answer",
+        feedbackRating: "positive",
+      })?.feedbackRating,
+    ).toBe("positive");
+    expect(
+      sanitizeStoredChatMessage({
+        id: "a-2",
+        role: "assistant",
+        content: "answer",
+        feedbackRating: "negative",
+      })?.feedbackRating,
+    ).toBe("negative");
+    expect(
+      sanitizeStoredChatMessage({
+        id: "a-3",
+        role: "assistant",
+        content: "answer",
+        feedbackRating: null,
+      })?.feedbackRating,
+    ).toBeNull();
+    // Persisted unrated messages include the key with undefined; omit the field.
+    expect(
+      sanitizeStoredChatMessage({
+        id: "a-4",
+        role: "assistant",
+        content: "answer",
+        feedbackRating: undefined,
+      }),
+    ).toEqual({
+      id: "a-4",
+      role: "assistant",
+      content: "answer",
+    });
+    expect(
+      sanitizeStoredChatMessage({
+        id: "a-5",
+        role: "assistant",
+        content: "answer",
+        feedbackRating: "up",
+      })?.feedbackRating,
+    ).toBeUndefined();
+    expect(
+      sanitizeStoredChatMessage({
+        id: "a-6",
+        role: "assistant",
+        content: "answer",
+        feedbackRating: 3,
+      })?.feedbackRating,
+    ).toBeUndefined();
+  });
+
   it("keeps safe pendingApproval projections and drops malformed ones", () => {
     const kept = sanitizeStoredChatMessage({
       id: "a-1",
