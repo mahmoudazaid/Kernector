@@ -93,6 +93,104 @@ describe("MessageFeedbackControls", () => {
     expect(onRatingChange).toHaveBeenCalledWith("negative");
   });
 
+  it("ignores a stale hydrate response after the user saves a rating", async () => {
+    let rejectHydrate!: (reason: unknown) => void;
+    getResponseFeedback.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectHydrate = reject;
+        }),
+    );
+    upsertResponseFeedback.mockResolvedValue({
+      request_id: "req-1",
+      rating: "positive",
+    });
+    const onRatingChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MessageFeedbackControls
+        baseUrl="http://127.0.0.1:8000"
+        requestId="req-1"
+        conversationId="conv-1"
+        clientMessageId="a-1"
+        onRatingChange={onRatingChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Thumbs up" }));
+    await waitFor(() => {
+      expect(upsertResponseFeedback).toHaveBeenCalled();
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Thanks for the feedback.",
+    );
+    expect(onRatingChange).toHaveBeenCalledWith("positive");
+
+    rejectHydrate(
+      new ApiError({
+        status: 404,
+        title: "Feedback not found",
+        detail: "No feedback found for this response.",
+        code: "feedback_not_found",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Thumbs up" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Thanks for the feedback.",
+    );
+    expect(onRatingChange).not.toHaveBeenCalledWith(null);
+  });
+
+  it("ignores a stale hydrate success after the user changes rating", async () => {
+    let resolveHydrate!: (value: unknown) => void;
+    getResponseFeedback.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveHydrate = resolve;
+        }),
+    );
+    upsertResponseFeedback.mockResolvedValue({
+      request_id: "req-1",
+      rating: "negative",
+    });
+    const onRatingChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MessageFeedbackControls
+        baseUrl="http://127.0.0.1:8000"
+        requestId="req-1"
+        conversationId="conv-1"
+        clientMessageId="a-1"
+        initialRating="positive"
+        onRatingChange={onRatingChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Thumbs down" }));
+    await waitFor(() => {
+      expect(upsertResponseFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({ body: { rating: "negative" } }),
+      );
+    });
+    expect(onRatingChange).toHaveBeenCalledWith("negative");
+
+    resolveHydrate({ request_id: "req-1", rating: "positive" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Thumbs down" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    expect(onRatingChange).not.toHaveBeenCalledWith("positive");
+  });
+
   it("restores initialRating from persisted message state", async () => {
     render(
       <MessageFeedbackControls

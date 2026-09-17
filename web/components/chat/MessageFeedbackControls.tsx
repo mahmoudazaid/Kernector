@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   clearResponseFeedback,
@@ -84,6 +84,8 @@ export function MessageFeedbackControls({
   );
   const [error, setError] = useState<string | null>(null);
   const [userAck, setUserAck] = useState(false);
+  const hydrateAbortRef = useRef<AbortController | null>(null);
+  const userActedRef = useRef(false);
 
   const busy = status === "pending";
 
@@ -95,7 +97,9 @@ export function MessageFeedbackControls({
   }, [initialRating]);
 
   useEffect(() => {
+    userActedRef.current = false;
     const controller = new AbortController();
+    hydrateAbortRef.current = controller;
     void (async () => {
       try {
         const stored = await getResponseFeedback({
@@ -103,14 +107,14 @@ export function MessageFeedbackControls({
           requestId,
           signal: controller.signal,
         });
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || userActedRef.current) {
           return;
         }
         setRating(stored.rating);
         setStatus("success");
         onRatingChange?.(stored.rating);
       } catch (caught) {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || userActedRef.current) {
           return;
         }
         if (caught instanceof ApiError && caught.status === 404) {
@@ -123,15 +127,26 @@ export function MessageFeedbackControls({
         // Keep local/persisted rating on hydrate failure.
       }
     })();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (hydrateAbortRef.current === controller) {
+        hydrateAbortRef.current = null;
+      }
+    };
     // Hydrate once per request identity; parent persistence is via onRatingChange.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount/requestId hydrate
   }, [baseUrl, requestId]);
+
+  function beginUserAction() {
+    userActedRef.current = true;
+    hydrateAbortRef.current?.abort();
+  }
 
   async function submit(next: FeedbackRating) {
     if (busy) {
       return;
     }
+    beginUserAction();
     setPendingAction(next);
     setStatus("pending");
     setError(null);
@@ -162,6 +177,7 @@ export function MessageFeedbackControls({
     if (busy) {
       return;
     }
+    beginUserAction();
     setPendingAction("clear");
     setStatus("pending");
     setError(null);

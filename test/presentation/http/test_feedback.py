@@ -142,7 +142,10 @@ def test_put_feedback_body_omits_prompt_fields() -> None:
     # Extra fields are ignored by default pydantic model; still must not reach use case.
     assert response.status_code == 200
     assert submit.calls[0].rating == "positive"
-    assert not hasattr(submit.calls[0], "prompt_key") or True
+    assert not hasattr(submit.calls[0], "prompt_key")
+    assert not hasattr(submit.calls[0], "prompt_version")
+    assert response.json()["prompt_key"] is None
+    assert response.json()["prompt_version"] is None
 
 
 def test_delete_feedback_returns_204() -> None:
