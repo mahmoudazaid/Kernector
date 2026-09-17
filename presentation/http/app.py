@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from composition import Settings, load_runtime_settings
+from application.submit_response_feedback import FeedbackNotFoundError
 from presentation.http.errors import (
     Problem,
     ProblemError,
@@ -189,6 +190,15 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
             instance=str(request.url.path),
         )
         return _problem_response(problem, headers=exc.headers)
+
+    @app.exception_handler(FeedbackNotFoundError)
+    async def feedback_not_found_handler(
+        request: Request, exc: FeedbackNotFoundError
+    ) -> JSONResponse:
+        # Expected when hydrating thumbs for a response with no rating yet —
+        # do not log as unhandled (avoids ServerErrorMiddleware / uvicorn ERROR).
+        problem = problem_from_exception(exc, instance=str(request.url.path))
+        return _problem_response(problem)
 
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
