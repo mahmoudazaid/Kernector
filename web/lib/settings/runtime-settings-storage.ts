@@ -39,6 +39,7 @@ export type StoredChatMessage = {
   action?: unknown;
   pendingApproval?: unknown;
   approvalResolution?: unknown;
+  feedbackRating?: unknown;
 };
 
 function isStoredRuntimeSettings(

@@ -32,6 +32,8 @@ export type ChatMessage = {
     fileName?: string | null;
     fileId?: string | null;
   } | null;
+  /** Persisted thumbs rating for this assistant turn (#219). */
+  feedbackRating?: "positive" | "negative" | null;
 };
 
 export type HistoryTurn = {

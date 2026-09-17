@@ -601,3 +601,38 @@ def get_test_design_facade(
 
 
 TestDesignFacadeDep = Annotated[object, Depends(get_test_design_facade)]
+
+
+@lru_cache(maxsize=1)
+def get_submit_response_feedback():
+    """Process-cached submit-feedback use case."""
+    from composition.container import build_submit_response_feedback
+
+    return build_submit_response_feedback(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_clear_response_feedback():
+    """Process-cached clear-feedback use case."""
+    from composition.container import build_clear_response_feedback
+
+    return build_clear_response_feedback(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_get_response_feedback():
+    """Process-cached get-feedback use case."""
+    from composition.container import build_get_response_feedback
+
+    return build_get_response_feedback(get_settings())
+
+
+SubmitResponseFeedbackDep = Annotated[
+    object, Depends(get_submit_response_feedback)
+]
+ClearResponseFeedbackDep = Annotated[
+    object, Depends(get_clear_response_feedback)
+]
+GetResponseFeedbackDep = Annotated[
+    object, Depends(get_get_response_feedback)
+]

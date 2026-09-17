@@ -531,6 +531,34 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/responses/{request_id}/feedback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Feedback
+     * @description Return the rating for ``request_id`` in the bound workspace.
+     */
+    get: operations["get_feedback_api_v1_responses__request_id__feedback_get"];
+    /**
+     * Upsert Feedback
+     * @description Create or update the rating for ``request_id`` in the bound workspace.
+     */
+    put: operations["upsert_feedback_api_v1_responses__request_id__feedback_put"];
+    post?: never;
+    /**
+     * Delete Feedback
+     * @description Clear the rating for ``request_id`` in the bound workspace.
+     */
+    delete: operations["delete_feedback_api_v1_responses__request_id__feedback_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/settings": {
     parameters: {
       query?: never;
@@ -1438,6 +1466,52 @@ export interface components {
       pointer: string;
     };
     /**
+     * ResponseFeedbackResponse
+     * @description Projected feedback record (no prompts, answers, or credentials).
+     */
+    ResponseFeedbackResponse: {
+      /** Client Message Id */
+      client_message_id?: string | null;
+      /** Comment */
+      comment?: string | null;
+      /** Conversation Id */
+      conversation_id?: string | null;
+      /** Created At */
+      created_at: string;
+      /** Model */
+      model?: string | null;
+      /** Prompt Key */
+      prompt_key?: string | null;
+      /** Prompt Version */
+      prompt_version?: string | null;
+      /**
+       * Rating
+       * @enum {string}
+       */
+      rating: "positive" | "negative";
+      /** Reason */
+      reason?:
+        | (
+            | "incorrect"
+            | "incomplete"
+            | "unsupported"
+            | "irrelevant"
+            | "wrong_tool"
+            | "unclear"
+            | "unsafe"
+            | "other"
+          )
+        | null;
+      /** Request Id */
+      request_id: string;
+      /** Run Id */
+      run_id?: string | null;
+      /** Tools */
+      tools?: string[];
+      /** Updated At */
+      updated_at: string;
+    };
+    /**
      * RiskFactorResponse
      * @description One risk factor with provenance ids only.
      */
@@ -1482,8 +1556,12 @@ export interface components {
       outcome?: string | null;
       /** Pack */
       pack?: string | null;
+      /** Prompt Key */
+      prompt_key?: string | null;
       /** Prompt Tokens */
       prompt_tokens?: number | null;
+      /** Prompt Version */
+      prompt_version?: string | null;
       /** Query Rewritten */
       query_rewritten?: boolean | null;
       /** Request Id */
@@ -1701,6 +1779,32 @@ export interface components {
       result_chars: number;
       /** Tool Name */
       tool_name: string;
+    };
+    /**
+     * UpsertResponseFeedbackRequest
+     * @description Body for creating or updating a response rating.
+     */
+    UpsertResponseFeedbackRequest: {
+      /** Comment */
+      comment?: string | null;
+      /**
+       * Rating
+       * @enum {string}
+       */
+      rating: "positive" | "negative";
+      /** Reason */
+      reason?:
+        | (
+            | "incorrect"
+            | "incomplete"
+            | "unsupported"
+            | "irrelevant"
+            | "wrong_tool"
+            | "unclear"
+            | "unsafe"
+            | "other"
+          )
+        | null;
     };
     /** ValidationError */
     ValidationError: {
@@ -3419,6 +3523,176 @@ export interface operations {
       };
       /** @description Conflict */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_feedback_api_v1_responses__request_id__feedback_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResponseFeedbackResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  upsert_feedback_api_v1_responses__request_id__feedback_put: {
+    parameters: {
+      query?: {
+        conversation_id?: string | null;
+        client_message_id?: string | null;
+      };
+      header?: never;
+      path: {
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpsertResponseFeedbackRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResponseFeedbackResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  delete_feedback_api_v1_responses__request_id__feedback_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
         headers: {
           [name: string]: unknown;
         };

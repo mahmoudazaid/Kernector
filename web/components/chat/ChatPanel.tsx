@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/chat";
 import { ToolApprovalCard, ExportDestinationRequiredPanel } from "@/components/chat/ToolApprovalCard";
 import type { ApprovalResolution } from "@/components/chat/ToolApprovalCard";
+import { MessageFeedbackControls } from "@/components/chat/MessageFeedbackControls";
 import { createTestDesignDraft } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
 import type {
@@ -353,6 +354,7 @@ function MessageRow({
   testDesignHref,
   onTestDesignStarted,
   onApprovalResolved,
+  onFeedbackChanged,
 }: {
   message: ChatMessage;
   apiBaseUrl: string;
@@ -366,6 +368,10 @@ function MessageRow({
       cancelled: boolean;
       resolution: ApprovalResolution;
     },
+  ) => void;
+  onFeedbackChanged: (
+    messageId: string,
+    rating: "positive" | "negative" | null,
   ) => void;
 }) {
   const router = useRouter();
@@ -431,6 +437,18 @@ function MessageRow({
     <article className="kern-chat-turn" data-role="assistant">
       <div className="kern-chat-msg kern-chat-msg--assistant">
         <div className="kern-chat-answer">{message.content}</div>
+        {message.run?.request_id ? (
+          <MessageFeedbackControls
+            baseUrl={apiBaseUrl}
+            requestId={message.run.request_id}
+            conversationId={conversationId}
+            clientMessageId={message.id}
+            initialRating={message.feedbackRating ?? null}
+            onRatingChange={(rating) => {
+              onFeedbackChanged(message.id, rating);
+            }}
+          />
+        ) : null}
         <CitationsBlock citations={message.citations ?? []} />
         <ToolsUsedBlock tools={message.toolsUsed ?? []} />
         {message.toolRun && !destinationRequired ? (
@@ -539,6 +557,7 @@ function toPersisted(messages: ChatMessage[]): StoredChatMessage[] {
     action: message.action,
     pendingApproval: message.pendingApproval,
     approvalResolution: message.approvalResolution,
+    feedbackRating: message.feedbackRating,
   }));
 }
 
@@ -556,6 +575,7 @@ function fromPersisted(messages: StoredChatMessage[]): ChatMessage[] {
     pendingApproval: message.pendingApproval as ChatMessage["pendingApproval"],
     approvalResolution:
       message.approvalResolution as ChatMessage["approvalResolution"],
+    feedbackRating: message.feedbackRating as ChatMessage["feedbackRating"],
   }));
 }
 
@@ -880,6 +900,30 @@ export function ChatPanel({
     });
   }
 
+  function handleFeedbackChanged(
+    messageId: string,
+    rating: "positive" | "negative" | null,
+  ): void {
+    setMessages((current) => {
+      const next = current.map((message) => {
+        if (message.id !== messageId) {
+          return message;
+        }
+        if ((message.feedbackRating ?? null) === rating) {
+          return message;
+        }
+        return {
+          ...message,
+          feedbackRating: rating,
+        };
+      });
+      if (boundIdRef.current) {
+        persistBound(boundIdRef.current, next, draftRef.current);
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (isLanding || !hydrated || !boundId) {
       return;
@@ -1185,6 +1229,7 @@ export function ChatPanel({
               testDesignHref={latestTestDesignHref(messages)}
               onTestDesignStarted={handleTestDesignStarted}
               onApprovalResolved={handleApprovalResolved}
+              onFeedbackChanged={handleFeedbackChanged}
             />
           ))}
           {sending ? (

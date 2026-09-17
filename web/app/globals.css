@@ -3207,6 +3207,76 @@ a.kern-btn {
   word-break: break-word;
 }
 
+.kern-chat-feedback {
+  margin-top: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.kern-chat-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.kern-chat-feedback-btn {
+  min-height: 2rem;
+  min-width: 2rem;
+  padding: 0.35rem;
+  line-height: 1;
+  color: var(--kern-muted);
+  border-radius: var(--kern-radius-pill);
+  transition:
+    color var(--kern-duration) var(--kern-ease),
+    background var(--kern-duration) var(--kern-ease),
+    box-shadow var(--kern-duration) var(--kern-ease),
+    border-color var(--kern-duration) var(--kern-ease);
+}
+
+.kern-chat-feedback-btn:hover:not(:disabled) {
+  color: var(--kern-ink);
+}
+
+.kern-chat-feedback-btn.is-selected {
+  color: var(--kern-accent);
+  border-color: color-mix(in srgb, var(--kern-accent) 45%, var(--kern-line));
+  background:
+    var(--kern-control-sheen),
+    color-mix(in srgb, var(--kern-surface) 88%, var(--kern-accent) 12%);
+  box-shadow: var(--kern-control-emboss);
+}
+
+.kern-chat-feedback-btn.is-selected:hover:not(:disabled) {
+  box-shadow: var(--kern-control-emboss-press);
+}
+
+.kern-chat-feedback-icon {
+  width: var(--kern-icon-sm, 1rem);
+  height: var(--kern-icon-sm, 1rem);
+  display: block;
+}
+
+.kern-chat-feedback-status {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--kern-muted, color-mix(in srgb, var(--kern-ink) 65%, transparent));
+}
+
+.kern-chat-feedback-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.kern-chat-feedback-error p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--kern-danger, #b42318);
+}
+
 .kern-approval-card {
   width: min(100%, 26.25rem);
   padding: 0.875rem;

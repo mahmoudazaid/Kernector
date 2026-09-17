@@ -68,6 +68,9 @@ function toChatMessages(
     approvalResolution:
       (message as { approvalResolution?: ChatMessage["approvalResolution"] })
         .approvalResolution ?? null,
+    feedbackRating:
+      (message as { feedbackRating?: ChatMessage["feedbackRating"] })
+        .feedbackRating ?? null,
   }));
 }
 
@@ -84,6 +87,7 @@ function toStored(messages: readonly ChatMessage[]): StoredChatMessage[] {
     action: message.action ?? null,
     pendingApproval: message.pendingApproval ?? null,
     approvalResolution: message.approvalResolution ?? null,
+    feedbackRating: message.feedbackRating ?? null,
   }));
 }
 

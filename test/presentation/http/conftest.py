@@ -10,6 +10,9 @@ from presentation.http.deps import (
     get_settings,
     get_short_term_memory_runtime,
     get_vector_store,
+    get_clear_response_feedback,
+    get_get_response_feedback,
+    get_submit_response_feedback,
 )
 
 
@@ -21,9 +24,15 @@ def _clear_http_process_caches() -> None:
     get_prompt_repository.cache_clear()
     get_document_catalog.cache_clear()
     get_short_term_memory_runtime.cache_clear()
+    get_submit_response_feedback.cache_clear()
+    get_clear_response_feedback.cache_clear()
+    get_get_response_feedback.cache_clear()
     yield
     get_settings.cache_clear()
     get_vector_store.cache_clear()
     get_prompt_repository.cache_clear()
     get_document_catalog.cache_clear()
     get_short_term_memory_runtime.cache_clear()
+    get_submit_response_feedback.cache_clear()
+    get_clear_response_feedback.cache_clear()
+    get_get_response_feedback.cache_clear()
