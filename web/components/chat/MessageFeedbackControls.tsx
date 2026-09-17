@@ -189,6 +189,15 @@ export function MessageFeedbackControls({
       setStatus("idle");
       onRatingChange?.(null);
     } catch (caught) {
+      // Idempotent clear: local rating with no server row is already the desired state.
+      if (caught instanceof ApiError && caught.status === 404) {
+        setRating(null);
+        setPendingAction(null);
+        setUserAck(false);
+        setStatus("idle");
+        onRatingChange?.(null);
+        return;
+      }
       setStatus("error");
       if (caught instanceof ApiError) {
         setError(caught.detail || "Could not clear feedback. Try again.");

@@ -271,6 +271,43 @@ describe("MessageFeedbackControls", () => {
     expect(onRatingChange).toHaveBeenCalledWith(null);
   });
 
+  it("treats clear 404 as success when the server has no feedback row", async () => {
+    const user = userEvent.setup();
+    const onRatingChange = vi.fn();
+    clearResponseFeedback.mockRejectedValue(
+      new ApiError({
+        status: 404,
+        title: "Feedback not found",
+        detail: "No feedback found for this response.",
+        code: "feedback_not_found",
+      }),
+    );
+    render(
+      <MessageFeedbackControls
+        baseUrl="http://127.0.0.1:8000"
+        requestId="req-1"
+        conversationId="conv-1"
+        clientMessageId="a-1"
+        initialRating="positive"
+        onRatingChange={onRatingChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Thumbs up" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Thumbs up" }));
+    await waitFor(() => {
+      expect(clearResponseFeedback).toHaveBeenCalled();
+    });
+    expect(screen.getByRole("button", { name: "Thumbs up" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onRatingChange).toHaveBeenCalledWith(null);
+  });
+
   it("shows recoverable error and retry", async () => {
     const user = userEvent.setup();
     upsertResponseFeedback.mockRejectedValue(
