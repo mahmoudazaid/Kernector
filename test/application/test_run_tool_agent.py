@@ -14,7 +14,9 @@ from domain.ports import Tool
 
 class _FakeAgent:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[str, ...], int, str | None]] = []
+        self.calls: list[
+            tuple[str, tuple[str, ...], int, str | None, str | None]
+        ] = []
 
     def run(
         self,
@@ -23,8 +25,17 @@ class _FakeAgent:
         *,
         max_steps: int,
         conversation_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> AgentTurnResult:
-        self.calls.append((goal, tuple(t.name for t in tools), max_steps, conversation_id))
+        self.calls.append(
+            (
+                goal,
+                tuple(t.name for t in tools),
+                max_steps,
+                conversation_id,
+                system_prompt,
+            )
+        )
         return AgentTurnResult(content="done", steps=1)
 
 
@@ -48,7 +59,20 @@ def test_run_tool_agent_delegates_to_port() -> None:
     result = use_case.execute("goal text", [_Tool()], max_steps=4)
 
     assert result == AgentTurnResult(content="done", steps=1)
-    assert agent.calls == [("goal text", ("t",), 4, None)]
+    assert agent.calls == [("goal text", ("t",), 4, None, None)]
+
+
+def test_run_tool_agent_forwards_per_run_system_prompt() -> None:
+    agent = _FakeAgent()
+
+    RunToolAgent(agent).execute(
+        "goal text",
+        [_Tool()],
+        max_steps=2,
+        system_prompt="BASE\n\nstyled",
+    )
+
+    assert agent.calls == [("goal text", ("t",), 2, None, "BASE\n\nstyled")]
 
 
 def test_run_tool_agent_rejects_blank_goal() -> None:

@@ -56,10 +56,50 @@ describe("conversation store", () => {
       messages: [{ id: "1", role: "user", content: "First question" }],
       draft: "",
       updatedAt: 1_700_000_000_000,
+      responseStyle: "default",
     });
     expect(getConversation(created.id)).toEqual(created);
     expect(listConversations()).toEqual([created]);
     expect(localStorage.getItem(CONVERSATIONS_STORAGE_KEY)).toBeTruthy();
+  });
+
+  it("defaults responseStyle to default and persists updates", () => {
+    const created = createConversation({
+      title: "t",
+      messages: [],
+      draft: "",
+    });
+    expect(created.responseStyle).toBe("default");
+
+    const updated = updateConversation(created.id, {
+      responseStyle: "concise",
+    });
+    expect(updated?.responseStyle).toBe("concise");
+    expect(getConversation(created.id)?.responseStyle).toBe("concise");
+  });
+
+  it("migrates legacy conversations missing responseStyle to default", () => {
+    localStorage.setItem(
+      CONVERSATIONS_STORAGE_KEY,
+      JSON.stringify({
+        conversations: [
+          {
+            id: "legacy-1",
+            title: "Legacy",
+            draft: "",
+            messages: [],
+            updatedAt: 100,
+            runStatus: "idle",
+            requestStartedAt: null,
+            runHeartbeatAt: null,
+            unread: false,
+          },
+        ],
+      }),
+    );
+    resetConversationsSnapshotForTests();
+
+    expect(getConversation("legacy-1")?.responseStyle).toBe("default");
   });
 
   it("lists conversations newest-first by updatedAt", () => {

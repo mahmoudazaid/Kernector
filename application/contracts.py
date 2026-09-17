@@ -9,8 +9,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from application.errors import ApplicationValidationError
+from application.response_style_policy import ResponseStyle
 from domain.knowledge import ScoredChunk, SourceDocument, SourceReference
 from domain.models import AskResult, Message, Usage
+
+_RESPONSE_STYLE_CHOICES = ", ".join(
+    sorted(style.value for style in ResponseStyle)
+)
 
 
 def _require_text(value: object, field_name: str) -> str:
@@ -230,6 +235,9 @@ class AskRequest:
         retrieval_limit (int | None): Optional positive limit for retrieval.
         conversation_id (str | None): Optional client conversation id for
             short-term agent thread memory. Workspace scoping is server-bound.
+        response_style: Optional allowlisted response-style preset
+            (``formal`` / ``friendly`` / ``concise``). ``None`` means Default
+            (no style instruction). Affects wording/length only.
     """
 
     query: str
@@ -238,6 +246,7 @@ class AskRequest:
     history: Sequence[Message] = ()
     retrieval_limit: int | None = None
     conversation_id: str | None = None
+    response_style: ResponseStyle | None = None
 
     def __post_init__(self) -> None:
         if self.prompt_key is not None:
@@ -270,6 +279,13 @@ class AskRequest:
                 "conversation_id",
                 require_conversation_id(self.conversation_id),
             )
+        if self.response_style is not None and not isinstance(
+            self.response_style, ResponseStyle
+        ):
+            raise ApplicationValidationError(
+                "response_style must be a ResponseStyle, "
+                f"got {type(self.response_style).__name__}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,6 +315,8 @@ class RunMeta:
         tools (Sequence[str]): Invoked tool **names** only.
         error_type (str | None): Exception type name on failure — never the
             exception message.
+        response_style (str | None): Allowlisted wording preset applied for
+            this turn (``formal`` / ``friendly`` / ``concise``), when any.
     """
 
     model: str | None = None
@@ -316,6 +334,7 @@ class RunMeta:
     source_type: str | None = None
     tools: Sequence[str] = ()
     error_type: str | None = None
+    response_style: str | None = None
 
     def __post_init__(self) -> None:
         if self.model is not None:
@@ -355,6 +374,15 @@ class RunMeta:
             value = getattr(self, name)
             if value is not None:
                 _require_text(value, name)
+        if self.response_style is not None:
+            _require_text(self.response_style, "response_style")
+            try:
+                ResponseStyle(self.response_style)
+            except ValueError as error:
+                raise ApplicationValidationError(
+                    "response_style must be one of "
+                    f"{_RESPONSE_STYLE_CHOICES}"
+                ) from error
         if self.hit_count is not None:
             if not isinstance(self.hit_count, int) or isinstance(
                 self.hit_count, bool

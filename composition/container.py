@@ -2548,6 +2548,25 @@ def _validate_selection_items(
                 except BaseException as error:
                     errors.append((index, error))
             if errors:
+                # Wait for any still-running lower-index jobs so the reported
+                # rejection is the earliest selected item, not a race winner.
+                min_error_index = min(index for index, _ in errors)
+                pending_lower = [
+                    future
+                    for future, index in in_flight.items()
+                    if index < min_error_index
+                ]
+                if pending_lower:
+                    wait(pending_lower)
+                    for future in list(in_flight):
+                        index = in_flight[future]
+                        if index >= min_error_index or not future.done():
+                            continue
+                        in_flight.pop(future)
+                        try:
+                            resolved[index] = future.result()
+                        except BaseException as error:
+                            errors.append((index, error))
                 raise _preferred_validation_error(errors)
             _fill()
     finally:
@@ -3710,8 +3729,9 @@ def build_tool_augmented_ask(
             output_style: str,
             invoke: OpaqueInvoke,
             conversation_id: str | None = None,
+            response_style: object = None,
         ):
-            del conversation_id
+            del conversation_id, response_style
             from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
             from packs.software_delivery.orchestration_contracts import (
                 OrchestrateSoftwareDeliveryRequest,

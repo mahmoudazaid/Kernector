@@ -495,6 +495,116 @@ def test_task_prompt_follows_the_retrieved_context() -> None:
     assert context_at < task_at < len(contents) - 1
 
 
+def test_response_style_composes_into_system_not_prelude() -> None:
+    from application.response_style_policy import (
+        FORMAL_STYLE_INSTRUCTION,
+        ResponseStyle,
+        compose_grounded_system,
+    )
+
+    chat = _RecordingChat()
+    before = GROUNDED_RAG_SYSTEM
+
+    response = _use_case((_hit(),), chat).execute(
+        AskRequest(
+            prompt_key=None,
+            query="How do I restart?",
+            response_style=ResponseStyle.FORMAL,
+        )
+    )
+
+    system, messages, _settings = chat.calls[0]
+    assert system == compose_grounded_system(ResponseStyle.FORMAL)
+    assert FORMAL_STYLE_INSTRUCTION in system
+    assert system.startswith(GROUNDED_RAG_SYSTEM)
+    assert GROUNDED_RAG_SYSTEM == before
+    assert FORMAL_STYLE_INSTRUCTION not in GROUNDED_RAG_SYSTEM
+    assert not any(FORMAL_STYLE_INSTRUCTION in message.content for message in messages)
+    assert response.citations == build_citations((_hit(),))
+    assert response.run is not None
+    assert response.run.response_style == "formal"
+
+
+def test_response_style_absent_keeps_policy_alone() -> None:
+    chat = _RecordingChat()
+
+    response = _use_case((_hit(),), chat).execute(
+        AskRequest(prompt_key=None, query="How do I restart?", response_style=None)
+    )
+
+    assert chat.calls[0][0] is GROUNDED_RAG_SYSTEM
+    assert response.run is not None
+    assert response.run.response_style is None
+
+
+def test_same_conversation_style_switch_changes_next_system_prompt() -> None:
+    from application.response_style_policy import (
+        FRIENDLY_STYLE_INSTRUCTION,
+        FORMAL_STYLE_INSTRUCTION,
+        ResponseStyle,
+        compose_grounded_system,
+    )
+
+    chat = _RecordingChat()
+    use_case = _use_case((_hit(),), chat)
+
+    use_case.execute(
+        AskRequest(
+            prompt_key=None,
+            query="How do I restart?",
+            conversation_id="conv-style",
+            response_style=ResponseStyle.FORMAL,
+        )
+    )
+    use_case.execute(
+        AskRequest(
+            prompt_key=None,
+            query="How do I restart again?",
+            conversation_id="conv-style",
+            response_style=ResponseStyle.FRIENDLY,
+        )
+    )
+
+    assert chat.calls[0][0] == compose_grounded_system(ResponseStyle.FORMAL)
+    assert FORMAL_STYLE_INSTRUCTION in chat.calls[0][0]
+    assert chat.calls[1][0] == compose_grounded_system(ResponseStyle.FRIENDLY)
+    assert FRIENDLY_STYLE_INSTRUCTION in chat.calls[1][0]
+    assert FORMAL_STYLE_INSTRUCTION not in chat.calls[1][0]
+
+
+def test_cross_conversation_styles_do_not_leak_into_system_prompt() -> None:
+    from application.response_style_policy import (
+        CONCISE_STYLE_INSTRUCTION,
+        FORMAL_STYLE_INSTRUCTION,
+        ResponseStyle,
+        compose_grounded_system,
+    )
+
+    chat_a = _RecordingChat()
+    chat_b = _RecordingChat()
+    _use_case((_hit(),), chat_a).execute(
+        AskRequest(
+            prompt_key=None,
+            query="How do I restart?",
+            conversation_id="conv-a",
+            response_style=ResponseStyle.FORMAL,
+        )
+    )
+    _use_case((_hit(),), chat_b).execute(
+        AskRequest(
+            prompt_key=None,
+            query="How do I restart?",
+            conversation_id="conv-b",
+            response_style=ResponseStyle.CONCISE,
+        )
+    )
+
+    assert chat_a.calls[0][0] == compose_grounded_system(ResponseStyle.FORMAL)
+    assert chat_b.calls[0][0] == compose_grounded_system(ResponseStyle.CONCISE)
+    assert FORMAL_STYLE_INSTRUCTION not in chat_b.calls[0][0]
+    assert CONCISE_STYLE_INSTRUCTION not in chat_a.calls[0][0]
+
+
 # --- Insufficient evidence ------------------------------------------------
 
 

@@ -160,6 +160,7 @@ class LangGraphToolAgent:
         *,
         max_steps: int,
         conversation_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> AgentTurnResult:
         """Run a model ↔ tools loop for ``goal`` with a hard ``max_steps`` stop."""
         tools_by_name = {tool.name: tool for tool in tools}
@@ -178,10 +179,15 @@ class LangGraphToolAgent:
         compiled, use_memory = self._compile(
             tools, max_steps=max_steps, conversation_id=conversation_key
         )
+        prompt = (
+            system_prompt
+            if isinstance(system_prompt, str) and system_prompt.strip()
+            else self._system_prompt
+        )
         input_state: Mapping[str, object] = {
             "messages": [
                 SystemMessage(
-                    content=self._system_prompt,
+                    content=prompt,
                     id=STABLE_SYSTEM_MESSAGE_ID,
                 ),
                 HumanMessage(content=goal),

@@ -17,9 +17,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from application.response_style_policy import ResponseStyle, compose_agent_system
 from application.run_tool_agent import RunToolAgent
+from application.untrusted_text import AGENT_BOUNDARY, agent_tool_system_prompt
 from domain.tool_approval import ApprovalHints
-from application.untrusted_text import AGENT_BOUNDARY
 from composition.prepare_drive_export import (
     DraftUnavailable,
     ExportDestinationRequired,
@@ -162,6 +163,7 @@ def build_agent_orchestrate(
         output_style: str,
         invoke: OpaqueInvoke,
         conversation_id: str | None = None,
+        response_style: ResponseStyle | None = None,
     ):
         del generate_tests, output_style
         if conversation_id is None or not str(conversation_id).strip():
@@ -209,8 +211,13 @@ def build_agent_orchestrate(
             )
         ]
         goal = _agent_goal(target=target, hits=hits, prepared=prepared)
+        style = response_style if isinstance(response_style, ResponseStyle) else None
         turn = run_agent.execute(
-            goal, tools, max_steps=max_steps, conversation_id=conversation_id
+            goal,
+            tools,
+            max_steps=max_steps,
+            conversation_id=conversation_id,
+            system_prompt=compose_agent_system(agent_tool_system_prompt(), style),
         )
         pending = getattr(turn, "pending_approval", None)
         if isinstance(pending, PendingToolApproval):

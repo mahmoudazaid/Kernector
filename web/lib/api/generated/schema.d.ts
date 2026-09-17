@@ -768,6 +768,10 @@ export interface components {
     /**
      * ChatRuntimeRequest
      * @description Optional client runtime overrides from Settings localStorage (#237).
+     *
+     *     ``response_style`` is an allowlisted wording/length preset (#218). Omit or
+     *     ``null`` for Default (no style instruction). Not stored in numeric
+     *     ``settings``.
      */
     ChatRuntimeRequest: {
       /** Model */
@@ -776,6 +780,8 @@ export interface components {
       ollama_base_url?: string | null;
       /** Provider */
       provider?: ("openrouter" | "ollama") | null;
+      /** Response Style */
+      response_style?: ("formal" | "friendly" | "concise") | null;
       /** Settings */
       settings?: {
         [key: string]: number;
@@ -1482,6 +1488,8 @@ export interface components {
       query_rewritten?: boolean | null;
       /** Request Id */
       request_id?: string | null;
+      /** Response Style */
+      response_style?: ("formal" | "friendly" | "concise") | null;
       /** Tools */
       tools?: string[];
       /** Total Tokens */

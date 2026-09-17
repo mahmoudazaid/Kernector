@@ -346,12 +346,18 @@ class ChatHistoryMessage(BaseModel):
 
 
 class ChatRuntimeRequest(BaseModel):
-    """Optional client runtime overrides from Settings localStorage (#237)."""
+    """Optional client runtime overrides from Settings localStorage (#237).
+
+    ``response_style`` is an allowlisted wording/length preset (#218). Omit or
+    ``null`` for Default (no style instruction). Not stored in numeric
+    ``settings``.
+    """
 
     provider: Literal["openrouter", "ollama"] | None = None
     model: str | None = None
     ollama_base_url: str | None = None
     settings: dict[str, int | float] = Field(default_factory=dict)
+    response_style: Literal["formal", "friendly", "concise"] | None = None
 
 
 class SourceLocatorRequest(BaseModel):
@@ -409,6 +415,7 @@ class RunMetaResponse(BaseModel):
     hit_count: int | None = None
     citation_count: int | None = None
     tools: list[str] = Field(default_factory=list)
+    response_style: Literal["formal", "friendly", "concise"] | None = None
 
 
 class ToolCallResponse(BaseModel):
@@ -693,6 +700,9 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
     if run is None:
         return None
     usage = run.usage
+    style: Literal["formal", "friendly", "concise"] | None = None
+    if run.response_style in ("formal", "friendly", "concise"):
+        style = run.response_style
     return RunMetaResponse(
         request_id=run.request_id,
         outcome=run.outcome,
@@ -706,6 +716,7 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
         hit_count=run.hit_count,
         citation_count=run.citation_count,
         tools=list(run.tools),
+        response_style=style,
     )
 
 
