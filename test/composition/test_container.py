@@ -535,6 +535,8 @@ def test_agent_loop_flag_on_wires_agent_orchestrate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Flag on: composition injects agent-backed orchestrate."""
+    from application.ask_knowledge_with_agent import AskKnowledgeWithAgent
+
     _sd_env(monkeypatch)
     monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setattr(
@@ -545,6 +547,7 @@ def test_agent_loop_flag_on_wires_agent_orchestrate(
 
     def _fake_agent_orchestrate(agent: object, **kwargs: object):
         wired.append(agent)
+        assert kwargs.get("retrieve_tool") is None  # Drive stays retrieval-free
 
         def orchestrate(**_kwargs: object):
             raise AssertionError("orchestrate body not under test")
@@ -563,6 +566,9 @@ def test_agent_loop_flag_on_wires_agent_orchestrate(
     assert len(wired) == 1
     assert isinstance(wired[0], LangGraphToolAgent)
     assert isinstance(ask._ask, ToolAugmentedAsk)
+    assert isinstance(ask._ask._grounded_ask, AskKnowledgeWithAgent)
+    assert ask._ask._runner._defer_retrieval is True
+    assert ask._ask._runner._citation_channel is not None
 
 
 def test_agent_loop_runtime_override_wires_despite_missing_openrouter_key(
@@ -653,30 +659,56 @@ def test_agent_loop_enabled_former_tool_query_stays_on_rag_without_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Choice A (#285): retired intent never enters the agent loop."""
+    from application.citations import build_citations
+    from domain.models import AgentTurnResult
+    from domain.ports import Tool
+
     _sd_env(monkeypatch)
     monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    hit = _scored_hit()
     monkeypatch.setattr(
         "composition.container.build_rewrite_and_retrieve_knowledge",
-        lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
+        lambda settings, vector_store=None: _RecordingRewriteRetrieve([hit]),
     )
-    chat = _StubChat()
 
-    ask = build_tool_augmented_ask(load_settings(), chat_model=chat)
+    class _RetrieveThenAnswer:
+        def run(
+            self,
+            goal: str,
+            tools: Sequence[Tool],
+            *,
+            max_steps: int,
+            conversation_id: str | None = None,
+            system_prompt: str | None = None,
+        ) -> AgentTurnResult:
+            del max_steps, conversation_id, system_prompt
+            tools[0].run({"query": goal})
+            return AgentTurnResult(content="stubbed", steps=2)
+
+    monkeypatch.setattr(
+        "composition.short_term_memory.ShortTermMemoryRuntime.bind_tool_agent",
+        lambda self, **_kwargs: _RetrieveThenAnswer(),
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
     response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
 
     assert response.answer == "stubbed"
+    assert response.citations == build_citations((hit,))
     assert response.tool_outputs == ()
     assert response.run is not None
     assert response.run.path == "rag"
     assert ask.consume_tool_run_view() is None
-    assert chat.calls
 
 
 def test_agent_loop_enabled_does_not_invoke_retired_tools_for_former_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Composed agent loop stays dormant when intent never matches."""
+    from domain.models import AgentTurnResult
+    from domain.ports import Tool
+
     _sd_env(monkeypatch)
     monkeypatch.setenv("SOFTWARE_DELIVERY_AGENT_LOOP", "true")
     monkeypatch.setattr(
@@ -688,9 +720,27 @@ def test_agent_loop_enabled_does_not_invoke_retired_tools_for_former_matches(
         "composition.container.build_invoke_tool",
         lambda settings, chat_model=None: invoke_tool,
     )
-    chat = _StubChat()
 
-    ask = build_tool_augmented_ask(load_settings(), chat_model=chat)
+    class _RetrieveThenAnswer:
+        def run(
+            self,
+            goal: str,
+            tools: Sequence[Tool],
+            *,
+            max_steps: int,
+            conversation_id: str | None = None,
+            system_prompt: str | None = None,
+        ) -> AgentTurnResult:
+            del max_steps, conversation_id, system_prompt
+            tools[0].run({"query": goal})
+            return AgentTurnResult(content="stubbed", steps=2)
+
+    monkeypatch.setattr(
+        "composition.short_term_memory.ShortTermMemoryRuntime.bind_tool_agent",
+        lambda self, **_kwargs: _RetrieveThenAnswer(),
+    )
+
+    ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
     assert isinstance(ask._ask, ToolAugmentedAsk)
 
     response = ask.execute(AskRequest(query="Create test cases for AUTH-101"))
@@ -701,7 +751,6 @@ def test_agent_loop_enabled_does_not_invoke_retired_tools_for_former_matches(
     assert response.run is not None
     assert response.run.path == "rag"
     assert ask.consume_tool_run_view() is None
-    assert chat.calls
 
 
 def test_observing_chat_bind_tools_forwards_extra_options() -> None:

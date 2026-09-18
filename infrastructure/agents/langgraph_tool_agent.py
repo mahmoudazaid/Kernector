@@ -528,6 +528,19 @@ def _pending_from_interrupts(interrupts: object) -> PendingToolApproval | None:
 
 def _to_langchain_tool(tool: Tool) -> StructuredTool:
     name = _bind_tool_name(tool.name)
+    schema = getattr(tool, "args_schema", None)
+
+    if schema is not None:
+
+        def _invoke_with_args(**kwargs: object) -> str:
+            return tool.run(kwargs)
+
+        return StructuredTool.from_function(
+            func=_invoke_with_args,
+            name=name,
+            description=tool.description,
+            args_schema=schema,
+        )
 
     def _invoke() -> str:
         return tool.run({})

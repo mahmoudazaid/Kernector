@@ -419,6 +419,39 @@ def test_langgraph_tool_agent_binds_empty_args_schema() -> None:
     assert schema.get("properties", {}) == {}
 
 
+def test_langgraph_tool_agent_forwards_typed_tool_args() -> None:
+    from pydantic import BaseModel, ConfigDict, Field
+
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    class _QueryArgs(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        query: str = Field(description="Retrieval query")
+
+    class _TypedTool(_RecordingTool):
+        args_schema = _QueryArgs
+
+    tool = _TypedTool(name="knowledge.retrieve", result="ctx")
+    chat = _ScriptedChat(
+        [
+            _ai_tool_call(
+                name="knowledge__retrieve",
+                args={"query": "restart worker"},
+            ),
+            _ai_text("done"),
+        ]
+    )
+    LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat),
+    ).run("goal", [tool], max_steps=4)
+
+    assert tool.calls == [{"query": "restart worker"}]
+    assert chat.bound_tools is not None
+    schema = chat.bound_tools[0].args_schema.model_json_schema()  # type: ignore[union-attr]
+    assert "query" in schema.get("properties", {})
+
+
 def test_langgraph_tool_agent_reuses_messages_on_same_workspace_conversation() -> None:
     from langchain_core.messages import HumanMessage, SystemMessage
     from langgraph.checkpoint.memory import InMemorySaver

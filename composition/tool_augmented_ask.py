@@ -157,7 +157,7 @@ class ToolAugmentedAsk:
     """Route a chat query via :class:`TurnRouter`, then execute the path.
 
     Args:
-        ask: Grounded RAG path.
+        ask: Grounded RAG path (also task_prompt delegation).
         runner: Tool/workflow runner for ``tool_workflow`` (Drive export).
         signals: Injected workflow probes (Test Design, Drive, …).
         ask_general: Labelled non-RAG path for ``general_answer``.
@@ -167,6 +167,8 @@ class ToolAugmentedAsk:
             (unit-test compat for pre-router scaffolding doubles).
         clarification_context_store: Optional conversation-scoped prior clarify
             context (get on route; set on clarify; clear on other paths).
+        grounded_ask: Optional agentic grounded path (retrieve tool then answer).
+            When set, ``GROUNDED_ANSWER`` uses this instead of ``ask``.
     """
 
     def __init__(
@@ -180,8 +182,10 @@ class ToolAugmentedAsk:
         build_test_design_handoff: TestDesignHandoffBuilder | None = None,
         select: SelectToolIntent | None = None,
         clarification_context_store: ClarificationContextStore | None = None,
+        grounded_ask: GroundedAsk | None = None,
     ) -> None:
         self._ask = ask
+        self._grounded_ask = grounded_ask
         self._runner = runner
         self._ask_general = ask_general
         self._pack_id = pack_id
@@ -365,7 +369,8 @@ class ToolAugmentedAsk:
         request: AskRequest,
         settings: Mapping[str, object] | None,
     ) -> AskResponse:
-        response = self._ask.execute(request, settings)
+        grounded = self._grounded_ask if self._grounded_ask is not None else self._ask
+        response = grounded.execute(request, settings)
         log_operation(
             logger, operation="ask_turn", outcome="delegated", path="rag"
         )
