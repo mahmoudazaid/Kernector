@@ -219,6 +219,74 @@ def test_clear_drive_export_with_payload_is_ready() -> None:
     assert result.readiness is WorkflowReadiness.READY
 
 
+def test_drive_prior_confirm_plus_yes_is_ready_when_draft_ready() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=True, draft_ready=lambda _cid: True
+    )
+    prior = {
+        "workflow_hint": "drive_export",
+        "missing_fields": ("export_confirmation",),
+    }
+    for query in ("yes", "ok", "sure"):
+        result = signal(
+            TurnRoutingRequest(
+                query=query,
+                clarification_context=prior,
+                conversation_id="conv-1",
+            )
+        )
+        assert result is not None, query
+        assert result.readiness is WorkflowReadiness.READY, query
+
+
+def test_drive_prior_confirm_plus_yes_missing_titles_stays_incomplete() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=True, draft_ready=lambda _cid: False
+    )
+    prior = {
+        "workflow_hint": "drive_export",
+        "missing_fields": ("export_confirmation",),
+    }
+    result = signal(
+        TurnRoutingRequest(
+            query="yes",
+            clarification_context=prior,
+            conversation_id="conv-1",
+        )
+    )
+    assert result is not None
+    assert result.readiness is WorkflowReadiness.INCOMPLETE
+    assert result.reason == "missing_fields"
+    assert "selected_titles" in result.missing_fields
+
+
+def test_drive_yes_without_prior_is_not_a_signal() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=True, draft_ready=lambda _cid: True
+    )
+    assert signal(TurnRoutingRequest(query="yes", conversation_id="c1")) is None
+
+
+def test_drive_prior_confirm_pivot_is_not_a_signal() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=True, draft_ready=lambda _cid: True
+    )
+    prior = {
+        "workflow_hint": "drive_export",
+        "missing_fields": ("export_confirmation",),
+    }
+    assert (
+        signal(
+            TurnRoutingRequest(
+                query="What do the docs say about auth?",
+                clarification_context=prior,
+                conversation_id="conv-1",
+            )
+        )
+        is None
+    )
+
+
 def test_drive_export_when_disabled_is_tool_unavailable_not_rag() -> None:
     signal = build_drive_export_workflow_signal(
         export_enabled=False, draft_ready=lambda _cid: True

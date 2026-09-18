@@ -301,8 +301,11 @@ missing payloads clarify (#304, #310).
 loads that context into WorkflowSignals: a Test Design follow-up that supplies
 a valid Issue locator (URL, ``owner/repo#N``, or ``owner/repo/N``) becomes
 ``tool_workflow`` without restating the command phrase; bare numbers or “yes”
-stay on clarification (never RAG). Context is cleared on tool_workflow,
-grounded, or general paths.
+for Test Design stay on clarification (never RAG). A Drive partial-export
+clarify followed by “yes”/“ok” confirms ``export_confirmation`` and becomes
+``tool_workflow`` when a draft with selected titles is ready (otherwise
+``missing_fields``); raw history alone still does not promote. Context is
+cleared on tool_workflow, grounded, or general paths.
 
 **AskGeneral** (``application/ask_general.py``): ``ChatModel``/``AskService``
 only — no retrieve, no citations. System policy forbids project/repository

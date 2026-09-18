@@ -52,8 +52,10 @@ def _routed_factory(
     export_enabled: bool = False,
     draft_ready: bool = False,
     clarification_context_store: object | None = None,
+    runner: object | None = None,
 ):
     grounded_ask = grounded if grounded is not None else _ExplodingAsk()
+    tool_runner = runner if runner is not None else _ExplodingRunner()
 
     def factory(runtime=None, *, source_locator=None):  # noqa: ANN001
         del runtime
@@ -67,7 +69,7 @@ def _routed_factory(
 
         return ToolAugmentedAsk(
             grounded_ask,  # type: ignore[arg-type]
-            runner=_ExplodingRunner(),
+            runner=tool_runner,  # type: ignore[arg-type]
             signals=(
                 build_test_design_workflow_signal(enabled=True),
                 build_drive_export_workflow_signal(
@@ -513,3 +515,114 @@ def test_pivot_after_clarify_clears_context_and_uses_rag() -> None:
     assert third.status_code == 200
     assert ask.calls == 2
     assert third.json().get("action") is None
+
+
+def test_drive_export_yes_follow_up_never_falls_to_rag() -> None:
+    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.workflow_signals import DRIVE_MISSING_PAYLOAD_CLARIFY_ANSWER
+
+    ask = _RecordingAsk()
+    store = InMemoryClarificationContextStore()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(
+            enabled_packs=("software-delivery",),
+            agent_loop=True,
+        ),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings,
+        grounded=ask,
+        export_enabled=True,
+        draft_ready=False,
+        clarification_context_store=store,
+    )
+    client = TestClient(app)
+    first = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "export",
+            "history": [],
+            "conversation_id": "conv-drive-1",
+        },
+    )
+    assert first.status_code == 200
+    assert first.json()["run"]["intent"] == "clarification"
+    assert ask.calls == 0
+
+    second = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "yes",
+            "history": [],
+            "conversation_id": "conv-drive-1",
+        },
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert ask.calls == 0
+    assert body["run"]["intent"] == "clarification"
+    assert body["run"]["path"] == "clarification"
+    assert body["answer"] == DRIVE_MISSING_PAYLOAD_CLARIFY_ANSWER
+
+
+def test_drive_export_yes_follow_up_runs_tools_when_draft_ready() -> None:
+    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.tool_augmented_ask import ToolRunOutcome
+
+    class _RecordingRunner:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def run(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            self.calls += 1
+            return ToolRunOutcome(answer="exported")
+
+    ask = _RecordingAsk()
+    runner = _RecordingRunner()
+    store = InMemoryClarificationContextStore()
+    base = get_settings()
+    settings = replace(
+        base,
+        domain_tools=DomainToolSettings(
+            enabled_packs=("software-delivery",),
+            agent_loop=True,
+        ),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(
+        settings,
+        grounded=ask,
+        export_enabled=True,
+        draft_ready=True,
+        clarification_context_store=store,
+        runner=runner,
+    )
+    client = TestClient(app)
+    client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "export",
+            "history": [],
+            "conversation_id": "conv-drive-2",
+        },
+    )
+    second = client.post(
+        "/api/v1/chat/ask",
+        json={
+            "query": "yes",
+            "history": [],
+            "conversation_id": "conv-drive-2",
+        },
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert ask.calls == 0
+    assert runner.calls == 1
+    assert body["run"]["intent"] == "tool_workflow"
+    assert body["answer"] == "exported"
+    assert store.get("conv-drive-2") is None

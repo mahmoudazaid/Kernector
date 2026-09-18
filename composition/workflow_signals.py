@@ -128,6 +128,25 @@ _AFFIRMATIVE_FOLLOW_UP = re.compile(
 )
 
 
+def _prior_missing_field(
+    request: TurnRoutingRequest,
+    *,
+    workflow_hint: str,
+    field: str,
+) -> bool:
+    prior = request.clarification_context
+    if not isinstance(prior, Mapping):
+        return False
+    if prior.get("workflow_hint") != workflow_hint:
+        return False
+    missing = prior.get("missing_fields")
+    if isinstance(missing, str):
+        return missing == field
+    if isinstance(missing, (list, tuple)):
+        return field in missing
+    return False
+
+
 def build_test_design_workflow_signal(
     *,
     enabled: bool = True,
@@ -135,17 +154,9 @@ def build_test_design_workflow_signal(
     """Return a WorkflowSignal for Test Design command + Issue readiness."""
 
     def _prior_awaiting_locator(request: TurnRoutingRequest) -> bool:
-        prior = request.clarification_context
-        if not isinstance(prior, Mapping):
-            return False
-        if prior.get("workflow_hint") != "test_design":
-            return False
-        missing = prior.get("missing_fields")
-        if isinstance(missing, str):
-            return missing == "issue_locator"
-        if isinstance(missing, (list, tuple)):
-            return "issue_locator" in missing
-        return False
+        return _prior_missing_field(
+            request, workflow_hint="test_design", field="issue_locator"
+        )
 
     def _incomplete_missing_locator() -> WorkflowSignalResult:
         return WorkflowSignalResult(
@@ -238,6 +249,49 @@ def build_drive_export_workflow_signal(
             drafts.find_by_conversation_id(conversation_id)
         )
 
+    def _tool_unavailable() -> WorkflowSignalResult:
+        return WorkflowSignalResult(
+            workflow_hint="drive_export",
+            readiness=WorkflowReadiness.INCOMPLETE,
+            reason="tool_unavailable",
+            missing_fields=(),
+            clarification_context={
+                "workflow_hint": "drive_export",
+                "missing_fields": (),
+            },
+        )
+
+    def _incomplete_confirmation() -> WorkflowSignalResult:
+        return WorkflowSignalResult(
+            workflow_hint="drive_export",
+            readiness=WorkflowReadiness.INCOMPLETE,
+            reason="incomplete_workflow",
+            missing_fields=("export_confirmation",),
+            clarification_context={
+                "workflow_hint": "drive_export",
+                "missing_fields": ("export_confirmation",),
+            },
+        )
+
+    def _incomplete_titles() -> WorkflowSignalResult:
+        return WorkflowSignalResult(
+            workflow_hint="drive_export",
+            readiness=WorkflowReadiness.INCOMPLETE,
+            reason="missing_fields",
+            missing_fields=("selected_titles",),
+            clarification_context={
+                "workflow_hint": "drive_export",
+                "missing_fields": ("selected_titles",),
+            },
+        )
+
+    def _ready() -> WorkflowSignalResult:
+        return WorkflowSignalResult(
+            workflow_hint="drive_export",
+            readiness=WorkflowReadiness.READY,
+            reason="workflow_ready",
+        )
+
     def probe(request: TurnRoutingRequest) -> WorkflowSignalResult | None:
         query = request.query
         if not isinstance(query, str) or not query.strip():
@@ -246,8 +300,29 @@ def build_drive_export_workflow_signal(
         clear = clear_match is not None
         partial_match = None if clear else _EXPORT_PARTIAL.search(query)
         partial = partial_match is not None
-        if not clear and not partial:
+        awaiting_confirm = _prior_missing_field(
+            request,
+            workflow_hint="drive_export",
+            field="export_confirmation",
+        )
+        awaiting_titles = _prior_missing_field(
+            request,
+            workflow_hint="drive_export",
+            field="selected_titles",
+        )
+        affirmed = _AFFIRMATIVE_FOLLOW_UP.match(query.strip()) is not None
+        # Structured prior + "yes" confirms the Drive export ask (never from
+        # raw history alone). That supplies export_confirmation.
+        confirmed_follow_up = awaiting_confirm and affirmed
+
+        if not clear and not partial and not confirmed_follow_up:
+            if awaiting_titles and affirmed:
+                # Affirmation does not create selected titles — stay clarifying.
+                if not export_enabled:
+                    return _tool_unavailable()
+                return _incomplete_titles()
             return None
+
         # Docs/prose questions that mention export+Drive stay on RAG (especially
         # with agent_loop off, where a signal would otherwise be tool_unavailable).
         # Issue locators are omitted from this cue set so dual-workflow commands
@@ -260,43 +335,12 @@ def build_drive_export_workflow_signal(
         ):
             return None
         if not export_enabled:
-            return WorkflowSignalResult(
-                workflow_hint="drive_export",
-                readiness=WorkflowReadiness.INCOMPLETE,
-                reason="tool_unavailable",
-                missing_fields=(),
-                clarification_context={
-                    "workflow_hint": "drive_export",
-                    "missing_fields": (),
-                },
-            )
-        if partial:
-            return WorkflowSignalResult(
-                workflow_hint="drive_export",
-                readiness=WorkflowReadiness.INCOMPLETE,
-                reason="incomplete_workflow",
-                missing_fields=("export_confirmation",),
-                clarification_context={
-                    "workflow_hint": "drive_export",
-                    "missing_fields": ("export_confirmation",),
-                },
-            )
+            return _tool_unavailable()
+        if partial and not clear and not confirmed_follow_up:
+            return _incomplete_confirmation()
         if not _ready_for(request.conversation_id):
-            return WorkflowSignalResult(
-                workflow_hint="drive_export",
-                readiness=WorkflowReadiness.INCOMPLETE,
-                reason="missing_fields",
-                missing_fields=("selected_titles",),
-                clarification_context={
-                    "workflow_hint": "drive_export",
-                    "missing_fields": ("selected_titles",),
-                },
-            )
-        return WorkflowSignalResult(
-            workflow_hint="drive_export",
-            readiness=WorkflowReadiness.READY,
-            reason="workflow_ready",
-        )
+            return _incomplete_titles()
+        return _ready()
 
     return probe
 
