@@ -8,7 +8,11 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from application.contracts import RetrieveRequest, RewriteRetrieveResponse
-from application.grounded_rag_policy import CONTEXT_CLOSE, CONTEXT_OPEN
+from application.grounded_rag_policy import (
+    CONTEXT_CLOSE,
+    CONTEXT_OPEN,
+    format_retrieved_context,
+)
 from application.retrieval_citation_channel import RetrievalCitationChannel
 from domain.errors import ToolArgumentValidationError
 from domain.knowledge import ScoredChunk
@@ -43,6 +47,10 @@ class RetrieveKnowledgeTool:
 
     Returns model-facing context text. Citations are deposited on the injected
     ``RetrievalCitationChannel`` — never encoded for later text recovery.
+
+    Hits are filtered with the same relevance floor as ``AskKnowledge._relevant``
+    and the pack retrieve binder so a non-empty store cannot masquerade as
+    evidence for an unrelated query.
     """
 
     args_schema = RetrieveKnowledgeToolArgs
@@ -54,11 +62,15 @@ class RetrieveKnowledgeTool:
         *,
         retrieval_limit: int,
         max_input_length: int,
+        relevance_threshold: float = 0.0,
+        keep_retrieved_hits: bool = False,
     ) -> None:
         self._rewrite_and_retrieve = rewrite_and_retrieve
         self._channel = channel
         self._retrieval_limit = retrieval_limit
         self._max_input_length = max_input_length
+        self._relevance_threshold = relevance_threshold
+        self._keep_retrieved_hits = keep_retrieved_hits
 
     @property
     def name(self) -> str:
@@ -78,11 +90,27 @@ class RetrieveKnowledgeTool:
         response = self._rewrite_and_retrieve.execute(
             RetrieveRequest(query=query, retrieval_limit=self._retrieval_limit)
         )
-        hits = tuple(response.hits)
+        hits = _relevant(
+            response.hits,
+            relevance_threshold=self._relevance_threshold,
+            keep_retrieved_hits=self._keep_retrieved_hits,
+        )
         self._channel.record(hits)
         if not hits:
             return _EMPTY_CONTEXT
-        return _format_context(hits)
+        return format_retrieved_context(hits)
+
+
+def _relevant(
+    hits: Sequence[ScoredChunk],
+    *,
+    relevance_threshold: float,
+    keep_retrieved_hits: bool,
+) -> tuple[ScoredChunk, ...]:
+    """Drop hits below the relevance floor (or keep all when hybrid)."""
+    if keep_retrieved_hits:
+        return tuple(hits)
+    return tuple(hit for hit in hits if hit.score >= relevance_threshold)
 
 
 def _require_query(
@@ -100,26 +128,3 @@ def _require_query(
             f"got {len(query)}"
         )
     return query
-
-
-def _defang(text: str) -> str:
-    return text.replace(CONTEXT_OPEN, "<«BEGIN_RETRIEVED_CONTEXT»>").replace(
-        CONTEXT_CLOSE, "<«END_RETRIEVED_CONTEXT»>"
-    )
-
-
-def _format_context(hits: Sequence[ScoredChunk]) -> str:
-    lines = [CONTEXT_OPEN]
-    for hit in hits:
-        ref = hit.chunk.reference
-        title = _defang(hit.chunk.metadata.title or "")
-        source_id = _defang(ref.source_id)
-        source_type = _defang(ref.source_type)
-        content = _defang(hit.chunk.content)
-        lines.append(
-            f"- source_id={source_id} source_type={source_type}"
-            f" title={title!r} chunk_index={hit.chunk.index}\n"
-            f"  {content}"
-        )
-    lines.append(CONTEXT_CLOSE)
-    return "\n".join(lines)

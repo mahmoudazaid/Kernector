@@ -120,3 +120,40 @@ def test_retrieve_tool_records_empty_hits_without_inventing_citations() -> None:
 
     assert isinstance(context, str) and context.strip()
     assert channel.drain() == ()
+
+
+def test_retrieve_tool_applies_relevance_threshold() -> None:
+    low = _hit(source_id="noise", content="unrelated", score=0.2)
+    high = _hit(source_id="doc-1", content="restart the worker process", score=0.9)
+    channel = RetrievalCitationChannel()
+    tool = RetrieveKnowledgeTool(
+        _StubRewriteRetrieve((low, high)),
+        channel,
+        retrieval_limit=5,
+        max_input_length=1000,
+        relevance_threshold=0.7,
+    )
+
+    context = tool.run({"query": "how do I restart?"})
+
+    assert "restart the worker process" in context
+    assert "unrelated" not in context
+    assert channel.drain() == build_citations((high,))
+
+
+def test_retrieve_tool_keeps_hybrid_hits_without_refiltering() -> None:
+    fused = _hit(source_id="fused", content="fused evidence", score=0.1)
+    channel = RetrievalCitationChannel()
+    tool = RetrieveKnowledgeTool(
+        _StubRewriteRetrieve((fused,)),
+        channel,
+        retrieval_limit=5,
+        max_input_length=1000,
+        relevance_threshold=0.7,
+        keep_retrieved_hits=True,
+    )
+
+    context = tool.run({"query": "restart"})
+
+    assert "fused evidence" in context
+    assert channel.drain() == build_citations((fused,))

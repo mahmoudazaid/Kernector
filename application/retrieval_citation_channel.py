@@ -33,7 +33,3 @@ class RetrievalCitationChannel:
         citations = build_citations(tuple(self._hits))
         self._hits.clear()
         return citations
-
-    def has_citations(self) -> bool:
-        """True when at least one hit has been recorded this turn."""
-        return bool(self._hits)

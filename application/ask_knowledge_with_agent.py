@@ -40,6 +40,12 @@ class AskKnowledgeWithAgent:
     Citations come only from the typed ``RetrievalCitationChannel``. When the
     channel has no citations after the turn (retrieve skipped or empty hits),
     returns ``INSUFFICIENT_KNOWLEDGE_ANSWER`` and ignores model prose.
+
+    ``AskRequest.history`` is validated for length and input safety, then
+    discarded: conversational context is server-owned via ``conversation_id``
+    → the agent's short-term checkpointer (same pattern as ``settings`` —
+    accepted for AskKnowledge parity, not applied here). Clients that need
+    multi-turn continuity must send a non-blank ``conversation_id``.
     """
 
     def __init__(
@@ -65,7 +71,8 @@ class AskKnowledgeWithAgent:
         """Run the agent grounded turn for ``request``.
 
         ``settings`` is accepted for AskKnowledge parity; generation settings
-        are owned by the bound agent model factory.
+        are owned by the bound agent model factory. ``request.history`` is
+        validated then discarded — thread memory is ``conversation_id``.
         """
         del settings
         try:

@@ -404,10 +404,17 @@ class LangGraphToolAgent:
                         )
                         continue
                     stored = pending_args.pop(approval_id, dict(args))
-                    result = tool.run(stored)
-                    approval_results[approval_id] = result
+                    try:
+                        result = tool.run(stored)
+                    except ToolArgumentValidationError as error:
+                        result = _tool_argument_error_message(error)
+                    else:
+                        approval_results[approval_id] = result
                 else:
-                    result = tool.run(args)
+                    try:
+                        result = tool.run(args)
+                    except ToolArgumentValidationError as error:
+                        result = _tool_argument_error_message(error)
                 outputs.append(
                     ToolMessage(
                         content=result,
@@ -526,9 +533,27 @@ def _pending_from_interrupts(interrupts: object) -> PendingToolApproval | None:
     return None
 
 
+def _tool_argument_error_message(error: ToolArgumentValidationError) -> str:
+    """Return a model-facing corrective string for bad tool arguments."""
+    detail = str(error).strip()
+    if detail:
+        return f"Invalid tool arguments: {detail}"
+    return _INVALID_TOOL_ARGS_MESSAGE
+
+
+def _tool_args_schema(tool: Tool) -> type | None:
+    """Read the optional ``Tool.args_schema`` port attribute."""
+    schema = getattr(tool, "args_schema", None)
+    if schema is None:
+        return None
+    if isinstance(schema, type):
+        return schema
+    return None
+
+
 def _to_langchain_tool(tool: Tool) -> StructuredTool:
     name = _bind_tool_name(tool.name)
-    schema = getattr(tool, "args_schema", None)
+    schema = _tool_args_schema(tool)
 
     if schema is not None:
 

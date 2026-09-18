@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from application.response_style_policy import ResponseStyle, compose_agent_system
 from application.run_tool_agent import RunToolAgent
@@ -117,6 +117,7 @@ class _BoundTool:
     _arguments: Mapping[str, object]
     _on_result: object  # Callable[[str], None]
     approval_hints: object | None = None
+    args_schema: ClassVar[type | None] = None
 
     @property
     def name(self) -> str:

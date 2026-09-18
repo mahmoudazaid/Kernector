@@ -3810,6 +3810,8 @@ def build_tool_augmented_ask(
             citation_channel,
             retrieval_limit=settings.retrieval.limit,
             max_input_length=settings.max_input_length,
+            relevance_threshold=settings.retrieval.relevance_threshold,
+            keep_retrieved_hits=settings.retrieval.hybrid_enabled,
         )
         tool_agent = runtime.bind_tool_agent(
             system_prompt=agent_tool_system_prompt(),

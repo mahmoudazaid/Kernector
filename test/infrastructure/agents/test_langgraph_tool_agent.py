@@ -16,6 +16,8 @@ _SYSTEM = agent_tool_system_prompt()
 class _RecordingTool:
     """Domain ``Tool`` double that records each invocation."""
 
+    args_schema: type | None = None
+
     def __init__(self, name: str = "lookup", result: str = "lookup-ok") -> None:
         self._name = name
         self._result = result
@@ -450,6 +452,31 @@ def test_langgraph_tool_agent_forwards_typed_tool_args() -> None:
     assert chat.bound_tools is not None
     schema = chat.bound_tools[0].args_schema.model_json_schema()  # type: ignore[union-attr]
     assert "query" in schema.get("properties", {})
+
+
+def test_langgraph_tool_agent_returns_tool_message_on_argument_validation() -> None:
+    from domain.errors import ToolArgumentValidationError
+    from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
+
+    class _RejectingTool(_RecordingTool):
+        def run(self, arguments: Mapping[str, object]) -> str:
+            del arguments
+            raise ToolArgumentValidationError("query must be a non-empty string")
+
+    tool = _RejectingTool(name="knowledge.retrieve")
+    chat = _ScriptedChat(
+        [
+            _ai_tool_call(name="knowledge__retrieve", args={"query": ""}),
+            _ai_text("recovered"),
+        ]
+    )
+    result = LangGraphToolAgent(
+        system_prompt=_SYSTEM,
+        model_factory=_RecordingFactory(chat),
+    ).run("goal", [tool], max_steps=4)
+
+    assert result.content == "recovered"
+    assert chat.invocations == 2
 
 
 def test_langgraph_tool_agent_reuses_messages_on_same_workspace_conversation() -> None:
