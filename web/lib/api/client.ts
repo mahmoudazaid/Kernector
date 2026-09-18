@@ -133,11 +133,13 @@ function parseContentDispositionFileName(
 
 /**
  * Shared fetch seam: URL join, timeout/cancel, problem+json → ApiError.
- * Returns the raw Response on success so JSON and blob callers share one path.
+ * On success, the timeout/caller signal stays live until the caller finishes
+ * reading the body (``clear``); clearing after headers alone would leave
+ * ``response.json()`` / ``.blob()`` uncovered.
  */
 async function apiRequestResponse(
   options: ApiRequestOptions,
-): Promise<Response> {
+): Promise<{ response: Response; clear: () => void }> {
   const {
     baseUrl,
     path,
@@ -151,7 +153,7 @@ async function apiRequestResponse(
 
   // Coerce invalid / missing values to the default so long-running callers
   // (chat ask, test-design create) never silently fall through to a short
-  // AbortSignal window.
+  // AbortSignal window. ``timeoutMs: 0`` means no timeout.
   const effectiveTimeoutMs =
     typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs >= 0
       ? timeoutMs
@@ -201,30 +203,36 @@ async function apiRequestResponse(
     }
     throw ApiError.generic(0);
   }
-  requestSignal.clear();
 
   const contentType = response.headers.get("content-type") ?? "";
   const isProblem = contentType.includes("application/problem+json");
 
   if (!response.ok) {
-    if (isProblem) {
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
+    try {
+      if (isProblem) {
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          if (isCancellation(error)) {
+            throw ApiError.aborted();
+          }
+          throw ApiError.generic(response.status);
+        }
+        if (isProblemPayload(payload)) {
+          throw ApiError.fromProblem(payload);
+        }
         throw ApiError.generic(response.status);
       }
-      if (isProblemPayload(payload)) {
-        throw ApiError.fromProblem(payload);
-      }
+      // Drain body so the connection can close; never surface the text.
+      await response.text().catch(() => undefined);
       throw ApiError.generic(response.status);
+    } finally {
+      requestSignal.clear();
     }
-    // Drain body so the connection can close; never surface the text.
-    await response.text().catch(() => undefined);
-    throw ApiError.generic(response.status);
   }
 
-  return response;
+  return { response, clear: requestSignal.clear };
 }
 
 /**
@@ -234,21 +242,24 @@ async function apiRequestResponse(
  * become {@link ApiError} without retaining raw bodies or stack traces.
  */
 export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
-  const response = await apiRequestResponse(options);
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
+  const { response, clear } = await apiRequestResponse(options);
   try {
-    return (await response.json()) as T;
-  } catch (error) {
-    if (isCancellation(error)) {
-      throw ApiError.aborted();
+    if (response.status === 204) {
+      return undefined as T;
     }
-    // A malformed success body (proxy error page, truncated stream) must not
-    // escape as a SyntaxError — its message embeds a snippet of the body.
-    throw ApiError.generic(response.status);
+
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      if (isCancellation(error)) {
+        throw ApiError.aborted();
+      }
+      // A malformed success body (proxy error page, truncated stream) must not
+      // escape as a SyntaxError — its message embeds a snippet of the body.
+      throw ApiError.generic(response.status);
+    }
+  } finally {
+    clear();
   }
 }
 
@@ -261,17 +272,24 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
 export async function apiRequestBlob(
   options: ApiRequestOptions,
 ): Promise<ApiBlobResult> {
-  const response = await apiRequestResponse(options);
+  const { response, clear } = await apiRequestResponse(options);
   try {
-    const blob = await response.blob();
-    return {
-      blob,
-      contentType: response.headers.get("content-type"),
-      fileName: parseContentDispositionFileName(
-        response.headers.get("content-disposition"),
-      ),
-    };
-  } catch {
-    throw ApiError.generic(response.status);
+    try {
+      const blob = await response.blob();
+      return {
+        blob,
+        contentType: response.headers.get("content-type"),
+        fileName: parseContentDispositionFileName(
+          response.headers.get("content-disposition"),
+        ),
+      };
+    } catch (error) {
+      if (isCancellation(error)) {
+        throw ApiError.aborted();
+      }
+      throw ApiError.generic(response.status);
+    }
+  } finally {
+    clear();
   }
 }

@@ -127,6 +127,17 @@ _AFFIRMATIVE_FOLLOW_UP = re.compile(
     re.IGNORECASE,
 )
 
+# Drive export confirmation must not treat gratitude as consent to write.
+_AFFIRMATIVE_CONFIRMATION = re.compile(
+    r"^\s*(yes|y|yeah|yep|ok|okay|sure|do\s+it|go\s+ahead|confirm)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+# Whole-message owner/repo paste without an issue number (incomplete follow-up).
+_OWNER_REPO_ONLY = re.compile(
+    r"^\s*[A-Za-z][A-Za-z0-9_.-]{0,38}/[A-Za-z0-9_.-]{1,100}\s*$"
+)
+
 
 def _prior_missing_field(
     request: TurnRoutingRequest,
@@ -177,7 +188,17 @@ def build_test_design_workflow_signal(
         if stripped.isdigit() or _AFFIRMATIVE_FOLLOW_UP.match(stripped):
             return True
         lower = stripped.casefold()
-        return "#" in stripped or "/" in stripped or "github.com" in lower
+        if "#" in stripped or "github.com" in lower:
+            return True
+        # Whole-message owner/repo/N paste only — bare "/" appears in most
+        # technical questions and must not keep the clarification loop open.
+        from infrastructure.connectors.github.issue_locator import (
+            parse_github_issue_locator,
+        )
+
+        if parse_github_issue_locator(stripped) is not None:
+            return True
+        return _OWNER_REPO_ONLY.fullmatch(stripped) is not None
 
     def probe(request: TurnRoutingRequest) -> WorkflowSignalResult | None:
         if not enabled:
@@ -199,6 +220,10 @@ def build_test_design_workflow_signal(
         try:
             parsed = extract_github_issue_locator(query)
         except AmbiguousGitHubIssueLocatorError as error:
+            # Ambiguity is only a hard error when this turn issued the command.
+            # Follow-ups / plain questions fall through (same as test_design.py).
+            if match is None:
+                return None
             raise TestDesignValidationError(
                 "Query must reference exactly one GitHub Issue"
             ) from error
@@ -310,7 +335,7 @@ def build_drive_export_workflow_signal(
             workflow_hint="drive_export",
             field="selected_titles",
         )
-        affirmed = _AFFIRMATIVE_FOLLOW_UP.match(query.strip()) is not None
+        affirmed = _AFFIRMATIVE_CONFIRMATION.match(query.strip()) is not None
         # Structured prior + "yes" confirms the Drive export ask (never from
         # raw history alone). That supplies export_confirmation.
         confirmed_follow_up = awaiting_confirm and affirmed

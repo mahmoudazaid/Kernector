@@ -30,12 +30,37 @@ def test_parses_owner_repo_slash_number() -> None:
     assert parsed.canonical == "mahmoudazaid/Kernector#293"
 
 
-def test_extracts_slash_locator_from_prose() -> None:
-    parsed = extract_github_issue_locator(
-        "please use mahmoudazaid/kernector/218"
+def test_slash_locator_only_as_whole_message_not_prose() -> None:
+    assert (
+        extract_github_issue_locator("please use mahmoudazaid/kernector/218")
+        is None
     )
+    parsed = extract_github_issue_locator("mahmoudazaid/kernector/218")
     assert parsed is not None
     assert parsed.canonical == "mahmoudazaid/kernector#218"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What does the api/v1/325 endpoint return?",
+        "The release went out on 2026/09/17",
+        "see test/composition/42 for the fixture",
+        "check docs/adr/0004 for the decision",
+        "version 1.2/3.4/56 build",
+        "ratio is 3/4/5 in the report",
+        "design tests for the api/v1/325 flow",
+        "design tests for the 2026/09/17 release notes",
+        "plan test coverage for src/utils/42",
+    ],
+)
+def test_extract_rejects_path_date_and_version_lookalikes(text: str) -> None:
+    assert extract_github_issue_locator(text) is None
+
+
+def test_canonicalize_rejects_numeric_owner_slash_form() -> None:
+    with pytest.raises(InvalidGitHubIssueLocatorError):
+        canonicalize_github_issue_locator("2026/09/17")
 
 
 def test_slash_form_does_not_steal_issues_url_path() -> None:

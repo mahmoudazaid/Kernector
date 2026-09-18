@@ -11,8 +11,8 @@ _URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _HASH_PATTERN = re.compile(rf"\b{_OWNER_REPO}#(?P<number>\d+)\b")
-# Slash form (owner/repo/N). Negative lookbehind avoids matching .../issues/N URLs
-# already covered by _URL_PATTERN; negative lookahead skips /pull/ and similar.
+# Slash form (owner/repo/N) is accepted only as a whole-string paste — never via
+# finditer over free text (paths, dates, and version strings look the same).
 _SLASH_PATTERN = re.compile(
     rf"(?<![\w./]){_OWNER_REPO}/(?P<number>\d+)\b(?!/)",
 )
@@ -80,16 +80,26 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
 
     Duplicate mentions of the same Issue are accepted. Multiple distinct Issues
     raise AmbiguousGitHubIssueLocatorError. Returns None when none are found.
+
+    Slash ``owner/repo/N`` is only accepted when the entire trimmed string is
+    that form (paste-as-follow-up). It is never scanned out of surrounding prose.
     """
     if not isinstance(text, str) or not text.strip():
         return None
     found: list[ParsedGitHubIssueLocator] = []
-    for pattern in (_URL_PATTERN, _HASH_PATTERN, _SLASH_PATTERN):
+    for pattern in (_URL_PATTERN, _HASH_PATTERN):
         for match in pattern.finditer(text):
             try:
                 found.append(_from_match(match))
             except InvalidGitHubIssueLocatorError:
                 continue
+    stripped = text.strip()
+    slash = _SLASH_PATTERN.fullmatch(stripped)
+    if slash is not None:
+        try:
+            found.append(_from_match(slash))
+        except InvalidGitHubIssueLocatorError:
+            pass
     if not found:
         return None
     unique: dict[tuple[str, str, int], ParsedGitHubIssueLocator] = {}
@@ -118,4 +128,8 @@ def _from_match(match: re.Match[str]) -> ParsedGitHubIssueLocator:
 
 
 def _valid_segment(value: str) -> bool:
-    return bool(value.strip()) and value.strip(".") != ""
+    """Reject empty, dot-only, and all-numeric segments (dates, ratios, versions)."""
+    stripped = value.strip()
+    if not stripped or stripped.strip(".") == "":
+        return False
+    return any(ch.isalpha() for ch in stripped)

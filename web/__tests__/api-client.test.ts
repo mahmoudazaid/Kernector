@@ -59,6 +59,86 @@ describe("apiRequest", () => {
     });
   });
 
+  it("keeps timeout armed while reading a stalled response body", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "Content-Type": "application/json" }),
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const signal = init?.signal;
+              if (signal?.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              signal?.addEventListener(
+                "abort",
+                () => {
+                  reject(signal.reason);
+                },
+                { once: true },
+              );
+            }),
+        } as Response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      apiRequest({
+        baseUrl: "http://127.0.0.1:8000",
+        path: "/health",
+        timeoutMs: 40,
+      }),
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      code: "aborted",
+    });
+  });
+
+  it("propagates caller AbortSignal while reading the body", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "Content-Type": "application/json" }),
+          json: () =>
+            new Promise((_resolve, reject) => {
+              const signal = init?.signal;
+              if (signal?.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              signal?.addEventListener(
+                "abort",
+                () => {
+                  reject(signal.reason);
+                },
+                { once: true },
+              );
+            }),
+        } as Response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = apiRequest({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/health",
+      signal: controller.signal,
+      timeoutMs: 60_000,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({
+      name: "ApiError",
+      code: "aborted",
+    });
+  });
+
   it("propagates caller AbortSignal", async () => {
     const controller = new AbortController();
     vi.stubGlobal("fetch", abortAwareFetch());

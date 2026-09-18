@@ -76,15 +76,23 @@ def test_test_design_prior_context_pivot_question_is_not_a_signal() -> None:
         "workflow_hint": "test_design",
         "missing_fields": ("issue_locator",),
     }
-    assert (
-        signal(
-            TurnRoutingRequest(
-                query="What do the docs say about auth?",
-                clarification_context=prior,
+    for query in (
+        "What do the docs say about auth?",
+        "What is our CI/CD setup?",
+        "How do I configure the client/server split?",
+        "Tell me about the and/or operator",
+        "compare api/v1/325 and api/v2/400",
+        "which is worse, acme/api#1 or acme/api#2?",
+    ):
+        assert (
+            signal(
+                TurnRoutingRequest(
+                    query=query,
+                    clarification_context=prior,
+                )
             )
-        )
-        is None
-    )
+            is None
+        ), query
 
 
 def test_locator_alone_without_prior_is_not_a_signal() -> None:
@@ -237,6 +245,27 @@ def test_drive_prior_confirm_plus_yes_is_ready_when_draft_ready() -> None:
         )
         assert result is not None, query
         assert result.readiness is WorkflowReadiness.READY, query
+
+
+def test_drive_prior_confirm_thanks_is_not_ready() -> None:
+    signal = build_drive_export_workflow_signal(
+        export_enabled=True, draft_ready=lambda _cid: True
+    )
+    prior = {
+        "workflow_hint": "drive_export",
+        "missing_fields": ("export_confirmation",),
+    }
+    for query in ("thanks", "thank you", "please"):
+        assert (
+            signal(
+                TurnRoutingRequest(
+                    query=query,
+                    clarification_context=prior,
+                    conversation_id="conv-1",
+                )
+            )
+            is None
+        ), query
 
 
 def test_drive_prior_confirm_plus_yes_missing_titles_stays_incomplete() -> None:
