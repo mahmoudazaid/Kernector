@@ -46,6 +46,10 @@ class AskKnowledgeWithAgent:
     → the agent's short-term checkpointer (same pattern as ``settings`` —
     accepted for AskKnowledge parity, not applied here). Clients that need
     multi-turn continuity must send a non-blank ``conversation_id``.
+
+    When the shared agent already has a pending tool approval for that
+    ``conversation_id``, the adapter keeps HITL tool bindings and runs this
+    turn without touching the interrupted checkpointer thread.
     """
 
     def __init__(

@@ -173,11 +173,20 @@ class LangGraphToolAgent:
             if isinstance(conversation_id, str) and conversation_id.strip()
             else None
         )
+        # Grounded ask and Drive-export HITL share this agent + process maps.
+        # While approvals are outstanding for a conversation, do not replace
+        # tools_by_conversation (resume needs the export BoundTool) and do not
+        # invoke the interrupted checkpointer thread (fresh input would clobber it).
+        memory_key = conversation_key
         if conversation_key is not None:
-            self._tools_by_conversation[conversation_key] = tools_by_name
+            outstanding = self._approvals_by_conversation.get(conversation_key)
+            if outstanding:
+                memory_key = None
+            else:
+                self._tools_by_conversation[conversation_key] = tools_by_name
 
         compiled, use_memory = self._compile(
-            tools, max_steps=max_steps, conversation_id=conversation_key
+            tools, max_steps=max_steps, conversation_id=memory_key
         )
         prompt = (
             system_prompt
@@ -199,8 +208,8 @@ class LangGraphToolAgent:
         try:
             if use_memory:
                 assert self._workspace_id is not None
-                assert conversation_key is not None
-                thread_id = scoped_thread_key(self._workspace_id, conversation_key)
+                assert memory_key is not None
+                thread_id = scoped_thread_key(self._workspace_id, memory_key)
                 final_state = compiled.invoke(
                     input_state,
                     {"configurable": {"thread_id": thread_id}},

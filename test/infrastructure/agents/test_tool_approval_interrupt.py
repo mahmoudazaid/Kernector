@@ -420,3 +420,80 @@ def test_resume_rejects_approval_owned_by_another_conversation() -> None:
     assert tool.calls == 0
     assert approval_id in pending_args
     assert approvals_by_conversation.get("conv-A") == {approval_id}
+
+
+def test_pending_approval_survives_interleaved_grounded_ask_on_same_conversation() -> None:
+    """Grounded ask must not clobber export HITL tool bindings (#328)."""
+
+    class _RetrieveTool:
+        args_schema: type | None = None
+
+        @property
+        def name(self) -> str:
+            return "knowledge.retrieve"
+
+        @property
+        def description(self) -> str:
+            return "retrieve"
+
+        def run(self, arguments: Mapping[str, object]) -> str:
+            del arguments
+            return "ctx"
+
+    export = _CountingTool("software_delivery.export_test_cases_google_drive")
+    retrieve = _RetrieveTool()
+    tools_by_conversation: dict[str, dict[str, Tool]] = {}
+    pending_args: dict[str, Mapping[str, object]] = {}
+    approvals_by_conversation: dict[str, set[str]] = {}
+    model = _ScriptedModel(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-export",
+                    }
+                ],
+            ),
+            AIMessage(content="grounded answer without retrieve call"),
+            AIMessage(content="export done"),
+        ]
+    )
+    agent = LangGraphToolAgent(
+        system_prompt="system",
+        model_factory=lambda **_: model,
+        checkpointer=InMemorySaver(),
+        workspace_id="ws-a",
+        approval_policy=ToolApprovalPolicy(
+            frozenset({"software_delivery.export_test_cases_google_drive"})
+        ),
+        pending_args=pending_args,
+        approvals_by_conversation=approvals_by_conversation,
+        tools_by_conversation=tools_by_conversation,
+    )
+
+    pending = agent.run("export please", [export], max_steps=4, conversation_id="conv-1")
+    assert isinstance(pending.pending_approval, PendingToolApproval)
+    approval_id = pending.pending_approval.approval_id
+    assert list(tools_by_conversation["conv-1"]) == [export.name]
+
+    grounded = agent.run(
+        "what is in the docs?",
+        [retrieve],
+        max_steps=4,
+        conversation_id="conv-1",
+    )
+    assert grounded.pending_approval is None
+    assert "grounded answer" in grounded.content
+    assert list(tools_by_conversation["conv-1"]) == [export.name]
+
+    resumed = agent.resume_approval(
+        conversation_id="conv-1",
+        approval_id=approval_id,
+        decision="approve",
+    )
+    assert resumed.pending_approval is None
+    assert export.calls == 1
+    assert "export done" in resumed.content
