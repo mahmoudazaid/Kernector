@@ -8,9 +8,8 @@ from application.citations import build_citations
 from application.contracts import AskRequest, AskResponse, RetrieveRequest, RunMeta
 from application.errors import ApplicationValidationError, InputRejectedError
 from application.grounded_rag_policy import (
-    CONTEXT_CLOSE,
-    CONTEXT_OPEN,
     INSUFFICIENT_KNOWLEDGE_ANSWER,
+    format_retrieved_context,
 )
 from application.input_safety import reject_unsafe_query
 from application.observability import current_request_id, log_operation
@@ -288,26 +287,6 @@ def _source_types(hits: Sequence[ScoredChunk]) -> str | None:
     return ",".join(types)
 
 
-def _defang(text: str) -> str:
-    """Neutralise context delimiters so stored text cannot close the block early."""
-    return text.replace(CONTEXT_OPEN, "<«BEGIN_RETRIEVED_CONTEXT»>").replace(
-        CONTEXT_CLOSE, "<«END_RETRIEVED_CONTEXT»>"
-    )
-
-
 def _context_message(hits: Sequence[ScoredChunk]) -> Message:
     """Wrap retrieved chunks in the delimiters the policy names as untrusted."""
-    lines = [CONTEXT_OPEN]
-    for hit in hits:
-        ref = hit.chunk.reference
-        title = _defang(hit.chunk.metadata.title or "")
-        source_id = _defang(ref.source_id)
-        source_type = _defang(ref.source_type)
-        content = _defang(hit.chunk.content)
-        lines.append(
-            f"- source_id={source_id} source_type={source_type}"
-            f" title={title!r} chunk_index={hit.chunk.index}\n"
-            f"  {content}"
-        )
-    lines.append(CONTEXT_CLOSE)
-    return Message(role="user", content="\n".join(lines))
+    return Message(role="user", content=format_retrieved_context(hits))

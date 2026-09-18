@@ -20,6 +20,7 @@ from application.errors import (
     ConfigurationError,
     InsufficientEvidenceError,
 )
+from application.retrieval_citation_channel import RetrievalCitationChannel
 from composition.software_delivery_tools import (
     RiskFactorView,
     RiskScoreView,
@@ -332,6 +333,11 @@ class PackSoftwareDeliveryChat:
         allow_empty_evidence (bool): When True (agent export path), empty
             retrieval hits are OK. Must not be derived from conversation_id —
             the web client always sends one.
+        defer_retrieval (bool): When True (agent loop), skip pre-orchestrate
+            retrieve; the agent may call a retrieve tool mid-run instead.
+        citation_channel (RetrievalCitationChannel | None): When set with
+            ``defer_retrieval``, citations come from this side channel after
+            the agent turn — not from pre-orchestrate hits.
     """
 
     def __init__(
@@ -342,12 +348,16 @@ class PackSoftwareDeliveryChat:
         orchestrate: Orchestrate,
         model_calls: ModelCallRecorder | None = None,
         allow_empty_evidence: bool = False,
+        defer_retrieval: bool = False,
+        citation_channel: RetrievalCitationChannel | None = None,
     ) -> None:
         self._retrieve = retrieve
         self._invoke = invoke
         self._orchestrate = orchestrate
         self._model_calls = model_calls
         self._allow_empty_evidence = allow_empty_evidence
+        self._defer_retrieval = defer_retrieval
+        self._citation_channel = citation_channel
 
     def run(
         self,
@@ -376,7 +386,11 @@ class PackSoftwareDeliveryChat:
         if self._model_calls is not None:
             self._model_calls.clear()
         try:
-            if need_evidence:
+            if self._citation_channel is not None:
+                self._citation_channel.clear()
+            if self._defer_retrieval:
+                hits: Sequence[ScoredChunk] = ()
+            elif need_evidence:
                 hits = require_evidence(
                     self._retrieve(target),
                     allow_empty=self._allow_empty_evidence,
@@ -406,10 +420,12 @@ class PackSoftwareDeliveryChat:
                 raise ToolRunFailedError(
                     _TOOL_RUN_FAILED_MESSAGE, tool_outputs=recorder.tool_outputs
                 ) from error
-            # Citations come from the raw hits, not from the bundle orchestration
-            # builds: that merges chunks by (source_type, source_id) and loses
-            # chunk_index, so row-level provenance only survives out here.
-            citations = build_citations(hits)
+            # Citations: deferred agent path uses the typed side channel.
+            # Pre-orchestrate path uses raw hits (bundle merges lose chunk_index).
+            if self._defer_retrieval and self._citation_channel is not None:
+                citations = self._citation_channel.drain()
+            else:
+                citations = build_citations(hits)
             model_meta = (
                 None if self._model_calls is None else self._model_calls.consume()
             )
@@ -446,6 +462,7 @@ def _run_meta_for_tool_outcome(
     base = model_meta if model_meta is not None else RunMeta()
     return replace(
         base,
-        hit_count=len(hits),
+        # Deferred agent retrieval leaves ``hits`` empty; cite channel size.
+        hit_count=len(hits) if hits else len(citations),
         citation_count=len(citations),
     )

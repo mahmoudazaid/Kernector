@@ -3762,7 +3762,13 @@ def build_tool_augmented_ask(
     )
 
     drafts = None
+    grounded_ask = None
+    citation_channel = None
+    defer_retrieval = False
     if settings.domain_tools.agent_loop:
+        from application.ask_knowledge_with_agent import AskKnowledgeWithAgent
+        from application.retrieval_citation_channel import RetrievalCitationChannel
+        from application.retrieve_knowledge_tool import RetrieveKnowledgeTool
         from application.untrusted_text import agent_tool_system_prompt
         from composition.short_term_memory import (
             ShortTermMemoryRuntime,
@@ -3796,20 +3802,42 @@ def build_tool_augmented_ask(
 
             drafts = _EmptyDrafts()
             destinations = _EmptyDestinations()
-        orchestrate = build_agent_orchestrate(
-            runtime.bind_tool_agent(
-                system_prompt=agent_tool_system_prompt(),
-                model_factory=_software_delivery_agent_model_factory(
-                    settings,
-                    recorder=model_calls,
-                    provider=provider,
-                    model=model,
-                    base_url=base_url,
-                ),
+        citation_channel = RetrievalCitationChannel()
+        retrieve_tool = RetrieveKnowledgeTool(
+            build_rewrite_and_retrieve_knowledge(
+                settings, vector_store=vector_store
             ),
+            citation_channel,
+            retrieval_limit=settings.retrieval.limit,
+            max_input_length=settings.max_input_length,
+            relevance_threshold=settings.retrieval.relevance_threshold,
+            keep_retrieved_hits=settings.retrieval.hybrid_enabled,
+        )
+        tool_agent = runtime.bind_tool_agent(
+            system_prompt=agent_tool_system_prompt(),
+            model_factory=_software_delivery_agent_model_factory(
+                settings,
+                recorder=model_calls,
+                provider=provider,
+                model=model,
+                base_url=base_url,
+            ),
+        )
+        grounded_ask = AskKnowledgeWithAgent(
+            tool_agent,
+            retrieve_tool,
+            citation_channel,
+            max_input_length=settings.max_input_length,
+        )
+        # Drive export stays retrieval-free: omit retrieve_tool here.
+        # Pass retrieve_tool into build_agent_orchestrate only for evidence
+        # multi-tool workflows that opt in.
+        orchestrate = build_agent_orchestrate(
+            tool_agent,
             drafts=drafts,
             destinations=destinations,
         )
+        defer_retrieval = True
     else:
 
         def orchestrate(
@@ -3854,6 +3882,8 @@ def build_tool_augmented_ask(
         orchestrate=orchestrate,
         model_calls=model_calls,
         allow_empty_evidence=settings.domain_tools.agent_loop,
+        defer_retrieval=defer_retrieval,
+        citation_channel=citation_channel,
     )
 
     from composition.test_design import build_test_design_handoff_from_request
@@ -3882,6 +3912,7 @@ def build_tool_augmented_ask(
             pack_id="software-delivery",
             build_test_design_handoff=build_handoff,
             clarification_context_store=clarification_context_store,
+            grounded_ask=grounded_ask,
         )
     )
 

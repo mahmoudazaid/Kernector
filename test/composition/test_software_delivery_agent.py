@@ -55,11 +55,14 @@ class _OrderedFakeAgent:
         conversation_id: str | None = None,
         system_prompt: str | None = None,
     ) -> AgentTurnResult:
-        del goal, max_steps, conversation_id, system_prompt
+        del max_steps, conversation_id, system_prompt
         by_name = {tool.name: tool for tool in tools}
         self.seen_tools = list(by_name)
         for name in self._tool_names:
-            by_name[name].run({})
+            args: Mapping[str, object] = {}
+            if name == "knowledge.retrieve":
+                args = {"query": goal}
+            by_name[name].run(args)
         return AgentTurnResult(
             content="Agent finished.",
             steps=len(self._tool_names),
@@ -196,3 +199,96 @@ def test_agent_draft_unavailable_skips_tools() -> None:
 
     assert outcome.tool_outputs == ()
     assert agent.seen_tools == []
+
+
+def test_drive_export_does_not_bind_retrieve_tool() -> None:
+    from application.retrieve_knowledge_tool import RETRIEVE_KNOWLEDGE_TOOL_NAME
+
+    prepared = PreparedDriveExportCall(
+        tool_name=TOOL_NAME,
+        arguments={
+            "document_title": "KERN-482",
+            "titles": ["Login MFA"],
+            "folder_id": "folder-abc",
+        },
+        destination_label="QA",
+        selected_title_count=1,
+    )
+    agent = _OrderedFakeAgent((TOOL_NAME,))
+    PackSoftwareDeliveryChat(
+        allow_empty_evidence=True,
+        defer_retrieval=True,
+        retrieve=_explode_if_called,
+        invoke=_invoke,
+        orchestrate=build_agent_orchestrate(
+            agent, prepare_export=_Prepared(prepared), max_steps=4
+        ),
+    ).run(
+        "Export to Google Drive",
+        conversation_id="conv-1",
+        need_evidence=False,
+    )
+
+    assert agent.seen_tools == [TOOL_NAME]
+    assert RETRIEVE_KNOWLEDGE_TOOL_NAME not in agent.seen_tools
+
+
+def test_deferred_retrieval_skips_pre_orchestrate_and_uses_channel_citations() -> None:
+    from application.citations import build_citations
+    from application.contracts import RewriteRetrieveResponse
+    from application.retrieval_citation_channel import RetrievalCitationChannel
+    from application.retrieve_knowledge_tool import (
+        RETRIEVE_KNOWLEDGE_TOOL_NAME,
+        RetrieveKnowledgeTool,
+    )
+
+    hit = _hit()
+    channel = RetrievalCitationChannel()
+
+    class _StubRewrite:
+        def execute(self, request: object) -> RewriteRetrieveResponse:
+            query = getattr(request, "query", "q")
+            return RewriteRetrieveResponse(
+                original_query=str(query),
+                rewritten_query="q",
+                hits=(hit,),
+            )
+
+    retrieve_tool = RetrieveKnowledgeTool(
+        _StubRewrite(),
+        channel,
+        retrieval_limit=5,
+        max_input_length=2000,
+    )
+    prepared = PreparedDriveExportCall(
+        tool_name=TOOL_NAME,
+        arguments={
+            "document_title": "KERN-482",
+            "titles": ["Login MFA"],
+            "folder_id": "folder-abc",
+        },
+        destination_label="QA",
+        selected_title_count=1,
+    )
+    agent = _OrderedFakeAgent((RETRIEVE_KNOWLEDGE_TOOL_NAME, TOOL_NAME))
+    outcome = PackSoftwareDeliveryChat(
+        allow_empty_evidence=True,
+        defer_retrieval=True,
+        citation_channel=channel,
+        retrieve=_explode_if_called,
+        invoke=_invoke,
+        orchestrate=build_agent_orchestrate(
+            agent,
+            prepare_export=_Prepared(prepared),
+            retrieve_tool=retrieve_tool,
+            max_steps=4,
+        ),
+    ).run("Export with optional retrieve", conversation_id="conv-1")
+
+    assert RETRIEVE_KNOWLEDGE_TOOL_NAME in agent.seen_tools
+    assert TOOL_NAME in agent.seen_tools
+    assert outcome.citations == build_citations((hit,))
+
+
+def _explode_if_called(target: str) -> Sequence[ScoredChunk]:
+    raise AssertionError(f"pre-orchestrate retrieve must not run, got {target!r}")

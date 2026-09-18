@@ -205,13 +205,22 @@ class LexicalIndex(Protocol):
 
 
 class Tool(Protocol):
-    """A named capability a use case can expose to the model."""
+    """A named capability a use case can expose to the model.
+
+    Optional attribute ``args_schema`` (``type | None``): when set to a
+    Pydantic model type, tool-calling adapters bind it as the LLM argument
+    schema. When absent or ``None``, adapters assume empty args. Declared on
+    the port so the contract is checkable rather than a silent ``getattr``
+    convention between application tools and infrastructure.
+    """
 
     @property
     def name(self) -> str: ...
 
     @property
     def description(self) -> str: ...
+
+    args_schema: type | None
 
     def run(self, arguments: Mapping[str, object]) -> str:
         """Execute the tool with ``arguments`` and return a string result.

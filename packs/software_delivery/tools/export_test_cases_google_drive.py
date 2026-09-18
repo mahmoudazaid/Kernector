@@ -49,6 +49,8 @@ RenderExportMarkdown = Callable[[str, Sequence[str]], str]
 class ExportTestCasesGoogleDriveTool:
     """Implements ``domain.ports.Tool`` for titles-only Drive export."""
 
+    args_schema: type | None = None
+
     def __init__(
         self,
         *,

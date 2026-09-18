@@ -8,6 +8,11 @@ in place of the deterministic #170 chain. Pack imports stay lazy so
 exposes ``software_delivery.export_test_cases_google_drive`` when a Test Design
 draft with selected titles is available. Destination defaults to My Drive Home
 when none is persisted for the conversation.
+
+Optional ``retrieve_tool`` (``knowledge.retrieve``) can be bound for
+evidence-needing multi-tool turns; Drive-export wiring omits it so export
+stays retrieval-free. Pre-orchestrate retrieve is deferred on the agent path
+(``PackSoftwareDeliveryChat.defer_retrieval``).
 """
 
 from __future__ import annotations
@@ -15,7 +20,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from application.response_style_policy import ResponseStyle, compose_agent_system
 from application.run_tool_agent import RunToolAgent
@@ -112,6 +117,7 @@ class _BoundTool:
     _arguments: Mapping[str, object]
     _on_result: object  # Callable[[str], None]
     approval_hints: object | None = None
+    args_schema: ClassVar[type | None] = None
 
     @property
     def name(self) -> str:
@@ -135,10 +141,13 @@ def build_agent_orchestrate(
     drafts: _DraftRepository | None = None,
     destinations: _DestinationRepository | None = None,
     max_steps: int = _DEFAULT_MAX_STEPS,
+    retrieve_tool: Tool | None = None,
 ) -> Orchestrate:
     """Return an ``orchestrate`` callable backed by ``agent``.
 
     Provide either ``prepare_export`` or both ``drafts`` and ``destinations``.
+    Optional ``retrieve_tool`` is bound for evidence-needing multi-tool turns;
+    Drive-export-only wiring omits it so export stays retrieval-free.
     """
     run_agent = RunToolAgent(agent)
     resolve = prepare_export
@@ -189,7 +198,10 @@ def build_agent_orchestrate(
         def on_export(raw: str) -> None:
             outcomes.append(_parse_drive_receipt(raw, prepared.destination_label))
 
-        tools: list[Tool] = [
+        tools: list[Tool] = []
+        if retrieve_tool is not None:
+            tools.append(retrieve_tool)
+        tools.append(
             _BoundTool(
                 prepared.tool_name,
                 "Export selected Test Design titles to Google Drive as Markdown."
@@ -209,7 +221,7 @@ def build_agent_orchestrate(
                     selected_title_count=prepared.selected_title_count,
                 ),
             )
-        ]
+        )
         goal = _agent_goal(target=target, hits=hits, prepared=prepared)
         style = response_style if isinstance(response_style, ResponseStyle) else None
         turn = run_agent.execute(
