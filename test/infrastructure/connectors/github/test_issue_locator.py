@@ -63,6 +63,25 @@ def test_canonicalize_rejects_numeric_owner_slash_form() -> None:
         canonicalize_github_issue_locator("2026/09/17")
 
 
+@pytest.mark.parametrize(
+    ("locator", "canonical"),
+    [
+        ("acme/2026#42", "acme/2026#42"),
+        ("https://github.com/acme/2026/issues/42", "acme/2026#42"),
+        ("360learning/360#5", "360learning/360#5"),
+        ("acme/365#1", "acme/365#1"),
+        ("2026/kernector#7", "2026/kernector#7"),
+    ],
+)
+def test_url_and_hash_forms_allow_numeric_owner_or_repo(
+    locator: str, canonical: str
+) -> None:
+    parsed = parse_github_issue_locator(locator)
+    assert parsed is not None
+    assert parsed.canonical == canonical
+    assert extract_github_issue_locator(f"Design tests for {locator}") is not None
+
+
 def test_slash_form_does_not_steal_issues_url_path() -> None:
     parsed = extract_github_issue_locator(
         "Design tests for https://github.com/mahmoudazaid/Kernector/issues/293"
