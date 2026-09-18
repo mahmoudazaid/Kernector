@@ -35,8 +35,8 @@ function joinUrl(baseUrl: string, path: string): string {
 
 /**
  * Cancellation covers both names: `fetch` rejects with the aborting signal's
- * reason, and `AbortSignal.timeout` aborts with `TimeoutError` — not
- * `AbortError`, which only a caller-supplied `AbortController` produces.
+ * reason. Our timeout path aborts with `TimeoutError`; a caller-supplied
+ * `AbortController` produces `AbortError`.
  */
 function isCancellation(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
@@ -49,30 +49,64 @@ function isCancellation(error: unknown): boolean {
 }
 
 /**
- * Combine the caller signal with the timeout signal.
+ * Build a request signal that aborts when ``timeoutMs`` elapses and/or when
+ * the caller signal aborts.
  *
- * `AbortSignal.any` is unavailable before Safari 17.4 / Firefox 124, so fall
- * back to forwarding whichever signal aborts first.
+ * Prefer ``AbortController`` + ``setTimeout`` over ``AbortSignal.timeout``:
+ * the timer is cleared when the request finishes, and the abort reason is a
+ * stable ``TimeoutError`` across Chromium/Safari/Firefox.
+ *
+ * ``AbortSignal.any`` is unavailable before Safari 17.4 / Firefox 124, so the
+ * caller-signal path always forwards via the same controller.
  */
-function combineSignals(
-  signal: AbortSignal,
-  timeoutSignal: AbortSignal,
-): AbortSignal {
-  if (typeof AbortSignal.any === "function") {
-    return AbortSignal.any([signal, timeoutSignal]);
+function createRequestSignal(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const abortFromCaller = () => {
+    if (!controller.signal.aborted) {
+      controller.abort(signal?.reason);
+    }
+  };
+
+  if (signal !== undefined) {
+    if (signal.aborted) {
+      abortFromCaller();
+      return { signal: controller.signal, clear: () => undefined };
+    }
+    signal.addEventListener("abort", abortFromCaller, { once: true });
   }
 
-  const controller = new AbortController();
-  for (const source of [signal, timeoutSignal]) {
-    if (source.aborted) {
-      controller.abort(source.reason);
-      return controller.signal;
-    }
-    source.addEventListener("abort", () => controller.abort(source.reason), {
-      once: true,
-    });
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => {
+      if (!controller.signal.aborted) {
+        const reason =
+          typeof DOMException === "function"
+            ? new DOMException("The operation was aborted due to timeout", "TimeoutError")
+            : new Error("The operation was aborted due to timeout");
+        if (reason && !(reason instanceof DOMException)) {
+          (reason as Error & { name: string }).name = "TimeoutError";
+        }
+        controller.abort(reason);
+      }
+    }, timeoutMs);
   }
-  return controller.signal;
+
+  return {
+    signal: controller.signal,
+    clear: () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (signal !== undefined) {
+        signal.removeEventListener("abort", abortFromCaller);
+      }
+    },
+  };
 }
 
 function parseContentDispositionFileName(
@@ -99,11 +133,13 @@ function parseContentDispositionFileName(
 
 /**
  * Shared fetch seam: URL join, timeout/cancel, problem+json → ApiError.
- * Returns the raw Response on success so JSON and blob callers share one path.
+ * On success, the timeout/caller signal stays live until the caller finishes
+ * reading the body (``clear``); clearing after headers alone would leave
+ * ``response.json()`` / ``.blob()`` uncovered.
  */
 async function apiRequestResponse(
   options: ApiRequestOptions,
-): Promise<Response> {
+): Promise<{ response: Response; clear: () => void }> {
   const {
     baseUrl,
     path,
@@ -115,11 +151,14 @@ async function apiRequestResponse(
     headers,
   } = options;
 
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const combinedSignal =
-    signal !== undefined
-      ? combineSignals(signal, timeoutSignal)
-      : timeoutSignal;
+  // Coerce invalid / missing values to the default so long-running callers
+  // (chat ask, test-design create) never silently fall through to a short
+  // AbortSignal window. ``timeoutMs: 0`` means no timeout.
+  const effectiveTimeoutMs =
+    typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs >= 0
+      ? timeoutMs
+      : DEFAULT_TIMEOUT_MS;
+  const requestSignal = createRequestSignal(effectiveTimeoutMs, signal);
 
   const requestHeaders = new Headers(headers);
   let requestBody: BodyInit | undefined;
@@ -155,9 +194,10 @@ async function apiRequestResponse(
       method,
       headers: requestHeaders,
       body: requestBody,
-      signal: combinedSignal,
+      signal: requestSignal.signal,
     });
   } catch (error) {
+    requestSignal.clear();
     if (isCancellation(error)) {
       throw ApiError.aborted();
     }
@@ -168,24 +208,31 @@ async function apiRequestResponse(
   const isProblem = contentType.includes("application/problem+json");
 
   if (!response.ok) {
-    if (isProblem) {
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
+    try {
+      if (isProblem) {
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          if (isCancellation(error)) {
+            throw ApiError.aborted();
+          }
+          throw ApiError.generic(response.status);
+        }
+        if (isProblemPayload(payload)) {
+          throw ApiError.fromProblem(payload);
+        }
         throw ApiError.generic(response.status);
       }
-      if (isProblemPayload(payload)) {
-        throw ApiError.fromProblem(payload);
-      }
+      // Drain body so the connection can close; never surface the text.
+      await response.text().catch(() => undefined);
       throw ApiError.generic(response.status);
+    } finally {
+      requestSignal.clear();
     }
-    // Drain body so the connection can close; never surface the text.
-    await response.text().catch(() => undefined);
-    throw ApiError.generic(response.status);
   }
 
-  return response;
+  return { response, clear: requestSignal.clear };
 }
 
 /**
@@ -195,18 +242,24 @@ async function apiRequestResponse(
  * become {@link ApiError} without retaining raw bodies or stack traces.
  */
 export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
-  const response = await apiRequestResponse(options);
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
+  const { response, clear } = await apiRequestResponse(options);
   try {
-    return (await response.json()) as T;
-  } catch {
-    // A malformed success body (proxy error page, truncated stream) must not
-    // escape as a SyntaxError — its message embeds a snippet of the body.
-    throw ApiError.generic(response.status);
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      if (isCancellation(error)) {
+        throw ApiError.aborted();
+      }
+      // A malformed success body (proxy error page, truncated stream) must not
+      // escape as a SyntaxError — its message embeds a snippet of the body.
+      throw ApiError.generic(response.status);
+    }
+  } finally {
+    clear();
   }
 }
 
@@ -219,17 +272,24 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
 export async function apiRequestBlob(
   options: ApiRequestOptions,
 ): Promise<ApiBlobResult> {
-  const response = await apiRequestResponse(options);
+  const { response, clear } = await apiRequestResponse(options);
   try {
-    const blob = await response.blob();
-    return {
-      blob,
-      contentType: response.headers.get("content-type"),
-      fileName: parseContentDispositionFileName(
-        response.headers.get("content-disposition"),
-      ),
-    };
-  } catch {
-    throw ApiError.generic(response.status);
+    try {
+      const blob = await response.blob();
+      return {
+        blob,
+        contentType: response.headers.get("content-type"),
+        fileName: parseContentDispositionFileName(
+          response.headers.get("content-disposition"),
+        ),
+      };
+    } catch (error) {
+      if (isCancellation(error)) {
+        throw ApiError.aborted();
+      }
+      throw ApiError.generic(response.status);
+    }
+  } finally {
+    clear();
   }
 }

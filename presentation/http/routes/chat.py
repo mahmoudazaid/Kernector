@@ -9,7 +9,6 @@ from application.decide_tool_approval import DecideToolApprovalRequest
 from application.response_style_policy import ResponseStyle
 from composition.test_design import (
     SourceLocatorView,
-    try_test_design_chat_handoff,
 )
 from domain.models import Message
 from presentation.http.deps import (
@@ -47,31 +46,17 @@ def chat_ask(
     ask_factory: AskFactoryDep,
     settings: SettingsDep,
 ) -> ChatAskResponse:
-    """Run one grounded ask turn, or a RAG-free Test Design handoff."""
+    """Run one routed ask turn (TurnRouter decides path before retrieval)."""
+    del settings
     locator_view = None
     if body.source_locator is not None:
         locator_view = SourceLocatorView(
             provider=body.source_locator.provider,
             locator=body.source_locator.locator,
         )
-    handoff = try_test_design_chat_handoff(
-        settings=settings,
-        query=body.query,
-        source_locator=locator_view,
-    )
-    if handoff is not None:
-        return ChatAskResponse(
-            answer=handoff.answer,
-            citations=[],
-            tools_used=[],
-            run=None,
-            tool_run=None,
-            action=chat_workflow_action_response(handoff.action),
-            pending_approval=None,
-        )
 
     runtime = body.runtime
-    ask = ask_factory(runtime)
+    ask = ask_factory(runtime, source_locator=locator_view)
     style = None
     if runtime is not None and runtime.response_style is not None:
         style = ResponseStyle(runtime.response_style)
@@ -88,13 +73,20 @@ def chat_ask(
     consume = getattr(ask, "consume_tool_run_view", None)
     tool_view = consume() if callable(consume) else None
     pending = None if tool_view is None else getattr(tool_view, "pending_approval", None)
+    consume_action = getattr(ask, "consume_workflow_action", None)
+    action_view = consume_action() if callable(consume_action) else None
+    action = (
+        None
+        if action_view is None
+        else chat_workflow_action_response(action_view)
+    )
     return ChatAskResponse(
         answer=response.answer,
         citations=[citation_response(c) for c in response.citations],
         tools_used=tools_used_response(response.tool_outputs),
         run=run_meta_response(response.run),
         tool_run=None if tool_view is None else tool_run_response(tool_view),
-        action=None,
+        action=action,
         pending_approval=pending_tool_approval_response(pending),
     )
 

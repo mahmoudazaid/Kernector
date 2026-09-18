@@ -11,6 +11,11 @@ _URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _HASH_PATTERN = re.compile(rf"\b{_OWNER_REPO}#(?P<number>\d+)\b")
+# Slash form (owner/repo/N) is accepted only as a whole-string paste — never via
+# finditer over free text (paths, dates, and version strings look the same).
+_SLASH_PATTERN = re.compile(
+    rf"(?<![\w./]){_OWNER_REPO}/(?P<number>\d+)\b(?!/)",
+)
 
 
 class InvalidGitHubIssueLocatorError(ValueError):
@@ -45,13 +50,20 @@ def parse_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
     stripped = text.strip()
     if not stripped or stripped.isdigit():
         return None
-    match = _URL_PATTERN.fullmatch(stripped) or _HASH_PATTERN.fullmatch(stripped)
-    if match is None:
-        # Allow optional trailing punctuation stripped by callers; try patterns
-        # that match the whole string only.
+    url_or_hash = _URL_PATTERN.fullmatch(stripped) or _HASH_PATTERN.fullmatch(
+        stripped
+    )
+    if url_or_hash is not None:
+        try:
+            return _from_match(url_or_hash)
+        except InvalidGitHubIssueLocatorError:
+            return None
+    slash = _SLASH_PATTERN.fullmatch(stripped)
+    if slash is None:
         return None
     try:
-        return _from_match(match)
+        # Alpha required only for slash form (dates/versions look identical).
+        return _from_match(slash, require_alpha=True)
     except InvalidGitHubIssueLocatorError:
         return None
 
@@ -71,6 +83,9 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
 
     Duplicate mentions of the same Issue are accepted. Multiple distinct Issues
     raise AmbiguousGitHubIssueLocatorError. Returns None when none are found.
+
+    Slash ``owner/repo/N`` is only accepted when the entire trimmed string is
+    that form (paste-as-follow-up). It is never scanned out of surrounding prose.
     """
     if not isinstance(text, str) or not text.strip():
         return None
@@ -81,6 +96,13 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
                 found.append(_from_match(match))
             except InvalidGitHubIssueLocatorError:
                 continue
+    stripped = text.strip()
+    slash = _SLASH_PATTERN.fullmatch(stripped)
+    if slash is not None:
+        try:
+            found.append(_from_match(slash, require_alpha=True))
+        except InvalidGitHubIssueLocatorError:
+            pass
     if not found:
         return None
     unique: dict[tuple[str, str, int], ParsedGitHubIssueLocator] = {}
@@ -93,11 +115,19 @@ def extract_github_issue_locator(text: str) -> ParsedGitHubIssueLocator | None:
     return next(iter(unique.values()))
 
 
-def _from_match(match: re.Match[str]) -> ParsedGitHubIssueLocator:
+def _from_match(
+    match: re.Match[str],
+    *,
+    require_alpha: bool = False,
+) -> ParsedGitHubIssueLocator:
     number = int(match.group("number"))
     owner = match.group("owner")
     repo = match.group("repo")
-    if number < 1 or not _valid_segment(owner) or not _valid_segment(repo):
+    if (
+        number < 1
+        or not _valid_segment(owner, require_alpha=require_alpha)
+        or not _valid_segment(repo, require_alpha=require_alpha)
+    ):
         raise InvalidGitHubIssueLocatorError(
             "GitHub Issue locator must use a valid owner, repo, and number"
         )
@@ -108,5 +138,11 @@ def _from_match(match: re.Match[str]) -> ParsedGitHubIssueLocator:
     )
 
 
-def _valid_segment(value: str) -> bool:
-    return bool(value.strip()) and value.strip(".") != ""
+def _valid_segment(value: str, *, require_alpha: bool = False) -> bool:
+    """Reject empty/dot-only segments; optionally require a letter (slash form)."""
+    stripped = value.strip()
+    if not stripped or stripped.strip(".") == "":
+        return False
+    if require_alpha and not any(ch.isalpha() for ch in stripped):
+        return False
+    return True

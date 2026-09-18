@@ -15,7 +15,7 @@ export interface paths {
     put?: never;
     /**
      * Chat Ask
-     * @description Run one grounded ask turn, or a RAG-free Test Design handoff.
+     * @description Run one routed ask turn (TurnRouter decides path before retrieval).
      */
     post: operations["chat_ask_api_v1_chat_ask_post"];
     delete?: never;
@@ -1542,12 +1542,23 @@ export interface components {
      * @description Safe run fields the chat UI may display (allowlisted projection).
      */
     RunMetaResponse: {
+      /** Ambiguous */
+      ambiguous?: boolean | null;
       /** Citation Count */
       citation_count?: number | null;
       /** Completion Tokens */
       completion_tokens?: number | null;
       /** Hit Count */
       hit_count?: number | null;
+      /** Intent */
+      intent?:
+        | (
+            | "tool_workflow"
+            | "clarification"
+            | "grounded_answer"
+            | "general_answer"
+          )
+        | null;
       /** Latency Ms */
       latency_ms?: number | null;
       /** Model */
@@ -1556,6 +1567,8 @@ export interface components {
       outcome?: string | null;
       /** Pack */
       pack?: string | null;
+      /** Path */
+      path?: string | null;
       /** Prompt Key */
       prompt_key?: string | null;
       /** Prompt Tokens */
@@ -1568,6 +1581,8 @@ export interface components {
       request_id?: string | null;
       /** Response Style */
       response_style?: ("formal" | "friendly" | "concise") | null;
+      /** Routing Confidence */
+      routing_confidence?: number | null;
       /** Tools */
       tools?: string[];
       /** Total Tokens */

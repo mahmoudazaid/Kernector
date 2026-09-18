@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 
+import pytest
 from fastapi.testclient import TestClient
 
 from application.submit_response_feedback import (
@@ -187,3 +189,14 @@ def test_get_missing_feedback_returns_404() -> None:
     response = client.get("/api/v1/responses/req-missing/feedback")
     assert response.status_code == 404
     assert response.json()["code"] == "feedback_not_found"
+
+
+def test_get_missing_feedback_is_not_logged_as_unhandled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Hydrate 404 must stay on ExceptionMiddleware (no unhandled ERROR spam)."""
+    client = _client(get=_StubGet())
+    with caplog.at_level(logging.ERROR, logger="presentation.http"):
+        response = client.get("/api/v1/responses/req-missing/feedback")
+    assert response.status_code == 404
+    assert not any("Unhandled exception" in rec.message for rec in caplog.records)

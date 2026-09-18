@@ -21,8 +21,8 @@ import {
 import { ToolApprovalCard, ExportDestinationRequiredPanel } from "@/components/chat/ToolApprovalCard";
 import type { ApprovalResolution } from "@/components/chat/ToolApprovalCard";
 import { MessageFeedbackControls } from "@/components/chat/MessageFeedbackControls";
-import { createTestDesignDraft } from "@/lib/api/test-design";
-import { ApiError } from "@/lib/api/errors";
+import { createTestDesignDraft, TEST_DESIGN_TIMEOUT_MS } from "@/lib/api/test-design";
+import { ApiError, isAbortError } from "@/lib/api/errors";
 import type {
   GetRuntimeSettingsOptions,
   RuntimeSettingsResponse,
@@ -377,6 +377,7 @@ function MessageRow({
   const router = useRouter();
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const startingRef = useRef(false);
 
   if (message.displayOnly) {
     return (
@@ -402,10 +403,12 @@ function MessageRow({
       action.kind !== "start_workflow" ||
       action.workflow_id !== "software-delivery.test-design" ||
       !action.source_locator ||
-      !conversationId
+      !conversationId ||
+      startingRef.current
     ) {
       return;
     }
+    startingRef.current = true;
     setStarting(true);
     setStartError(null);
     try {
@@ -415,18 +418,26 @@ function MessageRow({
           conversation_id: conversationId,
           source_locator: action.source_locator,
         },
+        timeoutMs: TEST_DESIGN_TIMEOUT_MS,
       });
       // Persist open_workflow before navigation so returning to chat resumes
       // the same draft instead of offering Start again.
       onTestDesignStarted(message.id, draft.draft_id);
       await router.push(`/test-design/${encodeURIComponent(draft.draft_id)}`);
     } catch (caught) {
-      if (caught instanceof ApiError) {
+      startingRef.current = false;
+      setStarting(false);
+      if (isAbortError(caught)) {
+        // Create often finishes server-side after the browser gives up; tell
+        // the user a draft may already exist instead of a bare cancel line.
+        setStartError(
+          "Test Design took too long to respond. Wait a few seconds, then try again — a draft may already have been created.",
+        );
+      } else if (caught instanceof ApiError) {
         setStartError(caught.detail || "Could not start Test Design. Try again.");
       } else {
         setStartError("Could not start Test Design. Try again.");
       }
-      setStarting(false);
     }
   }
 
@@ -1143,6 +1154,19 @@ export function ChatPanel({
       return;
     }
 
+    if (result.kind === "success") {
+      const conversation = getConversation(id);
+      if (conversation) {
+        seedIds(conversation.messages);
+        skipNextPersistRef.current = true;
+        setMessages(fromPersisted(conversation.messages));
+        setDraft(conversation.draft);
+      }
+      setSending(false);
+      setInlineError(null);
+      return;
+    }
+
     if (result.kind === "missing") {
       setSending(false);
       setMessages([]);
@@ -1155,6 +1179,13 @@ export function ChatPanel({
       setSending(false);
       setUnavailable(true);
     } else if (result.kind === "failed") {
+      const conversation = getConversation(id);
+      if (conversation) {
+        seedIds(conversation.messages);
+        skipNextPersistRef.current = true;
+        setMessages(fromPersisted(conversation.messages));
+        setDraft(conversation.draft);
+      }
       setSending(false);
     }
   }
