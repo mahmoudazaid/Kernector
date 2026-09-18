@@ -130,7 +130,9 @@ def test_chat_ask_projects_pending_approval_from_tool_view() -> None:
             return view
 
     app = create_app()
-    app.dependency_overrides[get_ask_factory] = lambda: (lambda _runtime: _Ask())
+    app.dependency_overrides[get_ask_factory] = lambda: (
+        lambda _runtime=None, **_kwargs: _Ask()
+    )
     client = TestClient(app, raise_server_exceptions=False)
 
     response = client.post(

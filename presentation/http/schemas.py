@@ -418,6 +418,18 @@ class RunMetaResponse(BaseModel):
     response_style: Literal["formal", "friendly", "concise"] | None = None
     prompt_key: str | None = None
     prompt_version: str | None = None
+    intent: (
+        Literal[
+            "tool_workflow",
+            "clarification",
+            "grounded_answer",
+            "general_answer",
+        ]
+        | None
+    ) = None
+    routing_confidence: float | None = None
+    ambiguous: bool | None = None
+    path: str | None = None
 
 
 FeedbackRatingLiteral = Literal["positive", "negative"]
@@ -767,6 +779,22 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
     style: Literal["formal", "friendly", "concise"] | None = None
     if run.response_style in ("formal", "friendly", "concise"):
         style = run.response_style
+    intent: (
+        Literal[
+            "tool_workflow",
+            "clarification",
+            "grounded_answer",
+            "general_answer",
+        ]
+        | None
+    ) = None
+    if run.intent in (
+        "tool_workflow",
+        "clarification",
+        "grounded_answer",
+        "general_answer",
+    ):
+        intent = run.intent  # type: ignore[assignment]
     return RunMetaResponse(
         request_id=run.request_id,
         outcome=run.outcome,
@@ -783,6 +811,10 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
         response_style=style,
         prompt_key=run.prompt_key,
         prompt_version=None,
+        intent=intent,
+        routing_confidence=run.routing_confidence,
+        ambiguous=run.ambiguous,
+        path=run.path,
     )
 
 

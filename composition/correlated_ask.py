@@ -30,6 +30,20 @@ class CorrelatedAsk:
             return None
         return consume()
 
+    def consume_workflow_action(self) -> object | None:
+        """Forward a post-routing workflow handoff action when present."""
+        consume = getattr(self._ask, "consume_workflow_action", None)
+        if consume is None:
+            return None
+        return consume()
+
+    def consume_clarification_context(self) -> object | None:
+        """Forward structured clarification context when present."""
+        consume = getattr(self._ask, "consume_clarification_context", None)
+        if consume is None:
+            return None
+        return consume()
+
     def execute(
         self,
         request: AskRequest,

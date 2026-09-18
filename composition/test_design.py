@@ -157,26 +157,25 @@ def resolve_start_test_design_action(
     )
 
 
-def try_test_design_chat_handoff(
+def build_test_design_handoff_from_request(
     *,
     settings: Settings,
-    query: str,
+    request: AskRequest,
     source_locator: SourceLocatorView | None = None,
 ) -> TestDesignChatHandoffView | None:
-    """Detect Test Design handoff before ask.execute; return fixed answer + action.
+    """Build Test Design handoff **after** a ready ``tool_workflow`` decision.
 
-    Returns None when this is not a Test Design Issue handoff (caller runs RAG),
-    including topical discussion that merely mentions test design/coverage and
-    phrases that match the command regex but carry no Issue reference.
-    Raises TestDesignValidationError for commands with multiple distinct Issues,
-    or for client source_locator mismatch.
+    Accepts command+locator messages and locator-only follow-ups. Raises
+    TestDesignValidationError for explicit commands with multiple distinct
+    Issues, or for client source_locator mismatch. Multi-issue discussion
+    without a command phrase returns ``None`` (falls through).
     """
     if not software_delivery_tools_enabled(settings):
         return None
+    query = request.query
     if not isinstance(query, str) or not query.strip():
         return None
-    if _TEST_DESIGN_COMMAND.search(query) is None:
-        return None
+    has_command = _TEST_DESIGN_COMMAND.search(query) is not None
     from infrastructure.connectors.github.issue_locator import (
         AmbiguousGitHubIssueLocatorError,
         extract_github_issue_locator,
@@ -185,13 +184,15 @@ def try_test_design_chat_handoff(
     try:
         parsed = extract_github_issue_locator(query)
     except AmbiguousGitHubIssueLocatorError as error:
+        if not has_command:
+            return None
         raise TestDesignValidationError(
             "Query must reference exactly one GitHub Issue"
         ) from error
     if parsed is None:
-        # Phrase match alone is not enough — no Issue means discussion, not
-        # a handoff. Fall through to grounded RAG.
         return None
+    # Locator-only follow-ups (no command phrase) are valid after clarification
+    # when the router already decided tool_workflow/test_design.
     canonical = parsed.canonical
     if source_locator is not None:
         client_locator = _require_github_locator_view(source_locator)
@@ -208,6 +209,27 @@ def try_test_design_chat_handoff(
     return TestDesignChatHandoffView(
         answer=TEST_DESIGN_HANDOFF_ANSWER,
         action=action,
+    )
+
+
+def try_test_design_chat_handoff(
+    *,
+    settings: Settings,
+    query: str,
+    source_locator: SourceLocatorView | None = None,
+) -> TestDesignChatHandoffView | None:
+    """Deprecated pre-router helper; prefer post-decision handoff builder.
+
+    Kept for unit tests that call the helper directly. Incomplete commands
+    (no Issue) return ``None`` — routing clarification is owned by
+    :class:`~application.turn_routing.TurnRouter`.
+    """
+    from application.contracts import AskRequest
+
+    return build_test_design_handoff_from_request(
+        settings=settings,
+        request=AskRequest(query=query),
+        source_locator=source_locator,
     )
 
 
@@ -754,5 +776,6 @@ __all__ = [
     "TestDesignChatHandoffView",
     "TestDesignFacade",
     "resolve_start_test_design_action",
+    "build_test_design_handoff_from_request",
     "try_test_design_chat_handoff",
 ]

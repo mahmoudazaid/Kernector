@@ -286,7 +286,8 @@ def _agent_goal(
     evidence_block = "\n".join(snippets) if snippets else "(no snippets)"
     task = (
         f"Export {prepared.selected_title_count} selected Test Design titles "
-        f"to Google Drive using the bound {TOOL_NAME} tool."
+        f"to Google Drive using the bound {TOOL_NAME} tool. "
+        "Call that tool now; do not ask clarifying questions."
     )
     return (
         f"{AGENT_BOUNDARY.wrap('target', target, include_notice=True)}\n\n"

@@ -75,7 +75,9 @@ class _StubAsk:
 
 def _client_with_ask(ask: _StubAsk) -> TestClient:
     app = create_app()
-    app.dependency_overrides[get_ask_factory] = lambda: (lambda _runtime: ask)
+    app.dependency_overrides[get_ask_factory] = lambda: (
+        lambda _runtime=None, **_kwargs: ask
+    )
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -153,6 +155,10 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
         "response_style": None,
         "prompt_key": None,
         "prompt_version": None,
+        "intent": None,
+        "routing_confidence": None,
+        "ambiguous": None,
+        "path": None,
     }
     assert "settings" not in body["run"]
     assert "error_type" not in body["run"]

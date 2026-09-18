@@ -58,6 +58,7 @@ from composition import (
     sync_github_oauth,
     sync_google_drive_oauth,
 )
+from composition.test_design import SourceLocatorView
 from domain.knowledge import (
     CatalogDocument,
     ChunkPage,
@@ -113,13 +114,26 @@ def get_probe_ollama_status(
 class AskFactory(Protocol):
     """Build a ``GroundedAsk`` for one request's runtime selection."""
 
-    def __call__(self, runtime: ChatRuntimeRequest | None) -> GroundedAsk: ...
+    def __call__(
+        self,
+        runtime: ChatRuntimeRequest | None,
+        *,
+        source_locator: SourceLocatorView | None = None,
+    ) -> GroundedAsk: ...
 
 
 @lru_cache(maxsize=1)
 def get_short_term_memory_runtime() -> ShortTermMemoryRuntime:
     """Process-cached short-term agent memory runtime (InMemorySaver)."""
     return build_short_term_memory_runtime(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_clarification_context_store():
+    """Process-cached clarification context for multi-turn workflow follow-ups."""
+    from composition.clarification_context import InMemoryClarificationContextStore
+
+    return InMemoryClarificationContextStore()
 
 
 def get_ask_factory(
@@ -129,10 +143,17 @@ def get_ask_factory(
     short_term_memory: Annotated[
         ShortTermMemoryRuntime, Depends(get_short_term_memory_runtime)
     ],
+    clarification_context_store: Annotated[
+        object, Depends(get_clarification_context_store)
+    ],
 ) -> AskFactory:
     """Return a factory that builds ask with per-request provider/model overrides."""
 
-    def factory(runtime: ChatRuntimeRequest | None) -> GroundedAsk:
+    def factory(
+        runtime: ChatRuntimeRequest | None,
+        *,
+        source_locator: SourceLocatorView | None = None,
+    ) -> GroundedAsk:
         provider = None if runtime is None else runtime.provider
         model = None if runtime is None else runtime.model
         base_url = None if runtime is None else runtime.ollama_base_url
@@ -151,6 +172,8 @@ def get_ask_factory(
             model=model,
             base_url=base_url,
             short_term_memory=short_term_memory,
+            client_source_locator=source_locator,
+            clarification_context_store=clarification_context_store,
         )
 
     return factory

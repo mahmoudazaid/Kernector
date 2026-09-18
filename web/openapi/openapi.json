@@ -1975,6 +1975,17 @@
       "RunMetaResponse": {
         "description": "Safe run fields the chat UI may display (allowlisted projection).",
         "properties": {
+          "ambiguous": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ambiguous"
+          },
           "citation_count": {
             "anyOf": [
               {
@@ -2007,6 +2018,23 @@
               }
             ],
             "title": "Hit Count"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tool_workflow",
+                  "clarification",
+                  "grounded_answer",
+                  "general_answer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
           },
           "latency_ms": {
             "anyOf": [
@@ -2051,6 +2079,17 @@
               }
             ],
             "title": "Pack"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           },
           "prompt_key": {
             "anyOf": [
@@ -2118,6 +2157,17 @@
               }
             ],
             "title": "Response Style"
+          },
+          "routing_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Confidence"
           },
           "tools": {
             "items": {
@@ -2659,7 +2709,7 @@
   "paths": {
     "/api/v1/chat/ask": {
       "post": {
-        "description": "Run one grounded ask turn, or a RAG-free Test Design handoff.",
+        "description": "Run one routed ask turn (TurnRouter decides path before retrieval).",
         "operationId": "chat_ask_api_v1_chat_ask_post",
         "requestBody": {
           "content": {

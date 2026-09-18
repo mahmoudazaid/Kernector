@@ -10,7 +10,7 @@ export type ExpectedVersionRequest =
 export type TestCoverageDraftResponse =
   components["schemas"]["TestCoverageDraftResponse"];
 
-export const TEST_DESIGN_TIMEOUT_MS = 120_000;
+export const TEST_DESIGN_TIMEOUT_MS = 180_000;
 
 type BaseOptions = {
   baseUrl: string;

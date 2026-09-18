@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from application.errors import InputRejectedError
+from application.errors import ApplicationValidationError, InputRejectedError
 from domain.ports import ResponseFeedbackRepository, RunProvenanceLookup
 from domain.response_feedback import (
     FEEDBACK_RATINGS,
@@ -20,7 +20,7 @@ from domain.response_feedback import (
 )
 
 
-class FeedbackNotFoundError(Exception):
+class FeedbackNotFoundError(ApplicationValidationError):
     """No feedback exists for the given request_id in this workspace."""
 
     def __init__(self, request_id: str) -> None:

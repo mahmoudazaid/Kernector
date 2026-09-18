@@ -30,16 +30,22 @@ The folder is selected in the Test Design export dialog — never returned in
 tool JSON or public errors. Wireframe:
 [`docs/wireframes/export-test-cases-google-drive.html`](../../docs/wireframes/export-test-cases-google-drive.html).
 
-## Chat-time intent selection
+## Chat-time routing (#312)
 
-`select_chat_intent(query)` always returns `None` (**choice A**, #285). Former
-risk/generate phrasing stays on grounded RAG. `ChatToolSelection` remains for
-registration typing and `ToolAugmentedAsk`'s intent protocol until a real tool
-lands.
+Composition injects `WorkflowSignal` probes (see
+`composition/workflow_signals.py`) into pack-neutral `TurnRouter`:
 
-Composition reaches the selector through `registration.build_chat_intent_selector`.
-Only General chat (`AskRequest.prompt_key is None`) is eligible; selected task
-prompts always stay on grounded RAG.
+| Workflow | Recognized | Ready | Incomplete (clarify, never RAG) |
+| --- | --- | --- | --- |
+| Test Design | Command phrases (`design tests`, `test design`, …); docs/topical mentions without an Issue locator excluded | Exactly one GitHub Issue locator | Leading command without Issue (#304) |
+| Drive export | Clear or partial export/Drive language (docs/prose mentions excluded) | Clear “export … Drive” **and** draft with selected titles **and** agent loop on | Partial phrase (#310); missing titles; agent loop off (`tool_unavailable`) |
+
+Handoff/`Start Test Design` actions are built **after** a ready `tool_workflow`
+decision — not as a presentation pre-ask gate.
+
+`select_chat_intent` remains for legacy registration typing; live chat routing
+uses WorkflowSignals. Only General chat (`AskRequest.prompt_key is None`) is
+eligible for the router; selected task prompts always stay on grounded RAG.
 
 ## Test Design workflow (#293)
 
@@ -59,6 +65,7 @@ Detailed manual/Cucumber scenario generation is deferred to #300.
 HTTP routes under `/api/v1/test-design/*` are always mounted; when the pack is
 disabled they return `test_design_unavailable` without importing this pack.
 Composition namespace for persistence: `software-delivery:test-design`.
-Chat handoff bypasses grounded RAG when intent + one Issue ref are present.
+Chat routing clarifies incomplete Test Design commands (#304) and builds the
+Start handoff only after a ready `tool_workflow` decision (intent + one Issue).
 
 Enable with `DOMAIN_TOOL_PACKS=software-delivery`.

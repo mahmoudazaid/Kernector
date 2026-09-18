@@ -24,8 +24,68 @@ def test_parses_full_github_issue_url() -> None:
     assert parsed.canonical == "mahmoudazaid/Kernector#293"
 
 
-def test_parses_owner_repo_hash_number() -> None:
-    parsed = parse_github_issue_locator("mahmoudazaid/Kernector#293")
+def test_parses_owner_repo_slash_number() -> None:
+    parsed = parse_github_issue_locator("mahmoudazaid/Kernector/293")
+    assert parsed is not None
+    assert parsed.canonical == "mahmoudazaid/Kernector#293"
+
+
+def test_slash_locator_only_as_whole_message_not_prose() -> None:
+    assert (
+        extract_github_issue_locator("please use mahmoudazaid/kernector/218")
+        is None
+    )
+    parsed = extract_github_issue_locator("mahmoudazaid/kernector/218")
+    assert parsed is not None
+    assert parsed.canonical == "mahmoudazaid/kernector#218"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What does the api/v1/325 endpoint return?",
+        "The release went out on 2026/09/17",
+        "see test/composition/42 for the fixture",
+        "check docs/adr/0004 for the decision",
+        "version 1.2/3.4/56 build",
+        "ratio is 3/4/5 in the report",
+        "design tests for the api/v1/325 flow",
+        "design tests for the 2026/09/17 release notes",
+        "plan test coverage for src/utils/42",
+    ],
+)
+def test_extract_rejects_path_date_and_version_lookalikes(text: str) -> None:
+    assert extract_github_issue_locator(text) is None
+
+
+def test_canonicalize_rejects_numeric_owner_slash_form() -> None:
+    with pytest.raises(InvalidGitHubIssueLocatorError):
+        canonicalize_github_issue_locator("2026/09/17")
+
+
+@pytest.mark.parametrize(
+    ("locator", "canonical"),
+    [
+        ("acme/2026#42", "acme/2026#42"),
+        ("https://github.com/acme/2026/issues/42", "acme/2026#42"),
+        ("360learning/360#5", "360learning/360#5"),
+        ("acme/365#1", "acme/365#1"),
+        ("2026/kernector#7", "2026/kernector#7"),
+    ],
+)
+def test_url_and_hash_forms_allow_numeric_owner_or_repo(
+    locator: str, canonical: str
+) -> None:
+    parsed = parse_github_issue_locator(locator)
+    assert parsed is not None
+    assert parsed.canonical == canonical
+    assert extract_github_issue_locator(f"Design tests for {locator}") is not None
+
+
+def test_slash_form_does_not_steal_issues_url_path() -> None:
+    parsed = extract_github_issue_locator(
+        "Design tests for https://github.com/mahmoudazaid/Kernector/issues/293"
+    )
     assert parsed is not None
     assert parsed.canonical == "mahmoudazaid/Kernector#293"
 

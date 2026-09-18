@@ -357,6 +357,7 @@ class PackSoftwareDeliveryChat:
         output_style: str = "steps",
         conversation_id: str | None = None,
         response_style: object = None,
+        need_evidence: bool = True,
     ) -> ToolRunOutcome:
         """Retrieve evidence for ``target``, run the chain, project the result.
 
@@ -375,10 +376,19 @@ class PackSoftwareDeliveryChat:
         if self._model_calls is not None:
             self._model_calls.clear()
         try:
-            hits = require_evidence(
-                self._retrieve(target),
-                allow_empty=self._allow_empty_evidence,
-            )
+            if need_evidence:
+                hits = require_evidence(
+                    self._retrieve(target),
+                    allow_empty=self._allow_empty_evidence,
+                )
+            elif self._allow_empty_evidence:
+                # Drive-export ready path: titles come from the draft, not RAG.
+                hits = ()
+            else:
+                hits = require_evidence(
+                    self._retrieve(target),
+                    allow_empty=False,
+                )
             recorder = ToolCallRecorder(self._invoke)
             try:
                 response = self._orchestrate(

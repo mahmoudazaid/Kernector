@@ -3286,8 +3286,10 @@ a.kern-btn {
 }
 
 .kern-approval-card--pending {
+  /* Outline sits outside the box; thread overflow clips it without inset room. */
   outline: 2px dashed color-mix(in srgb, var(--kern-accent) 55%, transparent);
   outline-offset: 3px;
+  margin: 5px;
 }
 
 .kern-approval-card[data-busy="true"] .kern-approval-card__actions {

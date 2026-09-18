@@ -28,6 +28,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api/test-design", () => ({
   createTestDesignDraft: vi.fn(),
+  TEST_DESIGN_TIMEOUT_MS: 180_000,
 }));
 
 vi.mock("@/components/documents/GoogleDrivePicker", () => ({
@@ -1383,6 +1384,58 @@ describe("ChatPanel", () => {
         message.content.includes("Your Test Design draft is ready"),
       ),
     ).toBe(true);
+  });
+
+  it("explains abort on Start Test Design when create times out", async () => {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue({
+      ...SUCCESS,
+      action: {
+        kind: "start_workflow",
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
+      },
+    });
+    vi.mocked(createTestDesignDraft).mockRejectedValue(ApiError.aborted());
+
+    const created = createConversation({
+      title: "timeout",
+      messages: [],
+      draft: "",
+    });
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={created.id}
+        variant="conversation"
+        ask={ask}
+        loadSettings={async () => ({
+          ...catalogWithLimit(10_000),
+          enabled_packs: ["software-delivery"],
+        })}
+      />,
+    );
+
+    await user.type(
+      screen.getByLabelText(/message/i),
+      "Design tests for mahmoudazaid/Kernector#293",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    const start = await screen.findByRole("button", {
+      name: /start test design/i,
+    });
+    await user.click(start);
+
+    expect(
+      await screen.findByText(/draft may already have been created/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /start test design/i }),
+    ).toBeEnabled();
   });
 
   it("shows Open Test Design outside the bubble when coverage is confirmed", async () => {
