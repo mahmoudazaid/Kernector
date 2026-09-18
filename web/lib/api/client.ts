@@ -35,8 +35,8 @@ function joinUrl(baseUrl: string, path: string): string {
 
 /**
  * Cancellation covers both names: `fetch` rejects with the aborting signal's
- * reason, and `AbortSignal.timeout` aborts with `TimeoutError` — not
- * `AbortError`, which only a caller-supplied `AbortController` produces.
+ * reason. Our timeout path aborts with `TimeoutError`; a caller-supplied
+ * `AbortController` produces `AbortError`.
  */
 function isCancellation(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
@@ -49,30 +49,64 @@ function isCancellation(error: unknown): boolean {
 }
 
 /**
- * Combine the caller signal with the timeout signal.
+ * Build a request signal that aborts when ``timeoutMs`` elapses and/or when
+ * the caller signal aborts.
  *
- * `AbortSignal.any` is unavailable before Safari 17.4 / Firefox 124, so fall
- * back to forwarding whichever signal aborts first.
+ * Prefer ``AbortController`` + ``setTimeout`` over ``AbortSignal.timeout``:
+ * the timer is cleared when the request finishes, and the abort reason is a
+ * stable ``TimeoutError`` across Chromium/Safari/Firefox.
+ *
+ * ``AbortSignal.any`` is unavailable before Safari 17.4 / Firefox 124, so the
+ * caller-signal path always forwards via the same controller.
  */
-function combineSignals(
-  signal: AbortSignal,
-  timeoutSignal: AbortSignal,
-): AbortSignal {
-  if (typeof AbortSignal.any === "function") {
-    return AbortSignal.any([signal, timeoutSignal]);
+function createRequestSignal(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const abortFromCaller = () => {
+    if (!controller.signal.aborted) {
+      controller.abort(signal?.reason);
+    }
+  };
+
+  if (signal !== undefined) {
+    if (signal.aborted) {
+      abortFromCaller();
+      return { signal: controller.signal, clear: () => undefined };
+    }
+    signal.addEventListener("abort", abortFromCaller, { once: true });
   }
 
-  const controller = new AbortController();
-  for (const source of [signal, timeoutSignal]) {
-    if (source.aborted) {
-      controller.abort(source.reason);
-      return controller.signal;
-    }
-    source.addEventListener("abort", () => controller.abort(source.reason), {
-      once: true,
-    });
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => {
+      if (!controller.signal.aborted) {
+        const reason =
+          typeof DOMException === "function"
+            ? new DOMException("The operation was aborted due to timeout", "TimeoutError")
+            : new Error("The operation was aborted due to timeout");
+        if (reason && !(reason instanceof DOMException)) {
+          (reason as Error & { name: string }).name = "TimeoutError";
+        }
+        controller.abort(reason);
+      }
+    }, timeoutMs);
   }
-  return controller.signal;
+
+  return {
+    signal: controller.signal,
+    clear: () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (signal !== undefined) {
+        signal.removeEventListener("abort", abortFromCaller);
+      }
+    },
+  };
 }
 
 function parseContentDispositionFileName(
@@ -115,11 +149,14 @@ async function apiRequestResponse(
     headers,
   } = options;
 
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const combinedSignal =
-    signal !== undefined
-      ? combineSignals(signal, timeoutSignal)
-      : timeoutSignal;
+  // Coerce invalid / missing values to the default so long-running callers
+  // (chat ask, test-design create) never silently fall through to a short
+  // AbortSignal window.
+  const effectiveTimeoutMs =
+    typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs >= 0
+      ? timeoutMs
+      : DEFAULT_TIMEOUT_MS;
+  const requestSignal = createRequestSignal(effectiveTimeoutMs, signal);
 
   const requestHeaders = new Headers(headers);
   let requestBody: BodyInit | undefined;
@@ -155,14 +192,16 @@ async function apiRequestResponse(
       method,
       headers: requestHeaders,
       body: requestBody,
-      signal: combinedSignal,
+      signal: requestSignal.signal,
     });
   } catch (error) {
+    requestSignal.clear();
     if (isCancellation(error)) {
       throw ApiError.aborted();
     }
     throw ApiError.generic(0);
   }
+  requestSignal.clear();
 
   const contentType = response.headers.get("content-type") ?? "";
   const isProblem = contentType.includes("application/problem+json");
@@ -203,7 +242,10 @@ export async function apiRequest<T>(options: ApiRequestOptions): Promise<T> {
 
   try {
     return (await response.json()) as T;
-  } catch {
+  } catch (error) {
+    if (isCancellation(error)) {
+      throw ApiError.aborted();
+    }
     // A malformed success body (proxy error page, truncated stream) must not
     // escape as a SyntaxError — its message embeds a snippet of the body.
     throw ApiError.generic(response.status);

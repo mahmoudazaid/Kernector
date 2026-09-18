@@ -77,11 +77,12 @@ describe("apiRequest", () => {
     });
   });
 
-  it("falls back when AbortSignal.any is unavailable", async () => {
+  it("propagates caller AbortSignal without AbortSignal.any", async () => {
     const controller = new AbortController();
     vi.stubGlobal("fetch", abortAwareFetch());
 
-    // Pre-Safari 17.4 / Firefox 124 have AbortSignal but not AbortSignal.any.
+    // Pre-Safari 17.4 / Firefox 124 lack AbortSignal.any; our client must
+    // not depend on it for combining caller + timeout signals.
     const originalAny = AbortSignal.any;
     Reflect.deleteProperty(AbortSignal, "any");
     try {
