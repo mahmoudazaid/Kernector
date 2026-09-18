@@ -257,6 +257,11 @@ class LangGraphToolAgent:
         if approval_id in self._pending_args and approval_id not in owned:
             raise ToolApprovalNotFoundError("No pending approval for this conversation.")
         if not interrupts and approval_id not in self._pending_args:
+            _forget_conversation_approval(
+                self._approvals_by_conversation,
+                conversation_key,
+                approval_id,
+            )
             values = snapshot.checkpoint.get("channel_values", {})
             return self._result_from_state(values)
 
@@ -404,6 +409,11 @@ class LangGraphToolAgent:
                     if decision_name == "reject":
                         pending_args.pop(approval_id, None)
                         approval_results.pop(approval_id, None)
+                        _forget_conversation_approval(
+                            approvals_by_conversation,
+                            conversation_key,
+                            approval_id,
+                        )
                         outputs.append(
                             ToolMessage(
                                 content=_CANCELLED_TOOL_CONTENT,
@@ -419,6 +429,11 @@ class LangGraphToolAgent:
                         result = _tool_argument_error_message(error)
                     else:
                         approval_results[approval_id] = result
+                    _forget_conversation_approval(
+                        approvals_by_conversation,
+                        conversation_key,
+                        approval_id,
+                    )
                 else:
                     try:
                         result = tool.run(args)
@@ -540,6 +555,22 @@ def _pending_from_interrupts(interrupts: object) -> PendingToolApproval | None:
         except (KeyError, TypeError, ValueError):
             continue
     return None
+
+
+def _forget_conversation_approval(
+    approvals_by_conversation: MutableMapping[str, set[str]],
+    conversation_key: str | None,
+    approval_id: str,
+) -> None:
+    """Drop a resolved approval id so ``outstanding`` means pending, not historical."""
+    if conversation_key is None:
+        return
+    owned = approvals_by_conversation.get(conversation_key)
+    if not owned:
+        return
+    owned.discard(approval_id)
+    if not owned:
+        approvals_by_conversation.pop(conversation_key, None)
 
 
 def _tool_argument_error_message(error: ToolArgumentValidationError) -> str:

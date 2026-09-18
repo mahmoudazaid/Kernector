@@ -497,3 +497,192 @@ def test_pending_approval_survives_interleaved_grounded_ask_on_same_conversation
     assert resumed.pending_approval is None
     assert export.calls == 1
     assert "export done" in resumed.content
+    assert approvals_by_conversation.get("conv-1") in (None, set())
+
+    # Guard must release: a later grounded turn may refresh tool bindings again.
+    follow = agent.run(
+        "follow-up question",
+        [retrieve],
+        max_steps=4,
+        conversation_id="conv-1",
+    )
+    assert follow.pending_approval is None
+    assert list(tools_by_conversation["conv-1"]) == [retrieve.name]
+
+
+def test_approval_map_clears_so_second_export_can_be_approved() -> None:
+    """Resolved approvals must leave approvals_by_conversation so the guard unlatches."""
+
+    class _LabeledExport:
+        args_schema: type | None = None
+
+        def __init__(self, label: str) -> None:
+            self.label = label
+            self.calls = 0
+            self.approval_hints = ApprovalHints(
+                title=f"Export {label}",
+                summary=f"Export {label}",
+                destination_label="Home",
+                file_name=f"{label}.md",
+                selected_title_count=1,
+            )
+            self._arguments = {"label": label}
+
+        @property
+        def name(self) -> str:
+            return "software_delivery.export_test_cases_google_drive"
+
+        @property
+        def description(self) -> str:
+            return "export"
+
+        def run(self, arguments: Mapping[str, object]) -> str:
+            del arguments
+            self.calls += 1
+            return f'{{"label":"{self.label}"}}'
+
+    first = _LabeledExport("FIRST")
+    second = _LabeledExport("SECOND")
+    tools_by_conversation: dict[str, dict[str, Tool]] = {}
+    pending_args: dict[str, Mapping[str, object]] = {}
+    approvals_by_conversation: dict[str, set[str]] = {}
+    model = _ScriptedModel(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-1",
+                    }
+                ],
+            ),
+            AIMessage(content="first done"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-2",
+                    }
+                ],
+            ),
+            AIMessage(content="second done"),
+        ]
+    )
+    agent = LangGraphToolAgent(
+        system_prompt="system",
+        model_factory=lambda **_: model,
+        checkpointer=InMemorySaver(),
+        workspace_id="ws-a",
+        approval_policy=ToolApprovalPolicy(
+            frozenset({"software_delivery.export_test_cases_google_drive"})
+        ),
+        pending_args=pending_args,
+        approvals_by_conversation=approvals_by_conversation,
+        tools_by_conversation=tools_by_conversation,
+    )
+
+    pending_first = agent.run("export first", [first], max_steps=4, conversation_id="conv-1")
+    assert isinstance(pending_first.pending_approval, PendingToolApproval)
+    first_id = pending_first.pending_approval.approval_id
+    assert tools_by_conversation["conv-1"][first.name] is first
+
+    done_first = agent.resume_approval(
+        conversation_id="conv-1",
+        approval_id=first_id,
+        decision="approve",
+    )
+    assert done_first.pending_approval is None
+    assert first.calls == 1
+    assert approvals_by_conversation.get("conv-1") in (None, set())
+
+    pending_second = agent.run(
+        "export second", [second], max_steps=4, conversation_id="conv-1"
+    )
+    assert isinstance(pending_second.pending_approval, PendingToolApproval)
+    second_id = pending_second.pending_approval.approval_id
+    assert tools_by_conversation["conv-1"][second.name] is second
+
+    done_second = agent.resume_approval(
+        conversation_id="conv-1",
+        approval_id=second_id,
+        decision="approve",
+    )
+    assert done_second.pending_approval is None
+    assert second.calls == 1
+    assert "second done" in done_second.content
+    assert approvals_by_conversation.get("conv-1") in (None, set())
+
+
+def test_reject_clears_approval_map_so_retry_can_be_approved() -> None:
+    tool = _CountingTool("software_delivery.export_test_cases_google_drive")
+    tools_by_conversation: dict[str, dict[str, Tool]] = {}
+    pending_args: dict[str, Mapping[str, object]] = {}
+    approvals_by_conversation: dict[str, set[str]] = {}
+    model = _ScriptedModel(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-a",
+                    }
+                ],
+            ),
+            AIMessage(content="cancelled"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-b",
+                    }
+                ],
+            ),
+            AIMessage(content="retried ok"),
+        ]
+    )
+    agent = LangGraphToolAgent(
+        system_prompt="system",
+        model_factory=lambda **_: model,
+        checkpointer=InMemorySaver(),
+        workspace_id="ws-a",
+        approval_policy=ToolApprovalPolicy(
+            frozenset({"software_delivery.export_test_cases_google_drive"})
+        ),
+        pending_args=pending_args,
+        approvals_by_conversation=approvals_by_conversation,
+        tools_by_conversation=tools_by_conversation,
+    )
+
+    pending = agent.run("export", [tool], max_steps=4, conversation_id="conv-1")
+    assert isinstance(pending.pending_approval, PendingToolApproval)
+    first_id = pending.pending_approval.approval_id
+
+    rejected = agent.resume_approval(
+        conversation_id="conv-1",
+        approval_id=first_id,
+        decision="reject",
+    )
+    assert rejected.pending_approval is None
+    assert tool.calls == 0
+    assert approvals_by_conversation.get("conv-1") in (None, set())
+
+    retry = agent.run("export again", [tool], max_steps=4, conversation_id="conv-1")
+    assert isinstance(retry.pending_approval, PendingToolApproval)
+    retry_id = retry.pending_approval.approval_id
+
+    approved = agent.resume_approval(
+        conversation_id="conv-1",
+        approval_id=retry_id,
+        decision="approve",
+    )
+    assert approved.pending_approval is None
+    assert tool.calls == 1
+    assert "retried ok" in approved.content
