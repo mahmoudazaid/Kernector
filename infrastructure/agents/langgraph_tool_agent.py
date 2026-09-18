@@ -423,17 +423,19 @@ class LangGraphToolAgent:
                         )
                         continue
                     stored = pending_args.pop(approval_id, dict(args))
+                    # Forget before tool.run so ToolFailureError / ConnectorAuthError
+                    # cannot leave pending_args empty while the guard still latches.
+                    _forget_conversation_approval(
+                        approvals_by_conversation,
+                        conversation_key,
+                        approval_id,
+                    )
                     try:
                         result = tool.run(stored)
                     except ToolArgumentValidationError as error:
                         result = _tool_argument_error_message(error)
                     else:
                         approval_results[approval_id] = result
-                    _forget_conversation_approval(
-                        approvals_by_conversation,
-                        conversation_key,
-                        approval_id,
-                    )
                 else:
                     try:
                         result = tool.run(args)

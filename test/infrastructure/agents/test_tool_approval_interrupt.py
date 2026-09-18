@@ -686,3 +686,104 @@ def test_reject_clears_approval_map_so_retry_can_be_approved() -> None:
     assert approved.pending_approval is None
     assert tool.calls == 1
     assert "retried ok" in approved.content
+
+
+def test_tool_failure_after_approve_still_clears_approval_map() -> None:
+    """ToolFailureError after approve must not re-latch the outstanding guard."""
+    from domain.errors import ToolFailureError
+
+    class _FailingExport:
+        args_schema: type | None = None
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.approval_hints = ApprovalHints(
+                title="Export",
+                summary="Export",
+                destination_label="Home",
+                file_name="doc.md",
+                selected_title_count=1,
+            )
+
+        @property
+        def name(self) -> str:
+            return "software_delivery.export_test_cases_google_drive"
+
+        @property
+        def description(self) -> str:
+            return "export"
+
+        def run(self, arguments: Mapping[str, object]) -> str:
+            del arguments
+            self.calls += 1
+            raise ToolFailureError("drive upload failed")
+
+    failing = _FailingExport()
+    retry_tool = _CountingTool("software_delivery.export_test_cases_google_drive")
+    tools_by_conversation: dict[str, dict[str, Tool]] = {}
+    pending_args: dict[str, Mapping[str, object]] = {}
+    approvals_by_conversation: dict[str, set[str]] = {}
+    model = _ScriptedModel(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-fail",
+                    }
+                ],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "software_delivery__export_test_cases_google_drive",
+                        "args": {},
+                        "id": "tc-retry",
+                    }
+                ],
+            ),
+            AIMessage(content="retry ok"),
+        ]
+    )
+    agent = LangGraphToolAgent(
+        system_prompt="system",
+        model_factory=lambda **_: model,
+        checkpointer=InMemorySaver(),
+        workspace_id="ws-a",
+        approval_policy=ToolApprovalPolicy(
+            frozenset({"software_delivery.export_test_cases_google_drive"})
+        ),
+        pending_args=pending_args,
+        approvals_by_conversation=approvals_by_conversation,
+        tools_by_conversation=tools_by_conversation,
+    )
+
+    pending = agent.run("export", [failing], max_steps=4, conversation_id="conv-1")
+    assert isinstance(pending.pending_approval, PendingToolApproval)
+    fail_id = pending.pending_approval.approval_id
+
+    with pytest.raises(ToolFailureError, match="drive upload failed"):
+        agent.resume_approval(
+            conversation_id="conv-1",
+            approval_id=fail_id,
+            decision="approve",
+        )
+    assert failing.calls == 1
+    assert pending_args == {}
+    assert approvals_by_conversation.get("conv-1") in (None, set())
+
+    retry = agent.run("export again", [retry_tool], max_steps=4, conversation_id="conv-1")
+    assert isinstance(retry.pending_approval, PendingToolApproval)
+    retry_id = retry.pending_approval.approval_id
+
+    approved = agent.resume_approval(
+        conversation_id="conv-1",
+        approval_id=retry_id,
+        decision="approve",
+    )
+    assert approved.pending_approval is None
+    assert retry_tool.calls == 1
+    assert "retry ok" in approved.content
