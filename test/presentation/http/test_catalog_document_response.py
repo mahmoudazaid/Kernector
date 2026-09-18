@@ -25,7 +25,8 @@ def _doc(
         title="Spec",
         content_format="markdown",
         status=status,
-        uploaded_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+        created_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+        updated_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
         chunk_count=7,
         error=error,
     )
@@ -39,6 +40,9 @@ def test_ready_document_projection_omits_error_text() -> None:
     assert projected.source_id == "0f0fabc"
     assert projected.status == "ready"
     assert projected.chunk_count == 7
+    assert projected.created_at == "2026-09-05T09:12:44+00:00"
+    assert projected.updated_at == "2026-09-05T09:12:44+00:00"
+    assert "uploaded_at" not in payload
     assert projected.has_error is False
     assert projected.has_stored_content is True
     assert projected.error_summary is None
@@ -87,7 +91,8 @@ def test_failed_drive_document_uses_sync_guidance() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.FAILED,
-            uploaded_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+            created_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+        updated_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
             chunk_count=0,
             error="ConnectorError",
             revision="8",
@@ -111,7 +116,8 @@ def test_degraded_drive_document_uses_sync_guidance() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.DEGRADED,
-            uploaded_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+            created_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+        updated_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
             chunk_count=2,
             error="partial",
             revision="8",

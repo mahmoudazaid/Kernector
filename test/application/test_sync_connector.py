@@ -89,7 +89,8 @@ def _row(
         title=document.file_name.rsplit(".", 1)[0],
         content_format="markdown",
         status=status,
-        uploaded_at=NOW,
+        created_at=NOW,
+        updated_at=NOW,
         chunk_count=chunk_count,
         error=error,
         revision=revision,
@@ -219,13 +220,18 @@ def test_happy_path_fetches_ingests_and_persists_ready() -> None:
     assert response.ingested_count == 1
     assert connector.fetched == [listed]
     assert len(ingest.calls) == 1
-    assert list(ingest.calls[0].documents) == [source]
+    ingested = ingest.calls[0].documents[0]
+    assert ingested.metadata.created_at == NOW
+    assert ingested.metadata.updated_at == NOW
+    assert ingested.content == source.content
     stored = catalog.get(listed.reference)
     assert stored is not None
     assert stored.status is CatalogStatus.READY
     assert stored.revision == "1"
     assert stored.chunk_count == 3
     assert stored.file_name == "guide.md"
+    assert stored.created_at == NOW
+    assert stored.updated_at == NOW
 
 
 def test_ingest_pipeline_is_constructed_lazily_once() -> None:
@@ -320,11 +326,12 @@ def test_changed_revision_replaces_old_chunks() -> None:
         chunk_overlap=2,
     )
     connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    later = datetime(2026, 9, 9, 15, 0, tzinfo=UTC)
     response = SyncConnectorDocuments(
         connector=connector,
         catalog=catalog,
         ingest_factory=lambda: ingest,
-        now=FixedClock(NOW),
+        now=FixedClock(later),
     ).execute()
 
     assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
@@ -333,11 +340,17 @@ def test_changed_revision_replaces_old_chunks() -> None:
     stored = catalog.get(listed.reference)
     assert stored is not None
     assert stored.revision == "2"
+    assert stored.created_at == NOW
+    assert stored.updated_at == later
     keys = [key for key in store.records if key[1] == "file-1"]
     assert keys
     indexes = sorted(key[2] for key in keys)
     assert indexes == list(range(len(indexes)))
     assert max(indexes) == stored.chunk_count - 1
+    for record in store.records.values():
+        if record.chunk.reference.source_id == "file-1":
+            assert record.chunk.metadata.created_at == NOW
+            assert record.chunk.metadata.updated_at == later
 
 
 def test_fewer_new_chunks_leave_no_stale_higher_index_chunks() -> None:

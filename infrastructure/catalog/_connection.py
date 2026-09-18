@@ -10,7 +10,7 @@ from domain.knowledge import CatalogDocument
 BUSY_TIMEOUT_MS = 5000
 SELECT_COLUMNS = (
     "source_id, source_type, file_name, title, content_format, status, "
-    "uploaded_at, chunk_count, error, revision, connector_id"
+    "created_at, updated_at, chunk_count, error, revision, connector_id"
 )
 _COLUMN_NAMES = tuple(part.strip() for part in SELECT_COLUMNS.split(","))
 _CONFLICT_KEY = ("workspace_id", "source_type", "source_id")
@@ -102,7 +102,8 @@ def upsert_document_row(
             "title": document.title,
             "content_format": document.content_format,
             "status": document.status.value,
-            "uploaded_at": document.uploaded_at.isoformat(),
+            "created_at": document.created_at.isoformat(),
+            "updated_at": document.updated_at.isoformat(),
             "chunk_count": document.chunk_count,
             "error": document.error,
             "revision": document.revision,

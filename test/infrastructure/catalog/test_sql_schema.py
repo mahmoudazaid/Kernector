@@ -23,11 +23,105 @@ def test_missing_database_reports_version_zero_without_creating_file(
     assert not path.parent.exists()
 
 
-def test_apply_shipped_migration_advances_to_version_two(tmp_path: Path) -> None:
+def test_apply_shipped_migration_advances_to_version_three(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
     apply_migrations(path)
-    assert current_schema_version(path) == 2
+    assert current_schema_version(path) == 3
     assert path.is_file()
+
+
+def test_legacy_uploaded_at_backfills_created_and_updated_then_drops_column(
+    tmp_path: Path,
+) -> None:
+    """v2 rows with uploaded_at become equal created_at/updated_at; column gone."""
+    from datetime import UTC, datetime
+
+    from domain.knowledge import (
+        CatalogDocument,
+        CatalogStatus,
+        SourceReference,
+        SourceType,
+    )
+    from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
+
+    shipped_dir = (
+        Path(__file__).resolve().parents[3]
+        / "infrastructure"
+        / "catalog"
+        / "migrations"
+    )
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for name in ("001_catalog_documents.sql", "002_catalog_connector_id.sql"):
+        (migrations / name).write_text(
+            (shipped_dir / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    path = tmp_path / "catalog.sqlite"
+    apply_migrations(path, migrations_dir=migrations)
+    assert current_schema_version(path) == 2
+
+    stamp = "2026-08-28T12:00:00+00:00"
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            "INSERT INTO catalog_documents ("
+            "workspace_id, source_id, source_type, file_name, title, "
+            "content_format, status, uploaded_at, chunk_count, error, "
+            "revision, connector_id"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "ws-a",
+                "legacy-1",
+                "knowledge_document",
+                "guide.md",
+                "Guide",
+                "markdown",
+                "ready",
+                stamp,
+                2,
+                None,
+                None,
+                None,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    apply_migrations(path)
+    assert current_schema_version(path) == 3
+
+    connection = sqlite3.connect(path)
+    try:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(catalog_documents)")
+        }
+    finally:
+        connection.close()
+    assert "uploaded_at" not in columns
+    assert "created_at" in columns
+    assert "updated_at" in columns
+
+    catalog = SqlDocumentCatalog(path, "ws-a")
+    document = catalog.get(
+        SourceReference("legacy-1", SourceType.KNOWLEDGE_DOCUMENT)
+    )
+    assert document is not None
+    expected = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    assert document.created_at == expected
+    assert document.updated_at == expected
+    assert document == CatalogDocument(
+        reference=SourceReference("legacy-1", SourceType.KNOWLEDGE_DOCUMENT),
+        file_name="guide.md",
+        title="Guide",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        created_at=expected,
+        updated_at=expected,
+        chunk_count=2,
+        error=None,
+    )
 
 
 def test_unsupported_future_schema_version_is_rejected(tmp_path: Path) -> None:
@@ -106,7 +200,8 @@ def test_failing_second_migration_rolls_back_and_keeps_prior_catalog(
         title="Guide",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         chunk_count=2,
         error=None,
         revision="1",
@@ -131,7 +226,7 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
         for future in futures:
             future.result(timeout=15)
 
-    assert current_schema_version(path) == 2
+    assert current_schema_version(path) == 3
     connection = sqlite3.connect(path)
     try:
         recorded_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]

@@ -8,6 +8,7 @@ from domain.errors import DomainValidationError
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    SourceMetadata,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -55,7 +56,8 @@ def test_valid_catalog_document_is_accepted() -> None:
         title="Guide",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=_aware_now(),
+        created_at=_aware_now(),
+        updated_at=_aware_now(),
         chunk_count=3,
         error=None,
     )
@@ -63,6 +65,8 @@ def test_valid_catalog_document_is_accepted() -> None:
     assert document.file_name == "guide.md"
     assert document.chunk_count == 3
     assert document.status is CatalogStatus.READY
+    assert document.created_at == _aware_now()
+    assert document.updated_at == _aware_now()
 
 
 @pytest.mark.parametrize("blank", BLANK)
@@ -74,7 +78,8 @@ def test_catalog_document_rejects_blank_file_name(blank: str) -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.PENDING,
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=0,
             error=None,
         )
@@ -88,7 +93,8 @@ def test_catalog_document_rejects_non_reference() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.PENDING,
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=0,
             error=None,
         )
@@ -102,21 +108,38 @@ def test_catalog_document_rejects_raw_string_status() -> None:
             title=None,
             content_format=None,
             status="ready",  # type: ignore[arg-type]
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=0,
             error=None,
         )
 
 
-def test_catalog_document_rejects_naive_uploaded_at() -> None:
-    with pytest.raises(DomainValidationError, match="uploaded_at"):
+def test_catalog_document_rejects_naive_created_at() -> None:
+    with pytest.raises(DomainValidationError, match="created_at"):
         CatalogDocument(
             reference=_reference(),
             file_name="guide.md",
             title=None,
             content_format=None,
             status=CatalogStatus.PENDING,
-            uploaded_at=datetime(2026, 8, 28, 12, 0),
+            created_at=datetime(2026, 8, 28, 12, 0),
+            updated_at=_aware_now(),
+            chunk_count=0,
+            error=None,
+        )
+
+
+def test_catalog_document_rejects_naive_updated_at() -> None:
+    with pytest.raises(DomainValidationError, match="updated_at"):
+        CatalogDocument(
+            reference=_reference(),
+            file_name="guide.md",
+            title=None,
+            content_format=None,
+            status=CatalogStatus.PENDING,
+            created_at=_aware_now(),
+            updated_at=datetime(2026, 8, 28, 12, 0),
             chunk_count=0,
             error=None,
         )
@@ -130,7 +153,8 @@ def test_catalog_document_rejects_negative_chunk_count() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.PENDING,
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=-1,
             error=None,
         )
@@ -144,7 +168,8 @@ def test_catalog_document_rejects_bool_chunk_count() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.PENDING,
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=True,  # type: ignore[arg-type]
             error=None,
         )
@@ -157,7 +182,8 @@ def test_catalog_document_revision_defaults_to_none() -> None:
         title=None,
         content_format=None,
         status=CatalogStatus.READY,
-        uploaded_at=_aware_now(),
+        created_at=_aware_now(),
+        updated_at=_aware_now(),
         chunk_count=1,
         error=None,
     )
@@ -171,7 +197,8 @@ def test_catalog_document_accepts_explicit_revision() -> None:
         title=None,
         content_format=None,
         status=CatalogStatus.READY,
-        uploaded_at=_aware_now(),
+        created_at=_aware_now(),
+        updated_at=_aware_now(),
         chunk_count=1,
         error=None,
         revision="42",
@@ -187,7 +214,8 @@ def test_catalog_document_rejects_non_string_revision() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.READY,
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=1,
             error=None,
             revision=42,  # type: ignore[arg-type]
@@ -201,7 +229,8 @@ def test_catalog_document_connector_id_defaults_to_none() -> None:
         title=None,
         content_format=None,
         status=CatalogStatus.READY,
-        uploaded_at=_aware_now(),
+        created_at=_aware_now(),
+        updated_at=_aware_now(),
         chunk_count=1,
         error=None,
     )
@@ -216,8 +245,41 @@ def test_catalog_document_rejects_blank_connector_id() -> None:
             title=None,
             content_format=None,
             status=CatalogStatus.READY,
-            uploaded_at=_aware_now(),
+            created_at=_aware_now(),
+            updated_at=_aware_now(),
             chunk_count=1,
             error=None,
             connector_id="   ",
+        )
+
+
+def test_source_metadata_timestamps_default_to_none() -> None:
+    metadata = SourceMetadata(reference=_reference())
+    assert metadata.created_at is None
+    assert metadata.updated_at is None
+
+
+def test_source_metadata_accepts_timezone_aware_timestamps() -> None:
+    metadata = SourceMetadata(
+        reference=_reference(),
+        created_at=_aware_now(),
+        updated_at=_aware_now(),
+    )
+    assert metadata.created_at == _aware_now()
+    assert metadata.updated_at == _aware_now()
+
+
+def test_source_metadata_rejects_naive_created_at() -> None:
+    with pytest.raises(DomainValidationError, match="created_at"):
+        SourceMetadata(
+            reference=_reference(),
+            created_at=datetime(2026, 8, 28, 12, 0),
+        )
+
+
+def test_source_metadata_rejects_naive_updated_at() -> None:
+    with pytest.raises(DomainValidationError, match="updated_at"):
+        SourceMetadata(
+            reference=_reference(),
+            updated_at=datetime(2026, 8, 28, 12, 0),
         )
