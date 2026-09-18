@@ -173,11 +173,20 @@ class LangGraphToolAgent:
             if isinstance(conversation_id, str) and conversation_id.strip()
             else None
         )
+        # Grounded ask and Drive-export HITL share this agent + process maps.
+        # While approvals are outstanding for a conversation, do not replace
+        # tools_by_conversation (resume needs the export BoundTool) and do not
+        # invoke the interrupted checkpointer thread (fresh input would clobber it).
+        memory_key = conversation_key
         if conversation_key is not None:
-            self._tools_by_conversation[conversation_key] = tools_by_name
+            outstanding = self._approvals_by_conversation.get(conversation_key)
+            if outstanding:
+                memory_key = None
+            else:
+                self._tools_by_conversation[conversation_key] = tools_by_name
 
         compiled, use_memory = self._compile(
-            tools, max_steps=max_steps, conversation_id=conversation_key
+            tools, max_steps=max_steps, conversation_id=memory_key
         )
         prompt = (
             system_prompt
@@ -199,8 +208,8 @@ class LangGraphToolAgent:
         try:
             if use_memory:
                 assert self._workspace_id is not None
-                assert conversation_key is not None
-                thread_id = scoped_thread_key(self._workspace_id, conversation_key)
+                assert memory_key is not None
+                thread_id = scoped_thread_key(self._workspace_id, memory_key)
                 final_state = compiled.invoke(
                     input_state,
                     {"configurable": {"thread_id": thread_id}},
@@ -248,6 +257,11 @@ class LangGraphToolAgent:
         if approval_id in self._pending_args and approval_id not in owned:
             raise ToolApprovalNotFoundError("No pending approval for this conversation.")
         if not interrupts and approval_id not in self._pending_args:
+            _forget_conversation_approval(
+                self._approvals_by_conversation,
+                conversation_key,
+                approval_id,
+            )
             values = snapshot.checkpoint.get("channel_values", {})
             return self._result_from_state(values)
 
@@ -395,6 +409,11 @@ class LangGraphToolAgent:
                     if decision_name == "reject":
                         pending_args.pop(approval_id, None)
                         approval_results.pop(approval_id, None)
+                        _forget_conversation_approval(
+                            approvals_by_conversation,
+                            conversation_key,
+                            approval_id,
+                        )
                         outputs.append(
                             ToolMessage(
                                 content=_CANCELLED_TOOL_CONTENT,
@@ -404,10 +423,24 @@ class LangGraphToolAgent:
                         )
                         continue
                     stored = pending_args.pop(approval_id, dict(args))
-                    result = tool.run(stored)
-                    approval_results[approval_id] = result
+                    # Forget before tool.run so ToolFailureError / ConnectorAuthError
+                    # cannot leave pending_args empty while the guard still latches.
+                    _forget_conversation_approval(
+                        approvals_by_conversation,
+                        conversation_key,
+                        approval_id,
+                    )
+                    try:
+                        result = tool.run(stored)
+                    except ToolArgumentValidationError as error:
+                        result = _tool_argument_error_message(error)
+                    else:
+                        approval_results[approval_id] = result
                 else:
-                    result = tool.run(args)
+                    try:
+                        result = tool.run(args)
+                    except ToolArgumentValidationError as error:
+                        result = _tool_argument_error_message(error)
                 outputs.append(
                     ToolMessage(
                         content=result,
@@ -526,8 +559,55 @@ def _pending_from_interrupts(interrupts: object) -> PendingToolApproval | None:
     return None
 
 
+def _forget_conversation_approval(
+    approvals_by_conversation: MutableMapping[str, set[str]],
+    conversation_key: str | None,
+    approval_id: str,
+) -> None:
+    """Drop a resolved approval id so ``outstanding`` means pending, not historical."""
+    if conversation_key is None:
+        return
+    owned = approvals_by_conversation.get(conversation_key)
+    if not owned:
+        return
+    owned.discard(approval_id)
+    if not owned:
+        approvals_by_conversation.pop(conversation_key, None)
+
+
+def _tool_argument_error_message(error: ToolArgumentValidationError) -> str:
+    """Return a model-facing corrective string for bad tool arguments."""
+    detail = str(error).strip()
+    if detail:
+        return f"Invalid tool arguments: {detail}"
+    return _INVALID_TOOL_ARGS_MESSAGE
+
+
+def _tool_args_schema(tool: Tool) -> type | None:
+    """Read the optional ``Tool.args_schema`` port attribute."""
+    schema = getattr(tool, "args_schema", None)
+    if schema is None:
+        return None
+    if isinstance(schema, type):
+        return schema
+    return None
+
+
 def _to_langchain_tool(tool: Tool) -> StructuredTool:
     name = _bind_tool_name(tool.name)
+    schema = _tool_args_schema(tool)
+
+    if schema is not None:
+
+        def _invoke_with_args(**kwargs: object) -> str:
+            return tool.run(kwargs)
+
+        return StructuredTool.from_function(
+            func=_invoke_with_args,
+            name=name,
+            description=tool.description,
+            args_schema=schema,
+        )
 
     def _invoke() -> str:
         return tool.run({})

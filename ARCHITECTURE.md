@@ -466,9 +466,11 @@ Retrieval is top-k by cosine similarity, so a non-empty store returns `k` chunks
 for any query however unrelated. `RELEVANCE_THRESHOLD` is the floor a chunk must
 clear to count as evidence; when nothing clears it, `AskKnowledge` returns a
 fixed insufficient-knowledge answer with no citations and never calls the model.
-The shipped default of `0.0` discards only actively dissimilar chunks — it is a
-floor, not a tuned value, and the right number depends on the embedding model
-and corpus.
+The agentic grounded path (`AskKnowledgeWithAgent` / `RetrieveKnowledgeTool`)
+applies the same floor before recording citations, as does the pack retrieve
+binder. The shipped default of `0.0` discards only actively dissimilar chunks —
+it is a floor, not a tuned value, and the right number depends on the embedding
+model and corpus.
 
 ### Replaceable connectors
 

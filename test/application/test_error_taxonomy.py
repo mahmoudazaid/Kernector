@@ -155,6 +155,8 @@ def test_tool_argument_validation_error_is_domain_validation_error() -> None:
 
 def test_fake_tool_raises_argument_validation_error_unchanged() -> None:
     class _RejectingTool:
+        args_schema: type | None = None
+
         @property
         def name(self) -> str:
             return "reject"
