@@ -1143,6 +1143,19 @@ export function ChatPanel({
       return;
     }
 
+    if (result.kind === "success") {
+      const conversation = getConversation(id);
+      if (conversation) {
+        seedIds(conversation.messages);
+        skipNextPersistRef.current = true;
+        setMessages(fromPersisted(conversation.messages));
+        setDraft(conversation.draft);
+      }
+      setSending(false);
+      setInlineError(null);
+      return;
+    }
+
     if (result.kind === "missing") {
       setSending(false);
       setMessages([]);
@@ -1155,6 +1168,13 @@ export function ChatPanel({
       setSending(false);
       setUnavailable(true);
     } else if (result.kind === "failed") {
+      const conversation = getConversation(id);
+      if (conversation) {
+        seedIds(conversation.messages);
+        skipNextPersistRef.current = true;
+        setMessages(fromPersisted(conversation.messages));
+        setDraft(conversation.draft);
+      }
       setSending(false);
     }
   }

@@ -144,6 +144,7 @@ class ToolRunner(Protocol):
         output_style: str = "steps",
         conversation_id: str | None = None,
         response_style: object = None,
+        need_evidence: bool = True,
     ) -> ToolRunOutcome:
         """Run the chain and project its typed results onto one outcome."""
 
@@ -463,13 +464,26 @@ class ToolAugmentedAsk:
         request: AskRequest,
     ) -> AskResponse:
         try:
-            outcome = self._runner.run(
-                request.query,
-                generate_tests=True,
-                output_style="steps",
-                conversation_id=request.conversation_id,
-                response_style=request.response_style,
-            )
+            # Drive export is ready from routing + draft titles. Affirmative
+            # follow-ups ("yes") must not become the retrieve target, and the
+            # export path does not need RAG evidence.
+            if decision.workflow_hint == "drive_export":
+                outcome = self._runner.run(
+                    "Export selected Test Design titles to Google Drive",
+                    generate_tests=True,
+                    output_style="steps",
+                    conversation_id=request.conversation_id,
+                    response_style=request.response_style,
+                    need_evidence=False,
+                )
+            else:
+                outcome = self._runner.run(
+                    request.query,
+                    generate_tests=True,
+                    output_style="steps",
+                    conversation_id=request.conversation_id,
+                    response_style=request.response_style,
+                )
         except InsufficientEvidenceError:
             log_operation(
                 logger,

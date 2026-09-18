@@ -576,9 +576,13 @@ def test_drive_export_yes_follow_up_runs_tools_when_draft_ready() -> None:
     class _RecordingRunner:
         def __init__(self) -> None:
             self.calls = 0
+            self.last_target: str | None = None
+            self.last_need_evidence: bool | None = None
 
-        def run(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+        def run(self, target, **kwargs):  # noqa: ANN001, ANN003
             self.calls += 1
+            self.last_target = target
+            self.last_need_evidence = kwargs.get("need_evidence")
             return ToolRunOutcome(answer="exported")
 
     ask = _RecordingAsk()
@@ -623,6 +627,10 @@ def test_drive_export_yes_follow_up_runs_tools_when_draft_ready() -> None:
     body = second.json()
     assert ask.calls == 0
     assert runner.calls == 1
+    assert runner.last_target == (
+        "Export selected Test Design titles to Google Drive"
+    )
+    assert runner.last_need_evidence is False
     assert body["run"]["intent"] == "tool_workflow"
     assert body["answer"] == "exported"
     assert store.get("conv-drive-2") is None
