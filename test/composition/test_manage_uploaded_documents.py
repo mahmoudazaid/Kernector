@@ -280,7 +280,7 @@ def test_replace_google_drive_row_is_unknown(
             content_format="markdown",
             status=CatalogStatus.READY,
             created_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
-        updated_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
             chunk_count=1,
             error=None,
         )
@@ -614,7 +614,7 @@ def test_get_uploaded_document_content_refuses_missing_blob_sentinel(
             content_format="pdf",
             status=CatalogStatus.READY,
             created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
-        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
             chunk_count=1,
             error=MISSING_UPLOAD_BLOB_ERROR,
         )
@@ -661,7 +661,7 @@ def test_get_uploaded_document_content_refuses_pending_rows(
             content_format="pdf",
             status=CatalogStatus.PENDING,
             created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
-        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
             chunk_count=0,
             error=None,
         )
@@ -730,7 +730,7 @@ def test_list_uploaded_document_chunks_known_empty(
             content_format="markdown",
             status=CatalogStatus.READY,
             created_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
-        updated_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
             chunk_count=0,
             error=None,
         )
@@ -785,7 +785,7 @@ def test_list_uploaded_document_chunks_uses_passed_vector_store(
             content_format="markdown",
             status=CatalogStatus.READY,
             created_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
-        updated_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
             chunk_count=0,
             error=None,
         )

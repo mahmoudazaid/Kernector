@@ -386,7 +386,7 @@ def test_create_rejects_colliding_generated_source_id_without_echoing_it(
             content_format="markdown",
             status=CatalogStatus.READY,
             created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
-        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
             chunk_count=1,
             error=None,
         )

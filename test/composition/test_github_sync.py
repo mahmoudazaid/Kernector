@@ -105,7 +105,7 @@ def test_sync_github_reconciles_missing_github_rows(
             content_format="markdown",
             status=CatalogStatus.READY,
             created_at=NOW,
-        updated_at=NOW,
+            updated_at=NOW,
             chunk_count=1,
             error=None,
             revision="old",
