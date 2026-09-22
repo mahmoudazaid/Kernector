@@ -89,6 +89,26 @@ def test_create_persists_application_generated_uuid() -> None:
     assert catalog.get(result.reference) == result
 
 
+def test_create_sets_matching_timezone_aware_created_and_updated_at() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    stamp = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    result = _use_case(
+        catalog,
+        clock=FixedClock(stamp),
+        store=store,
+    ).create(UploadPayload(file_name="guide.md", content=b"# Guide\n"))
+
+    assert result.created_at == stamp
+    assert result.updated_at == stamp
+    assert result.created_at.tzinfo is not None
+    chunks = store.list_source_chunks(result.reference).chunks
+    assert chunks
+    for chunk in chunks:
+        assert chunk.metadata.created_at == stamp
+        assert chunk.metadata.updated_at == stamp
+
+
 def test_two_creates_with_same_filename_get_distinct_ids() -> None:
     catalog = InMemoryDocumentCatalog()
     use_case = _use_case(
@@ -170,7 +190,8 @@ def test_list_includes_google_drive_catalog_rows() -> None:
         title="notes",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         chunk_count=2,
         error=None,
         revision="1",
@@ -181,7 +202,8 @@ def test_list_includes_google_drive_catalog_rows() -> None:
         title="story",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         chunk_count=1,
         error=None,
     )

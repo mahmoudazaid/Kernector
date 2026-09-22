@@ -10,13 +10,15 @@ from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 
 
 def _upload(source_id: str, *, status: CatalogStatus = CatalogStatus.READY) -> CatalogDocument:
+    stamp = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
     return CatalogDocument(
         reference=SourceReference(source_id, SourceType.KNOWLEDGE_DOCUMENT),
         file_name="guide.md",
         title="Guide",
         content_format="markdown",
         status=status,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=stamp,
+        updated_at=stamp,
         chunk_count=2,
         error=None,
     )
@@ -30,6 +32,7 @@ def test_count_filters_source_type_and_status(tmp_path: Path) -> None:
     catalog.upsert(
         _upload("bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee", status=CatalogStatus.FAILED)
     )
+    stamp = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
     catalog.upsert(
         CatalogDocument(
             reference=SourceReference("drive-ready", SourceType.GOOGLE_DRIVE),
@@ -37,7 +40,8 @@ def test_count_filters_source_type_and_status(tmp_path: Path) -> None:
             title="Drive",
             content_format="markdown",
             status=CatalogStatus.READY,
-            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            created_at=stamp,
+            updated_at=stamp,
             chunk_count=1,
             error=None,
         )

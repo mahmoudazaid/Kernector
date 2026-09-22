@@ -706,6 +706,8 @@ export interface components {
       chunk_count: number;
       /** Content Format */
       content_format?: string | null;
+      /** Created At */
+      created_at: string;
       /** Error Summary */
       error_summary?: string | null;
       /** File Name */
@@ -728,8 +730,8 @@ export interface components {
       status: "pending" | "ready" | "failed" | "degraded";
       /** Title */
       title?: string | null;
-      /** Uploaded At */
-      uploaded_at: string;
+      /** Updated At */
+      updated_at: string;
     };
     /**
      * ChatAskRequest

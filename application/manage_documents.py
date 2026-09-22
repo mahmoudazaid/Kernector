@@ -305,7 +305,11 @@ class ManageUploadedDocuments:
             )
             raise collision
         document = self._extractor.extract(payload, reference=reference)
-        pending = self._pending_row(reference, payload, document)
+        now = self._now()
+        document = self._with_timestamps(document, created_at=now, updated_at=now)
+        pending = self._pending_row(
+            reference, payload, document, created_at=now, updated_at=now
+        )
         self._catalog.upsert(pending)
         try:
             response = self._run_ingest(document)
@@ -328,7 +332,18 @@ class ManageUploadedDocuments:
             raise self._unknown(reference, operation="replace")
         self._assert_upload_size(payload)
         document = self._extractor.extract(payload, reference=reference)
-        pending = self._pending_row(reference, payload, document)
+        updated_at = self._now()
+        created_at = previous.created_at
+        document = self._with_timestamps(
+            document, created_at=created_at, updated_at=updated_at
+        )
+        pending = self._pending_row(
+            reference,
+            payload,
+            document,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
         self._catalog.upsert(pending)
         try:
             response = self._run_ingest(document)
@@ -510,6 +525,9 @@ class ManageUploadedDocuments:
         reference: SourceReference,
         payload: UploadPayload,
         document: SourceDocument,
+        *,
+        created_at: datetime,
+        updated_at: datetime,
     ) -> CatalogDocument:
         """The one row literal every other status is derived from."""
         return CatalogDocument(
@@ -518,9 +536,27 @@ class ManageUploadedDocuments:
             title=document.metadata.title,
             content_format=document.metadata.content_format,
             status=CatalogStatus.PENDING,
-            uploaded_at=self._now(),
+            created_at=created_at,
+            updated_at=updated_at,
             chunk_count=0,
             error=None,
+        )
+
+    @staticmethod
+    def _with_timestamps(
+        document: SourceDocument,
+        *,
+        created_at: datetime,
+        updated_at: datetime,
+    ) -> SourceDocument:
+        """Stamp matching provenance timestamps onto the document for ingest."""
+        return dataclasses.replace(
+            document,
+            metadata=dataclasses.replace(
+                document.metadata,
+                created_at=created_at,
+                updated_at=updated_at,
+            ),
         )
 
     def _run_ingest(self, document: SourceDocument) -> IngestResponse:

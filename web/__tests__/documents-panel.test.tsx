@@ -91,7 +91,8 @@ function doc(
     title: "Spec",
     content_format: "markdown",
     status: "ready",
-    uploaded_at: "2026-09-05T09:12:44+00:00",
+    created_at: "2026-09-05T09:12:44+00:00",
+    updated_at: "2026-09-05T09:12:44+00:00",
     chunk_count: 7,
     has_error: false,
     error_summary: null,
@@ -177,6 +178,34 @@ describe("DocumentsPanel", () => {
       screen.getByText(/file name is ignored for identity/i),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^replace$/i })).toBeInTheDocument();
+  });
+
+  it("shows created and updated timestamps when a document is selected", async () => {
+    const list = vi.fn().mockResolvedValue(
+      listResponse([
+        doc({
+          created_at: "2026-09-05T09:12:44+00:00",
+          updated_at: "2026-09-10T12:00:00+00:00",
+        }),
+      ]),
+    );
+    render(
+      <DocumentsPanel
+        apiBaseUrl="http://api.test"
+        list={list}
+        loadSettings={loadSettings}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await openDocumentsTab(user);
+    await user.click(screen.getByRole("button", { name: /spec\.md\s*src-1/i }));
+
+    const timestamps = await screen.findByTestId("document-timestamps");
+    expect(timestamps.querySelector('time[dateTime="2026-09-05T09:12:44+00:00"]')).toBeTruthy();
+    expect(timestamps.querySelector('time[dateTime="2026-09-10T12:00:00+00:00"]')).toBeTruthy();
+    expect(timestamps).toHaveTextContent(/Created/i);
+    expect(timestamps).toHaveTextContent(/Updated/i);
   });
 
   it("shows empty catalog copy including seed-corpus note", async () => {
@@ -1863,7 +1892,8 @@ describe("DocumentsPanel", () => {
         listResponse([
           doc({
             chunk_count: 1,
-            uploaded_at: "2026-09-05T09:12:44+00:00",
+            created_at: "2026-09-05T09:12:44+00:00",
+            updated_at: "2026-09-05T09:12:44+00:00",
           }),
         ]),
       )
@@ -1871,14 +1901,16 @@ describe("DocumentsPanel", () => {
         listResponse([
           doc({
             chunk_count: 1,
-            uploaded_at: "2026-09-10T12:00:00+00:00",
+            created_at: "2026-09-10T12:00:00+00:00",
+            updated_at: "2026-09-10T12:00:00+00:00",
           }),
         ]),
       );
     const replace = vi.fn().mockResolvedValue(
       doc({
         chunk_count: 1,
-        uploaded_at: "2026-09-10T12:00:00+00:00",
+        created_at: "2026-09-10T12:00:00+00:00",
+        updated_at: "2026-09-10T12:00:00+00:00",
       }),
     );
     render(
@@ -2124,7 +2156,8 @@ describe("DocumentsPanel", () => {
         listResponse([
           doc({
             chunk_count: 1,
-            uploaded_at: "2026-09-05T09:12:44+00:00",
+            created_at: "2026-09-05T09:12:44+00:00",
+            updated_at: "2026-09-05T09:12:44+00:00",
           }),
         ]),
       )
@@ -2132,14 +2165,16 @@ describe("DocumentsPanel", () => {
         listResponse([
           doc({
             chunk_count: 2,
-            uploaded_at: "2026-09-05T09:12:44+00:00",
+            created_at: "2026-09-05T09:12:44+00:00",
+            updated_at: "2026-09-05T09:12:44+00:00",
           }),
         ]),
       );
     const replace = vi.fn().mockResolvedValue(
       doc({
         chunk_count: 2,
-        uploaded_at: "2026-09-05T09:12:44+00:00",
+        created_at: "2026-09-05T09:12:44+00:00",
+        updated_at: "2026-09-05T09:12:44+00:00",
       }),
     );
     render(

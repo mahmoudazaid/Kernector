@@ -38,19 +38,22 @@ def _document(
     title: str | None = "Guide",
     content_format: str | None = "markdown",
     status: CatalogStatus = CatalogStatus.READY,
-    uploaded_at: datetime | None = None,
+    created_at: datetime | None = None,
+    updated_at: datetime | None = None,
     chunk_count: int = 2,
     error: str | None = None,
     revision: str | None = None,
     connector_id: str | None = None,
 ) -> CatalogDocument:
+    stamp = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
     return CatalogDocument(
         reference=_reference(source_id, source_type),
         file_name=file_name,
         title=title,
         content_format=content_format,
         status=status,
-        uploaded_at=uploaded_at or datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=created_at or stamp,
+        updated_at=updated_at or stamp,
         chunk_count=chunk_count,
         error=error,
         revision=revision,
@@ -71,7 +74,8 @@ def test_upsert_list_get_round_trip(tmp_path: Path) -> None:
         chunk_count=0,
         error="upsert failed",
         revision="42",
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
     )
     catalog.upsert(document)
     assert catalog.all() == (document,)
@@ -105,6 +109,28 @@ def test_upsert_replaces_existing_record(tmp_path: Path) -> None:
     updated = _document(chunk_count=5, file_name="guide-v2.md")
     catalog.upsert(updated)
     assert catalog.all() == (updated,)
+
+
+def test_upsert_persists_caller_supplied_created_and_updated_at(tmp_path: Path) -> None:
+    catalog = SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-a")
+    created = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    first_updated = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    catalog.upsert(
+        _document(created_at=created, updated_at=first_updated, chunk_count=1)
+    )
+    later = datetime(2026, 9, 1, 15, 30, tzinfo=UTC)
+    catalog.upsert(
+        _document(
+            created_at=created,
+            updated_at=later,
+            chunk_count=5,
+            file_name="guide-v2.md",
+        )
+    )
+    stored = catalog.get(_reference())
+    assert stored is not None
+    assert stored.created_at == created
+    assert stored.updated_at == later
 
 
 def test_opaque_source_type_round_trips(tmp_path: Path) -> None:

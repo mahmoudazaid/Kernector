@@ -7,6 +7,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from math import isfinite
 from pathlib import Path
 
@@ -104,6 +105,8 @@ _KEY_CHUNK_INDEX = "chunk_index"
 _KEY_TITLE = "title"
 _KEY_PROVIDER = "provider"
 _KEY_CONTENT_FORMAT = "content_format"
+_KEY_CREATED_AT = "created_at"
+_KEY_UPDATED_AT = "updated_at"
 _KEY_EXTRA_JSON = "extra_json"
 _EXTRA_KEY_PREFIX = "x:"
 
@@ -364,6 +367,21 @@ def _encode_metadata(chunk: DocumentChunk) -> dict[str, str | int]:
                 f"{where}: metadata.{key} must be a string, got {value!r}"
             )
         encoded[key] = value
+    for key, value in (
+        (_KEY_CREATED_AT, metadata.created_at),
+        (_KEY_UPDATED_AT, metadata.updated_at),
+    ):
+        if value is None:
+            continue
+        if not isinstance(value, datetime):
+            raise ChromaStoreError(
+                f"{where}: metadata.{key} must be a datetime, got {value!r}"
+            )
+        if value.tzinfo is None:
+            raise ChromaStoreError(
+                f"{where}: metadata.{key} must be timezone-aware"
+            )
+        encoded[key] = value.isoformat()
     for key, value in metadata.extra.items():
         if not isinstance(key, str):
             raise ChromaStoreError(
@@ -471,6 +489,30 @@ def _decode_optional_str(
     return value
 
 
+def _decode_optional_datetime(
+    metadata: Mapping[str, object], key: str, record_id: str
+) -> datetime | None:
+    """Read an optional ISO timestamp; absent means None (legacy rows)."""
+    value = metadata.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ChromaStoreError(
+            f"record {record_id}: {key} must be a string, got {value!r}"
+        )
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ChromaStoreError(
+            f"record {record_id}: {key} must be an ISO datetime, got {value!r}"
+        ) from exc
+    if parsed.tzinfo is None:
+        raise ChromaStoreError(
+            f"record {record_id}: {key} must be timezone-aware, got {value!r}"
+        )
+    return parsed
+
+
 def _decode_chunk(record_id: str, document: object, metadata: object) -> DocumentChunk:
     """Rebuild a DocumentChunk from one persisted record.
 
@@ -498,6 +540,12 @@ def _decode_chunk(record_id: str, document: object, metadata: object) -> Documen
                 provider=_decode_optional_str(metadata, _KEY_PROVIDER, record_id),
                 content_format=_decode_optional_str(
                     metadata, _KEY_CONTENT_FORMAT, record_id
+                ),
+                created_at=_decode_optional_datetime(
+                    metadata, _KEY_CREATED_AT, record_id
+                ),
+                updated_at=_decode_optional_datetime(
+                    metadata, _KEY_UPDATED_AT, record_id
                 ),
                 extra=_decode_extra(metadata.get(_KEY_EXTRA_JSON), record_id),
             ),

@@ -2194,6 +2194,15 @@ a.kern-btn {
   gap: var(--kern-space-3);
 }
 
+.kern-documents-detail-meta {
+  display: grid;
+  gap: var(--kern-space-2);
+}
+
+.kern-documents-detail-meta p {
+  margin: 0;
+}
+
 .kern-documents-detail-actions,
 .kern-document-viewer-head {
   display: flex;

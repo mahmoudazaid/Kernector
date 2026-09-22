@@ -236,8 +236,11 @@ export function DocumentChunksSheet({
               <span>
                 {doc.chunk_count} chunk{doc.chunk_count === 1 ? "" : "s"}
               </span>
-              <time dateTime={doc.uploaded_at}>
-                {formatTimestamp(doc.uploaded_at)}
+              <time dateTime={doc.created_at}>
+                Created {formatTimestamp(doc.created_at)}
+              </time>
+              <time dateTime={doc.updated_at}>
+                Updated {formatTimestamp(doc.updated_at)}
               </time>
             </div>
           </div>

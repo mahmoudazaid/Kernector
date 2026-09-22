@@ -617,7 +617,7 @@ export function DocumentsPanel({
   const selectedSourceType = selected?.source_type;
   const selectedStatus = selected?.status;
   const selectedChunkCount = selected?.chunk_count;
-  const selectedUploadedAt = selected?.uploaded_at;
+  const selectedUpdatedAt = selected?.updated_at;
 
   useEffect(() => {
     setReplaceFile(null);
@@ -662,7 +662,7 @@ export function DocumentsPanel({
       sourceType,
       selectedStatus,
       String(selectedChunkCount ?? ""),
-      selectedUploadedAt ?? "",
+      selectedUpdatedAt ?? "",
     ].join("\0");
     const selectionKey = `${identityKey}\0${String(chunksRetryToken)}`;
     // Keep already-loaded pages when the Documents tab is hidden; only skip fetch.
@@ -743,7 +743,7 @@ export function DocumentsPanel({
     selectedSourceType,
     selectedStatus,
     selectedChunkCount,
-    selectedUploadedAt,
+    selectedUpdatedAt,
     chunksRetryToken,
   ]);
 
@@ -1031,8 +1031,8 @@ export function DocumentsPanel({
 
   const latestUpload = uploadedDocuments.reduce<string | null>(
     (latest, doc) => {
-      if (!latest || Date.parse(doc.uploaded_at) > Date.parse(latest)) {
-        return doc.uploaded_at;
+      if (!latest || Date.parse(doc.updated_at) > Date.parse(latest)) {
+        return doc.updated_at;
       }
       return latest;
     },
@@ -1417,8 +1417,8 @@ export function DocumentsPanel({
                       </td>
                       <td>{doc.chunk_count}</td>
                       <td>
-                        <time dateTime={doc.uploaded_at}>
-                          {formatTimestamp(doc.uploaded_at)}
+                        <time dateTime={doc.updated_at}>
+                          {formatTimestamp(doc.updated_at)}
                         </time>
                       </td>
                       <td className="kern-documents-actions">
@@ -1460,6 +1460,20 @@ export function DocumentsPanel({
 
         {selected ? (
           <div className="kern-documents-detail">
+            <div className="kern-documents-detail-meta" data-testid="document-timestamps">
+              <p>
+                <span className="kern-metric-label">Created</span>{" "}
+                <time dateTime={selected.created_at}>
+                  {formatTimestamp(selected.created_at)}
+                </time>
+              </p>
+              <p>
+                <span className="kern-metric-label">Updated</span>{" "}
+                <time dateTime={selected.updated_at}>
+                  {formatTimestamp(selected.updated_at)}
+                </time>
+              </p>
+            </div>
             {isUploadDocument(selected) ? (
               <div className="kern-documents-detail-actions">
                 {selected.has_stored_content ? (

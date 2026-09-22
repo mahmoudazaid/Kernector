@@ -56,7 +56,8 @@ def test_build_document_catalog_persists_in_sql_workspace(settings: Settings) ->
         title="Guide",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         chunk_count=1,
         error=None,
     )
@@ -278,7 +279,8 @@ def test_replace_google_drive_row_is_unknown(
             title="notes",
             content_format="markdown",
             status=CatalogStatus.READY,
-            uploaded_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            created_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
             chunk_count=1,
             error=None,
         )
@@ -611,7 +613,8 @@ def test_get_uploaded_document_content_refuses_missing_blob_sentinel(
             title="report",
             content_format="pdf",
             status=CatalogStatus.READY,
-            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
             chunk_count=1,
             error=MISSING_UPLOAD_BLOB_ERROR,
         )
@@ -657,7 +660,8 @@ def test_get_uploaded_document_content_refuses_pending_rows(
             title="report",
             content_format="pdf",
             status=CatalogStatus.PENDING,
-            uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
             chunk_count=0,
             error=None,
         )
@@ -725,7 +729,8 @@ def test_list_uploaded_document_chunks_known_empty(
             title="Doc",
             content_format="markdown",
             status=CatalogStatus.READY,
-            uploaded_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            created_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
             chunk_count=0,
             error=None,
         )
@@ -779,7 +784,8 @@ def test_list_uploaded_document_chunks_uses_passed_vector_store(
             title="Doc",
             content_format="markdown",
             status=CatalogStatus.READY,
-            uploaded_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            created_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
+            updated_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
             chunk_count=0,
             error=None,
         )

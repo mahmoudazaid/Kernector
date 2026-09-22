@@ -41,7 +41,8 @@ def _catalog_row(reference: SourceReference) -> CatalogDocument:
         title="Doc",
         content_format="text/plain",
         status=CatalogStatus.READY,
-        uploaded_at=_NOW,
+        created_at=_NOW,
+        updated_at=_NOW,
         chunk_count=0,
         error=None,
     )

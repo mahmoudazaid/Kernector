@@ -54,7 +54,8 @@ def _document(
         title="Spec",
         content_format=content_format,
         status=status,
-        uploaded_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+        created_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
+        updated_at=datetime(2026, 9, 5, 9, 12, 44, tzinfo=UTC),
         chunk_count=chunk_count,
         error=error,
     )
@@ -170,6 +171,9 @@ def test_list_documents_returns_envelope_without_constraints(client_factory) -> 
     assert "constraints" not in body
     assert len(body["documents"]) == 2
     assert body["documents"][0]["source_id"] == "a"
+    assert body["documents"][0]["created_at"] == "2026-09-05T09:12:44+00:00"
+    assert body["documents"][0]["updated_at"] == "2026-09-05T09:12:44+00:00"
+    assert "uploaded_at" not in body["documents"][0]
     assert body["documents"][1]["has_error"] is True
     assert "vendor boom" not in response.text
 
