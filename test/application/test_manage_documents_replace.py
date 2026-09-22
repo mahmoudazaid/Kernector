@@ -173,6 +173,42 @@ def test_replace_preserves_source_id_and_updates_metadata() -> None:
     assert "abcdefghij" not in stored_text
 
 
+def test_replace_preserves_created_at_and_bumps_updated_at_on_catalog_and_chunks() -> None:
+    catalog = InMemoryDocumentCatalog()
+    blob_store = InMemoryUploadBlobStore()
+    store = InMemoryVectorStore()
+    created = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    updated = datetime(2026, 8, 28, 13, 0, tzinfo=UTC)
+    original = _seed_ready(catalog, store, blob_store=blob_store)
+    assert original.created_at == created
+
+    use_case = ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=blob_store,
+        extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
+        ingest_factory=lambda: IngestKnowledge(
+            StubEmbeddingModel(), store, chunk_size=10, chunk_overlap=2
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("should-not-be-used"),
+        now=FixedClock(updated),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+    )
+    replaced = use_case.replace(
+        original.reference,
+        UploadPayload(file_name="guide-v2.md", content=b"v2"),
+    )
+
+    assert replaced.created_at == created
+    assert replaced.updated_at == updated
+    assert replaced.updated_at > replaced.created_at
+    chunks = store.list_source_chunks(replaced.reference).chunks
+    assert chunks
+    for chunk in chunks:
+        assert chunk.metadata.created_at == created
+        assert chunk.metadata.updated_at == updated
+
+
 def test_replace_failure_before_vector_mutation_leaves_previous_blob_and_previous_row() -> None:
     catalog = InMemoryDocumentCatalog()
     blob_store = InMemoryUploadBlobStore()
@@ -258,7 +294,8 @@ def test_degraded_replace_stores_new_blob() -> None:
         title="guide",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         chunk_count=3,
         error=None,
     )
@@ -408,7 +445,8 @@ def test_degraded_replace_keeps_prior_blob_when_put_fails() -> None:
         title="guide",
         content_format="markdown",
         status=CatalogStatus.READY,
-        uploaded_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        created_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 28, 12, 0, tzinfo=UTC),
         chunk_count=3,
         error=None,
     )

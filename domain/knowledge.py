@@ -113,6 +113,16 @@ class SourceReference:
         _require_text(self.source_type, "source_type")
 
 
+def _require_aware_datetime(value: datetime, name: str) -> None:
+    """Reject non-datetime or naive datetime values for provenance fields."""
+    if not isinstance(value, datetime):
+        raise DomainValidationError(
+            f"{name} must be a datetime, got {type(value).__name__}"
+        )
+    if value.tzinfo is None:
+        raise DomainValidationError(f"{name} must be timezone-aware")
+
+
 @dataclass(frozen=True, slots=True)
 class SourceMetadata:
     """Descriptive metadata about a source, carrying its provenance."""
@@ -121,6 +131,8 @@ class SourceMetadata:
     title: str | None = None
     provider: str | None = None
     content_format: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     extra: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -129,6 +141,10 @@ class SourceMetadata:
                 f"reference must be a SourceReference, "
                 f"got {type(self.reference).__name__}"
             )
+        if self.created_at is not None:
+            _require_aware_datetime(self.created_at, "created_at")
+        if self.updated_at is not None:
+            _require_aware_datetime(self.updated_at, "updated_at")
 
     @property
     def source_id(self) -> str:
@@ -313,7 +329,8 @@ class CatalogDocument:
     title: str | None
     content_format: str | None
     status: CatalogStatus
-    uploaded_at: datetime
+    created_at: datetime
+    updated_at: datetime
     chunk_count: int
     error: str | None
     revision: str | None = None
@@ -331,15 +348,8 @@ class CatalogDocument:
                 f"status must be a CatalogStatus, "
                 f"got {type(self.status).__name__}"
             )
-        if not isinstance(self.uploaded_at, datetime):
-            raise DomainValidationError(
-                f"uploaded_at must be a datetime, "
-                f"got {type(self.uploaded_at).__name__}"
-            )
-        if self.uploaded_at.tzinfo is None:
-            raise DomainValidationError(
-                "uploaded_at must be timezone-aware"
-            )
+        _require_aware_datetime(self.created_at, "created_at")
+        _require_aware_datetime(self.updated_at, "updated_at")
         _require_index(self.chunk_count, "chunk_count")
         if self.revision is not None and not isinstance(self.revision, str):
             raise DomainValidationError(

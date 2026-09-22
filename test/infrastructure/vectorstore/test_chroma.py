@@ -161,6 +161,46 @@ def test_absent_optional_fields_round_trip_as_none(store: ChromaVectorStore) -> 
     assert decoded.metadata.title is None
     assert decoded.metadata.provider is None
     assert decoded.metadata.content_format is None
+    assert decoded.metadata.created_at is None
+    assert decoded.metadata.updated_at is None
+
+
+def test_created_and_updated_at_round_trip(store: ChromaVectorStore) -> None:
+    from datetime import UTC, datetime
+
+    stamp = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    later = datetime(2026, 9, 1, 15, 30, tzinfo=UTC)
+    original = make_chunk(created_at=stamp, updated_at=later)
+    decoded = round_trip(store, original)
+    assert decoded.metadata.created_at == stamp
+    assert decoded.metadata.updated_at == later
+
+
+def test_legacy_chunk_without_timestamps_loads_with_none(
+    store: ChromaVectorStore,
+) -> None:
+    """Pre-timestamp Chroma rows omit created_at/updated_at and must still load."""
+    store.upsert([make_embedded()])
+    record_id = next(iter(_raw_by_id(store)))
+    raw = _raw_by_id(store)[record_id]
+    embedding, document, metadata = raw
+    assert "created_at" not in metadata or metadata.get("created_at") is None
+    # Force-legacy: strip any timestamp keys if present and rewrite via collection
+    stripped = {
+        key: value
+        for key, value in metadata.items()
+        if key not in {"created_at", "updated_at"}
+    }
+    store._collection.update(
+        ids=[record_id],
+        embeddings=[list(embedding)],
+        documents=[document],
+        metadatas=[stripped],
+    )
+    results = store.search(ALIGNED, 1)
+    assert len(results) == 1
+    assert results[0].chunk.metadata.created_at is None
+    assert results[0].chunk.metadata.updated_at is None
 
 
 def test_empty_extra_round_trips(store: ChromaVectorStore) -> None:

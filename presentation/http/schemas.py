@@ -929,7 +929,8 @@ class CatalogDocumentResponse(BaseModel):
     title: str | None = None
     content_format: str | None = None
     status: Literal["pending", "ready", "failed", "degraded"]
-    uploaded_at: str
+    created_at: str
+    updated_at: str
     chunk_count: int
     has_error: bool
     error_summary: str | None = None
@@ -997,7 +998,8 @@ def catalog_document_response(document: CatalogDocument) -> CatalogDocumentRespo
         title=document.title,
         content_format=document.content_format,
         status=document.status.value,
-        uploaded_at=document.uploaded_at.isoformat(),
+        created_at=document.created_at.isoformat(),
+        updated_at=document.updated_at.isoformat(),
         chunk_count=document.chunk_count,
         has_error=has_error,
         error_summary=summary,

@@ -162,8 +162,14 @@ class SyncConnectorDocuments:
         except ConnectorError as error:
             _log_document_failure(document, error)
             if previous is None:
+                now = self._now()
                 self._catalog.upsert(
-                    _failed_row(document, uploaded_at=self._now(), error=error)
+                    _failed_row(
+                        document,
+                        created_at=now,
+                        updated_at=now,
+                        error=error,
+                    )
                 )
             return ConnectorSyncOutcome(
                 source_id=document.source_id,
@@ -172,7 +178,22 @@ class SyncConnectorDocuments:
                 error_type=type(error).__name__,
             )
         ingest = self._ingest()
-        pending = _pending_row(document, source, uploaded_at=self._now())
+        updated_at = self._now()
+        created_at = previous.created_at if previous is not None else updated_at
+        source = dataclasses.replace(
+            source,
+            metadata=dataclasses.replace(
+                source.metadata,
+                created_at=created_at,
+                updated_at=updated_at,
+            ),
+        )
+        pending = _pending_row(
+            document,
+            source,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
         self._catalog.upsert(pending)
         try:
             response = ingest.execute(IngestRequest(documents=(source,)))
@@ -360,7 +381,8 @@ def _source_id_scope(source_id: str) -> str | None:
 def _failed_row(
     document: ConnectorDocument,
     *,
-    uploaded_at: datetime,
+    created_at: datetime,
+    updated_at: datetime,
     error: BaseException,
 ) -> CatalogDocument:
     return CatalogDocument(
@@ -369,7 +391,8 @@ def _failed_row(
         title=None,
         content_format=None,
         status=CatalogStatus.FAILED,
-        uploaded_at=uploaded_at,
+        created_at=created_at,
+        updated_at=updated_at,
         chunk_count=0,
         error=type(error).__name__,
         revision=document.revision,
@@ -381,7 +404,8 @@ def _pending_row(
     document: ConnectorDocument,
     source: SourceDocument,
     *,
-    uploaded_at: datetime,
+    created_at: datetime,
+    updated_at: datetime,
 ) -> CatalogDocument:
     return CatalogDocument(
         reference=document.reference,
@@ -389,7 +413,8 @@ def _pending_row(
         title=source.metadata.title,
         content_format=source.metadata.content_format,
         status=CatalogStatus.PENDING,
-        uploaded_at=uploaded_at,
+        created_at=created_at,
+        updated_at=updated_at,
         chunk_count=0,
         error=None,
         revision=document.revision,
