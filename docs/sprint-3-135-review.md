@@ -5,7 +5,7 @@
 **Prior sprint:** [`sprint-2-125-review.md`](sprint-2-125-review.md)  
 **Review date:** 2026-09-22 (updated from 2026-09-16)  
 **Ticket filter:** GitHub label `Sprint#3` (41 issues: 9 open / 32 closed) plus carryover tickets cited below  
-**Verdict:** **LangGraph agent loop, short-term memory, HITL tool approval, and agentic RAG retrieve are live on `main` (opt-in).** Streamlit is retired (ADR 0004, [#228](https://github.com/mahmoudazaid/Kernector/issues/228)). Grounded RAG chat + Software Delivery Drive-export tool run on FastAPI + Next.js. Epic [#211](https://github.com/mahmoudazaid/Kernector/issues/211) remains open for review-facing agent docs ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)) and leftover bonus: **[#43](https://github.com/mahmoudazaid/Kernector/issues/43)** loop, **[#213](https://github.com/mahmoudazaid/Kernector/issues/213)** short-term memory, **[#214](https://github.com/mahmoudazaid/Kernector/issues/214)** HITL, and **[#216](https://github.com/mahmoudazaid/Kernector/issues/216)** agentic RAG are **closed**; purpose brief [#212](https://github.com/mahmoudazaid/Kernector/issues/212) is written in-repo. Long-term cross-thread memory deferred to [#299](https://github.com/mahmoudazaid/Kernector/issues/299). **Max bonus (≥2 medium + 1 hard) is met** (e.g. short-term memory + Drive export + agentic RAG / external KB connectors).
+**Verdict:** **LangGraph agent loop, short-term memory, HITL tool approval, and agentic RAG retrieve are live on `main` (opt-in).** Streamlit is retired (ADR 0004, [#228](https://github.com/mahmoudazaid/Kernector/issues/228)). Grounded RAG chat + Software Delivery Drive-export tool run on FastAPI + Next.js. Review-facing agent docs ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)) are in [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md). Epic [#211](https://github.com/mahmoudazaid/Kernector/issues/211) remains open for leftover bonus and ticket close-out. **[#43](https://github.com/mahmoudazaid/Kernector/issues/43)** loop, **[#213](https://github.com/mahmoudazaid/Kernector/issues/213)** short-term memory, **[#214](https://github.com/mahmoudazaid/Kernector/issues/214)** HITL, and **[#216](https://github.com/mahmoudazaid/Kernector/issues/216)** agentic RAG are **closed**; purpose brief [#212](https://github.com/mahmoudazaid/Kernector/issues/212) is written in-repo. Long-term cross-thread memory deferred to [#299](https://github.com/mahmoudazaid/Kernector/issues/299). **Max bonus (≥2 medium + 1 hard) is met** (e.g. short-term memory + Drive export + agentic RAG / external KB connectors).
 
 ---
 
@@ -13,8 +13,8 @@
 
 | Area | Count |
 |------|-------|
-| Mandatory Done | 4 / 5 |
-| Mandatory Partial | 1 / 5 |
+| Mandatory Done | 5 / 5 |
+| Mandatory Partial | 0 / 5 |
 | Optional Done | 9 |
 | Optional Partial | 4 |
 | Optional Not done | 5 |
@@ -26,7 +26,7 @@
 | HITL | [#214](https://github.com/mahmoudazaid/Kernector/issues/214) (**closed**) |
 | Agentic RAG | [#216](https://github.com/mahmoudazaid/Kernector/issues/216) (**closed**) |
 
-**Agent framing:** Kernector is a **grounded RAG chatbot** with an **opt-in LangGraph ReAct loop** for Software Delivery tool turns and agent-path asks. With `SOFTWARE_DELIVERY_AGENT_LOOP=true`, pack orchestrate swaps to `LangGraphToolAgent` (`infrastructure/agents/langgraph_tool_agent.py` behind `ToolCallingAgent`; wired via `composition/software_delivery_agent.py`). Chat intent matches **Google Drive export** only (#309; scaffolding risk/generate/markdown-export retired in #285). **Agentic RAG:** `RetrieveKnowledgeTool` (`application/retrieve_knowledge_tool.py`) binds as `knowledge.retrieve`; `AskKnowledgeWithAgent` runs retrieve-then-answer with citation channel (PR [#328](https://github.com/mahmoudazaid/Kernector/pull/328)). Short-term thread memory uses process-scoped `InMemorySaver` (`composition/short_term_memory.py`) keyed `{workspace_id}:{conversation_id}`. HITL pauses allowlisted tools (Drive export) via LangGraph `interrupt()`; Next.js shows `ToolApprovalCard` for approve/reject. Response style presets (formal / friendly / concise) and thumbs feedback store are shipped. Test Design coverage planning (#293) is pack-local (not an agent `Tool`). Epic [#211](https://github.com/mahmoudazaid/Kernector/issues/211) stays open for [#215](https://github.com/mahmoudazaid/Kernector/issues/215) and bonus follow-ons.
+**Agent framing:** Kernector is a **grounded RAG chatbot** with an **opt-in LangGraph ReAct loop** for Software Delivery tool turns and agent-path asks. With `SOFTWARE_DELIVERY_AGENT_LOOP=true`, pack orchestrate swaps to `LangGraphToolAgent` (`infrastructure/agents/langgraph_tool_agent.py` behind `ToolCallingAgent`; wired via `composition/software_delivery_agent.py`). Chat intent matches **Google Drive export** only (#309; scaffolding risk/generate/markdown-export retired in #285). **Agentic RAG:** `RetrieveKnowledgeTool` (`application/retrieve_knowledge_tool.py`) binds as `knowledge.retrieve`; `AskKnowledgeWithAgent` runs retrieve-then-answer with citation channel (PR [#328](https://github.com/mahmoudazaid/Kernector/pull/328)). Short-term thread memory uses process-scoped `InMemorySaver` (`composition/short_term_memory.py`) keyed `{workspace_id}:{conversation_id}`. HITL pauses allowlisted tools (Drive export) via LangGraph `interrupt()`; Next.js shows `ToolApprovalCard` for approve/reject. Response style presets (formal / friendly / concise) and thumbs feedback store are shipped. Test Design coverage planning (#293) is pack-local (not an agent `Tool`). Review-facing agent docs: [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md) ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)). Epic [#211](https://github.com/mahmoudazaid/Kernector/issues/211) stays open for ticket close-out and leftover bonus.
 
 **Domain purpose:** Software Delivery Intelligence — grounded chat over delivery knowledge, interactive test-design workflow, Drive export with HITL — target users: QA / engineering teams. Speaking brief: [`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md) ([#212](https://github.com/mahmoudazaid/Kernector/issues/212)).
 
@@ -63,9 +63,9 @@ Chat / Settings / Documents: `web/app/chat`, `web/app/settings`, `web/app/docume
 | Core functionality (primary tasks + user interactions) | Agent | Done | RAG ask + opt-in LangGraph orchestrate ([#43](https://github.com/mahmoudazaid/Kernector/issues/43)); agentic retrieve ([#216](https://github.com/mahmoudazaid/Kernector/issues/216)); Drive export tool ([#197](https://github.com/mahmoudazaid/Kernector/issues/197)); HITL approve/reject ([#214](https://github.com/mahmoudazaid/Kernector/issues/214)); thread memory ([#213](https://github.com/mahmoudazaid/Kernector/issues/213)); Test Design workflow ([#293](https://github.com/mahmoudazaid/Kernector/issues/293)) | [#43](https://github.com/mahmoudazaid/Kernector/issues/43) / [#216](https://github.com/mahmoudazaid/Kernector/issues/216) / [#197](https://github.com/mahmoudazaid/Kernector/issues/197) / [#214](https://github.com/mahmoudazaid/Kernector/issues/214) / [#213](https://github.com/mahmoudazaid/Kernector/issues/213) (**closed**) | [#211](https://github.com/mahmoudazaid/Kernector/issues/211) / [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
 | User interface (friendly UI for all functionalities) | UI | Done | Next.js chat/settings/documents; history [#246](https://github.com/mahmoudazaid/Kernector/issues/246); polish [#245](https://github.com/mahmoudazaid/Kernector/issues/245); viewer [#243](https://github.com/mahmoudazaid/Kernector/issues/243); HITL card; style picker; feedback controls; chunk inspect [#210](https://github.com/mahmoudazaid/Kernector/issues/210). Optional further UX split [#36](https://github.com/mahmoudazaid/Kernector/issues/36) still open | [#126](https://github.com/mahmoudazaid/Kernector/issues/126)/[#235](https://github.com/mahmoudazaid/Kernector/issues/235)–[#237](https://github.com/mahmoudazaid/Kernector/issues/237)/[#228](https://github.com/mahmoudazaid/Kernector/issues/228)/[#210](https://github.com/mahmoudazaid/Kernector/issues/210)/[#243](https://github.com/mahmoudazaid/Kernector/issues/243)/[#245](https://github.com/mahmoudazaid/Kernector/issues/245)/[#246](https://github.com/mahmoudazaid/Kernector/issues/246)/[#214](https://github.com/mahmoudazaid/Kernector/issues/214)/[#218](https://github.com/mahmoudazaid/Kernector/issues/218)/[#219](https://github.com/mahmoudazaid/Kernector/issues/219) (closed) | [#124](https://github.com/mahmoudazaid/Kernector/issues/124) |
 | Technical implementation (tools/libs, errors, real-world use) | Technical | Done | LangChain + LangGraph adapter, OpenRouter/Ollama, `domain/errors.py`, `input_safety.py`, HITL interrupts, short-term checkpointer, retrieve tool on agent path; LT memory deferred [#299](https://github.com/mahmoudazaid/Kernector/issues/299) | Sprint 2 carryover #89, #98, #96, #97 (closed); [#43](https://github.com/mahmoudazaid/Kernector/issues/43)/[#213](https://github.com/mahmoudazaid/Kernector/issues/213)/[#214](https://github.com/mahmoudazaid/Kernector/issues/214)/[#216](https://github.com/mahmoudazaid/Kernector/issues/216)/[#57](https://github.com/mahmoudazaid/Kernector/issues/57) (closed) | [#211](https://github.com/mahmoudazaid/Kernector/issues/211) |
-| Documentation (usage, examples, technical decisions) | Docs | Partial | `README.md`, `ARCHITECTURE.md` (agent / memory / HITL / agentic ask), ADRs; purpose brief Done ([#212](https://github.com/mahmoudazaid/Kernector/issues/212)); review-facing Sprint 3 how-to incomplete | [#215](https://github.com/mahmoudazaid/Kernector/issues/215) (open, `mandatory`); Sprint 2 #104, #105 | [#211](https://github.com/mahmoudazaid/Kernector/issues/211) / [#75](https://github.com/mahmoudazaid/Kernector/issues/75) |
+| Documentation (usage, examples, technical decisions) | Docs | Done | [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md); also `README.md`, `ARCHITECTURE.md`, purpose brief ([#212](https://github.com/mahmoudazaid/Kernector/issues/212)); Sprint 2 #104, #105 | [#215](https://github.com/mahmoudazaid/Kernector/issues/215) (`mandatory`) | [#211](https://github.com/mahmoudazaid/Kernector/issues/211) / [#75](https://github.com/mahmoudazaid/Kernector/issues/75) |
 
-**Gap vs 135.md topics:** LangGraph **agent loop — Done (opt-in)**. **Short-term graph memory — Done** (process-local; long-term → #299). **Human-in-the-loop — Done** for Drive export. **Agentic RAG — Done**. **Agent purpose — Done** ([`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md)). Remaining mandatory gap: review-facing agent docs ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)).
+**Gap vs 135.md topics:** LangGraph **agent loop — Done (opt-in)**. **Short-term graph memory — Done** (process-local; long-term → #299). **Human-in-the-loop — Done** for Drive export. **Agentic RAG — Done**. **Agent purpose — Done** ([`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md)). **Documentation — Done** ([`sprint-3-agent-usage.md`](sprint-3-agent-usage.md), [#215](https://github.com/mahmoudazaid/Kernector/issues/215)).
 
 ---
 
@@ -110,7 +110,7 @@ Chat / Settings / Documents: `web/app/chat`, `web/app/settings`, `web/app/docume
 
 | Epic / issue | Title | State | Sprint 3 relevance |
 |---|---|---|---|
-| [#211](https://github.com/mahmoudazaid/Kernector/issues/211) | **Epic: LangGraph agent, memory, and HITL** | Open | Primary Sprint 3 epic — loop/memory/HITL/agentic RAG Done; purpose/docs + bonus open |
+| [#211](https://github.com/mahmoudazaid/Kernector/issues/211) | **Epic: LangGraph agent, memory, and HITL** | Open | Primary Sprint 3 epic — loop/memory/HITL/agentic RAG/docs Done; purpose/docs tickets + bonus open for close-out |
 | [#43](https://github.com/mahmoudazaid/Kernector/issues/43) | LangChain agent loop for multi-step tool orchestration | **Closed** | Opt-in LangGraph orchestrate shipped |
 | [#213](https://github.com/mahmoudazaid/Kernector/issues/213) | LangGraph short-term memory | **Closed** | Process-local checkpointer; LT → #299 |
 | [#214](https://github.com/mahmoudazaid/Kernector/issues/214) | HITL interrupts for tool approval | **Closed** | Drive export allowlist + Next.js card |
@@ -134,7 +134,7 @@ Chat / Settings / Documents: `web/app/chat`, `web/app/settings`, `web/app/docume
 | [#43](https://github.com/mahmoudazaid/Kernector/issues/43) | LangChain / LangGraph agent loop | Mandatory #2 | **Closed** |
 | [#213](https://github.com/mahmoudazaid/Kernector/issues/213) | LangGraph short-term memory | Medium #2 | **Closed** |
 | [#214](https://github.com/mahmoudazaid/Kernector/issues/214) | HITL interrupts for tool approval | Mandatory #4 / HITL | **Closed** |
-| [#215](https://github.com/mahmoudazaid/Kernector/issues/215) | Document Sprint 3 agent usage | Mandatory #5 | Open |
+| [#215](https://github.com/mahmoudazaid/Kernector/issues/215) | Document Sprint 3 agent usage | Mandatory #5 | Done in-repo ([`sprint-3-agent-usage.md`](sprint-3-agent-usage.md); close ticket after merge) |
 | [#216](https://github.com/mahmoudazaid/Kernector/issues/216) | Agentic RAG in LangGraph | Hard #1 | **Closed** |
 | [#217](https://github.com/mahmoudazaid/Kernector/issues/217) | ChatGPT critique | Easy #1 | Open |
 | [#218](https://github.com/mahmoudazaid/Kernector/issues/218) | Agent personality | Easy #2 | **Closed** |
@@ -172,7 +172,7 @@ Chat / Settings / Documents: `web/app/chat`, `web/app/settings`, `web/app/docume
 | # | Title | Notes |
 |---|-------|-------|
 | [#212](https://github.com/mahmoudazaid/Kernector/issues/212) | Agent purpose brief | Mandatory #1 — brief landed; close after merge |
-| [#215](https://github.com/mahmoudazaid/Kernector/issues/215) | Agent usage docs | Mandatory #5 |
+| [#215](https://github.com/mahmoudazaid/Kernector/issues/215) | Agent usage docs | Mandatory #5 — guide landed ([`sprint-3-agent-usage.md`](sprint-3-agent-usage.md)); close after merge |
 | [#217](https://github.com/mahmoudazaid/Kernector/issues/217) | ChatGPT critique | Easy #1 |
 | [#221](https://github.com/mahmoudazaid/Kernector/issues/221) | Tool enable/disable + plugins | Medium #6 |
 | [#222](https://github.com/mahmoudazaid/Kernector/issues/222) | LangSmith / Langfuse | Hard #2 |
@@ -189,9 +189,9 @@ Carryover (not all `Sprint#3`): [#36](https://github.com/mahmoudazaid/Kernector/
 | Criterion | Ready for review? | Notes |
 |-----------|-------------------|--------|
 | Problem definition | Ready | [`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md) ([#212](https://github.com/mahmoudazaid/Kernector/issues/212)) |
-| Understanding core concepts | Near ready | Agent loop / memory / HITL / agentic RAG in code + `ARCHITECTURE.md`; still need review-facing docs [#215](https://github.com/mahmoudazaid/Kernector/issues/215) |
+| Understanding core concepts | Ready | Agent loop / memory / HITL / agentic RAG in code + [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md) / `ARCHITECTURE.md` ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)) |
 | Technical implementation | Ready | Next.js UI + KB + security + LangGraph + STM + HITL + retrieve tool on `main` |
-| Reflection and improvement | Not ready | [#215](https://github.com/mahmoudazaid/Kernector/issues/215) + critique [#217](https://github.com/mahmoudazaid/Kernector/issues/217) |
+| Reflection and improvement | Near ready | Decisions + gaps in [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md); optional critique [#217](https://github.com/mahmoudazaid/Kernector/issues/217) |
 | Bonus (≥2 medium + 1 hard) | **Met** | Medium: STM [#213](https://github.com/mahmoudazaid/Kernector/issues/213) + Drive export [#197](https://github.com/mahmoudazaid/Kernector/issues/197) (also multi-model + security). Hard: agentic RAG [#216](https://github.com/mahmoudazaid/Kernector/issues/216) **and** external sources Drive + GitHub ([#196](https://github.com/mahmoudazaid/Kernector/issues/196)/[#254](https://github.com/mahmoudazaid/Kernector/issues/254)/[#286](https://github.com/mahmoudazaid/Kernector/issues/286)) |
 
 ---
@@ -203,7 +203,7 @@ Carryover (not all `Sprint#3`): [#36](https://github.com/mahmoudazaid/Kernector/
 3. ~~[#213](https://github.com/mahmoudazaid/Kernector/issues/213) — short-term **memory**~~ **Done** (optional LT: [#299](https://github.com/mahmoudazaid/Kernector/issues/299)).
 4. ~~[#214](https://github.com/mahmoudazaid/Kernector/issues/214) — **HITL**~~ **Done**.
 5. ~~[#216](https://github.com/mahmoudazaid/Kernector/issues/216) — **agentic RAG**~~ **Done**.
-6. [#215](https://github.com/mahmoudazaid/Kernector/issues/215) — agent **docs** for review (flag, demo steps, architecture).
+6. ~~[#215](https://github.com/mahmoudazaid/Kernector/issues/215) — agent **docs** for review~~ **Done** ([`sprint-3-agent-usage.md`](sprint-3-agent-usage.md)).
 7. ~~UI polish / personality / feedback / settings~~ **Done** ([#245](https://github.com/mahmoudazaid/Kernector/issues/245)/[#218](https://github.com/mahmoudazaid/Kernector/issues/218)/[#219](https://github.com/mahmoudazaid/Kernector/issues/219)/[#220](https://github.com/mahmoudazaid/Kernector/issues/220)).
 8. Demo on **Next.js** (`web/` + FastAPI); Streamlit is retired.
 9. Optional further bonus: observability [#222](https://github.com/mahmoudazaid/Kernector/issues/222), adapt-from-feedback [#223](https://github.com/mahmoudazaid/Kernector/issues/223), more tools [#198](https://github.com/mahmoudazaid/Kernector/issues/198)/[#221](https://github.com/mahmoudazaid/Kernector/issues/221), critique [#217](https://github.com/mahmoudazaid/Kernector/issues/217).
@@ -213,7 +213,7 @@ Carryover (not all `Sprint#3`): [#36](https://github.com/mahmoudazaid/Kernector/
 ## Demo checklist (target for Sprint 3 review)
 
 1. State agent purpose and users in one minute — [`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md) ([#212](https://github.com/mahmoudazaid/Kernector/issues/212)).
-2. Show agent graph (or architecture diagram): nodes, state, tools ([#43](https://github.com/mahmoudazaid/Kernector/issues/43) — via `SOFTWARE_DELIVERY_AGENT_LOOP=true`).
+2. Show agent graph (or architecture diagram): nodes, state, tools ([#43](https://github.com/mahmoudazaid/Kernector/issues/43) — via `SOFTWARE_DELIVERY_AGENT_LOOP=true`; speaking script [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md)).
 3. Run a Drive-export tool turn on the agent path (intent + prepared call + HITL).
 4. Show short-term memory: follow-up in the same conversation_id uses checkpoint ([#213](https://github.com/mahmoudazaid/Kernector/issues/213)).
 5. HITL: pause before Drive export; approve/reject in Next.js ([#214](https://github.com/mahmoudazaid/Kernector/issues/214)).
@@ -222,4 +222,4 @@ Carryover (not all `Sprint#3`): [#36](https://github.com/mahmoudazaid/Kernector/
 8. Optional: tokens/cost, observability ([#40](https://github.com/mahmoudazaid/Kernector/issues/40), [#222](https://github.com/mahmoudazaid/Kernector/issues/222)).
 9. Show Next.js chat + history + Settings + Documents (chunk inspect [#210](https://github.com/mahmoudazaid/Kernector/issues/210); viewer [#243](https://github.com/mahmoudazaid/Kernector/issues/243); Drive/GitHub sync for Hard #5).
 
-Until review-facing agent docs land ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)), use [`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md) for the one-minute pitch, `ARCHITECTURE.md` for agent/memory/HITL/agentic-ask detail, and [`sprint-2-project-review-guide.md`](sprint-2-project-review-guide.md) for the Sprint 2 RAG baseline (run against Next.js, not Streamlit).
+Review speaking script: [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md) ([#215](https://github.com/mahmoudazaid/Kernector/issues/215)). One-minute pitch: [`sprint-3-agent-purpose.md`](sprint-3-agent-purpose.md). Deep detail: `ARCHITECTURE.md`. Sprint 2 RAG baseline (run against Next.js, not Streamlit): [`sprint-2-project-review-guide.md`](sprint-2-project-review-guide.md).
