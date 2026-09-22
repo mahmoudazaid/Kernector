@@ -41,4 +41,4 @@ cd web && npm ci && npm run dev   # http://localhost:3000
 - Architecture (agent / memory / HITL / agentic ask): [`ARCHITECTURE.md`](../ARCHITECTURE.md)
 - Pack capabilities: [`packs/software_delivery/README.md`](../packs/software_delivery/README.md)
 - Sprint 3 checklist: [`sprint-3-135-review.md`](sprint-3-135-review.md)
-- Usage / examples / decisions (mandatory #5): [#215](https://github.com/mahmoudazaid/Kernector/issues/215)
+- Usage / examples / decisions (mandatory #5): [`sprint-3-agent-usage.md`](sprint-3-agent-usage.md) ([#215](https://github.com/mahmoudazaid/Kernector/issues/215))
