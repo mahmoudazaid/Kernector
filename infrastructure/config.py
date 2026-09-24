@@ -123,6 +123,25 @@ class DomainToolSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class McpSettings:
+    """Trusted-MVP MCP Streamable HTTP settings (not OAuth).
+
+    Args:
+        auth_token: Required shared bearer for ``/mcp``.
+        access_profile: Single-profile MVP id.
+        tool_allowlist: Tool ids for the profile.
+        allowed_hosts: Required Host allowlist for transport security.
+        allowed_origins: Exact Origin allowlist (missing Origin still allowed).
+    """
+
+    auth_token: str
+    access_profile: str
+    tool_allowlist: tuple[str, ...]
+    allowed_hosts: tuple[str, ...]
+    allowed_origins: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class HttpAdapterSettings:
     """HTTP presentation adapter flags (CORS). Loaded with the rest of Settings."""
 
@@ -620,6 +639,58 @@ def _load_domain_tool_settings() -> DomainToolSettings:
 
 def _env_truthy(name: str, default: str = "") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def require_mcp_settings_from_env() -> McpSettings:
+    """Parse and validate MCP settings; fail closed on missing/invalid hosts/token.
+
+    Called only when building the MCP app — not from :func:`load_settings`.
+    """
+    load_dotenv(override=False)
+    token = (os.getenv("MCP_AUTH_TOKEN") or "").strip()
+    if not token:
+        raise ValueError("MCP_AUTH_TOKEN is required and must be non-blank")
+    profile = (os.getenv("MCP_ACCESS_PROFILE") or "default").strip()
+    if not profile:
+        raise ValueError("MCP_ACCESS_PROFILE must be non-blank when set")
+    allowlist = _csv(os.getenv("MCP_TOOL_ALLOWLIST", ""))
+    hosts = _csv(os.getenv("MCP_ALLOWED_HOSTS", ""))
+    if not hosts:
+        raise ValueError(
+            "MCP_ALLOWED_HOSTS is required and must include at least one host"
+        )
+    seen_hosts: set[str] = set()
+    for host in hosts:
+        if not host.strip():
+            raise ValueError("MCP_ALLOWED_HOSTS must not contain blank entries")
+        if "*" in host:
+            raise ValueError(
+                "MCP_ALLOWED_HOSTS must not include wildcards; list exact hosts"
+            )
+        if host in seen_hosts:
+            raise ValueError(f"MCP_ALLOWED_HOSTS contains duplicate host: {host!r}")
+        seen_hosts.add(host)
+    origins = _csv(os.getenv("MCP_ALLOWED_ORIGINS", ""))
+    seen_origins: set[str] = set()
+    for origin in origins:
+        if not origin.strip():
+            raise ValueError("MCP_ALLOWED_ORIGINS must not contain blank entries")
+        if "*" in origin:
+            raise ValueError(
+                "MCP_ALLOWED_ORIGINS must not include wildcards; list exact origins"
+            )
+        if origin in seen_origins:
+            raise ValueError(
+                f"MCP_ALLOWED_ORIGINS contains duplicate origin: {origin!r}"
+            )
+        seen_origins.add(origin)
+    return McpSettings(
+        auth_token=token,
+        access_profile=profile,
+        tool_allowlist=allowlist,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
 
 
 def _load_http_adapter_settings() -> HttpAdapterSettings:

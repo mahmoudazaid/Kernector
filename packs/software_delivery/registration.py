@@ -26,9 +26,14 @@ def build_tools(
     export_render: RenderExportMarkdown | None = None,
     export_uploader: ArtifactUploader | None = None,
 ) -> Sequence[Tool]:
-    """Return tools contributed by this pack.
+    """Return chat-bound tools contributed by this pack.
 
-    ``chat_model`` is optional until a tool that needs an LLM is registered.
+    Chat registration stays Drive-only when collaborators are wired.
+    Retired scaffolding tools (#285) are not revived here or on MCP (#320);
+    live pack tools land via follow-ups (#326/#327) through
+    :func:`build_mcp_tools`.
+
+    ``chat_model`` is optional until a chat tool that needs an LLM is registered.
     Drive export collaborators must be provided as an atomic pair (both or
     neither).
 
@@ -36,7 +41,7 @@ def build_tools(
         SoftwareDeliveryToolWiringError: Exactly one of the export
             collaborators was provided.
     """
-    _ = chat_model  # reserved for future LLM-backed tools
+    _ = chat_model  # reserved for future LLM-backed chat tools
     if (export_render is None) ^ (export_uploader is None):
         raise SoftwareDeliveryToolWiringError(
             "export_render and export_uploader must both be provided"
@@ -50,6 +55,21 @@ def build_tools(
             )
         )
     return tuple(tools)
+
+
+def build_mcp_tools(
+    *,
+    chat_model_factory: Callable[[], ChatModel] | None = None,
+) -> Sequence[tuple[str, Callable[[], Tool]]]:
+    """Return MCP tool factories for this pack (excludes Drive export).
+
+    Empty until live provider tools are contributed (#326/#327). Kept as the
+    pack → composition MCP seam so #320 does not need provider-specific code.
+
+    ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
+    """
+    _ = chat_model_factory
+    return ()
 
 
 def build_orchestrator(*, invoke: OpaqueInvoke) -> OrchestrateSoftwareDelivery:
