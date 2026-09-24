@@ -12,7 +12,7 @@ business logic and the UI stays replaceable.
 | `infrastructure/` | Concrete adapters and external integrations | `domain` and approved third-party libraries |
 | `packs/` | Optional executable domain packs (tools, scoring policies) | `domain` and standard library |
 | `composition/` | Settings loading, factories, and dependency injection | `application`, `domain`, `infrastructure`, and enabled `packs` (lazy) |
-| `presentation/` | CLI and `presentation/http/` FastAPI adapter | `application`, `domain`, and `composition` |
+| `presentation/` | CLI, `presentation/http/` FastAPI, and `presentation/mcp/` Streamable HTTP MCP adapter | `application`, `domain`, and `composition` |
 
 `web/` (Next.js) is the interactive presentation client, not a Python
 layer. It is outside the table above and talks to Kernector only over HTTP
@@ -51,7 +51,8 @@ import `packs`; only composition activates an enabled pack.
   import `application`, `infrastructure`, `presentation`, or `composition`.
 - `presentation` is the only Python layer allowed to import HTTP server
   frameworks (`fastapi`, `uvicorn`, `starlette`), and those belong under
-  `presentation/http/` only. Presentation must call application behavior
+  `presentation/http/**` or `presentation/mcp/**`. The `mcp` SDK belongs only
+  under `presentation/mcp/**`. Presentation must call application behavior
   through `composition` and must not construct or import infrastructure
   adapters or packs directly. HTTPX is an HTTP **client** (legitimate in
   clients and tests); it is not a server-framework boundary.
@@ -683,8 +684,9 @@ raise embeds a repr-equivalent form
 (`test/architecture/test_safe_validation_messages.py`).
 
 Those checks remain valid for today’s Python tree. FastAPI / uvicorn / starlette
-may appear only under `presentation/http/**` (path-prefix exception in
-`test/architecture/test_layer_boundaries.py`). The local OpenAPI
+may appear only under `presentation/http/**` and `presentation/mcp/**`. The
+`mcp` SDK may appear only under `presentation/mcp/**`. Presentation adapters
+(`http`, `cli`, `mcp`) are mutually isolated. The local OpenAPI
 contract-drift check is owned by
 [#127](https://github.com/mahmoudazaid/Kernector/issues/127)
 (`cd web && npm run api:check`); dual-stack PR CI
@@ -692,6 +694,33 @@ contract-drift check is owned by
 [#128](https://github.com/mahmoudazaid/Kernector/issues/128)) runs the same
 check. Feature-migration readiness:
 [docs/migration-readiness.md](docs/migration-readiness.md).
+
+## MCP Streamable HTTP adapter (`presentation/mcp`)
+
+Issue [#320](https://github.com/mahmoudazaid/Kernector/issues/320): one shared
+Kernector MCP server exposes `core.search_knowledge` (bounded untrusted
+evidence + citations; no LLM ask). Pack tools are contributed later via
+`build_mcp_tools()` (#326/#327). Coding assistants remain the agents; Kernector
+supplies evidence and allowlisted tools.
+
+- Transport: low-level `mcp.server.Server` Streamable HTTP at `/mcp`, plus
+  public `/healthz`.
+- Auth: required shared bearer `MCP_AUTH_TOKEN` (constant-time compare; trusted
+  MVP, **not** OAuth). Profile allowlist `MCP_TOOL_ALLOWLIST` is tool
+  authorization. `MCP_ALLOWED_HOSTS` is required; missing Origin is allowed,
+  present Origin must match `MCP_ALLOWED_ORIGINS`.
+- Chat `build_tools()` stays Drive-only; MCP `build_mcp_tools()` is the pack
+  seam (empty until live tools). Drive export is never auto-exposed on MCP.
+- Retired scaffolding tools (#285) are **not** revived for MCP.
+- Out of scope here: consuming remote MCP (#184), Admin UI profiles (#324),
+  live provider tools (#326/#327), stdio, MCP resources, `kernector_ask`, OAuth.
+
+```bash
+MCP_AUTH_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \
+  MCP_TOOL_ALLOWLIST=core.search_knowledge \
+  DOCUMENT_CATALOG_WORKSPACE_ID=… \
+  uv run uvicorn presentation.mcp.app:app --port 8100
+```
 
 Run only the architecture boundary tests:
 

@@ -12,7 +12,17 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 ![Kernector architecture](docs/images/kernector-architecture.png)
 
-`domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` is enabled via `DOMAIN_TOOL_PACKS` but registers no tools (#285 retirement of the scaffolding risk/generate/export adapters); chat intent always falls through to grounded RAG. Future tools land under `packs/software_delivery/tools/`. `composition/` is the sole wiring root: it loads settings, constructs adapters, activates enabled packs through an explicit allowlist, and hands typed services to the UI. `presentation/` hosts the FastAPI HTTP adapter and CLI entrypoints; it calls through composition and must not construct infrastructure or import packs directly. The interactive UI is Next.js under `web/`, talking HTTP to FastAPI.
+`domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` is
+enabled via `DOMAIN_TOOL_PACKS`; chat `build_tools()` stays Drive-only when
+wired (#285 scaffolding retirement). The shared Streamable HTTP MCP adapter
+(`presentation/mcp`, #320) exposes `core.search_knowledge`; pack MCP tools
+arrive later via `build_mcp_tools()` (#326/#327). `composition/` is the sole
+wiring root: it loads settings, constructs adapters, activates enabled packs
+through an explicit allowlist, and hands typed services to the UI.
+`presentation/` hosts the FastAPI HTTP adapter, MCP adapter,
+and CLI entrypoints; it calls through composition and must not construct
+infrastructure or import packs directly. The interactive UI is Next.js under
+`web/`, talking HTTP to FastAPI.
 
 This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, Google Drive, and GitHub (Hub OAuth plus CLI PAT).
 
@@ -69,6 +79,49 @@ uv run uvicorn presentation.http.app:app --reload
 See [ADR 0005](docs/adr/0005-consolidate-runtime-contract-on-settings.md) for
 why `/api/v1/settings` owns client bootstrap state and why `/capabilities` was
 retired.
+
+### Run the MCP Streamable HTTP server
+
+Coding assistants (Cursor, Claude Code, etc.) remain the agents. Kernector’s
+MCP adapter supplies **bounded, citable evidence** (`core.search_knowledge`) and
+**allowlisted** pack tools — not a second chat LLM answer.
+
+```bash
+export MCP_AUTH_TOKEN=dev-token
+export MCP_ALLOWED_HOSTS=127.0.0.1:8100
+export MCP_ALLOWED_ORIGINS=  # optional; missing Origin allowed for non-browser clients
+export MCP_TOOL_ALLOWLIST=core.search_knowledge
+export DOMAIN_TOOL_PACKS=software-delivery   # optional; live MCP pack tools come in #326/#327
+export DOCUMENT_CATALOG_WORKSPACE_ID=local
+uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
+```
+
+- Endpoint: `http://127.0.0.1:8100/mcp` (Bearer required)
+- Health: `GET http://127.0.0.1:8100/healthz` (public)
+- Auth is a **trusted shared bearer MVP**, not OAuth
+- Drive export and retired scaffolding tools (#285) are not on MCP; live pack
+  tools land in follow-ups (#326/#327)
+**Cursor** (`mcp.json` fragment — expand the token from the environment; never
+hardcode a real secret):
+
+```json
+{
+  "mcpServers": {
+    "kernector": {
+      "url": "http://127.0.0.1:8100/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:MCP_AUTH_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+**Claude Code** (similar Streamable HTTP remote server with env-expanded
+`Authorization: Bearer ${MCP_AUTH_TOKEN}`).
+
+Out of scope: remote MCP consume (#184), Admin UI allowlists (#324), live
+Jira/Xray/Drive MCP tools (#326/#327), stdio, MCP resources, `kernector_ask`.
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
 unless you intentionally set an explicit `HTTP_CORS_ORIGINS` allowlist. Never
