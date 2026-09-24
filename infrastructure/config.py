@@ -675,9 +675,9 @@ def require_mcp_settings_from_env() -> McpSettings:
     for origin in origins:
         if not origin.strip():
             raise ValueError("MCP_ALLOWED_ORIGINS must not contain blank entries")
-        if origin == "*":
+        if "*" in origin:
             raise ValueError(
-                "MCP_ALLOWED_ORIGINS must not include '*'; list exact origins"
+                "MCP_ALLOWED_ORIGINS must not include wildcards; list exact origins"
             )
         if origin in seen_origins:
             raise ValueError(

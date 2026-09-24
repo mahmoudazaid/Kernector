@@ -54,6 +54,16 @@ def test_require_mcp_settings_rejects_host_wildcard(
         require_mcp_settings_from_env()
 
 
+def test_require_mcp_settings_rejects_origin_wildcard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "localhost:8000")
+    monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "https://app.example.com:*")
+    with pytest.raises(ValueError, match="wildcard"):
+        require_mcp_settings_from_env()
+
+
 def test_require_mcp_settings_rejects_duplicate_hosts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
