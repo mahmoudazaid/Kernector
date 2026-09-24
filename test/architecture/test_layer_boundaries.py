@@ -8,9 +8,11 @@ reverse:
                           └────────> infrastructure ─────┘
 
 Server frameworks (``fastapi`` / ``uvicorn`` / ``starlette``) may live only
-under ``presentation/http/``. ``httpx`` stays in ``IO_PACKAGES`` as an HTTP
-*client* library (ADR 0002 §5) — it is not a server-framework rule. ``test/``
-is outside :func:`_modules`, so TestClient imports of ``httpx`` are fine.
+under ``presentation/http/**`` and ``presentation/mcp/**``. The ``mcp`` SDK
+may live only under ``presentation/mcp/**``. ``httpx`` stays in
+``IO_PACKAGES`` as an HTTP *client* library (ADR 0002 §5) — it is not a
+server-framework rule. ``test/`` is outside :func:`_modules`, so TestClient
+imports of ``httpx`` are fine.
 """
 
 from pathlib import Path
@@ -39,8 +41,11 @@ IO_PACKAGES = {
     "httplib2",
 }
 
-# FastAPI stack — allowed only under presentation/http/** (path-prefix exception).
+# FastAPI stack — allowed only under presentation/http/** and presentation/mcp/**.
 SERVER_FRAMEWORKS = {"fastapi", "uvicorn", "starlette"}
+
+# Official MCP SDK — allowed only under presentation/mcp/**.
+MCP_SDK = {"mcp", "mcp_types"}
 
 LAYER_RULES: dict[str, set[str]] = {
     # Use-case orchestration: domain only. No UI, no I/O, no adapters, no packs.
@@ -51,6 +56,7 @@ LAYER_RULES: dict[str, set[str]] = {
         "packs",
         *IO_PACKAGES,
         *SERVER_FRAMEWORKS,
+        *MCP_SDK,
     },
     # Implements the ports. Never reaches back into the layers above it.
     "infrastructure": {
@@ -59,15 +65,17 @@ LAYER_RULES: dict[str, set[str]] = {
         "composition",
         "packs",
         *SERVER_FRAMEWORKS,
+        *MCP_SDK,
     },
     # The outermost edge: may wire anything inward, but is not a UI itself.
     "composition": {
         "presentation",
         *SERVER_FRAMEWORKS,
+        *MCP_SDK,
     },
-    # Presentation adapters (HTTP, CLI). Must go through composition for I/O.
-    # SERVER_FRAMEWORKS are applied via :func:`_forbidden_for` with an
-    # exception for presentation/http/**.
+    # Presentation adapters (HTTP, CLI, MCP). Must go through composition for I/O.
+    # SERVER_FRAMEWORKS / MCP_SDK are applied via :func:`_forbidden_for` with
+    # path-prefix exceptions for presentation/http/** and presentation/mcp/**.
     "presentation": {
         "infrastructure",
         "packs",
@@ -81,6 +89,7 @@ LAYER_RULES: dict[str, set[str]] = {
         "composition",
         *IO_PACKAGES,
         *SERVER_FRAMEWORKS,
+        *MCP_SDK,
     },
 }
 
@@ -89,16 +98,34 @@ def _modules(layer: str) -> list[Path]:
     return sorted((REPO_ROOT / layer).rglob("*.py"))
 
 
-def _under_presentation_http(module_path: Path) -> bool:
+def _under_presentation_adapter(module_path: Path, adapter: str) -> bool:
     rel = module_path.resolve().relative_to(REPO_ROOT)
-    return len(rel.parts) >= 2 and rel.parts[0] == "presentation" and rel.parts[1] == "http"
+    return (
+        len(rel.parts) >= 2
+        and rel.parts[0] == "presentation"
+        and rel.parts[1] == adapter
+    )
+
+
+def _under_presentation_http(module_path: Path) -> bool:
+    return _under_presentation_adapter(module_path, "http")
+
+
+def _under_presentation_mcp(module_path: Path) -> bool:
+    return _under_presentation_adapter(module_path, "mcp")
 
 
 def _forbidden_for(layer: str, module_path: Path) -> set[str]:
-    """Return the denylist for *module_path*, including http path-prefix exception."""
+    """Return the denylist for *module_path*, including path-prefix exceptions."""
     forbidden = set(LAYER_RULES[layer])
-    if layer == "presentation" and not _under_presentation_http(module_path):
+    if layer != "presentation":
+        return forbidden
+    if not (
+        _under_presentation_http(module_path) or _under_presentation_mcp(module_path)
+    ):
         forbidden |= SERVER_FRAMEWORKS
+    if not _under_presentation_mcp(module_path):
+        forbidden |= MCP_SDK
     return forbidden
 
 
@@ -181,7 +208,7 @@ def test_planted_pack_forbidden_import_is_detected(
 def test_planted_non_http_presentation_server_framework_is_detected(
     tmp_path: Path, source: str, expected: set[str]
 ) -> None:
-    """Server frameworks are forbidden outside presentation/http/**."""
+    """Server frameworks are forbidden outside presentation/http|mcp/**."""
     # Path must sit under presentation/cli so _forbidden_for applies
     # SERVER_FRAMEWORKS (tmp_path never triggers the production helper).
     module = tmp_path / "bad_presentation.py"
@@ -190,6 +217,29 @@ def test_planted_non_http_presentation_server_framework_is_detected(
         "presentation", REPO_ROOT / "presentation" / "cli" / "x.py"
     )
     assert find_forbidden_imports(module, denylist) == expected
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("import mcp\n", {"mcp"}),
+        ("from mcp.server import Server\n", {"mcp"}),
+    ],
+)
+def test_planted_non_mcp_presentation_mcp_sdk_is_detected(
+    tmp_path: Path, source: str, expected: set[str]
+) -> None:
+    """The mcp SDK is forbidden outside presentation/mcp/**."""
+    module = tmp_path / "bad_presentation.py"
+    module.write_text(source, encoding="utf-8")
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "http" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist) == expected
+    denylist_cli = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "cli" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist_cli) == expected
 
 
 def test_planted_presentation_http_may_import_fastapi(tmp_path: Path) -> None:
@@ -203,26 +253,79 @@ def test_planted_presentation_http_may_import_fastapi(tmp_path: Path) -> None:
     assert SERVER_FRAMEWORKS.isdisjoint(denylist)
 
 
+def test_planted_presentation_mcp_may_import_starlette_and_mcp(
+    tmp_path: Path,
+) -> None:
+    """presentation/mcp/** may import server frameworks and the mcp SDK."""
+    module = tmp_path / "mcp_app.py"
+    module.write_text(
+        "from starlette.applications import Starlette\n"
+        "from mcp.server import Server\n",
+        encoding="utf-8",
+    )
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "mcp" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist) == set()
+    assert SERVER_FRAMEWORKS.isdisjoint(denylist)
+    assert MCP_SDK.isdisjoint(denylist)
+
+
+def test_planted_presentation_http_may_not_import_mcp_sdk(tmp_path: Path) -> None:
+    """HTTP adapter must not depend on the mcp SDK."""
+    module = tmp_path / "http_route.py"
+    module.write_text("from mcp.server import Server\n", encoding="utf-8")
+    denylist = _forbidden_for(
+        "presentation", REPO_ROOT / "presentation" / "http" / "x.py"
+    )
+    assert find_forbidden_imports(module, denylist) == {"mcp"}
+
+
 # Build tooling whose job *is* to serialize another adapter's schema, so the
 # peer-import rule below cannot apply. Keep this list empty of runtime modules.
 PEER_IMPORT_EXEMPT = {Path("presentation/cli/export_openapi.py")}
 
+_PEER_ADAPTERS = ("http", "cli", "mcp")
+
 
 def test_presentation_adapters_are_mutually_isolated() -> None:
     """Keep each UI replaceable: adapters must not import each other."""
-    for adapter, forbidden in (
-        ("http", "presentation.cli"),
-        ("cli", "presentation.http"),
-    ):
+    for adapter in _PEER_ADAPTERS:
         root = REPO_ROOT / "presentation" / adapter
         assert root.is_dir(), f"presentation/{adapter} no longer exists"
+        forbidden = {
+            f"presentation.{peer}"
+            for peer in _PEER_ADAPTERS
+            if peer != adapter
+        }
         for path in sorted(root.rglob("*.py")):
             if path.relative_to(REPO_ROOT) in PEER_IMPORT_EXEMPT:
                 continue
-            hits = find_forbidden_module_prefixes(path, {forbidden})
+            hits = find_forbidden_module_prefixes(path, forbidden)
             assert not hits, (
-                f"{path.relative_to(REPO_ROOT)} imports {forbidden}"
+                f"{path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
             )
+
+
+@pytest.mark.parametrize(
+    "source_adapter,target",
+    [
+        ("http", "presentation.cli"),
+        ("http", "presentation.mcp"),
+        ("cli", "presentation.http"),
+        ("cli", "presentation.mcp"),
+        ("mcp", "presentation.http"),
+        ("mcp", "presentation.cli"),
+    ],
+)
+def test_planted_pairwise_peer_adapter_import_is_detected(
+    tmp_path: Path, source_adapter: str, target: str
+) -> None:
+    """Every peer direction must be caught by the isolation scan."""
+    module = _plant_presentation_module(
+        tmp_path, source_adapter, f"import {target}\n"
+    )
+    assert find_forbidden_module_prefixes(module, {target}) == {target}
 
 
 def test_peer_import_exemptions_all_exist() -> None:
