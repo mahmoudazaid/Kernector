@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from application.retrieve_knowledge import RetrieveKnowledge
 from composition.mcp_wiring import build_mcp_tool_registry

@@ -88,7 +88,11 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             if header is None or not header.lower().startswith("bearer "):
                 return _UNAUTHORIZED
             presented = header[7:].strip()
-            if not hmac.compare_digest(presented, self._auth_token):
+            # Compare as bytes: str compare_digest raises TypeError on non-ASCII
+            # (latin-1-decoded header bytes >= 0x80), which would escape as 500.
+            if not hmac.compare_digest(
+                presented.encode("utf-8"), self._auth_token.encode("utf-8")
+            ):
                 return _UNAUTHORIZED
             request.state.mcp_caller = self._caller_factory()
         return await call_next(request)

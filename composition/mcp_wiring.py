@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 
 from application.errors import ConfigurationError
 from application.retrieve_knowledge import RetrieveKnowledge
@@ -64,11 +64,3 @@ def build_mcp_tool_registry(
         contributions=contributions,
         enabled_packs=settings.domain_tools.enabled_packs,
     )
-
-
-def filter_contributions_for_allowlist(
-    contributions: Sequence[McpToolContribution],
-    allowlist: frozenset[str],
-) -> tuple[McpToolContribution, ...]:
-    """Return contributions whose ids appear in *allowlist* (optional prefilter)."""
-    return tuple(item for item in contributions if item.tool_id in allowlist)

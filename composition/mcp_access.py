@@ -75,7 +75,7 @@ class McpAccessPolicy:
     """Effective-tool policy for the single-profile MVP.
 
     Effective tools = contributed tool ids ∩ enabled packs ∩ profile allowlist.
-    Core tools use pack_id ``None`` / ``"core"`` and require allowlist membership.
+    Core tools use pack_id ``None`` and require allowlist membership.
     """
 
     enabled_packs: frozenset[str]

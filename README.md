@@ -101,6 +101,7 @@ uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
 - Auth is a **trusted shared bearer MVP**, not OAuth
 - Drive export and retired scaffolding tools (#285) are not on MCP; live pack
   tools land in follow-ups (#326/#327)
+
 **Cursor** (`mcp.json` fragment — expand the token from the environment; never
 hardcode a real secret):
 

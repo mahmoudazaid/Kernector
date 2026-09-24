@@ -265,8 +265,7 @@ def test_mcp_wiring_loads_pack_via_allowlist_not_hardcoded_import(
         return (("fake.pack_tool", lambda: _Tool()),)
 
     fake.build_mcp_tools = build_mcp_tools  # type: ignore[attr-defined]
-    sys_modules = __import__("sys").modules
-    sys_modules["test_fake_mcp_pack"] = fake
+    monkeypatch.setitem(__import__("sys").modules, "test_fake_mcp_pack", fake)
     monkeypatch.setitem(
         mcp_wiring.SUPPORTED_MCP_TOOL_PACKS,
         "fake-pack",
