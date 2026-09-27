@@ -110,20 +110,17 @@ export function MessageFeedbackControls({
         if (controller.signal.aborted || userActedRef.current) {
           return;
         }
-        setRating(stored.rating);
-        setStatus("success");
-        onRatingChange?.(stored.rating);
-      } catch (caught) {
-        if (controller.signal.aborted || userActedRef.current) {
-          return;
-        }
-        if (caught instanceof ApiError && caught.status === 404) {
+        if (stored === null) {
           if (initialRating == null) {
             setRating(null);
             setStatus("idle");
           }
           return;
         }
+        setRating(stored.rating);
+        setStatus("success");
+        onRatingChange?.(stored.rating);
+      } catch {
         // Keep local/persisted rating on hydrate failure.
       }
     })();

@@ -17,7 +17,10 @@ The three scaffolding tools (`software_delivery.risk_score`,
 wired. Drive export (`software_delivery.export_test_cases_google_drive`, #197)
 registers when composition supplies both the #305 Markdown render adapter and a
 Google Drive `ArtifactUploader` (Hub OAuth client settings required; destination
-folder is chosen in the Test Design UI). `chat_model` is optional while only
+folder is chosen in the Test Design UI). The export carries the selected titles
+plus each available case: Cucumber as one fenced feature file (shared Feature and
+Background) and Manual as numbered Preconditions, Steps, and Expected result.
+Tests that need more detail from the ticket are listed by title only. `chat_model` is optional while only
 deterministic tools are registered. Retired tool name constants remain in
 `orchestration_policy.py` for dormant chain/projection wiring.
 
@@ -47,23 +50,38 @@ decision — not as a presentation pre-ask gate.
 uses WorkflowSignals. Only General chat (`AskRequest.prompt_key is None`) is
 eligible for the router; selected task prompts always stay on grounded RAG.
 
-## Test Design workflow (#293)
+## Test Design workflow (#293 / #300)
 
 Pack-local interactive workflow under `test_design/` — **not** a registered
 agent `Tool`. Create starts from a **live GitHub Issue** (`source_locator`),
 not catalog RAG. Evidence is a single `SourceDocument` from the connector
-reader; the pack suggests test candidates and typed coverage gaps, persists a
-workspace-scoped draft, and confirms coverage selection (`status: ready`).
-Detailed manual/Cucumber scenario generation is deferred to #300.
+reader; the pack suggests test candidates, persists a workspace-scoped draft,
+and confirms coverage selection (`status: ready`) with per-candidate
+`manual` / `cucumber` chosen on the same Coverage step. Next then generates
+grounded detailed cases (`status: case_editing`) for edit/save via CAS.
+Cucumber drafts share one
+`cucumber_feature` + `cucumber_background`; each case stores Scenario-only
+`gherkin`. Manual cases store independent Preconditions, Steps (action
+strings), and Expected Result — Kernector is the source of truth; destination
+sync (Xray, AssertThat, Drive, etc.) is an outbound adapter responsibility.
+The Cases UI packages Cucumber (one Feature), Manual (three numbered lists),
+and Needs clarification (`insufficient_evidence`). Confirm on `case_editing`
+is a no-op that keeps artifacts. Changing coverage fields demotes to
+`coverage_review` and clears generated cases; type-only or artifact edits do
+not. Generate re-fetches the Issue and compares `evidence_fingerprint`;
+mismatches fail closed without writing. Regeneration is explicit and never
+silently overwrites `user_edited` cases unless `overwrite_edited=true`.
 
 | Module | Responsibility |
 | --- | --- |
-| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, allowlists |
-| `test_design/suggest_tests.py` | Evidence → suggested candidates + gaps → coverage_review draft |
-| `test_design/codec.py` / `repository.py` | Opaque payload codec + repository Protocol |
+| `test_design/models.py` | `TestCoverageDraft`, `TestCandidate`, `GeneratedTestCase`, allowlists |
+| `test_design/suggest_tests.py` | Evidence → suggested candidates → coverage_review draft |
+| `test_design/generate_cases.py` | Confirmed draft + evidence → detailed cases |
+| `test_design/codec.py` / `repository.py` | Opaque payload codec (schema v4) + repository Protocol |
 
 HTTP routes under `/api/v1/test-design/*` are always mounted; when the pack is
 disabled they return `test_design_unavailable` without importing this pack.
+Endpoints: create/get/patch/confirm, `POST .../generate`, Drive export.
 Composition namespace for persistence: `software-delivery:test-design`.
 Chat routing clarifies incomplete Test Design commands (#304) and builds the
 Start handoff only after a ready `tool_workflow` decision (intent + one Issue).

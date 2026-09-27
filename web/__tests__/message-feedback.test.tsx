@@ -20,14 +20,7 @@ describe("MessageFeedbackControls", () => {
     upsertResponseFeedback.mockReset();
     clearResponseFeedback.mockReset();
     getResponseFeedback.mockReset();
-    getResponseFeedback.mockRejectedValue(
-      new ApiError({
-        status: 404,
-        title: "Feedback not found",
-        detail: "No feedback found for this response.",
-        code: "feedback_not_found",
-      }),
-    );
+    getResponseFeedback.mockResolvedValue(null);
   });
 
   it("submits positive rating and shows success", async () => {
@@ -94,11 +87,11 @@ describe("MessageFeedbackControls", () => {
   });
 
   it("ignores a stale hydrate response after the user saves a rating", async () => {
-    let rejectHydrate!: (reason: unknown) => void;
+    let resolveHydrate!: (value: unknown) => void;
     getResponseFeedback.mockImplementation(
       () =>
-        new Promise((_, reject) => {
-          rejectHydrate = reject;
+        new Promise((resolve) => {
+          resolveHydrate = resolve;
         }),
     );
     upsertResponseFeedback.mockResolvedValue({
@@ -126,14 +119,7 @@ describe("MessageFeedbackControls", () => {
     );
     expect(onRatingChange).toHaveBeenCalledWith("positive");
 
-    rejectHydrate(
-      new ApiError({
-        status: 404,
-        title: "Feedback not found",
-        detail: "No feedback found for this response.",
-        code: "feedback_not_found",
-      }),
-    );
+    resolveHydrate(null);
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Thumbs up" })).toHaveAttribute(

@@ -47,12 +47,13 @@ function feedbackPath(requestId: string, query?: Record<string, string>): string
 
 /**
  * Load a thumbs rating via ``GET /api/v1/responses/{request_id}/feedback``.
+ * Resolves to ``null`` when no rating is stored.
  */
 export async function getResponseFeedback(
   options: GetResponseFeedbackOptions,
-): Promise<ResponseFeedbackResponse> {
+): Promise<ResponseFeedbackResponse | null> {
   const request = options.request ?? apiRequest;
-  return request<ResponseFeedbackResponse>({
+  return request<ResponseFeedbackResponse | null>({
     baseUrl: options.baseUrl,
     path: feedbackPath(options.requestId),
     method: "GET",

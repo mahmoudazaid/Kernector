@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from application.errors import ConfigurationError
 from application.invoke_tool import ToolRegistry
@@ -15,7 +16,8 @@ SUPPORTED_DOMAIN_TOOL_PACKS: Mapping[str, str] = {
     "software-delivery": "packs.software_delivery.registration:build_tools",
 }
 
-ExportRender = Callable[[str, Sequence[str]], str]
+# Receives the pack's ``ExportContent``; typed loosely to keep packs lazy.
+ExportRender = Callable[[Any], str]
 
 
 def enabled_domain_tool_packs(settings: Settings) -> tuple[str, ...]:
@@ -57,7 +59,7 @@ def build_tool_registry(
     Args:
         settings: Runtime settings including ``domain_tools.enabled_packs``.
         chat_model: Optional chat collaborator for future LLM-backed tools.
-        export_render: Composition #305 adapter for titles-only export.
+        export_render: Composition #305 adapter for test-case export.
         export_uploader: Bound Google Drive ``ArtifactUploader``.
 
     Returns:

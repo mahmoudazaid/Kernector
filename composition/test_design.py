@@ -16,6 +16,7 @@ from application.errors import (
 )
 from composition.software_delivery_tools import software_delivery_tools_enabled
 from composition.test_design_errors import (
+    TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,
     TestDesignValidationError,
@@ -29,8 +30,11 @@ from infrastructure.workspace_store.errors import (
     VersionedStoreVersionConflictError,
 )
 
-DraftStatus = Literal["coverage_review", "ready"]
+DraftStatus = Literal["coverage_review", "ready", "case_editing"]
 CandidateOrigin = Literal["suggested", "manual"]
+TestCaseType = Literal["manual", "cucumber"]
+AutomationFit = Literal["applicable", "not_applicable", "unclear"]
+CaseAvailability = Literal["available", "insufficient_evidence"]
 CoverageCategory = Literal[
     "positive",
     "negative",
@@ -81,6 +85,23 @@ class TestCandidateView:
     evidence_references: tuple[SourceReferenceView, ...]
     selected: bool
     origin: CandidateOrigin
+    test_type: TestCaseType | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedTestCaseView:
+    __test__ = False
+
+    candidate_id: str
+    test_type: TestCaseType
+    automation_fit: AutomationFit
+    automation_rationale: str
+    availability: CaseAvailability
+    preconditions: str
+    steps: tuple[str, ...]
+    expected_result: str
+    gherkin: str
+    user_edited: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +117,11 @@ class TestCoverageDraftView:
     candidates: tuple[TestCandidateView, ...]
     version: int
     selected_candidate_ids: tuple[str, ...]
+    generated_cases: tuple[GeneratedTestCaseView, ...] = ()
+    evidence_fingerprint: str | None = None
+    skipped_edited_candidate_ids: tuple[str, ...] = ()
+    cucumber_feature: str = ""
+    cucumber_background: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +134,17 @@ class CreateTestDesignDraftRequest:
 class PatchTestDesignDraftRequest:
     expected_version: int
     candidates: tuple[TestCandidateView, ...] | None = None
+    generated_cases: tuple[GeneratedTestCaseView, ...] | None = None
+    cucumber_feature: str | None = None
+    cucumber_background: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateTestDesignCasesRequest:
+    expected_version: int
+    candidate_ids: tuple[str, ...] | None = None
+    type_overrides: tuple[tuple[str, TestCaseType], ...] = ()
+    overwrite_edited: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,6 +393,14 @@ class TestDesignFacade:
     ) -> TestCoverageDraftView:
         self._require_enabled()
         TestCandidate, TestCoverageDraft = self._load_models()
+        (
+            GeneratedTestCase,
+            coverage_candidates_equal,
+            drop_generated_cases,
+            is_deselection_only,
+            keep_unchanged_cases,
+            is_title_only_change,
+        ) = self._load_case_helpers()
         repo = self._repository()
         try:
             current = repo.get(draft_id)
@@ -364,7 +409,14 @@ class TestDesignFacade:
             raise
         if current is None:
             raise TestDesignNotFoundError("draft not found")
+
         candidates = current.candidates
+        generated_cases = current.generated_cases
+        next_status = current.status
+        next_fingerprint = current.evidence_fingerprint
+        next_cucumber_feature = current.cucumber_feature
+        next_cucumber_background = current.cucumber_background
+
         if request.candidates is not None:
             try:
                 candidates = tuple(
@@ -379,6 +431,7 @@ class TestDesignFacade:
                         ),
                         selected=item.selected,
                         origin=item.origin,
+                        test_type=item.test_type,
                     )
                     for item in request.candidates
                 )
@@ -392,13 +445,93 @@ class TestDesignFacade:
                         _TEST_DESIGN_VALIDATION_DETAIL
                     ) from error
                 raise
-        next_status = current.status
-        if (
-            request.candidates is not None
-            and current.status == "ready"
-            and not _candidates_semantically_equal(candidates, current.candidates)
-        ):
-            next_status = "coverage_review"
+            still_selected = {
+                candidate.candidate_id for candidate in candidates if candidate.selected
+            }
+            if current.status in {"ready", "case_editing"} and is_title_only_change(
+                current.candidates, candidates
+            ):
+                pass
+            elif (
+                current.status in {"ready", "case_editing"}
+                and still_selected
+                and is_deselection_only(current.candidates, candidates)
+            ):
+                generated_cases = tuple(
+                    case
+                    for case in drop_generated_cases(
+                        current.generated_cases,
+                        previous=current.candidates,
+                        updated=candidates,
+                    )
+                    if case.candidate_id in still_selected
+                )
+            elif not coverage_candidates_equal(candidates, current.candidates):
+                next_status = "coverage_review"
+                generated_cases = keep_unchanged_cases(
+                    current.generated_cases,
+                    previous=current.candidates,
+                    updated=candidates,
+                )
+                next_fingerprint = None
+            else:
+                generated_cases = drop_generated_cases(
+                    current.generated_cases,
+                    previous=current.candidates,
+                    updated=candidates,
+                )
+
+        if request.generated_cases is not None:
+            if next_status not in {"ready", "case_editing"}:
+                raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+            existing_ids = {case.candidate_id for case in generated_cases}
+            try:
+                patched_cases: list[object] = []
+                incoming_by_id = {
+                    item.candidate_id: item for item in request.generated_cases
+                }
+                for case in generated_cases:
+                    incoming = incoming_by_id.get(case.candidate_id)
+                    if incoming is None:
+                        patched_cases.append(case)
+                        continue
+                    patched_cases.append(
+                        GeneratedTestCase(
+                            candidate_id=incoming.candidate_id,
+                            test_type=incoming.test_type,
+                            automation_fit=incoming.automation_fit,
+                            automation_rationale=incoming.automation_rationale,
+                            availability=incoming.availability,
+                            preconditions=incoming.preconditions,
+                            steps=tuple(incoming.steps),
+                            expected_result=incoming.expected_result,
+                            gherkin=incoming.gherkin,
+                            user_edited=True,
+                        )
+                    )
+                unknown = set(incoming_by_id) - existing_ids
+                if unknown:
+                    raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+                generated_cases = tuple(patched_cases)
+                next_status = "case_editing"
+            except TestDesignValidationError:
+                raise
+            except Exception as error:
+                from packs.software_delivery.test_design.errors import (
+                    TestDesignValidationError as PackTestDesignValidationError,
+                )
+
+                if isinstance(error, PackTestDesignValidationError):
+                    raise TestDesignValidationError(
+                        _TEST_DESIGN_VALIDATION_DETAIL
+                    ) from error
+                raise
+
+        if request.cucumber_feature is not None:
+            next_cucumber_feature = request.cucumber_feature
+        if request.cucumber_background is not None:
+            next_cucumber_background = request.cucumber_background
+
         try:
             updated = TestCoverageDraft(
                 draft_id=current.draft_id,
@@ -409,6 +542,10 @@ class TestDesignFacade:
                 status=next_status,
                 candidates=candidates,
                 version=current.version,
+                generated_cases=generated_cases,
+                evidence_fingerprint=next_fingerprint,
+                cucumber_feature=next_cucumber_feature,
+                cucumber_background=next_cucumber_background,
             )
         except Exception as error:
             from packs.software_delivery.test_design.errors import (
@@ -446,21 +583,41 @@ class TestDesignFacade:
             raise
         if current is None:
             raise TestDesignNotFoundError("draft not found")
-        if current.status == "ready" and current.version == expected_version:
+        if current.version != expected_version:
+            raise TestDesignVersionConflictError("version conflict")
+        if current.status in {"ready", "case_editing"}:
             return _draft_view(current)
         if not any(c.selected for c in current.candidates):
             raise TestDesignValidationError(
                 "select at least one candidate before confirm"
             )
+        document, budgeted, fingerprint = self._fetch_live_evidence(
+            current.ticket_identifier
+        )
+        if (
+            document.reference.source_id != current.source_reference.source_id
+            or document.reference.source_type != current.source_reference.source_type
+        ):
+            raise TestDesignEvidenceChangedError("evidence changed")
+        selected_ids = {c.candidate_id for c in current.candidates if c.selected}
+        kept_cases = tuple(
+            case
+            for case in current.generated_cases
+            if case.candidate_id in selected_ids
+        )
         updated = TestCoverageDraft(
             draft_id=current.draft_id,
             workspace_id=current.workspace_id,
             conversation_id=current.conversation_id,
             source_reference=current.source_reference,
             ticket_identifier=current.ticket_identifier,
-            status="ready",
+            status="case_editing" if kept_cases else "ready",
             candidates=current.candidates,
             version=current.version,
+            generated_cases=kept_cases,
+            evidence_fingerprint=fingerprint,
+            cucumber_feature=current.cucumber_feature if kept_cases else "",
+            cucumber_background=current.cucumber_background if kept_cases else "",
         )
         try:
             saved = repo.update(updated, expected_version=expected_version)
@@ -473,6 +630,129 @@ class TestDesignFacade:
             raise
         return _draft_view(saved)
 
+    def generate_cases(
+        self, draft_id: str, request: GenerateTestDesignCasesRequest
+    ) -> TestCoverageDraftView:
+        self._require_enabled()
+        repo = self._repository()
+        try:
+            current = repo.get(draft_id)
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+        if current is None:
+            raise TestDesignNotFoundError("draft not found")
+        if current.status not in {"ready", "case_editing"}:
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+
+        (
+            GenerateTestCases,
+            GenerateTestCasesRequest,
+            TypeOverride,
+            CoverageEvidenceItem,
+        ) = self._load_generate_cases()
+        try:
+            type_overrides = tuple(
+                TypeOverride(candidate_id=candidate_id, test_type=test_type)
+                for candidate_id, test_type in request.type_overrides
+            )
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+
+        document, budgeted, fingerprint = self._fetch_live_evidence(
+            current.ticket_identifier
+        )
+        if (
+            document.reference.source_id != current.source_reference.source_id
+            or document.reference.source_type != current.source_reference.source_type
+        ):
+            raise TestDesignEvidenceChangedError("evidence changed")
+        if (
+            current.evidence_fingerprint is not None
+            and current.evidence_fingerprint != fingerprint
+        ):
+            raise TestDesignEvidenceChangedError("evidence changed")
+
+        try:
+            outcome = GenerateTestCases(
+                chat_model=self._build_chat_model(),
+                repository=repo,
+            ).execute(
+                GenerateTestCasesRequest(
+                    draft_id=draft_id,
+                    expected_version=request.expected_version,
+                    evidence=(
+                        CoverageEvidenceItem(
+                            reference=document.reference,
+                            text=budgeted,
+                        ),
+                    ),
+                    evidence_fingerprint=fingerprint,
+                    candidate_ids=request.candidate_ids,
+                    type_overrides=type_overrides,
+                    overwrite_edited=request.overwrite_edited,
+                )
+            )
+        except VersionedStoreVersionConflictError as error:
+            raise TestDesignVersionConflictError("version conflict") from error
+        except VersionedStoreNotFoundError as error:
+            raise TestDesignNotFoundError("draft not found") from error
+        except Exception as error:
+            from packs.software_delivery.test_design.errors import (
+                TestDesignValidationError as PackTestDesignValidationError,
+            )
+
+            if isinstance(error, PackTestDesignValidationError):
+                raise TestDesignValidationError(
+                    _TEST_DESIGN_VALIDATION_DETAIL
+                ) from error
+            _raise_composition_validation_if_pack_error(error)
+            raise
+        return _draft_view(
+            outcome.draft,
+            skipped_edited_candidate_ids=outcome.skipped_edited_candidate_ids,
+        )
+
+    def _fetch_live_evidence(self, ticket_identifier: str):
+        """Re-fetch live Issue evidence and compute fingerprint."""
+        import hashlib
+
+        from infrastructure.connectors.github.issue_source_reader import (
+            GitHubIssueEmptyBodyError,
+            GitHubIssueLocatorMismatchError,
+            GitHubIssueNotIssueError,
+        )
+
+        self._require_workspace()
+        access_token = self._oauth_preflight()
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise GitHubNotConnectedError("GitHub is not connected")
+        reader = self._live_source_reader_factory(access_token.strip())
+        locator = SourceLocator(provider="github", locator=ticket_identifier)
+        try:
+            document = reader.fetch(locator)
+        except GitHubIssueEmptyBodyError as error:
+            raise InsufficientEvidenceError(
+                "No usable grounded evidence for test coverage planning."
+            ) from error
+        except (GitHubIssueNotIssueError, GitHubIssueLocatorMismatchError) as error:
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
+        if not document.content.strip():
+            raise InsufficientEvidenceError(
+                "No usable grounded evidence for test coverage planning."
+            )
+        _, _, _, budget_source_document_text = self._load_suggest_tests()
+        budgeted = budget_source_document_text(document)
+        digest = hashlib.sha256(
+            (
+                f"{document.reference.source_type}\0"
+                f"{document.reference.source_id}\0"
+                f"{budgeted}"
+            ).encode("utf-8")
+        ).hexdigest()
+        return document, budgeted, digest
+
     def export_to_google_drive(
         self,
         draft_id: str,
@@ -481,7 +761,7 @@ class TestDesignFacade:
         file_name: str | None = None,
         destination_label: str | None = None,
     ) -> GoogleDriveExportReceiptView:
-        """Export selected titles into a user-chosen Google Drive folder."""
+        """Export selected tests and their cases into a Google Drive folder."""
         import json
 
         from application.contracts import InvokeToolRequest
@@ -490,6 +770,9 @@ class TestDesignFacade:
             build_invoke_tool,
             mark_drive_reauth,
             require_drive_export_grant,
+        )
+        from composition.software_delivery_export import (
+            draft_export_case_arguments,
         )
         from domain.errors import (
             ConnectorAuthError,
@@ -539,6 +822,7 @@ class TestDesignFacade:
             "document_title": current.ticket_identifier,
             "titles": list(selected_titles),
             "folder_id": folder_id,
+            **draft_export_case_arguments(current),
         }
         if file_name is not None:
             arguments["file_name"] = file_name
@@ -666,8 +950,50 @@ class TestDesignFacade:
 
         return TestCandidate, TestCoverageDraft
 
+    @staticmethod
+    def _load_case_helpers():
+        from packs.software_delivery.test_design.models import (
+            GeneratedTestCase,
+            coverage_candidates_equal,
+            drop_generated_cases_for_type_changes,
+            is_deselection_only,
+            is_title_only_change,
+            keep_generated_cases_for_unchanged_candidates,
+        )
 
-def _draft_view(draft: object) -> TestCoverageDraftView:
+        return (
+            GeneratedTestCase,
+            coverage_candidates_equal,
+            drop_generated_cases_for_type_changes,
+            is_deselection_only,
+            keep_generated_cases_for_unchanged_candidates,
+            is_title_only_change,
+        )
+
+    @staticmethod
+    def _load_generate_cases():
+        from packs.software_delivery.test_design.generate_cases import (
+            GenerateTestCases,
+            GenerateTestCasesRequest,
+            TypeOverride,
+        )
+        from packs.software_delivery.test_design.suggest_tests import (
+            CoverageEvidenceItem,
+        )
+
+        return (
+            GenerateTestCases,
+            GenerateTestCasesRequest,
+            TypeOverride,
+            CoverageEvidenceItem,
+        )
+
+
+def _draft_view(
+    draft: object,
+    *,
+    skipped_edited_candidate_ids: tuple[str, ...] = (),
+) -> TestCoverageDraftView:
     return TestCoverageDraftView(
         draft_id=draft.draft_id,  # type: ignore[attr-defined]
         workspace_id=draft.workspace_id,  # type: ignore[attr-defined]
@@ -690,11 +1016,31 @@ def _draft_view(draft: object) -> TestCoverageDraftView:
                 ),
                 selected=item.selected,
                 origin=item.origin,
+                test_type=getattr(item, "test_type", None),
             )
             for item in draft.candidates  # type: ignore[attr-defined]
         ),
         version=draft.version,  # type: ignore[attr-defined]
         selected_candidate_ids=tuple(draft.selected_candidate_ids),  # type: ignore[attr-defined]
+        generated_cases=tuple(
+            GeneratedTestCaseView(
+                candidate_id=case.candidate_id,
+                test_type=case.test_type,
+                automation_fit=case.automation_fit,
+                automation_rationale=case.automation_rationale,
+                availability=case.availability,
+                preconditions=case.preconditions,
+                steps=tuple(case.steps),
+                expected_result=case.expected_result,
+                gherkin=case.gherkin,
+                user_edited=case.user_edited,
+            )
+            for case in getattr(draft, "generated_cases", ())
+        ),
+        evidence_fingerprint=getattr(draft, "evidence_fingerprint", None),
+        skipped_edited_candidate_ids=skipped_edited_candidate_ids,
+        cucumber_feature=getattr(draft, "cucumber_feature", "") or "",
+        cucumber_background=getattr(draft, "cucumber_background", "") or "",
     )
 
 
@@ -711,34 +1057,6 @@ def _raise_composition_validation_if_pack_error(error: BaseException) -> None:
 
     if isinstance(error, PackTestDesignValidationError):
         raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
-
-
-def _candidates_semantically_equal(left: object, right: object) -> bool:
-    """Return True when candidate sequences match for confirmation invalidation."""
-    if not isinstance(left, tuple) or not isinstance(right, tuple):
-        return False
-    if len(left) != len(right):
-        return False
-    for left_item, right_item in zip(left, right, strict=True):
-        if _candidate_fingerprint(left_item) != _candidate_fingerprint(right_item):
-            return False
-    return True
-
-
-def _candidate_fingerprint(candidate: object) -> tuple[object, ...]:
-    refs = tuple(
-        (ref.source_id, ref.source_type)
-        for ref in getattr(candidate, "evidence_references", ())
-    )
-    return (
-        getattr(candidate, "candidate_id", None),
-        getattr(candidate, "title", None),
-        getattr(candidate, "category", None),
-        getattr(candidate, "rationale", None),
-        getattr(candidate, "selected", None),
-        getattr(candidate, "origin", None),
-        refs,
-    )
 
 
 def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:
@@ -765,6 +1083,8 @@ def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:
 __all__ = [
     "ChatWorkflowActionView",
     "CreateTestDesignDraftRequest",
+    "GenerateTestDesignCasesRequest",
+    "GeneratedTestCaseView",
     "GitHubNotConnectedError",
     "GitHubReauthorizationRequiredError",
     "PatchTestDesignDraftRequest",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 
 from domain.artifacts import Artifact
 from domain.errors import (
@@ -18,21 +19,35 @@ from packs.software_delivery.errors import GoogleDriveExportValidationError
 from packs.software_delivery.limits import (
     DEFAULT_EXPORT_FILE_NAME,
     MAX_EXPORT_ARTIFACT_BYTES,
+    MAX_EXPORT_CASE_ITEM_CHARS,
+    MAX_EXPORT_CASE_ITEMS,
     MAX_EXPORT_DOCUMENT_TITLE_CHARS,
     MAX_EXPORT_FILE_NAME_CHARS,
+    MAX_EXPORT_GHERKIN_CHARS,
     MAX_EXPORT_TITLE_CHARS,
     MAX_EXPORT_TITLES,
 )
 
 TOOL_NAME = "software_delivery.export_test_cases_google_drive"
 TOOL_DESCRIPTION = (
-    "Export selected Software Delivery test-case titles to Google Drive "
-    "as Markdown."
+    "Export selected Software Delivery test cases to Google Drive as Markdown."
 )
 
 _ALLOWED_ROOT_KEYS = frozenset(
-    {"document_title", "titles", "file_name", "folder_id"}
+    {
+        "document_title",
+        "titles",
+        "file_name",
+        "folder_id",
+        "cases",
+        "cucumber_feature",
+        "cucumber_background",
+    }
 )
+_ALLOWED_CASE_KEYS = frozenset(
+    {"title", "test_type", "preconditions", "steps", "expected_result", "gherkin"}
+)
+_CASE_TEST_TYPES = frozenset({"manual", "cucumber"})
 _ALLOWED_ROOT_KEYS_DISPLAY = str(sorted(_ALLOWED_ROOT_KEYS))
 _MARKDOWN_MEDIA_TYPE = "text/markdown"
 _MSG_RENDER_FAILED = "Markdown rendering failed."
@@ -43,11 +58,34 @@ _CONTROL_OR_SEP = re.compile(r"[\x00-\x1f\x7f/\\]")
 _SLUG_KEEP = re.compile(r"[^\w\-]+", re.UNICODE)
 _FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
-RenderExportMarkdown = Callable[[str, Sequence[str]], str]
+@dataclass(frozen=True, slots=True)
+class ExportCase:
+    """One exportable test: Manual lists or a Cucumber Scenario."""
+
+    title: str
+    test_type: str
+    preconditions: tuple[str, ...] = ()
+    steps: tuple[str, ...] = ()
+    expected_result: tuple[str, ...] = ()
+    gherkin: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ExportContent:
+    """Validated export input handed to the Markdown renderer."""
+
+    document_title: str
+    titles: tuple[str, ...]
+    cases: tuple[ExportCase, ...] = ()
+    cucumber_feature: str = ""
+    cucumber_background: str = ""
+
+
+RenderExportMarkdown = Callable[[ExportContent], str]
 
 
 class ExportTestCasesGoogleDriveTool:
-    """Implements ``domain.ports.Tool`` for titles-only Drive export."""
+    """Implements ``domain.ports.Tool`` for Drive export of selected tests."""
 
     args_schema: type | None = None
 
@@ -69,16 +107,16 @@ class ExportTestCasesGoogleDriveTool:
         return TOOL_DESCRIPTION
 
     def run(self, arguments: Mapping[str, object]) -> str:
-        """Validate titles-only args, render, upload, and return a safe receipt.
+        """Validate args, render, upload, and return a safe receipt.
 
         Raises:
             GoogleDriveExportValidationError: Invalid or incomplete arguments.
             ConnectorAuthError: Propagated so composition can surface reauth.
             ToolFailureError: Render or upload failed after valid arguments.
         """
-        document_title, titles, file_name, folder_id = _parse_request(arguments)
+        content, file_name, folder_id = _parse_request(arguments)
         try:
-            markdown = self._render(document_title, titles)
+            markdown = self._render(content)
         except ToolFailureError:
             raise
         except Exception as exc:  # noqa: BLE001 - map unexpected renderer failures
@@ -113,7 +151,7 @@ class ExportTestCasesGoogleDriveTool:
 
 def _parse_request(
     arguments: Mapping[str, object],
-) -> tuple[str, tuple[str, ...], str, str]:
+) -> tuple[ExportContent, str, str]:
     if not isinstance(arguments, Mapping):
         raise GoogleDriveExportValidationError(
             f"arguments must be a mapping, got {type(arguments).__name__}"
@@ -144,7 +182,103 @@ def _parse_request(
         file_name = _default_file_name(document_title)
     else:
         file_name = _validate_file_name(raw_file_name)
-    return document_title, titles, file_name, folder_id
+    content = ExportContent(
+        document_title=document_title,
+        titles=titles,
+        cases=_parse_cases(arguments.get("cases", ())),
+        cucumber_feature=_optional_bounded_str(
+            arguments.get("cucumber_feature", ""),
+            "cucumber_feature",
+            MAX_EXPORT_TITLE_CHARS,
+        ),
+        cucumber_background=_optional_bounded_str(
+            arguments.get("cucumber_background", ""),
+            "cucumber_background",
+            MAX_EXPORT_GHERKIN_CHARS,
+        ),
+    )
+    return content, file_name, folder_id
+
+
+def _parse_cases(raw: object) -> tuple[ExportCase, ...]:
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
+        raise GoogleDriveExportValidationError(
+            f"cases must be a sequence, got {type(raw).__name__}"
+        )
+    if len(raw) > MAX_EXPORT_TITLES:
+        raise GoogleDriveExportValidationError(
+            f"cases must have at most {MAX_EXPORT_TITLES} items, got {len(raw)}"
+        )
+    return tuple(_parse_case(item, index) for index, item in enumerate(raw))
+
+
+def _parse_case(raw: object, index: int) -> ExportCase:
+    field = f"cases[{index}]"
+    if not isinstance(raw, Mapping):
+        raise GoogleDriveExportValidationError(
+            f"{field} must be a mapping, got {type(raw).__name__}"
+        )
+    _validate_mapping_keys(raw, field_name=field)
+    unknown = set(raw) - _ALLOWED_CASE_KEYS
+    if unknown:
+        raise GoogleDriveExportValidationError(
+            f"{field} has {len(unknown)} unknown keys"
+        )
+    title = _require_bounded_str(raw.get("title"), f"{field}.title", MAX_EXPORT_TITLE_CHARS)
+    test_type = raw.get("test_type")
+    if test_type not in _CASE_TEST_TYPES:
+        raise GoogleDriveExportValidationError(f"{field}.test_type is invalid")
+    preconditions = _parse_case_items(raw.get("preconditions", ()), f"{field}.preconditions")
+    steps = _parse_case_items(raw.get("steps", ()), f"{field}.steps")
+    expected = _parse_case_items(
+        raw.get("expected_result", ()), f"{field}.expected_result"
+    )
+    gherkin = _optional_bounded_str(
+        raw.get("gherkin", ""), f"{field}.gherkin", MAX_EXPORT_GHERKIN_CHARS
+    )
+    if test_type == "manual" and (not steps or not expected):
+        raise GoogleDriveExportValidationError(
+            f"{field} manual cases need steps and expected_result"
+        )
+    if test_type == "cucumber" and not gherkin.strip():
+        raise GoogleDriveExportValidationError(
+            f"{field} cucumber cases need gherkin"
+        )
+    return ExportCase(
+        title=title,
+        test_type=str(test_type),
+        preconditions=preconditions,
+        steps=steps,
+        expected_result=expected,
+        gherkin=gherkin,
+    )
+
+
+def _parse_case_items(raw: object, field_name: str) -> tuple[str, ...]:
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
+        raise GoogleDriveExportValidationError(
+            f"{field_name} must be a sequence, got {type(raw).__name__}"
+        )
+    if len(raw) > MAX_EXPORT_CASE_ITEMS:
+        raise GoogleDriveExportValidationError(
+            f"{field_name} must have at most {MAX_EXPORT_CASE_ITEMS} items"
+        )
+    return tuple(
+        _require_bounded_str(item, f"{field_name}[{index}]", MAX_EXPORT_CASE_ITEM_CHARS)
+        for index, item in enumerate(raw)
+    )
+
+
+def _optional_bounded_str(value: object, field_name: str, max_chars: int) -> str:
+    if not isinstance(value, str):
+        raise GoogleDriveExportValidationError(
+            f"{field_name} must be a string, got {type(value).__name__}"
+        )
+    if len(value) > max_chars:
+        raise GoogleDriveExportValidationError(
+            f"{field_name} must be at most {max_chars} characters, got {len(value)}"
+        )
+    return value
 
 
 def _parse_titles(raw: object) -> tuple[str, ...]:

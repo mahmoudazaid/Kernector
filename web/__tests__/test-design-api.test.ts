@@ -15,6 +15,8 @@ describe("createTestDesignDraft", () => {
       status: "coverage_review",
       candidates: [],
       coverage_gaps: [],
+      generated_cases: [],
+      skipped_edited_candidate_ids: [],
       version: 1,
       selected_candidate_ids: [],
     });

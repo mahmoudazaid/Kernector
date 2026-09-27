@@ -278,3 +278,45 @@ def test_render_markdown_skips_blank_paragraphs() -> None:
         "\n"
         "Also keep\n"
     )
+
+
+def test_ordered_items_levels_and_code_block_render() -> None:
+    rendered = render_markdown(
+        MarkdownDocument(
+            title="Doc",
+            sections=(
+                MarkdownSection(heading="Case", level=3),
+                MarkdownSection(heading="Steps", ordered_items=("Open", "Click"), level=4),
+                MarkdownSection(
+                    heading="Feature",
+                    code_block="\nFeature: A\n  Scenario: B   \n\n",
+                    code_language="gherkin",
+                ),
+            ),
+        )
+    )
+    assert rendered == (
+        "# Doc\n\n### Case\n\n#### Steps\n\n1. Open\n2. Click\n\n"
+        "## Feature\n\n```gherkin\nFeature: A\n  Scenario: B\n```\n"
+    )
+
+
+def test_code_block_fence_outgrows_backtick_runs() -> None:
+    rendered = render_markdown(
+        MarkdownDocument(
+            title="Doc",
+            sections=(MarkdownSection(heading="Code", code_block="a ```` b"),),
+        )
+    )
+    assert "`````\na ```` b\n`````" in rendered
+
+
+@pytest.mark.parametrize("level", [1, 7, True, "3"])
+def test_markdown_section_rejects_invalid_level(level: object) -> None:
+    with pytest.raises(ApplicationValidationError, match="level"):
+        MarkdownSection(heading="H", level=level)  # type: ignore[arg-type]
+
+
+def test_markdown_section_rejects_invalid_code_language() -> None:
+    with pytest.raises(ApplicationValidationError, match="code_language"):
+        MarkdownSection(heading="H", code_language="js\n```")
