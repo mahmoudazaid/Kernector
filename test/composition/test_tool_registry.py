@@ -73,7 +73,7 @@ def test_export_tool_registers_with_atomic_collaborators(
     settings = load_settings()
     registry = build_tool_registry(
         settings,
-        export_render=lambda title, titles: f"# {title}\n",
+        export_render=lambda content: f"# {content.document_title}\n",
         export_uploader=_Uploader(),
     )
     assert TOOL_NAME in registry

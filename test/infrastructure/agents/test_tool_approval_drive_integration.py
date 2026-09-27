@@ -12,6 +12,7 @@ from domain.tool_approval import ApprovalHints, PendingToolApproval, ToolApprova
 from infrastructure.agents.langgraph_tool_agent import LangGraphToolAgent
 from packs.software_delivery.tools.export_test_cases_google_drive import (
     TOOL_NAME,
+    ExportContent,
     ExportTestCasesGoogleDriveTool,
 )
 
@@ -26,9 +27,9 @@ class _FakeUploader:
 
 
 def _drive_tool(uploader: _FakeUploader) -> ExportTestCasesGoogleDriveTool:
-    def render(document_title: str, titles: Sequence[str]) -> str:
-        lines = [f"# {document_title}", "", "## Selected tests", ""]
-        lines.extend(f"- {title}" for title in titles)
+    def render(content: ExportContent) -> str:
+        lines = [f"# {content.document_title}", "", "## Selected tests", ""]
+        lines.extend(f"- {title}" for title in content.titles)
         return "\n".join(lines) + "\n"
 
     return ExportTestCasesGoogleDriveTool(render=render, uploader=uploader)

@@ -20,6 +20,8 @@ from packs.software_delivery.limits import (
 )
 from packs.software_delivery.tools.export_test_cases_google_drive import (
     TOOL_NAME,
+    ExportCase,
+    ExportContent,
     ExportTestCasesGoogleDriveTool,
 )
 
@@ -56,12 +58,15 @@ def _tool(
     markdown: str = "# Issue 482\n\n## Selected tests\n\n- Login with MFA\n",
     uploader: _FakeUploader | None = None,
     render_error: Exception | None = None,
+    render_contents: list[ExportContent] | None = None,
 ) -> tuple[ExportTestCasesGoogleDriveTool, _FakeUploader]:
     calls = render_calls if render_calls is not None else []
+    contents = render_contents if render_contents is not None else []
     fake = uploader if uploader is not None else _FakeUploader()
 
-    def render(document_title: str, titles: Sequence[str]) -> str:
-        calls.append((document_title, tuple(titles)))
+    def render(content: ExportContent) -> str:
+        calls.append((content.document_title, tuple(content.titles)))
+        contents.append(content)
         if render_error is not None:
             raise render_error
         return markdown
@@ -217,6 +222,67 @@ def test_uploader_auth_error_propagates() -> None:
     with pytest.raises(ConnectorAuthError, match="ya29") as raised:
         tool.run(_valid_arguments())
     assert raised.value is uploader.error
+
+
+def test_structured_cases_reach_renderer() -> None:
+    contents: list[ExportContent] = []
+    tool, _ = _tool(render_contents=contents)
+    tool.run(
+        _valid_arguments(
+            cases=[
+                {
+                    "title": "Login with MFA",
+                    "test_type": "manual",
+                    "preconditions": ["Logged out"],
+                    "steps": ["Open login", "Enter code"],
+                    "expected_result": ["Home loads"],
+                },
+                {
+                    "title": "Checkout fails",
+                    "test_type": "cucumber",
+                    "gherkin": "Scenario: Checkout fails\n  Given an empty cart",
+                },
+            ],
+            cucumber_feature="Checkout",
+            cucumber_background="Given the store is open",
+        )
+    )
+    assert contents[0].cases == (
+        ExportCase(
+            title="Login with MFA",
+            test_type="manual",
+            preconditions=("Logged out",),
+            steps=("Open login", "Enter code"),
+            expected_result=("Home loads",),
+        ),
+        ExportCase(
+            title="Checkout fails",
+            test_type="cucumber",
+            gherkin="Scenario: Checkout fails\n  Given an empty cart",
+        ),
+    )
+    assert contents[0].cucumber_feature == "Checkout"
+    assert contents[0].cucumber_background == "Given the store is open"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        {"title": "A", "test_type": "exploratory", "steps": ["s"], "expected_result": ["e"]},
+        {"title": "A", "test_type": "manual", "steps": [], "expected_result": ["e"]},
+        {"title": "A", "test_type": "manual", "steps": ["s"], "expected_result": []},
+        {"title": "A", "test_type": "cucumber", "gherkin": "  "},
+        {"title": "A", "test_type": "manual", "steps": "s", "expected_result": ["e"]},
+        {"title": "A", "test_type": "manual", "steps": ["s"], "expected_result": ["e"], "x": 1},
+    ],
+)
+def test_invalid_case_rejected_before_render(case: dict[str, object]) -> None:
+    render_calls: list[tuple[str, tuple[str, ...]]] = []
+    tool, uploader = _tool(render_calls=render_calls)
+    with pytest.raises(GoogleDriveExportValidationError, match="cases"):
+        tool.run(_valid_arguments(cases=[case]))
+    assert render_calls == []
+    assert uploader.calls == []
 
 
 def test_uploader_generic_error_maps_to_tool_failure() -> None:

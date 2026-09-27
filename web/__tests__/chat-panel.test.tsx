@@ -1317,6 +1317,10 @@ describe("ChatPanel", () => {
       coverage_gaps: [],
       version: 1,
       selected_candidate_ids: [],
+      cucumber_feature: "",
+      cucumber_background: "",
+      generated_cases: [],
+      skipped_edited_candidate_ids: [],
     });
 
     const created = createConversation({
@@ -1464,7 +1468,7 @@ describe("ChatPanel", () => {
           id: "a2",
           role: "assistant",
           content:
-            "I can export the selected titles as Markdown to your Google Drive destination. Review the details and approve to continue.",
+            "I can export the selected test cases as Markdown to your Google Drive destination. Review the details and approve to continue.",
           pendingApproval: {
             approval_id: "appr-1",
             tool_name: "software_delivery.export_test_cases_google_drive",

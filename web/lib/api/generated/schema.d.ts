@@ -540,7 +540,7 @@ export interface paths {
     };
     /**
      * Get Feedback
-     * @description Return the rating for ``request_id`` in the bound workspace.
+     * @description Return the rating for ``request_id``, or ``null`` when none is stored.
      */
     get: operations["get_feedback_api_v1_responses__request_id__feedback_get"];
     /**
@@ -618,7 +618,7 @@ export interface paths {
     head?: never;
     /**
      * Patch Draft
-     * @description Save draft selection, title edits, and manual candidate adds.
+     * @description Save draft selection, title edits, types, and generated case edits.
      */
     patch: operations["patch_draft_api_v1_test_design_drafts__draft_id__patch"];
     trace?: never;
@@ -634,7 +634,7 @@ export interface paths {
     put?: never;
     /**
      * Confirm Draft
-     * @description Mark the draft ready; idempotent when already ready at matching version.
+     * @description Mark coverage selection ready; no-op when already ready/case_editing.
      */
     post: operations["confirm_draft_api_v1_test_design_drafts__draft_id__confirm_post"];
     delete?: never;
@@ -657,6 +657,26 @@ export interface paths {
      * @description Export selected titles into a user-chosen Google Drive folder.
      */
     post: operations["export_draft_google_drive_api_v1_test_design_drafts__draft_id__export_google_drive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/test-design/drafts/{draft_id}/generate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Generate Cases
+     * @description Generate detailed manual/Cucumber cases for selected candidates.
+     */
+    post: operations["generate_cases_api_v1_test_design_drafts__draft_id__generate_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -963,6 +983,50 @@ export interface components {
       file_id: string;
       /** File Name */
       file_name: string;
+    };
+    /**
+     * GenerateTestDesignCasesRequest
+     * @description Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/generate``.
+     */
+    GenerateTestDesignCasesRequest: {
+      /** Candidate Ids */
+      candidate_ids?: string[] | null;
+      /** Expected Version */
+      expected_version: number;
+      /**
+       * Overwrite Edited
+       * @default false
+       */
+      overwrite_edited: boolean;
+      /** Type Overrides */
+      type_overrides?:
+        components["schemas"]["TestTypeOverrideRequest"][] | null;
+    };
+    /**
+     * GeneratedTestCaseResponse
+     * @description Detailed manual or Cucumber artifact for one selected candidate.
+     */
+    GeneratedTestCaseResponse: {
+      /** Automation Fit */
+      automation_fit: string;
+      /** Automation Rationale */
+      automation_rationale: string;
+      /** Availability */
+      availability: string;
+      /** Candidate Id */
+      candidate_id: string;
+      /** Expected Result */
+      expected_result: string;
+      /** Gherkin */
+      gherkin: string;
+      /** Preconditions */
+      preconditions: string;
+      /** Steps */
+      steps: string[];
+      /** Test Type */
+      test_type: string;
+      /** User Edited */
+      user_edited: boolean;
     };
     /**
      * GitHubLastSyncResponse
@@ -1398,8 +1462,15 @@ export interface components {
     PatchTestDesignDraftRequest: {
       /** Candidates */
       candidates?: components["schemas"]["TestCandidateResponse"][] | null;
+      /** Cucumber Background */
+      cucumber_background?: string | null;
+      /** Cucumber Feature */
+      cucumber_feature?: string | null;
       /** Expected Version */
       expected_version: number;
+      /** Generated Cases */
+      generated_cases?:
+        components["schemas"]["GeneratedTestCaseResponse"][] | null;
     };
     /**
      * PendingToolApprovalResponse
@@ -1661,6 +1732,8 @@ export interface components {
       rationale: string;
       /** Selected */
       selected: boolean;
+      /** Test Type */
+      test_type?: string | null;
       /** Title */
       title: string;
     };
@@ -1699,10 +1772,32 @@ export interface components {
       conversation_id: string;
       /** Coverage Gaps */
       coverage_gaps: components["schemas"]["CoverageGapResponse"][];
+      /**
+       * Cucumber Background
+       * @default
+       */
+      cucumber_background: string;
+      /**
+       * Cucumber Feature
+       * @default
+       */
+      cucumber_feature: string;
       /** Draft Id */
       draft_id: string;
+      /** Evidence Fingerprint */
+      evidence_fingerprint?: string | null;
+      /**
+       * Generated Cases
+       * @default []
+       */
+      generated_cases: components["schemas"]["GeneratedTestCaseResponse"][];
       /** Selected Candidate Ids */
       selected_candidate_ids: string[];
+      /**
+       * Skipped Edited Candidate Ids
+       * @default []
+       */
+      skipped_edited_candidate_ids: string[];
       source_reference: components["schemas"]["SourceReferenceResponse"];
       /** Status */
       status: string;
@@ -1712,6 +1807,16 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /**
+     * TestTypeOverrideRequest
+     * @description Per-candidate type choice applied before generation.
+     */
+    TestTypeOverrideRequest: {
+      /** Candidate Id */
+      candidate_id: string;
+      /** Test Type */
+      test_type: string;
     };
     /**
      * ToolApprovalDecisionRequest
@@ -3575,16 +3680,8 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ResponseFeedbackResponse"];
-        };
-      };
-      /** @description Not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
+          "application/json":
+            components["schemas"]["ResponseFeedbackResponse"] | null;
         };
       };
       /** @description Method not allowed */
@@ -4042,6 +4139,15 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
     };
   };
   export_draft_google_drive_api_v1_test_design_drafts__draft_id__export_google_drive_post: {
@@ -4106,6 +4212,86 @@ export interface operations {
       };
       /** @description Server error */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  generate_cases_api_v1_test_design_drafts__draft_id__generate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GenerateTestDesignCasesRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TestCoverageDraftResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
         headers: {
           [name: string]: unknown;
         };

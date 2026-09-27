@@ -109,6 +109,7 @@ def prepare_drive_export_call(
         if destination is not None
         else DEFAULT_DRIVE_DESTINATION_LABEL
     )
+    from composition.software_delivery_export import draft_export_case_arguments
     from packs.software_delivery.tools.export_test_cases_google_drive import (
         default_export_file_name,
     )
@@ -120,6 +121,7 @@ def prepare_drive_export_call(
         "titles": list(titles),
         "folder_id": folder_id,
         "file_name": file_name,
+        **draft_export_case_arguments(draft),
     }
     return PreparedDriveExportCall(
         tool_name=TOOL_NAME,

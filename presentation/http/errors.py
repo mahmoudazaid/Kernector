@@ -41,6 +41,7 @@ from composition.errors import (
 )
 from composition.software_delivery_chat import ToolRunFailedError
 from composition.test_design_errors import (
+    TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,
     TestDesignValidationError,
@@ -90,6 +91,10 @@ _TEST_DESIGN_VERSION_CONFLICT_DETAIL = (
     "The draft was updated elsewhere. Reload or retry with the latest version."
 )
 _TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
+_TEST_DESIGN_EVIDENCE_CHANGED_DETAIL = (
+    "The GitHub Issue evidence changed since coverage was confirmed. "
+    "Reconfirm coverage against the current Issue, then generate again."
+)
 _CONNECTOR_AUTH_DETAIL = "The connector rejected the credentials or permissions."
 _CONNECTOR_NOT_FOUND_DETAIL = "The requested connector resource was not found."
 _CONNECTOR_RATE_LIMIT_DETAIL = "The connector rate limit was exceeded."
@@ -373,6 +378,15 @@ def problem_from_exception(
             title="Test design version conflict",
             status=409,
             detail=_TEST_DESIGN_VERSION_CONFLICT_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignEvidenceChangedError):
+        return _problem(
+            code="test_design_evidence_changed",
+            title="Test design evidence changed",
+            status=409,
+            detail=_TEST_DESIGN_EVIDENCE_CHANGED_DETAIL,
             instance=instance,
             request_id=request_id,
         )

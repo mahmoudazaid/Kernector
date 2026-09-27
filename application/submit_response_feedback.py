@@ -141,12 +141,9 @@ class GetResponseFeedback:
     def __init__(self, *, repository: ResponseFeedbackRepository) -> None:
         self._repository = repository
 
-    def execute(self, request: GetFeedbackRequest) -> ResponseFeedback:
+    def execute(self, request: GetFeedbackRequest) -> ResponseFeedback | None:
         request_id = _require_text(request.request_id, "request_id")
-        stored = self._repository.get(request_id)
-        if stored is None:
-            raise FeedbackNotFoundError(request_id)
-        return stored
+        return self._repository.get(request_id)
 
 
 def _require_text(value: str, field_name: str) -> str:

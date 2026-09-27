@@ -63,6 +63,13 @@ class _StubFacade:
     ) -> TestCoverageDraftView:
         return self.get_draft(draft_id)
 
+    def generate_cases(
+        self, draft_id: str, request: object
+    ) -> TestCoverageDraftView:
+        if not self.enabled:
+            raise TestDesignUnavailableError("off")
+        return self.get_draft(draft_id)
+
 
 def _draft_view() -> TestCoverageDraftView:
     return TestCoverageDraftView(
@@ -94,22 +101,40 @@ def _client(facade: _StubFacade) -> TestClient:
     return TestClient(app)
 
 
+@dataclass
 class _HTTPReader:
+    source_id: str = "issue:I_http"
+    content: str = "Acceptance criteria for coverage."
+
     def fetch(self, _locator):
         return SourceDocument(
             SourceMetadata(
-                reference=SourceReference("issue:I_http", SourceType.GITHUB),
+                reference=SourceReference(self.source_id, SourceType.GITHUB),
                 title="Live",
                 provider="github",
                 content_format="markdown",
                 extra={"revision": "2026-09-14T12:00:00Z"},
             ),
-            "Acceptance criteria for coverage.",
+            self.content,
         )
 
 
 class _HTTPChat:
-    def complete(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+    def complete(self, system: str, *_args, **_kwargs):  # noqa: ANN002, ANN003
+        if "test case author" in system:
+            return AskResult(
+                content=(
+                    '{"cases":[{"candidate_id":"cand-1","test_type":"manual",'
+                    '"automation_fit":"applicable",'
+                    '"automation_rationale":"Stable UI.",'
+                    '"availability":"available",'
+                    '"preconditions":"Logged out.",'
+                    '"steps":["Enter credentials","Submit"],'
+                    '"expected_result":"Home loads.",'
+                    '"gherkin":""}]}'
+                ),
+                model="fake",
+            )
         return AskResult(
             content=(
                 '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
@@ -121,11 +146,16 @@ class _HTTPChat:
         )
 
 
-def _real_facade_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def _real_facade_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reader: _HTTPReader | None = None,
+) -> TestClient:
     from composition.test_design import TestDesignFacade
 
     from dataclasses import replace
 
+    live_reader = reader or _HTTPReader()
     settings = replace(
         get_settings(),
         domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
@@ -135,7 +165,7 @@ def _real_facade_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Test
         store_path=tmp_path / "workspace.sqlite",
         workspace_id="default",
         oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: _HTTPReader(),
+        live_source_reader_factory=lambda _token: live_reader,
     )
     monkeypatch.setattr(facade, "_build_chat_model", lambda: _HTTPChat())
     app = create_app(cors_origins=())
@@ -165,10 +195,13 @@ def test_openapi_always_lists_test_design_paths_and_chat_action() -> None:
     assert "/api/v1/test-design/drafts/{draft_id}" in paths
     assert "/api/v1/test-design/drafts/{draft_id}/scenarios" not in paths
     assert "/api/v1/test-design/drafts/{draft_id}/confirm" in paths
+    assert "/api/v1/test-design/drafts/{draft_id}/generate" in paths
     assert "/api/v1/test-design/drafts/{draft_id}/export/google-drive" in paths
     components = schema["components"]["schemas"]
     assert "ChatWorkflowActionResponse" in components
     assert "TestCoverageDraftResponse" in components
+    assert "GenerateTestDesignCasesRequest" in components
+    assert "GeneratedTestCaseResponse" in components
     assert "ExportTestDesignGoogleDriveRequest" in components
     assert "ExportTestDesignGoogleDriveResponse" in components
     ask = components["ChatAskResponse"]["properties"]
@@ -268,17 +301,32 @@ def test_real_facade_patch_demotes_ready_after_semantic_edit(
     assert confirmed.json()["status"] == "ready"
     ready_version = confirmed.json()["version"]
 
-    renamed = client.patch(
+    renamed_only = client.patch(
         f"/api/v1/test-design/drafts/{draft['draft_id']}",
         json={
             "expected_version": ready_version,
             "candidates": [candidate | {"title": "Edited after confirm"}],
         },
     )
+    assert renamed_only.status_code == 200
+    assert renamed_only.json()["status"] == "ready"
+    ready_version = renamed_only.json()["version"]
+
+    renamed = client.patch(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}",
+        json={
+            "expected_version": ready_version,
+            "candidates": [
+                candidate
+                | {"title": "Edited after confirm", "rationale": "Edited rationale."}
+            ],
+        },
+    )
     assert renamed.status_code == 200
     body = renamed.json()
     assert body["status"] == "coverage_review"
     assert body["version"] == ready_version + 1
+    assert body["generated_cases"] == []
 
     reconfirmed = client.post(
         f"/api/v1/test-design/drafts/{draft['draft_id']}/confirm",
@@ -287,6 +335,9 @@ def test_real_facade_patch_demotes_ready_after_semantic_edit(
     assert reconfirmed.status_code == 200
     assert reconfirmed.json()["status"] == "ready"
     assert reconfirmed.json()["version"] == body["version"] + 1
+
+
+def test_get_draft_returns_payload() -> None:
     client = _client(_StubFacade(enabled=True, draft=_draft_view()))
     response = client.get("/api/v1/test-design/drafts/draft-1")
     assert response.status_code == 200
@@ -342,3 +393,262 @@ def test_resolve_action_helper_requires_pack_and_locator(
         )
         is None
     )
+
+
+def _confirm_ready(client: TestClient, draft: dict) -> dict:
+    candidate = draft["candidates"][0] | {"selected": True}
+    selected = client.patch(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}",
+        json={"expected_version": draft["version"], "candidates": [candidate]},
+    )
+    assert selected.status_code == 200
+    confirmed = client.post(
+        f"/api/v1/test-design/drafts/{draft['draft_id']}/confirm",
+        json={"expected_version": selected.json()["version"]},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "ready"
+    return confirmed.json()
+
+
+def test_type_only_patch_preserves_ready_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+    candidate = ready["candidates"][0] | {"test_type": "cucumber"}
+
+    patched = client.patch(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}",
+        json={"expected_version": ready["version"], "candidates": [candidate]},
+    )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["status"] == "ready"
+    assert body["candidates"][0]["test_type"] == "cucumber"
+    assert body["evidence_fingerprint"]
+
+
+def test_generate_mixed_types_and_automation_fit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={
+            "expected_version": ready["version"],
+            "type_overrides": [
+                {"candidate_id": "cand-1", "test_type": "manual"},
+            ],
+        },
+    )
+    assert generated.status_code == 200
+    body = generated.json()
+    assert body["status"] == "case_editing"
+    assert len(body["generated_cases"]) == 1
+    case = body["generated_cases"][0]
+    assert case["test_type"] == "manual"
+    assert case["automation_fit"] == "applicable"
+    assert case["user_edited"] is False
+    assert case["steps"]
+
+
+def test_confirm_on_case_editing_is_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={"expected_version": ready["version"]},
+    )
+    assert generated.status_code == 200
+    body = generated.json()
+    assert body["status"] == "case_editing"
+    cases = body["generated_cases"]
+
+    confirmed = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/confirm",
+        json={"expected_version": body["version"]},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "case_editing"
+    assert confirmed.json()["generated_cases"] == cases
+    assert confirmed.json()["version"] == body["version"]
+
+
+def test_generate_fails_closed_when_issue_body_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _HTTPReader()
+    client = _real_facade_client(tmp_path, monkeypatch, reader)
+    ready = _confirm_ready(client, _created_draft(client))
+    draft_url = f"/api/v1/test-design/drafts/{ready['draft_id']}"
+
+    reader.content = "Edited acceptance criteria."
+    changed = client.post(
+        f"{draft_url}/generate", json={"expected_version": ready["version"]}
+    )
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "test_design_evidence_changed"
+    unchanged = client.get(draft_url).json()
+    assert unchanged["status"] == "ready"
+    assert unchanged["version"] == ready["version"]
+    assert unchanged["generated_cases"] == []
+
+    reader.content = _HTTPReader().content
+    restored = client.post(
+        f"{draft_url}/generate", json={"expected_version": ready["version"]}
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "case_editing"
+
+
+def test_generate_fails_closed_when_issue_identity_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _HTTPReader()
+    client = _real_facade_client(tmp_path, monkeypatch, reader)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    reader.source_id = "issue:I_other"
+    changed = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={"expected_version": ready["version"]},
+    )
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "test_design_evidence_changed"
+
+
+def test_confirm_fails_closed_when_issue_identity_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _HTTPReader()
+    client = _real_facade_client(tmp_path, monkeypatch, reader)
+    draft = _created_draft(client)
+    draft_url = f"/api/v1/test-design/drafts/{draft['draft_id']}"
+    candidate = draft["candidates"][0] | {"selected": True}
+    selected = client.patch(
+        draft_url,
+        json={"expected_version": draft["version"], "candidates": [candidate]},
+    ).json()
+
+    reader.source_id = "issue:I_other"
+    confirmed = client.post(
+        f"{draft_url}/confirm", json={"expected_version": selected["version"]}
+    )
+    assert confirmed.status_code == 409
+    assert confirmed.json()["code"] == "test_design_evidence_changed"
+    unchanged = client.get(draft_url).json()
+    assert unchanged["status"] == "coverage_review"
+    assert unchanged["version"] == selected["version"]
+
+
+def test_stale_confirm_on_ready_returns_409(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    confirmed = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/confirm",
+        json={"expected_version": ready["version"] - 1},
+    )
+    assert confirmed.status_code == 409
+    assert confirmed.json()["code"] == "test_design_version_conflict"
+
+
+@pytest.mark.parametrize("test_type", ["Manual", "gherkin", "  "])
+def test_generate_invalid_type_override_returns_422(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    test_type: str,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={
+            "expected_version": ready["version"],
+            "type_overrides": [{"candidate_id": "cand-1", "test_type": test_type}],
+        },
+    )
+    assert generated.status_code == 422
+
+
+def test_patch_rejects_expected_result_over_line_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={"expected_version": ready["version"]},
+    ).json()
+    case = generated["generated_cases"][0] | {
+        "test_type": "manual",
+        "gherkin": "",
+        "steps": ["Step"],
+        "expected_result": "\n".join(f"Result {i}" for i in range(41)),
+    }
+    patched = client.patch(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}",
+        json={
+            "expected_version": generated["version"],
+            "generated_cases": [case],
+        },
+    )
+    assert patched.status_code == 422
+
+
+def test_artifact_patch_marks_user_edited(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={"expected_version": ready["version"]},
+    ).json()
+    case = generated["generated_cases"][0] | {
+        "preconditions": "Edited preconditions.",
+        "steps": ["Edited step"],
+        "expected_result": "Edited result.",
+    }
+    patched = client.patch(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}",
+        json={
+            "expected_version": generated["version"],
+            "generated_cases": [case],
+        },
+    )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["status"] == "case_editing"
+    assert body["generated_cases"][0]["user_edited"] is True
+    assert body["generated_cases"][0]["preconditions"] == "Edited preconditions."
+
+
+def test_generate_pack_disabled_returns_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client(_StubFacade(enabled=False, draft=_draft_view()))
+    response = client.post(
+        "/api/v1/test-design/drafts/draft-1/generate",
+        json={"expected_version": 1},
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == "test_design_unavailable"

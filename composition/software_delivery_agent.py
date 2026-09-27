@@ -49,7 +49,7 @@ _DESTINATION_REQUIRED_SUMMARY = (
     "for this conversation, then ask again."
 )
 _PENDING_APPROVAL_SUMMARY = (
-    "I can export the selected titles as Markdown to your Google Drive "
+    "I can export the selected test cases as Markdown to your Google Drive "
     "destination. Review the details and approve to continue."
 )
 _CANCELLED_SUMMARY = (

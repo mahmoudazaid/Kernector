@@ -26,14 +26,16 @@ router = APIRouter(prefix="/api/v1", tags=["feedback"])
 
 @router.get(
     "/responses/{request_id}/feedback",
-    responses=problem_responses(404, 405, 422, 500),
+    responses=problem_responses(405, 422, 500),
 )
 def get_feedback(
     request_id: str,
     use_case: GetResponseFeedbackDep,
-) -> ResponseFeedbackResponse:
-    """Return the rating for ``request_id`` in the bound workspace."""
+) -> ResponseFeedbackResponse | None:
+    """Return the rating for ``request_id``, or ``null`` when none is stored."""
     stored = use_case.execute(GetFeedbackRequest(request_id=request_id))
+    if stored is None:
+        return None
     return response_feedback_response(stored)
 
 

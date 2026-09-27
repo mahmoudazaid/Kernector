@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import logging
 
-import pytest
 from fastapi.testclient import TestClient
 
 from application.submit_response_feedback import (
@@ -58,11 +56,8 @@ class _StubClear:
 class _StubGet:
     rows: dict[str, ResponseFeedback] = field(default_factory=dict)
 
-    def execute(self, request: GetFeedbackRequest) -> ResponseFeedback:
-        stored = self.rows.get(request.request_id)
-        if stored is None:
-            raise FeedbackNotFoundError(request.request_id)
-        return stored
+    def execute(self, request: GetFeedbackRequest) -> ResponseFeedback | None:
+        return self.rows.get(request.request_id)
 
 
 def _client(
@@ -184,19 +179,8 @@ def test_get_feedback_returns_stored_rating() -> None:
     assert response.json()["rating"] == "positive"
 
 
-def test_get_missing_feedback_returns_404() -> None:
+def test_get_missing_feedback_returns_null() -> None:
     client = _client(get=_StubGet())
     response = client.get("/api/v1/responses/req-missing/feedback")
-    assert response.status_code == 404
-    assert response.json()["code"] == "feedback_not_found"
-
-
-def test_get_missing_feedback_is_not_logged_as_unhandled(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Hydrate 404 must stay on ExceptionMiddleware (no unhandled ERROR spam)."""
-    client = _client(get=_StubGet())
-    with caplog.at_level(logging.ERROR, logger="presentation.http"):
-        response = client.get("/api/v1/responses/req-missing/feedback")
-    assert response.status_code == 404
-    assert not any("Unhandled exception" in rec.message for rec in caplog.records)
+    assert response.status_code == 200
+    assert response.json() is None

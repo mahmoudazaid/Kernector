@@ -191,25 +191,28 @@ enabled prompt packs.
 **Executable packs** under `packs/` contribute domain tools and pack-local
 workflows. The first is `packs/software_delivery/`. Its scaffolding
 risk/generate/export tools are retired (#285). Google Drive export (#309) and
-**Test Design** (#293) are recognized via composition ``WorkflowSignal`` probes
+**Test Design** (#293 / #300) are recognized via composition ``WorkflowSignal`` probes
 injected into the pack-neutral ``TurnRouter`` (#312). Incomplete intents
 clarify instead of falling through to grounded RAG (#304, #310). Shared
 `application/markdown.py` (#305) is a reusable deterministic CommonMark
 renderer for typed documents — not an agent-callable Tool, not Drive- or
 pack-specific; later export flows (for example #197) map content into its
 neutral contracts. The **Test Design**
-workflow (#293) is pack-local (not an agent `Tool`): after a ready
+workflow (#293 / #300) is pack-local (not an agent `Tool`): after a ready
 ``tool_workflow`` decision, composition builds a fixed server answer and
 `Start Test Design` action with a canonical `source_locator`; create then
 fetches that Issue live via `LiveSourceReader`
-(OAuth preflight first; no catalog/vector/RAG). Test candidate suggestion under
-`packs/software_delivery/test_design/` (pack-local use case `SuggestTestCandidates`
-in `suggest_tests.py`, not an agent Tool) sees only `SourceDocument` evidence,
-persists candidates and coverage gaps via a namespaced versioned workspace
-store, and supports edit/select/save/confirm through `ready` (coverage
-selection confirmed — not detailed test-case generation; that remains #300).
-Always-mounted `/api/v1/test-design/*` routes return `test_design_unavailable`
-when the pack is off. Enable via
+(OAuth preflight first; no catalog/vector/RAG). Coverage planning under
+`packs/software_delivery/test_design/` (`SuggestTestCandidates`) persists
+candidates via a namespaced versioned workspace store through confirm
+(`ready`). Detailed manual/Cucumber generation (`GenerateTestCases`, #300)
+runs after confirm into `case_editing`, with per-candidate type, automation
+fit, evidence fingerprint matching, and explicit regenerate/overwrite rules.
+Manual cases store Kernector-owned Preconditions, Steps, and Expected Result
+lists; Cucumber shares one Feature/Background. Destination sync (Xray,
+AssertThat, etc.) is an outbound adapter concern, not part of the draft schema.
+Always-mounted `/api/v1/test-design/*` routes (including `/generate`) return
+`test_design_unavailable` when the pack is off. Enable via
 `DOMAIN_TOOL_PACKS=software-delivery`
 (CSV; default empty). Composition loads packs through an explicit allowlist
 manifest and `importlib` only for configured IDs — a disabled pack is neither

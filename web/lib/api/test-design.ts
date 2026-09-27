@@ -80,6 +80,26 @@ export async function confirmTestDesignDraft(
   } satisfies ApiRequestOptions);
 }
 
+export type GenerateTestDesignCasesRequest =
+  components["schemas"]["GenerateTestDesignCasesRequest"];
+
+export async function generateTestDesignCases(
+  options: BaseOptions & {
+    draftId: string;
+    body: GenerateTestDesignCasesRequest;
+  },
+): Promise<TestCoverageDraftResponse> {
+  const request = options.request ?? apiRequest;
+  return request<TestCoverageDraftResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/test-design/drafts/${encodeURIComponent(options.draftId)}/generate`,
+    method: "POST",
+    body: options.body,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}
+
 export type ExportTestDesignGoogleDriveRequest = {
   folder_id: string;
   file_name?: string | null;
