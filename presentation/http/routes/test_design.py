@@ -6,6 +6,8 @@ from fastapi import APIRouter
 
 from composition.test_design import (
     CreateTestDesignDraftRequest as CreateDraftFacadeRequest,
+    GenerateTestDesignCasesRequest as GenerateCasesFacadeRequest,
+    GeneratedTestCaseView,
     PatchTestDesignDraftRequest as PatchDraftFacadeRequest,
     SourceLocatorView,
     SourceReferenceView,
@@ -18,6 +20,7 @@ from presentation.http.schemas import (
     ExpectedVersionRequest,
     ExportTestDesignGoogleDriveRequest,
     ExportTestDesignGoogleDriveResponse,
+    GenerateTestDesignCasesRequest,
     PatchTestDesignDraftRequest,
     TestCoverageDraftResponse,
     test_coverage_draft_response,
@@ -68,7 +71,7 @@ def patch_draft(
     body: PatchTestDesignDraftRequest,
     facade: TestDesignFacadeDep,
 ) -> TestCoverageDraftResponse:
-    """Save draft selection, title edits, and manual candidate adds."""
+    """Save draft selection, title edits, types, and generated case edits."""
     candidates = None
     if body.candidates is not None:
         candidates = tuple(
@@ -83,14 +86,35 @@ def patch_draft(
                 ),
                 selected=item.selected,
                 origin=item.origin,  # type: ignore[arg-type]
+                test_type=item.test_type,  # type: ignore[arg-type]
             )
             for item in body.candidates
+        )
+    generated_cases = None
+    if body.generated_cases is not None:
+        generated_cases = tuple(
+            GeneratedTestCaseView(
+                candidate_id=item.candidate_id,
+                test_type=item.test_type,  # type: ignore[arg-type]
+                automation_fit=item.automation_fit,  # type: ignore[arg-type]
+                automation_rationale=item.automation_rationale,
+                availability=item.availability,  # type: ignore[arg-type]
+                preconditions=item.preconditions,
+                steps=tuple(item.steps),
+                expected_result=item.expected_result,
+                gherkin=item.gherkin,
+                user_edited=item.user_edited,
+            )
+            for item in body.generated_cases
         )
     view = facade.patch_draft(
         draft_id,
         PatchDraftFacadeRequest(
             expected_version=body.expected_version,
             candidates=candidates,
+            generated_cases=generated_cases,
+            cucumber_feature=body.cucumber_feature,
+            cucumber_background=body.cucumber_background,
         ),
     )
     return test_coverage_draft_response(view)
@@ -105,9 +129,39 @@ def confirm_draft(
     body: ExpectedVersionRequest,
     facade: TestDesignFacadeDep,
 ) -> TestCoverageDraftResponse:
-    """Mark the draft ready; idempotent when already ready at matching version."""
+    """Mark coverage selection ready; no-op when already ready/case_editing."""
     view = facade.confirm_draft(
         draft_id, expected_version=body.expected_version
+    )
+    return test_coverage_draft_response(view)
+
+
+@router.post(
+    "/drafts/{draft_id}/generate",
+    responses=problem_responses(404, 405, 409, 422, 500, 502),
+)
+def generate_cases(
+    draft_id: str,
+    body: GenerateTestDesignCasesRequest,
+    facade: TestDesignFacadeDep,
+) -> TestCoverageDraftResponse:
+    """Generate detailed manual/Cucumber cases for selected candidates."""
+    overrides = ()
+    if body.type_overrides is not None:
+        overrides = tuple(
+            (item.candidate_id, item.test_type)  # type: ignore[misc]
+            for item in body.type_overrides
+        )
+    view = facade.generate_cases(
+        draft_id,
+        GenerateCasesFacadeRequest(
+            expected_version=body.expected_version,
+            candidate_ids=(
+                tuple(body.candidate_ids) if body.candidate_ids is not None else None
+            ),
+            type_overrides=overrides,  # type: ignore[arg-type]
+            overwrite_edited=body.overwrite_edited,
+        ),
     )
     return test_coverage_draft_response(view)
 

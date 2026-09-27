@@ -615,6 +615,22 @@ class TestCandidateResponse(BaseModel):
     evidence_references: list[SourceReferenceResponse]
     selected: bool
     origin: str
+    test_type: str | None = None
+
+
+class GeneratedTestCaseResponse(BaseModel):
+    """Detailed manual or Cucumber artifact for one selected candidate."""
+
+    candidate_id: str
+    test_type: str
+    automation_fit: str
+    automation_rationale: str
+    availability: str
+    preconditions: str
+    steps: list[str]
+    expected_result: str
+    gherkin: str
+    user_edited: bool
 
 
 class CoverageGapResponse(BaseModel):
@@ -641,6 +657,11 @@ class TestCoverageDraftResponse(BaseModel):
     coverage_gaps: list[CoverageGapResponse]
     version: int
     selected_candidate_ids: list[str]
+    generated_cases: list[GeneratedTestCaseResponse] = []
+    evidence_fingerprint: str | None = None
+    skipped_edited_candidate_ids: list[str] = []
+    cucumber_feature: str = ""
+    cucumber_background: str = ""
 
 
 class CreateTestDesignDraftRequest(BaseModel):
@@ -655,6 +676,25 @@ class PatchTestDesignDraftRequest(BaseModel):
 
     expected_version: int = Field(ge=1)
     candidates: list[TestCandidateResponse] | None = None
+    generated_cases: list[GeneratedTestCaseResponse] | None = None
+    cucumber_feature: str | None = None
+    cucumber_background: str | None = None
+
+
+class TestTypeOverrideRequest(BaseModel):
+    """Per-candidate type choice applied before generation."""
+
+    candidate_id: str = Field(min_length=1)
+    test_type: str = Field(min_length=1)
+
+
+class GenerateTestDesignCasesRequest(BaseModel):
+    """Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/generate``."""
+
+    expected_version: int = Field(ge=1)
+    candidate_ids: list[str] | None = None
+    type_overrides: list[TestTypeOverrideRequest] | None = None
+    overwrite_edited: bool = False
 
 
 class ExpectedVersionRequest(BaseModel):
@@ -739,12 +779,34 @@ def test_coverage_draft_response(view: object) -> TestCoverageDraftResponse:
                 ],
                 selected=item.selected,
                 origin=item.origin,
+                test_type=getattr(item, "test_type", None),
             )
             for item in view.candidates  # type: ignore[attr-defined]
         ],
         coverage_gaps=[],
         version=view.version,  # type: ignore[attr-defined]
         selected_candidate_ids=list(view.selected_candidate_ids),  # type: ignore[attr-defined]
+        generated_cases=[
+            GeneratedTestCaseResponse(
+                candidate_id=case.candidate_id,
+                test_type=case.test_type,
+                automation_fit=case.automation_fit,
+                automation_rationale=case.automation_rationale,
+                availability=case.availability,
+                preconditions=case.preconditions,
+                steps=list(case.steps),
+                expected_result=case.expected_result,
+                gherkin=case.gherkin,
+                user_edited=case.user_edited,
+            )
+            for case in getattr(view, "generated_cases", ())
+        ],
+        evidence_fingerprint=getattr(view, "evidence_fingerprint", None),
+        skipped_edited_candidate_ids=list(
+            getattr(view, "skipped_edited_candidate_ids", ())
+        ),
+        cucumber_feature=getattr(view, "cucumber_feature", "") or "",
+        cucumber_background=getattr(view, "cucumber_background", "") or "",
     )
 
 

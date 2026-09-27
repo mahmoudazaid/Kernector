@@ -32,7 +32,7 @@ class _Uploader:
 
 def test_invoke_tool_returns_opaque_receipt_json() -> None:
     tool = ExportTestCasesGoogleDriveTool(
-        render=lambda title, titles: f"# {title}\n",
+        render=lambda content: f"# {content.document_title}\n",
         uploader=_Uploader(),
     )
     invoke = InvokeTool(ToolRegistry([tool]))

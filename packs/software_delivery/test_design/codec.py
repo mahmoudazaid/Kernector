@@ -12,12 +12,14 @@ from packs.software_delivery.test_design.models import (
     COVERAGE_CATEGORIES_DISPLAY,
     DRAFT_STATUSES,
     DRAFT_STATUSES_DISPLAY,
+    GeneratedTestCase,
     TestCandidate,
     TestCoverageDraft,
     coerce_coverage_category,
 )
 
-DRAFT_SCHEMA_VERSION = 1
+DRAFT_SCHEMA_VERSION = 4
+SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 
 
 def _normalize_stored_category(raw: str) -> str:
@@ -53,6 +55,10 @@ def encode_draft_payload(draft: TestCoverageDraft) -> str:
         "ticket_identifier": draft.ticket_identifier,
         "status": draft.status,
         "candidates": [_encode_candidate(item) for item in draft.candidates],
+        "generated_cases": [_encode_case(item) for item in draft.generated_cases],
+        "evidence_fingerprint": draft.evidence_fingerprint,
+        "cucumber_feature": draft.cucumber_feature,
+        "cucumber_background": draft.cucumber_background,
     }
     return json.dumps(body, separators=(",", ":"), sort_keys=True)
 
@@ -65,8 +71,10 @@ def decode_draft_payload(
 ) -> TestCoverageDraft:
     """Decode an opaque payload into a typed draft.
 
-    Legacy ``scenarios`` and ``coverage_gaps`` keys are ignored.
-    ``scenario_editing`` status maps to ``ready``.
+    Accepts schema versions 1–4. Legacy ``scenarios`` and ``coverage_gaps``
+    keys are ignored. ``scenario_editing`` status maps to ``ready``. Version 3
+    ``ManualStep`` objects migrate into ``steps`` string lists +
+    ``expected_result``.
 
     Raises:
         TestDesignValidationError: Payload JSON or draft shape is invalid.
@@ -84,7 +92,7 @@ def decode_draft_payload(
             f"payload must be a JSON object, got {type(raw).__name__}"
         )
     schema_version = raw.get("schema_version")
-    if schema_version != DRAFT_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_DRAFT_SCHEMA_VERSIONS:
         raise TestDesignValidationError(
             "unsupported schema_version; expected the current draft schema"
         )
@@ -97,17 +105,23 @@ def decode_draft_payload(
             ticket_identifier=_require_str(raw, "ticket_identifier"),
             status=_normalize_stored_status(_require_str(raw, "status")),  # type: ignore[arg-type]
             candidates=tuple(
-                _decode_candidate(item)
-                for item in _require_list(raw, "candidates")
+                _decode_candidate(item) for item in _require_list(raw, "candidates")
             ),
             version=version,
+            generated_cases=tuple(
+                _decode_case(item, schema_version=schema_version)
+                for item in _require_sequence_list(
+                    raw.get("generated_cases", []), "generated_cases"
+                )
+            ),
+            evidence_fingerprint=_optional_nullable_str(raw, "evidence_fingerprint"),
+            cucumber_feature=_optional_str(raw, "cucumber_feature"),
+            cucumber_background=_optional_str(raw, "cucumber_background"),
         )
     except TestDesignValidationError:
         raise
     except Exception as error:
-        raise TestDesignValidationError(
-            f"payload could not be decoded as a draft: {error}"
-        ) from error
+        raise TestDesignValidationError("payload must be a valid draft") from error
 
 
 def _encode_candidate(candidate: TestCandidate) -> dict[str, Any]:
@@ -122,11 +136,15 @@ def _encode_candidate(candidate: TestCandidate) -> dict[str, Any]:
         ],
         "selected": candidate.selected,
         "origin": candidate.origin,
+        "test_type": candidate.test_type,
     }
 
 
 def _decode_candidate(raw: object) -> TestCandidate:
     data = _require_mapping(raw, "candidates item")
+    test_type = data.get("test_type")
+    if test_type is not None and not isinstance(test_type, str):
+        raise TestDesignValidationError("test_type must be a string or null")
     return TestCandidate(
         candidate_id=_require_str(data, "candidate_id"),
         title=_require_str(data, "title"),
@@ -135,7 +153,88 @@ def _decode_candidate(raw: object) -> TestCandidate:
         evidence_references=_decode_references(data.get("evidence_references")),
         selected=_require_bool(data, "selected"),
         origin=_require_str(data, "origin"),  # type: ignore[arg-type]
+        test_type=test_type,  # type: ignore[arg-type]
     )
+
+
+def _encode_case(case: GeneratedTestCase) -> dict[str, Any]:
+    return {
+        "candidate_id": case.candidate_id,
+        "test_type": case.test_type,
+        "automation_fit": case.automation_fit,
+        "automation_rationale": case.automation_rationale,
+        "availability": case.availability,
+        "preconditions": case.preconditions,
+        "steps": list(case.steps),
+        "expected_result": case.expected_result,
+        "gherkin": case.gherkin,
+        "user_edited": case.user_edited,
+    }
+
+
+def _decode_case(raw: object, *, schema_version: object) -> GeneratedTestCase:
+    data = _require_mapping(raw, "generated_cases item")
+    steps, expected_result = _decode_steps_and_expected(
+        data, schema_version=schema_version
+    )
+    return GeneratedTestCase(
+        candidate_id=_require_str(data, "candidate_id"),
+        test_type=_require_str(data, "test_type"),  # type: ignore[arg-type]
+        automation_fit=_require_str(data, "automation_fit"),  # type: ignore[arg-type]
+        automation_rationale=_optional_str(data, "automation_rationale"),
+        availability=_require_str(data, "availability"),  # type: ignore[arg-type]
+        preconditions=_optional_str(data, "preconditions"),
+        steps=steps,
+        expected_result=expected_result,
+        gherkin=_optional_str(data, "gherkin"),
+        user_edited=_require_bool(data, "user_edited"),
+    )
+
+
+def _decode_steps_and_expected(
+    data: Mapping[str, Any], *, schema_version: object
+) -> tuple[tuple[str, ...], str]:
+    steps_raw = data.get("steps", [])
+    if not isinstance(steps_raw, list):
+        raise TestDesignValidationError("steps must be a list")
+    if not steps_raw:
+        expected_raw = data.get("expected_result", "")
+        if expected_raw is None:
+            expected_raw = ""
+        if not isinstance(expected_raw, str):
+            raise TestDesignValidationError("expected_result must be a string")
+        return (), expected_raw
+
+    # Schema v3 stored ManualStep objects; flatten into independent lists.
+    if all(isinstance(item, dict) for item in steps_raw):
+        actions: list[str] = []
+        expected_lines: list[str] = []
+        for index, item in enumerate(steps_raw):
+            action = item.get("action")
+            expected = item.get("expected")
+            if not isinstance(action, str):
+                raise TestDesignValidationError(
+                    f"steps[{index}].action must be a string"
+                )
+            if not isinstance(expected, str):
+                raise TestDesignValidationError(
+                    f"steps[{index}].expected must be a string"
+                )
+            if action.strip():
+                actions.append(action)
+            if expected.strip():
+                expected_lines.append(expected)
+        return tuple(actions), "\n".join(expected_lines)
+
+    if all(isinstance(item, str) for item in steps_raw):
+        expected_raw = data.get("expected_result", "")
+        if expected_raw is None:
+            expected_raw = ""
+        if not isinstance(expected_raw, str):
+            raise TestDesignValidationError("expected_result must be a string")
+        return tuple(steps_raw), expected_raw
+
+    raise TestDesignValidationError("steps must be a list of strings")
 
 
 def _decode_references(raw: object) -> tuple[SourceReference, ...]:
@@ -167,6 +266,12 @@ def _require_mapping(raw: object, field_name: str) -> Mapping[str, Any]:
 
 def _require_list(raw: Mapping[str, Any], field_name: str) -> Sequence[Any]:
     value = raw.get(field_name)
+    return _require_sequence_list(value, field_name)
+
+
+def _require_sequence_list(
+    value: object, field_name: str = "generated_cases"
+) -> Sequence[Any]:
     if not isinstance(value, list):
         raise TestDesignValidationError(
             f"{field_name} must be a list, got {type(value).__name__}"
@@ -183,10 +288,32 @@ def _require_str(raw: Mapping[str, Any], field_name: str) -> str:
     return value
 
 
+def _optional_str(raw: Mapping[str, Any], field_name: str) -> str:
+    value = raw.get(field_name, "")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise TestDesignValidationError(
+            f"{field_name} must be a string, got {type(value).__name__}"
+        )
+    return value
+
+
+def _optional_nullable_str(raw: Mapping[str, Any], field_name: str) -> str | None:
+    if field_name not in raw or raw.get(field_name) is None:
+        return None
+    value = raw.get(field_name)
+    if not isinstance(value, str):
+        raise TestDesignValidationError(
+            f"{field_name} must be a string or null, got {type(value).__name__}"
+        )
+    return value
+
+
 def _require_bool(raw: Mapping[str, Any], field_name: str) -> bool:
     value = raw.get(field_name)
     if not isinstance(value, bool):
         raise TestDesignValidationError(
-            f"{field_name} must be a bool, got {type(value).__name__}"
+            f"{field_name} must be a boolean, got {type(value).__name__}"
         )
     return value

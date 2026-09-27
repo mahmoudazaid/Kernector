@@ -45,6 +45,7 @@ from infrastructure.connectors.github.oauth import (
     GitHubOAuthConnectionStore,
     GitHubOAuthGrant,
 )
+from packs.software_delivery.test_design.models import GeneratedTestCase
 from presentation.http.deps import get_settings
 
 
@@ -312,7 +313,7 @@ def test_patch_demotes_ready_draft_when_candidates_change(
                     candidate_id="cand-1",
                     title="Renamed title",
                     category="positive",
-                    rationale="Grounded.",
+                    rationale="Refined rationale.",
                     evidence_references=(
                         SourceReferenceView("issue:I_kwDOExample", "github"),
                     ),
@@ -393,6 +394,155 @@ def test_patch_demotes_ready_draft_when_candidates_change(
     )
     assert identical.status == "ready"
     assert identical.version == reconfirmed.version + 1
+
+
+def test_patch_keeps_ready_status_when_only_deselecting_and_cases_on_reselect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _RecordingReader(document=_doc())
+    facade = TestDesignFacade(
+        settings=_settings(),
+        store_path=tmp_path / "ws.sqlite",
+        workspace_id="default",
+        oauth_preflight=lambda: "token",
+        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(
+        facade,
+        "_build_chat_model",
+        lambda: type(
+            "FakeChat",
+            (),
+            {
+                "complete": lambda self, *_args, **_kwargs: AskResult(
+                    content=(
+                        '{"candidates":[{"candidate_id":"cand-1","title":"Valid",'
+                        '"category":"positive","rationale":"Grounded.",'
+                        '"evidence_references":[{"source_type":"github",'
+                        '"source_id":"issue:I_kwDOExample"}]},'
+                        '{"candidate_id":"cand-2","title":"Invalid",'
+                        '"category":"negative","rationale":"Grounded.",'
+                        '"evidence_references":[{"source_type":"github",'
+                        '"source_id":"issue:I_kwDOExample"}]}]}'
+                    ),
+                    model="fake",
+                )
+            },
+        )(),
+    )
+    draft = facade.create_draft(
+        CreateTestDesignDraftRequest(
+            conversation_id="conv-1",
+            source_locator=SourceLocatorView(
+                provider="github", locator="mahmoudazaid/Kernector#293"
+            ),
+        )
+    )
+
+    def _candidates(*, second_selected: bool) -> tuple[TestCandidateView, ...]:
+        return tuple(
+            TestCandidateView(
+                candidate_id=candidate_id,
+                title=title,
+                category=category,
+                rationale="Grounded.",
+                evidence_references=(
+                    SourceReferenceView("issue:I_kwDOExample", "github"),
+                ),
+                selected=selected,
+                origin="suggested",
+            )
+            for candidate_id, title, category, selected in (
+                ("cand-1", "Valid", "positive", True),
+                ("cand-2", "Invalid", "negative", second_selected),
+            )
+        )
+
+    selected = facade.patch_draft(
+        draft.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=draft.version,
+            candidates=_candidates(second_selected=True),
+        ),
+    )
+    confirmed = facade.confirm_draft(
+        selected.draft_id, expected_version=selected.version
+    )
+    assert confirmed.status == "ready"
+
+    deselected = facade.patch_draft(
+        confirmed.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=confirmed.version,
+            candidates=_candidates(second_selected=False),
+        ),
+    )
+    assert deselected.status == "ready"
+    assert deselected.evidence_fingerprint == confirmed.evidence_fingerprint
+    assert deselected.selected_candidate_ids == ("cand-1",)
+
+    repo = facade._repository()
+    stored = repo.get(deselected.draft_id)
+    assert stored is not None
+    with_cases = repo.update(
+        replace(
+            stored,
+            status="case_editing",
+            generated_cases=(
+                GeneratedTestCase(
+                    candidate_id="cand-1",
+                    test_type="cucumber",
+                    automation_fit="applicable",
+                    automation_rationale="Stable.",
+                    availability="available",
+                    preconditions="",
+                    steps=(),
+                    expected_result="",
+                    gherkin="Scenario: Valid\n  Given logged out",
+                    user_edited=True,
+                ),
+            ),
+            cucumber_feature="Login",
+            cucumber_background="",
+        ),
+        expected_version=stored.version,
+    )
+
+    reselected = facade.patch_draft(
+        with_cases.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=with_cases.version,
+            candidates=_candidates(second_selected=True),
+        ),
+    )
+    assert reselected.status == "coverage_review"
+    assert [case.candidate_id for case in reselected.generated_cases] == ["cand-1"]
+    assert reselected.cucumber_feature == "Login"
+
+    reconfirmed = facade.confirm_draft(
+        reselected.draft_id, expected_version=reselected.version
+    )
+    assert reconfirmed.status == "case_editing"
+    assert [case.candidate_id for case in reconfirmed.generated_cases] == ["cand-1"]
+    assert reconfirmed.generated_cases[0].user_edited is True
+    assert reconfirmed.cucumber_feature == "Login"
+    assert reconfirmed.cucumber_background == ""
+
+    renamed = facade.patch_draft(
+        reconfirmed.draft_id,
+        PatchTestDesignDraftRequest(
+            expected_version=reconfirmed.version,
+            candidates=tuple(
+                replace(item, title="Valid login") if item.candidate_id == "cand-1" else item
+                for item in _candidates(second_selected=True)
+            ),
+        ),
+    )
+    assert renamed.status == "case_editing"
+    assert renamed.evidence_fingerprint == reconfirmed.evidence_fingerprint
+    assert [case.candidate_id for case in renamed.generated_cases] == ["cand-1"]
+    assert renamed.cucumber_feature == "Login"
 
 
 def test_issue_pr_and_mismatch_errors_are_sanitized(

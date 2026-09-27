@@ -674,6 +674,114 @@
         "title": "ExportTestDesignGoogleDriveResponse",
         "type": "object"
       },
+      "GenerateTestDesignCasesRequest": {
+        "description": "Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/generate``.",
+        "properties": {
+          "candidate_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Ids"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "overwrite_edited": {
+            "default": false,
+            "title": "Overwrite Edited",
+            "type": "boolean"
+          },
+          "type_overrides": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TestTypeOverrideRequest"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Overrides"
+          }
+        },
+        "required": ["expected_version"],
+        "title": "GenerateTestDesignCasesRequest",
+        "type": "object"
+      },
+      "GeneratedTestCaseResponse": {
+        "description": "Detailed manual or Cucumber artifact for one selected candidate.",
+        "properties": {
+          "automation_fit": {
+            "title": "Automation Fit",
+            "type": "string"
+          },
+          "automation_rationale": {
+            "title": "Automation Rationale",
+            "type": "string"
+          },
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "expected_result": {
+            "title": "Expected Result",
+            "type": "string"
+          },
+          "gherkin": {
+            "title": "Gherkin",
+            "type": "string"
+          },
+          "preconditions": {
+            "title": "Preconditions",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "test_type": {
+            "title": "Test Type",
+            "type": "string"
+          },
+          "user_edited": {
+            "title": "User Edited",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "test_type",
+          "automation_fit",
+          "automation_rationale",
+          "availability",
+          "preconditions",
+          "steps",
+          "expected_result",
+          "gherkin",
+          "user_edited"
+        ],
+        "title": "GeneratedTestCaseResponse",
+        "type": "object"
+      },
       "GitHubLastSyncResponse": {
         "description": "Last GitHub user-OAuth sync summary. Counts are honest; no secrets.",
         "properties": {
@@ -1642,10 +1750,46 @@
             ],
             "title": "Candidates"
           },
+          "cucumber_background": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cucumber Background"
+          },
+          "cucumber_feature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cucumber Feature"
+          },
           "expected_version": {
             "minimum": 1.0,
             "title": "Expected Version",
             "type": "integer"
+          },
+          "generated_cases": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GeneratedTestCaseResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Cases"
           }
         },
         "required": ["expected_version"],
@@ -2342,6 +2486,17 @@
             "title": "Selected",
             "type": "boolean"
           },
+          "test_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Type"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -2429,15 +2584,52 @@
             "title": "Coverage Gaps",
             "type": "array"
           },
+          "cucumber_background": {
+            "default": "",
+            "title": "Cucumber Background",
+            "type": "string"
+          },
+          "cucumber_feature": {
+            "default": "",
+            "title": "Cucumber Feature",
+            "type": "string"
+          },
           "draft_id": {
             "title": "Draft Id",
             "type": "string"
+          },
+          "evidence_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Fingerprint"
+          },
+          "generated_cases": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GeneratedTestCaseResponse"
+            },
+            "title": "Generated Cases",
+            "type": "array"
           },
           "selected_candidate_ids": {
             "items": {
               "type": "string"
             },
             "title": "Selected Candidate Ids",
+            "type": "array"
+          },
+          "skipped_edited_candidate_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Edited Candidate Ids",
             "type": "array"
           },
           "source_reference": {
@@ -2473,6 +2665,24 @@
           "selected_candidate_ids"
         ],
         "title": "TestCoverageDraftResponse",
+        "type": "object"
+      },
+      "TestTypeOverrideRequest": {
+        "description": "Per-candidate type choice applied before generation.",
+        "properties": {
+          "candidate_id": {
+            "minLength": 1,
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "test_type": {
+            "minLength": 1,
+            "title": "Test Type",
+            "type": "string"
+          }
+        },
+        "required": ["candidate_id", "test_type"],
+        "title": "TestTypeOverrideRequest",
         "type": "object"
       },
       "ToolApprovalDecisionRequest": {
@@ -5292,7 +5502,7 @@
         "tags": ["test-design"]
       },
       "patch": {
-        "description": "Save draft selection, title edits, and manual candidate adds.",
+        "description": "Save draft selection, title edits, types, and generated case edits.",
         "operationId": "patch_draft_api_v1_test_design_drafts__draft_id__patch",
         "parameters": [
           {
@@ -5383,7 +5593,7 @@
     },
     "/api/v1/test-design/drafts/{draft_id}/confirm": {
       "post": {
-        "description": "Mark the draft ready; idempotent when already ready at matching version.",
+        "description": "Mark coverage selection ready; no-op when already ready/case_editing.",
         "operationId": "confirm_draft_api_v1_test_design_drafts__draft_id__confirm_post",
         "parameters": [
           {
@@ -5560,6 +5770,107 @@
           }
         },
         "summary": "Export Draft Google Drive",
+        "tags": ["test-design"]
+      }
+    },
+    "/api/v1/test-design/drafts/{draft_id}/generate": {
+      "post": {
+        "description": "Generate detailed manual/Cucumber cases for selected candidates.",
+        "operationId": "generate_cases_api_v1_test_design_drafts__draft_id__generate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateTestDesignCasesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCoverageDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Generate Cases",
         "tags": ["test-design"]
       }
     },

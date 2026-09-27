@@ -13,6 +13,8 @@ export type ConfirmDialogProps = {
   tone?: "default" | "danger";
   busy?: boolean;
   restoreFocusRef?: RefObject<HTMLElement | null>;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -26,6 +28,8 @@ export function ConfirmDialog({
   tone = "default",
   busy = false,
   restoreFocusRef,
+  secondaryLabel,
+  onSecondary,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -52,6 +56,11 @@ export function ConfirmDialog({
         <Button ref={cancelRef} variant="secondary" onClick={onCancel}>
           {cancelLabel}
         </Button>
+        {secondaryLabel && onSecondary ? (
+          <Button variant="danger" disabled={busy} onClick={onSecondary}>
+            {secondaryLabel}
+          </Button>
+        ) : null}
         <Button
           variant={tone === "danger" ? "danger" : "default"}
           disabled={busy}

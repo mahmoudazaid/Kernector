@@ -23,3 +23,9 @@ class TestDesignValidationError(ValueError):
     """Caller-supplied test-design request failed validation."""
 
     __test__ = False
+
+
+class TestDesignEvidenceChangedError(RuntimeError):
+    """Live Issue evidence no longer matches the confirmed draft fingerprint."""
+
+    __test__ = False
