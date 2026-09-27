@@ -540,7 +540,7 @@ export interface paths {
     };
     /**
      * Get Feedback
-     * @description Return the rating for ``request_id`` in the bound workspace.
+     * @description Return the rating for ``request_id``, or ``null`` when none is stored.
      */
     get: operations["get_feedback_api_v1_responses__request_id__feedback_get"];
     /**
@@ -3680,16 +3680,8 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ResponseFeedbackResponse"];
-        };
-      };
-      /** @description Not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["Problem"];
+          "application/json":
+            components["schemas"]["ResponseFeedbackResponse"] | null;
         };
       };
       /** @description Method not allowed */

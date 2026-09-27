@@ -5131,7 +5131,7 @@
         "tags": ["feedback"]
       },
       "get": {
-        "description": "Return the rating for ``request_id`` in the bound workspace.",
+        "description": "Return the rating for ``request_id``, or ``null`` when none is stored.",
         "operationId": "get_feedback_api_v1_responses__request_id__feedback_get",
         "parameters": [
           {
@@ -5149,21 +5149,19 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResponseFeedbackResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseFeedbackResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Feedback Api V1 Responses  Request Id  Feedback Get"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Not found"
           },
           "405": {
             "content": {
