@@ -150,6 +150,13 @@ function draft(
   };
 }
 
+const EVIDENCE_CHANGED = new ApiError({
+  status: 409,
+  title: "Evidence changed",
+  detail: "The ticket changed since coverage was confirmed. Review coverage again.",
+  code: "test_design_evidence_changed",
+});
+
 async function renderWorkspace() {
   render(<TestDesignWorkspace apiBaseUrl="http://api.test" draftId="draft-1" />);
   expect(await screen.findByDisplayValue("Covers happy path")).toBeInTheDocument();
@@ -422,6 +429,51 @@ describe("TestDesignWorkspace", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/chat/conv-1"));
     expect(patchTestDesignDraft).toHaveBeenCalled();
   });
+
+  it("shows the evidence-changed detail when Next hits an edited ticket", async () => {
+    const user = userEvent.setup();
+    vi.mocked(generateTestDesignCases).mockRejectedValueOnce(EVIDENCE_CHANGED);
+    await renderWorkspace();
+
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+
+    expect(await screen.findByText(EVIDENCE_CHANGED.detail)).toBeInTheDocument();
+    expect(screen.queryByText(/changed elsewhere/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+  });
+
+  it.each([
+    { lines: 39, disabled: false },
+    { lines: 40, disabled: true },
+  ])(
+    "caps manual Add buttons at 40 lines (lines=$lines)",
+    async ({ lines, disabled }) => {
+      const items = Array.from({ length: lines }, (_, i) => `Line ${i + 1}`);
+      vi.mocked(getTestDesignDraft).mockResolvedValue(
+        stepsDraft({
+          generated_cases: [
+            {
+              ...stepsDraft().generated_cases![0],
+              preconditions: items.join("\n"),
+              steps: items,
+              expected_result: items.join("\n"),
+            },
+          ],
+        }),
+      );
+      render(<TestDesignWorkspace apiBaseUrl="http://api.test" draftId="draft-1" />);
+      await screen.findByRole("region", { name: /manual package/i });
+
+      for (const name of [/add precondition/i, /add step/i, /add expected result/i]) {
+        const button = screen.getByRole("button", { name });
+        if (disabled) {
+          expect(button).toBeDisabled();
+        } else {
+          expect(button).toBeEnabled();
+        }
+      }
+    },
+  );
 
   it("records coverage confirmation and generates cases on Next", async () => {
     const user = userEvent.setup();
@@ -1061,6 +1113,23 @@ describe("TestDesignWorkspace", () => {
         screen.queryByRole("region", { name: /needs more detail from the ticket/i }),
       ).not.toBeInTheDocument();
       expect(screen.getByRole("region", { name: /manual package/i })).toBeInTheDocument();
+    });
+
+    it("shows the evidence-changed detail when regenerate hits an edited ticket", async () => {
+      const user = userEvent.setup();
+      vi.mocked(getTestDesignDraft).mockResolvedValue(needsDetailDraft());
+      vi.mocked(generateTestDesignCases).mockRejectedValueOnce(EVIDENCE_CHANGED);
+
+      render(<TestDesignWorkspace apiBaseUrl="http://api.test" draftId="draft-1" />);
+      const clarification = await screen.findByRole("region", {
+        name: /needs more detail from the ticket/i,
+      });
+      await user.click(
+        within(clarification).getByRole("button", { name: /^regenerate$/i }),
+      );
+
+      expect(await screen.findByText(EVIDENCE_CHANGED.detail)).toBeInTheDocument();
+      expect(screen.queryByText(/changed elsewhere/i)).not.toBeInTheDocument();
     });
 
     it("regenerates only that test from the updated ticket", async () => {

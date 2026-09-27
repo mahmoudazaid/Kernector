@@ -101,17 +101,21 @@ def _client(facade: _StubFacade) -> TestClient:
     return TestClient(app)
 
 
+@dataclass
 class _HTTPReader:
+    source_id: str = "issue:I_http"
+    content: str = "Acceptance criteria for coverage."
+
     def fetch(self, _locator):
         return SourceDocument(
             SourceMetadata(
-                reference=SourceReference("issue:I_http", SourceType.GITHUB),
+                reference=SourceReference(self.source_id, SourceType.GITHUB),
                 title="Live",
                 provider="github",
                 content_format="markdown",
                 extra={"revision": "2026-09-14T12:00:00Z"},
             ),
-            "Acceptance criteria for coverage.",
+            self.content,
         )
 
 
@@ -142,11 +146,16 @@ class _HTTPChat:
         )
 
 
-def _real_facade_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def _real_facade_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reader: _HTTPReader | None = None,
+) -> TestClient:
     from composition.test_design import TestDesignFacade
 
     from dataclasses import replace
 
+    live_reader = reader or _HTTPReader()
     settings = replace(
         get_settings(),
         domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
@@ -156,7 +165,7 @@ def _real_facade_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Test
         store_path=tmp_path / "workspace.sqlite",
         workspace_id="default",
         oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: _HTTPReader(),
+        live_source_reader_factory=lambda _token: live_reader,
     )
     monkeypatch.setattr(facade, "_build_chat_model", lambda: _HTTPChat())
     app = create_app(cors_origins=())
@@ -471,6 +480,76 @@ def test_confirm_on_case_editing_is_noop(
     assert confirmed.json()["status"] == "case_editing"
     assert confirmed.json()["generated_cases"] == cases
     assert confirmed.json()["version"] == body["version"]
+
+
+def test_generate_fails_closed_when_issue_body_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _HTTPReader()
+    client = _real_facade_client(tmp_path, monkeypatch, reader)
+    ready = _confirm_ready(client, _created_draft(client))
+    draft_url = f"/api/v1/test-design/drafts/{ready['draft_id']}"
+
+    reader.content = "Edited acceptance criteria."
+    changed = client.post(
+        f"{draft_url}/generate", json={"expected_version": ready["version"]}
+    )
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "test_design_evidence_changed"
+    unchanged = client.get(draft_url).json()
+    assert unchanged["status"] == "ready"
+    assert unchanged["version"] == ready["version"]
+    assert unchanged["generated_cases"] == []
+
+    reader.content = _HTTPReader().content
+    restored = client.post(
+        f"{draft_url}/generate", json={"expected_version": ready["version"]}
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "case_editing"
+
+
+def test_generate_fails_closed_when_issue_identity_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _HTTPReader()
+    client = _real_facade_client(tmp_path, monkeypatch, reader)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    reader.source_id = "issue:I_other"
+    changed = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={"expected_version": ready["version"]},
+    )
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "test_design_evidence_changed"
+
+
+def test_confirm_fails_closed_when_issue_identity_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _HTTPReader()
+    client = _real_facade_client(tmp_path, monkeypatch, reader)
+    draft = _created_draft(client)
+    draft_url = f"/api/v1/test-design/drafts/{draft['draft_id']}"
+    candidate = draft["candidates"][0] | {"selected": True}
+    selected = client.patch(
+        draft_url,
+        json={"expected_version": draft["version"], "candidates": [candidate]},
+    ).json()
+
+    reader.source_id = "issue:I_other"
+    confirmed = client.post(
+        f"{draft_url}/confirm", json={"expected_version": selected["version"]}
+    )
+    assert confirmed.status_code == 409
+    assert confirmed.json()["code"] == "test_design_evidence_changed"
+    unchanged = client.get(draft_url).json()
+    assert unchanged["status"] == "coverage_review"
+    assert unchanged["version"] == selected["version"]
 
 
 def test_stale_confirm_on_ready_returns_409(

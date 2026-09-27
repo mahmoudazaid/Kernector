@@ -587,8 +587,6 @@ class TestDesignFacade:
             raise TestDesignVersionConflictError("version conflict")
         if current.status in {"ready", "case_editing"}:
             return _draft_view(current)
-        if current.status != "coverage_review":
-            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
         if not any(c.selected for c in current.candidates):
             raise TestDesignValidationError(
                 "select at least one candidate before confirm"
