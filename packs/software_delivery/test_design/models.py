@@ -15,9 +15,11 @@ from packs.software_delivery.test_design.limits import (
     MAX_EVIDENCE_FINGERPRINT_CHARS,
     MAX_EVIDENCE_REFS,
     MAX_EXPECTED_RESULT_CHARS,
+    MAX_EXPECTED_RESULT_LINES,
     MAX_GHERKIN_CHARS,
     MAX_ID_CHARS,
     MAX_PRECONDITIONS_CHARS,
+    MAX_PRECONDITIONS_LINES,
     MAX_RATIONALE_CHARS,
     MAX_STEP_CHARS,
     MAX_STEPS,
@@ -279,6 +281,14 @@ def _normalize_steps(value: object) -> tuple[str, ...]:
             )
         normalized.append(step)
     return tuple(normalized)
+
+
+def _require_max_lines(value: str, field_name: str, max_lines: int) -> None:
+    count = sum(1 for line in value.splitlines() if line.strip())
+    if count > max_lines:
+        raise TestDesignValidationError(
+            f"{field_name} must have at most {max_lines} lines, got {count}"
+        )
 
 
 def coverage_candidate_fingerprint(candidate: TestCandidate) -> tuple[object, ...]:
@@ -562,6 +572,10 @@ class GeneratedTestCase:
                 raise TestDesignValidationError(
                     "expected_result must be non-empty for available manual cases"
                 )
+            _require_max_lines(preconditions, "preconditions", MAX_PRECONDITIONS_LINES)
+            _require_max_lines(
+                expected_result, "expected_result", MAX_EXPECTED_RESULT_LINES
+            )
             object.__setattr__(self, "steps", steps)
             object.__setattr__(self, "expected_result", expected_result)
             object.__setattr__(self, "gherkin", "")

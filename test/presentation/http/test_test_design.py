@@ -473,6 +473,66 @@ def test_confirm_on_case_editing_is_noop(
     assert confirmed.json()["version"] == body["version"]
 
 
+def test_stale_confirm_on_ready_returns_409(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    confirmed = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/confirm",
+        json={"expected_version": ready["version"] - 1},
+    )
+    assert confirmed.status_code == 409
+    assert confirmed.json()["code"] == "test_design_version_conflict"
+
+
+@pytest.mark.parametrize("test_type", ["Manual", "gherkin", "  "])
+def test_generate_invalid_type_override_returns_422(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    test_type: str,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={
+            "expected_version": ready["version"],
+            "type_overrides": [{"candidate_id": "cand-1", "test_type": test_type}],
+        },
+    )
+    assert generated.status_code == 422
+
+
+def test_patch_rejects_expected_result_over_line_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _real_facade_client(tmp_path, monkeypatch)
+    ready = _confirm_ready(client, _created_draft(client))
+    generated = client.post(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}/generate",
+        json={"expected_version": ready["version"]},
+    ).json()
+    case = generated["generated_cases"][0] | {
+        "test_type": "manual",
+        "gherkin": "",
+        "steps": ["Step"],
+        "expected_result": "\n".join(f"Result {i}" for i in range(41)),
+    }
+    patched = client.patch(
+        f"/api/v1/test-design/drafts/{ready['draft_id']}",
+        json={
+            "expected_version": generated["version"],
+            "generated_cases": [case],
+        },
+    )
+    assert patched.status_code == 422
+
+
 def test_artifact_patch_marks_user_edited(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

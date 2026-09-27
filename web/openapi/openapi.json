@@ -5674,6 +5674,16 @@
               }
             },
             "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
           }
         },
         "summary": "Confirm Draft",

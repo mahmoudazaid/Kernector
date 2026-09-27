@@ -583,9 +583,9 @@ class TestDesignFacade:
             raise
         if current is None:
             raise TestDesignNotFoundError("draft not found")
-        if current.status in {"ready", "case_editing"} and (
-            current.version == expected_version
-        ):
+        if current.version != expected_version:
+            raise TestDesignVersionConflictError("version conflict")
+        if current.status in {"ready", "case_editing"}:
             return _draft_view(current)
         if current.status != "coverage_review":
             raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
@@ -647,6 +647,21 @@ class TestDesignFacade:
         if current.status not in {"ready", "case_editing"}:
             raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
 
+        (
+            GenerateTestCases,
+            GenerateTestCasesRequest,
+            TypeOverride,
+            CoverageEvidenceItem,
+        ) = self._load_generate_cases()
+        try:
+            type_overrides = tuple(
+                TypeOverride(candidate_id=candidate_id, test_type=test_type)
+                for candidate_id, test_type in request.type_overrides
+            )
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+
         document, budgeted, fingerprint = self._fetch_live_evidence(
             current.ticket_identifier
         )
@@ -661,16 +676,6 @@ class TestDesignFacade:
         ):
             raise TestDesignEvidenceChangedError("evidence changed")
 
-        (
-            GenerateTestCases,
-            GenerateTestCasesRequest,
-            TypeOverride,
-            CoverageEvidenceItem,
-        ) = self._load_generate_cases()
-        type_overrides = tuple(
-            TypeOverride(candidate_id=candidate_id, test_type=test_type)
-            for candidate_id, test_type in request.type_overrides
-        )
         try:
             outcome = GenerateTestCases(
                 chat_model=self._build_chat_model(),
@@ -1054,41 +1059,6 @@ def _raise_composition_validation_if_pack_error(error: BaseException) -> None:
 
     if isinstance(error, PackTestDesignValidationError):
         raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
-
-
-def _candidates_semantically_equal(left: object, right: object) -> bool:
-    """Return True when candidate sequences match for confirmation invalidation."""
-    from packs.software_delivery.test_design.models import coverage_candidates_equal
-
-    if not isinstance(left, tuple) or not isinstance(right, tuple):
-        return False
-    try:
-        return coverage_candidates_equal(left, right)  # type: ignore[arg-type]
-    except Exception:
-        return False
-
-
-def _candidate_fingerprint(candidate: object) -> tuple[object, ...]:
-    from packs.software_delivery.test_design.models import (
-        TestCandidate,
-        coverage_candidate_fingerprint,
-    )
-
-    if isinstance(candidate, TestCandidate):
-        return coverage_candidate_fingerprint(candidate)
-    refs = tuple(
-        (ref.source_id, ref.source_type)
-        for ref in getattr(candidate, "evidence_references", ())
-    )
-    return (
-        getattr(candidate, "candidate_id", None),
-        getattr(candidate, "title", None),
-        getattr(candidate, "category", None),
-        getattr(candidate, "rationale", None),
-        getattr(candidate, "selected", None),
-        getattr(candidate, "origin", None),
-        refs,
-    )
 
 
 def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:

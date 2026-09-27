@@ -10,7 +10,9 @@ from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.limits import (
     MAX_CANDIDATES,
+    MAX_EXPECTED_RESULT_LINES,
     MAX_ID_CHARS,
+    MAX_PRECONDITIONS_LINES,
     MAX_RATIONALE_CHARS,
     MAX_TITLE_CHARS,
 )
@@ -136,6 +138,31 @@ def test_generated_manual_case_requires_content_fields() -> None:
     )
     assert case.steps == ("Enter valid credentials", "Submit")
     assert case.expected_result == "User lands on home."
+
+
+@pytest.mark.parametrize(
+    ("field", "limit"),
+    [
+        ("preconditions", MAX_PRECONDITIONS_LINES),
+        ("expected_result", MAX_EXPECTED_RESULT_LINES),
+    ],
+)
+def test_generated_manual_case_caps_line_counts(field: str, limit: int) -> None:
+    fields: dict[str, object] = {
+        "candidate_id": "cand-1",
+        "test_type": "manual",
+        "automation_fit": "applicable",
+        "automation_rationale": "Stable UI path.",
+        "availability": "available",
+        "preconditions": "User is logged out.",
+        "steps": ("Submit",),
+        "expected_result": "User lands on home.",
+        "gherkin": "",
+        "user_edited": False,
+    }
+    GeneratedTestCase(**(fields | {field: "\n".join(["line"] * limit)}))  # type: ignore[arg-type]
+    with pytest.raises(TestDesignValidationError, match=f"{field}.*lines"):
+        GeneratedTestCase(**(fields | {field: "\n".join(["line"] * (limit + 1))}))  # type: ignore[arg-type]
 
 
 def test_generated_manual_case_rejects_gherkin_when_available() -> None:

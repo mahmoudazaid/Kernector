@@ -122,7 +122,7 @@ def patch_draft(
 
 @router.post(
     "/drafts/{draft_id}/confirm",
-    responses=problem_responses(404, 405, 409, 422, 500),
+    responses=problem_responses(404, 405, 409, 422, 500, 502),
 )
 def confirm_draft(
     draft_id: str,

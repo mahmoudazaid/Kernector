@@ -308,6 +308,11 @@ def test_decode_v3_migrates_manual_step_objects() -> None:
     assert restored.generated_cases[0].steps == ("Login", "Open home")
     assert restored.generated_cases[0].expected_result == "Home.\nDashboard."
 
+    as_v4 = json.loads(payload) | {"schema_version": 4}
+    with pytest.raises(TestDesignValidationError, match="list of strings"):
+        decode_draft_payload(json.dumps(as_v4), draft_id="draft-1", version=4)
+
+
 def test_decode_v1_defaults_new_fields() -> None:
     payload = json.dumps(
         {

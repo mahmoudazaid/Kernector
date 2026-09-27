@@ -148,6 +148,7 @@ function persistStoredLines(value: string): string {
 
 const MAX_CANDIDATES = 40;
 const MAX_TITLE_CHARS = 200;
+const MAX_CASE_LINES = 40;
 
 type WorkspaceStep = "coverage" | "cases";
 
@@ -1604,7 +1605,9 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                               <Button
                                 type="button"
                                 variant="secondary"
-                                disabled={busy}
+                                disabled={
+                                  busy || preconditions.length >= MAX_CASE_LINES
+                                }
                                 onClick={() =>
                                   updateGeneratedCase(item.candidate_id, {
                                     preconditions: joinPreconditionLines([
@@ -1636,7 +1639,7 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                               <Button
                                 type="button"
                                 variant="secondary"
-                                disabled={busy}
+                                disabled={busy || steps.length >= MAX_CASE_LINES}
                                 onClick={() =>
                                   updateGeneratedCase(item.candidate_id, {
                                     steps: [...steps, ""],
@@ -1667,7 +1670,10 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
                               <Button
                                 type="button"
                                 variant="secondary"
-                                disabled={busy}
+                                disabled={
+                                  busy ||
+                                  expectedResults.length >= MAX_CASE_LINES
+                                }
                                 onClick={() =>
                                   updateGeneratedCase(item.candidate_id, {
                                     expected_result: joinExpectedLines([

@@ -206,7 +206,7 @@ def _decode_steps_and_expected(
         return (), expected_raw
 
     # Schema v3 stored ManualStep objects; flatten into independent lists.
-    if all(isinstance(item, dict) for item in steps_raw):
+    if schema_version == 3 and all(isinstance(item, dict) for item in steps_raw):
         actions: list[str] = []
         expected_lines: list[str] = []
         for index, item in enumerate(steps_raw):
