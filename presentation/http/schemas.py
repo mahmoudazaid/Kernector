@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +35,7 @@ class HubSourceType(StrEnum):
     KNOWLEDGE_DOCUMENT = SourceType.KNOWLEDGE_DOCUMENT
     GOOGLE_DRIVE = SourceType.GOOGLE_DRIVE
     GITHUB = SourceType.GITHUB
+    JIRA = SourceType.JIRA
 
 
 class HealthResponse(BaseModel):
@@ -208,6 +209,86 @@ class GitHubSelectionRequest(BaseModel):
     project_number: int | None = None
 
 
+class JiraSiteResponse(BaseModel):
+    """One Jira Cloud site the grant can read."""
+
+    cloud_id: str
+    name: str
+    url: str
+
+
+class JiraSiteListResponse(BaseModel):
+    """Jira sites for the Hub site step."""
+
+    items: list[JiraSiteResponse]
+
+
+class JiraSiteRequest(BaseModel):
+    """Select one Jira site by Atlassian cloud id."""
+
+    cloud_id: str = Field(min_length=1, max_length=128)
+
+
+class JiraLastSyncResponse(GitHubLastSyncResponse):
+    """Last Jira sync summary. Counts are honest; no secrets."""
+
+
+class JiraStatusResponse(BaseModel):
+    """Jira connection, selected site and projects (no secrets)."""
+
+    available: bool
+    oauth_ready: bool
+    connected: bool = False
+    account_name: str | None = None
+    site: JiraSiteResponse | None = None
+    project_keys: list[str] = Field(default_factory=list)
+    document_count: int = 0
+    last_sync: JiraLastSyncResponse | None = None
+    reauthorization_required: bool = False
+    setup_required: bool = False
+    connection_state: Literal[
+        "disconnected",
+        "site_selection_required",
+        "setup_required",
+        "ready",
+        "reauthorization_required",
+    ] = "disconnected"
+    sync_scope: str | None = None
+
+
+class JiraProjectItemResponse(BaseModel):
+    """One Jira project row for the Hub picker."""
+
+    key: str
+    name: str
+
+
+class JiraProjectPageResponse(BaseModel):
+    """One page of Jira projects; ``next_start_at`` is null on the last page."""
+
+    items: list[JiraProjectItemResponse]
+    next_start_at: int | None = None
+
+
+JIRA_SELECTION_LIST_MAX = 100
+
+
+class JiraSelectionResponse(BaseModel):
+    """Saved Jira site and project keys (no tokens)."""
+
+    site: JiraSiteResponse | None = None
+    project_keys: list[str] = Field(default_factory=list)
+    connector_id: str | None = None
+
+
+class JiraSelectionRequest(BaseModel):
+    """Replace the saved project keys on the selected site."""
+
+    project_keys: list[Annotated[str, Field(max_length=255)]] = Field(
+        default_factory=list, max_length=JIRA_SELECTION_LIST_MAX
+    )
+
+
 class GoogleDriveBrowseItemResponse(BaseModel):
     """One Drive picker row. ``id`` is the only identity field."""
 
@@ -303,6 +384,10 @@ class GitHubSyncResponse(GoogleDriveSyncResponse):
     """Projected GitHub sync counts and per-document outcomes."""
 
 
+class JiraSyncResponse(GoogleDriveSyncResponse):
+    """Projected Jira sync counts and per-document outcomes."""
+
+
 def connector_sync_response(
     response: ConnectorSyncResponse,
 ) -> GoogleDriveSyncResponse:
@@ -336,6 +421,11 @@ def github_sync_response(response: ConnectorSyncResponse) -> GitHubSyncResponse:
     """Project GitHub sync counts onto the wire schema."""
     base = connector_sync_response(response)
     return GitHubSyncResponse(**base.model_dump())
+
+
+def jira_sync_response(response: ConnectorSyncResponse) -> JiraSyncResponse:
+    """Project Jira sync counts onto the wire schema."""
+    return JiraSyncResponse(**connector_sync_response(response).model_dump())
 
 
 class ChatHistoryMessage(BaseModel):

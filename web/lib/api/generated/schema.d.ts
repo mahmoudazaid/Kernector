@@ -400,6 +400,194 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connectors/jira": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Connector Status
+     * @description Return the presentation-safe Jira connection, site, and projects.
+     */
+    get: operations["jira_connector_status_api_v1_connectors_jira_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Jira Connector Disconnect
+     * @description Delete the stored Atlassian grant. Synced Jira documents are removed.
+     */
+    delete: operations["jira_connector_disconnect_api_v1_connectors_jira_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/last-sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Connector Last Sync
+     * @description Return the last persisted Jira sync summary, if present.
+     */
+    get: operations["jira_connector_last_sync_api_v1_connectors_jira_last_sync_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Oauth Callback
+     * @description Validate state, exchange the code server-side, resolve sites, return to the Hub.
+     */
+    get: operations["jira_oauth_callback_api_v1_connectors_jira_oauth_callback_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/oauth/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Oauth Start
+     * @description Issue CSRF state and redirect the browser to Atlassian, or back to the Hub.
+     */
+    get: operations["jira_oauth_start_api_v1_connectors_jira_oauth_start_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Connector Projects
+     * @description List projects on the selected Jira site for the Hub picker.
+     */
+    get: operations["jira_connector_projects_api_v1_connectors_jira_projects_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/selection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Connector Get Selection
+     * @description Return the saved Jira site and project keys.
+     */
+    get: operations["jira_connector_get_selection_api_v1_connectors_jira_selection_get"];
+    /**
+     * Jira Connector Put Selection
+     * @description Validate project access and replace the selection; deselected projects are purged.
+     */
+    put: operations["jira_connector_put_selection_api_v1_connectors_jira_selection_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/site": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Jira Connector Put Site
+     * @description Select a Jira site. Switching sites removes its synced documents.
+     */
+    put: operations["jira_connector_put_site_api_v1_connectors_jira_site_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/sites": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Jira Connector Sites
+     * @description List Jira sites the stored grant can read.
+     */
+    get: operations["jira_connector_sites_api_v1_connectors_jira_sites_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/jira/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Jira Connector Sync
+     * @description Synchronize the selected Jira projects into the knowledge base.
+     */
+    post: operations["jira_connector_sync_api_v1_connectors_jira_sync_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/documents": {
     parameters: {
       query?: never;
@@ -1400,7 +1588,165 @@ export interface components {
      *     ``SourceType``.
      * @enum {string}
      */
-    HubSourceType: "knowledge_document" | "google_drive" | "github";
+    HubSourceType: "knowledge_document" | "google_drive" | "github" | "jira";
+    /**
+     * JiraLastSyncResponse
+     * @description Last Jira sync summary. Counts are honest; no secrets.
+     */
+    JiraLastSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** New Count */
+      new_count: number;
+      /** Removed Count */
+      removed_count: number;
+      /** Synced At */
+      synced_at: string;
+      /** Unchanged Count */
+      unchanged_count: number;
+      /** Updated Count */
+      updated_count: number;
+    };
+    /**
+     * JiraProjectItemResponse
+     * @description One Jira project row for the Hub picker.
+     */
+    JiraProjectItemResponse: {
+      /** Key */
+      key: string;
+      /** Name */
+      name: string;
+    };
+    /**
+     * JiraProjectPageResponse
+     * @description One page of Jira projects; ``next_start_at`` is null on the last page.
+     */
+    JiraProjectPageResponse: {
+      /** Items */
+      items: components["schemas"]["JiraProjectItemResponse"][];
+      /** Next Start At */
+      next_start_at?: number | null;
+    };
+    /**
+     * JiraSelectionRequest
+     * @description Replace the saved project keys on the selected site.
+     */
+    JiraSelectionRequest: {
+      /** Project Keys */
+      project_keys?: string[];
+    };
+    /**
+     * JiraSelectionResponse
+     * @description Saved Jira site and project keys (no tokens).
+     */
+    JiraSelectionResponse: {
+      /** Connector Id */
+      connector_id?: string | null;
+      /** Project Keys */
+      project_keys?: string[];
+      site?: components["schemas"]["JiraSiteResponse"] | null;
+    };
+    /**
+     * JiraSiteListResponse
+     * @description Jira sites for the Hub site step.
+     */
+    JiraSiteListResponse: {
+      /** Items */
+      items: components["schemas"]["JiraSiteResponse"][];
+    };
+    /**
+     * JiraSiteRequest
+     * @description Select one Jira site by Atlassian cloud id.
+     */
+    JiraSiteRequest: {
+      /** Cloud Id */
+      cloud_id: string;
+    };
+    /**
+     * JiraSiteResponse
+     * @description One Jira Cloud site the grant can read.
+     */
+    JiraSiteResponse: {
+      /** Cloud Id */
+      cloud_id: string;
+      /** Name */
+      name: string;
+      /** Url */
+      url: string;
+    };
+    /**
+     * JiraStatusResponse
+     * @description Jira connection, selected site and projects (no secrets).
+     */
+    JiraStatusResponse: {
+      /** Account Name */
+      account_name?: string | null;
+      /** Available */
+      available: boolean;
+      /**
+       * Connected
+       * @default false
+       */
+      connected: boolean;
+      /**
+       * Connection State
+       * @default disconnected
+       * @enum {string}
+       */
+      connection_state:
+        | "disconnected"
+        | "site_selection_required"
+        | "setup_required"
+        | "ready"
+        | "reauthorization_required";
+      /**
+       * Document Count
+       * @default 0
+       */
+      document_count: number;
+      last_sync?: components["schemas"]["JiraLastSyncResponse"] | null;
+      /** Oauth Ready */
+      oauth_ready: boolean;
+      /** Project Keys */
+      project_keys?: string[];
+      /**
+       * Reauthorization Required
+       * @default false
+       */
+      reauthorization_required: boolean;
+      /**
+       * Setup Required
+       * @default false
+       */
+      setup_required: boolean;
+      site?: components["schemas"]["JiraSiteResponse"] | null;
+      /** Sync Scope */
+      sync_scope?: string | null;
+    };
+    /**
+     * JiraSyncResponse
+     * @description Projected Jira sync counts and per-document outcomes.
+     */
+    JiraSyncResponse: {
+      /** Failed Count */
+      failed_count: number;
+      /** Ingested Count */
+      ingested_count: number;
+      /** Outcomes */
+      outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
+      /**
+       * Removed Count
+       * @default 0
+       */
+      removed_count: number;
+      /** Skipped Count */
+      skipped_count: number;
+      /**
+       * Updated Count
+       * @default 0
+       */
+      updated_count: number;
+    };
     /**
      * ModelSettingDefResponse
      * @description One generation setting for Settings UI controls.
@@ -3152,6 +3498,581 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["GoogleDriveSyncResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_status_api_v1_connectors_jira_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraStatusResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_disconnect_api_v1_connectors_jira_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_last_sync_api_v1_connectors_jira_last_sync_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            components["schemas"]["JiraLastSyncResponse"] | null;
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_oauth_callback_api_v1_connectors_jira_oauth_callback_get: {
+    parameters: {
+      query?: {
+        state?: string | null;
+        code?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_oauth_start_api_v1_connectors_jira_oauth_start_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_projects_api_v1_connectors_jira_projects_get: {
+    parameters: {
+      query?: {
+        start_at?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraProjectPageResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_get_selection_api_v1_connectors_jira_selection_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_put_selection_api_v1_connectors_jira_selection_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["JiraSelectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_put_site_api_v1_connectors_jira_site_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["JiraSiteRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraSelectionResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_sites_api_v1_connectors_jira_sites_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraSiteListResponse"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  jira_connector_sync_api_v1_connectors_jira_sync_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JiraSyncResponse"];
         };
       };
       /** @description Method not allowed */
