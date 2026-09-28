@@ -17,6 +17,10 @@ from application.errors import (
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
+    JiraNotConnectedError,
+    JiraReauthorizationRequiredError,
+    JiraSelectionRequiredError,
+    JiraSiteSelectionRequiredError,
     MissingProviderCredentialsError,
     OllamaNotConfiguredError,
     ToolApprovalConflictError,
@@ -33,6 +37,9 @@ from composition.errors import (
     GitHubConnectorError,
     GitHubConnectorSyncError,
     GoogleDriveConnectorError,
+    JiraConnectorError,
+    JiraConnectorSyncError,
+    JiraIssueLimitExceededError,
     KnowledgeLoadError,
     MissingUploadContentError,
     PartialDocumentOperationError,
@@ -495,6 +502,72 @@ def problem_from_exception(
             title="GitHub request failed",
             status=502,
             detail="The GitHub request failed.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraNotConnectedError):
+        return _problem(
+            code="jira_not_connected",
+            title="Jira not connected",
+            status=409,
+            detail="Jira is not connected.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraSiteSelectionRequiredError):
+        return _problem(
+            code="jira_site_selection_required",
+            title="Jira site selection required",
+            status=409,
+            detail="Select a Jira site first.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraSelectionRequiredError):
+        return _problem(
+            code="jira_selection_required",
+            title="Jira selection required",
+            status=409,
+            detail="Select Jira projects before syncing.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraReauthorizationRequiredError):
+        return _problem(
+            code="jira_reauthorization_required",
+            title="Jira reauthorization required",
+            status=409,
+            detail="Jira authorization was revoked. Connect again.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraConnectorError):
+        return _problem(
+            code="jira_request_failed",
+            title="Jira request failed",
+            status=502,
+            detail="The Jira request failed.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraIssueLimitExceededError):
+        return _problem(
+            code="jira_issue_limit_exceeded",
+            title="Jira issue limit exceeded",
+            status=502,
+            detail=(
+                "The selected Jira projects exceed the configured issue limit. "
+                "Select fewer projects or raise JIRA_MAX_ISSUES."
+            ),
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraConnectorSyncError):
+        return _problem(
+            code="connector_sync_failed",
+            title="Connector sync failed",
+            status=502,
+            detail="The Jira connector sync failed.",
             instance=instance,
             request_id=request_id,
         )

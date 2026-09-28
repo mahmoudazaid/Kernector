@@ -150,14 +150,18 @@ other provider types as permanent core entities.
   plus CLI service-account sync.
 - GitHub (`infrastructure/connectors/github/`) — Hub user OAuth plus CLI PAT
   sync for allowlisted repo files and optional ProjectV2 Issues.
+- Jira Cloud (`infrastructure/connectors/jira/`) — Hub Atlassian OAuth 2.0
+  (3LO) only. The grant stores one selected site (`cloud_id`, `site_url`) and
+  project keys; issues map to Markdown `SourceDocument`s with source id
+  `{cloudId}/{PROJECT}:{KEY}` and the issue `updated` timestamp as revision.
 
-Drive/GitHub failures map to a small domain taxonomy: `ConnectorAuthError` for
+Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
 Exception messages are fixed; raw provider bodies stay on `__cause__` only.
 
-Presentation exposes HTTP status, user OAuth, and sync for Drive and GitHub
-under `/api/v1/connectors/{google-drive|github}/…`. Knowledge Hub panels start
+Presentation exposes HTTP status, user OAuth, and sync for Drive, GitHub, and
+Jira under `/api/v1/connectors/{google-drive|github|jira}/…`. Knowledge Hub panels start
 OAuth via the backend start URL and never store tokens. Grant JSON lives under
 `data/*-oauth-*.json` (gitignored). The Drive CLI remains on the service-account
 path; the GitHub CLI uses `GITHUB_TOKEN` from the environment only.
@@ -166,7 +170,16 @@ Drive synchronization compares Drive `version` to `CatalogDocument.revision`
 and skips unchanged `READY` rows. Drive sync is **add/update-only** (no remote
 deletion reconciliation). GitHub sync opts into hard-delete reconciliation for
 `source_type=github` when the listing completes with zero `FAILED` outcomes;
-incomplete listings must raise rather than return a short list. Concurrent HTTP
+incomplete listings must raise rather than return a short list. Jira sync
+reconciles `source_type=jira` rows under the selected `{cloudId}/` prefix and
+connector id the same way; a repeated `nextPageToken` or more than
+`JIRA_MAX_ISSUES` issues raises before any catalog write. Composition
+(`composition/jira.py`) owns Atlassian refresh-token rotation: it persists the
+rotated access and refresh tokens together under the grant lock before
+retrying, and an `invalid_grant` refresh clears tokens and moves the
+connection to `reauthorization_required`. Deselecting a project, switching
+sites, and disconnecting purge the matching Jira rows. Atlassian has no public
+revoke endpoint, so disconnect is local only. Concurrent HTTP
 syncs are unguarded server-side: the client `busy` flag covers one tab, but two
 tabs or a direct `curl` can run at once. Multi-instance claim is deferred (#270).
 Scheduled sync and webhooks are out of scope.
@@ -483,8 +496,8 @@ pipeline. Names only (no implementation commitment in this document):
 
 - File upload (TXT, Markdown, PDF)
 - Seed JSON corpus adapter
-- Future: Jira, Confluence
-- Implemented: Google Drive, GitHub
+- Future: Confluence
+- Implemented: Google Drive, GitHub, Jira Cloud
 
 ### Catalog adapter
 

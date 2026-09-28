@@ -101,6 +101,9 @@ from composition.errors import (
     DocumentUploadError,
     GitHubConnectorError,
     GitHubConnectorSyncError,
+    JiraConnectorError,
+    JiraConnectorSyncError,
+    JiraIssueLimitExceededError,
     KnowledgeLoadError,
     MissingUploadContentError,
     PartialDocumentOperationError,
@@ -108,6 +111,24 @@ from composition.errors import (
     UnsupportedPreviewFormatError,
 )
 from composition.evaluate import build_evaluate_knowledge, load_eval_cases
+from composition.jira import (
+    JiraLastSync,
+    JiraProjectItem,
+    JiraProjectPage,
+    JiraSelection,
+    JiraSiteItem,
+    JiraStatus,
+    complete_jira_oauth,
+    disconnect_jira_oauth,
+    get_jira_selection,
+    jira_status,
+    list_jira_projects,
+    list_jira_sites,
+    put_jira_selection,
+    put_jira_site,
+    start_jira_oauth,
+    sync_jira_oauth,
+)
 from infrastructure.config import Settings
 
 __all__ = [
@@ -210,4 +231,23 @@ __all__ = [
     "sync_github_oauth",
     "sync_google_drive",
     "sync_google_drive_oauth",
+    "JiraConnectorError",
+    "JiraConnectorSyncError",
+    "JiraIssueLimitExceededError",
+    "JiraLastSync",
+    "JiraProjectItem",
+    "JiraProjectPage",
+    "JiraSelection",
+    "JiraSiteItem",
+    "JiraStatus",
+    "complete_jira_oauth",
+    "disconnect_jira_oauth",
+    "get_jira_selection",
+    "jira_status",
+    "list_jira_projects",
+    "list_jira_sites",
+    "put_jira_selection",
+    "put_jira_site",
+    "start_jira_oauth",
+    "sync_jira_oauth",
 ]

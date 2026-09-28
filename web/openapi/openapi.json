@@ -1570,9 +1570,329 @@
       },
       "HubSourceType": {
         "description": "Hub catalog kinds accepted by chunk-inspect query params.\n\nMirrors ``domain.knowledge.HUB_SOURCE_TYPES`` as a named OpenAPI schema so\nthe wire contract stays documented and does not silently widen with\n``SourceType``.",
-        "enum": ["knowledge_document", "google_drive", "github"],
+        "enum": ["knowledge_document", "google_drive", "github", "jira"],
         "title": "HubSourceType",
         "type": "string"
+      },
+      "JiraLastSyncResponse": {
+        "description": "Last Jira sync summary. Counts are honest; no secrets.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "new_count": {
+            "title": "New Count",
+            "type": "integer"
+          },
+          "removed_count": {
+            "title": "Removed Count",
+            "type": "integer"
+          },
+          "synced_at": {
+            "title": "Synced At",
+            "type": "string"
+          },
+          "unchanged_count": {
+            "title": "Unchanged Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "synced_at",
+          "new_count",
+          "updated_count",
+          "unchanged_count",
+          "removed_count",
+          "failed_count"
+        ],
+        "title": "JiraLastSyncResponse",
+        "type": "object"
+      },
+      "JiraProjectItemResponse": {
+        "description": "One Jira project row for the Hub picker.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["key", "name"],
+        "title": "JiraProjectItemResponse",
+        "type": "object"
+      },
+      "JiraProjectPageResponse": {
+        "description": "One page of Jira projects; ``next_start_at`` is null on the last page.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_start_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Start At"
+          }
+        },
+        "required": ["items"],
+        "title": "JiraProjectPageResponse",
+        "type": "object"
+      },
+      "JiraSelectionRequest": {
+        "description": "Replace the saved project keys on the selected site.",
+        "properties": {
+          "project_keys": {
+            "items": {
+              "maxLength": 255,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Project Keys",
+            "type": "array"
+          }
+        },
+        "title": "JiraSelectionRequest",
+        "type": "object"
+      },
+      "JiraSelectionResponse": {
+        "description": "Saved Jira site and project keys (no tokens).",
+        "properties": {
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
+          },
+          "project_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Project Keys",
+            "type": "array"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JiraSiteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "JiraSelectionResponse",
+        "type": "object"
+      },
+      "JiraSiteListResponse": {
+        "description": "Jira sites for the Hub site step.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JiraSiteResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": ["items"],
+        "title": "JiraSiteListResponse",
+        "type": "object"
+      },
+      "JiraSiteRequest": {
+        "description": "Select one Jira site by Atlassian cloud id.",
+        "properties": {
+          "cloud_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Cloud Id",
+            "type": "string"
+          }
+        },
+        "required": ["cloud_id"],
+        "title": "JiraSiteRequest",
+        "type": "object"
+      },
+      "JiraSiteResponse": {
+        "description": "One Jira Cloud site the grant can read.",
+        "properties": {
+          "cloud_id": {
+            "title": "Cloud Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": ["cloud_id", "name", "url"],
+        "title": "JiraSiteResponse",
+        "type": "object"
+      },
+      "JiraStatusResponse": {
+        "description": "Jira connection, selected site and projects (no secrets).",
+        "properties": {
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "connected": {
+            "default": false,
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "connection_state": {
+            "default": "disconnected",
+            "enum": [
+              "disconnected",
+              "site_selection_required",
+              "setup_required",
+              "ready",
+              "reauthorization_required"
+            ],
+            "title": "Connection State",
+            "type": "string"
+          },
+          "document_count": {
+            "default": 0,
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "last_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JiraLastSyncResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oauth_ready": {
+            "title": "Oauth Ready",
+            "type": "boolean"
+          },
+          "project_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Project Keys",
+            "type": "array"
+          },
+          "reauthorization_required": {
+            "default": false,
+            "title": "Reauthorization Required",
+            "type": "boolean"
+          },
+          "setup_required": {
+            "default": false,
+            "title": "Setup Required",
+            "type": "boolean"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JiraSiteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sync_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Scope"
+          }
+        },
+        "required": ["available", "oauth_ready"],
+        "title": "JiraStatusResponse",
+        "type": "object"
+      },
+      "JiraSyncResponse": {
+        "description": "Projected Jira sync counts and per-document outcomes.",
+        "properties": {
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "ingested_count": {
+            "title": "Ingested Count",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorSyncOutcomeResponse"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "removed_count": {
+            "default": 0,
+            "title": "Removed Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "updated_count": {
+            "default": 0,
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ingested_count",
+          "skipped_count",
+          "failed_count",
+          "outcomes"
+        ],
+        "title": "JiraSyncResponse",
+        "type": "object"
       },
       "ModelSettingDefResponse": {
         "description": "One generation setting for Settings UI controls.",
@@ -4471,6 +4791,682 @@
           }
         },
         "summary": "Google Drive Connector Sync",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira": {
+      "delete": {
+        "description": "Delete the stored Atlassian grant. Synced Jira documents are removed.",
+        "operationId": "jira_connector_disconnect_api_v1_connectors_jira_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Jira Connector Disconnect",
+        "tags": ["connectors"]
+      },
+      "get": {
+        "description": "Return the presentation-safe Jira connection, site, and projects.",
+        "operationId": "jira_connector_status_api_v1_connectors_jira_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Jira Connector Status",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/last-sync": {
+      "get": {
+        "description": "Return the last persisted Jira sync summary, if present.",
+        "operationId": "jira_connector_last_sync_api_v1_connectors_jira_last_sync_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JiraLastSyncResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Jira Connector Last Sync Api V1 Connectors Jira Last Sync Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Jira Connector Last Sync",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/oauth/callback": {
+      "get": {
+        "description": "Validate state, exchange the code server-side, resolve sites, return to the Hub.",
+        "operationId": "jira_oauth_callback_api_v1_connectors_jira_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Jira Oauth Callback",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/oauth/start": {
+      "get": {
+        "description": "Issue CSRF state and redirect the browser to Atlassian, or back to the Hub.",
+        "operationId": "jira_oauth_start_api_v1_connectors_jira_oauth_start_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Jira Oauth Start",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/projects": {
+      "get": {
+        "description": "List projects on the selected Jira site for the Hub picker.",
+        "operationId": "jira_connector_projects_api_v1_connectors_jira_projects_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_at",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Start At",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraProjectPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Jira Connector Projects",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/selection": {
+      "get": {
+        "description": "Return the saved Jira site and project keys.",
+        "operationId": "jira_connector_get_selection_api_v1_connectors_jira_selection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Jira Connector Get Selection",
+        "tags": ["connectors"]
+      },
+      "put": {
+        "description": "Validate project access and replace the selection; deselected projects are purged.",
+        "operationId": "jira_connector_put_selection_api_v1_connectors_jira_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Jira Connector Put Selection",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/site": {
+      "put": {
+        "description": "Select a Jira site. Switching sites removes its synced documents.",
+        "operationId": "jira_connector_put_site_api_v1_connectors_jira_site_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraSiteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Jira Connector Put Site",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/sites": {
+      "get": {
+        "description": "List Jira sites the stored grant can read.",
+        "operationId": "jira_connector_sites_api_v1_connectors_jira_sites_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraSiteListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Jira Connector Sites",
+        "tags": ["connectors"]
+      }
+    },
+    "/api/v1/connectors/jira/sync": {
+      "post": {
+        "description": "Synchronize the selected Jira projects into the knowledge base.",
+        "operationId": "jira_connector_sync_api_v1_connectors_jira_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Jira Connector Sync",
         "tags": ["connectors"]
       }
     },

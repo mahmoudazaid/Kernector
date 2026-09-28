@@ -61,6 +61,22 @@ vi.mock("@/lib/api/connectors", async (importOriginal) => {
     disconnectGitHub: vi.fn(),
     githubOAuthStartUrl: (baseUrl: string) =>
       `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/github/oauth/start`,
+    getJiraStatus: vi.fn().mockResolvedValue({
+      available: true,
+      oauth_ready: true,
+      connected: false,
+      account_name: null,
+      site: null,
+      project_keys: [],
+      document_count: 0,
+      last_sync: null,
+      reauthorization_required: false,
+      setup_required: false,
+      connection_state: "disconnected",
+      sync_scope: null,
+    }),
+    syncJira: vi.fn(),
+    disconnectJira: vi.fn(),
   };
 });
 
@@ -1400,6 +1416,11 @@ describe("DocumentsPanel", () => {
     }).parentElement?.nextElementSibling;
     expect(available?.textContent).toMatch(/google drive/i);
     expect(available?.textContent).toMatch(/github/i);
+    const jiraConnect = connectLinks.find((link) =>
+      link.getAttribute("href")?.includes("/api/v1/connectors/jira/oauth/start"),
+    );
+    expect(jiraConnect).toBeDefined();
+    expect(available?.textContent).not.toMatch(/issues and stories/i);
     expect(
       screen.queryByRole("button", { name: /Sync/i }),
     ).not.toBeInTheDocument();
