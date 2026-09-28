@@ -29,6 +29,9 @@ google-drive = [
 github = [
     "httpx>=0.28.0",
 ]
+jira = [
+    "httpx>=0.28.0",
+]
 
 [dependency-groups]
 dev = [

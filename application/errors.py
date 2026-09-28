@@ -120,6 +120,22 @@ class GitHubReauthorizationRequiredError(ConfigurationError):
     """The stored GitHub token was revoked or is no longer valid."""
 
 
+class JiraNotConnectedError(ConfigurationError):
+    """No Atlassian grant is stored for Jira."""
+
+
+class JiraSiteSelectionRequiredError(ConfigurationError):
+    """The grant can read several Jira sites and none is selected yet."""
+
+
+class JiraSelectionRequiredError(ConfigurationError):
+    """A Jira site is selected but no projects are saved for sync."""
+
+
+class JiraReauthorizationRequiredError(ConfigurationError):
+    """The Atlassian grant or site access was revoked; the user must reconnect."""
+
+
 class InsufficientEvidenceError(RuntimeError):
     """A grounded use case found no retrieval hits above the relevance threshold.
 

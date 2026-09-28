@@ -54,6 +54,30 @@ _DOCUMENTS_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
     ("/api/v1/documents/{source_id}/chunks", "get"): ("404", "405", "422", "500"),
 }
 
+_JIRA_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("/api/v1/connectors/jira", "get"): ("405", "500"),
+    ("/api/v1/connectors/jira", "delete"): ("405", "409", "500"),
+    ("/api/v1/connectors/jira/last-sync", "get"): ("405", "500"),
+    ("/api/v1/connectors/jira/oauth/start", "get"): ("405", "500"),
+    ("/api/v1/connectors/jira/oauth/callback", "get"): ("405", "500"),
+    ("/api/v1/connectors/jira/sites", "get"): ("405", "409", "500", "502"),
+    ("/api/v1/connectors/jira/site", "put"): ("405", "409", "422", "500", "502"),
+    ("/api/v1/connectors/jira/projects", "get"): ("405", "409", "422", "500", "502"),
+    ("/api/v1/connectors/jira/selection", "get"): ("405", "409", "500"),
+    ("/api/v1/connectors/jira/selection", "put"): ("405", "409", "422", "500", "502"),
+    ("/api/v1/connectors/jira/sync", "post"): ("405", "409", "500", "502"),
+}
+
+
+def test_openapi_jira_routes_declare_problem_errors() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    for (path, method), statuses in _JIRA_ERROR_STATUSES.items():
+        responses = schema["paths"][path][method]["responses"]
+        for status in statuses:
+            content = responses[status]["content"]
+            assert list(content) == [_PROBLEM], f"{path} {method} {status}"
+
 
 def test_openapi_includes_health_and_settings_schemas() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
@@ -105,6 +129,7 @@ def test_openapi_hub_source_type_is_named_component() -> None:
         "knowledge_document",
         "google_drive",
         "github",
+        "jira",
     }
     chunks = schema["paths"]["/api/v1/documents/{source_id}/chunks"]["get"]
     source_type = next(

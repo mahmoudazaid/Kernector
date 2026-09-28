@@ -50,6 +50,7 @@ data/uploads/
 data/secrets/
 **/google-oauth-*.json
 **/github-oauth-*.json
+**/jira-oauth-*.json
 
 # Local scratch output
 .tmp-*
