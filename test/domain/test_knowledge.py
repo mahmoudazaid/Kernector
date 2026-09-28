@@ -41,8 +41,17 @@ def test_hub_source_types_are_explicit_members() -> None:
     from domain.knowledge import HUB_SOURCE_TYPES
 
     assert HUB_SOURCE_TYPES == frozenset(
-        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE, SourceType.GITHUB}
+        {
+            SourceType.KNOWLEDGE_DOCUMENT,
+            SourceType.GOOGLE_DRIVE,
+            SourceType.GITHUB,
+            SourceType.JIRA,
+        }
     )
+
+
+def test_jira_source_type_value_is_stable() -> None:
+    assert SourceType.JIRA == "jira"
 
 
 def test_hub_source_type_schema_matches_hub_source_types() -> None:

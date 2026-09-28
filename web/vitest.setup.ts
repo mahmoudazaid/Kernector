@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { MotionGlobalConfig } from "motion/react";
 import { afterEach, vi } from "vitest";
 import { consumeDriveCallback } from "@/lib/documents/drive-callback";
+import { consumeJiraCallback } from "@/lib/documents/jira-callback";
 
 MotionGlobalConfig.skipAnimations = true;
 
@@ -35,5 +36,6 @@ Object.defineProperty(URL, "revokeObjectURL", {
 
 afterEach(() => {
   consumeDriveCallback();
+  consumeJiraCallback();
   cleanup();
 });

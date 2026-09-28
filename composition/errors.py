@@ -94,5 +94,17 @@ class GitHubConnectorError(RuntimeError):
     """A GitHub browse or picker call failed without exposing provider details."""
 
 
+class JiraConnectorSyncError(ConnectorSyncError):
+    """A Jira connector sync failed at the run level."""
+
+
+class JiraIssueLimitExceededError(JiraConnectorSyncError):
+    """The selected Jira projects exceed ``JIRA_MAX_ISSUES``; nothing was changed."""
+
+
+class JiraConnectorError(RuntimeError):
+    """A Jira site, project, or picker call failed without exposing provider details."""
+
+
 class GoogleDriveConnectorError(RuntimeError):
     """A Drive browse or selection call failed without exposing provider details."""

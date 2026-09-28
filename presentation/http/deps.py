@@ -22,6 +22,10 @@ from composition import (
     GitHubSelection,
     GitHubStatus,
     GroundedAsk,
+    JiraProjectPage,
+    JiraSelection,
+    JiraSiteItem,
+    JiraStatus,
     Settings,
     ShortTermMemoryRuntime,
     browse_google_drive_items,
@@ -57,6 +61,16 @@ from composition import (
     start_google_drive_oauth,
     sync_github_oauth,
     sync_google_drive_oauth,
+    complete_jira_oauth,
+    disconnect_jira_oauth,
+    get_jira_selection,
+    jira_status,
+    list_jira_projects,
+    list_jira_sites,
+    put_jira_selection,
+    put_jira_site,
+    start_jira_oauth,
+    sync_jira_oauth,
 )
 from composition.test_design import SourceLocatorView
 from domain.knowledge import (
@@ -547,6 +561,130 @@ def get_github_selection_write(
     return save
 
 
+def get_jira_status(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> JiraStatus:
+    """Report the Jira connection without calling Atlassian."""
+    return jira_status(settings, catalog_factory=get_document_catalog)
+
+
+def get_jira_sync(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], ConnectorSyncResponse]:
+    """Return a Jira sync callable that builds the vector store lazily."""
+
+    def sync() -> ConnectorSyncResponse:
+        return sync_jira_oauth(
+            settings,
+            catalog_factory=get_document_catalog,
+            vector_store_factory=get_vector_store,
+        )
+
+    return sync
+
+
+def get_jira_oauth_start(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], str]:
+    """Return a callable that issues CSRF state and builds Atlassian's auth URL."""
+
+    def start() -> str:
+        return start_jira_oauth(settings)
+
+    return start
+
+
+def get_jira_oauth_callback(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[str | None, str | None, str | None], str]:
+    """Return a callable that completes the Atlassian OAuth callback."""
+
+    def complete(state: str | None, code: str | None, error: str | None) -> str:
+        return complete_jira_oauth(settings, state=state, code=code, error=error)
+
+    return complete
+
+
+def get_jira_disconnect(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], None]:
+    """Return a callable that deletes the grant and purges Jira documents."""
+
+    def disconnect() -> None:
+        disconnect_jira_oauth(
+            settings,
+            catalog_factory=get_document_catalog,
+            vector_store_factory=get_vector_store,
+        )
+
+    return disconnect
+
+
+def get_jira_site_list(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], tuple[JiraSiteItem, ...]]:
+    """Return a callable listing Jira sites the grant can read."""
+
+    def list_sites() -> tuple[JiraSiteItem, ...]:
+        return list_jira_sites(settings)
+
+    return list_sites
+
+
+def get_jira_site_write(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., JiraSelection]:
+    """Return a callable that selects a Jira site (switching purges documents)."""
+
+    def save(*, cloud_id: str) -> JiraSelection:
+        return put_jira_site(
+            settings,
+            cloud_id=cloud_id,
+            catalog_factory=get_document_catalog,
+            vector_store_factory=get_vector_store,
+        )
+
+    return save
+
+
+def get_jira_project_list(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., JiraProjectPage]:
+    """Return a Jira project listing callable for the Hub picker."""
+
+    def list_projects(*, start_at: int = 0) -> JiraProjectPage:
+        return list_jira_projects(settings, start_at=start_at)
+
+    return list_projects
+
+
+def get_jira_selection_read(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[[], JiraSelection]:
+    """Return a callable that loads the saved Jira selection."""
+
+    def load() -> JiraSelection:
+        return get_jira_selection(settings)
+
+    return load
+
+
+def get_jira_selection_write(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Callable[..., JiraSelection]:
+    """Return a callable that validates and replaces the Jira project selection."""
+
+    def save(*, project_keys: list[str]) -> JiraSelection:
+        return put_jira_selection(
+            settings,
+            project_keys=project_keys,
+            catalog_factory=get_document_catalog,
+            vector_store_factory=get_vector_store,
+        )
+
+    return save
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RuntimeSettingsDep = Annotated[GetRuntimeSettings, Depends(get_runtime_settings)]
 ProbeOllamaStatusDep = Annotated[ProbeOllamaStatus, Depends(get_probe_ollama_status)]
@@ -611,6 +749,27 @@ GitHubSelectionReadDep = Annotated[
 ]
 GitHubSelectionWriteDep = Annotated[
     Callable[..., GitHubSelection], Depends(get_github_selection_write)
+]
+JiraStatusDep = Annotated[JiraStatus, Depends(get_jira_status)]
+JiraSyncDep = Annotated[Callable[[], ConnectorSyncResponse], Depends(get_jira_sync)]
+JiraOAuthStartDep = Annotated[Callable[[], str], Depends(get_jira_oauth_start)]
+JiraOAuthCallbackDep = Annotated[
+    Callable[[str | None, str | None, str | None], str],
+    Depends(get_jira_oauth_callback),
+]
+JiraDisconnectDep = Annotated[Callable[[], None], Depends(get_jira_disconnect)]
+JiraSiteListDep = Annotated[
+    Callable[[], tuple[JiraSiteItem, ...]], Depends(get_jira_site_list)
+]
+JiraSiteWriteDep = Annotated[Callable[..., JiraSelection], Depends(get_jira_site_write)]
+JiraProjectListDep = Annotated[
+    Callable[..., JiraProjectPage], Depends(get_jira_project_list)
+]
+JiraSelectionReadDep = Annotated[
+    Callable[[], JiraSelection], Depends(get_jira_selection_read)
+]
+JiraSelectionWriteDep = Annotated[
+    Callable[..., JiraSelection], Depends(get_jira_selection_write)
 ]
 
 

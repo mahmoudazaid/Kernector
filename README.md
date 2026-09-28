@@ -2,7 +2,7 @@
 
 ![Kernector overview](docs/images/kernector-overview.png)
 
-Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, the Google Drive connector, and the GitHub connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. External provider connectors beyond Drive and GitHub (for example Jira or Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
+Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, the Google Drive connector, the GitHub connector, and the Jira connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. Other provider connectors (for example Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
 Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The Sprint 3 agent purpose brief (Software Delivery Intelligence) is in [docs/sprint-3-agent-purpose.md](docs/sprint-3-agent-purpose.md); usage, examples, and technical decisions: [docs/sprint-3-agent-usage.md](docs/sprint-3-agent-usage.md); checklist: [docs/sprint-3-135-review.md](docs/sprint-3-135-review.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). JSON catalog retirement is recorded in [ADR 0007](docs/adr/0007-retire-json-document-catalog.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
@@ -24,11 +24,11 @@ and CLI entrypoints; it calls through composition and must not construct
 infrastructure or import packs directly. The interactive UI is Next.js under
 `web/`, talking HTTP to FastAPI.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, Google Drive, and GitHub (Hub OAuth plus CLI PAT).
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, Google Drive, GitHub (Hub OAuth plus CLI PAT), and Jira Cloud (Hub OAuth).
 
 ## Knowledge path from source to cited answer
 
-Normalized documents follow one pipeline whether they arrived as an upload, a seed JSON row, a Google Drive file, or a GitHub repo/Issue document. Additional connector payloads are planned behind the same `SourceDocument` boundary.
+Normalized documents follow one pipeline whether they arrived as an upload, a seed JSON row, a Google Drive file, a GitHub repo/Issue document, or a Jira issue. Additional connector payloads are planned behind the same `SourceDocument` boundary.
 
 ![Knowledge pipeline](docs/images/kernector-knowledge-pipeline.png)
 
@@ -393,6 +393,73 @@ abort without deletions.
 Repo files use stable ids `{owner}/{repo}:{path}`, blob SHA as revision, and a
 commit-pinned citation URL. ProjectV2 linked Issues (not PRs/discussions) use
 the Issue node id and `updatedAt` as revision.
+
+## Sync issues from Jira
+
+Jira Cloud connects through Knowledge Hub with **Atlassian OAuth 2.0 (3LO)**.
+There is no CLI or API-token path. Tokens stay on the server.
+
+### Setup
+
+1. In the [Atlassian developer console](https://developer.atlassian.com/console/myapps/),
+   create an OAuth 2.0 integration. Add the Jira API scopes `read:jira-work`
+   and `read:me`, and set the callback URL to
+   `http://127.0.0.1:8000/api/v1/connectors/jira/oauth/callback`.
+   Kernector also requests `offline_access` to get a refresh token.
+2. Set `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`,
+   `JIRA_OAUTH_REDIRECT_URI`, and optionally `JIRA_OAUTH_FRONTEND_REDIRECT`
+   (see [`.env.example`](.env.example)). Never commit those values.
+3. Install the extra: `uv sync --extra jira`.
+4. In Knowledge Hub, click **Connect** on the Jira card. Atlassian owns consent.
+
+### Sites and projects
+
+- If the grant can read exactly one Jira site, Kernector selects it. With
+  several sites, the picker asks you to choose one. With none, the Hub shows
+  a "no Jira Cloud site" message and stores nothing.
+- Pick one or more projects, then **Save**. Save triggers a sync.
+- Removing a project, switching sites, or disconnecting deletes the matching
+  synced issues after a danger confirmation.
+- One Jira connection per workspace. Multi-instance connectors are tracked in
+  [#270](https://github.com/mahmoudazaid/Kernector/issues/270).
+
+### What syncs
+
+Each issue becomes one Markdown document with its summary, description,
+status, type, priority, labels, assignee, reporter, components, fix versions,
+parent, created, and updated. Comments are included only when
+`JIRA_INCLUDE_COMMENTS=true`. Source ids are `{cloudId}/{PROJECT}:{KEY}`, the
+revision is the issue's `updated` timestamp, and citations link to
+`https://<site>/browse/<KEY>`.
+
+Sync reconciles removed issues on a fully successful listing. It aborts
+without writes when pagination repeats a `nextPageToken` or the selection
+exceeds `JIRA_MAX_ISSUES` (default 5000). Page size is `JIRA_PAGE_SIZE`
+(1–100, default 100). Sync is manual; there are no webhooks.
+
+### Tokens and disconnect
+
+Atlassian rotates refresh tokens. Kernector persists the new access and
+refresh tokens together before retrying, and never reuses a consumed refresh
+token. A rejected refresh marks the connection **Reconnect required** and
+clears stored tokens. Atlassian has no public revoke endpoint, so
+**Disconnect** deletes the local grant and synced issues only; remove the app
+under your Atlassian account's connected apps to revoke access there.
+
+Grant files live under `data/jira-oauth-*.json` (gitignored, mode `0600`).
+
+### Smoke test
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/connectors/jira
+curl -s http://127.0.0.1:8000/api/v1/connectors/jira/sites
+curl -s -X PUT http://127.0.0.1:8000/api/v1/connectors/jira/selection \
+  -H 'Content-Type: application/json' -d '{"project_keys":["ENG"]}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/connectors/jira/sync
+```
+
+Errors are typed: 422 for invalid input, 409 when the connection needs
+Connect, a site, projects, or reauthorization, and 502 when Atlassian fails.
 
 ## Logging and monitoring
 

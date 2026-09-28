@@ -433,3 +433,148 @@ export async function disconnectGitHub(
     timeoutMs: options.timeoutMs,
   } satisfies ApiRequestOptions);
 }
+
+export type JiraStatusResponse = components["schemas"]["JiraStatusResponse"];
+export type JiraSiteResponse = components["schemas"]["JiraSiteResponse"];
+export type JiraSiteListResponse = components["schemas"]["JiraSiteListResponse"];
+export type JiraProjectItemResponse =
+  components["schemas"]["JiraProjectItemResponse"];
+export type JiraProjectPageResponse =
+  components["schemas"]["JiraProjectPageResponse"];
+export type JiraSelectionResponse =
+  components["schemas"]["JiraSelectionResponse"];
+export type JiraSyncResponse = components["schemas"]["JiraSyncResponse"];
+
+export const JIRA_OAUTH_START_PATH = "/api/v1/connectors/jira/oauth/start";
+
+export function jiraOAuthStartUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/$/, "")}${JIRA_OAUTH_START_PATH}`;
+}
+
+export type GetJiraStatusOptions = GetGitHubStatusOptions;
+export type ListJiraSitesOptions = GetJiraStatusOptions;
+export type GetJiraSelectionOptions = GetJiraStatusOptions;
+export type SyncJiraOptions = GetJiraStatusOptions;
+export type DisconnectJiraOptions = GetJiraStatusOptions;
+export type PutJiraSiteOptions = GetJiraStatusOptions & { cloudId: string };
+export type ListJiraProjectsOptions = GetJiraStatusOptions & {
+  startAt?: number;
+};
+export type PutJiraSelectionOptions = GetJiraStatusOptions & {
+  projectKeys: string[];
+};
+
+/** Load Jira connection status from ``GET /api/v1/connectors/jira``. */
+export async function getJiraStatus(
+  options: GetJiraStatusOptions,
+): Promise<JiraStatusResponse> {
+  const request = options.request ?? apiRequest;
+  return request<JiraStatusResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira",
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/** List Jira sites the grant can read via ``GET /api/v1/connectors/jira/sites``. */
+export async function listJiraSites(
+  options: ListJiraSitesOptions,
+): Promise<JiraSiteListResponse> {
+  const request = options.request ?? apiRequest;
+  return request<JiraSiteListResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira/sites",
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/** Select the Jira site via ``PUT /api/v1/connectors/jira/site``. */
+export async function putJiraSite(
+  options: PutJiraSiteOptions,
+): Promise<JiraSelectionResponse> {
+  const request = options.request ?? apiRequest;
+  return request<JiraSelectionResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira/site",
+    method: "PUT",
+    body: { cloud_id: options.cloudId },
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/** List projects on the selected site via ``GET /api/v1/connectors/jira/projects``. */
+export async function listJiraProjects(
+  options: ListJiraProjectsOptions,
+): Promise<JiraProjectPageResponse> {
+  const request = options.request ?? apiRequest;
+  const startAt = options.startAt ?? 0;
+  return request<JiraProjectPageResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/connectors/jira/projects?start_at=${encodeURIComponent(String(startAt))}`,
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/** Load the saved Jira site and projects via ``GET /api/v1/connectors/jira/selection``. */
+export async function getJiraSelection(
+  options: GetJiraSelectionOptions,
+): Promise<JiraSelectionResponse> {
+  const request = options.request ?? apiRequest;
+  return request<JiraSelectionResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira/selection",
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/** Replace the saved project keys via ``PUT /api/v1/connectors/jira/selection``. */
+export async function putJiraSelection(
+  options: PutJiraSelectionOptions,
+): Promise<JiraSelectionResponse> {
+  const request = options.request ?? apiRequest;
+  return request<JiraSelectionResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira/selection",
+    method: "PUT",
+    body: { project_keys: options.projectKeys },
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}
+
+/** Synchronize the selected Jira projects via ``POST /api/v1/connectors/jira/sync``. */
+export async function syncJira(
+  options: SyncJiraOptions,
+): Promise<JiraSyncResponse> {
+  const request = options.request ?? apiRequest;
+  return request<JiraSyncResponse>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira/sync",
+    method: "POST",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? CONNECTOR_SYNC_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}
+
+/** Delete the Jira grant and synced documents via ``DELETE /api/v1/connectors/jira``. */
+export async function disconnectJira(
+  options: DisconnectJiraOptions,
+): Promise<void> {
+  const request = options.request ?? apiRequest;
+  await request<undefined>({
+    baseUrl: options.baseUrl,
+    path: "/api/v1/connectors/jira",
+    method: "DELETE",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  } satisfies ApiRequestOptions);
+}

@@ -22,6 +22,11 @@ import {
   type GitHubPanelProps,
 } from "@/components/documents/GitHubPanel";
 import {
+  JiraIcon,
+  JiraPanel,
+  type JiraPanelProps,
+} from "@/components/documents/JiraPanel";
+import {
   captureDriveCallback,
   peekDriveCallback,
 } from "@/lib/documents/drive-callback";
@@ -29,6 +34,10 @@ import {
   captureGithubCallback,
   peekGithubCallback,
 } from "@/lib/documents/github-callback";
+import {
+  captureJiraCallback,
+  peekJiraCallback,
+} from "@/lib/documents/jira-callback";
 import { triggerBrowserDownload } from "@/lib/documents/download";
 import { EmptyState } from "@/components/states/EmptyState";
 import { LoadingState } from "@/components/states/LoadingState";
@@ -89,10 +98,14 @@ export type DocumentsPanelProps = {
   getGitHubStatus?: GitHubPanelProps["getStatus"];
   syncGitHub?: GitHubPanelProps["syncNow"];
   disconnectGitHub?: GitHubPanelProps["disconnect"];
+  getJiraStatus?: JiraPanelProps["getStatus"];
+  syncJira?: JiraPanelProps["syncNow"];
+  disconnectJira?: JiraPanelProps["disconnect"];
 };
 
 const GOOGLE_DRIVE_SOURCE = "google_drive";
 const GITHUB_SOURCE = "github";
+const JIRA_SOURCE = "jira";
 
 type CatalogView =
   | { kind: "loading" }
@@ -134,8 +147,7 @@ const HUB_LEDE =
   "Connect knowledge sources, control synchronization, and browse every indexed document in one place.";
 
 const PLANNED_CONNECTORS = [
-  { name: "Jira", kind: "Issues and stories", icon: "jira" },
-  { name: "Confluence", kind: "Team documentation", icon: "book" },
+  { name: "Confluence", kind: "Team documentation" },
 ] as const;
 
 const SOURCE_FILTERS = [
@@ -143,13 +155,15 @@ const SOURCE_FILTERS = [
   "File uploads",
   "Google Drive",
   "GitHub",
+  "Jira",
 ] as const;
 
 function isHubSourceType(value: string): value is HubSourceType {
   return (
     value === "knowledge_document" ||
     value === "google_drive" ||
-    value === "github"
+    value === "github" ||
+    value === "jira"
   );
 }
 
@@ -220,8 +234,12 @@ function isGitHubDocument(doc: CatalogDocumentResponse): boolean {
   return doc.source_type === GITHUB_SOURCE;
 }
 
+function isJiraDocument(doc: CatalogDocumentResponse): boolean {
+  return doc.source_type === JIRA_SOURCE;
+}
+
 function isUploadDocument(doc: CatalogDocumentResponse): boolean {
-  return !isDriveDocument(doc) && !isGitHubDocument(doc);
+  return !isDriveDocument(doc) && !isGitHubDocument(doc) && !isJiraDocument(doc);
 }
 
 /** Ready documents with stored chunks may open the inspect sheet. */
@@ -239,6 +257,9 @@ function sourceLabel(sourceType: string): string {
   }
   if (sourceType === GITHUB_SOURCE) {
     return "GitHub";
+  }
+  if (sourceType === JIRA_SOURCE) {
+    return "Jira";
   }
   return "File upload";
 }
@@ -330,21 +351,7 @@ function GitHubMiniIcon() {
   );
 }
 
-function PlannedIcon({
-  name,
-}: {
-  name: (typeof PLANNED_CONNECTORS)[number]["icon"];
-}) {
-  if (name === "jira") {
-    return (
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path
-          d="M4.5 5.5h6.2v2.2H6.7v6.8H4.5V5.5Zm4.8 4.8h6.2v6.2h-2.2v-4H9.3V10.3Zm2.2-4.8h4v4h-4v-4Z"
-          fill="currentColor"
-        />
-      </svg>
-    );
-  }
+function PlannedIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
@@ -395,6 +402,9 @@ export function DocumentsPanel({
   getGitHubStatus,
   syncGitHub: syncGitHubNow,
   disconnectGitHub: disconnectGitHubNow,
+  getJiraStatus,
+  syncJira: syncJiraNow,
+  disconnectJira: disconnectJiraNow,
 }: DocumentsPanelProps) {
   const {
     catalog: runtimeCatalog,
@@ -429,6 +439,11 @@ export function DocumentsPanel({
   const [githubReloadToken, setGithubReloadToken] = useState(0);
   const [githubOauthCallback, setGithubOauthCallback] = useState<string | null>(
     peekGithubCallback,
+  );
+  const [jiraConnected, setJiraConnected] = useState(false);
+  const [jiraReloadToken, setJiraReloadToken] = useState(0);
+  const [jiraOauthCallback, setJiraOauthCallback] = useState<string | null>(
+    peekJiraCallback,
   );
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -465,6 +480,7 @@ export function DocumentsPanel({
   useEffect(() => {
     captureDriveCallback();
     captureGithubCallback();
+    captureJiraCallback();
   }, []);
 
   useEffect(() => {
@@ -596,6 +612,9 @@ export function DocumentsPanel({
       return false;
     }
     if (sourceFilter === "GitHub" && !isGitHubDocument(doc)) {
+      return false;
+    }
+    if (sourceFilter === "Jira" && !isJiraDocument(doc)) {
       return false;
     }
     if (sourceFilter === "File uploads" && !isUploadDocument(doc)) {
@@ -992,6 +1011,9 @@ export function DocumentsPanel({
       if (isGitHubDocument(document)) {
         setGithubReloadToken((token) => token + 1);
       }
+      if (isJiraDocument(document)) {
+        setJiraReloadToken((token) => token + 1);
+      }
       await refresh();
     } catch (error) {
       setPendingDelete(null);
@@ -1039,7 +1061,10 @@ export function DocumentsPanel({
     null,
   );
   const connectedCount =
-    1 + (driveConnected ? 1 : 0) + (githubConnected ? 1 : 0);
+    1 +
+    (driveConnected ? 1 : 0) +
+    (githubConnected ? 1 : 0) +
+    (jiraConnected ? 1 : 0);
 
   if (catalog.kind === "loading") {
     return (
@@ -1235,6 +1260,23 @@ export function DocumentsPanel({
               }}
             />
           ) : null}
+          {jiraConnected ? (
+            <JiraPanel
+              apiBaseUrl={apiBaseUrl}
+              getStatus={getJiraStatus}
+              syncNow={syncJiraNow}
+              disconnect={disconnectJiraNow}
+              onConnectionChange={setJiraConnected}
+              onCatalogChange={() => {
+                void refresh();
+              }}
+              reloadToken={jiraReloadToken}
+              oauthCallback={jiraOauthCallback}
+              onOAuthCallbackConsumed={() => {
+                setJiraOauthCallback(null);
+              }}
+            />
+          ) : null}
         </div>
         <div className="kern-hub-section-head">
           <h2>Available connectors</h2>
@@ -1279,10 +1321,27 @@ export function DocumentsPanel({
               }}
             />
           ) : null}
+          {!jiraConnected ? (
+            <JiraPanel
+              apiBaseUrl={apiBaseUrl}
+              getStatus={getJiraStatus}
+              syncNow={syncJiraNow}
+              disconnect={disconnectJiraNow}
+              onConnectionChange={setJiraConnected}
+              onCatalogChange={() => {
+                void refresh();
+              }}
+              reloadToken={jiraReloadToken}
+              oauthCallback={jiraOauthCallback}
+              onOAuthCallbackConsumed={() => {
+                setJiraOauthCallback(null);
+              }}
+            />
+          ) : null}
           {PLANNED_CONNECTORS.map((connector) => (
             <article className="kern-available-card" key={connector.name}>
               <span className="kern-source-icon">
-                <PlannedIcon name={connector.icon} />
+                <PlannedIcon />
               </span>
               <div className="kern-available-copy">
                 <h3>{connector.name}</h3>
@@ -1403,6 +1462,8 @@ export function DocumentsPanel({
                               <DriveIcon />
                             ) : isGitHubDocument(doc) ? (
                               <GitHubMiniIcon />
+                            ) : isJiraDocument(doc) ? (
+                              <JiraIcon />
                             ) : (
                               <UploadIcon />
                             )}

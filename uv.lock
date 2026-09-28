@@ -1023,6 +1023,9 @@ google-drive = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
 ]
+jira = [
+    { name = "httpx" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1039,6 +1042,7 @@ requires-dist = [
     { name = "google-api-python-client", marker = "extra == 'google-drive'", specifier = ">=2.190.0" },
     { name = "google-auth", marker = "extra == 'google-drive'", specifier = ">=2.42.0" },
     { name = "httpx", marker = "extra == 'github'", specifier = ">=0.28.0" },
+    { name = "httpx", marker = "extra == 'jira'", specifier = ">=0.28.0" },
     { name = "langchain-core", specifier = ">=1.5.4" },
     { name = "langchain-openai", specifier = ">=1.5.0" },
     { name = "langgraph", specifier = ">=1.2.11" },
@@ -1052,7 +1056,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.34.2" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
-provides-extras = ["google-drive", "github"]
+provides-extras = ["google-drive", "github", "jira"]
 
 [package.metadata.requires-dev]
 dev = [

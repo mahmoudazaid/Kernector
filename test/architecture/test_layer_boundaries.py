@@ -485,3 +485,37 @@ def test_pyproject_does_not_declare_a_github_sdk() -> None:
         assert name not in text, f"unexpected GitHub SDK dependency: {name}"
     assert 'github = [' in text or 'github=[' in text
     assert "httpx" in text
+
+
+def test_only_infrastructure_reaches_the_jira_adapter() -> None:
+    """Domain, application, packs, and presentation never import Jira/Atlassian code."""
+    forbidden = {"atlassian", "jira", "infrastructure.connectors.jira"}
+    for layer in ("application", "domain", "packs", "presentation"):
+        for module_path in _modules(layer):
+            hits = find_forbidden_module_prefixes(module_path, forbidden)
+            assert not hits, (
+                f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}"
+            )
+
+
+def test_planted_jira_adapter_import_in_application_is_detected(tmp_path: Path) -> None:
+    planted = tmp_path / "planted.py"
+    planted.write_text(
+        "from infrastructure.connectors.jira.client import HttpJiraClient\n",
+        encoding="utf-8",
+    )
+
+    assert find_forbidden_module_prefixes(planted, {"infrastructure.connectors.jira"})
+
+
+def test_jira_http_routes_reach_connectors_only_through_composition() -> None:
+    routes = REPO_ROOT / "presentation" / "http" / "routes" / "jira.py"
+    assert not find_forbidden_imports(routes, {"infrastructure", "httpx"})
+    assert "from composition import" in routes.read_text(encoding="utf-8")
+
+
+def test_pyproject_does_not_declare_a_jira_sdk() -> None:
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    for name in ("atlassian-python-api", '"jira>', '"jira=', "pycontribs", "jira-python"):
+        assert name not in text, f"unexpected Jira SDK dependency: {name}"
+    assert "jira = [" in text

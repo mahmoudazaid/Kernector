@@ -357,6 +357,46 @@ class GitHubOAuthSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class JiraSettings:
+    """Jira connector sync limits. Credentials live in the OAuth grant file."""
+
+    include_comments: bool = False
+    page_size: int = 100
+    max_issues: int = 5000
+
+
+@dataclass(frozen=True, slots=True)
+class JiraOAuthSettings:
+    """Atlassian OAuth 2.0 (3LO) for the Jira connector.
+
+    Client secret is never exposed on HTTP responses. Token JSON is stored at
+    ``token_path`` and is not loaded into this dataclass.
+    """
+
+    client_id: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str | None = None
+    frontend_redirect: str | None = None
+    token_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "jira-oauth-connection.json"
+    )
+    state_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "jira-oauth-state.json"
+    )
+    state_ttl_seconds: int = 600
+
+    def __repr__(self) -> str:
+        return (
+            "JiraOAuthSettings("
+            f"client_id={self.client_id!r}, client_secret='***', "
+            f"redirect_uri={self.redirect_uri!r}, "
+            f"frontend_redirect={self.frontend_redirect!r}, "
+            f"token_path={self.token_path!r}, state_path={self.state_path!r}, "
+            f"state_ttl_seconds={self.state_ttl_seconds})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -377,6 +417,8 @@ class Settings:
     rag_judge: RagJudgeSettings = field(default_factory=RagJudgeSettings)
     google_oauth: GoogleOAuthSettings = field(default_factory=GoogleOAuthSettings)
     github_oauth: GitHubOAuthSettings = field(default_factory=GitHubOAuthSettings)
+    jira: JiraSettings = field(default_factory=JiraSettings)
+    jira_oauth: JiraOAuthSettings = field(default_factory=JiraOAuthSettings)
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
@@ -422,6 +464,8 @@ def load_settings() -> Settings:
         rag_judge=_load_rag_judge_settings(),
         google_oauth=_load_google_oauth_settings(),
         github_oauth=_load_github_oauth_settings(),
+        jira=_load_jira_settings(),
+        jira_oauth=_load_jira_oauth_settings(),
     )
 
 
@@ -483,6 +527,20 @@ def _require_github_oauth_json_path(path: Path, env_name: str) -> Path:
     ):
         raise ValueError(
             f"{env_name} must use a github-oauth-*.json filename so the grant stays gitignored"
+        )
+    return path
+
+
+def _require_jira_oauth_json_path(path: Path, env_name: str) -> Path:
+    """Reject in-repo grant paths that would not match the OAuth gitignore."""
+    resolved = path.expanduser().resolve()
+    if not resolved.is_relative_to(_PROJECT_ROOT.resolve()):
+        return path
+    if not resolved.name.startswith("jira-oauth-") or not resolved.name.endswith(
+        ".json"
+    ):
+        raise ValueError(
+            f"{env_name} must use a jira-oauth-*.json filename so the grant stays gitignored"
         )
     return path
 
@@ -910,5 +968,70 @@ def _load_github_oauth_settings() -> GitHubOAuthSettings:
         frontend_redirect=frontend_redirect,
         token_path=token_path,
         state_path=state_path,
+        state_ttl_seconds=ttl,
+    )
+
+
+_JIRA_MAX_ISSUES_CEILING = 50_000
+
+
+def _load_jira_settings() -> JiraSettings:
+    """Parse Jira sync limits; the issue ceiling bounds one sync run."""
+    page_size = _env_int("JIRA_PAGE_SIZE", "100")
+    if not 1 <= page_size <= 100:
+        raise ValueError(
+            f"JIRA_PAGE_SIZE must satisfy 1 <= page_size <= 100, got {page_size}"
+        )
+    max_issues = _env_int("JIRA_MAX_ISSUES", "5000")
+    if not 1 <= max_issues <= _JIRA_MAX_ISSUES_CEILING:
+        raise ValueError(
+            "JIRA_MAX_ISSUES must satisfy "
+            f"1 <= max_issues <= {_JIRA_MAX_ISSUES_CEILING}, got {max_issues}"
+        )
+    return JiraSettings(
+        include_comments=_env_bool("JIRA_INCLUDE_COMMENTS", "false"),
+        page_size=page_size,
+        max_issues=max_issues,
+    )
+
+
+def _load_jira_oauth_settings() -> JiraOAuthSettings:
+    """Parse Atlassian 3LO env without reading stored tokens."""
+    raw_redirect = _optional_env("JIRA_OAUTH_REDIRECT_URI")
+    raw_frontend = _optional_env("JIRA_OAUTH_FRONTEND_REDIRECT")
+    raw_token = _optional_env("JIRA_OAUTH_TOKEN_PATH")
+    raw_state = _optional_env("JIRA_OAUTH_STATE_PATH")
+    ttl = _env_int("JIRA_OAUTH_STATE_TTL_SECONDS", "600")
+    if ttl < 30:
+        raise ValueError("JIRA_OAUTH_STATE_TTL_SECONDS must be at least 30")
+    return JiraOAuthSettings(
+        client_id=_optional_env("JIRA_OAUTH_CLIENT_ID"),
+        client_secret=_optional_env("JIRA_OAUTH_CLIENT_SECRET"),
+        redirect_uri=(
+            _require_absolute_http_url("JIRA_OAUTH_REDIRECT_URI", raw_redirect)
+            if raw_redirect
+            else None
+        ),
+        frontend_redirect=(
+            _require_absolute_http_url("JIRA_OAUTH_FRONTEND_REDIRECT", raw_frontend)
+            if raw_frontend
+            else None
+        ),
+        token_path=_require_jira_oauth_json_path(
+            (
+                _resolve_under_project_root(raw_token)
+                if raw_token
+                else _PROJECT_ROOT / "data" / "jira-oauth-connection.json"
+            ),
+            "JIRA_OAUTH_TOKEN_PATH",
+        ),
+        state_path=_require_jira_oauth_json_path(
+            (
+                _resolve_under_project_root(raw_state)
+                if raw_state
+                else _PROJECT_ROOT / "data" / "jira-oauth-state.json"
+            ),
+            "JIRA_OAUTH_STATE_PATH",
+        ),
         state_ttl_seconds=ttl,
     )
