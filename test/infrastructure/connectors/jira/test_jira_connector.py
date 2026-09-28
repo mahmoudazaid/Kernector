@@ -565,3 +565,45 @@ def test_consistent_totals_paginate_per_project() -> None:
     documents = _connector(client, projects=("KAN", "OPS"), page_size=1).list_documents()
 
     assert [d.extra["issue_key"] for d in documents] == ["KAN-1", "KAN-2", "OPS-1"]
+
+
+class CappedServerClient:
+    """Clamp ``maxResults`` like Jira DC's ``jira.search.views.default.max``."""
+
+    def __init__(self, issue_count: int, cap: int) -> None:
+        self._issues = [_issue(f"KAN-{n}") for n in range(1, issue_count + 1)]
+        self._cap = cap
+        self.calls = 0
+
+    def search_issues(
+        self,
+        jql: str,
+        fields: Sequence[str],
+        page_size: int,
+        next_page_token: str | None,
+    ) -> JiraIssuePage:
+        self.calls += 1
+        start = int(next_page_token or 0)
+        issues = tuple(self._issues[start : start + min(page_size, self._cap)])
+        next_start = start + len(issues)
+        is_last = next_start >= len(self._issues)
+        return JiraIssuePage(
+            issues=issues,
+            next_page_token=None if is_last else str(next_start),
+            is_last=is_last,
+            total=len(self._issues),
+        )
+
+
+def test_server_page_cap_below_page_size_paginates_through() -> None:
+    client = CappedServerClient(issue_count=1200, cap=20)
+
+    connector = JiraKnowledgeConnector(
+        client,
+        JiraIssueConfig(site=SITE, project_keys=("KAN",), page_size=100, max_issues=5000),
+    )
+
+    documents = connector.list_documents()
+
+    assert len(documents) == 1200
+    assert client.calls == 60

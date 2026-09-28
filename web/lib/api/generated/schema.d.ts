@@ -1664,11 +1664,11 @@ export interface components {
     };
     /**
      * JiraSiteResponse
-     * @description One Jira instance; ``cloud_id`` is null for Data Center / Server.
+     * @description One Jira instance; ``cloud_id`` mirrors ``instance_id`` for Data Center / Server.
      */
     JiraSiteResponse: {
       /** Cloud Id */
-      cloud_id?: string | null;
+      cloud_id: string;
       /** Instance Id */
       instance_id: string;
       /** Name */

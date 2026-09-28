@@ -1736,18 +1736,11 @@
         "type": "object"
       },
       "JiraSiteResponse": {
-        "description": "One Jira instance; ``cloud_id`` is null for Data Center / Server.",
+        "description": "One Jira instance; ``cloud_id`` mirrors ``instance_id`` for Data Center / Server.",
         "properties": {
           "cloud_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cloud Id"
+            "title": "Cloud Id",
+            "type": "string"
           },
           "instance_id": {
             "title": "Instance Id",
@@ -1762,7 +1755,7 @@
             "type": "string"
           }
         },
-        "required": ["instance_id", "name", "url"],
+        "required": ["cloud_id", "instance_id", "name", "url"],
         "title": "JiraSiteResponse",
         "type": "object"
       },

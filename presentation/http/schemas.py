@@ -210,10 +210,10 @@ class GitHubSelectionRequest(BaseModel):
 
 
 class JiraSiteResponse(BaseModel):
-    """One Jira instance; ``cloud_id`` is null for Data Center / Server."""
+    """One Jira instance; ``cloud_id`` mirrors ``instance_id`` for Data Center / Server."""
 
+    cloud_id: str
     instance_id: str
-    cloud_id: str | None = None
     name: str
     url: str
 

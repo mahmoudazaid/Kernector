@@ -290,7 +290,7 @@ export function JiraPicker({
           ) : null}
           {sitesView.kind === "ready"
             ? sitesView.sites.map((item) => {
-                const cloudId = item.cloud_id ?? item.instance_id;
+                const cloudId = item.cloud_id;
                 const checked = chosenSite === cloudId;
                 return (
                   <div

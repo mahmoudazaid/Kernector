@@ -40,8 +40,8 @@ def _site_response(site: JiraSiteItem | None) -> JiraSiteResponse | None:
     if site is None:
         return None
     return JiraSiteResponse(
+        cloud_id=site.cloud_id or site.instance_id,
         instance_id=site.instance_id,
-        cloud_id=site.cloud_id,
         name=site.name,
         url=site.url,
     )

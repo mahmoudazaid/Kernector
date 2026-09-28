@@ -18,7 +18,7 @@ const BETA = {
 };
 const DC_SERVER = {
   instance_id: "SRV-1",
-  cloud_id: null,
+  cloud_id: "SRV-1",
   name: "Example Jira",
   url: "https://jira.example.com",
 };

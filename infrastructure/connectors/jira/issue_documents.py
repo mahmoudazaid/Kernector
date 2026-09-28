@@ -73,7 +73,8 @@ class JiraIssueDocuments:
     def list_documents(self) -> Sequence[ConnectorDocument]:
         documents: list[ConnectorDocument] = []
         issues: dict[str, tuple[str, Mapping[str, object]]] = {}
-        page_budget = _page_budget(self._config)
+        effective_page_size = self._config.page_size
+        page_budget = _page_budget(self._config, effective_page_size)
         pages_fetched = 0
         fields = self._fields()
         for project_key in self._config.project_keys:
@@ -100,6 +101,9 @@ class JiraIssueDocuments:
                     page_issues, (str, bytes)
                 ):
                     raise JiraPaginationError()
+                if not page.is_last and 0 < len(page_issues) < effective_page_size:
+                    effective_page_size = len(page_issues)
+                    page_budget = _page_budget(self._config, effective_page_size)
                 for issue in page_issues:
                     if not isinstance(issue, Mapping):
                         raise JiraPaginationError()
@@ -241,9 +245,11 @@ def _comments(raw: object, render_text: Callable[[object], str]) -> list[str]:
     return rendered
 
 
-def _page_budget(config: JiraIssueConfig) -> int:
+def _page_budget(config: JiraIssueConfig, page_size: int) -> int:
+    # ``page_size`` is the smallest non-empty, non-last page seen so far: servers
+    # may cap ``maxResults`` below the request (``jira.search.views.default.max``).
     # Every selected project needs at least one (possibly empty) last page.
-    return -(-config.max_issues // config.page_size) + len(config.project_keys)
+    return -(-config.max_issues // page_size) + len(config.project_keys)
 
 
 def _next_token(raw: str | None, seen: set[str]) -> str:

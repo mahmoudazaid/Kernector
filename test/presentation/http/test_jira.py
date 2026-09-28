@@ -229,7 +229,7 @@ def test_selection_body_is_bounded() -> None:
     assert response.status_code == 422
 
 
-def test_data_center_status_has_mode_and_no_cloud_id() -> None:
+def test_data_center_status_mirrors_instance_id_into_cloud_id() -> None:
     status = JiraStatus(
         available=True,
         oauth_ready=False,
@@ -249,7 +249,7 @@ def test_data_center_status_has_mode_and_no_cloud_id() -> None:
     assert body["oauth_ready"] is False
     assert body["site"] == {
         "instance_id": "SRV-1",
-        "cloud_id": None,
+        "cloud_id": "SRV-1",
         "name": "Example Jira",
         "url": "https://jira.example.com",
     }

@@ -43,7 +43,9 @@ def read_json(path: Path) -> object:
 def atomic_write_json(path: Path, payload: object) -> None:
     """Write JSON to ``path`` at mode ``0600`` via temp file + ``os.replace``."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix="jira-tmp-", suffix=".json", dir=path.parent)
+    # The temp file shares the target's gitignored ``jira-oauth-*`` / ``jira-dc-*``
+    # prefix: it can hold live tokens if the process dies before ``os.replace``.
+    fd, tmp = tempfile.mkstemp(prefix=f"{path.stem}-tmp-", suffix=".json", dir=path.parent)
     handle = None
     try:
         os.fchmod(fd, 0o600)

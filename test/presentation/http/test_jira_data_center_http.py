@@ -121,7 +121,7 @@ def test_data_center_flow_never_exposes_the_token(world) -> None:
         selection := client.put(f"{BASE}/selection", json={"project_keys": ["ENG"]})
     )
     assert selection.json()["site"]["instance_id"] == "SRV-E2E"
-    assert selection.json()["site"]["cloud_id"] is None
+    assert selection.json()["site"]["cloud_id"] == "SRV-E2E"
     responses.append(client.get(f"{BASE}/selection"))
     responses.append(sync := client.post(f"{BASE}/sync"))
     assert sync.json()["ingested_count"] == 1
