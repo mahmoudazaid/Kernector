@@ -70,6 +70,11 @@ const CALLBACK_ERRORS: Record<string, string> = {
     "This Atlassian account has no Jira Cloud site this app can read. Check site access, then connect again.",
 };
 
+const DC_SETUP_HINT =
+  "Configure the Jira Data Center URL and Personal Access Token on the server, then restart the API.";
+const DC_REJECTED_COPY =
+  "Jira Data Center rejected the server's Personal Access Token. Update it on the server, then Browse or Sync to retry.";
+
 function actionErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -171,6 +176,7 @@ export function JiraPanel({
   }, [reloadToken]);
 
   const status = view.kind === "ready" ? view.status : null;
+  const dataCenter = status?.mode === "data_center";
   const connected = Boolean(status?.connected);
   const documentCount = status?.document_count ?? 0;
   const currentKeys = status?.project_keys ?? NO_KEYS;
@@ -285,7 +291,9 @@ export function JiraPanel({
       : view.kind === "error"
         ? "Unavailable"
         : reauth
-          ? "Reconnect required"
+          ? dataCenter
+            ? "Token rejected"
+            : "Reconnect required"
           : siteRequired
             ? "Choose a site"
             : setupRequired
@@ -300,7 +308,11 @@ export function JiraPanel({
     view.kind === "error"
       ? view.message
       : (actionError ??
-        (reauth ? "Jira authorization was revoked. Connect again." : null));
+        (reauth
+          ? dataCenter
+            ? DC_REJECTED_COPY
+            : "Jira authorization was revoked. Connect again."
+          : null));
 
   function onConnectClick(event: MouseEvent<HTMLAnchorElement>) {
     if (status !== null && !status.oauth_ready) {
@@ -321,6 +333,8 @@ export function JiraPanel({
     </a>
   );
 
+  const title = dataCenter ? "Jira Data Center" : "Jira";
+
   if (!connected) {
     return (
       <div className="kern-drive-available">
@@ -337,15 +351,17 @@ export function JiraPanel({
             <JiraIcon />
           </span>
           <div className="kern-available-copy">
-            <h3>Jira</h3>
-            <p className="kern-source-kind">Sign in with your Atlassian account</p>
+            <h3>{title}</h3>
+            <p className="kern-source-kind">
+              {dataCenter ? DC_SETUP_HINT : "Sign in with your Atlassian account"}
+            </p>
           </div>
           {view.kind === "loading" ? (
             <p className="visually-hidden" role="status">
               Loading Jira…
             </p>
           ) : null}
-          {connectControl}
+          {dataCenter ? null : connectControl}
         </article>
       </div>
     );
@@ -367,7 +383,7 @@ export function JiraPanel({
             <JiraIcon />
           </span>
           <div>
-            <h3>Jira</h3>
+            <h3>{title}</h3>
             <p className="kern-source-kind">Project issues</p>
           </div>
         </div>
@@ -399,12 +415,21 @@ export function JiraPanel({
       ) : null}
 
       <div className="kern-source-metrics">
-        <div>
-          <span className="kern-metric-label">Account</span>
-          <span className="kern-metric-value">
-            {status?.account_name ?? "Connected account"}
-          </span>
-        </div>
+        {dataCenter ? (
+          <div>
+            <span className="kern-metric-label">Server</span>
+            <span className="kern-metric-value">
+              {status?.site?.name ?? "Not verified"}
+            </span>
+          </div>
+        ) : (
+          <div>
+            <span className="kern-metric-label">Account</span>
+            <span className="kern-metric-value">
+              {status?.account_name ?? "Connected account"}
+            </span>
+          </div>
+        )}
         <div>
           <span className="kern-metric-label">Indexed</span>
           <span className="kern-metric-value">{documentCount}</span>
@@ -412,12 +437,14 @@ export function JiraPanel({
       </div>
 
       <div className="kern-sync-section" role="status">
-        <div className="kern-sync-heading">
-          <h3>Site</h3>
-          <span className="kern-sync-time">
-            {status?.site?.name ?? "Not selected"}
-          </span>
-        </div>
+        {dataCenter ? null : (
+          <div className="kern-sync-heading">
+            <h3>Site</h3>
+            <span className="kern-sync-time">
+              {status?.site?.name ?? "Not selected"}
+            </span>
+          </div>
+        )}
         <div className="kern-sync-heading">
           <h3>Projects</h3>
           <span className="kern-sync-time">
@@ -444,7 +471,7 @@ export function JiraPanel({
 
       <div className="kern-source-actions is-split">
         <div className="kern-action-group">
-          {reauth ? (
+          {reauth && !dataCenter ? (
             connectControl
           ) : (
             <>
@@ -472,17 +499,18 @@ export function JiraPanel({
           disabled={busy}
           onClick={() => setDisconnectOpen(true)}
         >
-          Disconnect
+          {dataCenter ? "Remove" : "Disconnect"}
         </Button>
       </div>
 
-      {pickerOpen && !reauth ? (
+      {pickerOpen && (!reauth || dataCenter) ? (
         <JiraPicker
           open
           apiBaseUrl={apiBaseUrl}
           site={status?.site ?? null}
           initialProjectKeys={currentKeys}
           busy={busy}
+          dataCenter={dataCenter}
           listSites={listSites}
           listProjects={listProjects}
           notice={pickerNotice}
@@ -532,9 +560,15 @@ export function JiraPanel({
 
       <ConfirmDialog
         open={disconnectOpen}
-        title="Disconnect Jira?"
-        description="This removes the stored Jira grant and deletes synced Jira issues from this workspace. Atlassian has no revoke endpoint; remove the app under your Atlassian account's connected apps to revoke access there."
-        confirmLabel="Disconnect"
+        title={
+          dataCenter ? "Remove Jira Data Center connection?" : "Disconnect Jira?"
+        }
+        description={
+          dataCenter
+            ? "This clears the saved project selection and deletes synced Jira issues from this workspace. The server's Personal Access Token is not changed; revoke it in Jira to cut access."
+            : "This removes the stored Jira grant and deletes synced Jira issues from this workspace. Atlassian has no revoke endpoint; remove the app under your Atlassian account's connected apps to revoke access there."
+        }
+        confirmLabel={dataCenter ? "Remove" : "Disconnect"}
         cancelLabel="Cancel"
         tone="danger"
         busy={busy}

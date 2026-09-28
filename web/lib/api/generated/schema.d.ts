@@ -416,7 +416,7 @@ export interface paths {
     post?: never;
     /**
      * Jira Connector Disconnect
-     * @description Delete the stored Atlassian grant. Synced Jira documents are removed.
+     * @description Delete the stored Jira connection state. Synced Jira documents are removed.
      */
     delete: operations["jira_connector_disconnect_api_v1_connectors_jira_delete"];
     options?: never;
@@ -493,7 +493,7 @@ export interface paths {
     };
     /**
      * Jira Connector Projects
-     * @description List projects on the selected Jira site for the Hub picker.
+     * @description List Jira projects for the Hub picker (Cloud: selected site; Data Center: server).
      */
     get: operations["jira_connector_projects_api_v1_connectors_jira_projects_get"];
     put?: never;
@@ -1664,11 +1664,13 @@ export interface components {
     };
     /**
      * JiraSiteResponse
-     * @description One Jira Cloud site the grant can read.
+     * @description One Jira instance; ``cloud_id`` is null for Data Center / Server.
      */
     JiraSiteResponse: {
       /** Cloud Id */
-      cloud_id: string;
+      cloud_id?: string | null;
+      /** Instance Id */
+      instance_id: string;
       /** Name */
       name: string;
       /** Url */
@@ -1705,6 +1707,12 @@ export interface components {
        */
       document_count: number;
       last_sync?: components["schemas"]["JiraLastSyncResponse"] | null;
+      /**
+       * Mode
+       * @default cloud
+       * @enum {string}
+       */
+      mode: "cloud" | "data_center";
       /** Oauth Ready */
       oauth_ready: boolean;
       /** Project Keys */
@@ -3691,6 +3699,15 @@ export interface operations {
           "application/problem+json": components["schemas"]["Problem"];
         };
       };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -3731,6 +3748,15 @@ export interface operations {
       };
       /** @description Method not allowed */
       405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
         headers: {
           [name: string]: unknown;
         };

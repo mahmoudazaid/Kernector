@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from domain.errors import ConnectorError
 from domain.knowledge import (
@@ -41,7 +42,11 @@ _ISSUE_FIELDS = (
 
 @dataclass(frozen=True, slots=True)
 class JiraIssueConfig:
-    """Issue ingestion scope for one Jira site."""
+    """Issue ingestion scope for one Jira instance.
+
+    ``render_text`` converts description and comment bodies to Markdown: ADF for
+    Jira Cloud, wiki markup for Data Center.
+    """
 
     site: JiraSite
     project_keys: tuple[str, ...]
@@ -49,10 +54,12 @@ class JiraIssueConfig:
     include_comments: bool = False
     page_size: int = 100
     max_issues: int = 5000
+    render_text: Callable[[object], str] = adf_to_markdown
+    deployment: Literal["cloud", "data_center"] = "cloud"
 
 
-def project_source_id_prefix(cloud_id: str, project_key: str) -> str:
-    return f"{cloud_id}/{project_key}:"
+def project_source_id_prefix(instance_id: str, project_key: str) -> str:
+    return f"{instance_id}/{project_key}:"
 
 
 class JiraIssueDocuments:
@@ -72,6 +79,7 @@ class JiraIssueDocuments:
         for project_key in self._config.project_keys:
             token: str | None = None
             seen_tokens: set[str] = set()
+            first_total: int | None = None
             while True:
                 if pages_fetched >= page_budget:
                     raise JiraPaginationError()
@@ -82,6 +90,11 @@ class JiraIssueDocuments:
                     token,
                 )
                 pages_fetched += 1
+                if page.total is not None:
+                    if first_total is None:
+                        first_total = page.total
+                    elif page.total != first_total:
+                        raise JiraPaginationError()
                 page_issues = page.issues
                 if not isinstance(page_issues, Sequence) or isinstance(
                     page_issues, (str, bytes)
@@ -126,6 +139,7 @@ class JiraIssueDocuments:
                     **_connector_extra(self._config.connector_id),
                     "jira_issue_key": key,
                     "jira_issue_url": site.browse_url(key),
+                    "jira_instance_id": site.instance_id,
                     "jira_project_key": project_key,
                     "jira_site_url": site.site_url,
                     "jira_updated_at": _required_text(fields, "updated"),
@@ -145,14 +159,18 @@ class JiraIssueDocuments:
         key = _required_text(issue, "key")
         fields = _fields_of(issue)
         site = self._config.site
-        source_id = f"{project_source_id_prefix(site.cloud_id, project_key)}{key}"
+        source_id = f"{project_source_id_prefix(site.instance_id, project_key)}{key}"
+        cloud_extra = (
+            {"cloud_id": site.cloud_id} if self._config.deployment == "cloud" else {}
+        )
         return ConnectorDocument(
             reference=SourceReference(source_id, SourceType.JIRA),
             file_name=f"{key}.md",
             revision=_required_text(fields, "updated"),
             extra={
                 **_connector_extra(self._config.connector_id),
-                "cloud_id": site.cloud_id,
+                **cloud_extra,
+                "jira_instance_id": site.instance_id,
                 "project_key": project_key,
                 "issue_key": key,
                 "url": site.browse_url(key),
@@ -187,18 +205,18 @@ class JiraIssueDocuments:
                 f"- Updated: {_required_text(fields, 'updated')}",
             ]
         )
-        description = adf_to_markdown(fields.get("description"))
+        description = self._config.render_text(fields.get("description"))
         if description:
             lines.extend(["", "## Description", "", description])
         if self._config.include_comments:
-            comments = _comments(fields.get("comment"))
+            comments = _comments(fields.get("comment"), self._config.render_text)
             if comments:
                 lines.extend(["", "## Comments", ""])
                 lines.extend(comments)
         return "\n".join(lines).strip()
 
 
-def _comments(raw: object) -> list[str]:
+def _comments(raw: object, render_text: Callable[[object], str]) -> list[str]:
     entries = _mapping(raw).get("comments")
     if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
         return []
@@ -206,7 +224,7 @@ def _comments(raw: object) -> list[str]:
     for comment in entries:
         if not isinstance(comment, Mapping):
             continue
-        body = adf_to_markdown(comment.get("body"))
+        body = render_text(comment.get("body"))
         author = _display_name(comment.get("author")) or "unknown"
         rendered.append(
             "\n".join(

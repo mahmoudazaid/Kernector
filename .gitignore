@@ -51,6 +51,7 @@ data/secrets/
 **/google-oauth-*.json
 **/github-oauth-*.json
 **/jira-oauth-*.json
+**/jira-dc-*.json
 
 # Local scratch output
 .tmp-*

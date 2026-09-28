@@ -22,6 +22,8 @@ export type JiraPickerProps = {
   site: JiraSiteResponse | null;
   initialProjectKeys: string[];
   busy?: boolean;
+  /** Data Center has one configured server: no site step, projects list directly. */
+  dataCenter?: boolean;
   listSites?: (options: ListJiraSitesOptions) => Promise<JiraSiteListResponse>;
   listProjects?: (
     options: ListJiraProjectsOptions,
@@ -90,6 +92,7 @@ export function JiraPicker({
   site,
   initialProjectKeys,
   busy = false,
+  dataCenter = false,
   listSites = listJiraSites,
   listProjects = listJiraProjects,
   onSelectSite,
@@ -100,7 +103,7 @@ export function JiraPicker({
   const titleId = useId();
   const descriptionId = useId();
   const [step, setStep] = useState<"site" | "projects">(
-    site ? "projects" : "site",
+    site || dataCenter ? "projects" : "site",
   );
   const [sitesView, setSitesView] = useState<SitesView>({ kind: "loading" });
   const [projectsView, setProjectsView] = useState<ProjectsView>({
@@ -112,15 +115,16 @@ export function JiraPicker({
   const [selectedKeys, setSelectedKeys] = useState<string[]>(initialProjectKeys);
 
   const siteId = site?.cloud_id ?? null;
+  const canListProjects = dataCenter || siteId !== null;
 
   useEffect(() => {
     if (!open) {
       return;
     }
-    setStep(siteId ? "projects" : "site");
+    setStep(siteId || dataCenter ? "projects" : "site");
     setChosenSite(siteId);
     setSelectedKeys(initialProjectKeys);
-  }, [open, siteId, initialProjectKeys]);
+  }, [open, siteId, dataCenter, initialProjectKeys]);
 
   useEffect(() => {
     if (!open || step !== "site") {
@@ -151,7 +155,7 @@ export function JiraPicker({
   }, [open, step, apiBaseUrl, listSites]);
 
   useEffect(() => {
-    if (!open || step !== "projects" || !siteId) {
+    if (!open || step !== "projects" || !canListProjects) {
       return;
     }
     let ignore = false;
@@ -181,7 +185,7 @@ export function JiraPicker({
       ignore = true;
       controller.abort();
     };
-  }, [open, step, siteId, apiBaseUrl, listProjects]);
+  }, [open, step, canListProjects, apiBaseUrl, listProjects]);
 
   async function loadMoreProjects() {
     if (
@@ -235,7 +239,7 @@ export function JiraPicker({
             <p id={descriptionId} className="kern-dialog-body">
               {siteStep
                 ? "This Atlassian account can read more than one Jira Cloud site. Pick one."
-                : `Issues from the selected projects on ${site?.name ?? "this site"} sync into the Hub.`}
+                : `Issues from the selected projects on ${site?.name ?? (dataCenter ? "your Jira Data Center" : "this site")} sync into the Hub.`}
             </p>
           </div>
           <Button
@@ -286,13 +290,14 @@ export function JiraPicker({
           ) : null}
           {sitesView.kind === "ready"
             ? sitesView.sites.map((item) => {
-                const checked = chosenSite === item.cloud_id;
+                const cloudId = item.cloud_id ?? item.instance_id;
+                const checked = chosenSite === cloudId;
                 return (
                   <div
                     className={
                       checked ? "kern-drive-item is-checked" : "kern-drive-item"
                     }
-                    key={item.cloud_id}
+                    key={cloudId}
                   >
                     <label className="kern-drive-item-select">
                       <input
@@ -300,7 +305,7 @@ export function JiraPicker({
                         name="jira-site"
                         checked={checked}
                         disabled={busy}
-                        onChange={() => setChosenSite(item.cloud_id)}
+                        onChange={() => setChosenSite(cloudId)}
                       />
                       <span className="kern-drive-item-copy">
                         <strong>{item.name}</strong>
@@ -336,7 +341,11 @@ export function JiraPicker({
             </div>
           ) : null}
           {projectsView.kind === "ready" && projectsView.projects.length === 0 ? (
-            <p role="status">No projects are visible on this site.</p>
+            <p role="status">
+              {dataCenter
+                ? "No projects are visible to the configured token."
+                : "No projects are visible on this site."}
+            </p>
           ) : null}
           {projectsView.kind === "ready"
             ? projectsView.projects.map((project) => {
@@ -383,7 +392,7 @@ export function JiraPicker({
           <span aria-live="polite">{projectCountLabel(selectedKeys.length)}</span>
         )}
         <div className="kern-dialog-actions">
-          {!siteStep ? (
+          {!siteStep && !dataCenter ? (
             <Button
               variant="ghost"
               disabled={busy}

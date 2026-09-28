@@ -104,6 +104,7 @@ def test_lists_selected_project_issues_with_stable_identity_and_revision() -> No
     assert first.extra == {
         "connector_id": "conn-1",
         "cloud_id": CLOUD_ID,
+        "jira_instance_id": CLOUD_ID,
         "project_key": "KAN",
         "issue_key": "KAN-1",
         "url": "https://acme.atlassian.net/browse/KAN-1",
@@ -243,6 +244,7 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
         "connector_id": "conn-1",
         "jira_issue_key": "KAN-9",
         "jira_issue_url": "https://acme.atlassian.net/browse/KAN-9",
+        "jira_instance_id": CLOUD_ID,
         "jira_project_key": "KAN",
         "jira_site_url": "https://acme.atlassian.net",
         "jira_updated_at": "2026-09-01T10:00:00.000+0000",
@@ -302,6 +304,56 @@ def test_comments_are_included_only_when_configured() -> None:
             ]
         )
     )
+
+
+def _shouting_renderer(raw: object) -> str:
+    return raw.upper() if isinstance(raw, str) else ""
+
+
+def test_configured_renderer_renders_description_and_comment_bodies() -> None:
+    issue = _issue(
+        "KAN-5",
+        description="broken *checkout*",
+        comment={
+            "comments": [
+                {
+                    "author": {"displayName": "Ola"},
+                    "created": "2026-09-01T11:00:00.000+0000",
+                    "body": "seen on _staging_",
+                }
+            ]
+        },
+    )
+    client = FakeJiraClient({"KAN": [_page(issue)]})
+    connector = JiraKnowledgeConnector(
+        client,
+        JiraIssueConfig(
+            site=SITE,
+            project_keys=("KAN",),
+            include_comments=True,
+            render_text=_shouting_renderer,
+        ),
+    )
+    [document] = connector.list_documents()
+
+    content = connector.fetch_document(document).content
+
+    assert "## Description\n\nBROKEN *CHECKOUT*" in content
+    assert content.endswith("- Created: 2026-09-01T11:00:00.000+0000\n\nSEEN ON _STAGING_")
+
+
+def test_default_renderer_reads_atlassian_document_format_comments() -> None:
+    client = FakeJiraClient({"KAN": [_page(_rich_issue())]})
+    connector = JiraKnowledgeConnector(
+        client,
+        JiraIssueConfig(site=SITE, project_keys=("KAN",), include_comments=True),
+    )
+    [document] = connector.list_documents()
+
+    content = connector.fetch_document(document).content
+
+    assert "Checkout **fails** for @Mia" in content
+    assert content.endswith("Reproduced on staging.")
 
 
 def test_comments_are_excluded_by_default() -> None:
@@ -438,3 +490,78 @@ def test_malformed_page_raises_instead_of_returning_partial_list(page: JiraIssue
 
     with pytest.raises(JiraPaginationError):
         _connector(client).list_documents()
+
+
+SERVER_ID = "B8E7-4C2A-9F31-0D6E"
+DC_SITE = JiraSite(
+    cloud_id=SERVER_ID, site_url="https://jira.example.com/jira", name="Example Jira"
+)
+
+
+def test_data_center_documents_use_the_server_id_without_cloud_metadata() -> None:
+    client = FakeJiraClient({"KAN": [_page(_issue("KAN-1"))]})
+    connector = JiraKnowledgeConnector(
+        client,
+        JiraIssueConfig(
+            site=DC_SITE,
+            project_keys=("KAN",),
+            connector_id="conn-dc",
+            deployment="data_center",
+        ),
+    )
+
+    [document] = connector.list_documents()
+    source = connector.fetch_document(document)
+
+    assert document.source_id == f"{SERVER_ID}/KAN:KAN-1"
+    assert document.extra == {
+        "connector_id": "conn-dc",
+        "jira_instance_id": SERVER_ID,
+        "project_key": "KAN",
+        "issue_key": "KAN-1",
+        "url": "https://jira.example.com/jira/browse/KAN-1",
+    }
+    assert "cloud_id" not in source.metadata.extra
+    assert source.metadata.extra["jira_instance_id"] == SERVER_ID
+    assert source.metadata.extra["jira_issue_url"] == "https://jira.example.com/jira/browse/KAN-1"
+    assert "- URL: https://jira.example.com/jira/browse/KAN-1" in source.content
+
+
+def _counted_page(
+    *issues: dict[str, object], total: int, token: str | None = None
+) -> JiraIssuePage:
+    return JiraIssuePage(
+        issues=issues, next_page_token=token, is_last=token is None, total=total
+    )
+
+
+def test_total_that_changes_between_pages_aborts_the_listing() -> None:
+    client = FakeJiraClient(
+        {
+            "KAN": [
+                _counted_page(_issue("KAN-1"), _issue("KAN-2"), total=100, token="2"),
+                _counted_page(_issue("KAN-3"), _issue("KAN-4"), total=90, token="4"),
+            ]
+        }
+    )
+
+    with pytest.raises(JiraPaginationError):
+        _connector(client, page_size=2).list_documents()
+
+    assert len(client.search_calls) == 2
+
+
+def test_consistent_totals_paginate_per_project() -> None:
+    client = FakeJiraClient(
+        {
+            "KAN": [
+                _counted_page(_issue("KAN-1"), total=2, token="1"),
+                _counted_page(_issue("KAN-2"), total=2),
+            ],
+            "OPS": [_counted_page(_issue("OPS-1"), total=1)],
+        }
+    )
+
+    documents = _connector(client, projects=("KAN", "OPS"), page_size=1).list_documents()
+
+    assert [d.extra["issue_key"] for d in documents] == ["KAN-1", "KAN-2", "OPS-1"]

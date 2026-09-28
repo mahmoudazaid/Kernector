@@ -24,3 +24,5 @@ def _isolate_settings_from_dotenv(
     monkeypatch.setenv("DOCUMENT_UPLOAD_BLOB_PATH", str(tmp_path / "upload-blobs"))
     monkeypatch.delenv("DOCUMENT_CATALOG_BACKEND", raising=False)
     monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
+    monkeypatch.delenv("JIRA_DC_BASE_URL", raising=False)
+    monkeypatch.delenv("JIRA_DC_TOKEN", raising=False)
