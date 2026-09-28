@@ -295,6 +295,33 @@ def test_connection_store_round_trips_site_and_writes_0600(tmp_path: Path) -> No
     assert SECRET_REFRESH not in repr(loaded)
 
 
+def test_connection_store_save_fsyncs_parent_directory_after_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "jira-oauth-connection.json"
+    events: list[str] = []
+    real_replace = os.replace
+    real_fsync = os.fsync
+    directory = os.stat(tmp_path)
+
+    def recording_replace(src: str, dst: Path) -> None:
+        real_replace(src, dst)
+        events.append("replace")
+
+    def recording_fsync(fd: int) -> None:
+        real_fsync(fd)
+        opened = os.fstat(fd)
+        if (opened.st_dev, opened.st_ino) == (directory.st_dev, directory.st_ino):
+            events.append("fsync-dir")
+
+    monkeypatch.setattr(os, "replace", recording_replace)
+    monkeypatch.setattr(os, "fsync", recording_fsync)
+
+    JiraOAuthConnectionStore(path).save(_connection())
+
+    assert events == ["replace", "fsync-dir"]
+
+
 def test_connection_store_keeps_reauth_record_without_tokens(tmp_path: Path) -> None:
     store = JiraOAuthConnectionStore(tmp_path / "jira-oauth-connection.json")
 

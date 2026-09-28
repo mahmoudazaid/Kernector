@@ -536,6 +536,7 @@ def _atomic_write_json(path: Path, payload: object) -> None:
         handle.close()
         handle = None
         os.replace(tmp, path)
+        _fsync_dir(path.parent)
     except BaseException:
         if handle is not None:
             handle.close()
@@ -546,3 +547,16 @@ def _atomic_write_json(path: Path, payload: object) -> None:
         except OSError:
             pass
         raise
+
+
+def _fsync_dir(directory: Path) -> None:
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
