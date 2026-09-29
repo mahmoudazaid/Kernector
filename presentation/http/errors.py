@@ -17,9 +17,12 @@ from application.errors import (
     GoogleDriveSelectionRequiredError,
     InputRejectedError,
     InsufficientEvidenceError,
+    JiraDataCenterCredentialsRejectedError,
+    JiraDataCenterModeError,
     JiraNotConnectedError,
     JiraReauthorizationRequiredError,
     JiraSelectionRequiredError,
+    JiraSetupRequiredError,
     JiraSiteSelectionRequiredError,
     MissingProviderCredentialsError,
     OllamaNotConfiguredError,
@@ -529,6 +532,38 @@ def problem_from_exception(
             title="Jira selection required",
             status=409,
             detail="Select Jira projects before syncing.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraDataCenterModeError):
+        return _problem(
+            code="jira_data_center_mode",
+            title="Jira Data Center mode",
+            status=409,
+            detail=(
+                "Jira runs in Data Center mode; OAuth and site selection are unavailable."
+            ),
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraSetupRequiredError):
+        return _problem(
+            code="jira_setup_required",
+            title="Jira setup required",
+            status=409,
+            detail=(
+                "Set JIRA_DC_BASE_URL and JIRA_DC_TOKEN to a reachable "
+                "Jira Data Center REST API."
+            ),
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, JiraDataCenterCredentialsRejectedError):
+        return _problem(
+            code="jira_reauthorization_required",
+            title="Jira reauthorization required",
+            status=409,
+            detail="Jira Data Center rejected the token. Update JIRA_DC_TOKEN.",
             instance=instance,
             request_id=request_id,
         )

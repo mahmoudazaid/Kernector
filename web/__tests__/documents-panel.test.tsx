@@ -62,6 +62,7 @@ vi.mock("@/lib/api/connectors", async (importOriginal) => {
     githubOAuthStartUrl: (baseUrl: string) =>
       `${baseUrl.replace(/\/$/, "")}/api/v1/connectors/github/oauth/start`,
     getJiraStatus: vi.fn().mockResolvedValue({
+      mode: "cloud",
       available: true,
       oauth_ready: true,
       connected: false,

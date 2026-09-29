@@ -9,12 +9,8 @@ issue search, ``read:me`` for the connected account label, and
 
 from __future__ import annotations
 
-import fcntl
-import json
 import logging
-import os
 import secrets
-import tempfile
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -25,6 +21,11 @@ from urllib.parse import urlencode, urlsplit
 
 from domain.errors import ConnectorAuthError
 from infrastructure.config import JiraOAuthSettings
+from infrastructure.connectors.jira.json_file import (
+    ExclusiveLock,
+    atomic_write_json,
+    read_json,
+)
 from infrastructure.connectors.jira.site import JiraSite
 
 _LOG = logging.getLogger(__name__)
@@ -343,7 +344,7 @@ class JiraOAuthStateStore:
             now = time.time()
             items = {key: exp for key, exp in self._read().items() if exp > now}
             items[token] = now + self._ttl_seconds
-            _atomic_write_json(self._path, items)
+            atomic_write_json(self._path, items)
         return token
 
     def consume(self, token: str | None) -> bool:
@@ -355,11 +356,11 @@ class JiraOAuthStateStore:
             expiry = items.pop(token, None)
             if expiry is None:
                 return False
-            _atomic_write_json(self._path, items)
+            atomic_write_json(self._path, items)
             return expiry >= time.time()
 
     def _read(self) -> dict[str, float]:
-        raw = _read_json(self._path)
+        raw = read_json(self._path)
         if not isinstance(raw, dict):
             return {}
         return {
@@ -379,7 +380,7 @@ class JiraOAuthConnectionStore:
 
     def load(self) -> JiraOAuthConnection | None:
         """Return the stored grant, or None when disconnected."""
-        return _connection_from_payload(_read_json(self._path))
+        return _connection_from_payload(read_json(self._path))
 
     def save(self, connection: JiraOAuthConnection) -> None:
         """Persist the grant. Overwrites the previous connection."""
@@ -401,7 +402,7 @@ class JiraOAuthConnectionStore:
         Returning ``None`` from ``mutator`` keeps the current value.
         """
         with ExclusiveLock(self._path):
-            current = _connection_from_payload(_read_json(self._path))
+            current = _connection_from_payload(read_json(self._path))
             next_value = mutator(current)
             if next_value is None:
                 return current
@@ -411,17 +412,8 @@ class JiraOAuthConnectionStore:
                 except FileNotFoundError:
                     pass
                 return None
-            _atomic_write_json(self._path, _connection_payload(next_value))
+            atomic_write_json(self._path, _connection_payload(next_value))
             return next_value
-
-
-def _read_json(path: Path) -> object:
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
 
 
 def _connection_from_payload(raw: object) -> JiraOAuthConnection | None:
@@ -498,65 +490,3 @@ def _optional_float(value: object) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
-
-
-class ExclusiveLock:
-    """Process-wide exclusive lock for one JSON grant/state path."""
-
-    def __init__(self, path: Path) -> None:
-        self._path = path.with_suffix(".lock.json")
-        self._fd: int | None = None
-
-    def __enter__(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._fd = os.open(self._path, os.O_CREAT | os.O_RDWR, 0o600)
-        fcntl.flock(self._fd, fcntl.LOCK_EX)
-
-    def __exit__(self, *_exc: object) -> None:
-        fd = self._fd
-        if fd is None:
-            return
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
-        self._fd = None
-
-
-def _atomic_write_json(path: Path, payload: object) -> None:
-    """Write JSON to ``path`` at mode ``0600`` via temp file + ``os.replace``."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix="jira-oauth-tmp-", suffix=".json", dir=path.parent)
-    handle = None
-    try:
-        os.fchmod(fd, 0o600)
-        handle = os.fdopen(fd, "w", encoding="utf-8")
-        fd = -1
-        json.dump(payload, handle)
-        handle.flush()
-        os.fsync(handle.fileno())
-        handle.close()
-        handle = None
-        os.replace(tmp, path)
-        _fsync_dir(path.parent)
-    except BaseException:
-        if handle is not None:
-            handle.close()
-        elif fd >= 0:
-            os.close(fd)
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def _fsync_dir(directory: Path) -> None:
-    try:
-        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-    except OSError:
-        return
-    try:
-        os.fsync(dir_fd)
-    except OSError:
-        pass
-    finally:
-        os.close(dir_fd)

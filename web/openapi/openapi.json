@@ -1736,10 +1736,14 @@
         "type": "object"
       },
       "JiraSiteResponse": {
-        "description": "One Jira Cloud site the grant can read.",
+        "description": "One Jira instance; ``cloud_id`` mirrors ``instance_id`` for Data Center / Server.",
         "properties": {
           "cloud_id": {
             "title": "Cloud Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "title": "Instance Id",
             "type": "string"
           },
           "name": {
@@ -1751,7 +1755,7 @@
             "type": "string"
           }
         },
-        "required": ["cloud_id", "name", "url"],
+        "required": ["cloud_id", "instance_id", "name", "url"],
         "title": "JiraSiteResponse",
         "type": "object"
       },
@@ -1804,6 +1808,12 @@
                 "type": "null"
               }
             ]
+          },
+          "mode": {
+            "default": "cloud",
+            "enum": ["cloud", "data_center"],
+            "title": "Mode",
+            "type": "string"
           },
           "oauth_ready": {
             "title": "Oauth Ready",
@@ -4796,7 +4806,7 @@
     },
     "/api/v1/connectors/jira": {
       "delete": {
-        "description": "Delete the stored Atlassian grant. Synced Jira documents are removed.",
+        "description": "Delete the stored Jira connection state. Synced Jira documents are removed.",
         "operationId": "jira_connector_disconnect_api_v1_connectors_jira_delete",
         "responses": {
           "204": {
@@ -4996,6 +5006,16 @@
             },
             "description": "Method not allowed"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5044,6 +5064,16 @@
             },
             "description": "Method not allowed"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "500": {
             "content": {
               "application/problem+json": {
@@ -5061,7 +5091,7 @@
     },
     "/api/v1/connectors/jira/projects": {
       "get": {
-        "description": "List projects on the selected Jira site for the Hub picker.",
+        "description": "List Jira projects for the Hub picker (Cloud: selected site; Data Center: server).",
         "operationId": "jira_connector_projects_api_v1_connectors_jira_projects_get",
         "parameters": [
           {

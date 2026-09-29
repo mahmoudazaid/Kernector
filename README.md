@@ -24,7 +24,7 @@ and CLI entrypoints; it calls through composition and must not construct
 infrastructure or import packs directly. The interactive UI is Next.js under
 `web/`, talking HTTP to FastAPI.
 
-This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, Google Drive, GitHub (Hub OAuth plus CLI PAT), and Jira Cloud (Hub OAuth).
+This split keeps the UI replaceable and prevents ticket- or SDLC-shaped types from re-entering the shared contracts. New product behavior arrives as a pack, not as a fork of the core pipeline. New source kinds arrive as additional adapters that emit `SourceDocument`. Implemented sources today are file upload, the on-disk seed JSON loader, Google Drive, GitHub (Hub OAuth plus CLI PAT), Jira Cloud (Hub OAuth), and Jira Data Center / Server (server-side Personal Access Token).
 
 ## Knowledge path from source to cited answer
 
@@ -460,6 +460,56 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/connectors/jira/sync
 
 Errors are typed: 422 for invalid input, 409 when the connection needs
 Connect, a site, projects, or reauthorization, and 502 when Atlassian fails.
+
+### Jira Data Center / Server (self-hosted)
+
+Self-hosted Jira (Data Center or Server **8.14+**) connects with a
+**Personal Access Token** instead of OAuth. The token stays in the server
+environment: it is never written to disk, logged, stored in document
+metadata, or returned to the browser.
+
+1. In Jira, create a Personal Access Token for an account that can **browse**
+   the projects you want to sync. Read access is enough; the connector only
+   reads projects, issues, and comments.
+2. Set `JIRA_DC_BASE_URL` (for example `https://jira.example.com` or
+   `https://example.com/jira`) and `JIRA_DC_TOKEN` (see
+   [`.env.example`](.env.example)). The URL must be `https://` unless
+   `JIRA_DC_ALLOW_HTTP=true`, and must not contain credentials, a query, or
+   a fragment. Never commit the token.
+3. The API host must reach the Jira server directly (for example over your
+   VPN). Kernector calls `/rest/api/2`; there is no Atlassian cloud relay.
+4. Install the extra (`uv sync --extra jira`) and restart the API.
+
+Cloud and Data Center are **mutually exclusive**. Setting `JIRA_DC_BASE_URL`
+or `JIRA_DC_TOKEN` together with `JIRA_OAUTH_CLIENT_ID` or
+`JIRA_OAUTH_CLIENT_SECRET` fails at startup. Shared settings
+(`JIRA_PAGE_SIZE`, `JIRA_MAX_ISSUES`, `JIRA_INCLUDE_COMMENTS`) apply to both
+modes and do not switch modes. Before switching an existing workspace from
+Cloud to Data Center, **Disconnect** Jira Cloud in the Hub first so its synced
+issues are removed; leftover Cloud documents are not purged automatically.
+
+In Data Center mode the Hub card has no Connect button and no site step:
+**Browse** lists projects visible to the token, and Save triggers a sync.
+OAuth start, callback, and site routes return
+`409 jira_data_center_mode`. A missing URL or token (or a URL that is not a
+Jira REST API) returns `409 jira_setup_required`. A rejected token shows
+**Token rejected** and returns `409 jira_reauthorization_required`; update
+the token on the server, and the next successful request clears the state.
+
+Issue descriptions and comments use Jira wiki markup, converted to Markdown
+(headings, lists, tables, code and noformat blocks, links, mentions, bold and
+italic). Source ids are `{serverId}/{PROJECT}:{KEY}`; when the server reports
+no `serverId`, a stable hash of the base URL is used. If the server identity
+changes, the next selection or sync purges this connector's documents and
+asks you to choose projects again.
+
+Jira administrators may cap search page size below `JIRA_PAGE_SIZE`
+(`jira.search.views.default.max`). The connector advances by the number of
+issues actually returned, and aborts without writes if the reported `total`
+changes mid-sync. **Remove** clears the saved selection and synced issues but
+leaves `JIRA_DC_TOKEN` untouched; revoke the token in Jira to cut access.
+Connector state lives in `data/jira-dc-connection.json` (gitignored, mode
+`0600`, no token).
 
 ## Logging and monitoring
 

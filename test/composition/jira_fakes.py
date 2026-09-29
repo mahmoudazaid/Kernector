@@ -7,12 +7,18 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from domain.errors import ConnectorAuthError, ConnectorNotFoundError
-from infrastructure.config import JiraOAuthSettings, JiraSettings, Settings
+from infrastructure.config import (
+    JiraDataCenterSettings,
+    JiraOAuthSettings,
+    JiraSettings,
+    Settings,
+)
 from infrastructure.connectors.jira.client import (
     JiraIssuePage,
     JiraProject,
     JiraProjectPage,
 )
+from infrastructure.connectors.jira.data_center_state import JiraDataCenterStateStore
 from infrastructure.connectors.jira.oauth import (
     AccessibleResource,
     JiraOAuthConnection,
@@ -186,5 +192,111 @@ class _BoundClient:
     def get_project(self, key: str) -> JiraProject:
         self._check()
         if key not in self.owner.projects:
+            raise ConnectorNotFoundError("missing")
+        return JiraProject(key=key, name=f"{key} project")
+
+
+DC_TOKEN = "dc-personal-access-token-secret"
+DC_BASE_URL = "https://jira.example.com/jira"
+DC_SITE = JiraSite(cloud_id="SRV-1", site_url=DC_BASE_URL, name="Example Jira")
+DC_OTHER_SITE = JiraSite(cloud_id="SRV-2", site_url=DC_BASE_URL, name="Migrated Jira")
+
+
+def dc_settings(
+    base: Settings,
+    tmp_path: Path,
+    *,
+    base_url: str | None = DC_BASE_URL,
+    token: str | None = DC_TOKEN,
+    **jira: object,
+) -> Settings:
+    return replace(
+        base,
+        jira=JiraSettings(**jira),  # type: ignore[arg-type]
+        jira_oauth=JiraOAuthSettings(
+            token_path=tmp_path / "jira-oauth-connection.json",
+            state_path=tmp_path / "jira-oauth-state.json",
+        ),
+        jira_data_center=JiraDataCenterSettings(
+            base_url=base_url,
+            token=token,
+            state_path=tmp_path / "jira-dc-connection.json",
+        ),
+    )
+
+
+def dc_store(settings: Settings) -> JiraDataCenterStateStore:
+    assert settings.jira_data_center is not None
+    return JiraDataCenterStateStore(settings.jira_data_center.state_path)
+
+
+@dataclass
+class FakeDataCenterClient:
+    """One fake Data Center instance; ``pages`` scripts search responses per project."""
+
+    projects: Mapping[str, Sequence[Mapping[str, object]]] = field(
+        default_factory=lambda: {"ENG": [issue("ENG-1")], "OPS": [issue("OPS-1")]}
+    )
+    site: JiraSite = DC_SITE
+    reject: bool = False
+    error: Exception | None = None
+    server_info_error: Exception | None = None
+    project_error: Exception | None = None
+    pages: Mapping[str, Sequence[JiraIssuePage]] | None = None
+    built: list[tuple[str, str]] = field(default_factory=list)
+    request_count: int = 0
+    _search_calls: dict[str, int] = field(default_factory=dict)
+
+    def factory(self, base_url: str, token: str) -> FakeDataCenterClient:
+        self.built.append((base_url, token))
+        return self
+
+    def _check(self) -> None:
+        self.request_count += 1
+        if self.reject:
+            raise ConnectorAuthError("rejected")
+        if self.error is not None:
+            raise self.error
+
+    def server_info(self) -> JiraSite:
+        self._check()
+        if self.server_info_error is not None:
+            raise self.server_info_error
+        return self.site
+
+    def search_issues(
+        self,
+        jql: str,
+        fields: Sequence[str],
+        page_size: int,
+        next_page_token: str | None,
+    ) -> JiraIssuePage:
+        self._check()
+        key = jql.split('"')[1]
+        if self.pages is not None:
+            index = self._search_calls.get(key, 0)
+            self._search_calls[key] = index + 1
+            return self.pages[key][index]
+        issues = tuple(self.projects.get(key, ()))
+        return JiraIssuePage(
+            issues=issues, next_page_token=None, is_last=True, total=len(issues)
+        )
+
+    def list_projects(self, *, start_at: int, max_results: int) -> JiraProjectPage:
+        self._check()
+        keys = sorted(self.projects)
+        chunk = keys[start_at : start_at + max_results]
+        is_last = start_at + len(chunk) >= len(keys)
+        return JiraProjectPage(
+            items=tuple(JiraProject(key=k, name=f"{k} project") for k in chunk),
+            is_last=is_last,
+            next_start_at=None if is_last else start_at + len(chunk),
+        )
+
+    def get_project(self, key: str) -> JiraProject:
+        self._check()
+        if self.project_error is not None:
+            raise self.project_error
+        if key not in self.projects:
             raise ConnectorNotFoundError("missing")
         return JiraProject(key=key, name=f"{key} project")

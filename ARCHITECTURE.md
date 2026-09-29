@@ -154,6 +154,14 @@ other provider types as permanent core entities.
   (3LO) only. The grant stores one selected site (`cloud_id`, `site_url`) and
   project keys; issues map to Markdown `SourceDocument`s with source id
   `{cloudId}/{PROJECT}:{KEY}` and the issue `updated` timestamp as revision.
+- Jira Data Center / Server (`infrastructure/connectors/jira/data_center.py`)
+  — Personal Access Token from `JIRA_DC_TOKEN` (settings only, never
+  persisted) against `/rest/api/2`. It shares the provider-neutral
+  `JiraClient` protocol, `JiraIssueDocuments` mapping (with
+  `render_text=wiki_to_markdown`), selection, purge, and sync with Cloud.
+  Source ids use the neutral instance id (`serverId`, or a base-URL hash):
+  `{instanceId}/{PROJECT}:{KEY}`; documents carry `jira_instance_id` and no
+  `cloud_id`. Cloud and Data Center are mutually exclusive at settings load.
 
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
@@ -179,7 +187,14 @@ rotated access and refresh tokens together under the grant lock before
 retrying, and an `invalid_grant` refresh clears tokens and moves the
 connection to `reauthorization_required`. Deselecting a project, switching
 sites, and disconnecting purge the matching Jira rows. Atlassian has no public
-revoke endpoint, so disconnect is local only. Concurrent HTTP
+revoke endpoint, so disconnect is local only. In Data Center mode,
+`composition/jira.py` dispatches to `composition/jira_data_center.py`, which
+keeps a token-free state file (`data/jira-dc-*.json`: instance identity,
+projects, connector id, last sync, `credentials_rejected`). A rejected token
+sets `credentials_rejected`; the next authenticated success clears it. The
+client validates each search response (`startAt` echo, `total`), while
+`JiraIssueDocuments` owns the cross-page `total` invariant. OAuth and site
+operations raise `JiraDataCenterModeError` (HTTP 409). Concurrent HTTP
 syncs are unguarded server-side: the client `busy` flag covers one tab, but two
 tabs or a direct `curl` can run at once. Multi-instance claim is deferred (#270).
 Scheduled sync and webhooks are out of scope.
@@ -497,7 +512,7 @@ pipeline. Names only (no implementation commitment in this document):
 - File upload (TXT, Markdown, PDF)
 - Seed JSON corpus adapter
 - Future: Confluence
-- Implemented: Google Drive, GitHub, Jira Cloud
+- Implemented: Google Drive, GitHub, Jira Cloud, Jira Data Center / Server
 
 ### Catalog adapter
 

@@ -9,8 +9,11 @@ from application.contracts import (
 )
 from application.errors import (
     InputRejectedError,
+    JiraDataCenterCredentialsRejectedError,
+    JiraDataCenterModeError,
     JiraNotConnectedError,
     JiraReauthorizationRequiredError,
+    JiraSetupRequiredError,
     JiraSiteSelectionRequiredError,
 )
 from composition import (
@@ -27,7 +30,12 @@ from presentation.http.app import create_app
 from presentation.http import deps
 
 BASE = "/api/v1/connectors/jira"
-ACME = JiraSiteItem(cloud_id="cloud-acme", name="Acme", url="https://acme.atlassian.net")
+ACME = JiraSiteItem(
+    instance_id="cloud-acme",
+    cloud_id="cloud-acme",
+    name="Acme",
+    url="https://acme.atlassian.net",
+)
 
 
 def _client(**overrides) -> TestClient:
@@ -61,7 +69,13 @@ def test_status_is_presentation_safe() -> None:
 
     body = client.get(BASE).json()
 
-    assert body["site"] == {"cloud_id": "cloud-acme", "name": "Acme", "url": ACME.url}
+    assert body["site"] == {
+        "instance_id": "cloud-acme",
+        "cloud_id": "cloud-acme",
+        "name": "Acme",
+        "url": ACME.url,
+    }
+    assert body["mode"] == "cloud"
     assert body["project_keys"] == ["ENG"]
     assert body["connection_state"] == "ready"
     assert body["last_sync"]["unchanged_count"] == 2
@@ -102,7 +116,16 @@ def test_sites_list_and_select() -> None:
     sites = client.get(f"{BASE}/sites").json()
     saved = client.put(f"{BASE}/site", json={"cloud_id": "cloud-acme"})
 
-    assert sites == {"items": [{"cloud_id": "cloud-acme", "name": "Acme", "url": ACME.url}]}
+    assert sites == {
+        "items": [
+            {
+                "instance_id": "cloud-acme",
+                "cloud_id": "cloud-acme",
+                "name": "Acme",
+                "url": ACME.url,
+            }
+        ]
+    }
     assert saved.status_code == 200
     assert saved.json()["site"]["cloud_id"] == "cloud-acme"
     assert seen == {"cloud_id": "cloud-acme"}
@@ -204,3 +227,72 @@ def test_selection_body_is_bounded() -> None:
     response = client.put(f"{BASE}/selection", json={"project_keys": ["K"] * 101})
 
     assert response.status_code == 422
+
+
+def test_data_center_status_mirrors_instance_id_into_cloud_id() -> None:
+    status = JiraStatus(
+        available=True,
+        oauth_ready=False,
+        connected=True,
+        site=JiraSiteItem(
+            instance_id="SRV-1", name="Example Jira", url="https://jira.example.com"
+        ),
+        project_keys=("ENG",),
+        connection_state="ready",
+        mode="data_center",
+    )
+    client = _client(get_jira_status=lambda: status)
+
+    body = client.get(BASE).json()
+
+    assert body["mode"] == "data_center"
+    assert body["oauth_ready"] is False
+    assert body["site"] == {
+        "instance_id": "SRV-1",
+        "cloud_id": "SRV-1",
+        "name": "Example Jira",
+        "url": "https://jira.example.com",
+    }
+
+
+def test_cloud_only_routes_in_data_center_mode_are_409() -> None:
+    mode_error = JiraDataCenterModeError("Data Center mode")
+    client = _client(
+        get_jira_oauth_start=lambda: _raise(mode_error),
+        get_jira_oauth_callback=lambda: _raise(mode_error),
+        get_jira_site_list=lambda: _raise(mode_error),
+        get_jira_site_write=lambda: _raise(mode_error),
+    )
+
+    responses = [
+        client.get(f"{BASE}/oauth/start"),
+        client.get(f"{BASE}/oauth/callback", params={"state": "s", "code": "c"}),
+        client.get(f"{BASE}/sites"),
+        client.put(f"{BASE}/site", json={"cloud_id": "cloud-acme"}),
+    ]
+
+    for response in responses:
+        assert response.status_code == 409
+        assert response.json()["code"] == "jira_data_center_mode"
+
+
+def test_data_center_errors_map_to_fixed_problem_details() -> None:
+    cases = [
+        (JiraSetupRequiredError("secret url"), 409, "jira_setup_required", "JIRA_DC_BASE_URL"),
+        (
+            JiraDataCenterCredentialsRejectedError("secret token"),
+            409,
+            "jira_reauthorization_required",
+            "JIRA_DC_TOKEN",
+        ),
+    ]
+    for error, status, code, hint in cases:
+        client = _client(get_jira_project_list=lambda error=error: _raise(error))
+
+        response = client.get(f"{BASE}/projects")
+
+        assert response.status_code == status, code
+        body = response.json()
+        assert body["code"] == code
+        assert hint in body["detail"]
+        assert "secret" not in response.text

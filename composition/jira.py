@@ -18,6 +18,7 @@ from application.contracts import ConnectorSyncResponse
 from application.errors import (
     ConfigurationError,
     InputRejectedError,
+    JiraDataCenterModeError,
     JiraNotConnectedError,
     JiraReauthorizationRequiredError,
     JiraSelectionRequiredError,
@@ -46,15 +47,17 @@ _REAUTH_MESSAGE = "Jira authorization was revoked. Connect again."
 _SYNC_MESSAGE = "The Jira connector sync failed."
 _ISSUE_LIMIT_MESSAGE = "The selected Jira projects exceed the configured issue limit."
 _REFRESH_SKEW_SECONDS = 60.0
+_DATA_CENTER_MODE_MESSAGE = "Jira runs in Data Center mode; OAuth and site selection are unavailable."
 
 
 @dataclass(frozen=True, slots=True)
 class JiraSiteItem:
-    """One Jira Cloud site the grant can read."""
+    """One Jira instance: a Cloud site (``cloud_id`` set) or a Data Center server."""
 
-    cloud_id: str
+    instance_id: str
     name: str
     url: str
+    cloud_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,15 @@ class JiraSelection:
     site: JiraSiteItem | None
     project_keys: tuple[str, ...] = ()
     connector_id: str | None = None
+
+
+def _data_center(settings: Settings) -> bool:
+    return settings.jira_data_center is not None
+
+
+def _reject_in_data_center(settings: Settings) -> None:
+    if _data_center(settings):
+        raise JiraDataCenterModeError(_DATA_CENTER_MODE_MESSAGE)
 
 
 def _jira_oauth_ready(settings: Settings) -> bool:
@@ -113,6 +125,7 @@ def _expires_at(expires_in: int | None) -> float | None:
 
 def start_jira_oauth(settings: Settings, *, state_store=None) -> str:
     """Issue CSRF state and return Atlassian's authorization URL."""
+    _reject_in_data_center(settings)
     if not _jira_oauth_ready(settings):
         return _hub_redirect(settings, result="unconfigured")
     from infrastructure.connectors.jira.oauth import authorization_url
@@ -137,6 +150,7 @@ def complete_jira_oauth(
     choice; none stores nothing. A reconnect keeps the connector id, and keeps
     the site and projects when the previous site is still accessible.
     """
+    _reject_in_data_center(settings)
     if error == "access_denied":
         return _hub_redirect(settings, result="denied")
     states = state_store if state_store is not None else _state_store(settings)
@@ -311,13 +325,19 @@ def _fetch_sites(gateway, access_token: str):
 def _site_item(site) -> JiraSiteItem | None:
     if site is None:
         return None
-    return JiraSiteItem(cloud_id=site.cloud_id, name=site.name, url=site.site_url)
+    return JiraSiteItem(
+        instance_id=site.instance_id,
+        cloud_id=site.cloud_id,
+        name=site.name,
+        url=site.site_url,
+    )
 
 
 def list_jira_sites(
     settings: Settings, *, connection_store=None, gateway=None
 ) -> tuple[JiraSiteItem, ...]:
     """List Jira sites the stored grant can read, for the Hub site step."""
+    _reject_in_data_center(settings)
     tokens, connection = _require_grant(settings, connection_store)
     oauth_gateway = _gateway(settings, gateway)
     sites = _with_access_token(
@@ -338,6 +358,7 @@ def put_jira_site(
     vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> JiraSelection:
     """Select one accessible site. Switching sites purges docs and clears projects."""
+    _reject_in_data_center(settings)
     wanted = cloud_id.strip() if isinstance(cloud_id, str) else ""
     if not wanted:
         raise InputRejectedError("A Jira site is required.")
@@ -418,7 +439,16 @@ def list_jira_projects(
     gateway=None,
     client_factory=None,
 ) -> JiraProjectPage:
-    """List projects on the selected site for the Hub picker."""
+    """List projects on the selected site (Cloud) or the configured server (Data Center)."""
+    if _data_center(settings):
+        from composition import jira_data_center
+
+        return jira_data_center.list_projects(
+            settings,
+            start_at=start_at,
+            state_store=connection_store,
+            client_factory=client_factory,
+        )
     if start_at < 0:
         raise InputRejectedError("start_at must be zero or greater.")
     tokens, connection = _require_grant(settings, connection_store)
@@ -442,6 +472,10 @@ def list_jira_projects(
 
 def get_jira_selection(settings: Settings, *, connection_store=None) -> JiraSelection:
     """Return the saved site and project keys."""
+    if _data_center(settings):
+        from composition import jira_data_center
+
+        return jira_data_center.get_selection(settings, state_store=connection_store)
     _tokens, connection = _require_grant(settings, connection_store)
     return JiraSelection(
         site=_site_item(connection.site),
@@ -474,6 +508,19 @@ def put_jira_selection(
     vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> JiraSelection:
     """Validate project access, save the selection, and purge deselected projects."""
+    if _data_center(settings):
+        from composition import jira_data_center
+
+        return jira_data_center.put_selection(
+            settings,
+            project_keys=project_keys,
+            state_store=connection_store,
+            client_factory=client_factory,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
     from infrastructure.connectors.jira.issue_documents import project_source_id_prefix
 
     keys = _normalize_project_keys(project_keys)
@@ -550,6 +597,7 @@ class JiraStatus:
     setup_required: bool = False
     connection_state: str = "disconnected"
     sync_scope: str | None = None
+    mode: str = "cloud"
 
 
 def _last_sync(connection) -> JiraLastSync | None:
@@ -613,7 +661,13 @@ def jira_status(
     catalog: DocumentCatalog | None = None,
     catalog_factory: Callable[[], DocumentCatalog] | None = None,
 ) -> JiraStatus:
-    """Report the Jira connection without calling Atlassian."""
+    """Report the Jira connection without calling Atlassian or the Data Center server."""
+    if settings.jira_data_center is not None:
+        from composition import jira_data_center
+
+        return jira_data_center.status(
+            settings, catalog=catalog, catalog_factory=catalog_factory
+        )
     connection = _connection_store(settings).load()
     available = importlib.util.find_spec("httpx") is not None
     oauth_ready = _jira_oauth_ready(settings)
@@ -674,6 +728,18 @@ def sync_jira_oauth(
     The site must still be accessible to the grant. Listing is complete before
     any write, so issue-limit and pagination failures leave the catalog unchanged.
     """
+    if _data_center(settings):
+        from composition import jira_data_center
+
+        return jira_data_center.sync(
+            settings,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+            state_store=connection_store,
+            client_factory=client_factory,
+        )
     from datetime import datetime, timezone
 
     from infrastructure.connectors.jira.connector import JiraKnowledgeConnector
@@ -766,6 +832,18 @@ def disconnect_jira_oauth(
     Atlassian has no public 3LO revoke endpoint; the user can remove app
     access from their Atlassian account settings.
     """
+    if _data_center(settings):
+        from composition import jira_data_center
+
+        jira_data_center.disconnect(
+            settings,
+            state_store=connection_store,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
+        return
     tokens = connection_store if connection_store is not None else _connection_store(settings)
     connection = tokens.load()
     if connection is None:

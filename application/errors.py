@@ -136,6 +136,18 @@ class JiraReauthorizationRequiredError(ConfigurationError):
     """The Atlassian grant or site access was revoked; the user must reconnect."""
 
 
+class JiraDataCenterCredentialsRejectedError(JiraReauthorizationRequiredError):
+    """The Jira Data Center instance rejected the configured Personal Access Token."""
+
+
+class JiraSetupRequiredError(ConfigurationError):
+    """Jira Data Center base URL or token is missing, or the URL is not a Jira REST API."""
+
+
+class JiraDataCenterModeError(ConfigurationError):
+    """A Jira Cloud-only operation (OAuth, site selection) was called in Data Center mode."""
+
+
 class InsufficientEvidenceError(RuntimeError):
     """A grounded use case found no retrieval hits above the relevance threshold.
 

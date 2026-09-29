@@ -5,11 +5,13 @@ import { JiraPicker } from "@/components/documents/JiraPicker";
 import type { JiraSiteResponse } from "@/lib/api/connectors";
 
 const ACME: JiraSiteResponse = {
+  instance_id: "cloud-acme",
   cloud_id: "cloud-acme",
   name: "Acme",
   url: "https://acme.atlassian.net",
 };
 const BETA: JiraSiteResponse = {
+  instance_id: "cloud-beta",
   cloud_id: "cloud-beta",
   name: "Beta",
   url: "https://beta.atlassian.net",
@@ -90,5 +92,21 @@ describe("JiraPicker", () => {
     await user.click(await screen.findByRole("button", { name: "Change site" }));
 
     expect(await screen.findByRole("radio", { name: /Acme/ })).toBeChecked();
+  });
+  it("lists projects without a site in Data Center mode", async () => {
+    const user = userEvent.setup();
+    const props = renderPicker({
+      dataCenter: true,
+      site: null,
+      initialProjectKeys: [],
+    });
+
+    await user.click(await screen.findByRole("checkbox", { name: /OPS/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(props.onConfirm).toHaveBeenCalledWith(["OPS"]);
+    expect(props.listSites).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Change site" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Jira Cloud/)).not.toBeInTheDocument();
   });
 });

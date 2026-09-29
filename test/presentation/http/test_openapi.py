@@ -1,10 +1,13 @@
 """OpenAPI describes real response and Problem Details contracts."""
 
+import re
+
 from fastapi.testclient import TestClient
 
 from presentation.http.app import create_app
 
 _PROBLEM = "application/problem+json"
+_SECRET_PROPERTY = re.compile(r"token|secret|password|(^|_)pat($|_)", re.IGNORECASE)
 # path -> (http_method, expected error status codes as strings)
 _ERROR_STATUSES: dict[str, tuple[str, tuple[str, ...]]] = {
     "/health": ("get", ("405",)),
@@ -58,8 +61,8 @@ _JIRA_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
     ("/api/v1/connectors/jira", "get"): ("405", "500"),
     ("/api/v1/connectors/jira", "delete"): ("405", "409", "500"),
     ("/api/v1/connectors/jira/last-sync", "get"): ("405", "500"),
-    ("/api/v1/connectors/jira/oauth/start", "get"): ("405", "500"),
-    ("/api/v1/connectors/jira/oauth/callback", "get"): ("405", "500"),
+    ("/api/v1/connectors/jira/oauth/start", "get"): ("405", "409", "500"),
+    ("/api/v1/connectors/jira/oauth/callback", "get"): ("405", "409", "500"),
     ("/api/v1/connectors/jira/sites", "get"): ("405", "409", "500", "502"),
     ("/api/v1/connectors/jira/site", "put"): ("405", "409", "422", "500", "502"),
     ("/api/v1/connectors/jira/projects", "get"): ("405", "409", "422", "500", "502"),
@@ -193,3 +196,17 @@ def test_openapi_does_not_declare_unreachable_error_statuses() -> None:
     assert "404" not in settings
     assert "422" not in settings
     assert "502" not in settings
+
+
+def test_openapi_jira_schemas_have_no_token_properties() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    jira_schemas = {
+        name: component
+        for name, component in schema["components"]["schemas"].items()
+        if name.startswith("Jira")
+    }
+
+    assert "JiraStatusResponse" in jira_schemas
+    for name, component in jira_schemas.items():
+        for prop in component.get("properties", {}):
+            assert not _SECRET_PROPERTY.search(prop), f"{name}.{prop}"
