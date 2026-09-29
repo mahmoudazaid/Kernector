@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, replace
+from dataclasses import replace
 
 from application.errors import (
     GitHubNotConnectedError,
@@ -37,6 +37,7 @@ from domain.errors import (
     ToolVersionConflictError,
 )
 from infrastructure.config import Settings
+from packs.software_delivery.test_design.models import TestCaseType
 
 _ERROR_MAP: tuple[tuple[type[BaseException], type[Exception]], ...] = (
     (TestDesignNotFoundError, ToolTargetNotFoundError),
@@ -79,9 +80,9 @@ class McpTestDesignWorkflow:
 
     def start(
         self, *, issue_locator: str, conversation_id: str | None
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         with _translated_errors():
-            view = self._facade.create_draft(
+            return self._facade.create_draft(
                 CreateTestDesignDraftRequest(
                     conversation_id=conversation_id or self._conversation_id_factory(),
                     source_locator=SourceLocatorView(
@@ -89,12 +90,10 @@ class McpTestDesignWorkflow:
                     ),
                 )
             )
-        return _as_mapping(view)
 
-    def get(self, *, draft_id: str) -> Mapping[str, object]:
+    def get(self, *, draft_id: str) -> TestCoverageDraftView:
         with _translated_errors():
-            view = self._facade.get_draft(draft_id)
-        return _as_mapping(view)
+            return self._facade.get_draft(draft_id)
 
     def confirm_selection(
         self,
@@ -102,7 +101,7 @@ class McpTestDesignWorkflow:
         draft_id: str,
         expected_version: int,
         candidate_ids: tuple[str, ...],
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         """Select *candidate_ids* via ``patch_draft``, then ``confirm_draft``.
 
         Both calls keep their existing CAS semantics. When confirm fails after
@@ -125,10 +124,9 @@ class McpTestDesignWorkflow:
                     ),
                 ),
             )
-            view = self._facade.confirm_draft(
+            return self._facade.confirm_draft(
                 draft_id, expected_version=patched.version
             )
-        return _as_mapping(view)
 
     def generate(
         self,
@@ -136,20 +134,19 @@ class McpTestDesignWorkflow:
         draft_id: str,
         expected_version: int,
         candidate_ids: tuple[str, ...] | None,
-        type_overrides: tuple[tuple[str, str], ...],
+        type_overrides: tuple[tuple[str, TestCaseType], ...],
         overwrite_edited: bool,
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         with _translated_errors():
-            view = self._facade.generate_cases(
+            return self._facade.generate_cases(
                 draft_id,
                 GenerateTestDesignCasesRequest(
                     expected_version=expected_version,
                     candidate_ids=candidate_ids,
-                    type_overrides=type_overrides,  # type: ignore[arg-type]
+                    type_overrides=type_overrides,
                     overwrite_edited=overwrite_edited,
                 ),
             )
-        return _as_mapping(view)
 
 
 def build_mcp_test_design_workflow_factory(
@@ -167,7 +164,3 @@ def build_mcp_test_design_workflow_factory(
         return build_test_design_facade(settings)
 
     return lambda: McpTestDesignWorkflow(_facade())
-
-
-def _as_mapping(view: TestCoverageDraftView) -> Mapping[str, object]:
-    return asdict(view)

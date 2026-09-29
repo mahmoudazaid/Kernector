@@ -35,14 +35,14 @@ def test_start_generates_server_side_conversation_id(tmp_path: Path) -> None:
 
     draft = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
 
-    assert draft["status"] == "coverage_review"
-    assert draft["version"] == 1
-    assert [c["candidate_id"] for c in draft["candidates"]] == [
+    assert draft.status == "coverage_review"
+    assert draft.version == 1
+    assert [c.candidate_id for c in draft.candidates] == [
         "cand-1",
         "cand-2",
         "cand-3",
     ]
-    stored = facade.get_draft(draft["draft_id"])
+    stored = facade.get_draft(draft.draft_id)
     assert stored.conversation_id.startswith("mcp-")
     assert len(stored.conversation_id) > len("mcp-")
 
@@ -52,7 +52,7 @@ def test_start_keeps_client_conversation_id(tmp_path: Path) -> None:
 
     draft = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id="conv-9")
 
-    assert facade.get_draft(draft["draft_id"]).conversation_id == "conv-9"
+    assert facade.get_draft(draft.draft_id).conversation_id == "conv-9"
 
 
 def test_confirm_patches_selection_then_confirms(tmp_path: Path) -> None:
@@ -60,15 +60,15 @@ def test_confirm_patches_selection_then_confirms(tmp_path: Path) -> None:
     started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
 
     confirmed = workflow.confirm_selection(
-        draft_id=started["draft_id"],
-        expected_version=started["version"],
+        draft_id=started.draft_id,
+        expected_version=started.version,
         candidate_ids=("cand-1", "cand-2"),
     )
 
-    assert confirmed["status"] == "ready"
-    assert confirmed["version"] == started["version"] + 2
-    assert tuple(confirmed["selected_candidate_ids"]) == ("cand-1", "cand-2")
-    assert [c["selected"] for c in confirmed["candidates"]] == [True, True, False]
+    assert confirmed.status == "ready"
+    assert confirmed.version == started.version + 2
+    assert tuple(confirmed.selected_candidate_ids) == ("cand-1", "cand-2")
+    assert [c.selected for c in confirmed.candidates] == [True, True, False]
 
 
 def test_confirm_on_ready_draft_with_same_selection_advances_once(
@@ -77,19 +77,19 @@ def test_confirm_on_ready_draft_with_same_selection_advances_once(
     workflow, _facade = _workflow(tmp_path)
     started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
     ready = workflow.confirm_selection(
-        draft_id=started["draft_id"],
-        expected_version=started["version"],
+        draft_id=started.draft_id,
+        expected_version=started.version,
         candidate_ids=("cand-1",),
     )
 
     again = workflow.confirm_selection(
-        draft_id=ready["draft_id"],
-        expected_version=ready["version"],
+        draft_id=ready.draft_id,
+        expected_version=ready.version,
         candidate_ids=("cand-1",),
     )
 
-    assert again["status"] == "ready"
-    assert again["version"] == ready["version"] + 1
+    assert again.status == "ready"
+    assert again.version == ready.version + 1
 
 
 def test_confirm_with_stale_version_is_conflict_without_write(tmp_path: Path) -> None:
@@ -98,13 +98,13 @@ def test_confirm_with_stale_version_is_conflict_without_write(tmp_path: Path) ->
 
     with pytest.raises(ToolVersionConflictError):
         workflow.confirm_selection(
-            draft_id=started["draft_id"],
-            expected_version=started["version"] + 5,
+            draft_id=started.draft_id,
+            expected_version=started.version + 5,
             candidate_ids=("cand-1",),
         )
 
-    stored = facade.get_draft(started["draft_id"])
-    assert stored.version == started["version"]
+    stored = facade.get_draft(started.draft_id)
+    assert stored.version == started.version
     assert stored.selected_candidate_ids == ()
 
 
@@ -116,13 +116,13 @@ def test_confirm_with_unknown_candidate_is_validation_without_write(
 
     with pytest.raises(ToolArgumentValidationError):
         workflow.confirm_selection(
-            draft_id=started["draft_id"],
-            expected_version=started["version"],
+            draft_id=started.draft_id,
+            expected_version=started.version,
             candidate_ids=("cand-1", "cand-404"),
         )
 
-    stored = facade.get_draft(started["draft_id"])
-    assert stored.version == started["version"]
+    stored = facade.get_draft(started.draft_id)
+    assert stored.version == started.version
     assert stored.selected_candidate_ids == ()
 
 
@@ -134,14 +134,14 @@ def test_confirm_evidence_changed_keeps_saved_selection(tmp_path: Path) -> None:
 
     with pytest.raises(ToolEvidenceChangedError):
         workflow.confirm_selection(
-            draft_id=started["draft_id"],
-            expected_version=started["version"],
+            draft_id=started.draft_id,
+            expected_version=started.version,
             candidate_ids=("cand-1",),
         )
 
-    stored = facade.get_draft(started["draft_id"])
+    stored = facade.get_draft(started.draft_id)
     assert stored.status == "coverage_review"
-    assert stored.version == started["version"] + 1
+    assert stored.version == started.version + 1
     assert stored.selected_candidate_ids == ("cand-1",)
 
 
@@ -202,32 +202,32 @@ def test_generate_follows_the_300_contract(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
     started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
     ready = workflow.confirm_selection(
-        draft_id=started["draft_id"],
-        expected_version=started["version"],
+        draft_id=started.draft_id,
+        expected_version=started.version,
         candidate_ids=("cand-1", "cand-2"),
     )
 
     generated = workflow.generate(
-        draft_id=ready["draft_id"],
-        expected_version=ready["version"],
+        draft_id=ready.draft_id,
+        expected_version=ready.version,
         candidate_ids=None,
         type_overrides=(("cand-1", "manual"), ("cand-2", "cucumber")),
         overwrite_edited=False,
     )
 
-    assert generated["status"] == "case_editing"
-    assert generated["version"] == ready["version"] + 1
-    cases = {case["candidate_id"]: case for case in generated["generated_cases"]}
-    assert cases["cand-1"]["test_type"] == "manual"
-    assert tuple(cases["cand-1"]["steps"]) == (
+    assert generated.status == "case_editing"
+    assert generated.version == ready.version + 1
+    cases = {case.candidate_id: case for case in generated.generated_cases}
+    assert cases["cand-1"].test_type == "manual"
+    assert tuple(cases["cand-1"].steps) == (
         "Open the login page",
         "Submit valid credentials",
     )
-    assert cases["cand-1"]["gherkin"] == ""
-    assert cases["cand-2"]["test_type"] == "cucumber"
-    assert cases["cand-2"]["gherkin"].startswith("Given a locked account")
-    assert generated["cucumber_feature"] == "Login"
-    assert generated["cucumber_background"] == "Given the login page is open"
+    assert cases["cand-1"].gherkin == ""
+    assert cases["cand-2"].test_type == "cucumber"
+    assert cases["cand-2"].gherkin.startswith("Given a locked account")
+    assert generated.cucumber_feature == "Login"
+    assert generated.cucumber_background == "Given the login page is open"
 
 
 def test_generate_rejects_unselected_candidate_via_existing_contract(
@@ -236,15 +236,15 @@ def test_generate_rejects_unselected_candidate_via_existing_contract(
     workflow, _facade = _workflow(tmp_path)
     started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
     ready = workflow.confirm_selection(
-        draft_id=started["draft_id"],
-        expected_version=started["version"],
+        draft_id=started.draft_id,
+        expected_version=started.version,
         candidate_ids=("cand-1",),
     )
 
     with pytest.raises(ToolArgumentValidationError):
         workflow.generate(
-            draft_id=ready["draft_id"],
-            expected_version=ready["version"],
+            draft_id=ready.draft_id,
+            expected_version=ready.version,
             candidate_ids=("cand-3",),
             type_overrides=(),
             overwrite_edited=False,

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from dataclasses import replace
 
 import pytest
 
 from domain.errors import ToolArgumentValidationError
+from packs.software_delivery.test_design.views import (
+    GeneratedTestCaseView,
+    SourceReferenceView,
+    TestCandidateView,
+    TestCoverageDraftView,
+)
 from packs.software_delivery.tools.test_design_mcp import (
     TOOL_CONFIRM,
     TOOL_GENERATE,
@@ -20,57 +26,50 @@ from packs.software_delivery.tools.test_design_mcp import (
 )
 
 
-def _draft(**overrides: object) -> dict[str, object]:
-    draft: dict[str, object] = {
-        "draft_id": "draft-1",
-        "workspace_id": "ws-secret",
-        "conversation_id": "conv-secret",
-        "source_reference": {"source_id": "issue:I_node", "source_type": "github"},
-        "ticket_identifier": "acme/app#7",
-        "status": "coverage_review",
-        "candidates": [
-            {
-                "candidate_id": "cand-1",
-                "title": "Valid login",
-                "category": "positive",
-                "rationale": "AC says so.",
-                "evidence_references": [
-                    {"source_id": "issue:I_node", "source_type": "github"}
-                ],
-                "selected": False,
-                "origin": "suggested",
-                "test_type": None,
-            },
-            {
-                "candidate_id": "cand-2",
-                "title": "Manual addition",
-                "category": "edge_case",
-                "rationale": "User-authored.",
-                "evidence_references": [],
-                "selected": True,
-                "origin": "manual",
-                "test_type": "cucumber",
-            },
-        ],
-        "version": 1,
-        "selected_candidate_ids": ["cand-2"],
-        "generated_cases": [],
-        "evidence_fingerprint": "fp-secret",
-        "skipped_edited_candidate_ids": [],
-        "cucumber_feature": "",
-        "cucumber_background": "",
-    }
-    draft.update(overrides)
-    return draft
+def _draft(**overrides: object) -> TestCoverageDraftView:
+    issue = SourceReferenceView(source_id="issue:I_node", source_type="github")
+    draft = TestCoverageDraftView(
+        draft_id="draft-1",
+        workspace_id="ws-secret",
+        conversation_id="conv-secret",
+        source_reference=issue,
+        ticket_identifier="acme/app#7",
+        status="coverage_review",
+        candidates=(
+            TestCandidateView(
+                candidate_id="cand-1",
+                title="Valid login",
+                category="positive",
+                rationale="AC says so.",
+                evidence_references=(issue,),
+                selected=False,
+                origin="suggested",
+            ),
+            TestCandidateView(
+                candidate_id="cand-2",
+                title="Manual addition",
+                category="edge_case",
+                rationale="User-authored.",
+                evidence_references=(),
+                selected=True,
+                origin="manual",
+                test_type="cucumber",
+            ),
+        ),
+        version=1,
+        selected_candidate_ids=("cand-2",),
+        evidence_fingerprint="fp-secret",
+    )
+    return replace(draft, **overrides)
 
 
 class _FakeWorkflow:
-    def __init__(self, draft: Mapping[str, object] | None = None) -> None:
+    def __init__(self, draft: TestCoverageDraftView | None = None) -> None:
         self.draft = draft if draft is not None else _draft()
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.error: Exception | None = None
 
-    def _record(self, name: str, **kwargs: object) -> Mapping[str, object]:
+    def _record(self, name: str, **kwargs: object) -> TestCoverageDraftView:
         self.calls.append((name, kwargs))
         if self.error is not None:
             raise self.error
@@ -166,20 +165,20 @@ def test_trust_marker_covers_model_generated_content_only() -> None:
     workflow = _FakeWorkflow(
         _draft(
             status="case_editing",
-            generated_cases=[
-                {
-                    "candidate_id": "cand-2",
-                    "test_type": "cucumber",
-                    "automation_fit": "applicable",
-                    "automation_rationale": "UI flow.",
-                    "availability": "available",
-                    "preconditions": "",
-                    "steps": [],
-                    "expected_result": "",
-                    "gherkin": "Given a user\nWhen they log in\nThen it works",
-                    "user_edited": False,
-                }
-            ],
+            generated_cases=(
+                GeneratedTestCaseView(
+                    candidate_id="cand-2",
+                    test_type="cucumber",
+                    automation_fit="applicable",
+                    automation_rationale="UI flow.",
+                    availability="available",
+                    preconditions="",
+                    steps=(),
+                    expected_result="",
+                    gherkin="Given a user\nWhen they log in\nThen it works",
+                    user_edited=False,
+                ),
+            ),
             cucumber_feature="Login",
             cucumber_background="Given the app is up",
         )
@@ -324,7 +323,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
 
 
 def test_generate_returns_skipped_edited_ids() -> None:
-    workflow = _FakeWorkflow(_draft(skipped_edited_candidate_ids=["cand-2"]))
+    workflow = _FakeWorkflow(_draft(skipped_edited_candidate_ids=("cand-2",)))
 
     payload = _run(
         TestDesignGenerateTool, workflow, {"draft_id": "draft-1", "expected_version": 2}

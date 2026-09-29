@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import Annotated, Any, ClassVar, Literal, Protocol
+from typing import Annotated, Any, ClassVar, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
@@ -18,6 +18,8 @@ from packs.software_delivery.test_design.limits import (
     MAX_ID_CHARS,
     MAX_SUGGESTED_CANDIDATES,
 )
+from packs.software_delivery.test_design.models import TestCaseType
+from packs.software_delivery.test_design.views import TestCoverageDraftView
 
 TOOL_START = "software_delivery.test_design_start"
 TOOL_GET = "software_delivery.test_design_get"
@@ -40,17 +42,16 @@ Id = Annotated[
 class TestDesignWorkflow(Protocol):
     """Workspace-bound Test Design operations supplied by composition.
 
-    Each method returns the draft as a mapping with the Test Design draft view
-    fields. Failures are raised as domain tool errors.
+    Failures are raised as domain tool errors.
     """
 
     __test__ = False
 
     def start(
         self, *, issue_locator: str, conversation_id: str | None
-    ) -> Mapping[str, object]: ...
+    ) -> TestCoverageDraftView: ...
 
-    def get(self, *, draft_id: str) -> Mapping[str, object]: ...
+    def get(self, *, draft_id: str) -> TestCoverageDraftView: ...
 
     def confirm_selection(
         self,
@@ -58,7 +59,7 @@ class TestDesignWorkflow(Protocol):
         draft_id: str,
         expected_version: int,
         candidate_ids: tuple[str, ...],
-    ) -> Mapping[str, object]: ...
+    ) -> TestCoverageDraftView: ...
 
     def generate(
         self,
@@ -66,9 +67,9 @@ class TestDesignWorkflow(Protocol):
         draft_id: str,
         expected_version: int,
         candidate_ids: tuple[str, ...] | None,
-        type_overrides: tuple[tuple[str, str], ...],
+        type_overrides: tuple[tuple[str, TestCaseType], ...],
         overwrite_edited: bool,
-    ) -> Mapping[str, object]: ...
+    ) -> TestCoverageDraftView: ...
 
 
 TestDesignWorkflowFactory = Callable[[], TestDesignWorkflow]
@@ -123,7 +124,7 @@ class TestTypeOverrideArg(_StrictArgs):
     __test__ = False
 
     candidate_id: Id
-    test_type: Literal["cucumber", "manual"]
+    test_type: TestCaseType
 
 
 class TestDesignGenerateArgs(_StrictArgs):
@@ -210,54 +211,52 @@ class TestDesignDraftResult(BaseModel):
     cucumber: CucumberOut
 
 
-def project_draft(draft: Mapping[str, Any]) -> TestDesignDraftResult:
-    """Project a workflow draft mapping into the MCP-safe result."""
+def project_draft(draft: TestCoverageDraftView) -> TestDesignDraftResult:
+    """Project a workflow draft view into the MCP-safe result."""
     return TestDesignDraftResult(
-        draft_id=draft["draft_id"],
-        ticket_identifier=draft["ticket_identifier"],
-        status=draft["status"],
-        version=draft["version"],
-        selected_candidate_ids=list(draft["selected_candidate_ids"]),
-        skipped_edited_candidate_ids=list(
-            draft.get("skipped_edited_candidate_ids") or ()
-        ),
+        draft_id=draft.draft_id,
+        ticket_identifier=draft.ticket_identifier,
+        status=draft.status,
+        version=draft.version,
+        selected_candidate_ids=list(draft.selected_candidate_ids),
+        skipped_edited_candidate_ids=list(draft.skipped_edited_candidate_ids),
         candidates=[
             TestCandidateOut(
-                candidate_id=item["candidate_id"],
-                title=item["title"],
-                category=item["category"],
-                rationale=item["rationale"],
+                candidate_id=item.candidate_id,
+                title=item.title,
+                category=item.category,
+                rationale=item.rationale,
                 evidence_references=[
                     EvidenceReferenceOut(
-                        source_id=ref["source_id"], source_type=ref["source_type"]
+                        source_id=ref.source_id, source_type=ref.source_type
                     )
-                    for ref in item["evidence_references"]
+                    for ref in item.evidence_references
                 ],
-                selected=item["selected"],
-                origin=item["origin"],
-                test_type=item.get("test_type"),
-                untrusted_model_output=item["origin"] == "suggested",
+                selected=item.selected,
+                origin=item.origin,
+                test_type=item.test_type,
+                untrusted_model_output=item.origin == "suggested",
             )
-            for item in draft["candidates"]
+            for item in draft.candidates
         ],
         generated_cases=[
             GeneratedTestCaseOut(
-                candidate_id=case["candidate_id"],
-                test_type=case["test_type"],
-                automation_fit=case["automation_fit"],
-                automation_rationale=case["automation_rationale"],
-                availability=case["availability"],
-                preconditions=case["preconditions"],
-                steps=list(case["steps"]),
-                expected_result=case["expected_result"],
-                gherkin=case["gherkin"],
-                user_edited=case["user_edited"],
+                candidate_id=case.candidate_id,
+                test_type=case.test_type,
+                automation_fit=case.automation_fit,
+                automation_rationale=case.automation_rationale,
+                availability=case.availability,
+                preconditions=case.preconditions,
+                steps=list(case.steps),
+                expected_result=case.expected_result,
+                gherkin=case.gherkin,
+                user_edited=case.user_edited,
             )
-            for case in draft.get("generated_cases") or ()
+            for case in draft.generated_cases
         ],
         cucumber=CucumberOut(
-            feature=draft.get("cucumber_feature") or "",
-            background=draft.get("cucumber_background") or "",
+            feature=draft.cucumber_feature,
+            background=draft.cucumber_background,
         ),
     )
 
@@ -294,7 +293,7 @@ class _TestDesignTool:
 
     def _invoke(
         self, workflow: TestDesignWorkflow, args: Any
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         raise NotImplementedError
 
 
@@ -313,7 +312,7 @@ class TestDesignStartTool(_TestDesignTool):
 
     def _invoke(
         self, workflow: TestDesignWorkflow, args: TestDesignStartArgs
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         return workflow.start(
             issue_locator=args.issue_locator, conversation_id=args.conversation_id
         )
@@ -333,7 +332,7 @@ class TestDesignGetTool(_TestDesignTool):
 
     def _invoke(
         self, workflow: TestDesignWorkflow, args: TestDesignGetArgs
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         return workflow.get(draft_id=args.draft_id)
 
 
@@ -353,7 +352,7 @@ class TestDesignConfirmTool(_TestDesignTool):
 
     def _invoke(
         self, workflow: TestDesignWorkflow, args: TestDesignConfirmArgs
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         return workflow.confirm_selection(
             draft_id=args.draft_id,
             expected_version=args.expected_version,
@@ -376,7 +375,7 @@ class TestDesignGenerateTool(_TestDesignTool):
 
     def _invoke(
         self, workflow: TestDesignWorkflow, args: TestDesignGenerateArgs
-    ) -> Mapping[str, object]:
+    ) -> TestCoverageDraftView:
         return workflow.generate(
             draft_id=args.draft_id,
             expected_version=args.expected_version,
