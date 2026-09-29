@@ -86,6 +86,33 @@ class ToolFailureError(RuntimeError):
     """
 
 
+class ToolTargetNotFoundError(ToolFailureError):
+    """The resource a tool targets does not exist in the caller's scope.
+
+    Unknown ids and ids owned by another workspace are indistinguishable.
+    """
+
+
+class ToolVersionConflictError(ToolFailureError):
+    """A compare-and-swap version supplied to a tool no longer matches."""
+
+
+class ToolEvidenceChangedError(ToolFailureError):
+    """Live source evidence changed since the tool's target was confirmed."""
+
+
+class ToolSourceNotConnectedError(ToolFailureError):
+    """The live source a tool needs has no usable authorization grant."""
+
+
+class ToolInsufficientEvidenceError(ToolFailureError):
+    """The live source returned no usable grounded evidence for the tool."""
+
+
+class ToolUnavailableError(ToolFailureError):
+    """The capability behind a tool is disabled for this deployment."""
+
+
 class ConnectorError(RuntimeError):
     """A connector adapter failed without exposing provider details."""
 

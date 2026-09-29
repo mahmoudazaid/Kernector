@@ -87,3 +87,39 @@ Chat routing clarifies incomplete Test Design commands (#304) and builds the
 Start handoff only after a ready `tool_workflow` decision (intent + one Issue).
 
 Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
+
+## Test Design over MCP (#338)
+
+[`tools/test_design_mcp.py`](tools/test_design_mcp.py) exposes the same
+workflow to allowlisted MCP clients. The pack owns the tool ids and dispatch;
+composition ([`composition/mcp_test_design.py`](../../composition/mcp_test_design.py))
+owns the argument/result schemas and projection. `build_mcp_tools()`
+contributes these tools only when composition supplies a workspace-bound
+`test_design_binding`. The pack never sees the workspace id.
+
+| Tool id | Arguments | Existing operation |
+| --- | --- | --- |
+| `software_delivery.test_design_start` | `issue_locator` | create draft from a live GitHub Issue |
+| `software_delivery.test_design_get` | `draft_id` | read draft |
+| `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
+| `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), `type_overrides[{candidate_id, test_type}]`, `overwrite_edited` | #300 generate |
+
+- Arguments are strict (`additionalProperties: false`); `workspace_id` and
+  `conversation_id` are never accepted. Each MCP draft gets a server-generated
+  `mcp-<uuid>` conversation id, so it cannot collide with a chat conversation.
+- Results omit `workspace_id`, `conversation_id`, `evidence_fingerprint`, the
+  draft-level `source_reference`, and any OAuth or provider data. Candidate
+  `evidence_references` still carry the Issue `source_id`
+  (`issue:<GitHub node id>`).
+- `untrusted_model_output` marks model-generated text only: suggested
+  candidates, generated cases, and the shared Cucumber feature and background.
+  User-added (`origin: manual`) candidates are `false`. Server metadata
+  (`draft_id`, `status`, `version`, ids) carries no marker.
+- Confirm makes two compare-and-swap writes, so the version advances by 2 from
+  `coverage_review` (by 1 when already `ready` with the same selection). If
+  confirm fails after the selection is saved (for example
+  `evidence_changed`), re-read with `software_delivery.test_design_get`.
+- Errors: `validation_error`, `not_found` (unknown and other-workspace drafts
+  are identical), `version_conflict`, `evidence_changed`,
+  `github_not_connected`, `insufficient_evidence`, otherwise `internal_error`.
+  Nothing is published externally.

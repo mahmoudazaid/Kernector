@@ -15,8 +15,9 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 `domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` is
 enabled via `DOMAIN_TOOL_PACKS`; chat `build_tools()` stays Drive-only when
 wired (#285 scaffolding retirement). The shared Streamable HTTP MCP adapter
-(`presentation/mcp`, #320) exposes `core.search_knowledge`; pack MCP tools
-arrive later via `build_mcp_tools()` (#326/#327). `composition/` is the sole
+(`presentation/mcp`, #320) exposes `core.search_knowledge` and allowlisted
+pack tools from `build_mcp_tools()`, starting with Test Design (#338).
+`composition/` is the sole
 wiring root: it loads settings, constructs adapters, activates enabled packs
 through an explicit allowlist, and hands typed services to the UI.
 `presentation/` hosts the FastAPI HTTP adapter, MCP adapter,
@@ -90,8 +91,8 @@ MCP adapter supplies **bounded, citable evidence** (`core.search_knowledge`) and
 export MCP_AUTH_TOKEN=dev-token
 export MCP_ALLOWED_HOSTS=127.0.0.1:8100
 export MCP_ALLOWED_ORIGINS=  # optional; missing Origin allowed for non-browser clients
-export MCP_TOOL_ALLOWLIST=core.search_knowledge
-export DOMAIN_TOOL_PACKS=software-delivery   # optional; live MCP pack tools come in #326/#327
+export MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate
+export DOMAIN_TOOL_PACKS=software-delivery   # required for Test Design tools
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
 uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
 ```
@@ -99,8 +100,13 @@ uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
 - Endpoint: `http://127.0.0.1:8100/mcp` (Bearer required)
 - Health: `GET http://127.0.0.1:8100/healthz` (public)
 - Auth is a **trusted shared bearer MVP**, not OAuth
-- Drive export and retired scaffolding tools (#285) are not on MCP; live pack
-  tools land in follow-ups (#326/#327)
+- Test Design tools (#338) run start → confirm → generate for a live GitHub
+  Issue using the workspace's GitHub connection; they appear in `tools/list`
+  only when the pack is enabled and the ids are allowlisted. See the
+  [pack README](packs/software_delivery/README.md#test-design-over-mcp-338)
+  for arguments, error codes, and the `untrusted_model_output` marker.
+- Drive export and retired scaffolding tools (#285) are not on MCP; further
+  live pack tools land in follow-ups (#326/#327)
 
 **Cursor** (`mcp.json` fragment — expand the token from the environment; never
 hardcode a real secret):
