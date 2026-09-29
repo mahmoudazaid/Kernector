@@ -91,21 +91,26 @@ Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
 ## Test Design over MCP (#338)
 
 [`tools/test_design_mcp.py`](tools/test_design_mcp.py) exposes the same
-workflow to allowlisted MCP clients. `build_mcp_tools()` contributes these
-tools only when composition supplies a workspace-bound
-`test_design_workflow_factory`. The pack never sees the workspace id.
+workflow to allowlisted MCP clients. The pack owns the tool ids and dispatch;
+composition ([`composition/mcp_test_design.py`](../../composition/mcp_test_design.py))
+owns the argument/result schemas and projection. `build_mcp_tools()`
+contributes these tools only when composition supplies a workspace-bound
+`test_design_binding`. The pack never sees the workspace id.
 
 | Tool id | Arguments | Existing operation |
 | --- | --- | --- |
-| `software_delivery.test_design_start` | `issue_locator`, optional `conversation_id` (generated server-side when omitted) | create draft from a live GitHub Issue |
+| `software_delivery.test_design_start` | `issue_locator` | create draft from a live GitHub Issue |
 | `software_delivery.test_design_get` | `draft_id` | read draft |
-| `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (min 1) | patch selection, then confirm |
-| `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids`, `type_overrides[{candidate_id, test_type}]`, `overwrite_edited` | #300 generate |
+| `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
+| `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), `type_overrides[{candidate_id, test_type}]`, `overwrite_edited` | #300 generate |
 
-- Arguments are strict (`additionalProperties: false`); `workspace_id` is never
-  accepted.
+- Arguments are strict (`additionalProperties: false`); `workspace_id` and
+  `conversation_id` are never accepted. Each MCP draft gets a server-generated
+  `mcp-<uuid>` conversation id, so it cannot collide with a chat conversation.
 - Results omit `workspace_id`, `conversation_id`, `evidence_fingerprint`, the
-  Issue node reference, and any OAuth or provider data.
+  draft-level `source_reference`, and any OAuth or provider data. Candidate
+  `evidence_references` still carry the Issue `source_id`
+  (`issue:<GitHub node id>`).
 - `untrusted_model_output` marks model-generated text only: suggested
   candidates, generated cases, and the shared Cucumber feature and background.
   User-added (`origin: manual`) candidates are `false`. Server metadata

@@ -420,10 +420,13 @@ def test_cross_workspace_draft_is_identical_to_unknown_draft(
     assert draft_id not in cross.text
 
 
-def test_build_mcp_tools_contributes_test_design_only_with_workflow_factory() -> None:
+def test_build_mcp_tools_contributes_test_design_only_with_binding() -> None:
+    from composition.mcp_test_design import McpTestDesignBinding
     from packs.software_delivery.registration import build_mcp_tools
 
-    contributed = build_mcp_tools(test_design_workflow_factory=lambda: object())
+    contributed = build_mcp_tools(
+        test_design_binding=McpTestDesignBinding(lambda: object())  # type: ignore[arg-type,return-value]
+    )
 
     assert sorted(tool_id for tool_id, _ in contributed) == list(_TEST_DESIGN_TOOLS)
     assert sorted(factory().name for _, factory in contributed) == list(
@@ -467,6 +470,48 @@ assert not any(
     or name.startswith("packs.software_delivery.")
     for name in sys.modules
 )
+print("ok", flush=True)
+"""
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(project_root),
+        "DOMAIN_TOOL_PACKS": "",
+        "PYTHONUNBUFFERED": "1",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        timeout=120,
+    )
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    assert "ok" in completed.stdout
+
+
+def test_disabled_http_deps_do_not_import_any_pack() -> None:
+    """Fresh interpreter: the HTTP composition path must not load packs eagerly."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+    script = r"""
+import sys
+
+import infrastructure.config as config
+
+config.load_dotenv = lambda *a, **k: False
+
+import presentation.http.deps  # noqa: F401
+import presentation.http.routes.chat  # noqa: F401
+import presentation.http.routes.test_design  # noqa: F401
+
+loaded = sorted(name for name in sys.modules if name.split(".")[0] == "packs")
+assert not loaded, loaded
 print("ok", flush=True)
 """
     env = {

@@ -746,11 +746,13 @@ the agents; Kernector supplies evidence and allowlisted tools.
   authenticated caller. Denied tools are absent from `tools/list`, and
   invoking them returns one identical `tool_unavailable` payload.
 - Test Design (#338): `software_delivery.test_design_{start,get,confirm,generate}`
-  live in the pack over a `TestDesignWorkflow` Protocol. Composition
-  (`composition/mcp_test_design.py`) adapts the existing `TestDesignFacade`,
-  bound to `DOCUMENT_CATALOG_WORKSPACE_ID` and the workspace GitHub grant,
-  and `composition/mcp_wiring.py` passes it only when `software-delivery` is
-  enabled. `presentation/mcp` stays Test-Design unaware.
+  live in the pack (stdlib + `domain` only) over `TestDesignWorkflow` and
+  `TestDesignMcpBinding` Protocols. Composition
+  (`composition/mcp_test_design.py`) owns the pydantic argument/result schemas
+  and projection, adapts the existing `TestDesignFacade` bound to
+  `DOCUMENT_CATALOG_WORKSPACE_ID` and the workspace GitHub grant, and
+  `composition/mcp_wiring.py` passes the binding only when `software-delivery`
+  is enabled. `presentation/mcp` stays Test-Design unaware.
 - Tool failures stay transport-neutral (`domain.errors` subclasses of
   `ToolFailureError`, e.g. `ToolTargetNotFoundError`). Only
   `composition/mcp_tool_registry.py` maps exact types to the safe wire codes

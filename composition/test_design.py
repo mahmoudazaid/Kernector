@@ -29,15 +29,17 @@ from infrastructure.workspace_store.errors import (
     VersionedStoreNotFoundError,
     VersionedStoreVersionConflictError,
 )
-from packs.software_delivery.test_design.models import TestCaseType
-from packs.software_delivery.test_design.views import (
-    GeneratedTestCaseView,
-    SourceLocatorView,
-    SourceReferenceView,
-    TestCandidateView,
-    TestCoverageDraftView,
-)
 
+DraftStatus = Literal["coverage_review", "ready", "case_editing"]
+CandidateOrigin = Literal["suggested", "manual"]
+TestCaseType = Literal["manual", "cucumber"]
+AutomationFit = Literal["applicable", "not_applicable", "unclear"]
+CaseAvailability = Literal["available", "insufficient_evidence"]
+CoverageCategory = Literal[
+    "positive",
+    "negative",
+    "edge_case",
+]
 _TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
 
 OAuthPreflight = Callable[[], str]
@@ -58,6 +60,68 @@ TEST_DESIGN_HANDOFF_ANSWER = (
     "I can start Test Design from that GitHub Issue. "
     "Use Start Test Design to fetch the issue live and plan coverage."
 )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceLocatorView:
+    provider: str
+    locator: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourceReferenceView:
+    source_id: str
+    source_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class TestCandidateView:
+    __test__ = False
+
+    candidate_id: str
+    title: str
+    category: CoverageCategory
+    rationale: str
+    evidence_references: tuple[SourceReferenceView, ...]
+    selected: bool
+    origin: CandidateOrigin
+    test_type: TestCaseType | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedTestCaseView:
+    __test__ = False
+
+    candidate_id: str
+    test_type: TestCaseType
+    automation_fit: AutomationFit
+    automation_rationale: str
+    availability: CaseAvailability
+    preconditions: str
+    steps: tuple[str, ...]
+    expected_result: str
+    gherkin: str
+    user_edited: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TestCoverageDraftView:
+    __test__ = False
+
+    draft_id: str
+    workspace_id: str
+    conversation_id: str
+    source_reference: SourceReferenceView
+    ticket_identifier: str
+    status: DraftStatus
+    candidates: tuple[TestCandidateView, ...]
+    version: int
+    selected_candidate_ids: tuple[str, ...]
+    generated_cases: tuple[GeneratedTestCaseView, ...] = ()
+    evidence_fingerprint: str | None = None
+    skipped_edited_candidate_ids: tuple[str, ...] = ()
+    cucumber_feature: str = ""
+    cucumber_background: str = ""
 
 
 @dataclass(frozen=True, slots=True)

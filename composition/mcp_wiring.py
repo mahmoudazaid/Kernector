@@ -28,8 +28,7 @@ def build_mcp_tool_registry(
     """Build the MCP registry with core search + pack MCP factories.
 
     Pack factories come from allowlisted ``build_mcp_tools`` entrypoints.
-    Software Delivery receives a workspace-bound Test Design workflow factory
-    (#338). ``chat_model_factory`` is forwarded for future LLM-backed pack MCP
+    Software Delivery receives a workspace-bound Test Design binding (#338). ``chat_model_factory`` is forwarded for future LLM-backed pack MCP
     tools. Pack modules are imported only when that pack id is in
     ``settings.domain_tools.enabled_packs``.
     """
@@ -72,10 +71,6 @@ def _pack_mcp_kwargs(pack_id: str, settings: Settings) -> dict[str, object]:
     """Return pack-specific collaborators for that pack's ``build_mcp_tools``."""
     if pack_id != "software-delivery":
         return {}
-    from composition.mcp_test_design import build_mcp_test_design_workflow_factory
+    from composition.mcp_test_design import build_mcp_test_design_binding
 
-    return {
-        "test_design_workflow_factory": build_mcp_test_design_workflow_factory(
-            settings
-        )
-    }
+    return {"test_design_binding": build_mcp_test_design_binding(settings)}

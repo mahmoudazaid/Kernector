@@ -15,6 +15,7 @@ server-framework rule. ``test/`` is outside :func:`_modules`, so TestClient
 imports of ``httpx`` are fine.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,30 @@ def test_layer_imports_no_forbidden_packages(layer: str, module_path: Path) -> N
         f"{module_path.relative_to(REPO_ROOT)} imports {sorted(forbidden)}, "
         f"which {layer}/ may not depend on"
     )
+
+
+# ARCHITECTURE.md: packs/ may import `domain` and the standard library only.
+PACK_ALLOWED_IMPORTS = {*sys.stdlib_module_names, "domain", "packs"}
+
+
+@pytest.mark.parametrize(
+    "module_path", _modules("packs"), ids=lambda m: str(m.relative_to(REPO_ROOT))
+)
+def test_packs_import_only_domain_and_stdlib(module_path: Path) -> None:
+    hits = find_non_allowed_imports(module_path, allowed=PACK_ALLOWED_IMPORTS)
+    assert not hits, (
+        f"{module_path.relative_to(REPO_ROOT)} imports {sorted(hits)}, "
+        "but packs/ may import only domain and the standard library"
+    )
+
+
+@pytest.mark.parametrize("source", ["import pydantic\n", "from yaml import load\n"])
+def test_planted_pack_third_party_import_is_detected(
+    tmp_path: Path, source: str
+) -> None:
+    module = tmp_path / "bad_pack.py"
+    module.write_text(source, encoding="utf-8")
+    assert find_non_allowed_imports(module, allowed=PACK_ALLOWED_IMPORTS)
 
 
 @pytest.mark.parametrize(

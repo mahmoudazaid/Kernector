@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from application.errors import GitHubNotConnectedError, GitHubReauthorizationRequiredError
-from composition.mcp_test_design import McpTestDesignWorkflow
+from composition.mcp_test_design import McpTestDesignOperations
 from domain.errors import (
     ToolArgumentValidationError,
     ToolEvidenceChangedError,
@@ -25,15 +25,15 @@ from test.composition.test_design_fakes import (
 )
 
 
-def _workflow(tmp_path: Path, **kwargs) -> tuple[McpTestDesignWorkflow, object]:
+def _workflow(tmp_path: Path, **kwargs) -> tuple[McpTestDesignOperations, object]:
     facade = build_fake_facade(tmp_path, **kwargs)
-    return McpTestDesignWorkflow(facade), facade
+    return McpTestDesignOperations(facade), facade
 
 
 def test_start_generates_server_side_conversation_id(tmp_path: Path) -> None:
     workflow, facade = _workflow(tmp_path)
 
-    draft = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    draft = workflow.start(issue_locator=ISSUE_LOCATOR)
 
     assert draft.status == "coverage_review"
     assert draft.version == 1
@@ -47,17 +47,21 @@ def test_start_generates_server_side_conversation_id(tmp_path: Path) -> None:
     assert len(stored.conversation_id) > len("mcp-")
 
 
-def test_start_keeps_client_conversation_id(tmp_path: Path) -> None:
+def test_start_never_reuses_a_conversation_id(tmp_path: Path) -> None:
     workflow, facade = _workflow(tmp_path)
 
-    draft = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id="conv-9")
+    first = workflow.start(issue_locator=ISSUE_LOCATOR)
+    second = workflow.start(issue_locator=ISSUE_LOCATOR)
 
-    assert facade.get_draft(draft.draft_id).conversation_id == "conv-9"
+    assert (
+        facade.get_draft(first.draft_id).conversation_id
+        != facade.get_draft(second.draft_id).conversation_id
+    )
 
 
 def test_confirm_patches_selection_then_confirms(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
 
     confirmed = workflow.confirm_selection(
         draft_id=started.draft_id,
@@ -75,7 +79,7 @@ def test_confirm_on_ready_draft_with_same_selection_advances_once(
     tmp_path: Path,
 ) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
@@ -94,7 +98,7 @@ def test_confirm_on_ready_draft_with_same_selection_advances_once(
 
 def test_confirm_with_stale_version_is_conflict_without_write(tmp_path: Path) -> None:
     workflow, facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
 
     with pytest.raises(ToolVersionConflictError):
         workflow.confirm_selection(
@@ -112,7 +116,7 @@ def test_confirm_with_unknown_candidate_is_validation_without_write(
     tmp_path: Path,
 ) -> None:
     workflow, facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
 
     with pytest.raises(ToolArgumentValidationError):
         workflow.confirm_selection(
@@ -129,7 +133,7 @@ def test_confirm_with_unknown_candidate_is_validation_without_write(
 def test_confirm_evidence_changed_keeps_saved_selection(tmp_path: Path) -> None:
     reader = RecordingIssueReader()
     workflow, facade = _workflow(tmp_path, reader=reader)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
     reader.document = issue_document(source_id="issue:I_other")
 
     with pytest.raises(ToolEvidenceChangedError):
@@ -161,7 +165,7 @@ def test_github_grant_errors_map_to_source_not_connected(
     workflow, _facade = _workflow(tmp_path, oauth_preflight=_preflight)
 
     with pytest.raises(ToolSourceNotConnectedError):
-        workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+        workflow.start(issue_locator=ISSUE_LOCATOR)
 
 
 def test_blank_issue_maps_to_insufficient_evidence(tmp_path: Path) -> None:
@@ -174,14 +178,14 @@ def test_blank_issue_maps_to_insufficient_evidence(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path, reader=reader)
 
     with pytest.raises(ToolInsufficientEvidenceError):
-        workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+        workflow.start(issue_locator=ISSUE_LOCATOR)
 
 
 def test_invalid_locator_maps_to_argument_validation(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
 
     with pytest.raises(ToolArgumentValidationError):
-        workflow.start(issue_locator="not a locator", conversation_id=None)
+        workflow.start(issue_locator="not a locator")
 
 
 def test_unknown_draft_maps_to_target_not_found(tmp_path: Path) -> None:
@@ -200,7 +204,7 @@ def test_disabled_pack_maps_to_unavailable(tmp_path: Path) -> None:
 
 def test_generate_follows_the_300_contract(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
@@ -234,7 +238,7 @@ def test_generate_rejects_unselected_candidate_via_existing_contract(
     tmp_path: Path,
 ) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR, conversation_id=None)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
