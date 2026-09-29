@@ -9,7 +9,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from composition.mcp_access import McpAccessPolicy, McpCallerContext
-from domain.errors import ToolArgumentValidationError, ToolFailureError
+from domain.errors import (
+    ToolArgumentValidationError,
+    ToolEvidenceChangedError,
+    ToolFailureError,
+    ToolInsufficientEvidenceError,
+    ToolSourceNotConnectedError,
+    ToolTargetNotFoundError,
+    ToolUnavailableError,
+    ToolVersionConflictError,
+)
 from domain.ports import Tool
 
 logger = logging.getLogger(__name__)
@@ -17,6 +26,27 @@ logger = logging.getLogger(__name__)
 TOOL_UNAVAILABLE_CODE = "tool_unavailable"
 GENERIC_ERROR_CODE = "internal_error"
 VALIDATION_ERROR_CODE = "validation_error"
+
+# Exact exception type -> (wire code, fixed message). Only these escape.
+_SAFE_FAILURES: Mapping[type[ToolFailureError], tuple[str, str]] = {
+    ToolTargetNotFoundError: ("not_found", "Resource not found"),
+    ToolVersionConflictError: (
+        "version_conflict",
+        "Version conflict; re-read and retry",
+    ),
+    ToolEvidenceChangedError: (
+        "evidence_changed",
+        "Source evidence changed; restart the workflow",
+    ),
+    ToolSourceNotConnectedError: (
+        "github_not_connected",
+        "GitHub is not connected",
+    ),
+    ToolInsufficientEvidenceError: (
+        "insufficient_evidence",
+        "No usable grounded evidence",
+    ),
+}
 
 ToolFactory = Callable[[], Tool]
 
@@ -57,6 +87,16 @@ def _validation_error(message: str = "Invalid tool arguments") -> McpInvokeResul
         is_error=True,
         text=json.dumps(payload, separators=(",", ":")),
         code=VALIDATION_ERROR_CODE,
+        structured=payload,
+    )
+
+
+def _safe_failure(code: str, message: str) -> McpInvokeResult:
+    payload = {"code": code, "message": message}
+    return McpInvokeResult(
+        is_error=True,
+        text=json.dumps(payload, separators=(",", ":")),
+        code=code,
         structured=payload,
     )
 
@@ -162,7 +202,13 @@ class McpToolRegistry:
             result = tool.run(args)
         except ToolArgumentValidationError:
             return _validation_error()
-        except ToolFailureError:
+        except ToolFailureError as error:
+            if type(error) is ToolUnavailableError:
+                return _tool_unavailable()
+            safe = _SAFE_FAILURES.get(type(error))
+            if safe is not None:
+                logger.info("mcp_tool_outcome tool=%s code=%s", tool_id, safe[0])
+                return _safe_failure(*safe)
             logger.info("mcp_tool_failure tool=%s", tool_id)
             return _generic_error()
         except Exception:

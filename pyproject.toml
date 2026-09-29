@@ -42,6 +42,10 @@ dev = [
     "kernector[github]",
 ]
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
