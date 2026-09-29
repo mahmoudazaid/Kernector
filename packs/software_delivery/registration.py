@@ -12,6 +12,10 @@ from packs.software_delivery.tools.export_test_cases_google_drive import (
     ExportTestCasesGoogleDriveTool,
     RenderExportMarkdown,
 )
+from packs.software_delivery.tools.test_design_mcp import (
+    TEST_DESIGN_MCP_TOOLS,
+    TestDesignWorkflowFactory,
+)
 
 SelectChatIntent = Callable[[str], ChatToolSelection | None]
 
@@ -60,16 +64,22 @@ def build_tools(
 def build_mcp_tools(
     *,
     chat_model_factory: Callable[[], ChatModel] | None = None,
+    test_design_workflow_factory: TestDesignWorkflowFactory | None = None,
 ) -> Sequence[tuple[str, Callable[[], Tool]]]:
     """Return MCP tool factories for this pack (excludes Drive export).
 
-    Empty until live provider tools are contributed (#326/#327). Kept as the
-    pack → composition MCP seam so #320 does not need provider-specific code.
-
-    ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
+    Test Design tools (#338) are contributed only when composition supplies a
+    workspace-bound ``test_design_workflow_factory``; otherwise the result is
+    empty. ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
     """
     _ = chat_model_factory
-    return ()
+    if test_design_workflow_factory is None:
+        return ()
+    workflow_factory = test_design_workflow_factory
+    return tuple(
+        (tool_id, lambda tool_cls=tool_cls: tool_cls(workflow_factory))
+        for tool_id, tool_cls in TEST_DESIGN_MCP_TOOLS
+    )
 
 
 def build_orchestrator(*, invoke: OpaqueInvoke) -> OrchestrateSoftwareDelivery:

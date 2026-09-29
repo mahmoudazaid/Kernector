@@ -121,6 +121,159 @@ def test_unknown_and_drive_share_identical_unavailable() -> None:
     assert a.code == b.code == TOOL_UNAVAILABLE_CODE
 
 
+class _RaisingTool:
+    name = "fake.raising"
+    description = "Raises the configured error"
+    args_schema = None
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls = 0
+
+    def run(self, arguments: dict) -> str:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return '{"ok":true}'
+
+
+def _registry_for(
+    tool: _RaisingTool, *, enabled_packs: tuple[str, ...] = ("software-delivery",)
+) -> McpToolRegistry:
+    return McpToolRegistry(
+        contributions=(
+            McpToolContribution(
+                tool_id=tool.name, pack_id="software-delivery", factory=lambda: tool
+            ),
+        ),
+        enabled_packs=enabled_packs,
+    )
+
+
+_SECRET = "ws-secret token=gho_x fp=abc /internal/path"
+
+
+@pytest.mark.parametrize(
+    ("error_cls", "code"),
+    [
+        ("ToolTargetNotFoundError", "not_found"),
+        ("ToolVersionConflictError", "version_conflict"),
+        ("ToolEvidenceChangedError", "evidence_changed"),
+        ("ToolSourceNotConnectedError", "github_not_connected"),
+        ("ToolInsufficientEvidenceError", "insufficient_evidence"),
+    ],
+)
+def test_neutral_tool_errors_translate_to_allowlisted_safe_codes(
+    error_cls: str, code: str
+) -> None:
+    import domain.errors as domain_errors
+
+    tool = _RaisingTool(getattr(domain_errors, error_cls)(_SECRET))
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+
+    result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.is_error
+    assert result.code == code
+    assert result.structured is not None
+    assert result.structured["code"] == code
+    assert set(result.structured) == {"code", "message"}
+    assert _SECRET not in result.text
+    assert json.loads(result.text) == result.structured
+
+
+def test_safe_code_messages_are_fixed_per_code() -> None:
+    from domain.errors import ToolTargetNotFoundError
+
+    caller = McpCallerContext("ws", "default", frozenset({"fake.raising"}))
+    a = _registry_for(_RaisingTool(ToolTargetNotFoundError("a"))).invoke_authorized(
+        caller, "fake.raising", {}
+    )
+    b = _registry_for(_RaisingTool(ToolTargetNotFoundError("b"))).invoke_authorized(
+        caller, "fake.raising", {}
+    )
+    assert a.text == b.text
+
+
+def test_argument_validation_stays_validation_error() -> None:
+    from domain.errors import ToolArgumentValidationError
+
+    tool = _RaisingTool(ToolArgumentValidationError(_SECRET))
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+
+    result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.code == "validation_error"
+    assert _SECRET not in result.text
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        __import__("domain.errors").errors.ToolFailureError(_SECRET),
+        RuntimeError(_SECRET),
+        KeyError(_SECRET),
+    ],
+)
+def test_unexpected_or_generic_failures_become_internal_error(error: Exception) -> None:
+    tool = _RaisingTool(error)
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+
+    result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.code == "internal_error"
+    assert _SECRET not in result.text
+
+
+def test_unavailable_capability_is_identical_to_deny() -> None:
+    from domain.errors import ToolUnavailableError
+
+    tool = _RaisingTool(ToolUnavailableError(_SECRET))
+    allowed = McpCallerContext("ws", "default", frozenset({tool.name}))
+    denied = McpCallerContext("ws", "default", frozenset())
+    registry = _registry_for(tool)
+
+    raised = registry.invoke_authorized(allowed, tool.name, {})
+    deny = registry.invoke_authorized(denied, tool.name, {})
+
+    assert raised.code == TOOL_UNAVAILABLE_CODE
+    assert raised.text == deny.text
+    assert raised.structured == deny.structured
+
+
+def test_gate_enabled_allowlisted_authorized_is_listed_and_invocable() -> None:
+    tool = _RaisingTool()
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    registry = _registry_for(tool)
+
+    assert [d.name for d in registry.list_effective(caller)] == [tool.name]
+    result = registry.invoke_authorized(caller, tool.name, {})
+    assert result.is_error is False
+    assert tool.calls == 1
+
+
+def test_gate_pack_not_enabled_is_unlisted_and_unavailable() -> None:
+    tool = _RaisingTool()
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    registry = _registry_for(tool, enabled_packs=())
+
+    assert registry.list_effective(caller) == ()
+    result = registry.invoke_authorized(caller, tool.name, {})
+    assert result.code == TOOL_UNAVAILABLE_CODE
+    assert tool.calls == 0
+
+
+def test_gate_not_allowlisted_is_unlisted_and_unavailable() -> None:
+    tool = _RaisingTool()
+    caller = McpCallerContext("ws", "default", frozenset({"other.tool"}))
+    registry = _registry_for(tool)
+
+    assert registry.list_effective(caller) == ()
+    result = registry.invoke_authorized(caller, tool.name, {})
+    assert result.code == TOOL_UNAVAILABLE_CODE
+    assert tool.calls == 0
+
+
 def test_search_knowledge_projection_excludes_extra_and_marks_untrusted() -> None:
     hits = (_hit("src-1", "hello evidence"),)
     result = project_search_result(hits)
@@ -179,6 +332,103 @@ def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
         frozenset({TOOL_NAME, "software_delivery.risk_score"}),
     )
     assert [item.name for item in registry.list_effective(caller)] == [TOOL_NAME]
+
+
+_TEST_DESIGN_TOOLS = (
+    "software_delivery.test_design_confirm",
+    "software_delivery.test_design_generate",
+    "software_delivery.test_design_get",
+    "software_delivery.test_design_start",
+)
+
+
+def _test_design_registry(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, *, workspace_id: str, pack_on: bool = True
+):
+    import composition.container as container
+    from composition.mcp_wiring import build_mcp_tool_registry
+    from test.composition.test_design_fakes import (
+        build_fake_facade,
+        settings_with_pack,
+    )
+
+    settings = settings_with_pack(pack_on=pack_on, workspace_id=workspace_id)
+    monkeypatch.setattr(
+        container,
+        "build_test_design_facade",
+        lambda active: build_fake_facade(
+            tmp_path, workspace_id=active.document_catalog.workspace_id
+        ),
+    )
+    return build_mcp_tool_registry(settings, retrieve=_StubRetrieve())
+
+
+def test_wired_test_design_tools_are_listed_when_enabled_and_allowlisted(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-a")
+    caller = McpCallerContext("ws-a", "default", frozenset(_TEST_DESIGN_TOOLS))
+
+    names = [item.name for item in registry.list_effective(caller)]
+
+    assert names == list(_TEST_DESIGN_TOOLS)
+
+
+def test_wired_test_design_tools_absent_when_pack_disabled(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _test_design_registry(
+        tmp_path, monkeypatch, workspace_id="ws-a", pack_on=False
+    )
+    caller = McpCallerContext("ws-a", "default", frozenset(_TEST_DESIGN_TOOLS))
+
+    assert registry.list_effective(caller) == ()
+    result = registry.invoke_authorized(
+        caller, "software_delivery.test_design_get", {"draft_id": "d"}
+    )
+    assert result.code == TOOL_UNAVAILABLE_CODE
+
+
+def test_cross_workspace_draft_is_identical_to_unknown_draft(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test.composition.test_design_fakes import ISSUE_LOCATOR
+
+    registry_a = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-a")
+    caller_a = McpCallerContext("ws-a", "default", frozenset(_TEST_DESIGN_TOOLS))
+    started = registry_a.invoke_authorized(
+        caller_a, "software_delivery.test_design_start", {"issue_locator": ISSUE_LOCATOR}
+    )
+    assert started.is_error is False
+    draft_id = json.loads(started.text)["draft_id"]
+    own = registry_a.invoke_authorized(
+        caller_a, "software_delivery.test_design_get", {"draft_id": draft_id}
+    )
+    assert own.is_error is False
+
+    registry_b = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-b")
+    caller_b = McpCallerContext("ws-b", "default", frozenset(_TEST_DESIGN_TOOLS))
+    cross = registry_b.invoke_authorized(
+        caller_b, "software_delivery.test_design_get", {"draft_id": draft_id}
+    )
+    unknown = registry_b.invoke_authorized(
+        caller_b, "software_delivery.test_design_get", {"draft_id": "no-such-draft"}
+    )
+
+    assert cross.code == "not_found"
+    assert cross.text == unknown.text
+    assert draft_id not in cross.text
+
+
+def test_build_mcp_tools_contributes_test_design_only_with_workflow_factory() -> None:
+    from packs.software_delivery.registration import build_mcp_tools
+
+    contributed = build_mcp_tools(test_design_workflow_factory=lambda: object())
+
+    assert sorted(tool_id for tool_id, _ in contributed) == list(_TEST_DESIGN_TOOLS)
+    assert sorted(factory().name for _, factory in contributed) == list(
+        _TEST_DESIGN_TOOLS
+    )
 
 
 def test_disabled_mcp_registry_does_not_import_software_delivery_pack() -> None:

@@ -730,9 +730,9 @@ check. Feature-migration readiness:
 
 Issue [#320](https://github.com/mahmoudazaid/Kernector/issues/320): one shared
 Kernector MCP server exposes `core.search_knowledge` (bounded untrusted
-evidence + citations; no LLM ask). Pack tools are contributed later via
-`build_mcp_tools()` (#326/#327). Coding assistants remain the agents; Kernector
-supplies evidence and allowlisted tools.
+evidence + citations; no LLM ask). Pack tools are contributed via
+`build_mcp_tools()`; Test Design (#338) is the first. Coding assistants remain
+the agents; Kernector supplies evidence and allowlisted tools.
 
 - Transport: low-level `mcp.server.Server` Streamable HTTP at `/mcp`, plus
   public `/healthz`.
@@ -741,14 +741,30 @@ supplies evidence and allowlisted tools.
   authorization. `MCP_ALLOWED_HOSTS` is required; missing Origin is allowed,
   present Origin must match `MCP_ALLOWED_ORIGINS`.
 - Chat `build_tools()` stays Drive-only; MCP `build_mcp_tools()` is the pack
-  seam (empty until live tools). Drive export is never auto-exposed on MCP.
+  seam. Drive export is never auto-exposed on MCP.
+- Effective tools = contributed ∩ enabled packs ∩ `MCP_TOOL_ALLOWLIST`, with an
+  authenticated caller. Denied tools are absent from `tools/list`, and
+  invoking them returns one identical `tool_unavailable` payload.
+- Test Design (#338): `software_delivery.test_design_{start,get,confirm,generate}`
+  live in the pack over a `TestDesignWorkflow` Protocol. Composition
+  (`composition/mcp_test_design.py`) adapts the existing `TestDesignFacade`,
+  bound to `DOCUMENT_CATALOG_WORKSPACE_ID` and the workspace GitHub grant,
+  and `composition/mcp_wiring.py` passes it only when `software-delivery` is
+  enabled. `presentation/mcp` stays Test-Design unaware.
+- Tool failures stay transport-neutral (`domain.errors` subclasses of
+  `ToolFailureError`, e.g. `ToolTargetNotFoundError`). Only
+  `composition/mcp_tool_registry.py` maps exact types to the safe wire codes
+  `not_found`, `version_conflict`, `evidence_changed`, `github_not_connected`,
+  and `insufficient_evidence` with fixed messages; validation stays
+  `validation_error` and anything else is `internal_error`.
 - Retired scaffolding tools (#285) are **not** revived for MCP.
 - Out of scope here: consuming remote MCP (#184), Admin UI profiles (#324),
   live provider tools (#326/#327), stdio, MCP resources, `kernector_ask`, OAuth.
 
 ```bash
 MCP_AUTH_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \
-  MCP_TOOL_ALLOWLIST=core.search_knowledge \
+  MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate \
+  DOMAIN_TOOL_PACKS=software-delivery \
   DOCUMENT_CATALOG_WORKSPACE_ID=… \
   uv run uvicorn presentation.mcp.app:app --port 8100
 ```
