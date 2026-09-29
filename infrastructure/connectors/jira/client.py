@@ -1,4 +1,8 @@
-"""Jira Cloud REST client boundary (OAuth 2.0 3LO, ``api.atlassian.com``)."""
+"""Jira REST client boundary shared by Cloud and Data Center.
+
+:class:`JiraClient` is provider-neutral. :class:`HttpJiraClient` is the Jira Cloud
+implementation (OAuth 2.0 3LO through ``api.atlassian.com``).
+"""
 
 from __future__ import annotations
 
@@ -28,16 +32,21 @@ _API_BASE = "https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3"
 
 @dataclass(frozen=True, slots=True)
 class JiraIssuePage:
-    """One page of ``POST /rest/api/3/search/jql`` results."""
+    """One page of issue search results.
+
+    ``next_page_token`` is opaque to consumers. ``total`` is the server-reported
+    match count when the deployment provides one (Data Center), else ``None``.
+    """
 
     issues: Sequence[Mapping[str, object]]
     next_page_token: str | None
     is_last: bool
+    total: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class JiraProject:
-    """A Jira project visible to the authorized user."""
+    """A Jira project visible to the connector credentials."""
 
     key: str
     name: str
@@ -45,7 +54,7 @@ class JiraProject:
 
 @dataclass(frozen=True, slots=True)
 class JiraProjectPage:
-    """One page of ``GET /rest/api/3/project/search`` for the Hub picker."""
+    """One page of visible projects for the Hub picker."""
 
     items: tuple[JiraProject, ...]
     is_last: bool
@@ -53,7 +62,7 @@ class JiraProjectPage:
 
 
 class JiraClient(Protocol):
-    """Read-only Jira Cloud operations used by the connector and picker."""
+    """Read-only Jira operations used by the connector and picker."""
 
     def search_issues(
         self,
@@ -130,7 +139,7 @@ class HttpJiraClient:
         values = payload.get("values")
         if not isinstance(values, list) or payload.get("startAt") != start_at:
             raise JiraPaginationError()
-        items = tuple(_project(value) for value in values)
+        items = tuple(parse_project(value) for value in values)
         is_last = payload.get("isLast") is True
         if is_last:
             return JiraProjectPage(items=items, is_last=True, next_start_at=None)
@@ -141,7 +150,7 @@ class HttpJiraClient:
         )
 
     def get_project(self, key: str) -> JiraProject:
-        return _project(self._request_json("GET", f"/project/{quote(key, safe='')}"))
+        return parse_project(self._request_json("GET", f"/project/{quote(key, safe='')}"))
 
     def _request_json(
         self,
@@ -154,13 +163,13 @@ class HttpJiraClient:
             response.raise_for_status()
             payload = response.json()
         except Exception as error:
-            raise _map_httpx_error(error, self._httpx) from None
+            raise map_httpx_error(error, self._httpx) from None
         if not isinstance(payload, Mapping):
             raise ConnectorError(_MSG_REQUEST_FAILED)
         return payload
 
 
-def _project(raw: object) -> JiraProject:
+def parse_project(raw: object) -> JiraProject:
     if not isinstance(raw, Mapping):
         raise ConnectorError(_MSG_REQUEST_FAILED)
     key = raw.get("key")
@@ -176,7 +185,7 @@ def _retry_after(raw: str | None) -> int | None:
     return int(raw.strip())
 
 
-def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorError:
+def map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorError:
     http_status_error = getattr(httpx_module, "HTTPStatusError")
     request_error = getattr(httpx_module, "RequestError")
     timeout_error = getattr(httpx_module, "TimeoutException")

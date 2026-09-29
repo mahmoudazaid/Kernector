@@ -39,7 +39,12 @@ router = APIRouter(prefix="/api/v1/connectors/jira", tags=["connectors"])
 def _site_response(site: JiraSiteItem | None) -> JiraSiteResponse | None:
     if site is None:
         return None
-    return JiraSiteResponse(cloud_id=site.cloud_id, name=site.name, url=site.url)
+    return JiraSiteResponse(
+        cloud_id=site.cloud_id or site.instance_id,
+        instance_id=site.instance_id,
+        name=site.name,
+        url=site.url,
+    )
 
 
 def _last_sync_response(status: JiraStatus) -> JiraLastSyncResponse | None:
@@ -68,6 +73,7 @@ def _selection_response(selection: JiraSelection) -> JiraSelectionResponse:
 def jira_connector_status(status: JiraStatusDep) -> JiraStatusResponse:
     """Return the presentation-safe Jira connection, site, and projects."""
     return JiraStatusResponse(
+        mode="data_center" if status.mode == "data_center" else "cloud",
         available=status.available,
         oauth_ready=status.oauth_ready,
         connected=status.connected,
@@ -89,13 +95,13 @@ def jira_connector_last_sync(status: JiraStatusDep) -> JiraLastSyncResponse | No
     return _last_sync_response(status)
 
 
-@router.get("/oauth/start", responses=problem_responses(405, 500))
+@router.get("/oauth/start", responses=problem_responses(405, 409, 500))
 def jira_oauth_start(start: JiraOAuthStartDep) -> RedirectResponse:
     """Issue CSRF state and redirect the browser to Atlassian, or back to the Hub."""
     return RedirectResponse(url=start(), status_code=302)
 
 
-@router.get("/oauth/callback", responses=problem_responses(405, 500))
+@router.get("/oauth/callback", responses=problem_responses(405, 409, 500))
 def jira_oauth_callback(
     complete: JiraOAuthCallbackDep,
     state: str | None = None,
@@ -111,8 +117,9 @@ def jira_connector_sites(list_sites: JiraSiteListDep) -> JiraSiteListResponse:
     """List Jira sites the stored grant can read."""
     return JiraSiteListResponse(
         items=[
-            JiraSiteResponse(cloud_id=site.cloud_id, name=site.name, url=site.url)
+            site_response
             for site in list_sites()
+            if (site_response := _site_response(site)) is not None
         ]
     )
 
@@ -130,7 +137,7 @@ def jira_connector_projects(
     list_projects: JiraProjectListDep,
     start_at: Annotated[int, Query(ge=0)] = 0,
 ) -> JiraProjectPageResponse:
-    """List projects on the selected Jira site for the Hub picker."""
+    """List Jira projects for the Hub picker (Cloud: selected site; Data Center: server)."""
     page = list_projects(start_at=start_at)
     return JiraProjectPageResponse(
         items=[JiraProjectItemResponse(key=p.key, name=p.name) for p in page.items],
@@ -162,5 +169,5 @@ def jira_connector_sync(sync: JiraSyncDep) -> JiraSyncResponse:
 
 @router.delete("", status_code=204, responses=problem_responses(405, 409, 500))
 def jira_connector_disconnect(disconnect: JiraDisconnectDep) -> None:
-    """Delete the stored Atlassian grant. Synced Jira documents are removed."""
+    """Delete the stored Jira connection state. Synced Jira documents are removed."""
     disconnect()
