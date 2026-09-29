@@ -397,6 +397,33 @@ class JiraOAuthSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class JiraDataCenterSettings:
+    """Jira Data Center / Server via a Personal Access Token (``Authorization: Bearer``).
+
+    Present only when ``JIRA_DC_BASE_URL`` or ``JIRA_DC_TOKEN`` is set; the token
+    is never returned on HTTP responses, logged, or written to ``state_path``.
+    """
+
+    base_url: str | None = None
+    token: str | None = None
+    allow_http: bool = False
+    state_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "jira-dc-connection.json"
+    )
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base_url and self.token)
+
+    def __repr__(self) -> str:
+        return (
+            "JiraDataCenterSettings("
+            f"base_url={self.base_url!r}, token='***', "
+            f"allow_http={self.allow_http}, state_path={self.state_path!r})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -419,6 +446,7 @@ class Settings:
     github_oauth: GitHubOAuthSettings = field(default_factory=GitHubOAuthSettings)
     jira: JiraSettings = field(default_factory=JiraSettings)
     jira_oauth: JiraOAuthSettings = field(default_factory=JiraOAuthSettings)
+    jira_data_center: JiraDataCenterSettings | None = None
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
@@ -429,6 +457,13 @@ def load_settings() -> Settings:
     max_upload_bytes = _env_int("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024))
     if max_upload_bytes <= 0:
         raise ValueError(f"MAX_UPLOAD_BYTES must be > 0, got {max_upload_bytes}")
+    jira_oauth = _load_jira_oauth_settings()
+    jira_data_center = _load_jira_data_center_settings()
+    if jira_data_center is not None and (jira_oauth.client_id or jira_oauth.client_secret):
+        raise ValueError(
+            "JIRA_DC_BASE_URL/JIRA_DC_TOKEN and JIRA_OAUTH_CLIENT_ID/JIRA_OAUTH_CLIENT_SECRET "
+            "are mutually exclusive: configure Jira Cloud or Jira Data Center, not both"
+        )
     return Settings(
         provider=os.getenv("LLM_PROVIDER", "openrouter").lower(),
         max_input_length=max_input_length,
@@ -465,7 +500,8 @@ def load_settings() -> Settings:
         google_oauth=_load_google_oauth_settings(),
         github_oauth=_load_github_oauth_settings(),
         jira=_load_jira_settings(),
-        jira_oauth=_load_jira_oauth_settings(),
+        jira_oauth=jira_oauth,
+        jira_data_center=jira_data_center,
     )
 
 
@@ -527,6 +563,18 @@ def _require_github_oauth_json_path(path: Path, env_name: str) -> Path:
     ):
         raise ValueError(
             f"{env_name} must use a github-oauth-*.json filename so the grant stays gitignored"
+        )
+    return path
+
+
+def _require_jira_dc_json_path(path: Path, env_name: str) -> Path:
+    """Reject in-repo state paths that would not match the Data Center gitignore."""
+    resolved = path.expanduser().resolve()
+    if not resolved.is_relative_to(_PROJECT_ROOT.resolve()):
+        return path
+    if not resolved.name.startswith("jira-dc-") or not resolved.name.endswith(".json"):
+        raise ValueError(
+            f"{env_name} must use a jira-dc-*.json filename so the state stays gitignored"
         )
     return path
 
@@ -1035,3 +1083,49 @@ def _load_jira_oauth_settings() -> JiraOAuthSettings:
         ),
         state_ttl_seconds=ttl,
     )
+
+def _load_jira_data_center_settings() -> JiraDataCenterSettings | None:
+    """Parse Data Center env; only the base URL or token activates the mode."""
+    raw_base_url = _optional_env("JIRA_DC_BASE_URL")
+    token = _optional_env("JIRA_DC_TOKEN")
+    allow_http = _env_bool("JIRA_DC_ALLOW_HTTP", "false")
+    raw_state = _optional_env("JIRA_DC_STATE_PATH")
+    state_path = _require_jira_dc_json_path(
+        (
+            _resolve_under_project_root(raw_state)
+            if raw_state
+            else _PROJECT_ROOT / "data" / "jira-dc-connection.json"
+        ),
+        "JIRA_DC_STATE_PATH",
+    )
+    if raw_base_url is None and token is None:
+        return None
+    return JiraDataCenterSettings(
+        base_url=(
+            _require_jira_dc_base_url(raw_base_url, allow_http=allow_http)
+            if raw_base_url
+            else None
+        ),
+        token=token,
+        allow_http=allow_http,
+        state_path=state_path,
+    )
+
+
+def _require_jira_dc_base_url(raw: str, *, allow_http: bool) -> str:
+    """Accept ``https://host[:port][/context]``; ``http`` only when explicitly allowed."""
+    parsed = urlparse(raw)
+    schemes = {"https", "http"} if allow_http else {"https"}
+    if (
+        parsed.scheme not in schemes
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or "?" in raw
+        or "#" in raw
+    ):
+        allowed = "an absolute https URL" + (" (or http)" if allow_http else "")
+        raise ValueError(
+            f"JIRA_DC_BASE_URL must be {allowed} without credentials, query, or fragment"
+        )
+    return raw.rstrip("/")

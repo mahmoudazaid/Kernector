@@ -210,9 +210,10 @@ class GitHubSelectionRequest(BaseModel):
 
 
 class JiraSiteResponse(BaseModel):
-    """One Jira Cloud site the grant can read."""
+    """One Jira instance; ``cloud_id`` mirrors ``instance_id`` for Data Center / Server."""
 
     cloud_id: str
+    instance_id: str
     name: str
     url: str
 
@@ -236,6 +237,7 @@ class JiraLastSyncResponse(GitHubLastSyncResponse):
 class JiraStatusResponse(BaseModel):
     """Jira connection, selected site and projects (no secrets)."""
 
+    mode: Literal["cloud", "data_center"] = "cloud"
     available: bool
     oauth_ready: bool
     connected: bool = False
