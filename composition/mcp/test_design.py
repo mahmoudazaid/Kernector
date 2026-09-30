@@ -129,8 +129,18 @@ class TestDesignGenerateArgs(_StrictArgs):
         max_length=MAX_GENERATE_CANDIDATES,
         description="Subset of selected candidates; defaults to all selected.",
     )
+    test_type: TestCaseType | None = Field(
+        default=None,
+        description=(
+            "Test type the user chose for every generated case (manual or "
+            "cucumber). Ask the user before generating; type_overrides win "
+            "for the candidates they name."
+        ),
+    )
     type_overrides: list[TestTypeOverrideArg] | None = Field(
-        default=None, max_length=MAX_CANDIDATES
+        default=None,
+        max_length=MAX_CANDIDATES,
+        description="Per-candidate test type exceptions to test_type.",
     )
     overwrite_edited: bool = Field(default=False, strict=True)
 
@@ -147,7 +157,12 @@ class TestCandidateOut(BaseModel):
 
     __test__ = False
 
-    candidate_id: str
+    candidate_id: str = Field(
+        description=(
+            "Draft-local key for confirm/generate. Not a test-management id; "
+            "do not present it as the test's id."
+        )
+    )
     title: str
     category: str
     rationale: str
@@ -352,8 +367,22 @@ class McpTestDesignOperations:
         candidate_ids: tuple[str, ...] | None,
         type_overrides: tuple[tuple[str, TestCaseType], ...],
         overwrite_edited: bool,
+        test_type: TestCaseType | None = None,
     ) -> TestCoverageDraftView:
         with _translated_errors():
+            if test_type is not None:
+                targets = (
+                    candidate_ids
+                    if candidate_ids is not None
+                    else self._facade.get_draft(draft_id).selected_candidate_ids
+                )
+                overridden = {candidate_id for candidate_id, _ in type_overrides}
+                defaults: list[tuple[str, TestCaseType]] = [
+                    (candidate_id, test_type)
+                    for candidate_id in targets
+                    if candidate_id not in overridden
+                ]
+                type_overrides = (*defaults, *type_overrides)
             return self._facade.generate_cases(
                 draft_id,
                 GenerateTestDesignCasesRequest(
@@ -421,6 +450,7 @@ class McpTestDesignWorkflow:
                     for item in args.type_overrides or ()
                 ),
                 overwrite_edited=args.overwrite_edited,
+                test_type=args.test_type,
             )
         )
 

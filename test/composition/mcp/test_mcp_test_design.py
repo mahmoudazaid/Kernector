@@ -333,6 +333,67 @@ def test_generate_follows_the_300_contract(tmp_path: Path) -> None:
     assert generated.cucumber_background == "Given the login page is open"
 
 
+def _capture_type_overrides(
+    facade: TestDesignFacade, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[tuple[str, str], ...]]:
+    captured: list[tuple[tuple[str, str], ...]] = []
+
+    def _generate_cases(draft_id, request):
+        captured.append(request.type_overrides)
+        return facade.get_draft(draft_id)
+
+    monkeypatch.setattr(facade, "generate_cases", _generate_cases)
+    return captured
+
+
+def test_generate_applies_one_test_type_to_every_selected_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workflow, facade = _workflow(tmp_path)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    ready = workflow.confirm_selection(
+        draft_id=started.draft_id,
+        expected_version=started.version,
+        candidate_ids=("cand-1", "cand-3"),
+    )
+    captured = _capture_type_overrides(facade, monkeypatch)
+
+    workflow.generate(
+        draft_id=ready.draft_id,
+        expected_version=ready.version,
+        candidate_ids=None,
+        type_overrides=(),
+        overwrite_edited=False,
+        test_type="cucumber",
+    )
+
+    assert captured == [(("cand-1", "cucumber"), ("cand-3", "cucumber"))]
+
+
+def test_generate_type_overrides_win_over_test_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workflow, facade = _workflow(tmp_path)
+    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    ready = workflow.confirm_selection(
+        draft_id=started.draft_id,
+        expected_version=started.version,
+        candidate_ids=("cand-1", "cand-2", "cand-3"),
+    )
+    captured = _capture_type_overrides(facade, monkeypatch)
+
+    workflow.generate(
+        draft_id=ready.draft_id,
+        expected_version=ready.version,
+        candidate_ids=("cand-1", "cand-2"),
+        type_overrides=(("cand-2", "manual"),),
+        overwrite_edited=False,
+        test_type="cucumber",
+    )
+
+    assert captured == [(("cand-1", "cucumber"), ("cand-2", "manual"))]
+
+
 def test_generate_rejects_unselected_candidate_via_existing_contract(
     tmp_path: Path,
 ) -> None:

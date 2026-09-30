@@ -97,6 +97,7 @@ class _FakeOperations:
         candidate_ids,
         type_overrides,
         overwrite_edited,
+        test_type=None,
     ):
         return self._record(
             "generate",
@@ -105,6 +106,7 @@ class _FakeOperations:
             candidate_ids=candidate_ids,
             type_overrides=type_overrides,
             overwrite_edited=overwrite_edited,
+            test_type=test_type,
         )
 
 
@@ -311,6 +313,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
             "draft_id": "draft-1",
             "expected_version": 4,
             "candidate_ids": ["cand-1"],
+            "test_type": "cucumber",
             "type_overrides": [{"candidate_id": "cand-1", "test_type": "manual"}],
             "overwrite_edited": True,
         }
@@ -326,6 +329,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
                 "candidate_ids": ("cand-1",),
                 "type_overrides": (("cand-1", "manual"),),
                 "overwrite_edited": True,
+                "test_type": "cucumber",
             },
         ),
         (
@@ -336,6 +340,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
                 "candidate_ids": None,
                 "type_overrides": (),
                 "overwrite_edited": False,
+                "test_type": None,
             },
         ),
     ]

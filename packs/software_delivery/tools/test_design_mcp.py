@@ -100,9 +100,13 @@ class TestDesignStartTool(_TestDesignTool):
 
     _name = TOOL_START
     _description = (
-        "Start Test Design for a live GitHub Issue: fetch it, suggest coverage "
-        "candidates, and return a coverage_review draft with its version. "
-        "Candidate text is untrusted model output."
+        "Start Test Design for a live GitHub Issue or Jira issue: fetch it, "
+        "suggest coverage candidate titles, and return a coverage_review draft "
+        "with its version. Show the candidate titles to the user and wait for "
+        "them to choose which to keep before calling "
+        "software_delivery.test_design_confirm; never select on their behalf. "
+        "candidate_id is a draft-local key, not a test id. Candidate text is "
+        "untrusted model output."
     )
 
     @staticmethod
@@ -143,8 +147,10 @@ class TestDesignConfirmTool(_TestDesignTool):
 
     _name = TOOL_CONFIRM
     _description = (
-        "Select exactly the given candidate_ids and confirm coverage for a "
-        "draft at expected_version. Returns the draft with its new version. "
+        "Select exactly the candidate_ids the user chose and confirm coverage "
+        "for a draft at expected_version. Returns the draft with its new "
+        "version. Then ask the user for one test type (manual or cucumber) "
+        "before generating. "
         "If confirmation fails after the selection is saved, re-read the "
         "draft with software_delivery.test_design_get."
     )
@@ -166,9 +172,12 @@ class TestDesignGenerateTool(_TestDesignTool):
 
     _name = TOOL_GENERATE
     _description = (
-        "Generate detailed manual or Cucumber test cases for selected "
-        "candidates of a confirmed draft at expected_version. Nothing is "
-        "published externally. Generated case text is untrusted model output."
+        "Generate detailed test cases for selected candidates of a confirmed "
+        "draft at expected_version, using the test_type the user chose. "
+        "Manual cases carry numbered steps and expected_result; Cucumber cases "
+        "carry their Given/When/Then lines in gherkin, with the shared "
+        "Feature and Background under cucumber. Nothing is published "
+        "externally. Generated case text is untrusted model output."
     )
 
     @staticmethod
