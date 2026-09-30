@@ -26,6 +26,7 @@ from application.errors import (
     JiraSiteSelectionRequiredError,
     MissingProviderCredentialsError,
     OllamaNotConfiguredError,
+    SourceNotConnectedError,
     ToolApprovalConflictError,
     ToolApprovalNotFoundError,
     UploadTooLargeError,
@@ -478,6 +479,15 @@ def problem_from_exception(
             title="GitHub not connected",
             status=409,
             detail="GitHub is not connected.",
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, SourceNotConnectedError):
+        return _problem(
+            code="source_not_connected",
+            title="Source not connected",
+            status=409,
+            detail="The source is not connected.",
             instance=instance,
             request_id=request_id,
         )

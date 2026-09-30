@@ -91,6 +91,7 @@ class SuggestTestCandidatesRequest:
     conversation_id: str
     source_reference: SourceReference
     ticket_identifier: str
+    source_provider: str
     evidence: Sequence[CoverageEvidenceItem]
 
 
@@ -123,6 +124,7 @@ class SuggestTestCandidates:
                 f"got {type(request.source_reference).__name__}"
             )
         ticket_identifier = _require_ticket_identifier(request.ticket_identifier)
+        source_provider = _require_id(request.source_provider, "source_provider")
         evidence = _normalize_evidence(request.evidence)
         if not evidence:
             raise TestDesignInsufficientEvidenceError(
@@ -157,6 +159,7 @@ class SuggestTestCandidates:
             conversation_id=conversation_id,
             source_reference=request.source_reference,
             ticket_identifier=ticket_identifier,
+            source_provider=source_provider,
             status="coverage_review",
             candidates=candidates,
             version=1,

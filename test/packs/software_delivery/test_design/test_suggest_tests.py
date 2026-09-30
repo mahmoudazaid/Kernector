@@ -134,6 +134,7 @@ def _request(
     evidence: Sequence[CoverageEvidenceItem] | None = None,
     ticket_identifier: str = "KERN-293",
     source_reference: SourceReference | None = None,
+    source_provider: str = "jira",
 ) -> SuggestTestCandidatesRequest:
     return SuggestTestCandidatesRequest(
         draft_id="draft-1",
@@ -141,8 +142,33 @@ def _request(
         conversation_id="conv-1",
         source_reference=source_reference or _ref(),
         ticket_identifier=ticket_identifier,
+        source_provider=source_provider,
         evidence=() if evidence is None else evidence,
     )
+
+
+def test_persisted_draft_records_the_request_source_provider() -> None:
+    use_case = SuggestTestCandidates(
+        chat_model=_FakeChat(content=_model_payload()), repository=_MemoryRepo()
+    )
+
+    draft = use_case.execute(
+        _request(evidence=(_evidence(),), source_provider="acme")
+    )
+
+    assert draft.source_provider == "acme"
+
+
+def test_blank_source_provider_fails_before_model() -> None:
+    chat = _FakeChat(content=_model_payload())
+    repo = _MemoryRepo()
+    use_case = SuggestTestCandidates(chat_model=chat, repository=repo)
+
+    with pytest.raises(TestDesignValidationError, match="source_provider"):
+        use_case.execute(_request(evidence=(_evidence(),), source_provider="  "))
+
+    assert chat.calls == []
+    assert repo.created == []
 
 
 def test_empty_evidence_raises_insufficient_without_model_or_draft() -> None:
@@ -573,6 +599,7 @@ def test_invalid_source_reference_fails_before_model() -> None:
                 conversation_id="conv-1",
                 source_reference="not-a-ref",  # type: ignore[arg-type]
                 ticket_identifier="KERN-293",
+                source_provider="jira",
                 evidence=(_evidence(),),
             )
         )
