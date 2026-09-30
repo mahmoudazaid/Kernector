@@ -28,8 +28,10 @@ class TestDesignSource(Protocol):
     ``canonicalize`` raises ``TestDesignValidationError`` for malformed
     locators. ``extract_locator`` raises ``AmbiguousSourceLocatorError`` when
     the text references several distinct items. ``reader`` raises
-    ``SourceNotConnectedError`` when credentials are missing, and the returned
-    reader raises only ``InsufficientEvidenceError`` or
+    ``SourceNotConnectedError`` when credentials are missing or
+    ``SourceReauthorizationRequiredError`` when the stored grant was rejected.
+    The returned reader raises only ``InsufficientEvidenceError``,
+    ``SourceItemNotFoundError``, ``SourceReauthorizationRequiredError`` or
     ``TestDesignValidationError`` for provider-specific evidence problems.
     """
 
