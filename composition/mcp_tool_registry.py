@@ -39,13 +39,18 @@ _SAFE_FAILURES: Mapping[type[ToolFailureError], tuple[str, str]] = {
         "Source evidence changed; restart the workflow",
     ),
     ToolSourceNotConnectedError: (
-        "github_not_connected",
-        "GitHub is not connected",
+        "source_not_connected",
+        "Source is not connected",
     ),
     ToolInsufficientEvidenceError: (
         "insufficient_evidence",
         "No usable grounded evidence",
     ),
+}
+
+# Deprecated wire codes still sent as ``legacy_code`` for one release (#351).
+_LEGACY_CODE_ALIASES: Mapping[str, str] = {
+    "source_not_connected": "github_not_connected",
 }
 
 ToolFactory = Callable[[], Tool]
@@ -93,6 +98,9 @@ def _validation_error(message: str = "Invalid tool arguments") -> McpInvokeResul
 
 def _safe_failure(code: str, message: str) -> McpInvokeResult:
     payload = {"code": code, "message": message}
+    legacy_code = _LEGACY_CODE_ALIASES.get(code)
+    if legacy_code is not None:
+        payload["legacy_code"] = legacy_code
     return McpInvokeResult(
         is_error=True,
         text=json.dumps(payload, separators=(",", ":")),

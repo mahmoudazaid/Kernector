@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from application.contracts import AskRequest, AskResponse
+from composition.container import build_test_design_sources
 from composition.test_design import build_test_design_handoff_from_request
 from composition.tool_augmented_ask import ToolAugmentedAsk
 from composition.workflow_signals import (
@@ -64,6 +65,7 @@ def _routed_factory(
             return build_test_design_handoff_from_request(
                 settings=settings,
                 request=request,
+                sources=build_test_design_sources(settings),
                 source_locator=source_locator,
             )
 

@@ -18,8 +18,8 @@ from packs.software_delivery.test_design.models import (
     coerce_coverage_category,
 )
 
-DRAFT_SCHEMA_VERSION = 4
-SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
+DRAFT_SCHEMA_VERSION = 5
+SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
 
 
 def _normalize_stored_category(raw: str) -> str:
@@ -53,6 +53,7 @@ def encode_draft_payload(draft: TestCoverageDraft) -> str:
             "source_id": draft.source_reference.source_id,
         },
         "ticket_identifier": draft.ticket_identifier,
+        "source_provider": draft.source_provider,
         "status": draft.status,
         "candidates": [_encode_candidate(item) for item in draft.candidates],
         "generated_cases": [_encode_case(item) for item in draft.generated_cases],
@@ -71,7 +72,8 @@ def decode_draft_payload(
 ) -> TestCoverageDraft:
     """Decode an opaque payload into a typed draft.
 
-    Accepts schema versions 1–4. Legacy ``scenarios`` and ``coverage_gaps``
+    Accepts schema versions 1–5. Versions before 5 have no ``source_provider``
+    and derive it from ``source_reference.source_type``. Legacy ``scenarios`` and ``coverage_gaps``
     keys are ignored. ``scenario_editing`` status maps to ``ready``. Version 3
     ``ManualStep`` objects migrate into ``steps`` string lists +
     ``expected_result``.
@@ -97,12 +99,16 @@ def decode_draft_payload(
             "unsupported schema_version; expected the current draft schema"
         )
     try:
+        source_reference = _decode_reference(raw.get("source_reference"))
         return TestCoverageDraft(
             draft_id=draft_id,
             workspace_id=_require_str(raw, "workspace_id"),
             conversation_id=_require_str(raw, "conversation_id"),
-            source_reference=_decode_reference(raw.get("source_reference")),
+            source_reference=source_reference,
             ticket_identifier=_require_str(raw, "ticket_identifier"),
+            source_provider=_decode_source_provider(
+                raw, schema_version=schema_version, source_reference=source_reference
+            ),
             status=_normalize_stored_status(_require_str(raw, "status")),  # type: ignore[arg-type]
             candidates=tuple(
                 _decode_candidate(item) for item in _require_list(raw, "candidates")
@@ -122,6 +128,19 @@ def decode_draft_payload(
         raise
     except Exception as error:
         raise TestDesignValidationError("payload must be a valid draft") from error
+
+
+def _decode_source_provider(
+    raw: Mapping[str, Any],
+    *,
+    schema_version: object,
+    source_reference: SourceReference,
+) -> str:
+    # Schemas 1-4 predate source_provider; every such draft was created from a
+    # live reader whose provider matched the stored source_type.
+    if schema_version in {1, 2, 3, 4} and "source_provider" not in raw:
+        return source_reference.source_type
+    return _require_str(raw, "source_provider")
 
 
 def _encode_candidate(candidate: TestCandidate) -> dict[str, Any]:

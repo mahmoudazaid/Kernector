@@ -121,5 +121,11 @@ contributes these tools only when composition supplies a workspace-bound
   `evidence_changed`), re-read with `software_delivery.test_design_get`.
 - Errors: `validation_error`, `not_found` (unknown and other-workspace drafts
   are identical), `version_conflict`, `evidence_changed`,
-  `github_not_connected`, `insufficient_evidence`, otherwise `internal_error`.
+  `source_not_connected`, `insufficient_evidence`, otherwise `internal_error`.
   Nothing is published externally.
+- `source_not_connected` payloads also carry
+  `"legacy_code": "github_not_connected"` for one release so existing clients
+  keep working. Match on `code`; `legacy_code` will be removed.
+- Live sources are resolved through the composition-owned Test Design source
+  registry (#351). GitHub Issues is the only registered source; drafts persist
+  their `source_provider` so confirm and generate re-fetch from the same one.

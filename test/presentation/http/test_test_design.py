@@ -152,6 +152,7 @@ def _real_facade_client(
     reader: _HTTPReader | None = None,
 ) -> TestClient:
     from composition.test_design import TestDesignFacade
+    from test.composition.test_design_fakes import github_sources
 
     from dataclasses import replace
 
@@ -164,8 +165,7 @@ def _real_facade_client(
         settings=settings,
         store_path=tmp_path / "workspace.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: live_reader,
+        sources=github_sources(reader=live_reader),
     )
     monkeypatch.setattr(facade, "_build_chat_model", lambda: _HTTPChat())
     app = create_app(cors_origins=())

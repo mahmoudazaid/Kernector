@@ -756,9 +756,22 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Tool failures stay transport-neutral (`domain.errors` subclasses of
   `ToolFailureError`, e.g. `ToolTargetNotFoundError`). Only
   `composition/mcp_tool_registry.py` maps exact types to the safe wire codes
-  `not_found`, `version_conflict`, `evidence_changed`, `github_not_connected`,
+  `not_found`, `version_conflict`, `evidence_changed`, `source_not_connected`,
   and `insufficient_evidence` with fixed messages; validation stays
   `validation_error` and anything else is `internal_error`.
+  `source_not_connected` also sends `legacy_code: github_not_connected` for
+  one release (#351); clients should match on `code`.
+- Test Design sources (#351): `TestDesignFacade` and the chat handoff are
+  source-neutral and resolve providers through `TestDesignSourceRegistry`
+  (`composition/test_design_sources.py`). `container.build_test_design_sources`
+  registers `GitHubTestDesignSource` (`composition/test_design_github_source.py`),
+  the only GitHub-aware Test Design code, which translates reader errors before
+  they reach the facade. A blank/unknown provider is `validation_error`; a
+  known `SourceType` with no registered source is unavailable. Drafts store an
+  authoritative `source_provider` (distinct from `source_reference.source_type`);
+  pre-v5 drafts derive it from the stored `source_type`. Missing credentials
+  raise `SourceNotConnectedError` (`GitHubNotConnectedError` is a subclass, so
+  HTTP still answers `github_not_connected` for GitHub).
 - Retired scaffolding tools (#285) are **not** revived for MCP.
 - Out of scope here: consuming remote MCP (#184), Admin UI profiles (#324),
   live provider tools (#326/#327), stdio, MCP resources, `kernector_ask`, OAuth.

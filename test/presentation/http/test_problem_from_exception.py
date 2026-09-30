@@ -6,6 +6,7 @@ from application.contracts import AskRequest
 from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
+    GitHubNotConnectedError,
     GoogleDriveNotConfiguredError,
     GoogleDriveNotConnectedError,
     GoogleDriveOAuthNotConfiguredError,
@@ -21,6 +22,7 @@ from application.errors import (
     JiraSetupRequiredError,
     JiraSiteSelectionRequiredError,
     MissingProviderCredentialsError,
+    SourceNotConnectedError,
     UploadTooLargeError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
@@ -109,6 +111,8 @@ from presentation.http.errors import (
         ),
         (ConnectorSyncError("vendor body"), 502, "connector_sync_failed"),
         (GitHubConnectorError("vendor body"), 502, "github_request_failed"),
+        (GitHubNotConnectedError("no grant"), 409, "github_not_connected"),
+        (SourceNotConnectedError("no grant"), 409, "source_not_connected"),
         (JiraNotConnectedError("no grant"), 409, "jira_not_connected"),
         (
             JiraSiteSelectionRequiredError("no site"),

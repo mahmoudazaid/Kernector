@@ -30,6 +30,7 @@ def _draft(**overrides: object) -> TestCoverageDraft:
         "conversation_id": "conv-1",
         "source_reference": _ref(),
         "ticket_identifier": "KERN-293",
+        "source_provider": "jira",
         "status": "coverage_review",
         "candidates": (
             TestCandidate(
@@ -57,6 +58,55 @@ def test_encode_decode_round_trip_preserves_draft() -> None:
     parsed = json.loads(payload)
     assert parsed["schema_version"] == DRAFT_SCHEMA_VERSION
     assert "scenarios" not in parsed
+
+
+def test_round_trip_keeps_provider_distinct_from_source_type() -> None:
+    draft = _draft(source_provider="acme")
+
+    payload = encode_draft_payload(draft)
+    restored = decode_draft_payload(payload, draft_id=draft.draft_id, version=1)
+
+    assert restored.source_provider == "acme"
+    assert restored.source_reference.source_type == "jira"
+    assert json.loads(payload)["source_provider"] == "acme"
+
+
+@pytest.mark.parametrize("schema_version", [1, 2, 3, 4])
+def test_legacy_payload_without_provider_derives_it_from_source_type(
+    schema_version: int,
+) -> None:
+    payload = json.dumps(
+        {
+            "schema_version": schema_version,
+            "workspace_id": "ws-1",
+            "conversation_id": "conv-1",
+            "source_reference": {"source_type": "github", "source_id": "issue:I_1"},
+            "ticket_identifier": "acme/app#7",
+            "status": "coverage_review",
+            "candidates": [],
+        }
+    )
+
+    restored = decode_draft_payload(payload, draft_id="draft-1", version=1)
+
+    assert restored.source_provider == "github"
+
+
+def test_current_schema_payload_requires_provider() -> None:
+    payload = json.dumps(
+        {
+            "schema_version": DRAFT_SCHEMA_VERSION,
+            "workspace_id": "ws-1",
+            "conversation_id": "conv-1",
+            "source_reference": {"source_type": "github", "source_id": "issue:I_1"},
+            "ticket_identifier": "acme/app#7",
+            "status": "coverage_review",
+            "candidates": [],
+        }
+    )
+
+    with pytest.raises(TestDesignValidationError, match="source_provider"):
+        decode_draft_payload(payload, draft_id="draft-1", version=1)
 
 
 def test_decode_maps_legacy_scenario_editing_status_and_ignores_scenarios() -> None:
@@ -107,6 +157,7 @@ def test_decode_rejects_invalid_draft_shape() -> None:
             "conversation_id": "conv-1",
             "source_reference": {"source_type": "jira", "source_id": "PROJ-42"},
             "ticket_identifier": "293",
+            "source_provider": "jira",
             "status": "coverage_review",
             "candidates": [],
         }
@@ -164,7 +215,7 @@ def test_decode_maps_legacy_categories() -> None:
     assert restored.candidates[0].test_type is None
 
 
-def test_v4_round_trip_preserves_generated_cases_and_fingerprint() -> None:
+def test_round_trip_preserves_generated_cases_and_fingerprint() -> None:
     from packs.software_delivery.test_design.models import GeneratedTestCase
 
     case = GeneratedTestCase(
@@ -202,7 +253,7 @@ def test_v4_round_trip_preserves_generated_cases_and_fingerprint() -> None:
         payload, draft_id=draft.draft_id, version=draft.version
     )
     assert restored == draft
-    assert json.loads(payload)["schema_version"] == 4
+    assert json.loads(payload)["schema_version"] == DRAFT_SCHEMA_VERSION
 
 
 def test_decode_v2_keeps_steps_and_expected_result() -> None:
@@ -341,4 +392,4 @@ def test_decode_v1_defaults_new_fields() -> None:
     assert restored.generated_cases == ()
     assert restored.evidence_fingerprint is None
     assert restored.candidates[0].test_type is None
-    assert DRAFT_SCHEMA_VERSION == 4
+    assert DRAFT_SCHEMA_VERSION == 5

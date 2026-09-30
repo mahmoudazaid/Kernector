@@ -566,11 +566,38 @@ def build_test_design_facade(
     client_factory=None,
 ):
     """Wire the test-design HTTP facade (pack gated at call time)."""
-    from application.errors import GitHubNotConnectedError
     from composition.test_design import TestDesignFacade
 
     workspace_id = _require_workspace_id(settings)
     store_path = _workspace_store_path(settings)
+    return TestDesignFacade(
+        settings=settings,
+        store_path=store_path,
+        workspace_id=workspace_id,
+        sources=build_test_design_sources(
+            settings,
+            connection_store=connection_store,
+            oauth_gateway=oauth_gateway,
+            client_factory=client_factory,
+        ),
+    )
+
+
+def build_test_design_sources(
+    settings: Settings,
+    *,
+    connection_store=None,
+    oauth_gateway=None,
+    client_factory=None,
+):
+    """Register the live sources Test Design may plan from (GitHub only).
+
+    Credentials are resolved lazily when a reader is requested, so building
+    the registry never requires a grant.
+    """
+    from application.errors import GitHubNotConnectedError
+    from composition.test_design_github_source import GitHubTestDesignSource
+    from composition.test_design_sources import TestDesignSourceRegistry
 
     def oauth_preflight() -> str:
         _tokens_store, connection = _require_github_grant(
@@ -594,12 +621,13 @@ def build_test_design_facade(
             client_factory=client_factory,
         )
 
-    return TestDesignFacade(
-        settings=settings,
-        store_path=store_path,
-        workspace_id=workspace_id,
-        oauth_preflight=oauth_preflight,
-        live_source_reader_factory=live_source_reader_factory,
+    return TestDesignSourceRegistry(
+        (
+            GitHubTestDesignSource(
+                preflight=oauth_preflight,
+                reader_factory=live_source_reader_factory,
+            ),
+        )
     )
 
 
@@ -3888,6 +3916,7 @@ def build_tool_augmented_ask(
 
     from composition.test_design import build_test_design_handoff_from_request
 
+    test_design_sources = build_test_design_sources(settings)
     signals = (
         build_test_design_workflow_signal(enabled=True),
         build_drive_export_workflow_signal(
@@ -3900,6 +3929,7 @@ def build_tool_augmented_ask(
         return build_test_design_handoff_from_request(
             settings=settings,
             request=request,
+            sources=test_design_sources,
             source_locator=client_source_locator,  # type: ignore[arg-type]
         )
 

@@ -47,6 +47,7 @@ from infrastructure.connectors.github.oauth import (
 )
 from packs.software_delivery.test_design.models import GeneratedTestCase
 from presentation.http.deps import get_settings
+from test.composition.test_design_fakes import github_sources
 
 
 class _RecordingReader:
@@ -66,6 +67,10 @@ class _RecordingReader:
             raise self.error
         assert self.document is not None
         return self.document
+
+
+def _sources():  # noqa: ANN202
+    return composition_container.build_test_design_sources(_settings())
 
 
 def _settings(*, pack_on: bool = True) -> Settings:
@@ -96,10 +101,12 @@ def test_missing_connection_never_fetches(tmp_path: Path) -> None:
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: (_ for _ in ()).throw(
-            GitHubNotConnectedError("GitHub is not connected")
+        sources=github_sources(
+            reader=reader,
+            oauth_preflight=lambda: (_ for _ in ()).throw(
+                GitHubNotConnectedError("GitHub is not connected")
+            ),
         ),
-        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
     )
     with pytest.raises(GitHubNotConnectedError):
         facade.create_draft(
@@ -119,10 +126,12 @@ def test_reauthorization_required_never_fetches(tmp_path: Path) -> None:
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: (_ for _ in ()).throw(
-            GitHubReauthorizationRequiredError("revoked")
+        sources=github_sources(
+            reader=reader,
+            oauth_preflight=lambda: (_ for _ in ()).throw(
+                GitHubReauthorizationRequiredError("revoked")
+            ),
         ),
-        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
     )
     with pytest.raises(GitHubReauthorizationRequiredError):
         facade.create_draft(
@@ -146,8 +155,7 @@ def test_blank_body_does_not_persist_draft(tmp_path: Path, monkeypatch: pytest.M
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+        sources=github_sources(reader=reader),
     )
     monkeypatch.setattr(facade, "_build_chat_model", lambda: object())
     with pytest.raises(InsufficientEvidenceError):
@@ -173,8 +181,7 @@ def test_pack_validation_error_is_wrapped_with_sanitized_message(
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+        sources=github_sources(reader=reader),
     )
     monkeypatch.setattr(
         facade,
@@ -249,8 +256,7 @@ def test_patch_demotes_ready_draft_when_candidates_change(
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+        sources=github_sources(reader=reader),
     )
     monkeypatch.setattr(
         facade,
@@ -405,8 +411,7 @@ def test_patch_keeps_ready_status_when_only_deselecting_and_cases_on_reselect(
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: reader,  # type: ignore[arg-type]
+        sources=github_sources(reader=reader),
     )
     monkeypatch.setattr(
         facade,
@@ -561,10 +566,7 @@ def test_issue_pr_and_mismatch_errors_are_sanitized(
             settings=_settings(),
             store_path=tmp_path / f"{type(error).__name__}.sqlite",
             workspace_id="default",
-            oauth_preflight=lambda: "token",
-            live_source_reader_factory=lambda _token, error=error: _RecordingReader(
-                error=error
-            ),  # type: ignore[arg-type]
+            sources=github_sources(reader=_RecordingReader(error=error)),
         )
 
         with pytest.raises(TestDesignValidationError) as raised:
@@ -587,6 +589,7 @@ def test_chat_handoff_returns_fixed_answer_without_rag(
     handoff = try_test_design_chat_handoff(
         settings=settings,
         query="Design tests for mahmoudazaid/Kernector#293",
+        sources=_sources(),
     )
     assert handoff is not None
     assert handoff.answer == TEST_DESIGN_HANDOFF_ANSWER
@@ -599,6 +602,7 @@ def test_chat_handoff_rejects_locator_mismatch() -> None:
         try_test_design_chat_handoff(
             settings=_settings(),
             query="Design tests for mahmoudazaid/Kernector#293",
+            sources=_sources(),
             source_locator=SourceLocatorView(
                 provider="github", locator="other/repo#1"
             ),
@@ -609,6 +613,7 @@ def test_chat_handoff_declines_discussion_with_multiple_issues() -> None:
     handoff = try_test_design_chat_handoff(
         settings=_settings(),
         query="Compare the test coverage of acme/web#10 and acme/api#11",
+        sources=_sources(),
     )
     assert handoff is None
 
@@ -618,6 +623,7 @@ def test_chat_handoff_rejects_explicit_command_with_multiple_issues() -> None:
         try_test_design_chat_handoff(
             settings=_settings(),
             query="Design tests for acme/web#10 and acme/api#11",
+            sources=_sources(),
         )
 
 
@@ -630,7 +636,10 @@ def test_chat_handoff_declines_topical_phrase_without_issue_reference() -> None:
         "Can you explain the coverage plan we agreed on last sprint?",
     ):
         assert (
-            try_test_design_chat_handoff(settings=_settings(), query=query) is None
+            try_test_design_chat_handoff(
+                settings=_settings(), query=query, sources=_sources()
+            )
+            is None
         ), query
 
 
@@ -720,13 +729,16 @@ def test_live_reader_refreshes_token_then_retries(tmp_path: Path) -> None:
         seen.append(access_token)
         return _FlakyAuthClient(access_token, fail_tokens={"gho-access-secret"})
 
-    facade = composition_container.build_test_design_facade(
-        settings,
-        connection_store=tokens,
-        oauth_gateway=gateway,
-        client_factory=client_factory,
+    reader = (
+        composition_container.build_test_design_sources(
+            settings,
+            connection_store=tokens,
+            oauth_gateway=gateway,
+            client_factory=client_factory,
+        )
+        .resolve("github")
+        .reader()
     )
-    reader = facade._live_source_reader_factory("gho-access-secret")
     document = reader.fetch(
         SourceLocator(provider="github", locator="mahmoudazaid/Kernector#293")
     )
@@ -746,12 +758,15 @@ def test_live_reader_marks_reauth_when_refresh_token_missing(tmp_path: Path) -> 
     def client_factory(access_token: str):
         return _FlakyAuthClient(access_token, fail_tokens={access_token})
 
-    facade = composition_container.build_test_design_facade(
-        settings,
-        connection_store=tokens,
-        client_factory=client_factory,
+    reader = (
+        composition_container.build_test_design_sources(
+            settings,
+            connection_store=tokens,
+            client_factory=client_factory,
+        )
+        .resolve("github")
+        .reader()
     )
-    reader = facade._live_source_reader_factory("gho-access-secret")
     with pytest.raises(GitHubReauthorizationRequiredError):
         reader.fetch(
             SourceLocator(provider="github", locator="mahmoudazaid/Kernector#293")

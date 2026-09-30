@@ -54,6 +54,7 @@ def _draft(
         conversation_id=conversation_id,
         source_reference=_ref(),
         ticket_identifier="KERN-482",
+        source_provider="jira",
         status="ready",
         candidates=candidates,
         version=1,

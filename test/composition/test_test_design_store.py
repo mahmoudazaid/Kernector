@@ -41,6 +41,7 @@ def _draft(
         conversation_id="conv-1",
         source_reference=_ref(),
         ticket_identifier="KERN-293",
+        source_provider="jira",
         status=status,  # type: ignore[arg-type]
         candidates=(
             TestCandidate(

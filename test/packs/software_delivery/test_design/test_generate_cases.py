@@ -89,6 +89,7 @@ def _draft(**overrides: object) -> TestCoverageDraft:
         "conversation_id": "conv-1",
         "source_reference": _ref(),
         "ticket_identifier": "owner/repo#1",
+        "source_provider": "github",
         "status": "ready",
         "candidates": (_candidate(),),
         "version": 2,
@@ -185,6 +186,23 @@ def test_generate_happy_path_persists_case_editing_draft() -> None:
     assert result.generated_cases[0].user_edited is False
     assert result.evidence_fingerprint == "fp-1"
     assert len(repo.updates) == 1
+
+
+def test_generate_keeps_the_draft_source_provider() -> None:
+    draft = _draft(source_provider="acme")
+    chat = _FakeChat(content=_model_payload([_manual_case_payload()]))
+    use_case = GenerateTestCases(chat_model=chat, repository=_MemoryRepo(draft))
+
+    outcome = use_case.execute(
+        GenerateTestCasesRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            evidence=(_evidence(),),
+            evidence_fingerprint="fp-1",
+        )
+    )
+
+    assert outcome.draft.source_provider == "acme"
 
 
 def test_generate_mixed_manual_and_cucumber() -> None:
@@ -292,6 +310,40 @@ def test_generate_skips_user_edited_unless_overwrite() -> None:
     assert outcome.draft.generated_cases[0].user_edited is True
     assert outcome.skipped_edited_candidate_ids == ("cand-1",)
     assert chat.calls == []
+
+
+def test_generate_skipping_every_edited_case_keeps_the_draft_source_provider() -> None:
+    edited = GeneratedTestCase(
+        candidate_id="cand-1",
+        test_type="manual",
+        automation_fit="applicable",
+        automation_rationale="Human edit.",
+        availability="available",
+        preconditions="Custom.",
+        steps=("Do",),
+        expected_result="Done.",
+        gherkin="",
+        user_edited=True,
+    )
+    draft = _draft(
+        status="case_editing", generated_cases=(edited,), source_provider="acme"
+    )
+    chat = _FakeChat()
+    use_case = GenerateTestCases(chat_model=chat, repository=_MemoryRepo(draft))
+
+    outcome = use_case.execute(
+        GenerateTestCasesRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            evidence=(_evidence(),),
+            evidence_fingerprint="fp-1",
+            type_overrides=(TypeOverride(candidate_id="cand-1", test_type="manual"),),
+        )
+    )
+
+    assert chat.calls == []
+    assert outcome.draft.version == 3
+    assert outcome.draft.source_provider == "acme"
 
 
 def test_generate_overwrites_user_edited_when_requested() -> None:

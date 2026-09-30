@@ -55,6 +55,7 @@ def _draft(**overrides: object) -> TestCoverageDraft:
         "conversation_id": "conv-1",
         "source_reference": _ref(),
         "ticket_identifier": "KERN-293",
+        "source_provider": "jira",
         "status": "coverage_review",
         "candidates": (_candidate(),),
         "version": 1,

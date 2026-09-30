@@ -14,6 +14,7 @@ from application.errors import (
     GoogleDriveReauthorizationRequiredError,
 )
 from composition.test_design import TestDesignFacade
+from test.composition.test_design_fakes import github_sources
 from composition.test_design_errors import TestDesignValidationError
 from domain.errors import ConnectorAuthError, ToolFailureError
 from domain.knowledge import SourceReference, SourceType
@@ -80,8 +81,7 @@ def _facade(settings, tmp_path: Path) -> TestDesignFacade:
         settings=settings,
         store_path=tmp_path / "workspace.sqlite",
         workspace_id="default",
-        oauth_preflight=lambda: "token",
-        live_source_reader_factory=lambda _token: None,  # type: ignore[arg-type, return-value]
+        sources=github_sources(),
     )
 
 
@@ -93,6 +93,7 @@ def _seed_draft(facade: TestDesignFacade, *, selected: bool = True) -> str:
         conversation_id="conv-1",
         source_reference=SourceReference("issue:1", SourceType.GITHUB),
         ticket_identifier="owner/repo#1",
+        source_provider="github",
         status="coverage_review",
         candidates=(
             TestCandidate(
