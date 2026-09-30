@@ -108,7 +108,11 @@ class GitHubOAuthNotConfiguredError(ConfigurationError):
     """User OAuth client ID, secret, or redirect URI is absent."""
 
 
-class GitHubNotConnectedError(ConfigurationError):
+class SourceNotConnectedError(ConfigurationError):
+    """A live source has no usable authorization grant."""
+
+
+class GitHubNotConnectedError(SourceNotConnectedError):
     """No user OAuth grant is stored for GitHub."""
 
 

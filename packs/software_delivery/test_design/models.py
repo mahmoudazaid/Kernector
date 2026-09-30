@@ -609,6 +609,11 @@ class TestCoverageDraft:
 
     Status ``ready`` means coverage selection is confirmed. Status
     ``case_editing`` means detailed cases exist or are being edited (#300).
+
+    ``source_provider`` names the live source to re-fetch evidence from. It is
+    authoritative and distinct from ``source_reference.source_type``: a
+    provider may emit several source kinds, and a source kind may be served by
+    more than one provider.
     """
 
     __test__ = False
@@ -618,6 +623,7 @@ class TestCoverageDraft:
     conversation_id: str
     source_reference: SourceReference
     ticket_identifier: str
+    source_provider: str
     status: DraftStatus
     candidates: Sequence[TestCandidate]
     version: int
@@ -637,6 +643,11 @@ class TestCoverageDraft:
             )
         object.__setattr__(
             self, "ticket_identifier", _require_ticket_identifier(self.ticket_identifier)
+        )
+        object.__setattr__(
+            self,
+            "source_provider",
+            _require_bounded_text(self.source_provider, "source_provider", MAX_ID_CHARS),
         )
         if not isinstance(self.status, str):
             raise TestDesignValidationError(

@@ -159,7 +159,6 @@ _SECRET = "ws-secret token=gho_x fp=abc /internal/path"
         ("ToolTargetNotFoundError", "not_found"),
         ("ToolVersionConflictError", "version_conflict"),
         ("ToolEvidenceChangedError", "evidence_changed"),
-        ("ToolSourceNotConnectedError", "github_not_connected"),
         ("ToolInsufficientEvidenceError", "insufficient_evidence"),
     ],
 )
@@ -178,6 +177,25 @@ def test_neutral_tool_errors_translate_to_allowlisted_safe_codes(
     assert result.structured is not None
     assert result.structured["code"] == code
     assert set(result.structured) == {"code", "message"}
+    assert _SECRET not in result.text
+    assert json.loads(result.text) == result.structured
+
+
+def test_source_not_connected_carries_the_legacy_github_alias() -> None:
+    from domain.errors import ToolSourceNotConnectedError
+
+    tool = _RaisingTool(ToolSourceNotConnectedError(_SECRET))
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+
+    result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.is_error
+    assert result.code == "source_not_connected"
+    assert result.structured == {
+        "code": "source_not_connected",
+        "legacy_code": "github_not_connected",
+        "message": "Source is not connected",
+    }
     assert _SECRET not in result.text
     assert json.loads(result.text) == result.structured
 

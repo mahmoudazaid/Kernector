@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import replace
 from pathlib import Path
 
 from composition.test_design import TestDesignFacade
+from composition.test_design_errors import TestDesignValidationError
+from composition.test_design_github_source import GitHubTestDesignSource
+from composition.test_design_sources import (
+    AmbiguousSourceLocatorError,
+    TestDesignSourceRegistry,
+)
 from domain.knowledge import (
     SourceDocument,
     SourceLocator,
@@ -16,6 +22,7 @@ from domain.knowledge import (
     SourceType,
 )
 from domain.models import AskResult, Message
+from domain.ports import LiveSourceReader
 from infrastructure.config import DomainToolSettings, Settings, load_settings
 
 ISSUE_LOCATOR = "acme/app#7"
@@ -122,6 +129,44 @@ class RecordingIssueReader:
         return self.document
 
 
+class FakeTestDesignSource:
+    """Registry source double: identity canonicalization and a recording reader."""
+
+    __test__ = False
+
+    def __init__(
+        self,
+        provider: str,
+        *,
+        reader: RecordingIssueReader | None = None,
+        extracts: dict[str, str] | None = None,
+        ambiguous: Collection[str] = (),
+        reader_error: Exception | None = None,
+    ) -> None:
+        self.provider = provider
+        self.live_reader = reader or RecordingIssueReader()
+        self.reader_calls = 0
+        self._extracts = dict(extracts or {})
+        self._ambiguous = frozenset(ambiguous)
+        self._reader_error = reader_error
+
+    def canonicalize(self, locator: str) -> str:
+        if not isinstance(locator, str) or not locator.strip():
+            raise TestDesignValidationError("locator must be non-empty")
+        return locator.strip()
+
+    def extract_locator(self, text: str) -> str | None:
+        if text in self._ambiguous:
+            raise AmbiguousSourceLocatorError("Query must reference exactly one source")
+        return self._extracts.get(text)
+
+    def reader(self) -> LiveSourceReader:
+        self.reader_calls += 1
+        if self._reader_error is not None:
+            raise self._reader_error
+        return self.live_reader  # type: ignore[return-value]
+
+
 class FakeTestDesignChat:
     """Chat double serving candidate suggestions and #300 case generation."""
 
@@ -151,6 +196,24 @@ class FakeTestDesignChat:
         return AskResult(content=json.dumps(payload), model="fake")
 
 
+def github_sources(
+    *,
+    reader: object | None = None,
+    reader_factory: Callable[[str], object] | None = None,
+    oauth_preflight: Callable[[], str] | None = None,
+) -> TestDesignSourceRegistry:
+    """Registry with the real GitHub source over offline preflight/reader doubles."""
+    active_reader = reader or RecordingIssueReader()
+    return TestDesignSourceRegistry(
+        (
+            GitHubTestDesignSource(
+                preflight=oauth_preflight or (lambda: "token"),
+                reader_factory=reader_factory or (lambda _token: active_reader),  # type: ignore[arg-type,return-value]
+            ),
+        )
+    )
+
+
 def build_fake_facade(
     tmp_path: Path,
     *,
@@ -159,15 +222,15 @@ def build_fake_facade(
     reader: RecordingIssueReader | None = None,
     chat: FakeTestDesignChat | None = None,
     oauth_preflight: Callable[[], str] | None = None,
+    sources: TestDesignSourceRegistry | None = None,
 ) -> TestDesignFacade:
-    active_reader = reader or RecordingIssueReader()
     active_chat = chat or FakeTestDesignChat()
     facade = TestDesignFacade(
         settings=settings_with_pack(pack_on=pack_on, workspace_id=workspace_id),
         store_path=tmp_path / "workspace.sqlite",
         workspace_id=workspace_id,
-        oauth_preflight=oauth_preflight or (lambda: "token"),
-        live_source_reader_factory=lambda _token: active_reader,  # type: ignore[arg-type,return-value]
+        sources=sources
+        or github_sources(reader=reader, oauth_preflight=oauth_preflight),
     )
     facade._build_chat_model = lambda: active_chat  # type: ignore[method-assign]
     return facade

@@ -4,16 +4,11 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from application.errors import (
-    GitHubNotConnectedError,
-    GitHubReauthorizationRequiredError,
-    InsufficientEvidenceError,
-)
+from application.errors import InsufficientEvidenceError
 from composition.software_delivery_tools import software_delivery_tools_enabled
 from composition.test_design_errors import (
     TestDesignEvidenceChangedError,
@@ -22,8 +17,12 @@ from composition.test_design_errors import (
     TestDesignValidationError,
     TestDesignVersionConflictError,
 )
+from composition.test_design_sources import (
+    AmbiguousSourceLocatorError,
+    TestDesignSource,
+    TestDesignSourceRegistry,
+)
 from domain.knowledge import SourceLocator, SourceReference
-from domain.ports import LiveSourceReader
 from infrastructure.config import Settings
 from infrastructure.workspace_store.errors import (
     VersionedStoreNotFoundError,
@@ -41,9 +40,7 @@ CoverageCategory = Literal[
     "edge_case",
 ]
 _TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
-
-OAuthPreflight = Callable[[], str]
-LiveSourceReaderFactory = Callable[[str], LiveSourceReader]
+_NO_EVIDENCE_DETAIL = "No usable grounded evidence for test coverage planning."
 
 _TEST_DESIGN_COMMAND = re.compile(
     r"\b("
@@ -198,14 +195,15 @@ def build_test_design_handoff_from_request(
     *,
     settings: Settings,
     request: AskRequest,
+    sources: TestDesignSourceRegistry,
     source_locator: SourceLocatorView | None = None,
 ) -> TestDesignChatHandoffView | None:
     """Build Test Design handoff **after** a ready ``tool_workflow`` decision.
 
     Accepts command+locator messages and locator-only follow-ups. Raises
-    TestDesignValidationError for explicit commands with multiple distinct
-    Issues, or for client source_locator mismatch. Multi-issue discussion
-    without a command phrase returns ``None`` (falls through).
+    TestDesignValidationError for explicit commands referencing multiple
+    distinct source items, or for client source_locator mismatch. Multi-item
+    discussion without a command phrase returns ``None`` (falls through).
     """
     if not software_delivery_tools_enabled(settings):
         return None
@@ -213,33 +211,23 @@ def build_test_design_handoff_from_request(
     if not isinstance(query, str) or not query.strip():
         return None
     has_command = _TEST_DESIGN_COMMAND.search(query) is not None
-    from infrastructure.connectors.github.issue_locator import (
-        AmbiguousGitHubIssueLocatorError,
-        extract_github_issue_locator,
-    )
-
     try:
-        parsed = extract_github_issue_locator(query)
-    except AmbiguousGitHubIssueLocatorError as error:
+        found = sources.extract_locator(query)
+    except AmbiguousSourceLocatorError as error:
         if not has_command:
             return None
-        raise TestDesignValidationError(
-            "Query must reference exactly one GitHub Issue"
-        ) from error
-    if parsed is None:
+        raise TestDesignValidationError(str(error)) from error
+    if found is None:
         return None
     # Locator-only follow-ups (no command phrase) are valid after clarification
     # when the router already decided tool_workflow/test_design.
-    canonical = parsed.canonical
     if source_locator is not None:
-        client_locator = _require_github_locator_view(source_locator)
-        if client_locator.locator.casefold() != canonical.casefold():
-            raise TestDesignValidationError(
-                "source_locator must match the GitHub Issue in the query"
-            )
+        _require_client_locator_match(source_locator, found, sources)
     action = resolve_start_test_design_action(
         settings=settings,
-        source_locator=SourceLocatorView(provider="github", locator=canonical),
+        source_locator=SourceLocatorView(
+            provider=found.provider, locator=found.locator
+        ),
     )
     if action is None:
         return None
@@ -253,6 +241,7 @@ def try_test_design_chat_handoff(
     *,
     settings: Settings,
     query: str,
+    sources: TestDesignSourceRegistry,
     source_locator: SourceLocatorView | None = None,
 ) -> TestDesignChatHandoffView | None:
     """Deprecated pre-router helper; prefer post-decision handoff builder.
@@ -266,12 +255,13 @@ def try_test_design_chat_handoff(
     return build_test_design_handoff_from_request(
         settings=settings,
         request=AskRequest(query=query),
+        sources=sources,
         source_locator=source_locator,
     )
 
 
 class TestDesignFacade:
-    """HTTP-facing facade: pack gate, live Issue fetch, store bridge."""
+    """HTTP-facing facade: pack gate, live source fetch, store bridge."""
 
     __test__ = False
 
@@ -281,49 +271,25 @@ class TestDesignFacade:
         settings: Settings,
         store_path: Path,
         workspace_id: str,
-        oauth_preflight: OAuthPreflight,
-        live_source_reader_factory: LiveSourceReaderFactory,
+        sources: TestDesignSourceRegistry,
     ) -> None:
         self._settings = settings
         self._store_path = store_path
         self._workspace_id = workspace_id
-        self._oauth_preflight = oauth_preflight
-        self._live_source_reader_factory = live_source_reader_factory
+        self._sources = sources
         self._repo = None
 
     def create_draft(
         self, request: CreateTestDesignDraftRequest
     ) -> TestCoverageDraftView:
         self._require_enabled()
-        locator_view = _require_github_locator_view(request.source_locator)
+        source, locator = self._resolve_locator(request.source_locator)
         self._require_workspace()
-        access_token = self._oauth_preflight()
-        if not isinstance(access_token, str) or not access_token.strip():
-            raise GitHubNotConnectedError("GitHub is not connected")
-        reader = self._live_source_reader_factory(access_token.strip())
-        from infrastructure.connectors.github.issue_source_reader import (
-            GitHubIssueEmptyBodyError,
-            GitHubIssueLocatorMismatchError,
-            GitHubIssueNotIssueError,
+        document = source.reader().fetch(
+            SourceLocator(provider=source.provider, locator=locator)
         )
-
-        try:
-            document = reader.fetch(
-                SourceLocator(
-                    provider=locator_view.provider,
-                    locator=locator_view.locator,
-                )
-            )
-        except GitHubIssueEmptyBodyError as error:
-            raise InsufficientEvidenceError(
-                "No usable grounded evidence for test coverage planning."
-            ) from error
-        except (GitHubIssueNotIssueError, GitHubIssueLocatorMismatchError) as error:
-            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
         if not document.content.strip():
-            raise InsufficientEvidenceError(
-                "No usable grounded evidence for test coverage planning."
-            )
+            raise InsufficientEvidenceError(_NO_EVIDENCE_DETAIL)
         draft_id = str(uuid.uuid4())
         (
             SuggestTestCandidates,
@@ -354,7 +320,8 @@ class TestDesignFacade:
                         document.reference.source_id,
                         document.reference.source_type,
                     ),
-                    ticket_identifier=locator_view.locator,
+                    ticket_identifier=locator,
+                    source_provider=source.provider,
                     evidence=evidence,
                 )
             )
@@ -539,6 +506,7 @@ class TestDesignFacade:
                 conversation_id=current.conversation_id,
                 source_reference=current.source_reference,
                 ticket_identifier=current.ticket_identifier,
+                source_provider=current.source_provider,
                 status=next_status,
                 candidates=candidates,
                 version=current.version,
@@ -591,9 +559,7 @@ class TestDesignFacade:
             raise TestDesignValidationError(
                 "select at least one candidate before confirm"
             )
-        document, budgeted, fingerprint = self._fetch_live_evidence(
-            current.ticket_identifier
-        )
+        document, budgeted, fingerprint = self._fetch_live_evidence(current)
         if (
             document.reference.source_id != current.source_reference.source_id
             or document.reference.source_type != current.source_reference.source_type
@@ -611,6 +577,7 @@ class TestDesignFacade:
             conversation_id=current.conversation_id,
             source_reference=current.source_reference,
             ticket_identifier=current.ticket_identifier,
+            source_provider=current.source_provider,
             status="case_editing" if kept_cases else "ready",
             candidates=current.candidates,
             version=current.version,
@@ -660,9 +627,7 @@ class TestDesignFacade:
             _raise_composition_validation_if_pack_error(error)
             raise
 
-        document, budgeted, fingerprint = self._fetch_live_evidence(
-            current.ticket_identifier
-        )
+        document, budgeted, fingerprint = self._fetch_live_evidence(current)
         if (
             document.reference.source_id != current.source_reference.source_id
             or document.reference.source_type != current.source_reference.source_type
@@ -714,34 +679,28 @@ class TestDesignFacade:
             skipped_edited_candidate_ids=outcome.skipped_edited_candidate_ids,
         )
 
-    def _fetch_live_evidence(self, ticket_identifier: str):
-        """Re-fetch live Issue evidence and compute fingerprint."""
+    def _resolve_locator(
+        self, value: SourceLocatorView
+    ) -> tuple[TestDesignSource, str]:
+        if not isinstance(value, SourceLocatorView):
+            raise TestDesignValidationError("source_locator is required")
+        source = self._sources.resolve(value.provider)
+        return source, source.canonicalize(value.locator)
+
+    def _fetch_live_evidence(self, draft: object):
+        """Re-fetch live evidence from the draft's own source and fingerprint it."""
         import hashlib
 
-        from infrastructure.connectors.github.issue_source_reader import (
-            GitHubIssueEmptyBodyError,
-            GitHubIssueLocatorMismatchError,
-            GitHubIssueNotIssueError,
-        )
-
         self._require_workspace()
-        access_token = self._oauth_preflight()
-        if not isinstance(access_token, str) or not access_token.strip():
-            raise GitHubNotConnectedError("GitHub is not connected")
-        reader = self._live_source_reader_factory(access_token.strip())
-        locator = SourceLocator(provider="github", locator=ticket_identifier)
-        try:
-            document = reader.fetch(locator)
-        except GitHubIssueEmptyBodyError as error:
-            raise InsufficientEvidenceError(
-                "No usable grounded evidence for test coverage planning."
-            ) from error
-        except (GitHubIssueNotIssueError, GitHubIssueLocatorMismatchError) as error:
-            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
-        if not document.content.strip():
-            raise InsufficientEvidenceError(
-                "No usable grounded evidence for test coverage planning."
+        source = self._sources.resolve(draft.source_provider)  # type: ignore[attr-defined]
+        document = source.reader().fetch(
+            SourceLocator(
+                provider=source.provider,
+                locator=draft.ticket_identifier,  # type: ignore[attr-defined]
             )
+        )
+        if not document.content.strip():
+            raise InsufficientEvidenceError(_NO_EVIDENCE_DETAIL)
         _, _, _, budget_source_document_text = self._load_suggest_tests()
         budgeted = budget_source_document_text(document)
         digest = hashlib.sha256(
@@ -1059,34 +1018,27 @@ def _raise_composition_validation_if_pack_error(error: BaseException) -> None:
         raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
 
 
-def _require_github_locator_view(value: SourceLocatorView) -> SourceLocatorView:
+def _require_client_locator_match(
+    value: SourceLocatorView,
+    found: SourceLocator,
+    sources: TestDesignSourceRegistry,
+) -> None:
+    mismatch = "source_locator must match the source referenced in the query"
     if not isinstance(value, SourceLocatorView):
         raise TestDesignValidationError("source_locator is required")
     provider = _require_text(value.provider, "provider")
-    if provider.casefold() != "github":
-        raise TestDesignValidationError("source_locator.provider must be github")
-    from infrastructure.connectors.github.issue_locator import (
-        InvalidGitHubIssueLocatorError,
-        canonicalize_github_issue_locator,
-    )
-
-    try:
-        locator = canonicalize_github_issue_locator(value.locator)
-    except InvalidGitHubIssueLocatorError as error:
-        raise TestDesignValidationError(
-            "source_locator.locator must be a GitHub Issue URL or owner/repo#number"
-        ) from error
-    return SourceLocatorView(provider="github", locator=locator)
+    if provider.casefold() != found.provider.casefold():
+        raise TestDesignValidationError(mismatch)
+    client_locator = sources.resolve(found.provider).canonicalize(value.locator)
+    if client_locator.casefold() != found.locator.casefold():
+        raise TestDesignValidationError(mismatch)
 
 
-# Re-export for callers that still type-check connection errors on create.
 __all__ = [
     "ChatWorkflowActionView",
     "CreateTestDesignDraftRequest",
     "GenerateTestDesignCasesRequest",
     "GeneratedTestCaseView",
-    "GitHubNotConnectedError",
-    "GitHubReauthorizationRequiredError",
     "PatchTestDesignDraftRequest",
     "SourceLocatorView",
     "SourceReferenceView",
