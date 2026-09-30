@@ -50,8 +50,8 @@ from composition.errors import (
     UnknownUploadedDocumentError,
     UnsupportedPreviewFormatError,
 )
-from composition.software_delivery_chat import ToolRunFailedError
-from composition.test_design_errors import (
+from composition.software_delivery.chat import ToolRunFailedError
+from composition.test_design.errors import (
     TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,

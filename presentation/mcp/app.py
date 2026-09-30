@@ -17,14 +17,14 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.types import ASGIApp
 
-from composition.mcp_access import (
+from composition.mcp.access import (
     CallerContextResolver,
     MissingCallerContextError,
     McpCallerContext,
     RequestScopedCallerContextResolver,
 )
-from composition.mcp_settings import McpSettings, load_mcp_settings
-from composition.mcp_tool_registry import (
+from composition.mcp.settings import McpSettings, load_mcp_settings
+from composition.mcp.tool_registry import (
     McpInvokeResult,
     McpToolDescriptor,
     McpToolRegistry,
@@ -181,7 +181,7 @@ def create_mcp_app(
     runtime settings. *mcp_settings* defaults to :func:`load_mcp_settings`.
     """
     from composition.container import load_runtime_settings
-    from composition.mcp_settings import build_mcp_registry_for_runtime
+    from composition.mcp.settings import build_mcp_registry_for_runtime
 
     runtime = settings or load_runtime_settings()
     mcp_cfg = mcp_settings or load_mcp_settings()

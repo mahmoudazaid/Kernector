@@ -36,7 +36,7 @@ tool JSON or public errors. Wireframe:
 ## Chat-time routing (#312)
 
 Composition injects `WorkflowSignal` probes (see
-`composition/workflow_signals.py`) into pack-neutral `TurnRouter`:
+`composition/chat/workflow_signals.py`) into pack-neutral `TurnRouter`:
 
 | Workflow | Recognized | Ready | Incomplete (clarify, never RAG) |
 | --- | --- | --- | --- |
@@ -92,7 +92,7 @@ Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
 
 [`tools/test_design_mcp.py`](tools/test_design_mcp.py) exposes the same
 workflow to allowlisted MCP clients. The pack owns the tool ids and dispatch;
-composition ([`composition/mcp_test_design.py`](../../composition/mcp_test_design.py))
+composition ([`composition/mcp/test_design.py`](../../composition/mcp/test_design.py))
 owns the argument/result schemas and projection. `build_mcp_tools()`
 contributes these tools only when composition supplies a workspace-bound
 `test_design_binding`. The pack never sees the workspace id.

@@ -1,40 +1,8 @@
 """Composition root: the outermost edge, where the layers are joined."""
 
 from composition.container import (
-    SUPPORTED_DOMAIN_TOOL_PACKS,
     SUPPORTED_UPLOAD_SUFFIXES,
     UPLOAD_CONTENT_TYPE_BY_FORMAT,
-    GoogleDriveBrowseItem,
-    GoogleDriveBrowsePage,
-    GoogleDriveLastSync,
-    GoogleDriveSelection,
-    GoogleDriveSelectedItem,
-    GoogleDriveStatus,
-    GitHubLastSync,
-    GitHubProjectItem,
-    GitHubProjectPage,
-    GitHubRepoItem,
-    GitHubRepoPage,
-    GitHubSelection,
-    GitHubStatus,
-    browse_google_drive_items,
-    create_google_drive_folder,
-    complete_github_oauth,
-    complete_google_drive_oauth,
-    disconnect_github_oauth,
-    disconnect_google_drive_oauth,
-    get_github_selection,
-    get_google_drive_selection,
-    github_status,
-    list_github_projects,
-    list_github_repositories,
-    put_github_selection,
-    put_google_drive_selection,
-    start_github_oauth,
-    start_google_drive_oauth,
-    sync_github,
-    sync_github_oauth,
-    sync_google_drive_oauth,
     unsupported_upload_type_detail,
     available_providers,
     build_ask_knowledge,
@@ -42,11 +10,8 @@ from composition.container import (
     build_chat_model,
     build_document_catalog,
     build_embedding_model,
-    build_github_connector,
-    build_google_drive_connector,
     build_ingest_knowledge,
     build_invoke_tool,
-    build_manage_uploaded_documents,
     build_opaque_invoke,
     build_orchestrate_software_delivery,
     build_probe_ollama_status,
@@ -58,25 +23,77 @@ from composition.container import (
     build_tool_registry,
     build_vector_store,
     build_chroma_vector_store,
+    load_knowledge_documents,
+    load_runtime_settings,
+    probe_ollama,
+    reindex_filter_metadata,
+)
+from composition.documents import (
+    build_manage_uploaded_documents,
     create_uploaded_document,
     delete_uploaded_document,
     get_uploaded_document_content,
     ingest_uploaded_document,
     list_uploaded_document_chunks,
     list_uploaded_documents,
-    load_knowledge_documents,
-    load_runtime_settings,
-    probe_ollama,
-    reindex_filter_metadata,
     replace_uploaded_document,
+)
+from composition.github.models import (
+    GitHubLastSync,
+    GitHubProjectItem,
+    GitHubProjectPage,
+    GitHubRepoItem,
+    GitHubRepoPage,
+    GitHubSelection,
+    GitHubStatus,
+)
+from composition.github.connection import (
+    complete_github_oauth,
+    disconnect_github_oauth,
+    github_status,
+    start_github_oauth,
+)
+from composition.github.selection import (
+    get_github_selection,
+    list_github_projects,
+    list_github_repositories,
+    put_github_selection,
+)
+from composition.github.sync import (
+    sync_github,
+    sync_github_oauth,
+    build_github_connector,
+)
+from composition.google_drive.models import (
+    GoogleDriveBrowseItem,
+    GoogleDriveBrowsePage,
+    GoogleDriveLastSync,
+    GoogleDriveSelection,
+    GoogleDriveSelectedItem,
+    GoogleDriveStatus,
+)
+from composition.google_drive.connection import (
+    complete_google_drive_oauth,
+    disconnect_google_drive_oauth,
+    start_google_drive_oauth,
     google_drive_status,
+)
+from composition.google_drive.selection import (
+    browse_google_drive_items,
+    create_google_drive_folder,
+    get_google_drive_selection,
+    put_google_drive_selection,
+)
+from composition.google_drive.sync import (
+    sync_google_drive_oauth,
+    build_google_drive_connector,
     sync_google_drive,
 )
-from composition.short_term_memory import (
+from composition.chat.short_term_memory import (
     ShortTermMemoryRuntime,
     build_short_term_memory_runtime,
 )
-from composition.software_delivery_tools import (
+from composition.software_delivery.tools import (
     RiskFactorView,
     RiskScoreView,
     SoftwareDeliveryRunView,
@@ -84,16 +101,17 @@ from composition.software_delivery_tools import (
     TestCasesView,
     software_delivery_tools_enabled,
 )
-from composition.software_delivery_chat import (
+from composition.software_delivery.chat import (
     SOFTWARE_DELIVERY_TEST_STYLES,
     ToolRunFailedError,
 )
-from composition.tool_augmented_ask import (
+from composition.chat.tool_augmented_ask import (
     GroundedAsk,
     ToolAugmentedAsk,
     ToolRunOutcome,
 )
-from composition.tool_runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
+from composition.tools.registry import SUPPORTED_DOMAIN_TOOL_PACKS
+from composition.tools.runs import MAX_TOOL_CALL_SUMMARY_CHARS, ToolCallView
 from composition.errors import (
     ConnectorSyncError,
     DocumentContentError,
@@ -111,7 +129,7 @@ from composition.errors import (
     UnsupportedPreviewFormatError,
 )
 from composition.evaluate import build_evaluate_knowledge, load_eval_cases
-from composition.jira import (
+from composition.jira.cloud import (
     JiraLastSync,
     JiraProjectItem,
     JiraProjectPage,

@@ -16,7 +16,7 @@ Use this document as a speaking script. Deep layering rules stay in [`ARCHITECTU
 | --- | --- | --- | --- |
 | HTTP API | [`presentation/http/app.py`](../presentation/http/app.py) | FastAPI app | Chat, settings, documents, HITL resume |
 | Composition root | [`composition/container.py`](../composition/container.py) | factories / settings | Wires adapters, pack, agent when flag on |
-| Opt-in agent orchestrate | [`composition/software_delivery_agent.py`](../composition/software_delivery_agent.py) | agent factory | Swaps pack `orchestrate` for LangGraph |
+| Opt-in agent orchestrate | [`composition/software_delivery/agent.py`](../composition/software_delivery/agent.py) | agent factory | Swaps pack `orchestrate` for LangGraph |
 | ReAct graph | [`infrastructure/agents/langgraph_tool_agent.py`](../infrastructure/agents/langgraph_tool_agent.py) | `LangGraphToolAgent` | `agent ⇄ tools`, STM, HITL `interrupt()` |
 | Next.js UI | [`web/`](../web/) | chat / settings / documents | Talks HTTP to FastAPI |
 
@@ -72,11 +72,11 @@ flowchart LR
 | Concern | Path | Symbol | Reviewer talking point |
 | --- | --- | --- | --- |
 | Pre-retrieval routing | [`application/turn_routing.py`](../application/turn_routing.py) | `TurnRouter` | Kinds: `tool_workflow` \| `clarification` \| `grounded_answer` \| `general_answer` |
-| Workflow probes | [`composition/workflow_signals.py`](../composition/workflow_signals.py) | Drive / Test Design signals | Recognized vs ready; incomplete never RAG |
-| Chat dispatch | [`composition/tool_augmented_ask.py`](../composition/tool_augmented_ask.py) | `ToolAugmentedAsk` | Task `prompt_key` skips router → RAG only |
-| Agent wiring | [`composition/software_delivery_agent.py`](../composition/software_delivery_agent.py) | opt-in orchestrate | Domain/app never import LangGraph |
+| Workflow probes | [`composition/chat/workflow_signals.py`](../composition/chat/workflow_signals.py) | Drive / Test Design signals | Recognized vs ready; incomplete never RAG |
+| Chat dispatch | [`composition/chat/tool_augmented_ask.py`](../composition/chat/tool_augmented_ask.py) | `ToolAugmentedAsk` | Task `prompt_key` skips router → RAG only |
+| Agent wiring | [`composition/software_delivery/agent.py`](../composition/software_delivery/agent.py) | opt-in orchestrate | Domain/app never import LangGraph |
 | ReAct + HITL | [`infrastructure/agents/langgraph_tool_agent.py`](../infrastructure/agents/langgraph_tool_agent.py) | `LangGraphToolAgent` | `bind_tools`; `interrupt()` before allowlisted `Tool.run` |
-| Short-term memory | [`composition/short_term_memory.py`](../composition/short_term_memory.py) | `InMemorySaver` | Key `{workspace_id}:{conversation_id}`; lost on restart |
+| Short-term memory | [`composition/chat/short_term_memory.py`](../composition/chat/short_term_memory.py) | `InMemorySaver` | Key `{workspace_id}:{conversation_id}`; lost on restart |
 | Agentic retrieve | [`application/retrieve_knowledge_tool.py`](../application/retrieve_knowledge_tool.py), [`application/ask_knowledge_with_agent.py`](../application/ask_knowledge_with_agent.py) | `knowledge.retrieve`, `AskKnowledgeWithAgent` | Must retrieve before answer; citations via channel |
 | Drive export tool | [`packs/software_delivery/tools/export_test_cases_google_drive.py`](../packs/software_delivery/tools/export_test_cases_google_drive.py) | Drive uploader | Titles + folder from Test Design UI |
 | HITL UI | [`web/components/chat/ToolApprovalCard.tsx`](../web/components/chat/ToolApprovalCard.tsx) | approve / reject | Browser sends decision only; args stay server-side |

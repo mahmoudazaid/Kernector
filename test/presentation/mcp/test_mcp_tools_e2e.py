@@ -8,10 +8,10 @@ import pytest
 from mcp import Client
 
 from application.contracts import RetrieveRequest, RetrieveResponse
-from composition.mcp_access import FixedCallerContextResolver, McpCallerContext
-from composition.mcp_search_knowledge import TOOL_NAME as SEARCH_TOOL
-from composition.mcp_search_knowledge import SearchKnowledgeTool
-from composition.mcp_tool_registry import (
+from composition.mcp.access import FixedCallerContextResolver, McpCallerContext
+from composition.mcp.search_knowledge import TOOL_NAME as SEARCH_TOOL
+from composition.mcp.search_knowledge import SearchKnowledgeTool
+from composition.mcp.tool_registry import (
     TOOL_UNAVAILABLE_CODE,
     McpToolContribution,
     McpToolRegistry,
@@ -121,8 +121,8 @@ _TEST_DESIGN_TOOLS = frozenset(
 
 def _wired_registry(tmp_path, monkeypatch: pytest.MonkeyPatch, *, pack_on: bool = True):
     import composition.container as container
-    from composition.mcp_wiring import build_mcp_tool_registry
-    from test.composition.test_design_fakes import build_fake_facade, settings_with_pack
+    from composition.mcp.wiring import build_mcp_tool_registry
+    from test.composition.test_design.test_design_fakes import build_fake_facade, settings_with_pack
 
     settings = settings_with_pack(pack_on=pack_on, workspace_id="ws-a")
     monkeypatch.setattr(
@@ -143,7 +143,7 @@ async def _call(client, name: str, arguments: dict) -> dict:
 async def test_test_design_workflow_e2e_via_protocol_client(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from test.composition.test_design_fakes import ISSUE_LOCATOR
+    from test.composition.test_design.test_design_fakes import ISSUE_LOCATOR
 
     registry = _wired_registry(tmp_path, monkeypatch)
     caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
@@ -242,7 +242,7 @@ async def test_test_design_workflow_e2e_via_protocol_client(
 
 class _UnauthorizedResolver:
     def resolve(self, request: object | None) -> McpCallerContext:
-        from composition.mcp_access import MissingCallerContextError
+        from composition.mcp.access import MissingCallerContextError
 
         raise MissingCallerContextError("missing authenticated caller context")
 

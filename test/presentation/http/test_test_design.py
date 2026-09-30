@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from composition.test_design import (
+from composition.test_design.facade import (
     ChatWorkflowActionView,
     CreateTestDesignDraftRequest,
     PatchTestDesignDraftRequest,
@@ -16,7 +16,7 @@ from composition.test_design import (
     TestCandidateView,
     TestCoverageDraftView,
 )
-from composition.test_design_errors import (
+from composition.test_design.errors import (
     TestDesignNotFoundError,
     TestDesignUnavailableError,
     TestDesignVersionConflictError,
@@ -151,8 +151,8 @@ def _real_facade_client(
     monkeypatch: pytest.MonkeyPatch,
     reader: _HTTPReader | None = None,
 ) -> TestClient:
-    from composition.test_design import TestDesignFacade
-    from test.composition.test_design_fakes import github_sources
+    from composition.test_design.facade import TestDesignFacade
+    from test.composition.test_design.test_design_fakes import github_sources
 
     from dataclasses import replace
 
@@ -351,8 +351,8 @@ def test_get_draft_returns_payload() -> None:
 def test_resolve_action_helper_requires_pack_and_locator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from composition import test_design as module
-    from composition.test_design import SourceLocatorView
+    from composition.test_design import facade as module
+    from composition.test_design.facade import SourceLocatorView
 
     settings = get_settings()
 

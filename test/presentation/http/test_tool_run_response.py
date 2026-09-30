@@ -6,7 +6,7 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel
 
-from composition.software_delivery_tools import SoftwareDeliveryRunView
+from composition.software_delivery.tools import SoftwareDeliveryRunView
 from presentation.http.schemas import (
     ToolCallResponse,
     ToolRunResponse,

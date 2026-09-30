@@ -39,7 +39,7 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
-from composition.software_delivery_chat import ToolRunFailedError
+from composition.software_delivery.chat import ToolRunFailedError
 from domain.errors import (
     DomainValidationError,
     ProviderAuthError,
