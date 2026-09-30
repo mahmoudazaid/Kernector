@@ -12,6 +12,7 @@ from application.runtime_settings import GetRuntimeSettings, ProbeOllamaStatus
 from application.run_tool_agent import ClearAgentThread
 from composition import (
     SUPPORTED_UPLOAD_SUFFIXES,
+    ClarificationContextStore,
     GoogleDriveBrowseItem,
     GoogleDriveBrowsePage,
     GoogleDriveSelection,
@@ -72,7 +73,7 @@ from composition import (
     start_jira_oauth,
     sync_jira_oauth,
 )
-from composition.test_design.facade import SourceLocatorView
+from composition.test_design.facade import SourceLocatorView, TestDesignFacade
 from domain.knowledge import (
     CatalogDocument,
     ChunkPage,
@@ -143,7 +144,7 @@ def get_short_term_memory_runtime() -> ShortTermMemoryRuntime:
 
 
 @lru_cache(maxsize=1)
-def get_clarification_context_store():
+def get_clarification_context_store() -> ClarificationContextStore:
     """Process-cached clarification context for multi-turn workflow follow-ups."""
     from composition.chat.clarification_context import InMemoryClarificationContextStore
 
@@ -158,7 +159,7 @@ def get_ask_factory(
         ShortTermMemoryRuntime, Depends(get_short_term_memory_runtime)
     ],
     clarification_context_store: Annotated[
-        object, Depends(get_clarification_context_store)
+        ClarificationContextStore, Depends(get_clarification_context_store)
     ],
 ) -> AskFactory:
     """Return a factory that builds ask with per-request provider/model overrides."""
@@ -775,14 +776,14 @@ JiraSelectionWriteDep = Annotated[
 
 def get_test_design_facade(
     settings: Annotated[Settings, Depends(get_settings)],
-):
+) -> TestDesignFacade:
     """Build the test-design facade for this request (pack gated at call time)."""
     from composition.container import build_test_design_facade
 
     return build_test_design_facade(settings)
 
 
-TestDesignFacadeDep = Annotated[object, Depends(get_test_design_facade)]
+TestDesignFacadeDep = Annotated[TestDesignFacade, Depends(get_test_design_facade)]
 
 
 @lru_cache(maxsize=1)

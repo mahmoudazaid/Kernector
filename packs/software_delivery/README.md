@@ -99,7 +99,7 @@ contributes these tools only when composition supplies a workspace-bound
 
 | Tool id | Arguments | Existing operation |
 | --- | --- | --- |
-| `software_delivery.test_design_start` | `issue_locator` | create draft from a live GitHub Issue |
+| `software_delivery.test_design_start` | `issue_locator` (GitHub Issue URL or `owner/repo#number`, or Jira Data Center key `PROJ-123` or browse URL) | create draft from the one source that accepts the locator |
 | `software_delivery.test_design_get` | `draft_id` | read draft |
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
 | `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), `type_overrides[{candidate_id, test_type}]`, `overwrite_edited` | #300 generate |

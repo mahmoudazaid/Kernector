@@ -11,8 +11,11 @@ from test.composition.test_design.source_contract.github_harness import (
     GitHubContractHarness,
 )
 from test.composition.test_design.source_contract.harness import SourceContractHarness
+from test.composition.test_design.source_contract.jira_data_center_harness import (
+    JiraDataCenterContractHarness,
+)
 
-CONTRACT_HARNESSES = (GitHubContractHarness,)
+CONTRACT_HARNESSES = (GitHubContractHarness, JiraDataCenterContractHarness)
 
 
 def _refuse_network(*_args: object, **_kwargs: object) -> None:

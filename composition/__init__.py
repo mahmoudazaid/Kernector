@@ -89,6 +89,7 @@ from composition.google_drive.sync import (
     build_google_drive_connector,
     sync_google_drive,
 )
+from composition.chat.clarification_context import ClarificationContextStore
 from composition.chat.short_term_memory import (
     ShortTermMemoryRuntime,
     build_short_term_memory_runtime,
@@ -180,6 +181,7 @@ __all__ = [
     "SUPPORTED_UPLOAD_SUFFIXES",
     "UPLOAD_CONTENT_TYPE_BY_FORMAT",
     "unsupported_upload_type_detail",
+    "ClarificationContextStore",
     "GroundedAsk",
     "Settings",
     "RiskFactorView",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from application.errors import (
@@ -105,8 +107,8 @@ _TEST_DESIGN_VERSION_CONFLICT_DETAIL = (
 )
 _TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
 _TEST_DESIGN_EVIDENCE_CHANGED_DETAIL = (
-    "The GitHub Issue evidence changed since coverage was confirmed. "
-    "Reconfirm coverage against the current Issue, then generate again."
+    "The source issue evidence changed since coverage was confirmed. "
+    "Reconfirm coverage against the current issue, then generate again."
 )
 _CONNECTOR_AUTH_DETAIL = "The connector rejected the credentials or permissions."
 _CONNECTOR_NOT_FOUND_DETAIL = "The requested connector resource was not found."
@@ -188,14 +190,14 @@ _PROBLEM_STATUS_DESCRIPTIONS: dict[int, str] = {
 }
 
 
-def problem_responses(*status_codes: int) -> dict[int, dict]:
+def problem_responses(*status_codes: int) -> dict[int | str, dict[str, Any]]:
     """OpenAPI response map declaring ``application/problem+json`` only.
 
     Uses a ``$ref`` to ``Problem``. Call :func:`register_problem_schemas` from
     the app OpenAPI generator so the model is present under
     ``components.schemas`` — a bare ``$ref`` does not register it.
     """
-    responses: dict[int, dict] = {}
+    responses: dict[int | str, dict[str, Any]] = {}
     for code in status_codes:
         description = _PROBLEM_STATUS_DESCRIPTIONS.get(code, "Error")
         responses[code] = {
@@ -320,13 +322,12 @@ def problem_from_exception(
             request_id=request_id,
         )
     if isinstance(exc, PartialDocumentOperationError):
-        operation = getattr(exc, "operation", None)
         return _problem(
             code="document_partial_failure",
             title="Document partial failure",
             status=409,
             detail=DOCUMENT_PARTIAL_DETAILS.get(
-                operation, _DOCUMENT_PARTIAL_FALLBACK
+                exc.operation, _DOCUMENT_PARTIAL_FALLBACK
             ),
             instance=instance,
             request_id=request_id,

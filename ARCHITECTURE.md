@@ -75,7 +75,10 @@ Connector and upload flows live beside it, one package per concern:
 `composition/github/`, `composition/google_drive/`, `composition/jira/`, and
 `composition/documents.py`. They reach shared factories (catalog, vector store,
 ingest) through `container` at call time, and `container` imports them only
-lazily, so the dependency points one way.
+lazily, so the dependency points one way. `container` decides *whether* to
+wire a concern; the concern's package decides *how* (default stores, clients,
+adapters). New modules go into a concern package in every layer, not at the
+layer root ([ADR 0008](docs/adr/0008-group-modules-by-concern.md)).
 
 ## Next.js / HTTP presentation migration
 
@@ -770,9 +773,12 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Test Design sources (#351): `TestDesignFacade` and the chat handoff are
   source-neutral and resolve providers through `TestDesignSourceRegistry`
   (`composition/test_design/sources.py`). `container.build_test_design_sources`
-  registers `GitHubTestDesignSource` (`composition/test_design/github_source.py`),
-  the only GitHub-aware Test Design code, which translates reader errors before
-  they reach the facade. A blank/unknown provider is `validation_error`; a
+  always registers `GitHubTestDesignSource`
+  (`composition/test_design/github_source.py`) and, when Jira Data Center mode
+  is on, `JiraDataCenterTestDesignSource`
+  (`composition/test_design/jira_data_center_source.py`, #353). Each is the only
+  code aware of its provider in Test Design, owns its own construction
+  defaults, and translates reader errors before they reach the facade. A blank/unknown provider is `validation_error`; a
   known `SourceType` with no registered source is unavailable. Drafts store an
   authoritative `source_provider` (distinct from `source_reference.source_type`);
   pre-v5 drafts derive it from the stored `source_type`. Missing credentials

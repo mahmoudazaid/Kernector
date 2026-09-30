@@ -24,7 +24,6 @@ from composition.test_design.facade import (
     CreateTestDesignDraftRequest,
     GenerateTestDesignCasesRequest,
     PatchTestDesignDraftRequest,
-    SourceLocatorView,
     TestCaseType,
     TestCoverageDraftView,
     TestDesignFacade,
@@ -79,7 +78,12 @@ class TestDesignStartArgs(_StrictArgs):
         StringConstraints(
             strip_whitespace=True, min_length=1, max_length=MAX_ISSUE_LOCATOR_CHARS
         ),
-    ] = Field(description="GitHub Issue URL or owner/repo#number.")
+    ] = Field(
+        description=(
+            "GitHub Issue URL or owner/repo#number, or Jira issue key "
+            "(PROJ-123) or browse URL."
+        )
+    )
 
 
 class TestDesignGetArgs(_StrictArgs):
@@ -299,9 +303,7 @@ class McpTestDesignOperations:
             return self._facade.create_draft(
                 CreateTestDesignDraftRequest(
                     conversation_id=self._conversation_id_factory(),
-                    source_locator=SourceLocatorView(
-                        provider="github", locator=issue_locator
-                    ),
+                    source_locator=self._facade.resolve_source_locator(issue_locator),
                 )
             )
 

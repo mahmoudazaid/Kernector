@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -142,6 +142,8 @@ class FakeTestDesignSource:
         extracts: dict[str, str] | None = None,
         ambiguous: Collection[str] = (),
         reader_error: Exception | None = None,
+        accepts: Callable[[str], bool] | None = None,
+        canonicalize_error: Exception | None = None,
     ) -> None:
         self.provider = provider
         self.live_reader = reader or RecordingIssueReader()
@@ -149,10 +151,16 @@ class FakeTestDesignSource:
         self._extracts = dict(extracts or {})
         self._ambiguous = frozenset(ambiguous)
         self._reader_error = reader_error
+        self._accepts = accepts
+        self._canonicalize_error = canonicalize_error
 
     def canonicalize(self, locator: str) -> str:
+        if self._canonicalize_error is not None:
+            raise self._canonicalize_error
         if not isinstance(locator, str) or not locator.strip():
             raise TestDesignValidationError("locator must be non-empty")
+        if self._accepts is not None and not self._accepts(locator.strip()):
+            raise TestDesignValidationError("locator is not for this source")
         return locator.strip()
 
     def extract_locator(self, text: str) -> str | None:
@@ -186,7 +194,7 @@ class FakeTestDesignChat:
                 for candidate_id, case in _GENERATED_CASES.items()
                 if f'"candidate_id":"{candidate_id}"' in request
             ]
-            payload: dict[str, object] = {
+            payload: Mapping[str, object] = {
                 "cases": cases,
                 "cucumber_feature": "Login",
                 "cucumber_background": "Given the login page is open",

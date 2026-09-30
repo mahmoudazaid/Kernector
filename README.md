@@ -4,7 +4,7 @@
 
 Kernector is a domain-agnostic knowledge platform built around a shared ingest and retrieval pipeline. Uploaded TXT, Markdown, and PDF files, seed JSON corpora, the Google Drive connector, the GitHub connector, and the Jira connector normalize into `SourceDocument`; the core then chunks, embeds, stores, and retrieves with provenance so answers can cite what they used. Domain vocabulary stays out of the reusable core. Optional packs supply business meaning. Other provider connectors (for example Confluence) are planned, not shipped. The default seed corpus at `data/knowledge/documents.json` is neutral. Story Intelligence samples under `data/knowledge/packs/story-intelligence/` demonstrate a content pack without defining platform requirements.
 
-Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The Sprint 3 agent purpose brief (Software Delivery Intelligence) is in [docs/sprint-3-agent-purpose.md](docs/sprint-3-agent-purpose.md); usage, examples, and technical decisions: [docs/sprint-3-agent-usage.md](docs/sprint-3-agent-usage.md); checklist: [docs/sprint-3-135-review.md](docs/sprint-3-135-review.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). JSON catalog retirement is recorded in [ADR 0007](docs/adr/0007-retire-json-document-catalog.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
+Architecture and layering live in [ARCHITECTURE.md](ARCHITECTURE.md). The Sprint 3 agent purpose brief (Software Delivery Intelligence) is in [docs/sprint-3-agent-purpose.md](docs/sprint-3-agent-purpose.md); usage, examples, and technical decisions: [docs/sprint-3-agent-usage.md](docs/sprint-3-agent-usage.md); checklist: [docs/sprint-3-135-review.md](docs/sprint-3-135-review.md). The domain-agnostic direction is recorded in [ADR 0001](docs/adr/0001-domain-agnostic-knowledge-foundation.md). The Next.js / HTTP presentation migration is recorded in [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md). The Next.js Instrument panel visual identity is recorded in [ADR 0003](docs/adr/0003-nextjs-instrument-panel-visual-identity.md). Streamlit retirement is recorded in [ADR 0004](docs/adr/0004-retire-streamlit-presentation.md). JSON catalog retirement is recorded in [ADR 0007](docs/adr/0007-retire-json-document-catalog.md). Grouping modules by concern in every layer is recorded in [ADR 0008](docs/adr/0008-group-modules-by-concern.md). Seed format details are in [data/knowledge/README.md](data/knowledge/README.md).
 
 ## How the platform is structured
 
@@ -101,7 +101,9 @@ uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
 - Health: `GET http://127.0.0.1:8100/healthz` (public)
 - Auth is a **trusted shared bearer MVP**, not OAuth
 - Test Design tools (#338) run start → confirm → generate for a live GitHub
-  Issue using the workspace's GitHub connection; they appear in `tools/list`
+  Issue or Jira Data Center issue (#353) using the workspace's connection;
+  `issue_locator` accepts either and the provider is detected from it. They
+  appear in `tools/list`
   only when the pack is enabled and the ids are allowlisted. See the
   [pack README](packs/software_delivery/README.md#test-design-over-mcp-338)
   for arguments, error codes, and the `untrusted_model_output` marker.
@@ -516,6 +518,36 @@ changes mid-sync. **Remove** clears the saved selection and synced issues but
 leaves `JIRA_DC_TOKEN` untouched; revoke the token in Jira to cut access.
 Connector state lives in `data/jira-dc-connection.json` (gitignored, mode
 `0600`, no token).
+
+#### Jira Data Center issues as a Test Design source (#353)
+
+With `DOMAIN_TOOL_PACKS=software-delivery`, Test Design can plan coverage from
+one live Data Center issue (provider `jira`). The source is registered whenever
+Data Center mode is on (either `JIRA_DC_*` variable set). Drafts can be started
+only when both URL and token are set and the token has not been rejected;
+otherwise creating a draft fails with *source not connected* or
+*reauthorization required*. With Data Center mode off, provider `jira` is
+unavailable.
+
+Accepted locators:
+
+- An issue key such as `ENG-7` (case-insensitive, surrounding spaces ignored).
+- A browse URL on the configured host: `{JIRA_DC_BASE_URL}/browse/ENG-7`.
+  Scheme, host, port, and context path must match exactly; queries,
+  fragments, credentials, and extra path segments are rejected.
+
+In chat, browse URLs on the configured host are always recognized. Bare keys
+are recognized only for projects in the saved Hub selection, and only when
+written in uppercase. A message that names more than one issue is ambiguous.
+On MCP, `test_design_start` takes the same `issue_locator` argument for GitHub
+and Jira; the provider is detected from the locator.
+
+Evidence is the issue summary, description, and (optionally) an
+acceptance-criteria text field, converted to Markdown. Set
+`JIRA_DC_ACCEPTANCE_CRITERIA_FIELD` to the field id (`customfield_<digits>`);
+non-text values are ignored. An issue with neither description nor acceptance
+criteria has insufficient evidence. Changes to the issue's `updated` time
+alone do not invalidate a confirmed draft; changes to the evidence text do.
 
 ## Logging and monitoring
 

@@ -4,6 +4,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from typing import TYPE_CHECKING, cast
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
@@ -26,12 +27,14 @@ from composition.errors import (
     DocumentOperationError,
     KnowledgeLoadError,
 )
+from composition.chat.clarification_context import ClarificationContextStore
 from composition.chat.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
 from composition.chat.recording_chat import RecordingChatModel
 from composition.software_delivery.agent import build_agent_orchestrate
 from composition.software_delivery.chat import (
     OpaqueInvoke,
+    Orchestrate,
     PackSoftwareDeliveryChat,
 )
 from composition.software_delivery.tools import software_delivery_tools_enabled
@@ -90,6 +93,11 @@ from infrastructure.prompts.markdown_repository import MarkdownPromptRepository
 from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from infrastructure.vectorstore.chroma import ChromaVectorStore
 from infrastructure.vectorstore.dual_write import DualWriteVectorStore
+
+if TYPE_CHECKING:
+    from composition.test_design.facade import TestDesignFacade
+    from packs.software_delivery.contracts import TestCaseStyle
+    from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
 
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
@@ -248,7 +256,7 @@ def build_embedding_model(settings: Settings) -> EmbeddingModel:
     return OpenRouterEmbeddings(settings.openrouter)
 
 
-def build_chroma_vector_store(settings: Settings) -> VectorStore:
+def build_chroma_vector_store(settings: Settings) -> ChromaVectorStore:
     """Return Chroma only (no BM25 hydrate). For chunk listing and similar reads."""
     return ChromaVectorStore(settings.chroma)
 
@@ -498,7 +506,7 @@ def build_test_design_facade(
     connection_store=None,
     oauth_gateway=None,
     client_factory=None,
-):
+) -> "TestDesignFacade":
     """Wire the test-design HTTP facade (pack gated at call time)."""
     from composition.test_design.facade import TestDesignFacade
 
@@ -523,50 +531,45 @@ def build_test_design_sources(
     connection_store=None,
     oauth_gateway=None,
     client_factory=None,
+    jira_dc_state_store=None,
+    jira_dc_client_factory=None,
+    jira_dc_settings_provider=None,
 ):
-    """Register the live sources Test Design may plan from (GitHub only).
+    """Register the live sources Test Design may plan from.
 
-    Credentials are resolved lazily when a reader is requested, so building
-    the registry never requires a grant.
+    GitHub is always registered; Jira Data Center only when its mode is active
+    (``JIRA_DC_BASE_URL`` or ``JIRA_DC_TOKEN`` set). Credentials are resolved
+    lazily when a reader is requested, so building the registry never requires
+    a grant or a network call.
     """
-    from application.errors import GitHubNotConnectedError
-    from composition.github.connection import (
-        AuthRetryingGitHubIssueReader,
-        require_github_grant,
+    from composition.test_design.github_source import build_github_test_design_source
+    from composition.test_design.sources import (
+        TestDesignSource,
+        TestDesignSourceRegistry,
     )
-    from composition.test_design.github_source import GitHubTestDesignSource
-    from composition.test_design.sources import TestDesignSourceRegistry
 
-    def oauth_preflight() -> str:
-        _tokens_store, connection = require_github_grant(
-            settings, connection_store=connection_store
-        )
-        token = connection.access_token
-        if not isinstance(token, str) or not token.strip():
-            raise GitHubNotConnectedError("GitHub is not connected")
-        return token.strip()
-
-    def live_source_reader_factory(access_token: str):
-        tokens_store, connection = require_github_grant(
-            settings, connection_store=connection_store
-        )
-        return AuthRetryingGitHubIssueReader(
-            settings=settings,
-            access_token=access_token,
-            tokens_store=tokens_store,
-            connection=connection,
+    sources: list[TestDesignSource] = [
+        build_github_test_design_source(
+            settings,
+            connection_store=connection_store,
             oauth_gateway=oauth_gateway,
             client_factory=client_factory,
         )
-
-    return TestDesignSourceRegistry(
-        (
-            GitHubTestDesignSource(
-                preflight=oauth_preflight,
-                reader_factory=live_source_reader_factory,
-            ),
+    ]
+    dc = settings.jira_data_center
+    if dc is not None:
+        from composition.test_design.jira_data_center_source import (
+            build_jira_data_center_test_design_source,
         )
-    )
+
+        sources.append(
+            build_jira_data_center_test_design_source(
+                jira_dc_settings_provider or (lambda: dc),
+                state_store=jira_dc_state_store,
+                client_factory=jira_dc_client_factory,
+            )
+        )
+    return TestDesignSourceRegistry(sources)
 
 
 def reindex_filter_metadata(settings: Settings) -> int:
@@ -800,7 +803,7 @@ def build_orchestrate_software_delivery(
     *,
     chat_model: ChatModel,
     invoke: OpaqueInvoke | None = None,
-) -> object:
+) -> "OrchestrateSoftwareDelivery":
     """Wire Software Delivery orchestration when the pack is enabled.
 
     Imports pack orchestration only for configured pack IDs so disabled packs
@@ -881,7 +884,7 @@ def build_tool_augmented_ask(
     base_url: str | None = None,
     short_term_memory: object | None = None,
     client_source_locator: object | None = None,
-    clarification_context_store: object | None = None,
+    clarification_context_store: ClarificationContextStore | None = None,
 ) -> GroundedAsk:
     """Wire grounded ask with TurnRouter, AskGeneral, and pack workflow signals.
 
@@ -977,6 +980,7 @@ def build_tool_augmented_ask(
     grounded_ask = None
     citation_channel = None
     defer_retrieval = False
+    pack_orchestrate: Orchestrate
     if settings.domain_tools.agent_loop:
         from application.ask_knowledge_with_agent import AskKnowledgeWithAgent
         from application.retrieval_citation_channel import RetrievalCitationChannel
@@ -1044,7 +1048,7 @@ def build_tool_augmented_ask(
         # Drive export stays retrieval-free: omit retrieve_tool here.
         # Pass retrieve_tool into build_agent_orchestrate only for evidence
         # multi-tool workflows that opt in.
-        orchestrate = build_agent_orchestrate(
+        pack_orchestrate = build_agent_orchestrate(
             tool_agent,
             drafts=drafts,
             destinations=destinations,
@@ -1084,14 +1088,16 @@ def build_tool_augmented_ask(
                     intent=intent,
                     target=target,
                     evidence=evidence_bundle_from_hits(hits),
-                    output_style=output_style,
+                    output_style=cast("TestCaseStyle", output_style),
                 )
             )
+
+        pack_orchestrate = orchestrate
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_relevant_retrieve(settings, vector_store=vector_store),
         invoke=build_opaque_invoke(settings, chat_model=model_calls),
-        orchestrate=orchestrate,
+        orchestrate=pack_orchestrate,
         model_calls=model_calls,
         allow_empty_evidence=settings.domain_tools.agent_loop,
         defer_retrieval=defer_retrieval,
@@ -1158,6 +1164,7 @@ def _software_delivery_agent_model_factory(
 
     def factory(**_kwargs: object):
         from langchain_openai import ChatOpenAI
+        from pydantic import SecretStr
 
         from domain.errors import ProviderError
 
@@ -1184,7 +1191,7 @@ def _software_delivery_agent_model_factory(
             try:
                 inner = ChatOpenAI(
                     model=config.model,
-                    api_key="ollama",
+                    api_key=SecretStr("ollama"),
                     base_url=f"{base}/v1",
                     timeout=config.timeout,
                 )
@@ -1195,10 +1202,15 @@ def _software_delivery_agent_model_factory(
             model_name = config.model
         else:
             config = _openrouter_runtime_config(settings, model=model)
+            if not config.api_key or not config.model:
+                # builder() already validated; keep a local guard for the checker.
+                raise MissingProviderCredentialsError(
+                    "Missing OPENROUTER_API_KEY or OPENROUTER_MODEL."
+                )
             try:
                 inner = ChatOpenAI(
                     model=config.model,
-                    api_key=config.api_key,
+                    api_key=SecretStr(config.api_key),
                     base_url=config.base_url,
                     timeout=config.timeout,
                 )

@@ -12,6 +12,7 @@ from application.errors import (
     SourceReauthorizationRequiredError,
 )
 from composition.mcp.test_design import McpTestDesignOperations
+from composition.test_design.facade import TestDesignFacade
 from domain.errors import (
     ToolArgumentValidationError,
     ToolEvidenceChangedError,
@@ -29,7 +30,9 @@ from test.composition.test_design.test_design_fakes import (
 )
 
 
-def _workflow(tmp_path: Path, **kwargs) -> tuple[McpTestDesignOperations, object]:
+def _workflow(
+    tmp_path: Path, **kwargs
+) -> tuple[McpTestDesignOperations, TestDesignFacade]:
     facade = build_fake_facade(tmp_path, **kwargs)
     return McpTestDesignOperations(facade), facade
 
@@ -191,6 +194,97 @@ def test_invalid_locator_maps_to_argument_validation(tmp_path: Path) -> None:
 
     with pytest.raises(ToolArgumentValidationError):
         workflow.start(issue_locator="not a locator")
+
+
+class _JiraIssueClient:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def get_issue(self, key: str, fields: object) -> dict[str, object]:
+        self.calls.append(key)
+        return {
+            "id": "10001",
+            "key": key,
+            "fields": {
+                "summary": "Login",
+                "description": "Acceptance criteria: login, lockout, password length.",
+                "updated": "2026-09-14T12:00:00.000+0000",
+            },
+        }
+
+
+def _github_and_jira(tmp_path: Path, client: _JiraIssueClient):  # noqa: ANN202
+    from composition.test_design.jira_data_center_source import (
+        JiraDataCenterTestDesignSource,
+    )
+    from composition.test_design.sources import TestDesignSourceRegistry
+    from infrastructure.config import JiraDataCenterSettings
+    from infrastructure.connectors.jira.data_center_state import (
+        JiraDataCenterStateStore,
+    )
+    from test.composition.test_design.test_design_fakes import github_sources
+
+    settings = JiraDataCenterSettings(
+        base_url="https://jira.example.com/jira",
+        token="dc-token",
+        state_path=tmp_path / "jira-dc-connection.json",
+    )
+    jira = JiraDataCenterTestDesignSource(
+        settings_provider=lambda: settings,
+        state_store=JiraDataCenterStateStore(settings.state_path),
+        client_factory=lambda _base_url, _token: client,
+    )
+    github = github_sources().resolve("github")
+    return TestDesignSourceRegistry((github, jira))
+
+
+@pytest.mark.parametrize(
+    "locator", ["ENG-7", "https://jira.example.com/jira/browse/ENG-7"]
+)
+def test_start_resolves_a_jira_issue_locator_through_the_registry(
+    tmp_path: Path, locator: str
+) -> None:
+    client = _JiraIssueClient()
+    workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
+
+    draft = workflow.start(issue_locator=locator)
+
+    assert client.calls == ["ENG-7"]
+    assert draft.ticket_identifier == "ENG-7"
+    assert draft.source_reference.source_type == "jira"
+    assert draft.source_reference.source_id == "issue:10001"
+
+
+def test_start_resolves_a_github_locator_when_jira_is_registered(
+    tmp_path: Path,
+) -> None:
+    client = _JiraIssueClient()
+    workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
+
+    draft = workflow.start(issue_locator=ISSUE_LOCATOR)
+
+    assert client.calls == []
+    assert draft.source_reference.source_type == "github"
+
+
+def test_start_with_locator_no_source_accepts_is_validation(tmp_path: Path) -> None:
+    client = _JiraIssueClient()
+    workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
+
+    with pytest.raises(ToolArgumentValidationError):
+        workflow.start(issue_locator="https://other.example.com/browse/ENG-7")
+    assert client.calls == []
+
+
+def test_start_args_describe_both_locator_families_without_provider() -> None:
+    from composition.mcp.test_design import TestDesignStartArgs
+
+    schema = TestDesignStartArgs.model_json_schema()
+
+    assert set(schema["properties"]) == {"issue_locator"}
+    description = schema["properties"]["issue_locator"]["description"]
+    assert "owner/repo#number" in description
+    assert "PROJ-123" in description
 
 
 def test_unknown_draft_maps_to_target_not_found(tmp_path: Path) -> None:

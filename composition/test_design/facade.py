@@ -6,7 +6,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from application.errors import InsufficientEvidenceError
 from composition.software_delivery.tools import software_delivery_tools_enabled
@@ -28,6 +28,12 @@ from infrastructure.workspace_store.errors import (
     VersionedStoreNotFoundError,
     VersionedStoreVersionConflictError,
 )
+
+if TYPE_CHECKING:
+    from application.contracts import AskRequest
+    from packs.software_delivery.test_design.models import (
+        GeneratedTestCase as PackGeneratedTestCase,
+    )
 
 DraftStatus = Literal["coverage_review", "ready", "case_editing"]
 CandidateOrigin = Literal["suggested", "manual"]
@@ -279,6 +285,12 @@ class TestDesignFacade:
         self._sources = sources
         self._repo = None
 
+    def resolve_source_locator(self, locator: str) -> SourceLocatorView:
+        """Pick the one registered source whose ``canonicalize`` accepts *locator*."""
+        self._require_enabled()
+        resolved = self._sources.resolve_locator(locator)
+        return SourceLocatorView(provider=resolved.provider, locator=resolved.locator)
+
     def create_draft(
         self, request: CreateTestDesignDraftRequest
     ) -> TestCoverageDraftView:
@@ -453,7 +465,7 @@ class TestDesignFacade:
                 raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
             existing_ids = {case.candidate_id for case in generated_cases}
             try:
-                patched_cases: list[object] = []
+                patched_cases: list[PackGeneratedTestCase] = []
                 incoming_by_id = {
                     item.candidate_id: item for item in request.generated_cases
                 }
