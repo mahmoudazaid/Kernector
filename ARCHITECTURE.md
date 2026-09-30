@@ -71,6 +71,12 @@ import `packs`; only composition activates an enabled pack.
 `composition/container.py` wires concrete infrastructure implementations into
 application services. Presentation is not the composition root.
 
+Connector and upload flows live beside it, one package per concern:
+`composition/github/`, `composition/google_drive/`, `composition/jira/`, and
+`composition/documents.py`. They reach shared factories (catalog, vector store,
+ingest) through `container` at call time, and `container` imports them only
+lazily, so the dependency points one way.
+
 ## Next.js / HTTP presentation migration
 
 See [ADR 0002](docs/adr/0002-nextjs-presentation-migration.md) for the full
@@ -182,13 +188,13 @@ incomplete listings must raise rather than return a short list. Jira sync
 reconciles `source_type=jira` rows under the selected `{cloudId}/` prefix and
 connector id the same way; a repeated `nextPageToken` or more than
 `JIRA_MAX_ISSUES` issues raises before any catalog write. Composition
-(`composition/jira.py`) owns Atlassian refresh-token rotation: it persists the
+(`composition/jira/cloud.py`) owns Atlassian refresh-token rotation: it persists the
 rotated access and refresh tokens together under the grant lock before
 retrying, and an `invalid_grant` refresh clears tokens and moves the
 connection to `reauthorization_required`. Deselecting a project, switching
 sites, and disconnecting purge the matching Jira rows. Atlassian has no public
 revoke endpoint, so disconnect is local only. In Data Center mode,
-`composition/jira.py` dispatches to `composition/jira_data_center.py`, which
+`composition/jira/cloud.py` dispatches to `composition/jira/data_center.py`, which
 keeps a token-free state file (`data/jira-dc-*.json`: instance identity,
 projects, connector id, last sync, `credentials_rejected`). A rejected token
 sets `credentials_rejected`; the next authenticated success clears it. The
@@ -345,20 +351,20 @@ source facts; the router must not choose ``general_answer`` when project cues
 are present.
 
 Composition injects ``WorkflowSignal`` probes
-(``composition/workflow_signals.py``) and builds Test Design handoff actions
+(``composition/chat/workflow_signals.py``) and builds Test Design handoff actions
 **after** a ready decision. HITL / tool authorization remain separate from
 intent routing. Domain/application never import LangGraph.
 
 #### Chat-time tool execution (#170 / #309)
 
-``ToolAugmentedAsk`` (``composition/tool_augmented_ask.py``) applies the
+``ToolAugmentedAsk`` (``composition/chat/tool_augmented_ask.py``) applies the
 task-prompt pre-rule, runs ``TurnRouter``, then dispatches. Drive
 ``tool_workflow`` runs through ``PackSoftwareDeliveryChat`` when the agent loop
 is on. Generation
 wins over risk-only for any residual scaffolding doubles in unit tests.
 
 A matched Drive turn runs through ``PackSoftwareDeliveryChat``
-(``composition/software_delivery_chat.py``): filter-less cross-source retrieval
+(``composition/software_delivery/chat.py``): filter-less cross-source retrieval
 with the relevance threshold applied in composition → ``require_evidence`` →
 evidence bundle → agent/orchestrate via the opaque tool boundary,
 wrapped in a ``ToolCallRecorder`` that keeps one ``InvokeToolResponse`` per
@@ -371,7 +377,7 @@ projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
 **Agent loop (#43), opt-in:** ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default
 **false**) swaps only the pack ``orchestrate`` callable for a LangGraph-backed
 ``ToolCallingAgent`` adapter (``infrastructure/agents/langgraph_tool_agent.py``)
-wired through ``composition/software_delivery_agent.py``. Intent selection,
+wired through ``composition/software_delivery/agent.py``. Intent selection,
 retrieve → recorder → ordered ``tool_outputs``, stop handling, and sanitized
 ``ToolRunFailedError`` stay on the #170 path. Domain and application must not
 import LangGraph; ``langgraph`` is an infrastructure I/O package. With chat
@@ -380,7 +386,7 @@ a real tool and matcher land. Keep the deterministic chain as the default until
 the agent path is proven.
 
 **Short-term thread memory (#213):** when the agent loop is on, composition owns
-a process-scoped ``InMemorySaver`` (``composition/short_term_memory.py``) keyed
+a process-scoped ``InMemorySaver`` (``composition/chat/short_term_memory.py``) keyed
 as ``{workspace_id}:{conversation_id}`` where ``workspace_id`` comes only from
 trusted server config (``DOCUMENT_CATALOG_WORKSPACE_ID``) and ``conversation_id``
 is the client thread id from #246. Checkpoints are **process-local** and are
@@ -748,14 +754,14 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Test Design (#338): `software_delivery.test_design_{start,get,confirm,generate}`
   live in the pack (stdlib + `domain` only) over `TestDesignWorkflow` and
   `TestDesignMcpBinding` Protocols. Composition
-  (`composition/mcp_test_design.py`) owns the pydantic argument/result schemas
+  (`composition/mcp/test_design.py`) owns the pydantic argument/result schemas
   and projection, adapts the existing `TestDesignFacade` bound to
   `DOCUMENT_CATALOG_WORKSPACE_ID` and the workspace GitHub grant, and
-  `composition/mcp_wiring.py` passes the binding only when `software-delivery`
+  `composition/mcp/wiring.py` passes the binding only when `software-delivery`
   is enabled. `presentation/mcp` stays Test-Design unaware.
 - Tool failures stay transport-neutral (`domain.errors` subclasses of
   `ToolFailureError`, e.g. `ToolTargetNotFoundError`). Only
-  `composition/mcp_tool_registry.py` maps exact types to the safe wire codes
+  `composition/mcp/tool_registry.py` maps exact types to the safe wire codes
   `not_found`, `version_conflict`, `evidence_changed`, `source_not_connected`,
   and `insufficient_evidence` with fixed messages; validation stays
   `validation_error` and anything else is `internal_error`.
@@ -763,8 +769,8 @@ the agents; Kernector supplies evidence and allowlisted tools.
   one release (#351); clients should match on `code`.
 - Test Design sources (#351): `TestDesignFacade` and the chat handoff are
   source-neutral and resolve providers through `TestDesignSourceRegistry`
-  (`composition/test_design_sources.py`). `container.build_test_design_sources`
-  registers `GitHubTestDesignSource` (`composition/test_design_github_source.py`),
+  (`composition/test_design/sources.py`). `container.build_test_design_sources`
+  registers `GitHubTestDesignSource` (`composition/test_design/github_source.py`),
   the only GitHub-aware Test Design code, which translates reader errors before
   they reach the facade. A blank/unknown provider is `validation_error`; a
   known `SourceType` with no registered source is unavailable. Drafts store an
@@ -772,6 +778,14 @@ the agents; Kernector supplies evidence and allowlisted tools.
   pre-v5 drafts derive it from the stored `source_type`. Missing credentials
   raise `SourceNotConnectedError` (`GitHubNotConnectedError` is a subclass, so
   HTTP still answers `github_not_connected` for GitHub).
+- Source contract (#352): every source must raise only neutral errors:
+  `SourceNotConnectedError` (no usable grant), `SourceReauthorizationRequiredError`
+  (grant rejected; `GitHubReauthorizationRequiredError` subclasses it, so HTTP
+  keeps `github_reauthorization_required`), `SourceItemNotFoundError` (HTTP
+  `connector_not_found`), `InsufficientEvidenceError`, and
+  `TestDesignValidationError`. `test/composition/test_design/source_contract/`
+  runs one offline suite per registered harness. A new provider needs only
+  a `SourceContractHarness` added to `CONTRACT_HARNESSES`.
 - Retired scaffolding tools (#285) are **not** revived for MCP.
 - Out of scope here: consuming remote MCP (#184), Admin UI profiles (#324),
   live provider tools (#326/#327), stdio, MCP resources, `kernector_ask`, OAuth.

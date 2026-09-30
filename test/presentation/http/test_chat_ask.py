@@ -376,7 +376,7 @@ def test_bad_history_role_returns_validation_422() -> None:
 
 
 def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
-    from composition.tool_runs import ToolCallView
+    from composition.tools.runs import ToolCallView
     from test.software_delivery_views import software_delivery_run_view
 
     secret = "OPAQUE-TOOL-PAYLOAD-SECRET-do-not-leak"

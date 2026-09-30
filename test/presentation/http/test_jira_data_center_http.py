@@ -15,7 +15,7 @@ from infrastructure.config import load_settings
 from infrastructure.connectors.jira import data_center
 from presentation.http import deps
 from presentation.http.app import create_app
-from test.composition.jira_fakes import dc_settings
+from test.composition.jira.jira_fakes import dc_settings
 from test.document_doubles import InMemoryDocumentCatalog
 from test.doubles import InMemoryVectorStore
 

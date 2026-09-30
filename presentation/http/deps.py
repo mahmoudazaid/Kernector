@@ -72,7 +72,7 @@ from composition import (
     start_jira_oauth,
     sync_jira_oauth,
 )
-from composition.test_design import SourceLocatorView
+from composition.test_design.facade import SourceLocatorView
 from domain.knowledge import (
     CatalogDocument,
     ChunkPage,
@@ -145,7 +145,7 @@ def get_short_term_memory_runtime() -> ShortTermMemoryRuntime:
 @lru_cache(maxsize=1)
 def get_clarification_context_store():
     """Process-cached clarification context for multi-turn workflow follow-ups."""
-    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.chat.clarification_context import InMemoryClarificationContextStore
 
     return InMemoryClarificationContextStore()
 

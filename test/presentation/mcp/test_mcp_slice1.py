@@ -9,13 +9,13 @@ import pytest
 from mcp import Client
 from starlette.testclient import TestClient
 
-from composition.mcp_access import (
+from composition.mcp.access import (
     FixedCallerContextResolver,
     MissingCallerContextError,
     McpCallerContext,
     RequestScopedCallerContextResolver,
 )
-from composition.mcp_tool_registry import McpToolRegistry
+from composition.mcp.tool_registry import McpToolRegistry
 from infrastructure.config import require_mcp_settings_from_env
 from presentation.mcp.app import BearerAuthMiddleware, build_mcp_server, create_mcp_app
 
@@ -113,7 +113,7 @@ async def test_protocol_client_lists_empty_when_allowlist_empty() -> None:
 
 def test_healthz_is_public(mcp_env: None) -> None:
     registry = McpToolRegistry(contributions=(), enabled_packs=())
-    from composition.mcp_settings import load_mcp_settings
+    from composition.mcp.settings import load_mcp_settings
     from mcp.server.transport_security import TransportSecuritySettings
     from starlette.routing import Route
     from presentation.mcp.app import _healthz
@@ -151,7 +151,7 @@ def test_mcp_requires_bearer(mcp_env: None) -> None:
         registry=registry,
         resolver=RequestScopedCallerContextResolver(),
     )
-    from composition.mcp_settings import load_mcp_settings
+    from composition.mcp.settings import load_mcp_settings
     from mcp.server.transport_security import TransportSecuritySettings
     from starlette.routing import Route
     from presentation.mcp.app import _healthz
@@ -180,7 +180,7 @@ def test_mcp_requires_bearer(mcp_env: None) -> None:
 @pytest.mark.anyio
 async def test_mcp_non_ascii_bearer_returns_401_not_500(mcp_env: None) -> None:
     """Non-ASCII Authorization must 401; str compare_digest would raise TypeError."""
-    from composition.mcp_settings import load_mcp_settings
+    from composition.mcp.settings import load_mcp_settings
     from mcp.server.transport_security import TransportSecuritySettings
     from starlette.routing import Route
     from presentation.mcp.app import _healthz
@@ -248,10 +248,10 @@ def test_authenticated_http_lists_search_knowledge_via_request_scoped_caller(
     import re
 
     from application.contracts import RetrieveRequest, RetrieveResponse
-    from composition.mcp_search_knowledge import TOOL_NAME as SEARCH_TOOL
-    from composition.mcp_search_knowledge import SearchKnowledgeTool
-    from composition.mcp_settings import load_mcp_settings
-    from composition.mcp_tool_registry import McpToolContribution
+    from composition.mcp.search_knowledge import TOOL_NAME as SEARCH_TOOL
+    from composition.mcp.search_knowledge import SearchKnowledgeTool
+    from composition.mcp.settings import load_mcp_settings
+    from composition.mcp.tool_registry import McpToolContribution
     from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 
     monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token-secret")

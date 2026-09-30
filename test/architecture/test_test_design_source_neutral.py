@@ -17,12 +17,12 @@ from test.architecture.import_scan import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TEST_DESIGN = REPO_ROOT / "composition" / "test_design.py"
-TEST_DESIGN_SOURCES = REPO_ROOT / "composition" / "test_design_sources.py"
+TEST_DESIGN = REPO_ROOT / "composition" / "test_design" / "facade.py"
+TEST_DESIGN_SOURCES = REPO_ROOT / "composition" / "test_design" / "sources.py"
 NEUTRAL_MODULES = (TEST_DESIGN, TEST_DESIGN_SOURCES)
 GITHUB_ADAPTER_MODULES = {
     "infrastructure.connectors.github",
-    "composition.test_design_github_source",
+    "composition.test_design.github_source",
 }
 
 
@@ -107,7 +107,7 @@ def test_test_design_pack_stays_independent_and_provider_literal_free() -> None:
 def test_planted_github_import_in_facade_module_is_detected(tmp_path: Path) -> None:
     planted = tmp_path / "planted.py"
     planted.write_text(
-        "from composition.test_design_github_source import GitHubTestDesignSource\n",
+        "from composition.test_design.github_source import GitHubTestDesignSource\n",
         encoding="utf-8",
     )
 

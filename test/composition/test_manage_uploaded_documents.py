@@ -14,6 +14,7 @@ from application.manage_documents import (
     UnknownDocumentError,
 )
 from composition import container as composition_container
+from composition import documents as composition_documents
 from composition.errors import (
     DocumentOperationError,
     DocumentUploadError,
@@ -160,18 +161,18 @@ def test_list_create_replace_delete_round_trip(
         lambda _settings: StubEmbeddingModel(),
     )
 
-    created = composition_container.create_uploaded_document(
+    created = composition_documents.create_uploaded_document(
         settings,
         UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
     )
     assert created.status is CatalogStatus.READY
     assert created.reference.source_type == SourceType.KNOWLEDGE_DOCUMENT
 
-    listed = composition_container.list_uploaded_documents(settings)
+    listed = composition_documents.list_uploaded_documents(settings)
     assert len(listed) == 1
     assert listed[0].reference == created.reference
 
-    replaced = composition_container.replace_uploaded_document(
+    replaced = composition_documents.replace_uploaded_document(
         settings,
         created.reference,
         UploadPayload(file_name="guide-v2.md", content=b"# Replacement text\n" * 20),
@@ -179,8 +180,8 @@ def test_list_create_replace_delete_round_trip(
     assert replaced.reference == created.reference
     assert replaced.file_name == "guide-v2.md"
 
-    composition_container.delete_uploaded_document(settings, created.reference)
-    assert composition_container.list_uploaded_documents(settings) == ()
+    composition_documents.delete_uploaded_document(settings, created.reference)
+    assert composition_documents.list_uploaded_documents(settings) == ()
 
 
 def test_oversize_create_passes_upload_too_large_through_to_mapper(
@@ -198,7 +199,7 @@ def test_oversize_create_passes_upload_too_large_through_to_mapper(
     payload = UploadPayload(file_name="big.md", content=b"x" * 17)
 
     with pytest.raises(UploadTooLargeError) as caught:
-        composition_container.create_uploaded_document(tight, payload)
+        composition_documents.create_uploaded_document(tight, payload)
 
     problem = problem_from_exception(caught.value)
     body = problem.model_dump_json()
@@ -219,14 +220,14 @@ def test_oversize_replace_passes_upload_too_large_through(
         "build_embedding_model",
         lambda _settings: StubEmbeddingModel(),
     )
-    created = composition_container.create_uploaded_document(
+    created = composition_documents.create_uploaded_document(
         settings,
         UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
     )
     tight = replace(settings, max_upload_bytes=16)
 
     with pytest.raises(UploadTooLargeError) as caught:
-        composition_container.replace_uploaded_document(
+        composition_documents.replace_uploaded_document(
             tight,
             created.reference,
             UploadPayload(file_name="big.md", content=b"x" * 17),
@@ -250,7 +251,7 @@ def test_replace_unknown_becomes_document_operation_error(
     )
     missing = SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT)
     with pytest.raises(DocumentOperationError) as raised:
-        composition_container.replace_uploaded_document(
+        composition_documents.replace_uploaded_document(
             settings,
             missing,
             UploadPayload(file_name="x.md", content=b"# x\n"),
@@ -286,7 +287,7 @@ def test_replace_google_drive_row_is_unknown(
         )
     )
     with pytest.raises(DocumentOperationError) as raised:
-        composition_container.replace_uploaded_document(
+        composition_documents.replace_uploaded_document(
             settings,
             SourceReference("drive-1", SourceType.KNOWLEDGE_DOCUMENT),
             UploadPayload(file_name="x.md", content=b"# x\n" * 20),
@@ -305,7 +306,7 @@ def test_create_extraction_failure_becomes_document_upload_error(
         lambda _settings: StubEmbeddingModel(),
     )
     with pytest.raises(DocumentUploadError):
-        composition_container.create_uploaded_document(
+        composition_documents.create_uploaded_document(
             settings,
             UploadPayload(file_name="notes.docx", content=b"x"),
         )
@@ -340,7 +341,7 @@ def test_create_dimension_mismatch_keeps_the_actionable_guidance(
     )
 
     with pytest.raises(DocumentUploadError, match="embedding size") as raised:
-        composition_container.create_uploaded_document(
+        composition_documents.create_uploaded_document(
             settings,
             UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
         )
@@ -383,7 +384,7 @@ def test_create_recovery_write_failure_maps_to_partial_operation_error(
     )
 
     with pytest.raises(PartialDocumentOperationError) as raised:
-        composition_container.create_uploaded_document(
+        composition_documents.create_uploaded_document(
             settings,
             UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
         )
@@ -457,7 +458,7 @@ def test_create_partial_failure_is_translated_without_internal_detail(
     with caplog.at_level("ERROR"), pytest.raises(
         PartialDocumentOperationError
     ) as raised:
-        composition_container.create_uploaded_document(
+        composition_documents.create_uploaded_document(
             settings,
             UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
         )
@@ -481,7 +482,7 @@ def test_create_partial_failure_log_holds_no_sensitive_values(
     )
 
     with caplog.at_level("ERROR"), pytest.raises(PartialDocumentOperationError):
-        composition_container.create_uploaded_document(
+        composition_documents.create_uploaded_document(
             settings,
             UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
         )
@@ -508,13 +509,13 @@ def test_create_partial_failure_logs_safe_diagnostic_fields(
     _partial_create_scenario(monkeypatch, vector_mutation_started=mutation_started)
 
     with caplog.at_level("ERROR"), pytest.raises(PartialDocumentOperationError):
-        composition_container.create_uploaded_document(
+        composition_documents.create_uploaded_document(
             settings,
             UploadPayload(file_name="guide.md", content=b"# Hello world\n" * 20),
         )
 
     records = [
-        record for record in caplog.records if record.name == "composition.container"
+        record for record in caplog.records if record.name == "composition.documents"
     ]
     assert len(records) == 1
     assert records[0].getMessage() == (
@@ -535,7 +536,7 @@ def test_list_and_delete_need_no_embedding_credentials(
         "build_embedding_model",
         lambda _settings: StubEmbeddingModel(),
     )
-    created = composition_container.create_uploaded_document(
+    created = composition_documents.create_uploaded_document(
         settings,
         UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
     )
@@ -547,11 +548,11 @@ def test_list_and_delete_need_no_embedding_credentials(
         composition_container, "build_embedding_model", _no_embeddings
     )
 
-    listed = composition_container.list_uploaded_documents(settings)
+    listed = composition_documents.list_uploaded_documents(settings)
     assert [row.reference for row in listed] == [created.reference]
 
-    composition_container.delete_uploaded_document(settings, created.reference)
-    assert composition_container.list_uploaded_documents(settings) == ()
+    composition_documents.delete_uploaded_document(settings, created.reference)
+    assert composition_documents.list_uploaded_documents(settings) == ()
 
 
 def test_partial_delete_is_translated(
@@ -564,7 +565,7 @@ def test_partial_delete_is_translated(
         "build_embedding_model",
         lambda _settings: StubEmbeddingModel(),
     )
-    created = composition_container.create_uploaded_document(
+    created = composition_documents.create_uploaded_document(
         settings,
         UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
     )
@@ -588,7 +589,7 @@ def test_partial_delete_is_translated(
         lambda _settings: ExplodingCatalog(),
     )
     with pytest.raises(PartialDocumentOperationError) as raised:
-        composition_container.delete_uploaded_document(settings, created.reference)
+        composition_documents.delete_uploaded_document(settings, created.reference)
     assert isinstance(raised.value.__cause__, PartialDeleteFailure)
 
 def test_get_uploaded_document_content_refuses_missing_blob_sentinel(
@@ -636,7 +637,7 @@ def test_get_uploaded_document_content_refuses_missing_blob_sentinel(
     )
 
     with pytest.raises(MissingUploadContentError):
-        composition_container.get_uploaded_document_content(settings, "src-1")
+        composition_documents.get_uploaded_document_content(settings, "src-1")
 
 
 def test_get_uploaded_document_content_refuses_pending_rows(
@@ -683,7 +684,7 @@ def test_get_uploaded_document_content_refuses_pending_rows(
     )
 
     with pytest.raises(MissingUploadContentError):
-        composition_container.get_uploaded_document_content(
+        composition_documents.get_uploaded_document_content(
             settings, "src-pending"
         )
 
@@ -699,7 +700,7 @@ def test_list_uploaded_document_chunks_unknown_is_unknown_uploaded(
         lambda _settings: InMemoryVectorStore(),
     )
     with pytest.raises(UnknownUploadedDocumentError) as raised:
-        composition_container.list_uploaded_document_chunks(
+        composition_documents.list_uploaded_document_chunks(
             settings,
             SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
         )
@@ -736,7 +737,7 @@ def test_list_uploaded_document_chunks_known_empty(
         )
     )
 
-    chunks = composition_container.list_uploaded_document_chunks(
+    chunks = composition_documents.list_uploaded_document_chunks(
         settings, reference, catalog=catalog, vector_store=store
     )
 
@@ -758,7 +759,7 @@ def test_list_uploaded_document_chunks_defers_lazy_store_for_unknown(
     monkeypatch.setattr(composition_container, "build_vector_store", boom)
 
     with pytest.raises(UnknownUploadedDocumentError):
-        composition_container.list_uploaded_document_chunks(
+        composition_documents.list_uploaded_document_chunks(
             settings,
             SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT),
         )
@@ -799,7 +800,7 @@ def test_list_uploaded_document_chunks_uses_passed_vector_store(
 
     monkeypatch.setattr(composition_container, "build_vector_store", boom)
 
-    chunks = composition_container.list_uploaded_document_chunks(
+    chunks = composition_documents.list_uploaded_document_chunks(
         settings,
         reference,
         catalog=catalog,

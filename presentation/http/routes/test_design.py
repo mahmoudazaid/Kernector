@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from composition.test_design import (
+from composition.test_design.facade import (
     CreateTestDesignDraftRequest as CreateDraftFacadeRequest,
     GenerateTestDesignCasesRequest as GenerateCasesFacadeRequest,
     GeneratedTestCaseView,

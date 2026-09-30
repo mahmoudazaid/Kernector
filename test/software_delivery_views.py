@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from composition.software_delivery_tools import (
+from composition.software_delivery.tools import (
     RiskFactorView,
     RiskScoreView,
     SoftwareDeliveryRunView,
     TestCaseView,
     TestCasesView,
 )
-from composition.tool_runs import ToolCallView
+from composition.tools.runs import ToolCallView
 from domain.knowledge import SourceReference
 
 

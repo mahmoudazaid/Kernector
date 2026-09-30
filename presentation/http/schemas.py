@@ -14,7 +14,7 @@ from application.contracts import (
     InvokeToolResponse,
     RunMeta,
 )
-from composition.software_delivery_tools import SoftwareDeliveryRunView
+from composition.software_delivery.tools import SoftwareDeliveryRunView
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,

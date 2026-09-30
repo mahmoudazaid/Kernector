@@ -7,7 +7,7 @@ from fastapi import APIRouter, Response, status
 from application.contracts import AskRequest
 from application.decide_tool_approval import DecideToolApprovalRequest
 from application.response_style_policy import ResponseStyle
-from composition.test_design import (
+from composition.test_design.facade import (
     SourceLocatorView,
 )
 from domain.models import Message
@@ -143,8 +143,8 @@ def _tool_run_view_from_approval_result(raw: str):
     """Best-effort Drive receipt projection from a resumed tool JSON string."""
     import json
 
-    from composition.software_delivery_tools import SoftwareDeliveryRunView
-    from composition.tool_runs import ToolCallView
+    from composition.software_delivery.tools import SoftwareDeliveryRunView
+    from composition.tools.runs import ToolCallView
 
     try:
         payload = json.loads(raw)

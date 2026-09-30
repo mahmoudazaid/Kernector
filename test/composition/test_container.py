@@ -486,7 +486,7 @@ def test_build_tool_augmented_ask_adds_tool_selection_when_the_pack_is_enabled(
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
 
-    from composition.correlated_ask import CorrelatedAsk
+    from composition.chat.correlated_ask import CorrelatedAsk
 
     assert isinstance(ask, CorrelatedAsk)
     assert isinstance(ask._ask, ToolAugmentedAsk)
@@ -687,7 +687,7 @@ def test_agent_loop_enabled_former_tool_query_stays_on_rag_without_credentials(
             return AgentTurnResult(content="stubbed", steps=2)
 
     monkeypatch.setattr(
-        "composition.short_term_memory.ShortTermMemoryRuntime.bind_tool_agent",
+        "composition.chat.short_term_memory.ShortTermMemoryRuntime.bind_tool_agent",
         lambda self, **_kwargs: _RetrieveThenAnswer(),
     )
 
@@ -736,7 +736,7 @@ def test_agent_loop_enabled_does_not_invoke_retired_tools_for_former_matches(
             return AgentTurnResult(content="stubbed", steps=2)
 
     monkeypatch.setattr(
-        "composition.short_term_memory.ShortTermMemoryRuntime.bind_tool_agent",
+        "composition.chat.short_term_memory.ShortTermMemoryRuntime.bind_tool_agent",
         lambda self, **_kwargs: _RetrieveThenAnswer(),
     )
 
@@ -785,7 +785,7 @@ def test_build_tool_augmented_ask_is_plain_grounded_ask_without_a_pack(
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
 
-    from composition.correlated_ask import CorrelatedAsk
+    from composition.chat.correlated_ask import CorrelatedAsk
 
     assert isinstance(ask, CorrelatedAsk)
     assert isinstance(ask._ask, ToolAugmentedAsk)

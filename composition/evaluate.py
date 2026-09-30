@@ -54,9 +54,9 @@ from composition.container import (
     build_vector_store,
     load_runtime_settings,
 )
-from composition.correlated_ask import CorrelatedAsk
+from composition.chat.correlated_ask import CorrelatedAsk
 from composition.errors import KnowledgeLoadError
-from composition.tool_augmented_ask import ToolAugmentedAsk
+from composition.chat.tool_augmented_ask import ToolAugmentedAsk
 from domain.errors import DomainValidationError, ProviderError, VectorStoreError
 from domain.knowledge import EmbeddedChunk, SourceDocument
 from domain.models import PromptVariant

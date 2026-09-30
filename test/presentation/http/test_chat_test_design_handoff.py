@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 
 from application.contracts import AskRequest, AskResponse
 from composition.container import build_test_design_sources
-from composition.test_design import build_test_design_handoff_from_request
-from composition.tool_augmented_ask import ToolAugmentedAsk
-from composition.workflow_signals import (
+from composition.test_design.facade import build_test_design_handoff_from_request
+from composition.chat.tool_augmented_ask import ToolAugmentedAsk
+from composition.chat.workflow_signals import (
     TEST_DESIGN_CLARIFY_ANSWER,
     build_drive_export_workflow_signal,
     build_test_design_workflow_signal,
@@ -385,7 +385,7 @@ def test_bare_issue_number_command_clarifies_not_rag() -> None:
 
 
 def test_follow_up_locator_after_clarify_starts_test_design() -> None:
-    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.chat.clarification_context import InMemoryClarificationContextStore
 
     ask = _RecordingAsk()
     store = InMemoryClarificationContextStore()
@@ -432,7 +432,7 @@ def test_follow_up_locator_after_clarify_starts_test_design() -> None:
 
 
 def test_follow_up_bare_number_after_clarify_stays_clarification() -> None:
-    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.chat.clarification_context import InMemoryClarificationContextStore
 
     ask = _RecordingAsk()
     store = InMemoryClarificationContextStore()
@@ -470,7 +470,7 @@ def test_follow_up_bare_number_after_clarify_stays_clarification() -> None:
 
 
 def test_pivot_after_clarify_clears_context_and_uses_rag() -> None:
-    from composition.clarification_context import InMemoryClarificationContextStore
+    from composition.chat.clarification_context import InMemoryClarificationContextStore
 
     ask = _RecordingAsk()
     store = InMemoryClarificationContextStore()
@@ -520,8 +520,8 @@ def test_pivot_after_clarify_clears_context_and_uses_rag() -> None:
 
 
 def test_drive_export_yes_follow_up_never_falls_to_rag() -> None:
-    from composition.clarification_context import InMemoryClarificationContextStore
-    from composition.workflow_signals import DRIVE_MISSING_PAYLOAD_CLARIFY_ANSWER
+    from composition.chat.clarification_context import InMemoryClarificationContextStore
+    from composition.chat.workflow_signals import DRIVE_MISSING_PAYLOAD_CLARIFY_ANSWER
 
     ask = _RecordingAsk()
     store = InMemoryClarificationContextStore()
@@ -572,8 +572,8 @@ def test_drive_export_yes_follow_up_never_falls_to_rag() -> None:
 
 
 def test_drive_export_yes_follow_up_runs_tools_when_draft_ready() -> None:
-    from composition.clarification_context import InMemoryClarificationContextStore
-    from composition.tool_augmented_ask import ToolRunOutcome
+    from composition.chat.clarification_context import InMemoryClarificationContextStore
+    from composition.chat.tool_augmented_ask import ToolRunOutcome
 
     class _RecordingRunner:
         def __init__(self) -> None:

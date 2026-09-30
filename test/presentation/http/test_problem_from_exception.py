@@ -7,6 +7,7 @@ from application.errors import (
     ApplicationValidationError,
     ConfigurationError,
     GitHubNotConnectedError,
+    GitHubReauthorizationRequiredError,
     GoogleDriveNotConfiguredError,
     GoogleDriveNotConnectedError,
     GoogleDriveOAuthNotConfiguredError,
@@ -22,7 +23,9 @@ from application.errors import (
     JiraSetupRequiredError,
     JiraSiteSelectionRequiredError,
     MissingProviderCredentialsError,
+    SourceItemNotFoundError,
     SourceNotConnectedError,
+    SourceReauthorizationRequiredError,
     UploadTooLargeError,
 )
 from application.input_safety import UNSAFE_QUERY_MESSAGE
@@ -39,7 +42,7 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
-from composition.software_delivery_chat import ToolRunFailedError
+from composition.software_delivery.chat import ToolRunFailedError
 from domain.errors import (
     DomainValidationError,
     ProviderAuthError,
@@ -113,6 +116,17 @@ from presentation.http.errors import (
         (GitHubConnectorError("vendor body"), 502, "github_request_failed"),
         (GitHubNotConnectedError("no grant"), 409, "github_not_connected"),
         (SourceNotConnectedError("no grant"), 409, "source_not_connected"),
+        (
+            GitHubReauthorizationRequiredError("revoked"),
+            409,
+            "github_reauthorization_required",
+        ),
+        (
+            SourceReauthorizationRequiredError("rejected"),
+            409,
+            "source_reauthorization_required",
+        ),
+        (SourceItemNotFoundError("missing"), 404, "connector_not_found"),
         (JiraNotConnectedError("no grant"), 409, "jira_not_connected"),
         (
             JiraSiteSelectionRequiredError("no site"),
