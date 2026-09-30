@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from application.errors import GitHubNotConnectedError, InsufficientEvidenceError
+from application.errors import (
+    GitHubNotConnectedError,
+    InsufficientEvidenceError,
+    SourceItemNotFoundError,
+)
 from composition.test_design.errors import TestDesignValidationError
 from composition.test_design.sources import AmbiguousSourceLocatorError
+from domain.errors import ConnectorNotFoundError
 from domain.knowledge import SourceDocument, SourceLocator
 from domain.ports import LiveSourceReader
 from infrastructure.connectors.github.issue_locator import (
@@ -23,6 +28,7 @@ from infrastructure.connectors.github.issue_source_reader import (
 
 _INVALID_REQUEST = "The test-design request was invalid."
 _NO_EVIDENCE = "No usable grounded evidence for test coverage planning."
+_NOT_FOUND = "The GitHub Issue was not found."
 
 
 class GitHubTestDesignSource:
@@ -72,5 +78,7 @@ class _TranslatingIssueReader:
             return self._inner.fetch(locator)
         except GitHubIssueEmptyBodyError as error:
             raise InsufficientEvidenceError(_NO_EVIDENCE) from error
+        except ConnectorNotFoundError as error:
+            raise SourceItemNotFoundError(_NOT_FOUND) from error
         except (GitHubIssueNotIssueError, GitHubIssueLocatorMismatchError) as error:
             raise TestDesignValidationError(_INVALID_REQUEST) from error

@@ -16,9 +16,9 @@ from typing import Annotated, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from application.errors import (
-    GitHubReauthorizationRequiredError,
     InsufficientEvidenceError,
     SourceNotConnectedError,
+    SourceReauthorizationRequiredError,
 )
 from composition.test_design.facade import (
     CreateTestDesignDraftRequest,
@@ -255,7 +255,7 @@ _ERROR_MAP: tuple[tuple[type[BaseException], type[Exception]], ...] = (
     (TestDesignVersionConflictError, ToolVersionConflictError),
     (TestDesignEvidenceChangedError, ToolEvidenceChangedError),
     (SourceNotConnectedError, ToolSourceNotConnectedError),
-    (GitHubReauthorizationRequiredError, ToolSourceNotConnectedError),
+    (SourceReauthorizationRequiredError, ToolSourceNotConnectedError),
     (InsufficientEvidenceError, ToolInsufficientEvidenceError),
     (TestDesignUnavailableError, ToolUnavailableError),
     (TestDesignValidationError, ToolArgumentValidationError),

@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from application.errors import GitHubNotConnectedError, GitHubReauthorizationRequiredError
+from application.errors import (
+    GitHubNotConnectedError,
+    GitHubReauthorizationRequiredError,
+    SourceReauthorizationRequiredError,
+)
 from composition.mcp.test_design import McpTestDesignOperations
 from domain.errors import (
     ToolArgumentValidationError,
@@ -154,9 +158,10 @@ def test_confirm_evidence_changed_keeps_saved_selection(tmp_path: Path) -> None:
     [
         GitHubNotConnectedError("GitHub is not connected"),
         GitHubReauthorizationRequiredError("token revoked"),
+        SourceReauthorizationRequiredError("grant rejected"),
     ],
 )
-def test_github_grant_errors_map_to_source_not_connected(
+def test_source_grant_errors_map_to_source_not_connected(
     tmp_path: Path, error: Exception
 ) -> None:
     def _preflight() -> str:

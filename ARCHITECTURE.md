@@ -778,6 +778,14 @@ the agents; Kernector supplies evidence and allowlisted tools.
   pre-v5 drafts derive it from the stored `source_type`. Missing credentials
   raise `SourceNotConnectedError` (`GitHubNotConnectedError` is a subclass, so
   HTTP still answers `github_not_connected` for GitHub).
+- Source contract (#352): every source must raise only neutral errors:
+  `SourceNotConnectedError` (no usable grant), `SourceReauthorizationRequiredError`
+  (grant rejected; `GitHubReauthorizationRequiredError` subclasses it, so HTTP
+  keeps `github_reauthorization_required`), `SourceItemNotFoundError` (HTTP
+  `connector_not_found`), `InsufficientEvidenceError`, and
+  `TestDesignValidationError`. `test/composition/test_design/source_contract/`
+  runs one offline suite per registered harness. A new provider needs only
+  a `SourceContractHarness` added to `CONTRACT_HARNESSES`.
 - Retired scaffolding tools (#285) are **not** revived for MCP.
 - Out of scope here: consuming remote MCP (#184), Admin UI profiles (#324),
   live provider tools (#326/#327), stdio, MCP resources, `kernector_ask`, OAuth.
