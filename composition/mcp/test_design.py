@@ -69,7 +69,7 @@ class _StrictArgs(BaseModel):
 
 
 class TestDesignStartArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_start``."""
+    """Arguments for ``software_delivery_test_design_start``."""
 
     __test__ = False
 
@@ -87,7 +87,7 @@ class TestDesignStartArgs(_StrictArgs):
 
 
 class TestDesignGetArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_get``."""
+    """Arguments for ``software_delivery_test_design_get``."""
 
     __test__ = False
 
@@ -95,7 +95,7 @@ class TestDesignGetArgs(_StrictArgs):
 
 
 class TestDesignConfirmArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_confirm``."""
+    """Arguments for ``software_delivery_test_design_confirm``."""
 
     __test__ = False
 
@@ -118,7 +118,7 @@ class TestTypeOverrideArg(_StrictArgs):
 
 
 class TestDesignGenerateArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_generate`` (#300 contract)."""
+    """Arguments for ``software_delivery_test_design_generate`` (#300 contract)."""
 
     __test__ = False
 

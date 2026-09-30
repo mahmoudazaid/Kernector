@@ -15,6 +15,7 @@ from composition.mcp.tool_registry import (
     TOOL_UNAVAILABLE_CODE,
     McpToolContribution,
     McpToolRegistry,
+    mcp_tool_name,
 )
 from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 from presentation.mcp.app import build_mcp_server
@@ -60,12 +61,12 @@ async def test_search_knowledge_e2e_via_protocol_client() -> None:
     async with Client(server, raise_exceptions=True) as client:
         listed = await client.list_tools()
         names = [tool.name for tool in listed.tools]
-        assert names == [SEARCH_TOOL]
+        assert names == ["core_search_knowledge"]
         tool = listed.tools[0]
         assert "evidence" in (tool.description or "").lower()
         assert tool.input_schema is not None
         result = await client.call_tool(
-            SEARCH_TOOL, {"query": "restart service", "retrieval_limit": 3}
+            tool.name, {"query": "restart service", "retrieval_limit": 3}
         )
         assert result.is_error is False
         payload = json.loads(result.content[0].text)
@@ -92,11 +93,12 @@ async def test_identical_tool_unavailable_matrix() -> None:
     )
     async with Client(server, raise_exceptions=True) as client:
         listed = await client.list_tools()
-        assert [t.name for t in listed.tools] == [SEARCH_TOOL]
+        assert [t.name for t in listed.tools] == [mcp_tool_name(SEARCH_TOOL)]
         results = []
         for name in (
             "nope.tool",
             "software_delivery.risk_score",
+            "software_delivery_risk_score",
             "software_delivery.generate_test_cases",
             "software_delivery.export_test_cases_markdown",
             "software_delivery.export_test_cases_google_drive",
@@ -152,14 +154,16 @@ async def test_test_design_workflow_e2e_via_protocol_client(
     )
     async with Client(server, raise_exceptions=True) as client:
         listed = await client.list_tools()
-        assert {tool.name for tool in listed.tools} == _TEST_DESIGN_TOOLS
+        assert {tool.name for tool in listed.tools} == {
+            mcp_tool_name(tool_id) for tool_id in _TEST_DESIGN_TOOLS
+        }
         for tool in listed.tools:
             assert "workspace_id" not in json.dumps(tool.input_schema)
             assert "workspace_id" not in json.dumps(tool.output_schema)
 
         started = await _call(
             client,
-            "software_delivery.test_design_start",
+            "software_delivery_test_design_start",
             {"issue_locator": ISSUE_LOCATOR},
         )
         assert started["status"] == "coverage_review"
@@ -169,14 +173,14 @@ async def test_test_design_workflow_e2e_via_protocol_client(
         draft_id = started["draft_id"]
 
         fetched = await _call(
-            client, "software_delivery.test_design_get", {"draft_id": draft_id}
+            client, "software_delivery_test_design_get", {"draft_id": draft_id}
         )
         assert fetched["version"] == 1
         assert fetched["candidates"] == started["candidates"]
 
         confirmed = await _call(
             client,
-            "software_delivery.test_design_confirm",
+            "software_delivery_test_design_confirm",
             {
                 "draft_id": draft_id,
                 "expected_version": 1,
@@ -189,7 +193,7 @@ async def test_test_design_workflow_e2e_via_protocol_client(
 
         generated = await _call(
             client,
-            "software_delivery.test_design_generate",
+            "software_delivery_test_design_generate",
             {
                 "draft_id": draft_id,
                 "expected_version": 3,
@@ -275,7 +279,7 @@ async def test_test_design_gate_not_allowlisted(tmp_path, monkeypatch) -> None:
     names, text = await _deny_payload(
         build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
     )
-    assert names == [SEARCH_TOOL]
+    assert names == [mcp_tool_name(SEARCH_TOOL)]
     assert json.loads(text)["code"] == TOOL_UNAVAILABLE_CODE
 
 

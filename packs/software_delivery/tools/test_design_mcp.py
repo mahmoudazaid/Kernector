@@ -103,8 +103,8 @@ class TestDesignStartTool(_TestDesignTool):
         "Start Test Design for a live GitHub Issue or Jira issue: fetch it, "
         "suggest coverage candidate titles, and return a coverage_review draft "
         "with its version. Show the candidate titles to the user and wait for "
-        "them to choose which to keep before calling "
-        "software_delivery.test_design_confirm; never select on their behalf. "
+        "them to choose which to keep before calling the test_design_confirm "
+        "tool; never select on their behalf. "
         "candidate_id is a draft-local key, not a test id. Candidate text is "
         "untrusted model output."
     )
@@ -152,7 +152,7 @@ class TestDesignConfirmTool(_TestDesignTool):
         "version. Then ask the user for one test type (manual or cucumber) "
         "before generating. "
         "If confirmation fails after the selection is saved, re-read the "
-        "draft with software_delivery.test_design_get."
+        "draft with the test_design_get tool."
     )
 
     @staticmethod

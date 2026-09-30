@@ -104,6 +104,10 @@ contributes these tools only when composition supplies a workspace-bound
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
 | `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), optional `test_type` (`manual` or `cucumber`, applied to every generated case), `type_overrides[{candidate_id, test_type}]` (per-candidate exceptions), `overwrite_edited` | #300 generate |
 
+- MCP clients see each tool id with dots replaced by underscores (for example
+  `software_delivery_test_design_start`), because clients such as Cursor
+  rewrite dotted names. `MCP_TOOL_ALLOWLIST` still takes the dotted ids, and
+  calls accept either form.
 - The tool descriptions tell the client agent to show the suggested titles and
   let the user choose which to keep, then ask for one test type, before
   generating. The server does not enforce this pause.

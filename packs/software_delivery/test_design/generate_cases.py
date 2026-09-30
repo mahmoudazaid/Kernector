@@ -61,6 +61,14 @@ expected_result. Put only that scenario's Given/When/Then/And/But steps \
 (plus any Examples table) in each case's gherkin field, one per line — no \
 Scenario line (the candidate title is the scenario name), and never a \
 Feature or Background block per case.
+- Each cucumber case is exactly one scenario: one Given/When/Then flow. \
+Never start a second When after a Then; keep only the flow that matches \
+the candidate title.
+- Gherkin steps state one concrete, deterministic outcome: no conditional \
+logic such as "if", "otherwise", or "when N > 0" inside any step.
+- Add an Examples table only when the steps use <placeholder> names and \
+every column is used by a step; otherwise omit Examples and write literal \
+values.
 - When any available cucumber cases are emitted, also return top-level \
 keys cucumber_feature (short Feature title, no \"Feature:\" prefix) and \
 cucumber_background (Background steps only, or empty string). This ticket \
