@@ -103,7 +103,7 @@ def test_decide_approval_not_found_is_problem_details() -> None:
 
 def test_chat_ask_projects_pending_approval_from_tool_view() -> None:
     from application.contracts import AskResponse
-    from composition.software_delivery_tools import SoftwareDeliveryRunView
+    from composition.software_delivery.tools import SoftwareDeliveryRunView
     from presentation.http.deps import get_ask_factory
 
     pending = PendingToolApproval(

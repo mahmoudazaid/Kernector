@@ -8,6 +8,7 @@ import pytest
 
 from composition import DocumentUploadError, ingest_uploaded_document
 from composition import container as composition_container
+from composition import documents as composition_documents
 from application.contracts import IngestRequest, IngestResponse
 from application.ingest_knowledge import IngestFailure
 from domain.errors import DomainValidationError
@@ -98,7 +99,7 @@ def test_extraction_failures_become_document_upload_error(
         raise AssertionError("build_ingest_knowledge must not run on extraction failure")
 
     monkeypatch.setattr(
-        composition_container, "extract_document", lambda *_a, **_k: (_ for _ in ()).throw(error)
+        composition_documents, "extract_document", lambda *_a, **_k: (_ for _ in ()).throw(error)
     )
     monkeypatch.setattr(
         composition_container, "build_ingest_knowledge", _should_not_build
@@ -133,7 +134,7 @@ def test_ingest_uploaded_document_executes_ingest_with_extracted_document(
     recorder = _RecordingIngest(expected)
 
     monkeypatch.setattr(
-        composition_container,
+        composition_documents,
         "extract_document",
         lambda _path, *, source_id: document,
     )
@@ -185,7 +186,7 @@ def test_chroma_dimension_mismatch_becomes_document_upload_error(
             )
 
     monkeypatch.setattr(
-        composition_container,
+        composition_documents,
         "extract_document",
         lambda _path, *, source_id: document,
     )

@@ -112,6 +112,10 @@ class SourceNotConnectedError(ConfigurationError):
     """A live source has no usable authorization grant."""
 
 
+class SourceReauthorizationRequiredError(ConfigurationError):
+    """A live source grant exists but the provider rejected it; reconnect."""
+
+
 class GitHubNotConnectedError(SourceNotConnectedError):
     """No user OAuth grant is stored for GitHub."""
 
@@ -120,7 +124,7 @@ class GitHubSelectionRequiredError(ConfigurationError):
     """A user grant exists but no repository (and optional project) is saved."""
 
 
-class GitHubReauthorizationRequiredError(ConfigurationError):
+class GitHubReauthorizationRequiredError(SourceReauthorizationRequiredError):
     """The stored GitHub token was revoked or is no longer valid."""
 
 
@@ -150,6 +154,10 @@ class JiraSetupRequiredError(ConfigurationError):
 
 class JiraDataCenterModeError(ConfigurationError):
     """A Jira Cloud-only operation (OAuth, site selection) was called in Data Center mode."""
+
+
+class SourceItemNotFoundError(RuntimeError):
+    """A live source has no item at the requested locator (or hides it from the grant)."""
 
 
 class InsufficientEvidenceError(RuntimeError):

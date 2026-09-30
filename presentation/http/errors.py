@@ -26,7 +26,9 @@ from application.errors import (
     JiraSiteSelectionRequiredError,
     MissingProviderCredentialsError,
     OllamaNotConfiguredError,
+    SourceItemNotFoundError,
     SourceNotConnectedError,
+    SourceReauthorizationRequiredError,
     ToolApprovalConflictError,
     ToolApprovalNotFoundError,
     UploadTooLargeError,
@@ -50,8 +52,8 @@ from composition.errors import (
     UnknownUploadedDocumentError,
     UnsupportedPreviewFormatError,
 )
-from composition.software_delivery_chat import ToolRunFailedError
-from composition.test_design_errors import (
+from composition.software_delivery.chat import ToolRunFailedError
+from composition.test_design.errors import (
     TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,
@@ -586,6 +588,15 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
+    if isinstance(exc, SourceReauthorizationRequiredError):
+        return _problem(
+            code="source_reauthorization_required",
+            title="Source reauthorization required",
+            status=409,
+            detail="The source authorization was rejected. Connect again.",
+            instance=instance,
+            request_id=request_id,
+        )
     if isinstance(exc, JiraConnectorError):
         return _problem(
             code="jira_request_failed",
@@ -625,7 +636,7 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
-    if isinstance(exc, ConnectorNotFoundError):
+    if isinstance(exc, (ConnectorNotFoundError, SourceItemNotFoundError)):
         return _problem(
             code="connector_not_found",
             title="Connector resource not found",

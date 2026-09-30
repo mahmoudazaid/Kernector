@@ -508,8 +508,8 @@ def test_ask_response_accepts_opaque_invoke_tool_response_entries() -> None:
 
 
 def test_ask_response_rejects_presentation_view_types_in_tool_outputs() -> None:
-    from composition.tool_runs import ToolCallView
-    from composition.software_delivery_tools import SoftwareDeliveryRunView
+    from composition.tools.runs import ToolCallView
+    from composition.software_delivery.tools import SoftwareDeliveryRunView
 
     with pytest.raises(ApplicationValidationError, match=r"tool_outputs\[0\]"):
         AskResponse(

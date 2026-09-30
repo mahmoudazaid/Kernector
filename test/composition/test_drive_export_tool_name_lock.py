@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from composition import prepare_drive_export, software_delivery_agent
+from composition.drive_export import prepare as prepare_drive_export
+from composition.software_delivery import agent as software_delivery_agent
 from domain.tool_approval import ToolApprovalPolicy
 from packs.software_delivery.tools.export_test_cases_google_drive import TOOL_NAME
 

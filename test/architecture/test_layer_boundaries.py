@@ -204,7 +204,7 @@ def test_planted_application_forbidden_import_is_detected(
     [
         ("import application\n", {"application"}),
         ("import infrastructure\n", {"infrastructure"}),
-        ("from composition.tool_registry import build_tool_registry\n", {"composition"}),
+        ("from composition.tools.registry import build_tool_registry\n", {"composition"}),
         ("import fastapi\n", {"fastapi"}),
         ("import google\n", {"google"}),
         ("from googleapiclient.discovery import build\n", {"googleapiclient"}),
