@@ -72,6 +72,64 @@ def test_extract_locator_is_ambiguous_across_sources() -> None:
         registry.extract_locator("x")
 
 
+def _hash_locators(locator: str) -> bool:
+    return "#" in locator
+
+
+def _dash_locators(locator: str) -> bool:
+    return "-" in locator
+
+
+def test_resolve_locator_returns_the_single_accepting_source() -> None:
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", accepts=_hash_locators),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    assert registry.resolve_locator(" OTHER-1 ") == SourceLocator("other", "OTHER-1")
+
+
+def test_resolve_locator_without_an_accepting_source_is_a_validation_error() -> None:
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", accepts=_hash_locators),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    with pytest.raises(TestDesignValidationError):
+        registry.resolve_locator("plain words")
+
+
+def test_resolve_locator_accepted_by_several_sources_is_ambiguous() -> None:
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", accepts=_dash_locators),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    with pytest.raises(TestDesignValidationError, match="ambiguous"):
+        registry.resolve_locator("X-1")
+
+
+def test_resolve_locator_propagates_operational_errors_while_probing() -> None:
+    failure = RuntimeError("credential store unreadable")
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", canonicalize_error=failure),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        registry.resolve_locator("OTHER-1")
+
+    assert raised.value is failure
+
+
 def test_extract_locator_propagates_source_ambiguity() -> None:
     registry = TestDesignSourceRegistry(
         (FakeTestDesignSource("acme", ambiguous={"two refs"}),)

@@ -13,6 +13,7 @@ from domain.knowledge import SourceReference
 from domain.models import AskResult, Message
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.generate_cases import (
+    GENERATE_CASES_SYSTEM,
     GenerateTestCases,
     GenerateTestCasesRequest,
     TypeOverride,
@@ -604,3 +605,9 @@ def test_type_overrides_applied_without_demoting() -> None:
     assert result.status == "case_editing"
     assert result.candidates[0].test_type == "cucumber"
     assert result.generated_cases[0].test_type == "cucumber"
+
+
+def test_prompt_constrains_cucumber_scenarios() -> None:
+    assert "exactly one scenario" in GENERATE_CASES_SYSTEM
+    assert "no conditional logic" in GENERATE_CASES_SYSTEM
+    assert "every column is used by a step" in GENERATE_CASES_SYSTEM

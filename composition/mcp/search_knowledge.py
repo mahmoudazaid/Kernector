@@ -28,7 +28,7 @@ MAX_TOTAL_OUTPUT_CHARS = 24_000
 
 
 class SearchKnowledgeArgs(BaseModel):
-    """Input schema for ``core.search_knowledge``."""
+    """Input schema for ``core_search_knowledge``."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -75,7 +75,7 @@ class CitationOut(BaseModel):
 
 
 class SearchKnowledgeResult(BaseModel):
-    """Structured MCP result for ``core.search_knowledge``."""
+    """Structured MCP result for ``core_search_knowledge``."""
 
     model_config = ConfigDict(extra="forbid")
 

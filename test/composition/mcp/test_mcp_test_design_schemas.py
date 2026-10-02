@@ -12,6 +12,8 @@ from composition.mcp.test_design import (
     McpTestDesignWorkflow,
     TestDesignConfirmArgs,
     TestDesignDraftResult,
+    TestDesignExportFeatureArgs,
+    TestDesignFeatureFileResult,
     TestDesignGenerateArgs,
     TestDesignGetArgs,
     TestDesignStartArgs,
@@ -97,6 +99,7 @@ class _FakeOperations:
         candidate_ids,
         type_overrides,
         overwrite_edited,
+        test_type=None,
     ):
         return self._record(
             "generate",
@@ -105,6 +108,7 @@ class _FakeOperations:
             candidate_ids=candidate_ids,
             type_overrides=type_overrides,
             overwrite_edited=overwrite_edited,
+            test_type=test_type,
         )
 
 
@@ -263,6 +267,7 @@ def test_schemas_never_expose_workspace_or_conversation_id() -> None:
         binding.get_args,
         binding.confirm_args,
         binding.generate_args,
+        binding.export_feature_args,
     ):
         schema = model.model_json_schema()
         encoded = json.dumps(schema)
@@ -281,7 +286,9 @@ def test_binding_exposes_composition_schemas() -> None:
     assert binding.get_args is TestDesignGetArgs
     assert binding.confirm_args is TestDesignConfirmArgs
     assert binding.generate_args is TestDesignGenerateArgs
+    assert binding.export_feature_args is TestDesignExportFeatureArgs
     assert binding.result is TestDesignDraftResult
+    assert binding.feature_file_result is TestDesignFeatureFileResult
 
 
 def test_confirm_forwards_selection_and_version() -> None:
@@ -311,6 +318,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
             "draft_id": "draft-1",
             "expected_version": 4,
             "candidate_ids": ["cand-1"],
+            "test_type": "cucumber",
             "type_overrides": [{"candidate_id": "cand-1", "test_type": "manual"}],
             "overwrite_edited": True,
         }
@@ -326,6 +334,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
                 "candidate_ids": ("cand-1",),
                 "type_overrides": (("cand-1", "manual"),),
                 "overwrite_edited": True,
+                "test_type": "cucumber",
             },
         ),
         (
@@ -336,6 +345,7 @@ def test_generate_forwards_the_300_request_shape() -> None:
                 "candidate_ids": None,
                 "type_overrides": (),
                 "overwrite_edited": False,
+                "test_type": None,
             },
         ),
     ]
@@ -347,3 +357,111 @@ def test_generate_returns_skipped_edited_ids() -> None:
     payload = workflow.generate({"draft_id": "draft-1", "expected_version": 2})
 
     assert payload["skipped_edited_candidate_ids"] == ["cand-2"]
+
+
+def _case(candidate_id: str, test_type: str, **overrides: object) -> GeneratedTestCaseView:
+    base: dict[str, object] = {
+        "candidate_id": candidate_id,
+        "test_type": test_type,
+        "automation_fit": "applicable",
+        "automation_rationale": "UI flow.",
+        "availability": "available",
+        "preconditions": "",
+        "steps": (),
+        "expected_result": "",
+        "gherkin": "",
+        "user_edited": False,
+    }
+    base.update(overrides)
+    return GeneratedTestCaseView(**base)  # type: ignore[arg-type]
+
+
+def _candidate(candidate_id: str, title: str, *, selected: bool = True) -> TestCandidateView:
+    return TestCandidateView(
+        candidate_id=candidate_id,
+        title=title,
+        category="positive",
+        rationale="AC.",
+        evidence_references=(),
+        selected=selected,
+        origin="suggested",
+    )
+
+
+def _feature_draft() -> TestCoverageDraftView:
+    return _draft(
+        status="case_editing",
+        version=4,
+        candidates=(
+            _candidate("cand-1", "Banner shows Good"),
+            _candidate("cand-2", "Manual check"),
+            _candidate("cand-3", "Unclear behaviour"),
+            _candidate("cand-4", "Not selected", selected=False),
+            _candidate("cand-5", "Banner shows Poor"),
+        ),
+        selected_candidate_ids=("cand-1", "cand-2", "cand-3", "cand-5"),
+        generated_cases=(
+            _case("cand-1", "cucumber", gherkin="Given all sites are Good\nThen the banner shows \"Good\""),
+            _case("cand-2", "manual", steps=("Open dashboard",), expected_result="Banner shown"),
+            _case("cand-3", "cucumber", availability="insufficient_evidence"),
+            _case("cand-4", "cucumber", gherkin="Given nothing"),
+            _case("cand-5", "cucumber", gherkin="Scenario: ignored\nGiven one site is Poor\nThen the banner shows \"Poor\""),
+        ),
+        cucumber_feature="Network health banner",
+        cucumber_background="Background:\nGiven the dashboard is open",
+    )
+
+
+def test_export_feature_renders_selected_cucumber_cases_as_one_file() -> None:
+    workflow, operations = _workflow(_feature_draft())
+
+    payload = workflow.export_feature({"draft_id": "draft-1"})
+
+    assert operations.calls == [("get", {"draft_id": "draft-1"})]
+    assert payload == {
+        "draft_id": "draft-1",
+        "version": 4,
+        "filename": "network_health_banner.feature",
+        "content": (
+            "Feature: Network health banner\n"
+            "\n"
+            "  Background:\n"
+            "    Given the dashboard is open\n"
+            "\n"
+            "  Scenario: Banner shows Good\n"
+            "    Given all sites are Good\n"
+            "    Then the banner shows \"Good\"\n"
+            "\n"
+            "  Scenario: Banner shows Poor\n"
+            "    Given one site is Poor\n"
+            "    Then the banner shows \"Poor\"\n"
+        ),
+        "scenario_count": 2,
+        "untrusted_model_output": True,
+    }
+
+
+def test_export_feature_falls_back_to_ticket_for_feature_and_filename() -> None:
+    draft = replace(_feature_draft(), cucumber_feature="", ticket_identifier="OIE-721")
+    workflow, _operations = _workflow(draft)
+
+    payload = workflow.export_feature({"draft_id": "draft-1"})
+
+    assert payload["filename"] == "oie_721.feature"
+    assert str(payload["content"]).startswith("Feature: OIE-721\n")
+
+
+def test_export_feature_without_cucumber_cases_is_a_validation_error() -> None:
+    workflow, _operations = _workflow(_draft())
+
+    with pytest.raises(ToolArgumentValidationError):
+        workflow.export_feature({"draft_id": "draft-1"})
+
+
+def test_export_feature_rejects_extra_arguments() -> None:
+    workflow, operations = _workflow(_feature_draft())
+
+    with pytest.raises(ToolArgumentValidationError):
+        workflow.export_feature({"draft_id": "draft-1", "workspace_id": "x"})
+
+    assert operations.calls == []

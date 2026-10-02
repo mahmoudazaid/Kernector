@@ -9,10 +9,12 @@ import pytest
 from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TOOL_CONFIRM,
+    TOOL_EXPORT_FEATURE,
     TOOL_GENERATE,
     TOOL_GET,
     TOOL_START,
     TestDesignConfirmTool,
+    TestDesignExportFeatureTool,
     TestDesignGenerateTool,
     TestDesignGetTool,
     TestDesignStartTool,
@@ -33,7 +35,13 @@ class _ConfirmArgs: ...
 class _GenerateArgs: ...
 
 
+class _ExportFeatureArgs: ...
+
+
 class _Result: ...
+
+
+class _FeatureFileResult: ...
 
 
 class _FakeWorkflow:
@@ -59,13 +67,18 @@ class _FakeWorkflow:
     def generate(self, arguments):
         return self._record("generate", arguments)
 
+    def export_feature(self, arguments):
+        return self._record("export_feature", arguments)
+
 
 class _FakeBinding:
     start_args = _StartArgs
     get_args = _GetArgs
     confirm_args = _ConfirmArgs
     generate_args = _GenerateArgs
+    export_feature_args = _ExportFeatureArgs
     result = _Result
+    feature_file_result = _FeatureFileResult
 
     def __init__(self, factory=None) -> None:
         self.workflow_instance = _FakeWorkflow()
@@ -80,26 +93,34 @@ def test_tool_ids_are_stable() -> None:
     assert TOOL_GET == "software_delivery.test_design_get"
     assert TOOL_CONFIRM == "software_delivery.test_design_confirm"
     assert TOOL_GENERATE == "software_delivery.test_design_generate"
+    assert TOOL_EXPORT_FEATURE == "software_delivery.test_design_export_feature"
     binding = _FakeBinding()
     assert [(tool_id, cls(binding).name) for tool_id, cls in TEST_DESIGN_MCP_TOOLS] == [
         (TOOL_START, TOOL_START),
         (TOOL_GET, TOOL_GET),
         (TOOL_CONFIRM, TOOL_CONFIRM),
         (TOOL_GENERATE, TOOL_GENERATE),
+        (TOOL_EXPORT_FEATURE, TOOL_EXPORT_FEATURE),
     ]
 
 
 @pytest.mark.parametrize(
-    ("tool_cls", "operation", "args_schema"),
+    ("tool_cls", "operation", "args_schema", "output_schema"),
     [
-        (TestDesignStartTool, "start", _StartArgs),
-        (TestDesignGetTool, "get", _GetArgs),
-        (TestDesignConfirmTool, "confirm", _ConfirmArgs),
-        (TestDesignGenerateTool, "generate", _GenerateArgs),
+        (TestDesignStartTool, "start", _StartArgs, _Result),
+        (TestDesignGetTool, "get", _GetArgs, _Result),
+        (TestDesignConfirmTool, "confirm", _ConfirmArgs, _Result),
+        (TestDesignGenerateTool, "generate", _GenerateArgs, _Result),
+        (
+            TestDesignExportFeatureTool,
+            "export_feature",
+            _ExportFeatureArgs,
+            _FeatureFileResult,
+        ),
     ],
 )
 def test_tool_uses_binding_schemas_and_dispatches_raw_arguments(
-    tool_cls, operation: str, args_schema: type
+    tool_cls, operation: str, args_schema: type, output_schema: type
 ) -> None:
     binding = _FakeBinding()
     tool = tool_cls(binding)
@@ -108,7 +129,7 @@ def test_tool_uses_binding_schemas_and_dispatches_raw_arguments(
     raw = tool.run(arguments)
 
     assert tool.args_schema is args_schema
-    assert tool.output_schema is _Result
+    assert tool.output_schema is output_schema
     assert binding.workflow_instance.calls == [(operation, arguments)]
     assert json.loads(raw) == _RESULT
 

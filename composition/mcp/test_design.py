@@ -7,11 +7,12 @@ that the pack's Test Design tools delegate to. Imported only from
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Annotated, TypeVar
+from typing import Annotated, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
@@ -24,7 +25,6 @@ from composition.test_design.facade import (
     CreateTestDesignDraftRequest,
     GenerateTestDesignCasesRequest,
     PatchTestDesignDraftRequest,
-    SourceLocatorView,
     TestCaseType,
     TestCoverageDraftView,
     TestDesignFacade,
@@ -70,7 +70,7 @@ class _StrictArgs(BaseModel):
 
 
 class TestDesignStartArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_start``."""
+    """Arguments for ``software_delivery_test_design_start``."""
 
     __test__ = False
 
@@ -79,11 +79,16 @@ class TestDesignStartArgs(_StrictArgs):
         StringConstraints(
             strip_whitespace=True, min_length=1, max_length=MAX_ISSUE_LOCATOR_CHARS
         ),
-    ] = Field(description="GitHub Issue URL or owner/repo#number.")
+    ] = Field(
+        description=(
+            "GitHub Issue URL or owner/repo#number, or Jira issue key "
+            "(PROJ-123) or browse URL."
+        )
+    )
 
 
 class TestDesignGetArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_get``."""
+    """Arguments for ``software_delivery_test_design_get``."""
 
     __test__ = False
 
@@ -91,7 +96,7 @@ class TestDesignGetArgs(_StrictArgs):
 
 
 class TestDesignConfirmArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_confirm``."""
+    """Arguments for ``software_delivery_test_design_confirm``."""
 
     __test__ = False
 
@@ -114,7 +119,7 @@ class TestTypeOverrideArg(_StrictArgs):
 
 
 class TestDesignGenerateArgs(_StrictArgs):
-    """Arguments for ``software_delivery.test_design_generate`` (#300 contract)."""
+    """Arguments for ``software_delivery_test_design_generate`` (#300 contract)."""
 
     __test__ = False
 
@@ -125,10 +130,31 @@ class TestDesignGenerateArgs(_StrictArgs):
         max_length=MAX_GENERATE_CANDIDATES,
         description="Subset of selected candidates; defaults to all selected.",
     )
+    test_type: TestCaseType | None = Field(
+        default=None,
+        description=(
+            "Test type for every generated case (manual or cucumber) when the "
+            "user chose one type for all. Ask the user first; type_overrides "
+            "win for the candidates they name."
+        ),
+    )
     type_overrides: list[TestTypeOverrideArg] | None = Field(
-        default=None, max_length=MAX_CANDIDATES
+        default=None,
+        max_length=MAX_CANDIDATES,
+        description=(
+            "One entry per candidate when the user chose the type per test, "
+            "or per-candidate exceptions to test_type."
+        ),
     )
     overwrite_edited: bool = Field(default=False, strict=True)
+
+
+class TestDesignExportFeatureArgs(_StrictArgs):
+    """Arguments for ``software_delivery_test_design_export_feature``."""
+
+    __test__ = False
+
+    draft_id: Id
 
 
 class EvidenceReferenceOut(BaseModel):
@@ -143,7 +169,12 @@ class TestCandidateOut(BaseModel):
 
     __test__ = False
 
-    candidate_id: str
+    candidate_id: str = Field(
+        description=(
+            "Draft-local key for confirm/generate. Not a test-management id; "
+            "do not present it as the test's id."
+        )
+    )
     title: str
     category: str
     rationale: str
@@ -198,6 +229,70 @@ class TestDesignDraftResult(BaseModel):
     candidates: list[TestCandidateOut]
     generated_cases: list[GeneratedTestCaseOut]
     cucumber: CucumberOut
+
+
+class TestDesignFeatureFileResult(BaseModel):
+    """Generated Cucumber cases of a draft as one ``.feature`` file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    __test__ = False
+
+    draft_id: str
+    version: int
+    filename: str = Field(
+        description="Suggested file name; the user chooses the folder."
+    )
+    content: str = Field(description="Complete Gherkin .feature file text.")
+    scenario_count: int
+    untrusted_model_output: bool = Field(
+        default=True, description=_UNTRUSTED_DESCRIPTION
+    )
+
+
+_FILENAME_UNSAFE = re.compile(r"[^a-z0-9]+")
+_MAX_FILENAME_STEM = 80
+
+
+def _slug(text: str) -> str:
+    return _FILENAME_UNSAFE.sub("_", text.lower()).strip("_")[:_MAX_FILENAME_STEM].rstrip("_")
+
+
+def project_feature_file(draft: TestCoverageDraftView) -> TestDesignFeatureFileResult:
+    """Render the draft's selected, available Cucumber cases as a Feature file.
+
+    Raises:
+        TestDesignValidationError: The draft has no such Cucumber cases.
+    """
+    from composition.software_delivery.export import (
+        draft_export_case_arguments,
+        render_feature_file,
+    )
+
+    cases = cast(
+        "list[dict[str, object]]",
+        draft_export_case_arguments(draft).get("cases", []),
+    )
+    scenarios = [
+        (str(case["title"]), str(case["gherkin"]))
+        for case in cases
+        if case["test_type"] == "cucumber"
+    ]
+    if not scenarios:
+        raise TestDesignValidationError("draft has no generated Cucumber cases")
+    feature = draft.cucumber_feature.strip() or draft.ticket_identifier
+    return TestDesignFeatureFileResult(
+        draft_id=draft.draft_id,
+        version=draft.version,
+        filename=f"{_slug(feature) or _slug(draft.ticket_identifier) or 'test_design'}.feature",
+        content=render_feature_file(
+            feature=feature,
+            background=draft.cucumber_background,
+            scenarios=scenarios,
+        )
+        + "\n",
+        scenario_count=len(scenarios),
+    )
 
 
 def project_draft(draft: TestCoverageDraftView) -> TestDesignDraftResult:
@@ -299,9 +394,7 @@ class McpTestDesignOperations:
             return self._facade.create_draft(
                 CreateTestDesignDraftRequest(
                     conversation_id=self._conversation_id_factory(),
-                    source_locator=SourceLocatorView(
-                        provider="github", locator=issue_locator
-                    ),
+                    source_locator=self._facade.resolve_source_locator(issue_locator),
                 )
             )
 
@@ -350,8 +443,22 @@ class McpTestDesignOperations:
         candidate_ids: tuple[str, ...] | None,
         type_overrides: tuple[tuple[str, TestCaseType], ...],
         overwrite_edited: bool,
+        test_type: TestCaseType | None = None,
     ) -> TestCoverageDraftView:
         with _translated_errors():
+            if test_type is not None:
+                targets = (
+                    candidate_ids
+                    if candidate_ids is not None
+                    else self._facade.get_draft(draft_id).selected_candidate_ids
+                )
+                overridden = {candidate_id for candidate_id, _ in type_overrides}
+                defaults: list[tuple[str, TestCaseType]] = [
+                    (candidate_id, test_type)
+                    for candidate_id in targets
+                    if candidate_id not in overridden
+                ]
+                type_overrides = (*defaults, *type_overrides)
             return self._facade.generate_cases(
                 draft_id,
                 GenerateTestDesignCasesRequest(
@@ -419,8 +526,16 @@ class McpTestDesignWorkflow:
                     for item in args.type_overrides or ()
                 ),
                 overwrite_edited=args.overwrite_edited,
+                test_type=args.test_type,
             )
         )
+
+    def export_feature(self, arguments: Mapping[str, object]) -> dict[str, object]:
+        args = _parse(TestDesignExportFeatureArgs, arguments)
+        draft = self._operations.get(draft_id=args.draft_id)
+        with _translated_errors():
+            result = project_feature_file(draft)
+        return result.model_dump(mode="json")
 
 
 class McpTestDesignBinding:
@@ -430,7 +545,9 @@ class McpTestDesignBinding:
     get_args: type = TestDesignGetArgs
     confirm_args: type = TestDesignConfirmArgs
     generate_args: type = TestDesignGenerateArgs
+    export_feature_args: type = TestDesignExportFeatureArgs
     result: type = TestDesignDraftResult
+    feature_file_result: type = TestDesignFeatureFileResult
 
     def __init__(self, facade_factory: Callable[[], TestDesignFacade]) -> None:
         self._facade_factory = facade_factory
