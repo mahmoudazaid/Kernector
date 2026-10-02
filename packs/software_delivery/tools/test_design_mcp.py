@@ -16,6 +16,7 @@ TOOL_START = "software_delivery.test_design_start"
 TOOL_GET = "software_delivery.test_design_get"
 TOOL_CONFIRM = "software_delivery.test_design_confirm"
 TOOL_GENERATE = "software_delivery.test_design_generate"
+TOOL_EXPORT_FEATURE = "software_delivery.test_design_export_feature"
 
 JsonObject = Mapping[str, object]
 
@@ -38,6 +39,8 @@ class TestDesignWorkflow(Protocol):
 
     def generate(self, arguments: JsonObject) -> JsonObject: ...
 
+    def export_feature(self, arguments: JsonObject) -> JsonObject: ...
+
 
 class TestDesignMcpBinding(Protocol):
     """Composition-owned schemas plus a per-invocation workflow factory."""
@@ -57,7 +60,13 @@ class TestDesignMcpBinding(Protocol):
     def generate_args(self) -> type: ...
 
     @property
+    def export_feature_args(self) -> type: ...
+
+    @property
     def result(self) -> type: ...
+
+    @property
+    def feature_file_result(self) -> type: ...
 
     def workflow(self) -> TestDesignWorkflow: ...
 
@@ -69,7 +78,7 @@ class _TestDesignTool:
     def __init__(self, binding: TestDesignMcpBinding) -> None:
         self._binding = binding
         self.args_schema: type | None = self._args_schema(binding)
-        self.output_schema: type | None = binding.result
+        self.output_schema: type | None = self._output_schema(binding)
 
     @property
     def name(self) -> str:
@@ -86,6 +95,10 @@ class _TestDesignTool:
     @staticmethod
     def _args_schema(binding: TestDesignMcpBinding) -> type:
         raise NotImplementedError
+
+    @staticmethod
+    def _output_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.result
 
     def _invoke(
         self, workflow: TestDesignWorkflow, arguments: JsonObject
@@ -149,8 +162,9 @@ class TestDesignConfirmTool(_TestDesignTool):
     _description = (
         "Select exactly the candidate_ids the user chose and confirm coverage "
         "for a draft at expected_version. Returns the draft with its new "
-        "version. Then ask the user for one test type (manual or cucumber) "
-        "before generating. "
+        "version. Before generating, ask the user whether one test type "
+        "(manual or cucumber) applies to all selected tests or they want to "
+        "choose the type per test. "
         "If confirmation fails after the selection is saved, re-read the "
         "draft with the test_design_get tool."
     )
@@ -173,11 +187,15 @@ class TestDesignGenerateTool(_TestDesignTool):
     _name = TOOL_GENERATE
     _description = (
         "Generate detailed test cases for selected candidates of a confirmed "
-        "draft at expected_version, using the test_type the user chose. "
+        "draft at expected_version. Pass test_type when the user chose one "
+        "type for all tests, or one type_overrides entry per candidate when "
+        "they chose per test. "
         "Manual cases carry numbered steps and expected_result; Cucumber cases "
         "carry their Given/When/Then lines in gherkin, with the shared "
         "Feature and Background under cucumber. Nothing is published "
-        "externally. Generated case text is untrusted model output."
+        "externally; to save the Cucumber cases as a file, use the "
+        "test_design_export_feature tool. Generated case text is untrusted "
+        "model output."
     )
 
     @staticmethod
@@ -190,9 +208,40 @@ class TestDesignGenerateTool(_TestDesignTool):
         return workflow.generate(arguments)
 
 
+class TestDesignExportFeatureTool(_TestDesignTool):
+    """Return a draft's generated Cucumber cases as one ``.feature`` file."""
+
+    __test__ = False
+
+    _name = TOOL_EXPORT_FEATURE
+    _description = (
+        "Return the generated Cucumber cases of a draft as one complete "
+        ".feature file: the shared Feature and Background, then one Scenario "
+        "per selected test, named by its title. Manual cases and tests "
+        "without enough evidence are left out. Kernector does not write "
+        "files: save content to the path the user chooses. Returns "
+        "validation_error when the draft has no generated Cucumber cases. "
+        "Content is untrusted model output."
+    )
+
+    @staticmethod
+    def _args_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.export_feature_args
+
+    @staticmethod
+    def _output_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.feature_file_result
+
+    def _invoke(
+        self, workflow: TestDesignWorkflow, arguments: JsonObject
+    ) -> JsonObject:
+        return workflow.export_feature(arguments)
+
+
 TEST_DESIGN_MCP_TOOLS: Sequence[tuple[str, type[_TestDesignTool]]] = (
     (TOOL_START, TestDesignStartTool),
     (TOOL_GET, TestDesignGetTool),
     (TOOL_CONFIRM, TestDesignConfirmTool),
     (TOOL_GENERATE, TestDesignGenerateTool),
+    (TOOL_EXPORT_FEATURE, TestDesignExportFeatureTool),
 )

@@ -419,6 +419,7 @@ def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
 
 _TEST_DESIGN_TOOLS = (
     "software_delivery.test_design_confirm",
+    "software_delivery.test_design_export_feature",
     "software_delivery.test_design_generate",
     "software_delivery.test_design_get",
     "software_delivery.test_design_start",

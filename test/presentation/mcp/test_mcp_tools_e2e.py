@@ -117,6 +117,7 @@ _TEST_DESIGN_TOOLS = frozenset(
         "software_delivery.test_design_get",
         "software_delivery.test_design_confirm",
         "software_delivery.test_design_generate",
+        "software_delivery.test_design_export_feature",
     }
 )
 
@@ -228,6 +229,18 @@ async def test_test_design_workflow_e2e_via_protocol_client(
         )
         assert final["version"] == 4
         assert final["generated_cases"] == generated["generated_cases"]
+
+        exported = await _call(
+            client,
+            "software_delivery_test_design_export_feature",
+            {"draft_id": draft_id},
+        )
+        assert exported["filename"] == "login.feature"
+        assert exported["scenario_count"] == 1
+        assert exported["content"].startswith(
+            "Feature: Login\n\n  Background:\n    Given the login page is open\n"
+        )
+        assert "Given a locked account" in exported["content"]
 
         stale = await client.call_tool(
             "software_delivery.test_design_confirm",

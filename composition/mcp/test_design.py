@@ -7,11 +7,12 @@ that the pack's Test Design tools delegate to. Imported only from
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Annotated, TypeVar
+from typing import Annotated, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
@@ -132,17 +133,28 @@ class TestDesignGenerateArgs(_StrictArgs):
     test_type: TestCaseType | None = Field(
         default=None,
         description=(
-            "Test type the user chose for every generated case (manual or "
-            "cucumber). Ask the user before generating; type_overrides win "
-            "for the candidates they name."
+            "Test type for every generated case (manual or cucumber) when the "
+            "user chose one type for all. Ask the user first; type_overrides "
+            "win for the candidates they name."
         ),
     )
     type_overrides: list[TestTypeOverrideArg] | None = Field(
         default=None,
         max_length=MAX_CANDIDATES,
-        description="Per-candidate test type exceptions to test_type.",
+        description=(
+            "One entry per candidate when the user chose the type per test, "
+            "or per-candidate exceptions to test_type."
+        ),
     )
     overwrite_edited: bool = Field(default=False, strict=True)
+
+
+class TestDesignExportFeatureArgs(_StrictArgs):
+    """Arguments for ``software_delivery_test_design_export_feature``."""
+
+    __test__ = False
+
+    draft_id: Id
 
 
 class EvidenceReferenceOut(BaseModel):
@@ -217,6 +229,70 @@ class TestDesignDraftResult(BaseModel):
     candidates: list[TestCandidateOut]
     generated_cases: list[GeneratedTestCaseOut]
     cucumber: CucumberOut
+
+
+class TestDesignFeatureFileResult(BaseModel):
+    """Generated Cucumber cases of a draft as one ``.feature`` file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    __test__ = False
+
+    draft_id: str
+    version: int
+    filename: str = Field(
+        description="Suggested file name; the user chooses the folder."
+    )
+    content: str = Field(description="Complete Gherkin .feature file text.")
+    scenario_count: int
+    untrusted_model_output: bool = Field(
+        default=True, description=_UNTRUSTED_DESCRIPTION
+    )
+
+
+_FILENAME_UNSAFE = re.compile(r"[^a-z0-9]+")
+_MAX_FILENAME_STEM = 80
+
+
+def _slug(text: str) -> str:
+    return _FILENAME_UNSAFE.sub("_", text.lower()).strip("_")[:_MAX_FILENAME_STEM].rstrip("_")
+
+
+def project_feature_file(draft: TestCoverageDraftView) -> TestDesignFeatureFileResult:
+    """Render the draft's selected, available Cucumber cases as a Feature file.
+
+    Raises:
+        TestDesignValidationError: The draft has no such Cucumber cases.
+    """
+    from composition.software_delivery.export import (
+        draft_export_case_arguments,
+        render_feature_file,
+    )
+
+    cases = cast(
+        "list[dict[str, object]]",
+        draft_export_case_arguments(draft).get("cases", []),
+    )
+    scenarios = [
+        (str(case["title"]), str(case["gherkin"]))
+        for case in cases
+        if case["test_type"] == "cucumber"
+    ]
+    if not scenarios:
+        raise TestDesignValidationError("draft has no generated Cucumber cases")
+    feature = draft.cucumber_feature.strip() or draft.ticket_identifier
+    return TestDesignFeatureFileResult(
+        draft_id=draft.draft_id,
+        version=draft.version,
+        filename=f"{_slug(feature) or _slug(draft.ticket_identifier) or 'test_design'}.feature",
+        content=render_feature_file(
+            feature=feature,
+            background=draft.cucumber_background,
+            scenarios=scenarios,
+        )
+        + "\n",
+        scenario_count=len(scenarios),
+    )
 
 
 def project_draft(draft: TestCoverageDraftView) -> TestDesignDraftResult:
@@ -454,6 +530,13 @@ class McpTestDesignWorkflow:
             )
         )
 
+    def export_feature(self, arguments: Mapping[str, object]) -> dict[str, object]:
+        args = _parse(TestDesignExportFeatureArgs, arguments)
+        draft = self._operations.get(draft_id=args.draft_id)
+        with _translated_errors():
+            result = project_feature_file(draft)
+        return result.model_dump(mode="json")
+
 
 class McpTestDesignBinding:
     """Implements the pack ``TestDesignMcpBinding`` port for one workspace."""
@@ -462,7 +545,9 @@ class McpTestDesignBinding:
     get_args: type = TestDesignGetArgs
     confirm_args: type = TestDesignConfirmArgs
     generate_args: type = TestDesignGenerateArgs
+    export_feature_args: type = TestDesignExportFeatureArgs
     result: type = TestDesignDraftResult
+    feature_file_result: type = TestDesignFeatureFileResult
 
     def __init__(self, facade_factory: Callable[[], TestDesignFacade]) -> None:
         self._facade_factory = facade_factory

@@ -91,7 +91,7 @@ MCP adapter supplies **bounded, citable evidence** (`core.search_knowledge`) and
 export MCP_AUTH_TOKEN=dev-token
 export MCP_ALLOWED_HOSTS=127.0.0.1:8100
 export MCP_ALLOWED_ORIGINS=  # optional; missing Origin allowed for non-browser clients
-export MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate
+export MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature
 export DOMAIN_TOOL_PACKS=software-delivery   # required for Test Design tools
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
 uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
