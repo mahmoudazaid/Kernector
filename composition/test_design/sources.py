@@ -83,6 +83,28 @@ class TestDesignSourceRegistry:
             raise TestDesignUnavailableError("test design source unavailable")
         raise TestDesignValidationError("source_locator.provider is not supported")
 
+    def resolve_locator(self, locator: str) -> SourceLocator:
+        """Return the one registered source that accepts *locator*, canonicalized.
+
+        A source's ``TestDesignValidationError`` means "not my locator" and is
+        skipped; any other error propagates, so ``canonicalize`` must stay pure.
+
+        Raises:
+            TestDesignValidationError: No source, or several, accept *locator*.
+        """
+        found: list[SourceLocator] = []
+        for source in self._by_provider.values():
+            try:
+                canonical = source.canonicalize(locator)
+            except TestDesignValidationError:
+                continue
+            found.append(SourceLocator(provider=source.provider, locator=canonical))
+        if not found:
+            raise TestDesignValidationError("locator is not a supported source locator")
+        if len(found) > 1:
+            raise TestDesignValidationError("locator is ambiguous across sources")
+        return found[0]
+
     def extract_locator(self, text: str) -> SourceLocator | None:
         """Return the one source item referenced in *text*, if any.
 

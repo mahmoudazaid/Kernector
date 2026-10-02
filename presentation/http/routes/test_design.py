@@ -37,7 +37,7 @@ def create_draft(
     body: CreateTestDesignDraftRequest,
     facade: TestDesignFacadeDep,
 ) -> TestCoverageDraftResponse:
-    """Create a coverage-planning draft from a live GitHub Issue locator."""
+    """Create a coverage-planning draft from a live source issue locator."""
     view = facade.create_draft(
         CreateDraftFacadeRequest(
             conversation_id=body.conversation_id,

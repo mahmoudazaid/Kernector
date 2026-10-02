@@ -14,6 +14,7 @@ from composition.test_design.sources import AmbiguousSourceLocatorError
 from domain.errors import ConnectorNotFoundError
 from domain.knowledge import SourceDocument, SourceLocator
 from domain.ports import LiveSourceReader
+from infrastructure.config import Settings
 from infrastructure.connectors.github.issue_locator import (
     AmbiguousGitHubIssueLocatorError,
     InvalidGitHubIssueLocatorError,
@@ -65,6 +66,48 @@ class GitHubTestDesignSource:
         if not isinstance(access_token, str) or not access_token.strip():
             raise GitHubNotConnectedError("GitHub is not connected")
         return _TranslatingIssueReader(self._reader_factory(access_token.strip()))
+
+
+def build_github_test_design_source(
+    settings: Settings,
+    *,
+    connection_store=None,
+    oauth_gateway=None,
+    client_factory=None,
+) -> GitHubTestDesignSource:
+    """Build the source over the stored GitHub grant and an auth-retrying reader.
+
+    The grant is loaded lazily on each ``reader()`` call, so building the source
+    never requires a connection or a network call.
+    """
+    from composition.github.connection import (
+        AuthRetryingGitHubIssueReader,
+        require_github_grant,
+    )
+
+    def preflight() -> str:
+        _tokens_store, connection = require_github_grant(
+            settings, connection_store=connection_store
+        )
+        token = connection.access_token
+        if not isinstance(token, str) or not token.strip():
+            raise GitHubNotConnectedError("GitHub is not connected")
+        return token.strip()
+
+    def reader_factory(access_token: str) -> LiveSourceReader:
+        tokens_store, connection = require_github_grant(
+            settings, connection_store=connection_store
+        )
+        return AuthRetryingGitHubIssueReader(
+            settings=settings,
+            access_token=access_token,
+            tokens_store=tokens_store,
+            connection=connection,
+            oauth_gateway=oauth_gateway,
+            client_factory=client_factory,
+        )
+
+    return GitHubTestDesignSource(preflight=preflight, reader_factory=reader_factory)
 
 
 class _TranslatingIssueReader:

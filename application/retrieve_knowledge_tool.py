@@ -53,7 +53,7 @@ class RetrieveKnowledgeTool:
     evidence for an unrelated query.
     """
 
-    args_schema = RetrieveKnowledgeToolArgs
+    args_schema: type | None = RetrieveKnowledgeToolArgs
 
     def __init__(
         self,

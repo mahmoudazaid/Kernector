@@ -99,10 +99,30 @@ contributes these tools only when composition supplies a workspace-bound
 
 | Tool id | Arguments | Existing operation |
 | --- | --- | --- |
-| `software_delivery.test_design_start` | `issue_locator` | create draft from a live GitHub Issue |
+| `software_delivery.test_design_start` | `issue_locator` (GitHub Issue URL or `owner/repo#number`, or Jira Data Center key `PROJ-123` or browse URL) | create draft from the one source that accepts the locator |
 | `software_delivery.test_design_get` | `draft_id` | read draft |
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
-| `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), `type_overrides[{candidate_id, test_type}]`, `overwrite_edited` | #300 generate |
+| `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), optional `test_type` (`manual` or `cucumber`, applied to every generated case), `type_overrides[{candidate_id, test_type}]` (per-candidate exceptions), `overwrite_edited` | #300 generate |
+| `software_delivery.test_design_export_feature` | `draft_id` | render the selected, available Cucumber cases as one `.feature` file (`filename`, `content`, `scenario_count`); no model call |
+
+- MCP clients see each tool id with dots replaced by underscores (for example
+  `software_delivery_test_design_start`), because clients such as Cursor
+  rewrite dotted names. `MCP_TOOL_ALLOWLIST` still takes the dotted ids, and
+  calls accept either form.
+- The tool descriptions tell the client agent to show the suggested titles and
+  let the user choose which to keep, then ask whether one test type applies
+  to all of them or the type is chosen per test, before generating. The
+  server does not enforce this pause.
+- Export returns the file text only; Kernector never writes into the
+  client's workspace. The client agent saves `content` where the user
+  chooses, so it needs a mode that allows edits.
+- `candidate_id` values (`cand-1`, `cand-2`, …) are assigned by the server in
+  suggestion order and are keys local to the draft, used only by confirm and
+  generate. They are not test-management ids; a later export or sync creates
+  those.
+- Manual cases carry `steps` and `expected_result`. Cucumber cases leave those
+  empty and put their Given/When/Then lines in `gherkin`, with the shared
+  `Feature` and `Background` under `cucumber`.
 
 - Arguments are strict (`additionalProperties: false`); `workspace_id` and
   `conversation_id` are never accepted. Each MCP draft gets a server-generated

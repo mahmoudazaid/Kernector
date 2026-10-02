@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from application.markdown import MarkdownDocument, MarkdownSection, render_markdown
@@ -40,17 +41,37 @@ def render_export_markdown(content: ExportContent) -> str:
 
 
 def _feature_file(content: ExportContent, cases: list[ExportCase]) -> str:
-    feature = content.cucumber_feature.strip() or content.document_title.strip()
-    lines = [f"Feature: {feature}"]
-    background = _step_lines(content.cucumber_background, _BACKGROUND_HEADERS)
-    if background:
+    return render_feature_file(
+        feature=content.cucumber_feature.strip() or content.document_title.strip(),
+        background=content.cucumber_background,
+        scenarios=[(case.title, case.gherkin) for case in cases],
+    )
+
+
+def render_feature_file(
+    *, feature: str, background: str, scenarios: Sequence[tuple[str, str]]
+) -> str:
+    """Render one Gherkin Feature with a shared Background.
+
+    Args:
+        feature: Feature title, without the ``Feature:`` keyword.
+        background: Background steps; a leading ``Background:`` line is dropped.
+        scenarios: ``(title, gherkin)`` pairs; each title names its Scenario and
+            any ``Scenario:`` line inside the gherkin is dropped.
+
+    Returns:
+        The Feature text, without a trailing newline.
+    """
+    lines = [f"Feature: {feature.strip()}"]
+    background_steps = _step_lines(background, _BACKGROUND_HEADERS)
+    if background_steps:
         lines.extend(["", "  Background:"])
-        lines.extend(_indent_step(line) for line in background)
-    for case in cases:
-        steps = _step_lines(case.gherkin, _SCENARIO_HEADERS)
+        lines.extend(_indent_step(line) for line in background_steps)
+    for title, gherkin in scenarios:
+        steps = _step_lines(gherkin, _SCENARIO_HEADERS)
         outline = any(line.lower().startswith(_EXAMPLES_HEADERS) for line in steps)
         keyword = "Scenario Outline" if outline else "Scenario"
-        lines.extend(["", f"  {keyword}: {case.title.strip()}"])
+        lines.extend(["", f"  {keyword}: {title.strip()}"])
         lines.extend(_indent_step(line) for line in steps)
     return "\n".join(lines)
 

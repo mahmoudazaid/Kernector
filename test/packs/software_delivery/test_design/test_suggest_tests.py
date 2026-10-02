@@ -199,7 +199,7 @@ def test_grounded_evidence_persists_coverage_review_draft() -> None:
     assert draft.version == 1
     assert draft.ticket_identifier == "KERN-293"
     assert len(draft.candidates) == 1
-    assert draft.candidates[0].candidate_id == "cand-login"
+    assert draft.candidates[0].candidate_id == "cand-1"
     assert draft.candidates[0].category == "positive"
     assert draft.candidates[0].origin == "suggested"
     assert draft.candidates[0].selected is False
@@ -223,7 +223,7 @@ def test_accepts_fenced_model_json() -> None:
 
     draft = use_case.execute(_request(evidence=(_evidence(),)))
 
-    assert draft.candidates[0].candidate_id == "cand-login"
+    assert draft.candidates[0].candidate_id == "cand-1"
     assert repo.get("draft-1") == draft
 
 
@@ -319,11 +319,11 @@ def test_remaps_ticket_nickname_citation_when_single_evidence_source() -> None:
 
 
 
-def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:
+def test_candidate_ids_are_server_assigned_in_order() -> None:
     payload = _model_payload(
         candidates=[
             {
-                "candidate_id": "cand-2",
+                "candidate_id": "model-id",
                 "title": "Valid login",
                 "category": "positive",
                 "rationale": "Acceptance criteria describe successful login.",
@@ -332,6 +332,7 @@ def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:
                 ],
             },
             {
+                "candidate_id": "model-id",
                 "title": "Invalid login",
                 "category": "negative",
                 "rationale": "Acceptance criteria mention credential checks.",
@@ -339,76 +340,10 @@ def test_missing_candidate_id_fallback_skips_supplied_ids() -> None:
                     {"source_type": "jira", "source_id": "PROJ-42"}
                 ],
             },
-        ]
-    )
-    chat = _FakeChat(content=payload)
-    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
-    draft = use_case.execute(_request(evidence=(_evidence(),)))
-
-    assert [candidate.candidate_id for candidate in draft.candidates] == [
-        "cand-2",
-        "cand-1",
-    ]
-
-
-def test_generated_candidate_id_before_explicit_auto_id_does_not_collide() -> None:
-    payload = _model_payload(
-        candidates=[
             {
-                "title": "Valid login",
-                "category": "positive",
-                "rationale": "Acceptance criteria describe successful login.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-            {
-                "candidate_id": "cand-1",
-                "title": "Invalid login",
-                "category": "negative",
-                "rationale": "Acceptance criteria mention credential checks.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-        ]
-    )
-    chat = _FakeChat(content=payload)
-    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
-    draft = use_case.execute(_request(evidence=(_evidence(),)))
-
-    assert [candidate.candidate_id for candidate in draft.candidates] == [
-        "cand-2",
-        "cand-1",
-    ]
-
-
-def test_generated_candidate_id_skips_later_explicit_auto_style_id() -> None:
-    payload = _model_payload(
-        candidates=[
-            {
-                "candidate_id": "cand-1",
-                "title": "Valid login",
-                "category": "positive",
-                "rationale": "Acceptance criteria describe successful login.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-            {
-                "title": "Missing id first gap",
-                "category": "negative",
-                "rationale": "Acceptance criteria mention credential checks.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-            {
-                "title": "Missing id second gap",
+                "title": "Locked account",
                 "category": "edge_case",
-                "rationale": "Edge paths remain unspecified.",
+                "rationale": "Acceptance criteria mention lockout.",
                 "evidence_references": [
                     {"source_type": "jira", "source_id": "PROJ-42"}
                 ],
@@ -427,100 +362,11 @@ def test_generated_candidate_id_skips_later_explicit_auto_style_id() -> None:
     ]
 
 
-def test_generated_candidate_id_skips_explicit_auto_prefix_ids() -> None:
-    payload = _model_payload(
-        candidates=[
-            {
-                "candidate_id": "auto-1",
-                "title": "Valid login",
-                "category": "positive",
-                "rationale": "Acceptance criteria describe successful login.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-            {
-                "title": "Invalid login",
-                "category": "negative",
-                "rationale": "Acceptance criteria mention credential checks.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-        ]
-    )
-    chat = _FakeChat(content=payload)
+def test_model_prompt_does_not_request_candidate_ids() -> None:
+    chat = _FakeChat(content=_model_payload())
     use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
-    draft = use_case.execute(_request(evidence=(_evidence(),)))
-
-    assert [candidate.candidate_id for candidate in draft.candidates] == [
-        "auto-1",
-        "cand-1",
-    ]
-
-
-def test_generated_candidate_id_before_explicit_auto_prefix_id() -> None:
-    payload = _model_payload(
-        candidates=[
-            {
-                "title": "Valid login",
-                "category": "positive",
-                "rationale": "Acceptance criteria describe successful login.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-            {
-                "candidate_id": "auto-1",
-                "title": "Invalid login",
-                "category": "negative",
-                "rationale": "Acceptance criteria mention credential checks.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-        ]
-    )
-    chat = _FakeChat(content=payload)
-    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
-    draft = use_case.execute(_request(evidence=(_evidence(),)))
-
-    assert [candidate.candidate_id for candidate in draft.candidates] == [
-        "cand-1",
-        "auto-1",
-    ]
-
-
-def test_duplicate_model_supplied_candidate_ids_are_rejected() -> None:
-    payload = _model_payload(
-        candidates=[
-            {
-                "candidate_id": "model-id",
-                "title": "Valid login",
-                "category": "positive",
-                "rationale": "Acceptance criteria describe successful login.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-            {
-                "candidate_id": "model-id",
-                "title": "Invalid login",
-                "category": "negative",
-                "rationale": "Acceptance criteria mention credential checks.",
-                "evidence_references": [
-                    {"source_type": "jira", "source_id": "PROJ-42"}
-                ],
-            },
-        ]
-    )
-    chat = _FakeChat(content=payload)
-    use_case = SuggestTestCandidates(chat_model=chat, repository=_MemoryRepo())
-
-    with pytest.raises(ToolFailureError, match="unique candidate_id"):
-        use_case.execute(_request(evidence=(_evidence(),)))
+    use_case.execute(_request(evidence=(_evidence(),)))
+    assert "candidate_id" not in chat.calls[0][0]
 
 
 def test_budget_source_document_text_preserves_short_content() -> None:

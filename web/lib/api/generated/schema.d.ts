@@ -778,7 +778,7 @@ export interface paths {
     put?: never;
     /**
      * Create Draft
-     * @description Create a coverage-planning draft from a live GitHub Issue locator.
+     * @description Create a coverage-planning draft from a live source issue locator.
      */
     post: operations["create_draft_api_v1_test_design_drafts_post"];
     delete?: never;

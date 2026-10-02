@@ -79,6 +79,7 @@ _DC_VARS = (
     "JIRA_OAUTH_CLIENT_SECRET",
     "JIRA_OAUTH_REDIRECT_URI",
     "JIRA_OAUTH_FRONTEND_REDIRECT",
+    "JIRA_DC_ACCEPTANCE_CRITERIA_FIELD",
 )
 DC_TOKEN = "dc-pat-secret-value"
 
@@ -214,6 +215,41 @@ def test_in_repo_data_center_state_path_must_stay_gitignored(
     clean_jira_env.setenv("JIRA_DC_STATE_PATH", "data/jira-state.json")
 
     with pytest.raises(ValueError, match="jira-dc-"):
+        load_settings()
+
+
+def test_acceptance_criteria_field_defaults_to_none(
+    clean_jira_env: pytest.MonkeyPatch,
+) -> None:
+    clean_jira_env.setenv("JIRA_DC_BASE_URL", "https://jira.example.com")
+
+    dc = load_settings().jira_data_center
+
+    assert dc is not None
+    assert dc.acceptance_criteria_field is None
+
+
+def test_acceptance_criteria_field_is_kept(clean_jira_env: pytest.MonkeyPatch) -> None:
+    clean_jira_env.setenv("JIRA_DC_BASE_URL", "https://jira.example.com")
+    clean_jira_env.setenv("JIRA_DC_ACCEPTANCE_CRITERIA_FIELD", " customfield_10200 ")
+
+    dc = load_settings().jira_data_center
+
+    assert dc is not None
+    assert dc.acceptance_criteria_field == "customfield_10200"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["acceptance", "customfield_", "customfield_12a", "summary", "customfield_1 2"],
+)
+def test_invalid_acceptance_criteria_field_is_rejected(
+    clean_jira_env: pytest.MonkeyPatch, value: str
+) -> None:
+    clean_jira_env.setenv("JIRA_DC_BASE_URL", "https://jira.example.com")
+    clean_jira_env.setenv("JIRA_DC_ACCEPTANCE_CRITERIA_FIELD", value)
+
+    with pytest.raises(ValueError, match="JIRA_DC_ACCEPTANCE_CRITERIA_FIELD"):
         load_settings()
 
 

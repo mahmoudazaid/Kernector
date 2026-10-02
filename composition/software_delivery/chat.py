@@ -113,8 +113,11 @@ class ToolCallRecorder:
 
 
 class _PackResponse(Protocol):
-    summary: str
-    outcomes: Sequence[object]
+    @property
+    def summary(self) -> str: ...
+
+    @property
+    def outcomes(self) -> Sequence[object]: ...
 
 
 RetrieveHits = Callable[[str], Sequence[ScoredChunk]]

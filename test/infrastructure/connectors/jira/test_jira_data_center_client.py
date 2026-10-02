@@ -181,6 +181,43 @@ def test_get_project_reads_one_project_and_maps_missing_to_not_found() -> None:
         client.get_project("NOPE")
 
 
+def test_get_issue_reads_one_issue_with_only_the_requested_fields() -> None:
+    seen: list[httpx.Request] = []
+    payload = {"id": "10001", "key": "KAN-7", "fields": {"summary": "Login"}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=payload)
+
+    issue = _client(handler).get_issue("KAN-7", ("summary", "description"))
+
+    [request] = seen
+    assert request.method == "GET"
+    assert request.url.path == "/jira/rest/api/2/issue/KAN-7"
+    assert request.url.params["fields"] == "summary,description"
+    assert request.headers["Authorization"] == f"Bearer {TOKEN}"
+    assert issue == payload
+
+
+def test_get_issue_maps_missing_to_not_found_with_a_token_free_cause() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text=f"no issue for Bearer {TOKEN}")
+
+    with pytest.raises(ConnectorNotFoundError) as caught:
+        _client(handler).get_issue("KAN-404", ("summary",))
+
+    for error in _chain(caught.value):
+        assert TOKEN not in str(error)
+
+
+def test_get_issue_rejects_a_non_object_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["KAN-7"])
+
+    with pytest.raises(ConnectorError):
+        _client(handler).get_issue("KAN-7", ("summary",))
+
+
 def test_server_info_identifies_the_instance_by_server_id() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/jira/rest/api/2/serverInfo"

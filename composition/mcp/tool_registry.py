@@ -56,6 +56,21 @@ _LEGACY_CODE_ALIASES: Mapping[str, str] = {
 ToolFactory = Callable[[], Tool]
 
 
+def mcp_tool_name(tool_id: str) -> str:
+    """Return the advertised MCP name for *tool_id*.
+
+    Clients such as Cursor rewrite dots in tool names and then call the
+    rewritten name, so the wire name must already avoid them.
+
+    Args:
+        tool_id: Dotted registry id (e.g. ``software_delivery.test_design_start``).
+
+    Returns:
+        The id with dots replaced by underscores.
+    """
+    return tool_id.replace(".", "_")
+
+
 @dataclass(frozen=True, slots=True)
 class McpToolDescriptor:
     """Wire-ready tool metadata for ``tools/list`` (no mcp SDK types)."""
@@ -156,13 +171,19 @@ class McpToolRegistry:
         enabled_packs: Sequence[str],
     ) -> None:
         by_id: dict[str, McpToolContribution] = {}
+        id_by_name: dict[str, str] = {}
         tool_pack: dict[str, str | None] = {}
         for item in contributions:
             if item.tool_id in by_id:
                 raise ValueError(f"duplicate MCP tool id: {item.tool_id}")
+            name = mcp_tool_name(item.tool_id)
+            if name in id_by_name:
+                raise ValueError(f"duplicate MCP tool name: {name}")
             by_id[item.tool_id] = item
+            id_by_name[name] = item.tool_id
             tool_pack[item.tool_id] = item.pack_id
         self._by_id = by_id
+        self._id_by_name = id_by_name
         self._policy = McpAccessPolicy(
             enabled_packs=frozenset(enabled_packs),
             tool_pack=tool_pack,
@@ -176,7 +197,7 @@ class McpToolRegistry:
             input_schema, output_schema = _schema_for_tool(tool)
             descriptors.append(
                 McpToolDescriptor(
-                    name=tool.name,
+                    name=mcp_tool_name(tool_id),
                     description=tool.description,
                     input_schema=input_schema,
                     output_schema=output_schema,
@@ -190,7 +211,11 @@ class McpToolRegistry:
         tool_id: str,
         arguments: Mapping[str, object] | None,
     ) -> McpInvokeResult:
-        """Atomically authorize, validate, and invoke *tool_id*."""
+        """Atomically authorize, validate, and invoke *tool_id*.
+
+        *tool_id* may be the dotted registry id or its advertised MCP name.
+        """
+        tool_id = self._id_by_name.get(tool_id, tool_id)
         if not self._policy.is_effective(caller, tool_id):
             return _tool_unavailable()
         contribution = self._by_id[tool_id]

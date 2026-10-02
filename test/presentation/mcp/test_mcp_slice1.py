@@ -332,4 +332,4 @@ def test_authenticated_http_lists_search_knowledge_via_request_scoped_caller(
         assert match is not None
         payload = json.loads(match.group(1))
         names = [tool["name"] for tool in payload["result"]["tools"]]
-        assert names == [SEARCH_TOOL]
+        assert names == ["core_search_knowledge"]

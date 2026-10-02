@@ -6367,7 +6367,7 @@
     },
     "/api/v1/test-design/drafts": {
       "post": {
-        "description": "Create a coverage-planning draft from a live GitHub Issue locator.",
+        "description": "Create a coverage-planning draft from a live source issue locator.",
         "operationId": "create_draft_api_v1_test_design_drafts_post",
         "requestBody": {
           "content": {

@@ -17,6 +17,7 @@ from composition.mcp.tool_registry import (
     TOOL_UNAVAILABLE_CODE,
     McpToolContribution,
     McpToolRegistry,
+    mcp_tool_name,
 )
 from domain.knowledge import (
     DocumentChunk,
@@ -63,7 +64,65 @@ def test_list_effective_respects_allowlist() -> None:
     )
     caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
     names = [item.name for item in registry.list_effective(caller)]
-    assert names == [TOOL_NAME]
+    assert names == [mcp_tool_name(TOOL_NAME)]
+
+
+def test_advertised_names_have_no_dots() -> None:
+    assert mcp_tool_name("software_delivery.test_design_start") == (
+        "software_delivery_test_design_start"
+    )
+    assert mcp_tool_name(TOOL_NAME) == "core_search_knowledge"
+
+
+def test_invoke_accepts_advertised_name_and_dotted_id() -> None:
+    retrieve = _StubRetrieve()
+    registry = McpToolRegistry(
+        contributions=(
+            McpToolContribution(
+                tool_id=TOOL_NAME,
+                pack_id=None,
+                factory=lambda: SearchKnowledgeTool(retrieve),
+            ),
+        ),
+        enabled_packs=(),
+    )
+    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+
+    for name in (mcp_tool_name(TOOL_NAME), TOOL_NAME):
+        result = registry.invoke_authorized(caller, name, {"query": "x"})
+        assert result.is_error is False
+
+    assert len(retrieve.calls) == 2
+
+
+def test_advertised_name_still_requires_allowlist() -> None:
+    registry = McpToolRegistry(
+        contributions=(
+            McpToolContribution(
+                tool_id=TOOL_NAME,
+                pack_id=None,
+                factory=lambda: SearchKnowledgeTool(_StubRetrieve()),
+            ),
+        ),
+        enabled_packs=(),
+    )
+    caller = McpCallerContext("ws", "default", frozenset())
+    result = registry.invoke_authorized(caller, mcp_tool_name(TOOL_NAME), {"query": "x"})
+    assert result.code == TOOL_UNAVAILABLE_CODE
+
+
+def test_tool_ids_colliding_after_name_mapping_are_rejected() -> None:
+    def factory() -> SearchKnowledgeTool:
+        return SearchKnowledgeTool(_StubRetrieve())
+
+    with pytest.raises(ValueError, match="duplicate MCP tool name"):
+        McpToolRegistry(
+            contributions=(
+                McpToolContribution(tool_id="a.b", pack_id=None, factory=factory),
+                McpToolContribution(tool_id="a_b", pack_id=None, factory=factory),
+            ),
+            enabled_packs=(),
+        )
 
 
 def test_invoke_non_allowlisted_is_tool_unavailable() -> None:
@@ -101,7 +160,7 @@ def test_stale_pack_tool_allowlist_is_unavailable_when_not_contributed() -> None
         frozenset({"software_delivery.risk_score", TOOL_NAME}),
     )
     names = [item.name for item in registry.list_effective(caller)]
-    assert names == [TOOL_NAME]
+    assert names == [mcp_tool_name(TOOL_NAME)]
     result = registry.invoke_authorized(
         caller, "software_delivery.risk_score", {}
     )
@@ -264,7 +323,9 @@ def test_gate_enabled_allowlisted_authorized_is_listed_and_invocable() -> None:
     caller = McpCallerContext("ws", "default", frozenset({tool.name}))
     registry = _registry_for(tool)
 
-    assert [d.name for d in registry.list_effective(caller)] == [tool.name]
+    assert [d.name for d in registry.list_effective(caller)] == [
+        mcp_tool_name(tool.name)
+    ]
     result = registry.invoke_authorized(caller, tool.name, {})
     assert result.is_error is False
     assert tool.calls == 1
@@ -329,7 +390,9 @@ def test_build_mcp_registry_without_packs_exposes_only_core() -> None:
     )
     registry = build_mcp_tool_registry(settings, retrieve=_StubRetrieve())
     caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
-    assert [item.name for item in registry.list_effective(caller)] == [TOOL_NAME]
+    assert [item.name for item in registry.list_effective(caller)] == [
+        mcp_tool_name(TOOL_NAME)
+    ]
 
 
 def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
@@ -349,11 +412,14 @@ def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
         "default",
         frozenset({TOOL_NAME, "software_delivery.risk_score"}),
     )
-    assert [item.name for item in registry.list_effective(caller)] == [TOOL_NAME]
+    assert [item.name for item in registry.list_effective(caller)] == [
+        mcp_tool_name(TOOL_NAME)
+    ]
 
 
 _TEST_DESIGN_TOOLS = (
     "software_delivery.test_design_confirm",
+    "software_delivery.test_design_export_feature",
     "software_delivery.test_design_generate",
     "software_delivery.test_design_get",
     "software_delivery.test_design_start",
@@ -389,7 +455,7 @@ def test_wired_test_design_tools_are_listed_when_enabled_and_allowlisted(
 
     names = [item.name for item in registry.list_effective(caller)]
 
-    assert names == list(_TEST_DESIGN_TOOLS)
+    assert names == [mcp_tool_name(tool_id) for tool_id in _TEST_DESIGN_TOOLS]
 
 
 def test_wired_test_design_tools_absent_when_pack_disabled(
@@ -595,4 +661,4 @@ def test_mcp_wiring_loads_pack_via_allowlist_not_hardcoded_import(
         "ws", "default", frozenset({TOOL_NAME, "fake.pack_tool"})
     )
     names = [item.name for item in registry.list_effective(caller)]
-    assert names == [TOOL_NAME, "fake.pack_tool"]
+    assert names == [mcp_tool_name(TOOL_NAME), "fake_pack_tool"]

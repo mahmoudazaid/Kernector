@@ -166,7 +166,7 @@ def _client(settings: Settings, client_factory):
     return data_center.HttpJiraDataCenterClient(dc.base_url, dc.token)
 
 
-def _authenticated(store, operation: Callable[[], _T]) -> _T:
+def authenticated_call(store, operation: Callable[[], _T]) -> _T:
     """Run ``operation``; record a rejected token, and clear it after any success."""
     from infrastructure.connectors.jira.data_center_state import JiraDataCenterState
 
@@ -202,7 +202,7 @@ def list_projects(
     _require_configured(settings)
     client = _client(settings, client_factory)
     try:
-        page = _authenticated(
+        page = authenticated_call(
             _store(settings, state_store),
             lambda: client.list_projects(
                 start_at=start_at, max_results=settings.jira.page_size
@@ -232,7 +232,7 @@ def get_selection(settings: Settings, *, state_store=None) -> JiraSelection:
 
 
 def _server_info(client):
-    """Resolve the instance identity; auth failures pass through for ``_authenticated``."""
+    """Resolve the instance identity; auth failures pass through for ``authenticated_call``."""
     try:
         return client.server_info()
     except ConnectorNotFoundError as error:
@@ -281,7 +281,7 @@ def put_selection(
                     "A selected Jira project is inaccessible."
                 ) from error
 
-        site, keys = _authenticated(store, _validate)
+        site, keys = authenticated_call(store, _validate)
     switched = (
         previous.site is not None
         and site is not None
@@ -299,15 +299,20 @@ def put_selection(
 
     saved = store.mutate(_apply)
     assert saved is not None
-    purge = dict(
-        connector_id=previous.connector_id,
-        catalog=catalog,
-        catalog_factory=catalog_factory,
-        vector_store=vector_store,
-        vector_store_factory=vector_store_factory,
-    )
+
+    def _purge(source_id_prefixes: tuple[str, ...] | None = None) -> None:
+        _purge_jira_docs(
+            settings,
+            connector_id=previous.connector_id,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+            source_id_prefixes=source_id_prefixes,
+        )
+
     if switched:
-        _purge_jira_docs(settings, **purge)
+        _purge()
     elif previous.site is not None:
         dropped = tuple(
             project_source_id_prefix(previous.site.instance_id, key)
@@ -315,7 +320,7 @@ def put_selection(
             if key not in keys
         )
         if dropped:
-            _purge_jira_docs(settings, source_id_prefixes=dropped, **purge)
+            _purge(dropped)
     return JiraSelection(
         site=_dc_site_item(saved.site),
         project_keys=saved.project_keys,
@@ -356,22 +361,23 @@ def sync(
         raise JiraSelectionRequiredError("Select Jira projects before syncing.")
     client = _client(settings, client_factory)
     try:
-        site = _authenticated(store, lambda: _server_info(client))
+        site = authenticated_call(store, lambda: _server_info(client))
     except JiraConnectorError as error:
         raise JiraConnectorSyncError(_SYNC_MESSAGE) from error
-    purge = dict(
-        catalog=catalog,
-        catalog_factory=catalog_factory,
-        vector_store=vector_store,
-        vector_store_factory=vector_store_factory,
-    )
     if state.site is None or state.site.instance_id != site.instance_id:
         store.mutate(
             lambda current: replace(
                 current or JiraDataCenterState(), site=site, project_keys=()
             )
         )
-        _purge_jira_docs(settings, connector_id=state.connector_id, **purge)
+        _purge_jira_docs(
+            settings,
+            connector_id=state.connector_id,
+            catalog=catalog,
+            catalog_factory=catalog_factory,
+            vector_store=vector_store,
+            vector_store_factory=vector_store_factory,
+        )
         raise JiraSelectionRequiredError(
             "The Jira Data Center instance changed. Select projects again."
         )
@@ -411,7 +417,7 @@ def sync(
         vector_store_factory=get_store,
     )
     try:
-        result = _authenticated(store, sync_documents.execute)
+        result = authenticated_call(store, sync_documents.execute)
     except _InfraIssueLimitExceededError as error:
         raise JiraIssueLimitExceededError(_ISSUE_LIMIT_MESSAGE) from error
     except (ConnectorError, CatalogError, VectorStoreError) as error:

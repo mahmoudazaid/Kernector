@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, TypeGuard
 from urllib.parse import quote, urlsplit
 
 from domain.errors import ConnectorError
@@ -20,6 +21,9 @@ from infrastructure.connectors.jira.client import (
 )
 from infrastructure.connectors.jira.errors import JiraPaginationError
 from infrastructure.connectors.jira.site import JiraSite
+
+if TYPE_CHECKING:
+    import httpx
 
 _MSG_REQUEST_FAILED = "The Jira request failed."
 _DIAGNOSTIC_BODY_LIMIT = 500
@@ -48,7 +52,7 @@ class HttpJiraDataCenterClient:
         token: str,
         *,
         timeout: float = 30.0,
-        transport: object | None = None,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
         import httpx
 
@@ -123,6 +127,14 @@ class HttpJiraDataCenterClient:
     def get_project(self, key: str) -> JiraProject:
         return parse_project(self._request_json("GET", f"/project/{quote(key, safe='')}"))
 
+    def get_issue(self, key: str, fields: Sequence[str]) -> Mapping[str, object]:
+        """Read one issue, requesting only ``fields`` to keep the payload bounded."""
+        return self._request_json(
+            "GET",
+            f"/issue/{quote(key, safe='')}",
+            params={"fields": ",".join(fields)},
+        )
+
     def server_info(self) -> JiraSite:
         """Identify the instance: ``serverId``, else a stable hash of the base URL."""
         payload = self._request_json("GET", "/serverInfo")
@@ -144,16 +156,25 @@ class HttpJiraDataCenterClient:
         self,
         method: str,
         path: str,
-        **kwargs: object,
+        *,
+        json: object = None,
+        params: Mapping[str, str] | None = None,
     ) -> Mapping[str, object]:
-        payload = self._request(method, path, **kwargs)
+        payload = self._request(method, path, json=json, params=params)
         if not isinstance(payload, Mapping):
             raise ConnectorError(_MSG_REQUEST_FAILED)
         return payload
 
-    def _request(self, method: str, path: str, **kwargs: object) -> object:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: object = None,
+        params: Mapping[str, str] | None = None,
+    ) -> object:
         try:
-            response = self._client.request(method, path, **kwargs)
+            response = self._client.request(method, path, json=json, params=params)
             response.raise_for_status()
             return response.json()
         except Exception as error:
@@ -171,7 +192,7 @@ class HttpJiraDataCenterClient:
         return JiraDataCenterHttpDiagnostic(detail.replace(self._token, _REDACTED))
 
 
-def _is_int(value: object) -> bool:
+def _is_int(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
 

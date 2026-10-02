@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -410,6 +411,7 @@ class JiraDataCenterSettings:
     state_path: Path = field(
         default_factory=lambda: _PROJECT_ROOT / "data" / "jira-dc-connection.json"
     )
+    acceptance_criteria_field: str | None = None
 
     @property
     def configured(self) -> bool:
@@ -419,7 +421,8 @@ class JiraDataCenterSettings:
         return (
             "JiraDataCenterSettings("
             f"base_url={self.base_url!r}, token='***', "
-            f"allow_http={self.allow_http}, state_path={self.state_path!r})"
+            f"allow_http={self.allow_http}, state_path={self.state_path!r}, "
+            f"acceptance_criteria_field={self.acceptance_criteria_field!r})"
         )
 
 
@@ -1109,7 +1112,23 @@ def _load_jira_data_center_settings() -> JiraDataCenterSettings | None:
         token=token,
         allow_http=allow_http,
         state_path=state_path,
+        acceptance_criteria_field=_optional_jira_dc_custom_field(
+            "JIRA_DC_ACCEPTANCE_CRITERIA_FIELD"
+        ),
     )
+
+
+_JIRA_CUSTOM_FIELD = re.compile(r"customfield_\d+")
+
+
+def _optional_jira_dc_custom_field(env_name: str) -> str | None:
+    """Accept only ``customfield_<digits>`` so the id is safe in a ``fields`` query."""
+    raw = _optional_env(env_name)
+    if raw is None:
+        return None
+    if _JIRA_CUSTOM_FIELD.fullmatch(raw) is None:
+        raise ValueError(f"{env_name} must look like customfield_<digits>")
+    return raw
 
 
 def _require_jira_dc_base_url(raw: str, *, allow_http: bool) -> str:

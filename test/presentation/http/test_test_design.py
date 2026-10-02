@@ -652,3 +652,79 @@ def test_generate_pack_disabled_returns_unavailable(
     )
     assert response.status_code == 404
     assert response.json()["code"] == "test_design_unavailable"
+
+
+class _JiraIssueClient:
+    def get_issue(self, key: str, _fields: object) -> dict[str, object]:
+        return {
+            "id": "10001",
+            "key": key,
+            "fields": {
+                "summary": "Login",
+                "description": "Acceptance criteria for coverage.",
+                "updated": "2026-09-14T12:00:00.000+0000",
+            },
+        }
+
+
+def _jira_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, dc_on: bool):  # noqa: ANN202
+    from dataclasses import replace
+
+    from composition.container import build_test_design_sources
+    from composition.test_design.facade import TestDesignFacade
+    from test.composition.jira.jira_fakes import DC_TOKEN, dc_settings
+
+    settings = replace(
+        get_settings(),
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+    )
+    if dc_on:
+        settings = dc_settings(settings, tmp_path)
+    facade = TestDesignFacade(
+        settings=settings,
+        store_path=tmp_path / "workspace.sqlite",
+        workspace_id="default",
+        sources=build_test_design_sources(
+            settings, jira_dc_client_factory=lambda _url, _token: _JiraIssueClient()
+        ),
+    )
+    monkeypatch.setattr(facade, "_build_chat_model", lambda: _HTTPChat())
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_test_design_facade] = lambda: facade
+    return TestClient(app), DC_TOKEN
+
+
+def _create_jira(client: TestClient):  # noqa: ANN202
+    return client.post(
+        "/api/v1/test-design/drafts",
+        json={
+            "conversation_id": "conv-jira",
+            "source_locator": {"provider": "jira", "locator": "ENG-7"},
+        },
+    )
+
+
+def test_create_draft_from_jira_issue_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, token = _jira_client(tmp_path, monkeypatch, dc_on=True)
+
+    response = _create_jira(client)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ticket_identifier"] == "ENG-7"
+    assert body["source_reference"] == {"source_id": "issue:10001", "source_type": "jira"}
+    assert token not in response.text
+
+
+def test_create_jira_draft_with_data_center_mode_off_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, token = _jira_client(tmp_path, monkeypatch, dc_on=False)
+
+    response = _create_jira(client)
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "test_design_unavailable"
+    assert token not in response.text
