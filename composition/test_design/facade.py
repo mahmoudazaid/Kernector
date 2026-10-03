@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -34,12 +35,16 @@ if TYPE_CHECKING:
     from packs.software_delivery.test_design.models import (
         GeneratedTestCase as PackGeneratedTestCase,
     )
+    from packs.software_delivery.test_design.models import (
+        TestCoverageDraft as PackTestCoverageDraft,
+    )
 
 DraftStatus = Literal["coverage_review", "ready", "case_editing"]
 CandidateOrigin = Literal["suggested", "manual"]
 TestCaseType = Literal["manual", "cucumber"]
 AutomationFit = Literal["applicable", "not_applicable", "unclear"]
 CaseAvailability = Literal["available", "insufficient_evidence"]
+EvidenceOrigin = Literal["live", "client_supplied"]
 CoverageCategory = Literal[
     "positive",
     "negative",
@@ -125,12 +130,25 @@ class TestCoverageDraftView:
     skipped_edited_candidate_ids: tuple[str, ...] = ()
     cucumber_feature: str = ""
     cucumber_background: str = ""
+    evidence_origin: EvidenceOrigin = "live"
 
 
 @dataclass(frozen=True, slots=True)
 class CreateTestDesignDraftRequest:
     conversation_id: str
     source_locator: SourceLocatorView
+
+
+@dataclass(frozen=True, slots=True)
+class CreateTestDesignDraftFromContentRequest:
+    """Issue content an MCP client already fetched (#355); not verified live."""
+
+    conversation_id: str
+    ticket_identifier: str
+    title: str
+    body: str
+    acceptance_criteria: str | None = None
+    source_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,21 +320,80 @@ class TestDesignFacade:
         )
         if not document.content.strip():
             raise InsufficientEvidenceError(_NO_EVIDENCE_DETAIL)
+        _, _, _, budget_source_document_text = self._load_suggest_tests()
+        return self._suggest_draft(
+            conversation_id=request.conversation_id,
+            reference=document.reference,
+            ticket_identifier=locator,
+            source_provider=source.provider,
+            budgeted=lambda: budget_source_document_text(document),
+            evidence_origin="live",
+        )
+
+    def create_draft_from_content(
+        self, request: CreateTestDesignDraftFromContentRequest
+    ) -> TestCoverageDraftView:
+        """Create a draft from client-supplied Issue content (#355).
+
+        The content is rendered and budgeted once and persisted with the
+        draft; no live source is consulted now or on confirm/generate.
+        """
+        from packs.software_delivery.test_design.client_evidence import (
+            CLIENT_SOURCE_PROVIDER,
+            client_source_reference,
+            render_client_evidence,
+        )
+        from packs.software_delivery.test_design.suggest_tests import (
+            budget_evidence_text,
+        )
+
+        self._require_enabled()
+        if not isinstance(request, CreateTestDesignDraftFromContentRequest):
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL)
+        self._require_workspace()
+        try:
+            rendered = render_client_evidence(
+                ticket_identifier=request.ticket_identifier,
+                title=request.title,
+                body=request.body,
+                acceptance_criteria=request.acceptance_criteria,
+                source_url=request.source_url,
+            )
+            reference = client_source_reference(request.ticket_identifier)
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+        return self._suggest_draft(
+            conversation_id=request.conversation_id,
+            reference=reference,
+            ticket_identifier=request.ticket_identifier.strip(),
+            source_provider=CLIENT_SOURCE_PROVIDER,
+            budgeted=lambda: budget_evidence_text(rendered),
+            evidence_origin="client_supplied",
+        )
+
+    def _suggest_draft(
+        self,
+        *,
+        conversation_id: str,
+        reference: SourceReference,
+        ticket_identifier: str,
+        source_provider: str,
+        budgeted: Callable[[], str],
+        evidence_origin: EvidenceOrigin,
+    ) -> TestCoverageDraftView:
         draft_id = str(uuid.uuid4())
         (
             SuggestTestCandidates,
             SuggestTestCandidatesRequest,
             CoverageEvidenceItem,
-            budget_source_document_text,
+            _budget,
         ) = (
             self._load_suggest_tests()
         )
         try:
             evidence = (
-                CoverageEvidenceItem(
-                    reference=document.reference,
-                    text=budget_source_document_text(document),
-                ),
+                CoverageEvidenceItem(reference=reference, text=budgeted()),
             )
             chat_model = self._build_chat_model()
             repo = self._repository()
@@ -325,16 +402,15 @@ class TestDesignFacade:
                 SuggestTestCandidatesRequest(
                     draft_id=draft_id,
                     workspace_id=self._workspace_id,
-                    conversation_id=_require_text(
-                        request.conversation_id, "conversation_id"
-                    ),
+                    conversation_id=_require_text(conversation_id, "conversation_id"),
                     source_reference=SourceReference(
-                        document.reference.source_id,
-                        document.reference.source_type,
+                        reference.source_id,
+                        reference.source_type,
                     ),
-                    ticket_identifier=locator,
-                    source_provider=source.provider,
+                    ticket_identifier=ticket_identifier,
+                    source_provider=source_provider,
                     evidence=evidence,
+                    evidence_origin=evidence_origin,
                 )
             )
         except TestDesignValidationError:
@@ -526,6 +602,8 @@ class TestDesignFacade:
                 evidence_fingerprint=next_fingerprint,
                 cucumber_feature=next_cucumber_feature,
                 cucumber_background=next_cucumber_background,
+                evidence_origin=current.evidence_origin,
+                client_evidence_text=current.client_evidence_text,
             )
         except Exception as error:
             from packs.software_delivery.test_design.errors import (
@@ -571,12 +649,7 @@ class TestDesignFacade:
             raise TestDesignValidationError(
                 "select at least one candidate before confirm"
             )
-        document, budgeted, fingerprint = self._fetch_live_evidence(current)
-        if (
-            document.reference.source_id != current.source_reference.source_id
-            or document.reference.source_type != current.source_reference.source_type
-        ):
-            raise TestDesignEvidenceChangedError("evidence changed")
+        _reference, _budgeted, fingerprint = self._evidence_for(current)
         selected_ids = {c.candidate_id for c in current.candidates if c.selected}
         kept_cases = tuple(
             case
@@ -597,6 +670,8 @@ class TestDesignFacade:
             evidence_fingerprint=fingerprint,
             cucumber_feature=current.cucumber_feature if kept_cases else "",
             cucumber_background=current.cucumber_background if kept_cases else "",
+            evidence_origin=current.evidence_origin,
+            client_evidence_text=current.client_evidence_text,
         )
         try:
             saved = repo.update(updated, expected_version=expected_version)
@@ -639,12 +714,7 @@ class TestDesignFacade:
             _raise_composition_validation_if_pack_error(error)
             raise
 
-        document, budgeted, fingerprint = self._fetch_live_evidence(current)
-        if (
-            document.reference.source_id != current.source_reference.source_id
-            or document.reference.source_type != current.source_reference.source_type
-        ):
-            raise TestDesignEvidenceChangedError("evidence changed")
+        reference, budgeted, fingerprint = self._evidence_for(current)
         if (
             current.evidence_fingerprint is not None
             and current.evidence_fingerprint != fingerprint
@@ -661,7 +731,7 @@ class TestDesignFacade:
                     expected_version=request.expected_version,
                     evidence=(
                         CoverageEvidenceItem(
-                            reference=document.reference,
+                            reference=reference,
                             text=budgeted,
                         ),
                     ),
@@ -699,30 +769,45 @@ class TestDesignFacade:
         source = self._sources.resolve(value.provider)
         return source, source.canonicalize(value.locator)
 
-    def _fetch_live_evidence(self, draft: object):
-        """Re-fetch live evidence from the draft's own source and fingerprint it."""
-        import hashlib
+    def _evidence_for(
+        self, draft: PackTestCoverageDraft
+    ) -> tuple[SourceReference, str, str]:
+        """Return the draft's evidence reference, budgeted text and fingerprint.
+
+        Client-supplied drafts use their stored evidence; live drafts re-fetch
+        from their own source.
+
+        Raises:
+            TestDesignEvidenceChangedError: The live source now resolves to a
+                different item.
+        """
+        from packs.software_delivery.test_design.client_evidence import (
+            evidence_fingerprint,
+        )
 
         self._require_workspace()
-        source = self._sources.resolve(draft.source_provider)  # type: ignore[attr-defined]
+        if draft.evidence_origin == "client_supplied":
+            reference = draft.source_reference
+            budgeted = draft.client_evidence_text
+            return reference, budgeted, evidence_fingerprint(reference, budgeted)
+        source = self._sources.resolve(draft.source_provider)
         document = source.reader().fetch(
-            SourceLocator(
-                provider=source.provider,
-                locator=draft.ticket_identifier,  # type: ignore[attr-defined]
-            )
+            SourceLocator(provider=source.provider, locator=draft.ticket_identifier)
         )
         if not document.content.strip():
             raise InsufficientEvidenceError(_NO_EVIDENCE_DETAIL)
+        if (
+            document.reference.source_id != draft.source_reference.source_id
+            or document.reference.source_type != draft.source_reference.source_type
+        ):
+            raise TestDesignEvidenceChangedError("evidence changed")
         _, _, _, budget_source_document_text = self._load_suggest_tests()
         budgeted = budget_source_document_text(document)
-        digest = hashlib.sha256(
-            (
-                f"{document.reference.source_type}\0"
-                f"{document.reference.source_id}\0"
-                f"{budgeted}"
-            ).encode("utf-8")
-        ).hexdigest()
-        return document, budgeted, digest
+        return (
+            document.reference,
+            budgeted,
+            evidence_fingerprint(document.reference, budgeted),
+        )
 
     def export_to_google_drive(
         self,
@@ -1012,6 +1097,7 @@ def _draft_view(
         skipped_edited_candidate_ids=skipped_edited_candidate_ids,
         cucumber_feature=getattr(draft, "cucumber_feature", "") or "",
         cucumber_background=getattr(draft, "cucumber_background", "") or "",
+        evidence_origin=getattr(draft, "evidence_origin", "live"),
     )
 
 
@@ -1048,6 +1134,7 @@ def _require_client_locator_match(
 
 __all__ = [
     "ChatWorkflowActionView",
+    "CreateTestDesignDraftFromContentRequest",
     "CreateTestDesignDraftRequest",
     "GenerateTestDesignCasesRequest",
     "GeneratedTestCaseView",

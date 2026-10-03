@@ -114,6 +114,7 @@ async def test_identical_tool_unavailable_matrix() -> None:
 _TEST_DESIGN_TOOLS = frozenset(
     {
         "software_delivery.test_design_start",
+        "software_delivery.test_design_start_from_content",
         "software_delivery.test_design_get",
         "software_delivery.test_design_confirm",
         "software_delivery.test_design_generate",
@@ -255,6 +256,167 @@ async def test_test_design_workflow_e2e_via_protocol_client(
         )
         assert rejected.is_error is True
         assert json.loads(rejected.content[0].text)["code"] == "validation_error"
+
+
+_CLIENT_SENTINELS = ("SENTINEL-355-BODY", "SENTINEL-355-AC")
+_CLIENT_CONTENT = {
+    "ticket_identifier": "KERN-355",
+    "title": "Login",
+    "body": "Users sign in with email and password. SENTINEL-355-BODY",
+    "acceptance_criteria": "- Lockout after 5 failures SENTINEL-355-AC",
+    "source_url": "https://tracker.example/KERN-355",
+}
+
+
+def _assert_client_supplied_without_evidence(result: dict) -> None:
+    assert result["evidence_origin"] == "client_supplied"
+    encoded = json.dumps(result)
+    assert "client_evidence_text" not in encoded
+    for sentinel in _CLIENT_SENTINELS:
+        assert sentinel not in encoded
+
+
+@pytest.mark.anyio
+async def test_test_design_from_client_content_e2e_via_protocol_client(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        listed = {tool.name: tool for tool in (await client.list_tools()).tools}
+        tool = listed["software_delivery_test_design_start_from_content"]
+        assert "workspace_id" not in json.dumps(tool.input_schema)
+        assert "client_evidence_text" not in json.dumps(tool.output_schema)
+
+        started = await _call(
+            client, "software_delivery_test_design_start_from_content", _CLIENT_CONTENT
+        )
+        assert started["status"] == "coverage_review"
+        assert started["version"] == 1
+        assert started["ticket_identifier"] == "KERN-355"
+        _assert_client_supplied_without_evidence(started)
+        draft_id = started["draft_id"]
+
+        fetched = await _call(
+            client, "software_delivery_test_design_get", {"draft_id": draft_id}
+        )
+        assert fetched["candidates"] == started["candidates"]
+        _assert_client_supplied_without_evidence(fetched)
+
+        confirmed = await _call(
+            client,
+            "software_delivery_test_design_confirm",
+            {
+                "draft_id": draft_id,
+                "expected_version": 1,
+                "candidate_ids": ["cand-1", "cand-2"],
+            },
+        )
+        assert confirmed["status"] == "ready"
+        _assert_client_supplied_without_evidence(confirmed)
+
+        generated = await _call(
+            client,
+            "software_delivery_test_design_generate",
+            {
+                "draft_id": draft_id,
+                "expected_version": confirmed["version"],
+                "type_overrides": [
+                    {"candidate_id": "cand-1", "test_type": "manual"},
+                    {"candidate_id": "cand-2", "test_type": "cucumber"},
+                ],
+            },
+        )
+        assert generated["status"] == "case_editing"
+        assert {case["candidate_id"] for case in generated["generated_cases"]} == {
+            "cand-1",
+            "cand-2",
+        }
+        _assert_client_supplied_without_evidence(generated)
+
+        final = await _call(
+            client, "software_delivery_test_design_get", {"draft_id": draft_id}
+        )
+        assert final["version"] == generated["version"]
+        assert final["generated_cases"] == generated["generated_cases"]
+        _assert_client_supplied_without_evidence(final)
+
+        exported = await _call(
+            client,
+            "software_delivery_test_design_export_feature",
+            {"draft_id": draft_id},
+        )
+        assert exported["scenario_count"] == 1
+        _assert_client_supplied_without_evidence(exported)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {**_CLIENT_CONTENT, "body": "x" * 20_001},
+        {**_CLIENT_CONTENT, "workspace_id": "ws-b"},
+        {**_CLIENT_CONTENT, "ticket_identifier": "KERN 355"},
+    ],
+)
+async def test_invalid_client_content_is_a_validation_error(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, arguments: dict
+) -> None:
+    import composition.mcp.test_design as mcp_test_design
+
+    registry = _wired_registry(tmp_path, monkeypatch)
+    calls: list[object] = []
+    original = mcp_test_design.McpTestDesignOperations.start_from_content
+
+    def _spy(self, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        calls.append(kwargs)
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(
+        mcp_test_design.McpTestDesignOperations, "start_from_content", _spy
+    )
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "software_delivery_test_design_start_from_content", arguments
+        )
+
+    assert result.is_error is True
+    assert json.loads(result.content[0].text)["code"] == "validation_error"
+    assert calls == []
+
+
+@pytest.mark.anyio
+async def test_start_from_content_requires_its_own_allowlist_entry(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    live_only = McpCallerContext(
+        "ws-a",
+        "default",
+        _TEST_DESIGN_TOOLS - {"software_delivery.test_design_start_from_content"},
+    )
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(live_only)
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        listed = await client.list_tools()
+        denied = await client.call_tool(
+            "software_delivery_test_design_start_from_content", _CLIENT_CONTENT
+        )
+        unknown = await client.call_tool("nope.tool", {})
+
+    assert "software_delivery_test_design_start_from_content" not in {
+        tool.name for tool in listed.tools
+    }
+    assert denied.is_error is True
+    assert denied.content[0].text == unknown.content[0].text
 
 
 class _UnauthorizedResolver:

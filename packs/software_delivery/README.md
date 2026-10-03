@@ -100,6 +100,7 @@ contributes these tools only when composition supplies a workspace-bound
 | Tool id | Arguments | Existing operation |
 | --- | --- | --- |
 | `software_delivery.test_design_start` | `issue_locator` (GitHub Issue URL or `owner/repo#number`, or Jira Data Center key `PROJ-123` or browse URL) | create draft from the one source that accepts the locator |
+| `software_delivery.test_design_start_from_content` | `ticket_identifier` (single token, e.g. `PROJ-123`), `title`, `body`, optional `acceptance_criteria`, optional `source_url` (http/https) | create a `client_supplied` draft from content the client already fetched (#355) |
 | `software_delivery.test_design_get` | `draft_id` | read draft |
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
 | `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), optional `test_type` (`manual` or `cucumber`, applied to every generated case), `type_overrides[{candidate_id, test_type}]` (per-candidate exceptions), `overwrite_edited` | #300 generate |
@@ -149,3 +150,31 @@ contributes these tools only when composition supplies a workspace-bound
 - Live sources are resolved through the composition-owned Test Design source
   registry (#351). GitHub Issues is the only registered source; drafts persist
   their `source_provider` so confirm and generate re-fetch from the same one.
+
+### Live vs client-supplied evidence (#355)
+
+Use `test_design_start` when Kernector is connected to the tracker: it fetches
+the Issue live, and confirm and generate re-fetch it, returning
+`evidence_changed` if the Issue moved. Use `test_design_start_from_content`
+when the client already has the Issue through its own tools (Jira, GitHub or
+GitLab MCP servers, `gh`, GraphQL) and Kernector has no connection to that
+tracker.
+
+- Every draft result, and the `export_feature` result, carries
+  `evidence_origin`: `live` or `client_supplied`. `client_supplied` means
+  Kernector did not verify the content against a live source.
+- Client-supplied content is rendered once into one canonical evidence text
+  ([`test_design/client_evidence.py`](test_design/client_evidence.py)),
+  budgeted, and stored with the draft. Confirm and generate reuse it and never
+  call a source reader, so the fingerprint cannot change. To change the
+  evidence, start a new draft.
+- The stored evidence is internal: no MCP result echoes the supplied body,
+  acceptance criteria or source URL. Only `evidence_origin` is exposed.
+- Supplied content is untrusted input. It goes inside the same defanged
+  evidence delimiters as live evidence; `ticket_identifier` must be a single
+  token (no whitespace, not a bare number) because it reaches the prompt
+  outside those delimiters. Oversized or invalid payloads (body over 20,000
+  characters, acceptance criteria over 10,000, URL over 2,048, unknown fields)
+  return `validation_error` before any workflow call.
+- The tool needs its own `MCP_TOOL_ALLOWLIST` entry; allowlisting
+  `test_design_start` does not enable it.
