@@ -12,13 +12,16 @@ import hashlib
 
 from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
-from packs.software_delivery.test_design.limits import MAX_EVIDENCE_TEXT_CHARS
+from packs.software_delivery.test_design.limits import (
+    MAX_CLIENT_CONTENT_CHARS,
+    MAX_EVIDENCE_TEXT_CHARS,
+)
 
 CLIENT_SUPPLIED_SOURCE_TYPE = "client_supplied"
 CLIENT_SOURCE_PROVIDER = "client"
 CLIENT_EVIDENCE_LIMIT_GUIDANCE = (
     "Title, body, acceptance_criteria and source_url together must fit in "
-    f"{MAX_EVIDENCE_TEXT_CHARS:,} characters; shorten the body first and keep "
+    f"{MAX_CLIENT_CONTENT_CHARS:,} characters; shorten the body first and keep "
     "the acceptance criteria."
 )
 
@@ -48,14 +51,21 @@ def render_client_evidence(
 
     Raises:
         TestDesignValidationError: ``ticket_identifier``, ``title`` or
-            ``body`` is blank, or the rendered text exceeds
-            ``MAX_EVIDENCE_TEXT_CHARS``.
+            ``body`` is blank, the title, body, acceptance criteria and source
+            URL together exceed ``MAX_CLIENT_CONTENT_CHARS``, or the rendered
+            text exceeds ``MAX_EVIDENCE_TEXT_CHARS``.
     """
     ticket = _require(ticket_identifier, "ticket_identifier")
     heading = _require(title, "title")
     description = _require(body, "body")
     url = _normalize(source_url or "")
     criteria = _normalize(acceptance_criteria or "")
+    content_chars = len(heading) + len(description) + len(url) + len(criteria)
+    if content_chars > MAX_CLIENT_CONTENT_CHARS:
+        raise TestDesignValidationError(
+            "title, body, acceptance_criteria and source_url must fit in "
+            f"{MAX_CLIENT_CONTENT_CHARS} characters, got {content_chars}"
+        )
     lines = [f"# {heading}", "", f"Ticket: {ticket}"]
     if url:
         lines.append(f"Source: {url}")

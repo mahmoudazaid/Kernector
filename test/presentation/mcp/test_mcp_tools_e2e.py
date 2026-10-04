@@ -392,6 +392,40 @@ async def test_invalid_client_content_is_a_validation_error(
     assert calls == []
 
 
+def _content_with_combined_chars(total: int) -> dict:
+    criteria = "y" * 5_000
+    used = (
+        len(_CLIENT_CONTENT["title"])
+        + len(_CLIENT_CONTENT["source_url"])
+        + len(criteria)
+    )
+    return {
+        **_CLIENT_CONTENT,
+        "ticket_identifier": "K" * 160,
+        "body": "x" * (total - used),
+        "acceptance_criteria": criteria,
+    }
+
+
+@pytest.mark.anyio
+async def test_client_content_at_the_published_limit_is_accepted(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        started = await _call(
+            client,
+            "software_delivery_test_design_start_from_text",
+            _content_with_combined_chars(9_775),
+        )
+
+    assert started["status"] == "coverage_review"
+
+
 @pytest.mark.anyio
 async def test_client_content_over_the_combined_limit_says_what_to_shorten(
     tmp_path, monkeypatch: pytest.MonkeyPatch
@@ -404,7 +438,7 @@ async def test_client_content_over_the_combined_limit_says_what_to_shorten(
     async with Client(server, raise_exceptions=True) as client:
         result = await client.call_tool(
             "software_delivery_test_design_start_from_text",
-            {**_CLIENT_CONTENT, "body": "x" * 6_000, "acceptance_criteria": "y" * 5_000},
+            _content_with_combined_chars(9_776),
         )
 
     assert result.is_error is True
@@ -412,7 +446,7 @@ async def test_client_content_over_the_combined_limit_says_what_to_shorten(
         "code": "validation_error",
         "message": (
             "Issue content is too long. Title, body, acceptance_criteria and "
-            "source_url together must fit in 10,000 characters; shorten the "
+            "source_url together must fit in 9,775 characters; shorten the "
             "body first and keep the acceptance criteria."
         ),
     }

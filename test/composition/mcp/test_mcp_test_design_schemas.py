@@ -375,7 +375,7 @@ def test_schemas_never_expose_workspace_or_conversation_id() -> None:
 
 _COMBINED_LIMIT_WORDING = (
     "Title, body, acceptance_criteria and source_url together must fit in "
-    "10,000 characters; shorten the body first and keep the acceptance criteria."
+    "9,775 characters; shorten the body first and keep the acceptance criteria."
 )
 
 

@@ -173,10 +173,11 @@ tracker.
 - Supplied content is untrusted input. It goes inside the same defanged
   evidence delimiters as live evidence; `ticket_identifier` must be a single
   token (no whitespace, not a bare number) because it reaches the prompt
-  outside those delimiters. Oversized or invalid payloads (body or acceptance
-  criteria over 10,000 characters, URL over 2,048, rendered evidence over the
-  10,000-character evidence budget, unknown fields) return `validation_error`
-  before any workflow call. The combined limit is stated in the tool and
+  outside those delimiters. Oversized or invalid payloads (title, body,
+  acceptance criteria and source URL together over 9,775 characters, URL over
+  2,048, unknown fields) return `validation_error` before any workflow call.
+  The 9,775 limit is the 10,000-character evidence budget minus the worst-case
+  rendering overhead (headings, blank lines and a 160-character ticket line). The combined limit is stated in the tool and
   `body` descriptions, and exceeding it returns a specific message telling the
   client to shorten the body and keep the acceptance criteria. Supplied content
   is never truncated, so acceptance criteria always reach the model in full.

@@ -21,7 +21,11 @@ from composition.test_design.sources import TestDesignSourceRegistry
 from packs.software_delivery.test_design.client_evidence import (
     render_client_evidence,
 )
-from packs.software_delivery.test_design.limits import MAX_EVIDENCE_TEXT_CHARS
+from packs.software_delivery.test_design.limits import (
+    MAX_CLIENT_CONTENT_CHARS,
+    MAX_EVIDENCE_TEXT_CHARS,
+    MAX_TICKET_IDENTIFIER_CHARS,
+)
 from test.composition.test_design.test_design_fakes import (
     ISSUE_LOCATOR,
     FakeTestDesignChat,
@@ -184,41 +188,61 @@ def test_supplied_context_delimiters_are_defanged(tmp_path: Path) -> None:
     assert chat.contexts[0].endswith("<<<END_RETRIEVED_CONTEXT>>>")
 
 
-def _body_filling_budget(criteria: str) -> str:
-    probe = render_client_evidence(
-        ticket_identifier="KERN-355",
+_MAX_TICKET = "K" * MAX_TICKET_IDENTIFIER_CHARS
+_URL = "https://tracker.example/KERN-355"
+_CRITERIA = "- " + "c" * 4_998
+
+
+def _body_at_published_limit() -> str:
+    used = len("Login") + len(_URL) + len(_CRITERIA)
+    return "b" * (MAX_CLIENT_CONTENT_CHARS - used)
+
+
+def test_render_overhead_matches_the_reserved_worst_case() -> None:
+    body = _body_at_published_limit()
+
+    rendered = render_client_evidence(
+        ticket_identifier=_MAX_TICKET,
         title="Login",
-        body="b",
-        acceptance_criteria=criteria,
-        source_url="https://tracker.example/KERN-355",
+        body=body,
+        acceptance_criteria=_CRITERIA,
+        source_url=_URL,
     )
-    return "b" * (MAX_EVIDENCE_TEXT_CHARS - len(probe) + 1)
+
+    assert len(rendered) == MAX_EVIDENCE_TEXT_CHARS
 
 
-def test_content_filling_the_budget_keeps_all_acceptance_criteria(
+def test_content_at_the_published_limit_keeps_all_acceptance_criteria(
     tmp_path: Path,
 ) -> None:
     chat = _RecordingChat()
     facade = build_fake_facade(tmp_path, chat=chat)
-    criteria = "- " + "c" * 8_998
 
     facade.create_draft_from_content(
-        _request(body=_body_filling_budget(criteria), acceptance_criteria=criteria)
+        _request(
+            ticket_identifier=_MAX_TICKET,
+            body=_body_at_published_limit(),
+            acceptance_criteria=_CRITERIA,
+            source_url=_URL,
+        )
     )
 
-    assert criteria in chat.contexts[0]
+    assert _CRITERIA in chat.contexts[0]
 
 
-def test_content_over_the_budget_is_rejected_not_truncated(tmp_path: Path) -> None:
+def test_content_over_the_published_limit_is_rejected_not_truncated(
+    tmp_path: Path,
+) -> None:
     chat = _RecordingChat()
     facade = build_fake_facade(tmp_path, chat=chat)
-    criteria = "- " + "c" * 8_998
 
     with pytest.raises(TestDesignValidationError):
         facade.create_draft_from_content(
             _request(
-                body=_body_filling_budget(criteria) + "b",
-                acceptance_criteria=criteria,
+                ticket_identifier="KERN-355",
+                body=_body_at_published_limit() + "b",
+                acceptance_criteria=_CRITERIA,
+                source_url=_URL,
             )
         )
 
