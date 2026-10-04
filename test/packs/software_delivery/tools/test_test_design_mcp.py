@@ -168,7 +168,7 @@ def test_start_description_recommends_a_browse_url_over_a_bare_key() -> None:
 def test_start_failures_hint_at_start_from_text() -> None:
     hints = TestDesignStartTool(_FakeBinding()).failure_hints
 
-    assert set(hints) == {"source_not_connected", "not_found"}
+    assert set(hints) == {"source_not_connected", "not_found", "unsupported_source"}
     for required_tool_id, hint in hints.values():
         assert required_tool_id == TOOL_START_FROM_CONTENT
         assert "test_design_start_from_text" in hint

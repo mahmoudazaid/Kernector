@@ -142,7 +142,8 @@ contributes these tools only when composition supplies a workspace-bound
   `evidence_changed`), re-read with `software_delivery.test_design_get`.
 - Errors: `validation_error`, `not_found` (unknown and other-workspace drafts
   are identical), `version_conflict`, `evidence_changed`,
-  `source_not_connected`, `insufficient_evidence`, otherwise `internal_error`.
+  `source_not_connected`, `insufficient_evidence`, `unsupported_source` (no
+  registered source accepts the `issue_locator`), otherwise `internal_error`.
   Nothing is published externally.
 - `source_not_connected` payloads also carry
   `"legacy_code": "github_not_connected"` for one release so existing clients
@@ -195,10 +196,11 @@ tracker.
 
 - Try `test_design_start` first, with the full Issue or browse URL when you
   have one. A bare key is read from the tracker Kernector is connected to,
-  which may be a different instance with the same key. A browse URL from an
-  instance Kernector is not connected to returns `validation_error`.
-- When `test_design_start` fails with `source_not_connected` or `not_found`,
-  the payload carries a fixed `hint` pointing to
+  which may be a different instance with the same key. A locator no
+  registered source accepts (a tracker Kernector has no source for, or a
+  browse URL from another instance) returns `unsupported_source`.
+- When `test_design_start` fails with `source_not_connected`, `not_found` or
+  `unsupported_source`, the payload carries a fixed `hint` pointing to
   `test_design_start_from_text`, but only when that tool is contributed and
   effective for the caller (allowlisted, pack enabled). Otherwise the payload
   is unchanged, so it reveals nothing about tools the caller cannot use. The

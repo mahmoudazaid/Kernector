@@ -141,7 +141,7 @@ class TestDesignStartTool(_TestDesignTool):
     )
     failure_hints: ClassVar[Mapping[str, tuple[str, str]]] = {
         code: (TOOL_START_FROM_CONTENT, _START_FROM_CONTENT_HINT)
-        for code in ("source_not_connected", "not_found")
+        for code in ("source_not_connected", "not_found", "unsupported_source")
     }
 
     @staticmethod

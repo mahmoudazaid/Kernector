@@ -776,7 +776,8 @@ the agents; Kernector supplies evidence and allowlisted tools.
   `ToolFailureError`, e.g. `ToolTargetNotFoundError`). Only
   `composition/mcp/tool_registry.py` maps exact types to the safe wire codes
   `not_found`, `version_conflict`, `evidence_changed`, `source_not_connected`,
-  and `insufficient_evidence` with fixed messages; validation stays
+  `insufficient_evidence` and `unsupported_source` (no registered Test Design
+  source accepts the locator, #361) with fixed messages; validation stays
   `validation_error` and anything else is `internal_error`.
   `source_not_connected` also sends `legacy_code: github_not_connected` for
   one release (#351); clients should match on `code`.

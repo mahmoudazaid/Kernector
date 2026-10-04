@@ -48,6 +48,7 @@ from composition.test_design.errors import (
     TestDesignUnavailableError,
     TestDesignValidationError,
     TestDesignVersionConflictError,
+    UnsupportedSourceLocatorError,
 )
 from domain.errors import (
     ToolArgumentValidationError,
@@ -56,6 +57,7 @@ from domain.errors import (
     ToolSourceNotConnectedError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
+    ToolUnsupportedSourceError,
     ToolVersionConflictError,
 )
 from infrastructure.config import Settings
@@ -484,6 +486,7 @@ _ERROR_MAP: tuple[tuple[type[BaseException], type[Exception]], ...] = (
     (SourceReauthorizationRequiredError, ToolSourceNotConnectedError),
     (InsufficientEvidenceError, ToolInsufficientEvidenceError),
     (TestDesignUnavailableError, ToolUnavailableError),
+    (UnsupportedSourceLocatorError, ToolUnsupportedSourceError),
     (TestDesignValidationError, ToolArgumentValidationError),
 )
 

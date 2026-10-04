@@ -634,8 +634,15 @@ async def test_scenario_2_no_hint_when_start_from_text_is_not_allowlisted(
     }
 
 
+_UNSUPPORTED_SOURCE_WITH_HINT = {
+    "code": "unsupported_source",
+    "message": "No connected source accepts this locator",
+    "hint": _START_FROM_TEXT_HINT,
+}
+
+
 @pytest.mark.anyio
-async def test_scenario_2_foreign_instance_url_fails_loudly(
+async def test_scenario_2_foreign_instance_url_fails_loudly_with_hint(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     jira = _KernectorJiraClient()
@@ -643,9 +650,26 @@ async def test_scenario_2_foreign_instance_url_fails_loudly(
 
     payload = await _start_error(server, "https://other-jira.example.com/browse/ENG-7")
 
-    assert payload["code"] == "validation_error"
-    assert "hint" not in payload
+    assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
     assert jira.calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "locator", ["OIE-721", "https://jira.example.com/browse/OIE-721"]
+)
+async def test_scenario_2_tracker_kernector_has_no_source_for_hints(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+
+    payload = await _start_error(server, locator)
+
+    assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
 
 
 _WRONG_TRACKER_SENTINELS = ("SENTINEL-361-WRONG-BODY", "SENTINEL-361-WRONG-AC")

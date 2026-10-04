@@ -19,6 +19,7 @@ from domain.errors import (
     ToolSourceNotConnectedError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
+    ToolUnsupportedSourceError,
     ToolVersionConflictError,
 )
 from domain.ports import Tool
@@ -55,6 +56,10 @@ _SAFE_FAILURES: Mapping[type[ToolFailureError], tuple[str, str]] = {
     ToolInsufficientEvidenceError: (
         "insufficient_evidence",
         "No usable grounded evidence",
+    ),
+    ToolUnsupportedSourceError: (
+        "unsupported_source",
+        "No connected source accepts this locator",
     ),
 }
 
