@@ -373,6 +373,24 @@ def test_schemas_never_expose_workspace_or_conversation_id() -> None:
     assert "conversation_id" not in result_schema
 
 
+_COMBINED_LIMIT_WORDING = (
+    "Title, body, acceptance_criteria and source_url together must fit in "
+    "10,000 characters; shorten the body first and keep the acceptance criteria."
+)
+
+
+def test_start_from_content_advertises_the_combined_limit() -> None:
+    from packs.software_delivery.tools.test_design_mcp import (
+        TestDesignStartFromContentTool,
+    )
+
+    tool = TestDesignStartFromContentTool(McpTestDesignBinding(lambda: None))  # type: ignore[arg-type,return-value]
+    body = TestDesignStartFromContentArgs.model_json_schema()["properties"]["body"]
+
+    assert _COMBINED_LIMIT_WORDING in tool.description
+    assert _COMBINED_LIMIT_WORDING in body["description"]
+
+
 def test_binding_exposes_composition_schemas() -> None:
     binding = McpTestDesignBinding(lambda: None)  # type: ignore[arg-type,return-value]
 

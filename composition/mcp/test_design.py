@@ -23,6 +23,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from application.errors import (
     InsufficientEvidenceError,
@@ -39,6 +40,7 @@ from composition.test_design.facade import (
     TestCoverageDraftView,
     TestDesignFacade,
 )
+from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE
 from composition.test_design.errors import (
     TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
@@ -57,6 +59,7 @@ from domain.errors import (
 )
 from infrastructure.config import Settings
 from packs.software_delivery.test_design.client_evidence import (
+    CLIENT_EVIDENCE_LIMIT_GUIDANCE,
     render_client_evidence,
 )
 from packs.software_delivery.test_design.errors import (
@@ -147,7 +150,12 @@ class TestDesignStartFromContentArgs(_StrictArgs):
         StringConstraints(
             strip_whitespace=True, min_length=1, max_length=MAX_CLIENT_BODY_CHARS
         ),
-    ] = Field(description="Issue description as fetched, in plain text or Markdown.")
+    ] = Field(
+        description=(
+            "Issue description as fetched, in plain text or Markdown. "
+            f"{CLIENT_EVIDENCE_LIMIT_GUIDANCE}"
+        )
+    )
     acceptance_criteria: (
         Annotated[
             str,
@@ -196,7 +204,10 @@ class TestDesignStartFromContentArgs(_StrictArgs):
                 source_url=self.source_url,
             )
         except PackTestDesignValidationError as error:
-            raise ValueError(str(error)) from error
+            raise PydanticCustomError(
+                SAFE_VALIDATION_ERROR_TYPE,
+                f"Issue content is too long. {CLIENT_EVIDENCE_LIMIT_GUIDANCE}",
+            ) from error
         return self
 
 

@@ -12,6 +12,10 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import ClassVar, Protocol
 
+from packs.software_delivery.test_design.client_evidence import (
+    CLIENT_EVIDENCE_LIMIT_GUIDANCE,
+)
+
 TOOL_START = "software_delivery.test_design_start"
 TOOL_START_FROM_CONTENT = "software_delivery.test_design_start_from_text"
 TOOL_GET = "software_delivery.test_design_get"
@@ -147,7 +151,9 @@ class TestDesignStartFromContentTool(_TestDesignTool):
     _description = (
         "Start Test Design from issue content you already fetched with your "
         "own tracker tools (any tracker): pass ticket_identifier, title, body, "
-        "and optional acceptance_criteria and source_url. Kernector does not "
+        "and optional acceptance_criteria and source_url. "
+        f"{CLIENT_EVIDENCE_LIMIT_GUIDANCE} "
+        "Kernector does not "
         "verify this content against a live source; the draft reports "
         "evidence_origin client_supplied, and confirm and generate reuse the "
         "supplied content. To change the evidence, start a new draft. "

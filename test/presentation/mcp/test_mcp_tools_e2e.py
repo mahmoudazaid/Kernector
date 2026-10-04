@@ -393,6 +393,32 @@ async def test_invalid_client_content_is_a_validation_error(
 
 
 @pytest.mark.anyio
+async def test_client_content_over_the_combined_limit_says_what_to_shorten(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "software_delivery_test_design_start_from_text",
+            {**_CLIENT_CONTENT, "body": "x" * 6_000, "acceptance_criteria": "y" * 5_000},
+        )
+
+    assert result.is_error is True
+    assert json.loads(result.content[0].text) == {
+        "code": "validation_error",
+        "message": (
+            "Issue content is too long. Title, body, acceptance_criteria and "
+            "source_url together must fit in 10,000 characters; shorten the "
+            "body first and keep the acceptance criteria."
+        ),
+    }
+
+
+@pytest.mark.anyio
 async def test_start_from_content_requires_its_own_allowlist_entry(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

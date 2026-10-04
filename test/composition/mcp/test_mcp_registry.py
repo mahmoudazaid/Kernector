@@ -284,6 +284,46 @@ def test_argument_validation_stays_validation_error() -> None:
     assert _SECRET not in result.text
 
 
+class _SchemaTool(_RaisingTool):
+    def __init__(self, args_schema: type) -> None:
+        super().__init__()
+        self.args_schema = args_schema
+
+
+def _schema_rejecting_with(error_type: str) -> type:
+    from pydantic import BaseModel, model_validator
+    from pydantic_core import PydanticCustomError
+
+    class _Args(BaseModel):
+        @model_validator(mode="after")
+        def _reject(self):  # noqa: ANN202
+            raise PydanticCustomError(error_type, "Fixed safe message.")
+
+    return _Args
+
+
+def test_safe_schema_validation_message_is_returned() -> None:
+    from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE
+
+    tool = _SchemaTool(_schema_rejecting_with(SAFE_VALIDATION_ERROR_TYPE))
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+
+    result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.code == "validation_error"
+    assert json.loads(result.text)["message"] == "Fixed safe message."
+    assert tool.calls == 0
+
+
+def test_other_schema_validation_messages_stay_generic() -> None:
+    tool = _SchemaTool(_schema_rejecting_with("value_error"))
+    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+
+    result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
+
+    assert json.loads(result.text)["message"] == "Invalid tool arguments"
+
+
 @pytest.mark.parametrize(
     "error",
     [

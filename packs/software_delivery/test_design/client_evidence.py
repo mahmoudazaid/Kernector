@@ -16,6 +16,11 @@ from packs.software_delivery.test_design.limits import MAX_EVIDENCE_TEXT_CHARS
 
 CLIENT_SUPPLIED_SOURCE_TYPE = "client_supplied"
 CLIENT_SOURCE_PROVIDER = "client"
+CLIENT_EVIDENCE_LIMIT_GUIDANCE = (
+    "Title, body, acceptance_criteria and source_url together must fit in "
+    f"{MAX_EVIDENCE_TEXT_CHARS:,} characters; shorten the body first and keep "
+    "the acceptance criteria."
+)
 
 
 def client_source_reference(ticket_identifier: str) -> SourceReference:
