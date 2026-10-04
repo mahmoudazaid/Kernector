@@ -20,6 +20,7 @@ from packs.software_delivery.test_design.limits import (
 )
 from packs.software_delivery.test_design.model_json import loads_model_json_object
 from packs.software_delivery.test_design.models import (
+    EvidenceOrigin,
     TestCandidate,
     TestCoverageDraft,
     coerce_coverage_category,
@@ -93,6 +94,7 @@ class SuggestTestCandidatesRequest:
     ticket_identifier: str
     source_provider: str
     evidence: Sequence[CoverageEvidenceItem]
+    evidence_origin: EvidenceOrigin = "live"
 
 
 class SuggestTestCandidates:
@@ -130,6 +132,7 @@ class SuggestTestCandidates:
             raise TestDesignInsufficientEvidenceError(
                 "No usable grounded evidence for test candidate suggestion."
             )
+        client_evidence_text = _client_evidence_text(request.evidence_origin, evidence)
 
         allowed_refs = {
             (item.reference.source_type, item.reference.source_id)
@@ -163,6 +166,8 @@ class SuggestTestCandidates:
             status="coverage_review",
             candidates=candidates,
             version=1,
+            evidence_origin=request.evidence_origin,
+            client_evidence_text=client_evidence_text,
         )
         return self._repository.create(draft)
 
@@ -181,12 +186,31 @@ def budget_source_document_text(document: SourceDocument) -> str:
     text = document.content
     if not isinstance(text, str) or not text.strip():
         raise TestDesignValidationError("document content must be non-empty")
+    return budget_evidence_text(text)
+
+
+def budget_evidence_text(text: str) -> str:
+    """Return *text* bounded to the coverage planning evidence budget."""
+    if not isinstance(text, str) or not text.strip():
+        raise TestDesignValidationError("evidence text must be non-empty")
     if len(text) <= MAX_EVIDENCE_TEXT_CHARS:
         return text
     budget = MAX_EVIDENCE_TEXT_CHARS - len(TRUNCATION_MARKER)
     if budget <= 0:
         return TRUNCATION_MARKER[:MAX_EVIDENCE_TEXT_CHARS]
     return f"{text[:budget].rstrip()}{TRUNCATION_MARKER}"
+
+
+def _client_evidence_text(
+    origin: str, evidence: Sequence[CoverageEvidenceItem]
+) -> str:
+    if origin != "client_supplied":
+        return ""
+    if len(evidence) != 1:
+        raise TestDesignValidationError(
+            "client_supplied drafts need exactly one evidence item"
+        )
+    return evidence[0].text
 
 
 def _require_id(value: object, field_name: str) -> str:

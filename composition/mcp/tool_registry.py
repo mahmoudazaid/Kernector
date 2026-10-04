@@ -8,6 +8,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
+
 from composition.mcp.access import McpAccessPolicy, McpCallerContext
 from domain.errors import (
     ToolArgumentValidationError,
@@ -26,6 +28,10 @@ logger = logging.getLogger(__name__)
 TOOL_UNAVAILABLE_CODE = "tool_unavailable"
 GENERIC_ERROR_CODE = "internal_error"
 VALIDATION_ERROR_CODE = "validation_error"
+# An args schema may raise ``PydanticCustomError(SAFE_VALIDATION_ERROR_TYPE,
+# message)`` with a fixed message that never interpolates input; only that
+# message replaces the generic validation text.
+SAFE_VALIDATION_ERROR_TYPE = "mcp_safe_validation"
 
 # Exact exception type -> (wire code, fixed message). Only these escape.
 _SAFE_FAILURES: Mapping[type[ToolFailureError], tuple[str, str]] = {
@@ -109,6 +115,14 @@ def _validation_error(message: str = "Invalid tool arguments") -> McpInvokeResul
         code=VALIDATION_ERROR_CODE,
         structured=payload,
     )
+
+
+def _schema_validation_error(error: Exception) -> McpInvokeResult:
+    if isinstance(error, ValidationError):
+        details = error.errors(include_url=False, include_input=False)
+        if len(details) == 1 and details[0]["type"] == SAFE_VALIDATION_ERROR_TYPE:
+            return _validation_error(details[0]["msg"])
+    return _validation_error()
 
 
 def _safe_failure(code: str, message: str) -> McpInvokeResult:
@@ -229,8 +243,8 @@ class McpToolRegistry:
         if args_schema is not None:
             try:
                 args_schema.model_validate(args)
-            except Exception:
-                return _validation_error()
+            except Exception as error:
+                return _schema_validation_error(error)
         try:
             result = tool.run(args)
         except ToolArgumentValidationError:

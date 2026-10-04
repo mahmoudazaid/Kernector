@@ -18,8 +18,8 @@ from packs.software_delivery.test_design.models import (
     coerce_coverage_category,
 )
 
-DRAFT_SCHEMA_VERSION = 5
-SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
+DRAFT_SCHEMA_VERSION = 6
+SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
 
 
 def _normalize_stored_category(raw: str) -> str:
@@ -60,6 +60,8 @@ def encode_draft_payload(draft: TestCoverageDraft) -> str:
         "evidence_fingerprint": draft.evidence_fingerprint,
         "cucumber_feature": draft.cucumber_feature,
         "cucumber_background": draft.cucumber_background,
+        "evidence_origin": draft.evidence_origin,
+        "client_evidence_text": draft.client_evidence_text,
     }
     return json.dumps(body, separators=(",", ":"), sort_keys=True)
 
@@ -72,8 +74,9 @@ def decode_draft_payload(
 ) -> TestCoverageDraft:
     """Decode an opaque payload into a typed draft.
 
-    Accepts schema versions 1–5. Versions before 5 have no ``source_provider``
-    and derive it from ``source_reference.source_type``. Legacy ``scenarios`` and ``coverage_gaps``
+    Accepts schema versions 1–6. Versions before 5 have no ``source_provider``
+    and derive it from ``source_reference.source_type``. Versions before 6
+    have no ``evidence_origin`` and decode as ``live``. Legacy ``scenarios`` and ``coverage_gaps``
     keys are ignored. ``scenario_editing`` status maps to ``ready``. Version 3
     ``ManualStep`` objects migrate into ``steps`` string lists +
     ``expected_result``.
@@ -123,6 +126,16 @@ def decode_draft_payload(
             evidence_fingerprint=_optional_nullable_str(raw, "evidence_fingerprint"),
             cucumber_feature=_optional_str(raw, "cucumber_feature"),
             cucumber_background=_optional_str(raw, "cucumber_background"),
+            evidence_origin=(
+                raw.get("evidence_origin")
+                if schema_version == DRAFT_SCHEMA_VERSION
+                else "live"
+            ),
+            client_evidence_text=(
+                _optional_str(raw, "client_evidence_text")
+                if schema_version == DRAFT_SCHEMA_VERSION
+                else ""
+            ),
         )
     except TestDesignValidationError:
         raise

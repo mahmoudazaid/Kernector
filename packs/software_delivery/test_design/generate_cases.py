@@ -212,6 +212,8 @@ class GenerateTestCases:
                     evidence_fingerprint=request.evidence_fingerprint,
                     cucumber_feature=current.cucumber_feature,
                     cucumber_background=current.cucumber_background,
+                    evidence_origin=current.evidence_origin,
+                    client_evidence_text=current.client_evidence_text,
                 )
                 saved = self._repository.update(
                     updated, expected_version=request.expected_version
@@ -276,6 +278,8 @@ class GenerateTestCases:
             evidence_fingerprint=request.evidence_fingerprint,
             cucumber_feature=cucumber_feature if has_cucumber else "",
             cucumber_background=cucumber_background if has_cucumber else "",
+            evidence_origin=current.evidence_origin,
+            client_evidence_text=current.client_evidence_text,
         )
         saved = self._repository.update(
             updated, expected_version=request.expected_version
