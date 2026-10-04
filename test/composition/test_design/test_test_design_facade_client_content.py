@@ -6,6 +6,8 @@ import hashlib
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from composition.test_design.facade import (
     CreateTestDesignDraftFromContentRequest,
     CreateTestDesignDraftRequest,
@@ -14,7 +16,12 @@ from composition.test_design.facade import (
     SourceLocatorView,
     TestDesignFacade,
 )
+from composition.test_design.errors import TestDesignValidationError
 from composition.test_design.sources import TestDesignSourceRegistry
+from packs.software_delivery.test_design.client_evidence import (
+    render_client_evidence,
+)
+from packs.software_delivery.test_design.limits import MAX_EVIDENCE_TEXT_CHARS
 from test.composition.test_design.test_design_fakes import (
     ISSUE_LOCATOR,
     FakeTestDesignChat,
@@ -175,6 +182,47 @@ def test_supplied_context_delimiters_are_defanged(tmp_path: Path) -> None:
 
     assert chat.contexts[0].count("<<<END_RETRIEVED_CONTEXT>>>") == 1
     assert chat.contexts[0].endswith("<<<END_RETRIEVED_CONTEXT>>>")
+
+
+def _body_filling_budget(criteria: str) -> str:
+    probe = render_client_evidence(
+        ticket_identifier="KERN-355",
+        title="Login",
+        body="b",
+        acceptance_criteria=criteria,
+        source_url="https://tracker.example/KERN-355",
+    )
+    return "b" * (MAX_EVIDENCE_TEXT_CHARS - len(probe) + 1)
+
+
+def test_content_filling_the_budget_keeps_all_acceptance_criteria(
+    tmp_path: Path,
+) -> None:
+    chat = _RecordingChat()
+    facade = build_fake_facade(tmp_path, chat=chat)
+    criteria = "- " + "c" * 8_998
+
+    facade.create_draft_from_content(
+        _request(body=_body_filling_budget(criteria), acceptance_criteria=criteria)
+    )
+
+    assert criteria in chat.contexts[0]
+
+
+def test_content_over_the_budget_is_rejected_not_truncated(tmp_path: Path) -> None:
+    chat = _RecordingChat()
+    facade = build_fake_facade(tmp_path, chat=chat)
+    criteria = "- " + "c" * 8_998
+
+    with pytest.raises(TestDesignValidationError):
+        facade.create_draft_from_content(
+            _request(
+                body=_body_filling_budget(criteria) + "b",
+                acceptance_criteria=criteria,
+            )
+        )
+
+    assert chat.contexts == []
 
 
 def test_live_draft_reports_live_origin(tmp_path: Path) -> None:

@@ -279,6 +279,7 @@ _CONTENT: dict[str, object] = {
     [
         {"body": "x" * (MAX_CLIENT_BODY_CHARS + 1)},
         {"acceptance_criteria": "x" * (MAX_CLIENT_ACCEPTANCE_CRITERIA_CHARS + 1)},
+        {"body": "x" * 5_000, "acceptance_criteria": "y" * 5_000},
         {"title": "x" * (MAX_TITLE_CHARS + 1)},
         {"ticket_identifier": "K" * (MAX_TICKET_IDENTIFIER_CHARS + 1)},
         {"source_url": "https://t.example/" + "x" * MAX_CLIENT_SOURCE_URL_CHARS},

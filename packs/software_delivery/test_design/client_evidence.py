@@ -1,7 +1,7 @@
 """Canonical client-supplied Issue evidence and the shared evidence fingerprint.
 
 Client-supplied drafts (#355) are rendered once, at start, by
-:func:`render_client_evidence`; the budgeted result is persisted and hashed by
+:func:`render_client_evidence`; the result is persisted and hashed by
 :func:`evidence_fingerprint`. Confirm and generate never re-render, so the
 fingerprint cannot drift between start, confirm and generate.
 """
@@ -12,6 +12,7 @@ import hashlib
 
 from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.test_design.limits import MAX_EVIDENCE_TEXT_CHARS
 
 CLIENT_SUPPLIED_SOURCE_TYPE = "client_supplied"
 CLIENT_SOURCE_PROVIDER = "client"
@@ -37,10 +38,13 @@ def render_client_evidence(
     Each field has ``\\r\\n`` and ``\\r`` converted to ``\\n`` and is stripped.
     Lines join with ``\\n`` and there is no trailing newline. The ``Source:``
     line and the acceptance criteria block are omitted when absent or blank.
+    The rendered text is never truncated, so no supplied field is silently
+    dropped before it reaches the model.
 
     Raises:
         TestDesignValidationError: ``ticket_identifier``, ``title`` or
-            ``body`` is blank.
+            ``body`` is blank, or the rendered text exceeds
+            ``MAX_EVIDENCE_TEXT_CHARS``.
     """
     ticket = _require(ticket_identifier, "ticket_identifier")
     heading = _require(title, "title")
@@ -53,7 +57,13 @@ def render_client_evidence(
     lines.extend(["", "## Description", "", description])
     if criteria:
         lines.extend(["", "## Acceptance criteria", "", criteria])
-    return "\n".join(lines)
+    rendered = "\n".join(lines)
+    if len(rendered) > MAX_EVIDENCE_TEXT_CHARS:
+        raise TestDesignValidationError(
+            "supplied issue content must fit in "
+            f"{MAX_EVIDENCE_TEXT_CHARS} characters, got {len(rendered)}"
+        )
+    return rendered
 
 
 def evidence_fingerprint(reference: SourceReference, budgeted: str) -> str:

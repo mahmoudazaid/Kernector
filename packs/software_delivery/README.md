@@ -173,8 +173,10 @@ tracker.
 - Supplied content is untrusted input. It goes inside the same defanged
   evidence delimiters as live evidence; `ticket_identifier` must be a single
   token (no whitespace, not a bare number) because it reaches the prompt
-  outside those delimiters. Oversized or invalid payloads (body over 20,000
-  characters, acceptance criteria over 10,000, URL over 2,048, unknown fields)
-  return `validation_error` before any workflow call.
+  outside those delimiters. Oversized or invalid payloads (body or acceptance
+  criteria over 10,000 characters, URL over 2,048, rendered evidence over the
+  10,000-character evidence budget, unknown fields) return `validation_error`
+  before any workflow call. Supplied content is never truncated, so acceptance
+  criteria always reach the model in full.
 - The tool needs its own `MCP_TOOL_ALLOWLIST` entry; allowlisting
   `test_design_start` does not enable it.

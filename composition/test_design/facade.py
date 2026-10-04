@@ -335,16 +335,14 @@ class TestDesignFacade:
     ) -> TestCoverageDraftView:
         """Create a draft from client-supplied Issue content (#355).
 
-        The content is rendered and budgeted once and persisted with the
-        draft; no live source is consulted now or on confirm/generate.
+        The content is rendered once and persisted with the draft; content
+        that does not fit the evidence budget is rejected, never truncated.
+        No live source is consulted now or on confirm/generate.
         """
         from packs.software_delivery.test_design.client_evidence import (
             CLIENT_SOURCE_PROVIDER,
             client_source_reference,
             render_client_evidence,
-        )
-        from packs.software_delivery.test_design.suggest_tests import (
-            budget_evidence_text,
         )
 
         self._require_enabled()
@@ -368,7 +366,7 @@ class TestDesignFacade:
             reference=reference,
             ticket_identifier=request.ticket_identifier.strip(),
             source_provider=CLIENT_SOURCE_PROVIDER,
-            budgeted=lambda: budget_evidence_text(rendered),
+            budgeted=lambda: rendered,
             evidence_origin="client_supplied",
         )
 

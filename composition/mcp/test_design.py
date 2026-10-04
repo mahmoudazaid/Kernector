@@ -21,6 +21,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 from application.errors import (
@@ -55,6 +56,12 @@ from domain.errors import (
     ToolVersionConflictError,
 )
 from infrastructure.config import Settings
+from packs.software_delivery.test_design.client_evidence import (
+    render_client_evidence,
+)
+from packs.software_delivery.test_design.errors import (
+    TestDesignValidationError as PackTestDesignValidationError,
+)
 from packs.software_delivery.test_design.limits import (
     MAX_CANDIDATES,
     MAX_CLIENT_ACCEPTANCE_CRITERIA_CHARS,
@@ -177,6 +184,20 @@ class TestDesignStartFromContentArgs(_StrictArgs):
         if value and not _CLIENT_SOURCE_URL.fullmatch(value):
             raise ValueError("source_url must be an http(s) URL")
         return value or None
+
+    @model_validator(mode="after")
+    def _content_fits_evidence_budget(self) -> TestDesignStartFromContentArgs:
+        try:
+            render_client_evidence(
+                ticket_identifier=self.ticket_identifier,
+                title=self.title,
+                body=self.body,
+                acceptance_criteria=self.acceptance_criteria,
+                source_url=self.source_url,
+            )
+        except PackTestDesignValidationError as error:
+            raise ValueError(str(error)) from error
+        return self
 
 
 class TestDesignGetArgs(_StrictArgs):
