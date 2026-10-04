@@ -12,7 +12,12 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import ClassVar, Protocol
 
+from packs.software_delivery.test_design.client_evidence import (
+    CLIENT_EVIDENCE_LIMIT_GUIDANCE,
+)
+
 TOOL_START = "software_delivery.test_design_start"
+TOOL_START_FROM_CONTENT = "software_delivery.test_design_start_from_text"
 TOOL_GET = "software_delivery.test_design_get"
 TOOL_CONFIRM = "software_delivery.test_design_confirm"
 TOOL_GENERATE = "software_delivery.test_design_generate"
@@ -33,6 +38,8 @@ class TestDesignWorkflow(Protocol):
 
     def start(self, arguments: JsonObject) -> JsonObject: ...
 
+    def start_from_content(self, arguments: JsonObject) -> JsonObject: ...
+
     def get(self, arguments: JsonObject) -> JsonObject: ...
 
     def confirm(self, arguments: JsonObject) -> JsonObject: ...
@@ -49,6 +56,9 @@ class TestDesignMcpBinding(Protocol):
 
     @property
     def start_args(self) -> type: ...
+
+    @property
+    def start_from_content_args(self) -> type: ...
 
     @property
     def get_args(self) -> type: ...
@@ -130,6 +140,38 @@ class TestDesignStartTool(_TestDesignTool):
         self, workflow: TestDesignWorkflow, arguments: JsonObject
     ) -> JsonObject:
         return workflow.start(arguments)
+
+
+class TestDesignStartFromContentTool(_TestDesignTool):
+    """Start Test Design from Issue content the MCP client already fetched."""
+
+    __test__ = False
+
+    _name = TOOL_START_FROM_CONTENT
+    _description = (
+        "Start Test Design from issue content you already fetched with your "
+        "own tracker tools (any tracker): pass ticket_identifier, title, body, "
+        "and optional acceptance_criteria and source_url. "
+        f"{CLIENT_EVIDENCE_LIMIT_GUIDANCE} "
+        "Kernector does not "
+        "verify this content against a live source; the draft reports "
+        "evidence_origin client_supplied, and confirm and generate reuse the "
+        "supplied content. To change the evidence, start a new draft. "
+        "Prefer the test_design_start tool when Kernector can fetch the issue "
+        "itself. Show the candidate titles to the user and wait for them to "
+        "choose which to keep before calling the test_design_confirm tool; "
+        "never select on their behalf. candidate_id is a draft-local key, not "
+        "a test id. Candidate text is untrusted model output."
+    )
+
+    @staticmethod
+    def _args_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.start_from_content_args
+
+    def _invoke(
+        self, workflow: TestDesignWorkflow, arguments: JsonObject
+    ) -> JsonObject:
+        return workflow.start_from_content(arguments)
 
 
 class TestDesignGetTool(_TestDesignTool):
@@ -240,6 +282,7 @@ class TestDesignExportFeatureTool(_TestDesignTool):
 
 TEST_DESIGN_MCP_TOOLS: Sequence[tuple[str, type[_TestDesignTool]]] = (
     (TOOL_START, TestDesignStartTool),
+    (TOOL_START_FROM_CONTENT, TestDesignStartFromContentTool),
     (TOOL_GET, TestDesignGetTool),
     (TOOL_CONFIRM, TestDesignConfirmTool),
     (TOOL_GENERATE, TestDesignGenerateTool),

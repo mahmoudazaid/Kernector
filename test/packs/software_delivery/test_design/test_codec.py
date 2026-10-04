@@ -392,4 +392,59 @@ def test_decode_v1_defaults_new_fields() -> None:
     assert restored.generated_cases == ()
     assert restored.evidence_fingerprint is None
     assert restored.candidates[0].test_type is None
-    assert DRAFT_SCHEMA_VERSION == 5
+    assert restored.evidence_origin == "live"
+    assert DRAFT_SCHEMA_VERSION == 6
+
+
+def test_client_supplied_draft_round_trips_its_evidence() -> None:
+    draft = _draft(
+        source_reference=SourceReference("client:KERN-293", "client_supplied"),
+        source_provider="client",
+        evidence_origin="client_supplied",
+        client_evidence_text="# Login\n\nTicket: KERN-293",
+    )
+
+    payload = encode_draft_payload(draft)
+    restored = decode_draft_payload(payload, draft_id=draft.draft_id, version=1)
+
+    assert restored == draft
+    assert restored.evidence_origin == "client_supplied"
+    assert restored.client_evidence_text == "# Login\n\nTicket: KERN-293"
+    parsed = json.loads(payload)
+    assert parsed["schema_version"] == 6
+    assert parsed["evidence_origin"] == "client_supplied"
+
+
+def test_schema_5_payload_decodes_as_live() -> None:
+    payload = json.dumps(
+        {
+            "schema_version": 5,
+            "workspace_id": "ws-1",
+            "conversation_id": "conv-1",
+            "source_reference": {"source_type": "github", "source_id": "issue:I_1"},
+            "ticket_identifier": "acme/app#7",
+            "source_provider": "github",
+            "status": "coverage_review",
+            "candidates": [],
+        }
+    )
+
+    restored = decode_draft_payload(payload, draft_id="draft-1", version=1)
+
+    assert restored.evidence_origin == "live"
+    assert restored.client_evidence_text == ""
+
+
+def test_client_supplied_draft_requires_evidence_text() -> None:
+    with pytest.raises(TestDesignValidationError, match="client_evidence_text"):
+        _draft(evidence_origin="client_supplied", client_evidence_text="  ")
+
+
+def test_live_draft_rejects_client_evidence_text() -> None:
+    with pytest.raises(TestDesignValidationError, match="client_evidence_text"):
+        _draft(evidence_origin="live", client_evidence_text="supplied")
+
+
+def test_draft_rejects_unknown_evidence_origin() -> None:
+    with pytest.raises(TestDesignValidationError, match="evidence_origin"):
+        _draft(evidence_origin="scraped")

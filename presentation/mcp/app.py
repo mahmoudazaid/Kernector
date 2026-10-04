@@ -38,6 +38,11 @@ _UNAUTHORIZED = JSONResponse(
     status_code=401,
     headers={"WWW-Authenticate": "Bearer"},
 )
+_NO_STANDALONE_STREAM = JSONResponse(
+    {"detail": "Method Not Allowed"},
+    status_code=405,
+    headers={"Allow": "POST, DELETE"},
+)
 
 
 def _to_call_tool_result(result: McpInvokeResult) -> types.CallToolResult:
@@ -62,7 +67,11 @@ def _to_mcp_tool(descriptor: McpToolDescriptor) -> types.Tool:
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Require ``Authorization: Bearer`` for ``/mcp``; leave ``/healthz`` public."""
+    """Require ``Authorization: Bearer`` for ``/mcp``; leave ``/healthz`` public.
+
+    Authenticated ``GET /mcp`` gets 405: the server offers no standalone SSE
+    stream, which the MCP Streamable HTTP spec allows.
+    """
 
     def __init__(
         self,
@@ -94,6 +103,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 presented.encode("utf-8"), self._auth_token.encode("utf-8")
             ):
                 return _UNAUTHORIZED
+            if request.method == "GET":
+                # No server-initiated messages; an idle SSE stream would block
+                # graceful shutdown until a forced second Ctrl+C.
+                return _NO_STANDALONE_STREAM
             request.state.mcp_caller = self._caller_factory()
         return await call_next(request)
 

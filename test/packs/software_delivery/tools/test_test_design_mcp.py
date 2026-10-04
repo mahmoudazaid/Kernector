@@ -13,10 +13,12 @@ from packs.software_delivery.tools.test_design_mcp import (
     TOOL_GENERATE,
     TOOL_GET,
     TOOL_START,
+    TOOL_START_FROM_CONTENT,
     TestDesignConfirmTool,
     TestDesignExportFeatureTool,
     TestDesignGenerateTool,
     TestDesignGetTool,
+    TestDesignStartFromContentTool,
     TestDesignStartTool,
 )
 
@@ -24,6 +26,9 @@ _RESULT = {"draft_id": "draft-1", "version": 1, "candidates": []}
 
 
 class _StartArgs: ...
+
+
+class _StartFromContentArgs: ...
 
 
 class _GetArgs: ...
@@ -58,6 +63,9 @@ class _FakeWorkflow:
     def start(self, arguments):
         return self._record("start", arguments)
 
+    def start_from_content(self, arguments):
+        return self._record("start_from_content", arguments)
+
     def get(self, arguments):
         return self._record("get", arguments)
 
@@ -73,6 +81,7 @@ class _FakeWorkflow:
 
 class _FakeBinding:
     start_args = _StartArgs
+    start_from_content_args = _StartFromContentArgs
     get_args = _GetArgs
     confirm_args = _ConfirmArgs
     generate_args = _GenerateArgs
@@ -90,6 +99,7 @@ class _FakeBinding:
 
 def test_tool_ids_are_stable() -> None:
     assert TOOL_START == "software_delivery.test_design_start"
+    assert TOOL_START_FROM_CONTENT == "software_delivery.test_design_start_from_text"
     assert TOOL_GET == "software_delivery.test_design_get"
     assert TOOL_CONFIRM == "software_delivery.test_design_confirm"
     assert TOOL_GENERATE == "software_delivery.test_design_generate"
@@ -97,6 +107,7 @@ def test_tool_ids_are_stable() -> None:
     binding = _FakeBinding()
     assert [(tool_id, cls(binding).name) for tool_id, cls in TEST_DESIGN_MCP_TOOLS] == [
         (TOOL_START, TOOL_START),
+        (TOOL_START_FROM_CONTENT, TOOL_START_FROM_CONTENT),
         (TOOL_GET, TOOL_GET),
         (TOOL_CONFIRM, TOOL_CONFIRM),
         (TOOL_GENERATE, TOOL_GENERATE),
@@ -104,10 +115,23 @@ def test_tool_ids_are_stable() -> None:
     ]
 
 
+@pytest.mark.parametrize("tool_id", [tool_id for tool_id, _ in TEST_DESIGN_MCP_TOOLS])
+def test_client_tool_names_fit_cursor_limit(tool_id: str) -> None:
+    """Cursor silently drops tools whose ``mcp_<server>_<tool>`` name exceeds 60."""
+    client_name = tool_id.replace(".", "_")
+    assert len(f"mcp_kernector_{client_name}") <= 60
+
+
 @pytest.mark.parametrize(
     ("tool_cls", "operation", "args_schema", "output_schema"),
     [
         (TestDesignStartTool, "start", _StartArgs, _Result),
+        (
+            TestDesignStartFromContentTool,
+            "start_from_content",
+            _StartFromContentArgs,
+            _Result,
+        ),
         (TestDesignGetTool, "get", _GetArgs, _Result),
         (TestDesignConfirmTool, "confirm", _ConfirmArgs, _Result),
         (TestDesignGenerateTool, "generate", _GenerateArgs, _Result),

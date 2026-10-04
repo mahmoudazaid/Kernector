@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from application.errors import (
     GitHubReauthorizationRequiredError,
     SourceReauthorizationRequiredError,
 )
-from composition.mcp.test_design import McpTestDesignOperations
+from composition.mcp.test_design import McpTestDesignOperations, McpTestDesignWorkflow
 from composition.test_design.facade import TestDesignFacade
 from domain.errors import (
     ToolArgumentValidationError,
@@ -285,6 +286,79 @@ def test_start_args_describe_both_locator_families_without_provider() -> None:
     description = schema["properties"]["issue_locator"]["description"]
     assert "owner/repo#number" in description
     assert "PROJ-123" in description
+
+
+_SENTINELS = ("SENTINEL-355-BODY", "SENTINEL-355-AC", "SENTINEL-355-URL")
+_CONTENT = {
+    "ticket_identifier": "KERN-355",
+    "title": "Login",
+    "body": "Users sign in with email. SENTINEL-355-BODY",
+    "acceptance_criteria": "- Lockout after 5 failures SENTINEL-355-AC",
+    "source_url": "https://tracker.example/SENTINEL-355-URL",
+}
+
+
+def _mcp_workflow(tmp_path: Path, **kwargs) -> tuple[McpTestDesignWorkflow, TestDesignFacade]:
+    facade = build_fake_facade(tmp_path, **kwargs)
+    return McpTestDesignWorkflow(McpTestDesignOperations(facade)), facade
+
+
+def test_start_from_content_projects_client_supplied_origin(tmp_path: Path) -> None:
+    reader = RecordingIssueReader()
+    workflow, facade = _mcp_workflow(tmp_path, reader=reader)
+
+    started = workflow.start_from_content(dict(_CONTENT))
+
+    assert started["evidence_origin"] == "client_supplied"
+    assert started["status"] == "coverage_review"
+    assert started["version"] == 1
+    assert started["ticket_identifier"] == "KERN-355"
+    assert reader.calls == []
+    stored = facade.get_draft(started["draft_id"])
+    assert stored.conversation_id.startswith("mcp-")
+
+
+def test_live_start_projects_live_origin(tmp_path: Path) -> None:
+    workflow, _facade = _mcp_workflow(tmp_path)
+
+    started = workflow.start({"issue_locator": ISSUE_LOCATOR})
+
+    assert started["evidence_origin"] == "live"
+
+
+def test_supplied_evidence_never_appears_in_mcp_outputs(tmp_path: Path) -> None:
+    workflow, _facade = _mcp_workflow(tmp_path)
+
+    started = workflow.start_from_content(dict(_CONTENT))
+    draft_id = started["draft_id"]
+    fetched = workflow.get({"draft_id": draft_id})
+    confirmed = workflow.confirm(
+        {
+            "draft_id": draft_id,
+            "expected_version": started["version"],
+            "candidate_ids": ["cand-1", "cand-2"],
+        }
+    )
+    generated = workflow.generate(
+        {
+            "draft_id": draft_id,
+            "expected_version": confirmed["version"],
+            "type_overrides": [
+                {"candidate_id": "cand-1", "test_type": "manual"},
+                {"candidate_id": "cand-2", "test_type": "cucumber"},
+            ],
+        }
+    )
+    exported = workflow.export_feature({"draft_id": draft_id})
+
+    assert generated["generated_cases"]
+    assert exported["scenario_count"] == 1
+    for result in (started, fetched, confirmed, generated, exported):
+        encoded = json.dumps(result)
+        for sentinel in _SENTINELS:
+            assert sentinel not in encoded
+        assert "client_evidence_text" not in encoded
+        assert result["evidence_origin"] == "client_supplied"
 
 
 def test_unknown_draft_maps_to_target_not_found(tmp_path: Path) -> None:

@@ -91,7 +91,7 @@ MCP adapter supplies **bounded, citable evidence** (`core.search_knowledge`) and
 export MCP_AUTH_TOKEN=dev-token
 export MCP_ALLOWED_HOSTS=127.0.0.1:8100
 export MCP_ALLOWED_ORIGINS=  # optional; missing Origin allowed for non-browser clients
-export MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature
+export MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature
 export DOMAIN_TOOL_PACKS=software-delivery   # required for Test Design tools
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
 uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
@@ -107,6 +107,15 @@ uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
   only when the pack is enabled and the ids are allowlisted. See the
   [pack README](packs/software_delivery/README.md#test-design-over-mcp-338)
   for arguments, error codes, and the `untrusted_model_output` marker.
+- When Kernector has no connection to the tracker but the client already
+  fetched the issue (its own Jira/GitHub/GitLab MCP server, `gh`, GraphQL),
+  `test_design_start_from_text` (#355) starts Test Design from the supplied
+  `ticket_identifier`, `title`, `body`, and optional `acceptance_criteria` and
+  `source_url`. Drafts report `evidence_origin: client_supplied` (live drafts
+  report `live`): the content is not verified against a live source, confirm
+  and generate reuse it without re-fetching, and changing it needs a new start.
+  Allowlist it separately. See
+  [live vs client-supplied evidence](packs/software_delivery/README.md#live-vs-client-supplied-evidence-355).
 - Drive export and retired scaffolding tools (#285) are not on MCP; further
   live pack tools land in follow-ups (#326/#327)
 

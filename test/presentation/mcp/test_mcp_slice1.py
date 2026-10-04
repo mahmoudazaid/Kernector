@@ -333,3 +333,45 @@ def test_authenticated_http_lists_search_knowledge_via_request_scoped_caller(
         payload = json.loads(match.group(1))
         names = [tool["name"] for tool in payload["result"]["tools"]]
         assert names == ["core_search_knowledge"]
+
+
+def _stream_test_app(monkeypatch: pytest.MonkeyPatch) -> object:
+    from composition.mcp.settings import load_mcp_settings
+
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "test-token-secret")
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "testserver")
+    monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "")
+    monkeypatch.setenv("MCP_ACCESS_PROFILE", "default")
+    monkeypatch.setenv("MCP_TOOL_ALLOWLIST", "")
+    return create_mcp_app(
+        mcp_settings=load_mcp_settings(),
+        registry=McpToolRegistry(contributions=(), enabled_packs=()),
+        workspace_id="ws-test",
+    )
+
+
+def test_authenticated_get_mcp_declines_standalone_sse_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No server-initiated messages: GET /mcp is 405, so no stream blocks shutdown."""
+    app = _stream_test_app(monkeypatch)
+    with TestClient(app) as client:
+        response = client.get(
+            "/mcp",
+            headers={
+                "Authorization": "Bearer test-token-secret",
+                "Accept": "text/event-stream",
+            },
+        )
+    assert response.status_code == 405
+    assert response.headers.get("allow") == "POST, DELETE"
+
+
+def test_unauthenticated_get_mcp_is_still_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _stream_test_app(monkeypatch)
+    with TestClient(app) as client:
+        response = client.get("/mcp", headers={"Accept": "text/event-stream"})
+    assert response.status_code == 401
+    assert response.headers.get("www-authenticate") == "Bearer"

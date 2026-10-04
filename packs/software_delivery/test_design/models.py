@@ -14,6 +14,7 @@ from packs.software_delivery.test_design.limits import (
     MAX_CANDIDATES,
     MAX_EVIDENCE_FINGERPRINT_CHARS,
     MAX_EVIDENCE_REFS,
+    MAX_EVIDENCE_TEXT_CHARS,
     MAX_EXPECTED_RESULT_CHARS,
     MAX_EXPECTED_RESULT_LINES,
     MAX_GHERKIN_CHARS,
@@ -37,6 +38,7 @@ CandidateOrigin = Literal["suggested", "manual"]
 TestCaseType = Literal["manual", "cucumber"]
 AutomationFit = Literal["applicable", "not_applicable", "unclear"]
 CaseAvailability = Literal["available", "insufficient_evidence"]
+EvidenceOrigin = Literal["live", "client_supplied"]
 
 COVERAGE_CATEGORIES: frozenset[str] = frozenset(
     {
@@ -93,6 +95,9 @@ CASE_AVAILABILITIES: frozenset[str] = frozenset(
     {"available", "insufficient_evidence"}
 )
 CASE_AVAILABILITIES_DISPLAY = str(sorted(CASE_AVAILABILITIES))
+
+EVIDENCE_ORIGINS: frozenset[str] = frozenset({"live", "client_supplied"})
+EVIDENCE_ORIGINS_DISPLAY = str(sorted(EVIDENCE_ORIGINS))
 
 _BARE_TICKET_ID = re.compile(r"^\d+$")
 _E = TypeVar("_E", bound=Exception)
@@ -614,6 +619,11 @@ class TestCoverageDraft:
     authoritative and distinct from ``source_reference.source_type``: a
     provider may emit several source kinds, and a source kind may be served by
     more than one provider.
+
+    ``evidence_origin`` is ``client_supplied`` when an MCP client supplied the
+    Issue content (#355). Such drafts persist that content, already rendered
+    and budgeted, in ``client_evidence_text`` and are never re-fetched. The
+    text is internal evidence and must not be projected to callers.
     """
 
     __test__ = False
@@ -631,6 +641,8 @@ class TestCoverageDraft:
     evidence_fingerprint: str | None = None
     cucumber_feature: str = ""
     cucumber_background: str = ""
+    evidence_origin: EvidenceOrigin = "live"
+    client_evidence_text: str = ""
 
     def __post_init__(self) -> None:
         _require_bounded_text(self.draft_id, "draft_id", MAX_ID_CHARS)
@@ -737,6 +749,23 @@ class TestCoverageDraft:
                 header_keywords=_BACKGROUND_HEADER_KEYWORDS,
             ),
         )
+
+        origin = _require_allowlist(
+            self.evidence_origin,
+            "evidence_origin",
+            EVIDENCE_ORIGINS,
+            EVIDENCE_ORIGINS_DISPLAY,
+        )
+        if origin == "client_supplied":
+            _require_bounded_text(
+                self.client_evidence_text,
+                "client_evidence_text",
+                MAX_EVIDENCE_TEXT_CHARS,
+            )
+        elif self.client_evidence_text != "":
+            raise TestDesignValidationError(
+                "client_evidence_text must be empty for live drafts"
+            )
 
     @property
     def selected_candidate_ids(self) -> tuple[str, ...]:
