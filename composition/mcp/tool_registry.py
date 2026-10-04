@@ -32,6 +32,10 @@ VALIDATION_ERROR_CODE = "validation_error"
 # message)`` with a fixed message that never interpolates input; only that
 # message replaces the generic validation text.
 SAFE_VALIDATION_ERROR_TYPE = "mcp_safe_validation"
+# A tool may set an optional ``failure_hints`` attribute (MCP-only, not on the
+# ``Tool`` port) mapping a safe wire code to ``(required_tool_id, hint)``. The
+# fixed hint is added only when that tool is contributed and effective for the
+# caller, so it never reveals tools the caller cannot use.
 
 # Exact exception type -> (wire code, fixed message). Only these escape.
 _SAFE_FAILURES: Mapping[type[ToolFailureError], tuple[str, str]] = {
@@ -125,11 +129,13 @@ def _schema_validation_error(error: Exception) -> McpInvokeResult:
     return _validation_error()
 
 
-def _safe_failure(code: str, message: str) -> McpInvokeResult:
+def _safe_failure(code: str, message: str, hint: str | None = None) -> McpInvokeResult:
     payload = {"code": code, "message": message}
     legacy_code = _LEGACY_CODE_ALIASES.get(code)
     if legacy_code is not None:
         payload["legacy_code"] = legacy_code
+    if hint is not None:
+        payload["hint"] = hint
     return McpInvokeResult(
         is_error=True,
         text=json.dumps(payload, separators=(",", ":")),
@@ -219,6 +225,20 @@ class McpToolRegistry:
             )
         return tuple(descriptors)
 
+    def _failure_hint(
+        self, caller: McpCallerContext, tool: Tool, code: str
+    ) -> str | None:
+        hints = getattr(tool, "failure_hints", None) or {}
+        hinted = hints.get(code)
+        if hinted is None:
+            return None
+        required_tool_id, hint = hinted
+        if required_tool_id not in self._by_id:
+            return None
+        if not self._policy.is_effective(caller, required_tool_id):
+            return None
+        return hint
+
     def invoke_authorized(
         self,
         caller: McpCallerContext,
@@ -255,7 +275,7 @@ class McpToolRegistry:
             safe = _SAFE_FAILURES.get(type(error))
             if safe is not None:
                 logger.info("mcp_tool_outcome tool=%s code=%s", tool_id, safe[0])
-                return _safe_failure(*safe)
+                return _safe_failure(*safe, self._failure_hint(caller, tool, safe[0]))
             logger.info("mcp_tool_failure tool=%s", tool_id)
             return _generic_error()
         except Exception:

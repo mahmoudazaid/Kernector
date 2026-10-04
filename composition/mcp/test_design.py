@@ -27,6 +27,7 @@ from pydantic_core import PydanticCustomError
 
 from application.errors import (
     InsufficientEvidenceError,
+    SourceItemNotFoundError,
     SourceNotConnectedError,
     SourceReauthorizationRequiredError,
 )
@@ -116,7 +117,8 @@ class TestDesignStartArgs(_StrictArgs):
     ] = Field(
         description=(
             "GitHub Issue URL or owner/repo#number, or Jira issue key "
-            "(PROJ-123) or browse URL."
+            "(PROJ-123) or browse URL. Prefer the full URL over a bare key "
+            "when you have it."
         )
     )
 
@@ -475,6 +477,7 @@ def project_draft(draft: TestCoverageDraftView) -> TestDesignDraftResult:
 
 _ERROR_MAP: tuple[tuple[type[BaseException], type[Exception]], ...] = (
     (TestDesignNotFoundError, ToolTargetNotFoundError),
+    (SourceItemNotFoundError, ToolTargetNotFoundError),
     (TestDesignVersionConflictError, ToolVersionConflictError),
     (TestDesignEvidenceChangedError, ToolEvidenceChangedError),
     (SourceNotConnectedError, ToolSourceNotConnectedError),

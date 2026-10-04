@@ -15,6 +15,7 @@ from application.errors import (
 from composition.mcp.test_design import McpTestDesignOperations, McpTestDesignWorkflow
 from composition.test_design.facade import TestDesignFacade
 from domain.errors import (
+    ConnectorNotFoundError,
     ToolArgumentValidationError,
     ToolEvidenceChangedError,
     ToolInsufficientEvidenceError,
@@ -190,6 +191,15 @@ def test_blank_issue_maps_to_insufficient_evidence(tmp_path: Path) -> None:
         workflow.start(issue_locator=ISSUE_LOCATOR)
 
 
+def test_missing_source_issue_maps_to_target_not_found(tmp_path: Path) -> None:
+    reader = RecordingIssueReader()
+    reader.error = ConnectorNotFoundError("issue not found")
+    workflow, _facade = _workflow(tmp_path, reader=reader)
+
+    with pytest.raises(ToolTargetNotFoundError):
+        workflow.start(issue_locator=ISSUE_LOCATOR)
+
+
 def test_invalid_locator_maps_to_argument_validation(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
 
@@ -286,6 +296,7 @@ def test_start_args_describe_both_locator_families_without_provider() -> None:
     description = schema["properties"]["issue_locator"]["description"]
     assert "owner/repo#number" in description
     assert "PROJ-123" in description
+    assert "over a bare key" in description
 
 
 _SENTINELS = ("SENTINEL-355-BODY", "SENTINEL-355-AC", "SENTINEL-355-URL")

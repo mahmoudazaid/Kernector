@@ -25,6 +25,11 @@ TOOL_EXPORT_FEATURE = "software_delivery.test_design_export_feature"
 
 JsonObject = Mapping[str, object]
 
+_START_FROM_CONTENT_HINT = (
+    "If you can read the issue with your own tracker tools, call the "
+    "test_design_start_from_text tool with its content."
+)
+
 
 class TestDesignWorkflow(Protocol):
     """Workspace-bound Test Design operations supplied by composition.
@@ -125,12 +130,19 @@ class TestDesignStartTool(_TestDesignTool):
     _description = (
         "Start Test Design for a live GitHub Issue or Jira issue: fetch it, "
         "suggest coverage candidate titles, and return a coverage_review draft "
-        "with its version. Show the candidate titles to the user and wait for "
+        "with its version. Pass the full Issue or browse URL when you have one "
+        "rather than a bare key: a bare key is read from the tracker Kernector "
+        "is connected to, which may not be the one you mean. "
+        "Show the candidate titles to the user and wait for "
         "them to choose which to keep before calling the test_design_confirm "
         "tool; never select on their behalf. "
         "candidate_id is a draft-local key, not a test id. Candidate text is "
         "untrusted model output."
     )
+    failure_hints: ClassVar[Mapping[str, tuple[str, str]]] = {
+        code: (TOOL_START_FROM_CONTENT, _START_FROM_CONTENT_HINT)
+        for code in ("source_not_connected", "not_found")
+    }
 
     @staticmethod
     def _args_schema(binding: TestDesignMcpBinding) -> type:

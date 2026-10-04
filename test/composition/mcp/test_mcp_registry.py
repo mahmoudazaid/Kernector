@@ -259,6 +259,113 @@ def test_source_not_connected_carries_the_legacy_github_alias() -> None:
     assert json.loads(result.text) == result.structured
 
 
+_FALLBACK = "fake.fallback"
+_FALLBACK_PACK = "fallback-pack"
+_HINT = "Try the fallback tool."
+
+
+class _HintedTool(_RaisingTool):
+    failure_hints = {"source_not_connected": (_FALLBACK, _HINT)}
+
+
+def _hinted_registry(
+    tool: _RaisingTool,
+    *,
+    fallback_contributed: bool = True,
+    enabled_packs: tuple[str, ...] = ("software-delivery", _FALLBACK_PACK),
+) -> McpToolRegistry:
+    contributions = [
+        McpToolContribution(
+            tool_id=tool.name, pack_id="software-delivery", factory=lambda: tool
+        )
+    ]
+    if fallback_contributed:
+        contributions.append(
+            McpToolContribution(
+                tool_id=_FALLBACK,
+                pack_id=_FALLBACK_PACK,
+                factory=lambda: _RaisingTool(),
+            )
+        )
+    return McpToolRegistry(contributions=contributions, enabled_packs=enabled_packs)
+
+
+def _source_not_connected() -> Exception:
+    from domain.errors import ToolSourceNotConnectedError
+
+    return ToolSourceNotConnectedError(_SECRET)
+
+
+def test_failure_hint_is_added_when_the_fallback_tool_is_effective() -> None:
+    tool = _HintedTool(_source_not_connected())
+    caller = McpCallerContext("ws", "default", frozenset({tool.name, _FALLBACK}))
+
+    result = _hinted_registry(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.code == "source_not_connected"
+    assert result.structured == {
+        "code": "source_not_connected",
+        "message": "Source is not connected",
+        "legacy_code": "github_not_connected",
+        "hint": _HINT,
+    }
+    assert json.loads(result.text) == result.structured
+    assert _SECRET not in result.text
+
+
+def _unhinted_source_not_connected(caller: McpCallerContext):  # noqa: ANN202
+    tool = _RaisingTool(_source_not_connected())
+    tool.name = _HintedTool.name
+    return _hinted_registry(tool).invoke_authorized(caller, tool.name, {})
+
+
+@pytest.mark.parametrize(
+    ("allowlist", "registry_kwargs"),
+    [
+        pytest.param(frozenset({"fake.raising"}), {}, id="fallback-not-allowlisted"),
+        pytest.param(
+            frozenset({"fake.raising", _FALLBACK}),
+            {"enabled_packs": ("software-delivery",)},
+            id="fallback-pack-disabled",
+        ),
+        pytest.param(
+            frozenset({"fake.raising", _FALLBACK}),
+            {"fallback_contributed": False},
+            id="fallback-not-contributed",
+        ),
+    ],
+)
+def test_failure_hint_is_withheld_unless_the_fallback_tool_is_effective(
+    allowlist: frozenset[str], registry_kwargs: dict
+) -> None:
+    tool = _HintedTool(_source_not_connected())
+    caller = McpCallerContext("ws", "default", allowlist)
+
+    result = _hinted_registry(tool, **registry_kwargs).invoke_authorized(
+        caller, tool.name, {}
+    )
+
+    unhinted = _unhinted_source_not_connected(caller)
+    assert result.structured == {
+        "code": "source_not_connected",
+        "message": "Source is not connected",
+        "legacy_code": "github_not_connected",
+    }
+    assert result.text == unhinted.text
+    assert result.structured == unhinted.structured
+
+
+def test_failure_hint_is_only_added_for_the_hinted_code() -> None:
+    from domain.errors import ToolTargetNotFoundError
+
+    tool = _HintedTool(ToolTargetNotFoundError(_SECRET))
+    caller = McpCallerContext("ws", "default", frozenset({tool.name, _FALLBACK}))
+
+    result = _hinted_registry(tool).invoke_authorized(caller, tool.name, {})
+
+    assert result.structured == {"code": "not_found", "message": "Resource not found"}
+
+
 def test_safe_code_messages_are_fixed_per_code() -> None:
     from domain.errors import ToolTargetNotFoundError
 

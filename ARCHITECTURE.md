@@ -780,6 +780,10 @@ the agents; Kernector supplies evidence and allowlisted tools.
   `validation_error` and anything else is `internal_error`.
   `source_not_connected` also sends `legacy_code: github_not_connected` for
   one release (#351); clients should match on `code`.
+  A tool may set an optional MCP-only `failure_hints` attribute (read via
+  `getattr` like `output_schema`, not on the `Tool` port) mapping a safe code
+  to `(required_tool_id, hint)`; the registry adds the fixed `hint` only when
+  that tool is contributed and effective for the caller (#361).
 - Test Design sources (#351): `TestDesignFacade` and the chat handoff are
   source-neutral and resolve providers through `TestDesignSourceRegistry`
   (`composition/test_design/sources.py`). `container.build_test_design_sources`
