@@ -112,7 +112,7 @@ class TestDesignStartArgs(_StrictArgs):
 
 
 class TestDesignStartFromContentArgs(_StrictArgs):
-    """Arguments for ``software_delivery_test_design_start_from_content``."""
+    """Arguments for ``software_delivery_test_design_start_from_text``."""
 
     __test__ = False
 

@@ -423,7 +423,7 @@ _TEST_DESIGN_TOOLS = (
     "software_delivery.test_design_generate",
     "software_delivery.test_design_get",
     "software_delivery.test_design_start",
-    "software_delivery.test_design_start_from_content",
+    "software_delivery.test_design_start_from_text",
 )
 
 

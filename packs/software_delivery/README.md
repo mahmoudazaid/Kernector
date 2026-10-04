@@ -100,7 +100,7 @@ contributes these tools only when composition supplies a workspace-bound
 | Tool id | Arguments | Existing operation |
 | --- | --- | --- |
 | `software_delivery.test_design_start` | `issue_locator` (GitHub Issue URL or `owner/repo#number`, or Jira Data Center key `PROJ-123` or browse URL) | create draft from the one source that accepts the locator |
-| `software_delivery.test_design_start_from_content` | `ticket_identifier` (single token, e.g. `PROJ-123`), `title`, `body`, optional `acceptance_criteria`, optional `source_url` (http/https) | create a `client_supplied` draft from content the client already fetched (#355) |
+| `software_delivery.test_design_start_from_text` | `ticket_identifier` (single token, e.g. `PROJ-123`), `title`, `body`, optional `acceptance_criteria`, optional `source_url` (http/https) | create a `client_supplied` draft from content the client already fetched (#355) |
 | `software_delivery.test_design_get` | `draft_id` | read draft |
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
 | `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), optional `test_type` (`manual` or `cucumber`, applied to every generated case), `type_overrides[{candidate_id, test_type}]` (per-candidate exceptions), `overwrite_edited` | #300 generate |
@@ -155,7 +155,7 @@ contributes these tools only when composition supplies a workspace-bound
 
 Use `test_design_start` when Kernector is connected to the tracker: it fetches
 the Issue live, and confirm and generate re-fetch it, returning
-`evidence_changed` if the Issue moved. Use `test_design_start_from_content`
+`evidence_changed` if the Issue moved. Use `test_design_start_from_text`
 when the client already has the Issue through its own tools (Jira, GitHub or
 GitLab MCP servers, `gh`, GraphQL) and Kernector has no connection to that
 tracker.

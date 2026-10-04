@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import ClassVar, Protocol
 
 TOOL_START = "software_delivery.test_design_start"
-TOOL_START_FROM_CONTENT = "software_delivery.test_design_start_from_content"
+TOOL_START_FROM_CONTENT = "software_delivery.test_design_start_from_text"
 TOOL_GET = "software_delivery.test_design_get"
 TOOL_CONFIRM = "software_delivery.test_design_confirm"
 TOOL_GENERATE = "software_delivery.test_design_generate"

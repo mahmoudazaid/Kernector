@@ -762,7 +762,7 @@ the agents; Kernector supplies evidence and allowlisted tools.
   `DOCUMENT_CATALOG_WORKSPACE_ID` and the workspace GitHub grant, and
   `composition/mcp/wiring.py` passes the binding only when `software-delivery`
   is enabled. `presentation/mcp` stays Test-Design unaware.
-- Client-supplied evidence (#355): `software_delivery.test_design_start_from_content`
+- Client-supplied evidence (#355): `software_delivery.test_design_start_from_text`
   (separately allowlisted) calls `TestDesignFacade.create_draft_from_content`,
   which never touches the source registry. The pack renders the supplied
   fields once into one canonical text (`test_design/client_evidence.py`),
@@ -808,7 +808,7 @@ the agents; Kernector supplies evidence and allowlisted tools.
 
 ```bash
 MCP_AUTH_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \
-  MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_content,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature \
+  MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature \
   DOMAIN_TOOL_PACKS=software-delivery \
   DOCUMENT_CATALOG_WORKSPACE_ID=… \
   uv run uvicorn presentation.mcp.app:app --port 8100

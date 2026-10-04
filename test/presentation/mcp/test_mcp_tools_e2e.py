@@ -114,7 +114,7 @@ async def test_identical_tool_unavailable_matrix() -> None:
 _TEST_DESIGN_TOOLS = frozenset(
     {
         "software_delivery.test_design_start",
-        "software_delivery.test_design_start_from_content",
+        "software_delivery.test_design_start_from_text",
         "software_delivery.test_design_get",
         "software_delivery.test_design_confirm",
         "software_delivery.test_design_generate",
@@ -287,12 +287,12 @@ async def test_test_design_from_client_content_e2e_via_protocol_client(
     )
     async with Client(server, raise_exceptions=True) as client:
         listed = {tool.name: tool for tool in (await client.list_tools()).tools}
-        tool = listed["software_delivery_test_design_start_from_content"]
+        tool = listed["software_delivery_test_design_start_from_text"]
         assert "workspace_id" not in json.dumps(tool.input_schema)
         assert "client_evidence_text" not in json.dumps(tool.output_schema)
 
         started = await _call(
-            client, "software_delivery_test_design_start_from_content", _CLIENT_CONTENT
+            client, "software_delivery_test_design_start_from_text", _CLIENT_CONTENT
         )
         assert started["status"] == "coverage_review"
         assert started["version"] == 1
@@ -384,7 +384,7 @@ async def test_invalid_client_content_is_a_validation_error(
     )
     async with Client(server, raise_exceptions=True) as client:
         result = await client.call_tool(
-            "software_delivery_test_design_start_from_content", arguments
+            "software_delivery_test_design_start_from_text", arguments
         )
 
     assert result.is_error is True
@@ -400,7 +400,7 @@ async def test_start_from_content_requires_its_own_allowlist_entry(
     live_only = McpCallerContext(
         "ws-a",
         "default",
-        _TEST_DESIGN_TOOLS - {"software_delivery.test_design_start_from_content"},
+        _TEST_DESIGN_TOOLS - {"software_delivery.test_design_start_from_text"},
     )
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(live_only)
@@ -408,11 +408,11 @@ async def test_start_from_content_requires_its_own_allowlist_entry(
     async with Client(server, raise_exceptions=True) as client:
         listed = await client.list_tools()
         denied = await client.call_tool(
-            "software_delivery_test_design_start_from_content", _CLIENT_CONTENT
+            "software_delivery_test_design_start_from_text", _CLIENT_CONTENT
         )
         unknown = await client.call_tool("nope.tool", {})
 
-    assert "software_delivery_test_design_start_from_content" not in {
+    assert "software_delivery_test_design_start_from_text" not in {
         tool.name for tool in listed.tools
     }
     assert denied.is_error is True

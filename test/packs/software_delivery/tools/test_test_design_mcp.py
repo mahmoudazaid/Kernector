@@ -99,7 +99,7 @@ class _FakeBinding:
 
 def test_tool_ids_are_stable() -> None:
     assert TOOL_START == "software_delivery.test_design_start"
-    assert TOOL_START_FROM_CONTENT == "software_delivery.test_design_start_from_content"
+    assert TOOL_START_FROM_CONTENT == "software_delivery.test_design_start_from_text"
     assert TOOL_GET == "software_delivery.test_design_get"
     assert TOOL_CONFIRM == "software_delivery.test_design_confirm"
     assert TOOL_GENERATE == "software_delivery.test_design_generate"
@@ -113,6 +113,13 @@ def test_tool_ids_are_stable() -> None:
         (TOOL_GENERATE, TOOL_GENERATE),
         (TOOL_EXPORT_FEATURE, TOOL_EXPORT_FEATURE),
     ]
+
+
+@pytest.mark.parametrize("tool_id", [tool_id for tool_id, _ in TEST_DESIGN_MCP_TOOLS])
+def test_client_tool_names_fit_cursor_limit(tool_id: str) -> None:
+    """Cursor silently drops tools whose ``mcp_<server>_<tool>`` name exceeds 60."""
+    client_name = tool_id.replace(".", "_")
+    assert len(f"mcp_kernector_{client_name}") <= 60
 
 
 @pytest.mark.parametrize(
