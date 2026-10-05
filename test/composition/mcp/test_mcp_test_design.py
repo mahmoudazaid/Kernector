@@ -24,6 +24,7 @@ from domain.errors import (
     ToolEvidenceChangedError,
     ToolInsufficientEvidenceError,
     ToolSourceNotConnectedError,
+    ToolSourceProviderMismatchError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
     ToolUnsupportedSourceError,
@@ -300,23 +301,36 @@ def test_start_reads_github_when_jira_is_also_registered(tmp_path: Path) -> None
     assert facade.get_draft(started["draft_id"]).source_reference.source_type == "github"
 
 
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        {"provider": "github", "locator": "ENG-7"},
-        {"provider": "jira", "locator": ISSUE_LOCATOR},
-        {"provider": "jira", "locator": "https://other.example.com/browse/ENG-7"},
-        {"issue_locator": "ENG-7"},
-        {"issue_locator": "https://jira.example.com/jira/browse/ENG-7"},
-    ],
-)
-def test_locator_the_chosen_provider_rejects_is_unsupported_source(
-    tmp_path: Path, arguments: dict[str, str]
+def test_locator_no_registered_provider_accepts_is_unsupported_source(
+    tmp_path: Path,
 ) -> None:
     client = _JiraIssueClient()
     workflow, _facade = _jira_workflow(tmp_path, client)
 
     with pytest.raises(ToolUnsupportedSourceError):
+        workflow.start(
+            {"provider": "jira", "locator": "https://other.example.com/browse/ENG-7"}
+        )
+    assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"provider": "github", "locator": "ENG-7"},
+        {"provider": "github", "locator": "https://jira.example.com/jira/browse/ENG-7"},
+        {"provider": "jira", "locator": ISSUE_LOCATOR},
+        {"issue_locator": "ENG-7"},
+        {"issue_locator": "https://jira.example.com/jira/browse/ENG-7"},
+    ],
+)
+def test_locator_another_registered_provider_accepts_is_provider_mismatch(
+    tmp_path: Path, arguments: dict[str, str]
+) -> None:
+    client = _JiraIssueClient()
+    workflow, _facade = _jira_workflow(tmp_path, client)
+
+    with pytest.raises(ToolSourceProviderMismatchError):
         workflow.start(arguments)
     assert client.calls == []
 

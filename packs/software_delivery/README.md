@@ -138,7 +138,9 @@ contributes these tools only when composition supplies a workspace-bound
   workflow call.
 - `issue_locator` is deprecated and will be removed after one release. It is
   a GitHub-only alias for `provider: github`: a Jira key or browse URL passed
-  as `issue_locator` returns `unsupported_source`.
+  as `issue_locator` returns `validation_error` telling the client to retry
+  with the provider that accepts it (`unsupported_source` when no registered
+  provider does).
 - Arguments are strict (`additionalProperties: false`); `workspace_id` and
   `conversation_id` are never accepted. Each MCP draft gets a server-generated
   `mcp-<uuid>` conversation id, so it cannot collide with a chat conversation.
@@ -156,8 +158,11 @@ contributes these tools only when composition supplies a workspace-bound
   `evidence_changed`), re-read with `software_delivery.test_design_get`.
 - Errors: `validation_error`, `not_found` (unknown and other-workspace drafts
   are identical), `version_conflict`, `evidence_changed`,
-  `source_not_connected`, `insufficient_evidence`, `unsupported_source` (the
-  chosen provider does not accept the `locator`), otherwise `internal_error`.
+  `source_not_connected`, `insufficient_evidence`, `unsupported_source` (no
+  registered provider accepts the `locator`), otherwise `internal_error`. When
+  the chosen provider rejects a `locator` another registered provider accepts,
+  the result is `validation_error` with the fixed message "Another connected
+  provider accepts this locator; retry with that provider" and no hint.
   `not_found` and `source_not_connected` payloads are identical whichever
   provider was chosen. Nothing is published externally.
 - `source_not_connected` payloads also carry
@@ -214,9 +219,10 @@ tracker.
   Issue or browse URL as `locator` when you have one. A bare key is read from
   the tracker Kernector is connected to, which may be a different instance
   with the same key. A tracker Kernector has no source for is not in the
-  `provider` enum (`validation_error`); a locator the chosen provider does not
-  accept (for example a browse URL from another instance) returns
-  `unsupported_source`.
+  `provider` enum (`validation_error`); a locator another registered provider
+  accepts returns `validation_error` asking to retry with that provider; a
+  locator no registered provider accepts (for example a browse URL from
+  another instance) returns `unsupported_source`.
 
   ```json
   {"provider": "jira", "locator": "https://jira.example.com/browse/PROJ-123"}

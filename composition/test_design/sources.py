@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from composition.test_design.errors import (
+    SourceProviderMismatchError,
     TestDesignUnavailableError,
     TestDesignValidationError,
     UnsupportedSourceLocatorError,
@@ -118,7 +119,9 @@ class TestDesignSourceRegistry:
         """Return *locator* canonicalized by the source registered as *provider*.
 
         Raises:
-            UnsupportedSourceLocatorError: That source does not accept *locator*.
+            SourceProviderMismatchError: That source rejects *locator* but
+                another registered source accepts it.
+            UnsupportedSourceLocatorError: No registered source accepts *locator*.
             TestDesignValidationError: Provider is blank or not a known source.
             TestDesignUnavailableError: Provider is known but not registered.
         """
@@ -126,6 +129,14 @@ class TestDesignSourceRegistry:
         try:
             canonical = source.canonicalize(locator)
         except TestDesignValidationError as error:
+            if any(
+                _accepts(other, locator)
+                for other in self._by_provider.values()
+                if other is not source
+            ):
+                raise SourceProviderMismatchError(
+                    "locator belongs to another connected provider"
+                ) from error
             raise UnsupportedSourceLocatorError(
                 "locator is not a supported source locator"
             ) from error
@@ -145,6 +156,14 @@ class TestDesignSourceRegistry:
         if len(found) > 1:
             raise AmbiguousSourceLocatorError("Query must reference exactly one source")
         return found[0] if found else None
+
+
+def _accepts(source: TestDesignSource, locator: str) -> bool:
+    try:
+        source.canonicalize(locator)
+    except TestDesignValidationError:
+        return False
+    return True
 
 
 def _provider_key(provider: object) -> str | None:

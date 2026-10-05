@@ -713,17 +713,31 @@ async def test_scenario_2_foreign_instance_url_fails_loudly_with_hint(
     assert jira.calls == []
 
 
+_PROVIDER_MISMATCH = {
+    "code": "validation_error",
+    "message": "Another connected provider accepts this locator; retry with that provider",
+}
+
+
 @pytest.mark.anyio
-@pytest.mark.parametrize("locator", ["ENG-7", f"{_KERNECTOR_JIRA}/browse/ENG-7"])
-async def test_deprecated_issue_locator_is_github_only_even_with_jira_registered(
-    tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"issue_locator": "ENG-7"},
+        {"issue_locator": f"{_KERNECTOR_JIRA}/browse/ENG-7"},
+        {"provider": "github", "locator": "ENG-7"},
+        {"provider": "github", "locator": f"{_KERNECTOR_JIRA}/browse/ENG-7"},
+    ],
+)
+async def test_locator_for_another_registered_provider_says_retry_with_it(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, arguments: dict[str, str]
 ) -> None:
     jira = _KernectorJiraClient()
     server = _jira_server(tmp_path, monkeypatch, jira)
 
-    payload = await _start_error(server, {"issue_locator": locator})
+    payload = await _start_error(server, arguments)
 
-    assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
+    assert payload == _PROVIDER_MISMATCH
     assert jira.calls == []
 
 

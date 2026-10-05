@@ -220,6 +220,7 @@ _SECRET = "ws-secret token=gho_x fp=abc /internal/path"
         ("ToolEvidenceChangedError", "evidence_changed"),
         ("ToolInsufficientEvidenceError", "insufficient_evidence"),
         ("ToolUnsupportedSourceError", "unsupported_source"),
+        ("ToolSourceProviderMismatchError", "validation_error"),
     ],
 )
 def test_neutral_tool_errors_translate_to_allowlisted_safe_codes(

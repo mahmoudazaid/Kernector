@@ -46,6 +46,7 @@ from composition.test_design.facade import (
 from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE
 from composition.test_design.github_source import GitHubTestDesignSource
 from composition.test_design.errors import (
+    SourceProviderMismatchError,
     TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,
@@ -58,6 +59,7 @@ from domain.errors import (
     ToolEvidenceChangedError,
     ToolInsufficientEvidenceError,
     ToolSourceNotConnectedError,
+    ToolSourceProviderMismatchError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
     ToolUnsupportedSourceError,
@@ -543,6 +545,7 @@ _ERROR_MAP: tuple[tuple[type[BaseException], type[Exception]], ...] = (
     (InsufficientEvidenceError, ToolInsufficientEvidenceError),
     (TestDesignUnavailableError, ToolUnavailableError),
     (UnsupportedSourceLocatorError, ToolUnsupportedSourceError),
+    (SourceProviderMismatchError, ToolSourceProviderMismatchError),
     (TestDesignValidationError, ToolArgumentValidationError),
 )
 
