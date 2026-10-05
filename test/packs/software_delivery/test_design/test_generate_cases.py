@@ -27,8 +27,9 @@ from packs.software_delivery.test_design.suggest_tests import CoverageEvidenceIt
 
 
 class _FakeChat:
-    def __init__(self, content: str = "") -> None:
+    def __init__(self, content: str = "", *, followups: Sequence[str] = ()) -> None:
         self.content = content
+        self._followups = list(followups)
         self.calls: list[tuple[str, Sequence[Message], Mapping[str, object]]] = []
 
     def complete(
@@ -38,7 +39,8 @@ class _FakeChat:
         settings: Mapping[str, object],
     ) -> AskResult:
         self.calls.append((system, tuple(messages), dict(settings)))
-        return AskResult(content=self.content, model="fake")
+        content = self._followups[len(self.calls) - 2] if len(self.calls) > 1 else self.content
+        return AskResult(content=content, model="fake")
 
 
 class _MemoryRepo:
@@ -605,6 +607,137 @@ def test_type_overrides_applied_without_demoting() -> None:
     assert result.status == "case_editing"
     assert result.candidates[0].test_type == "cucumber"
     assert result.generated_cases[0].test_type == "cucumber"
+
+
+_UNUSED_EXAMPLES = (
+    "Given two sites with all links Up\n"
+    "When the dashboard recalculates network health\n"
+    'Then the banner displays "Good"\n'
+    "Examples:\n"
+    "| overall_state | site1_links |\n"
+    "| Good | Up,Up |\n"
+    "| Poor | Down,Down |"
+)
+_OUTLINE = (
+    "Given site1 links are <site1_links>\n"
+    "When the dashboard recalculates network health\n"
+    'Then the banner displays "<overall_state>"\n'
+    "Examples:\n"
+    "| overall_state | site1_links |\n"
+    "| Good | Up,Up |\n"
+    "| Poor | Down,Down |"
+)
+
+
+def _outline_draft() -> TestCoverageDraft:
+    return _draft(
+        candidates=(
+            _candidate(candidate_id="cand-1", test_type="manual"),
+            _candidate(
+                candidate_id="cand-2", title="Banner states", test_type="cucumber"
+            ),
+        )
+    )
+
+
+def _with_gherkin(gherkin: str) -> dict[str, object]:
+    return {**_cucumber_case_payload("cand-2"), "gherkin": gherkin}
+
+
+def _generate(chat: _FakeChat) -> TestCoverageDraft:
+    return GenerateTestCases(
+        chat_model=chat, repository=_MemoryRepo(_outline_draft())
+    ).execute(
+        GenerateTestCasesRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            evidence=(_evidence(),),
+            evidence_fingerprint="fp-1",
+        )
+    ).draft
+
+
+def test_examples_table_unused_by_steps_is_regenerated_once_with_feedback() -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)],
+            cucumber_feature="Health banner",
+        ),
+        followups=[_model_payload([_with_gherkin(_OUTLINE)])],
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 2
+    retry_messages = chat.calls[1][1]
+    retry_prompt = retry_messages[-1].content
+    assert "cand-2" in retry_prompt
+    assert "<placeholder>" in retry_prompt
+    assert '"cand-1"' not in retry_messages[-3].content
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == _OUTLINE
+    assert cases["cand-1"].steps == ("Enter credentials", "Submit")
+    assert result.cucumber_feature == "Health banner"
+
+
+def test_examples_table_still_unused_after_retry_is_dropped() -> None:
+    chat = _FakeChat(
+        content=_model_payload([_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]),
+        followups=[_model_payload([_with_gherkin(_UNUSED_EXAMPLES)])],
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 2
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == (
+        "Given two sites with all links Up\n"
+        "When the dashboard recalculates network health\n"
+        'Then the banner displays "Good"'
+    )
+
+
+@pytest.mark.parametrize(
+    "gherkin", [_OUTLINE, "Given no sites\nThen the banner says \"No sites\""]
+)
+def test_consistent_cucumber_case_is_kept_without_retry(gherkin: str) -> None:
+    chat = _FakeChat(
+        content=_model_payload([_manual_case_payload("cand-1"), _with_gherkin(gherkin)])
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 1
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == gherkin
+
+
+@pytest.mark.parametrize(
+    ("gherkin", "problem"),
+    [
+        (
+            _OUTLINE.replace("<site1_links>", "Up,Up"),
+            "Examples columns not used by any step: site1_links",
+        ),
+        (
+            _OUTLINE.replace("<site1_links>", "<site2_links>"),
+            "Examples columns not used by any step: site1_links",
+        ),
+    ],
+)
+def test_partially_used_examples_table_is_regenerated_with_the_problem(
+    gherkin: str, problem: str
+) -> None:
+    chat = _FakeChat(
+        content=_model_payload([_manual_case_payload("cand-1"), _with_gherkin(gherkin)]),
+        followups=[_model_payload([_with_gherkin(_OUTLINE)])],
+    )
+
+    result = _generate(chat)
+
+    assert problem in chat.calls[1][1][-1].content
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == _OUTLINE
 
 
 def test_prompt_constrains_cucumber_scenarios() -> None:

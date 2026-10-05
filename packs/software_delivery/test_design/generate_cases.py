@@ -253,6 +253,40 @@ class GenerateTestCases:
             existing_feature=current.cucumber_feature,
             existing_background=current.cucumber_background,
         )
+        problems = _examples_problems(generated)
+        if problems:
+            retry_candidates = [
+                item for item in to_generate if item.candidate_id in problems
+            ]
+            retried, _, _ = _parse_generated_cases(
+                self._chat_model.complete(
+                    GENERATE_CASES_SYSTEM,
+                    (
+                        _context_message(evidence),
+                        Message(
+                            role="user",
+                            content=_generate_user_message(
+                                current.ticket_identifier,
+                                retry_candidates,
+                                allowed_refs,
+                            ),
+                        ),
+                        Message(
+                            role="assistant",
+                            content=result.content
+                            if isinstance(result.content, str)
+                            else "",
+                        ),
+                        Message(role="user", content=_examples_feedback(problems)),
+                    ),
+                    GENERATE_CASES_MODEL_SETTINGS,
+                ),
+                requested=retry_candidates,
+                allowed_refs=allowed_refs,
+            )
+            generated = tuple(
+                _drop_unused_examples(case) for case in _merge_cases(generated, retried)
+            )
         if any(
             case.test_type == "cucumber" and case.availability == "available"
             for case in retained
@@ -517,6 +551,83 @@ def _parse_manual_case_fields(
         if _strip_list_prefix(step)
     )
     return actions, _join_stripped_lines(raw_expected, "expected_result")
+
+
+_PLACEHOLDER = re.compile(r"<([^<>\s][^<>]*)>")
+_EXAMPLES_KEYWORDS = ("examples:", "scenarios:")
+
+
+def _split_examples(gherkin: str) -> tuple[list[str], list[str]]:
+    """Return the scenario's step lines and the lines from the first Examples on."""
+    lines = gherkin.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().lower().startswith(_EXAMPLES_KEYWORDS):
+            return lines[:index], lines[index:]
+    return lines, []
+
+
+def _table_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _examples_problem(gherkin: str) -> str | None:
+    """Describe how an Examples table disagrees with the steps, if it does."""
+    steps, examples = _split_examples(gherkin)
+    if not examples:
+        return None
+    used = set(_PLACEHOLDER.findall("\n".join(steps)))
+    if not used:
+        return "it has an Examples table but no step uses a <placeholder>"
+    columns: set[str] = set()
+    expect_header = False
+    for line in examples:
+        stripped = line.strip()
+        if stripped.lower().startswith(_EXAMPLES_KEYWORDS):
+            expect_header = True
+        elif expect_header and stripped.startswith("|"):
+            columns.update(_table_cells(stripped))
+            expect_header = False
+    unused = sorted(columns - used)
+    if unused:
+        return f"Examples columns not used by any step: {', '.join(unused)}"
+    undefined = sorted(used - columns)
+    if undefined:
+        return f"placeholders without an Examples column: {', '.join(undefined)}"
+    return None
+
+
+def _examples_problems(cases: Sequence[GeneratedTestCase]) -> dict[str, str]:
+    problems: dict[str, str] = {}
+    for case in cases:
+        if case.test_type != "cucumber" or case.availability != "available":
+            continue
+        problem = _examples_problem(case.gherkin)
+        if problem is not None:
+            problems[case.candidate_id] = problem
+    return problems
+
+
+def _drop_unused_examples(case: GeneratedTestCase) -> GeneratedTestCase:
+    """Remove an Examples table no step reads, so the scenario claims only what it tests."""
+    if case.test_type != "cucumber":
+        return case
+    steps, examples = _split_examples(case.gherkin)
+    if not examples or _PLACEHOLDER.search("\n".join(steps)):
+        return case
+    return replace(case, gherkin="\n".join(steps).strip())
+
+
+def _examples_feedback(problems: Mapping[str, str]) -> str:
+    details = "\n".join(
+        f"- {candidate_id}: {problem}" for candidate_id, problem in problems.items()
+    )
+    return (
+        "These cucumber cases break the Examples rule:\n"
+        f"{details}\n"
+        "Return JSON with \"cases\" for only these candidate_ids. Either make "
+        "the steps use a <placeholder> for every Examples column, or remove "
+        "the Examples table and write literal values."
+    )
 
 
 def _split_gherkin_blocks(gherkin: str) -> tuple[str, str, str]:
