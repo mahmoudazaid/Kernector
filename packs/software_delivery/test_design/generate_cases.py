@@ -69,6 +69,10 @@ logic such as "if", "otherwise", or "when N > 0" inside any step.
 - Add an Examples table only when the steps use <placeholder> names and \
 every column is used by a step; otherwise omit Examples and write literal \
 values.
+- A case must cover every outcome the candidate title names. When the title \
+lists several states or values (for example "Good/Fair/Poor"), write the \
+steps with <placeholder> names and add one Examples row per listed state; \
+never cover only one of them.
 - When any available cucumber cases are emitted, also return top-level \
 keys cucumber_feature (short Feature title, no \"Feature:\" prefix) and \
 cucumber_background (Background steps only, or empty string). This ticket \

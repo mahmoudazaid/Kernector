@@ -744,3 +744,4 @@ def test_prompt_constrains_cucumber_scenarios() -> None:
     assert "exactly one scenario" in GENERATE_CASES_SYSTEM
     assert "no conditional logic" in GENERATE_CASES_SYSTEM
     assert "every column is used by a step" in GENERATE_CASES_SYSTEM
+    assert "every outcome the candidate title names" in GENERATE_CASES_SYSTEM
