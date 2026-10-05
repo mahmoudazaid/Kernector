@@ -67,6 +67,11 @@ class TestDesignSourceRegistry:
             by_provider
         )
 
+    @property
+    def providers(self) -> tuple[str, ...]:
+        """Registered provider keys, in registration order."""
+        return tuple(source.provider for source in self._by_provider.values())
+
     def resolve(self, provider: str) -> TestDesignSource:
         """Return the registered source for *provider*.
 
@@ -108,6 +113,23 @@ class TestDesignSourceRegistry:
         if len(found) > 1:
             raise TestDesignValidationError("locator is ambiguous across sources")
         return found[0]
+
+    def resolve_provider_locator(self, provider: str, locator: str) -> SourceLocator:
+        """Return *locator* canonicalized by the source registered as *provider*.
+
+        Raises:
+            UnsupportedSourceLocatorError: That source does not accept *locator*.
+            TestDesignValidationError: Provider is blank or not a known source.
+            TestDesignUnavailableError: Provider is known but not registered.
+        """
+        source = self.resolve(provider)
+        try:
+            canonical = source.canonicalize(locator)
+        except TestDesignValidationError as error:
+            raise UnsupportedSourceLocatorError(
+                "locator is not a supported source locator"
+            ) from error
+        return SourceLocator(provider=source.provider, locator=canonical)
 
     def extract_locator(self, text: str) -> SourceLocator | None:
         """Return the one source item referenced in *text*, if any.

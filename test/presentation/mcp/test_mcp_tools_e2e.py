@@ -128,7 +128,11 @@ def _wired_registry(
 ):
     import composition.container as container
     from composition.mcp.wiring import build_mcp_tool_registry
-    from test.composition.test_design.test_design_fakes import build_fake_facade, settings_with_pack
+    from test.composition.test_design.test_design_fakes import (
+        build_fake_facade,
+        github_sources,
+        settings_with_pack,
+    )
 
     settings = settings_with_pack(pack_on=pack_on, workspace_id="ws-a")
     monkeypatch.setattr(
@@ -137,6 +141,11 @@ def _wired_registry(
         lambda _settings: build_fake_facade(
             tmp_path, workspace_id="ws-a", **facade_kwargs
         ),
+    )
+    monkeypatch.setattr(
+        container,
+        "build_test_design_sources",
+        lambda _settings: facade_kwargs.get("sources") or github_sources(),
     )
     return build_mcp_tool_registry(settings, retrieve=_StubRetrieve())
 
@@ -514,7 +523,7 @@ class _KernectorJiraClient:
 
 
 def _github_and_kernector_jira(
-    tmp_path, client: _KernectorJiraClient, *, token: str | None = "dc-token"
+    tmp_path, client: _KernectorJiraClient, *, token: str | None = "dc-token", **github
 ):
     from composition.test_design.jira_data_center_source import (
         JiraDataCenterTestDesignSource,
@@ -536,7 +545,7 @@ def _github_and_kernector_jira(
         state_store=JiraDataCenterStateStore(settings.state_path),
         client_factory=lambda _base_url, _token: client,
     )
-    return TestDesignSourceRegistry((github_sources().resolve("github"), jira))
+    return TestDesignSourceRegistry((github_sources(**github).resolve("github"), jira))
 
 
 def _jira_server(tmp_path, monkeypatch, client, *, allowlist=_TEST_DESIGN_TOOLS, **kw):
@@ -549,16 +558,22 @@ def _jira_server(tmp_path, monkeypatch, client, *, allowlist=_TEST_DESIGN_TOOLS,
     return build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
 
 
-async def _start_error(server, issue_locator: str) -> dict:
+def _jira(locator: str) -> dict[str, str]:
+    return {"provider": "jira", "locator": locator}
+
+
+async def _start_error_text(server, arguments: dict[str, str]) -> str:
     async with Client(server, raise_exceptions=True) as client:
-        result = await client.call_tool(
-            "software_delivery_test_design_start", {"issue_locator": issue_locator}
-        )
+        result = await client.call_tool("software_delivery_test_design_start", arguments)
     assert result.is_error is True
-    payload = json.loads(result.content[0].text)
-    assert "http" not in result.content[0].text
-    assert "example.com" not in result.content[0].text
-    return payload
+    text = result.content[0].text
+    assert "http" not in text
+    assert "example.com" not in text
+    return text
+
+
+async def _start_error(server, arguments: dict[str, str]) -> dict:
+    return json.loads(await _start_error_text(server, arguments))
 
 
 @pytest.mark.anyio
@@ -571,7 +586,7 @@ async def test_scenarios_1_and_3_live_start_reads_kernector_jira(
 
     async with Client(server, raise_exceptions=True) as client:
         started = await _call(
-            client, "software_delivery_test_design_start", {"issue_locator": locator}
+            client, "software_delivery_test_design_start", _jira(locator)
         )
 
     assert jira.calls == ["ENG-7"]
@@ -585,7 +600,7 @@ async def test_scenario_2_not_connected_hints_at_start_from_text(
 ) -> None:
     server = _jira_server(tmp_path, monkeypatch, _KernectorJiraClient(), token=None)
 
-    payload = await _start_error(server, "ENG-7")
+    payload = await _start_error(server, _jira("ENG-7"))
 
     assert payload == {
         "code": "source_not_connected",
@@ -604,7 +619,7 @@ async def test_scenario_2_missing_issue_hints_at_start_from_text(
     jira = _KernectorJiraClient(error=ConnectorNotFoundError("Jira 404 body"))
     server = _jira_server(tmp_path, monkeypatch, jira)
 
-    payload = await _start_error(server, f"{_KERNECTOR_JIRA}/browse/ENG-7")
+    payload = await _start_error(server, _jira(f"{_KERNECTOR_JIRA}/browse/ENG-7"))
 
     assert payload == {
         "code": "not_found",
@@ -625,13 +640,55 @@ async def test_scenario_2_no_hint_when_start_from_text_is_not_allowlisted(
         token=None,
     )
 
-    payload = await _start_error(server, "ENG-7")
+    payload = await _start_error(server, _jira("ENG-7"))
 
     assert payload == {
         "code": "source_not_connected",
         "message": "Source is not connected",
         "legacy_code": "github_not_connected",
     }
+
+
+async def _start_tool(server):  # noqa: ANN001, ANN202
+    async with Client(server, raise_exceptions=True) as client:
+        listed = {tool.name: tool for tool in (await client.list_tools()).tools}
+    return listed["software_delivery_test_design_start"]
+
+
+@pytest.mark.anyio
+async def test_start_advertises_only_github_when_only_github_is_registered(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+
+    tool = await _start_tool(
+        build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
+    )
+
+    properties = tool.input_schema["properties"]
+    assert properties["provider"]["enum"] == ["github"]
+    assert properties["issue_locator"]["deprecated"] is True
+    assert "GitHub only" in properties["issue_locator"]["description"]
+    encoded = json.dumps(tool.input_schema) + (tool.description or "")
+    assert "jira" not in encoded.lower()
+    assert "workspace_id" not in encoded
+    assert "github" in (tool.description or "")
+
+
+@pytest.mark.anyio
+async def test_start_advertises_every_registered_provider(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server = _jira_server(tmp_path, monkeypatch, _KernectorJiraClient())
+
+    tool = await _start_tool(server)
+
+    properties = tool.input_schema["properties"]
+    assert properties["provider"]["enum"] == ["github", "jira"]
+    assert "PROJ-123" in properties["locator"]["description"]
+    assert "github, jira" in (tool.description or "")
+    assert "gitlab" not in (json.dumps(tool.input_schema) + (tool.description or ""))
 
 
 _UNSUPPORTED_SOURCE_WITH_HINT = {
@@ -648,7 +705,23 @@ async def test_scenario_2_foreign_instance_url_fails_loudly_with_hint(
     jira = _KernectorJiraClient()
     server = _jira_server(tmp_path, monkeypatch, jira)
 
-    payload = await _start_error(server, "https://other-jira.example.com/browse/ENG-7")
+    payload = await _start_error(
+        server, _jira("https://other-jira.example.com/browse/ENG-7")
+    )
+
+    assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
+    assert jira.calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("locator", ["ENG-7", f"{_KERNECTOR_JIRA}/browse/ENG-7"])
+async def test_deprecated_issue_locator_is_github_only_even_with_jira_registered(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str
+) -> None:
+    jira = _KernectorJiraClient()
+    server = _jira_server(tmp_path, monkeypatch, jira)
+
+    payload = await _start_error(server, {"issue_locator": locator})
 
     assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
     assert jira.calls == []
@@ -667,7 +740,7 @@ async def test_scenario_2_tracker_kernector_has_no_source_for_hints(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
 
-    payload = await _start_error(server, locator)
+    payload = await _start_error(server, {"issue_locator": locator})
 
     assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
 
@@ -706,9 +779,7 @@ async def test_scenario_4_wrong_client_tracker_content_is_accepted_unverified(
         )
         assert jira.calls == []
 
-        live = await _call(
-            client, "software_delivery_test_design_start", {"issue_locator": "ENG-7"}
-        )
+        live = await _call(client, "software_delivery_test_design_start", _jira("ENG-7"))
 
     for result in (started, confirmed):
         assert result["evidence_origin"] == "client_supplied"
@@ -718,6 +789,131 @@ async def test_scenario_4_wrong_client_tracker_content_is_accepted_unverified(
             assert sentinel not in json.dumps(result)
     assert jira.calls == ["ENG-7"]
     assert live["evidence_origin"] == "live"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("provider", "locator"), [("github", "acme/app#7"), ("jira", "ENG-7")]
+)
+async def test_start_to_generate_works_for_every_registered_provider(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, provider: str, locator: str
+) -> None:
+    jira = _KernectorJiraClient()
+    server = _jira_server(tmp_path, monkeypatch, jira)
+
+    async with Client(server, raise_exceptions=True) as client:
+        started = await _call(
+            client,
+            "software_delivery_test_design_start",
+            {"provider": provider, "locator": locator},
+        )
+        confirmed = await _call(
+            client,
+            "software_delivery_test_design_confirm",
+            {
+                "draft_id": started["draft_id"],
+                "expected_version": started["version"],
+                "candidate_ids": ["cand-1", "cand-2"],
+            },
+        )
+        generated = await _call(
+            client,
+            "software_delivery_test_design_generate",
+            {
+                "draft_id": started["draft_id"],
+                "expected_version": confirmed["version"],
+                "type_overrides": [
+                    {"candidate_id": "cand-1", "test_type": "manual"},
+                    {"candidate_id": "cand-2", "test_type": "cucumber"},
+                ],
+            },
+        )
+
+    assert started["ticket_identifier"] == locator
+    assert started["evidence_origin"] == "live"
+    assert generated["status"] == "case_editing"
+    assert {case["candidate_id"] for case in generated["generated_cases"]} == {
+        "cand-1",
+        "cand-2",
+    }
+    assert set(jira.calls) == ({"ENG-7"} if provider == "jira" else set())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["jira", "gitlab", "GITHUB", "unknown"])
+async def test_unregistered_provider_is_a_validation_error_without_workflow_call(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    import composition.mcp.test_design as mcp_test_design
+
+    calls: list[object] = []
+    monkeypatch.setattr(
+        mcp_test_design.McpTestDesignOperations,
+        "start",
+        lambda _self, **kwargs: calls.append(kwargs),
+    )
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+
+    payload = await _start_error(server, {"provider": provider, "locator": "ENG-7"})
+
+    assert payload == {"code": "validation_error", "message": "Invalid tool arguments"}
+    assert calls == []
+
+
+def _github_not_connected() -> str:
+    from application.errors import GitHubNotConnectedError
+
+    raise GitHubNotConnectedError("not connected")
+
+
+@pytest.mark.anyio
+async def test_source_not_connected_is_identical_across_providers(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server = _jira_server(
+        tmp_path,
+        monkeypatch,
+        _KernectorJiraClient(),
+        token=None,
+        oauth_preflight=_github_not_connected,
+    )
+
+    github = await _start_error_text(
+        server, {"provider": "github", "locator": "acme/app#7"}
+    )
+    jira = await _start_error_text(server, _jira("ENG-7"))
+
+    assert json.loads(github)["code"] == "source_not_connected"
+    assert github == jira
+
+
+@pytest.mark.anyio
+async def test_not_found_is_identical_across_providers(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from domain.errors import ConnectorNotFoundError
+    from test.composition.test_design.test_design_fakes import RecordingIssueReader
+
+    reader = RecordingIssueReader()
+    reader.error = ConnectorNotFoundError("GitHub 404 body")
+    server = _jira_server(
+        tmp_path,
+        monkeypatch,
+        _KernectorJiraClient(error=ConnectorNotFoundError("Jira 404 body")),
+        reader=reader,
+    )
+
+    github = await _start_error_text(
+        server, {"provider": "github", "locator": "acme/app#7"}
+    )
+    jira = await _start_error_text(server, _jira("ENG-7"))
+
+    assert json.loads(github)["code"] == "not_found"
+    assert github == jira
 
 
 class _UnauthorizedResolver:

@@ -80,6 +80,7 @@ class _FakeWorkflow:
 
 
 class _FakeBinding:
+    start_providers = ("github", "jira")
     start_args = _StartArgs
     start_from_content_args = _StartFromContentArgs
     get_args = _GetArgs
@@ -163,6 +164,14 @@ def test_start_description_recommends_a_browse_url_over_a_bare_key() -> None:
 
     assert "browse URL" in description
     assert "bare key" in description
+
+
+def test_start_description_names_the_binding_providers_and_the_deprecated_alias() -> None:
+    description = TestDesignStartTool(_FakeBinding()).description
+
+    assert "(github, jira)" in description
+    assert "provider and locator" in description
+    assert "issue_locator is deprecated and accepts GitHub Issues only" in description
 
 
 def test_start_failures_hint_at_start_from_text() -> None:

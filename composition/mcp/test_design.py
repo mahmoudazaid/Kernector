@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Annotated, TypeVar, cast
+from typing import Annotated, Literal, TypeVar, cast
 
 from pydantic import (
     BaseModel,
@@ -20,6 +20,8 @@ from pydantic import (
     Field,
     StringConstraints,
     ValidationError,
+    WithJsonSchema,
+    create_model,
     field_validator,
     model_validator,
 )
@@ -42,6 +44,7 @@ from composition.test_design.facade import (
     TestDesignFacade,
 )
 from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE
+from composition.test_design.github_source import GitHubTestDesignSource
 from composition.test_design.errors import (
     TestDesignEvidenceChangedError,
     TestDesignNotFoundError,
@@ -106,22 +109,75 @@ class _StrictArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class TestDesignStartArgs(_StrictArgs):
-    """Arguments for ``software_delivery_test_design_start``."""
+Locator = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=MAX_ISSUE_LOCATOR_CHARS
+    ),
+]
+
+# Locator wording per registered provider; unregistered providers never appear.
+_LOCATOR_HINTS: Mapping[str, str] = {
+    "github": "for github, a GitHub Issue URL or owner/repo#number",
+    "jira": "for jira, a Jira issue key (PROJ-123) or browse URL",
+}
+
+
+class _StartArgsBase(_StrictArgs):
+    """Strict start arguments; ``start_args_for`` narrows ``provider``.
+
+    Exactly one form is accepted: ``provider`` with ``locator``, or the
+    deprecated GitHub-only ``issue_locator`` alone.
+    """
 
     __test__ = False
 
-    issue_locator: Annotated[
-        str,
-        StringConstraints(
-            strip_whitespace=True, min_length=1, max_length=MAX_ISSUE_LOCATOR_CHARS
-        ),
-    ] = Field(
+    provider: str | None = None
+    locator: Locator | None = None
+    issue_locator: Locator | None = Field(
+        default=None,
         description=(
-            "GitHub Issue URL or owner/repo#number, or Jira issue key "
-            "(PROJ-123) or browse URL. Prefer the full URL over a bare key "
-            "when you have it."
-        )
+            "Deprecated, GitHub only: GitHub Issue URL or owner/repo#number. "
+            "Use provider and locator instead."
+        ),
+        json_schema_extra={"deprecated": True},
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_form(self) -> _StartArgsBase:
+        if self.issue_locator is not None:
+            if self.provider is not None or self.locator is not None:
+                raise ValueError("pass provider and locator, or issue_locator alone")
+        elif self.provider is None or self.locator is None:
+            raise ValueError("provider and locator are required")
+        return self
+
+
+def start_args_for(providers: tuple[str, ...]) -> type[_StartArgsBase]:
+    """Return start arguments whose ``provider`` enum is exactly *providers*."""
+    hints = [_LOCATOR_HINTS[key] for key in providers if key in _LOCATOR_HINTS]
+    locator_description = (
+        "The issue in the chosen provider"
+        + (f": {'; '.join(hints)}" if hints else "")
+        + ". Prefer the full URL over a bare key when you have it."
+    )
+    return create_model(
+        "TestDesignStartArgs",
+        __base__=_StartArgsBase,
+        provider=(
+            Annotated[
+                Literal[providers] | None,  # type: ignore[valid-type]
+                WithJsonSchema({"type": "string", "enum": list(providers)}),
+            ],
+            Field(
+                default=None,
+                description="Tracker Kernector reads the issue from.",
+            ),
+        ),
+        locator=(
+            Locator | None,
+            Field(default=None, description=locator_description),
+        ),
     )
 
 
@@ -518,7 +574,7 @@ class McpTestDesignOperations:
         self._facade = facade
         self._conversation_id_factory = conversation_id_factory
 
-    def start(self, *, issue_locator: str) -> TestCoverageDraftView:
+    def start(self, *, provider: str, locator: str) -> TestCoverageDraftView:
         """Create a draft under a fresh ``mcp-`` conversation id.
 
         MCP callers never choose the conversation id, so their drafts cannot
@@ -528,7 +584,9 @@ class McpTestDesignOperations:
             return self._facade.create_draft(
                 CreateTestDesignDraftRequest(
                     conversation_id=self._conversation_id_factory(),
-                    source_locator=self._facade.resolve_source_locator(issue_locator),
+                    source_locator=self._facade.resolve_source_locator(
+                        locator, provider=provider
+                    ),
                 )
             )
 
@@ -645,12 +703,22 @@ def _result(draft: TestCoverageDraftView) -> dict[str, object]:
 class McpTestDesignWorkflow:
     """Implements the pack ``TestDesignWorkflow`` port: validate, call, project."""
 
-    def __init__(self, operations: McpTestDesignOperations) -> None:
+    def __init__(
+        self,
+        operations: McpTestDesignOperations,
+        *,
+        start_args: type[_StartArgsBase],
+    ) -> None:
         self._operations = operations
+        self._start_args = start_args
 
     def start(self, arguments: Mapping[str, object]) -> dict[str, object]:
-        args = _parse(TestDesignStartArgs, arguments)
-        return _result(self._operations.start(issue_locator=args.issue_locator))
+        args = _parse(self._start_args, arguments)
+        if args.issue_locator is not None:
+            provider, locator = GitHubTestDesignSource.provider, args.issue_locator
+        else:
+            provider, locator = cast(str, args.provider), cast(str, args.locator)
+        return _result(self._operations.start(provider=provider, locator=locator))
 
     def start_from_content(self, arguments: Mapping[str, object]) -> dict[str, object]:
         args = _parse(TestDesignStartFromContentArgs, arguments)
@@ -709,7 +777,6 @@ class McpTestDesignWorkflow:
 class McpTestDesignBinding:
     """Implements the pack ``TestDesignMcpBinding`` port for one workspace."""
 
-    start_args: type = TestDesignStartArgs
     start_from_content_args: type = TestDesignStartFromContentArgs
     get_args: type = TestDesignGetArgs
     confirm_args: type = TestDesignConfirmArgs
@@ -718,12 +785,36 @@ class McpTestDesignBinding:
     result: type = TestDesignDraftResult
     feature_file_result: type = TestDesignFeatureFileResult
 
-    def __init__(self, facade_factory: Callable[[], TestDesignFacade]) -> None:
+    def __init__(
+        self,
+        facade_factory: Callable[[], TestDesignFacade],
+        *,
+        providers: Callable[[], tuple[str, ...]],
+    ) -> None:
         self._facade_factory = facade_factory
+        self._providers_factory = providers
+        self._providers: tuple[str, ...] | None = None
+        self._start_args: type[_StartArgsBase] | None = None
+
+    @property
+    def start_providers(self) -> tuple[str, ...]:
+        """Provider keys registered in this deployment (resolved once)."""
+        if self._providers is None:
+            self._providers = tuple(self._providers_factory())
+        return self._providers
+
+    @property
+    def start_args(self) -> type[_StartArgsBase]:
+        if self._start_args is None:
+            self._start_args = start_args_for(self.start_providers)
+        return self._start_args
 
     def workflow(self) -> McpTestDesignWorkflow:
         """Return a workflow over a fresh facade (one per invocation)."""
-        return McpTestDesignWorkflow(McpTestDesignOperations(self._facade_factory()))
+        return McpTestDesignWorkflow(
+            McpTestDesignOperations(self._facade_factory()),
+            start_args=self.start_args,
+        )
 
 
 def build_mcp_test_design_binding(
@@ -740,4 +831,9 @@ def build_mcp_test_design_binding(
 
         return build_test_design_facade(settings)
 
-    return McpTestDesignBinding(_facade)
+    def _providers() -> tuple[str, ...]:
+        from composition.container import build_test_design_sources
+
+        return build_test_design_sources(settings).providers
+
+    return McpTestDesignBinding(_facade, providers=_providers)

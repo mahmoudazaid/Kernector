@@ -186,11 +186,16 @@ def _mcp_invoke(
         "build_test_design_facade",
         lambda _active: build_fake_facade(tmp_path, sources=registry),
     )
+    monkeypatch.setattr(
+        composition_container, "build_test_design_sources", lambda _active: registry
+    )
     tools = build_mcp_tool_registry(
         settings, retrieve=cast(RetrieveKnowledge, _StubRetrieve())
     )
     caller = McpCallerContext("ws-a", "default", frozenset({START_TOOL}))
-    return tools.invoke_authorized(caller, START_TOOL, {"issue_locator": "ENG-7"})
+    return tools.invoke_authorized(
+        caller, START_TOOL, {"provider": "jira", "locator": "ENG-7"}
+    )
 
 
 def test_mcp_success_payload_and_logs_carry_no_secrets(

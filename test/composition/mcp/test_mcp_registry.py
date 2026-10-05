@@ -658,7 +658,10 @@ def test_build_mcp_tools_contributes_test_design_only_with_binding() -> None:
     from packs.software_delivery.registration import build_mcp_tools
 
     contributed = build_mcp_tools(
-        test_design_binding=McpTestDesignBinding(lambda: object())  # type: ignore[arg-type,return-value]
+        test_design_binding=McpTestDesignBinding(
+            lambda: object(),  # type: ignore[arg-type,return-value]
+            providers=lambda: ("github",),
+        )
     )
 
     assert sorted(tool_id for tool_id, _ in contributed) == list(_TEST_DESIGN_TOOLS)

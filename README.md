@@ -101,9 +101,11 @@ uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
 - Health: `GET http://127.0.0.1:8100/healthz` (public)
 - Auth is a **trusted shared bearer MVP**, not OAuth
 - Test Design tools (#338) run start → confirm → generate for a live GitHub
-  Issue or Jira Data Center issue (#353) using the workspace's connection;
-  `issue_locator` accepts either and the provider is detected from it. They
-  appear in `tools/list`
+  Issue or Jira Data Center issue (#353) using the workspace's connection.
+  `test_design_start` takes `provider` (`github`, or `jira` when Jira Data
+  Center is configured; only registered providers are listed) and `locator`
+  (#356). `issue_locator` still works for one release as a deprecated,
+  GitHub-only alias. They appear in `tools/list`
   only when the pack is enabled and the ids are allowlisted. See the
   [pack README](packs/software_delivery/README.md#test-design-over-mcp-338)
   for arguments, error codes, and the `untrusted_model_output` marker.
@@ -548,8 +550,9 @@ Accepted locators:
 In chat, browse URLs on the configured host are always recognized. Bare keys
 are recognized only for projects in the saved Hub selection, and only when
 written in uppercase. A message that names more than one issue is ambiguous.
-On MCP, `test_design_start` takes the same `issue_locator` argument for GitHub
-and Jira; the provider is detected from the locator.
+On MCP, call `test_design_start` with `provider: "jira"` and the key or browse
+URL as `locator`. The deprecated `issue_locator` argument accepts GitHub Issues
+only.
 
 Evidence is the issue summary, description, and (optionally) an
 acceptance-criteria text field, converted to Markdown. Set

@@ -42,6 +42,14 @@ def test_registered_provider_resolves_case_insensitively() -> None:
     assert registry.resolve(" ACME ") is source
 
 
+def test_providers_lists_registered_keys_in_registration_order() -> None:
+    registry = TestDesignSourceRegistry(
+        (FakeTestDesignSource("github"), FakeTestDesignSource("jira"))
+    )
+
+    assert registry.providers == ("github", "jira")
+
+
 def test_duplicate_provider_registration_is_rejected() -> None:
     with pytest.raises(ValueError):
         TestDesignSourceRegistry(
