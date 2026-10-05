@@ -4,7 +4,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from application.ask_knowledge import AskKnowledge
 from application.ask_service import AskService
@@ -34,11 +34,14 @@ from composition.chat.recording_chat import RecordingChatModel
 from composition.software_delivery.agent import build_agent_orchestrate
 from composition.software_delivery.chat import (
     OpaqueInvoke,
-    Orchestrate,
     PackSoftwareDeliveryChat,
 )
 from composition.software_delivery.tools import software_delivery_tools_enabled
-from composition.chat.tool_augmented_ask import GroundedAsk, ToolAugmentedAsk
+from composition.chat.tool_augmented_ask import (
+    GroundedAsk,
+    ToolAugmentedAsk,
+    ToolRunner,
+)
 from composition.tools.registry import (
     enabled_domain_tool_packs,
     build_tool_registry,
@@ -96,8 +99,6 @@ from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 
 if TYPE_CHECKING:
     from composition.test_design.facade import TestDesignFacade
-    from packs.software_delivery.contracts import TestCaseStyle
-    from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
 
 SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = SUPPORTED_SUFFIXES
 
@@ -798,43 +799,15 @@ def build_opaque_invoke(
     return invoke
 
 
-def build_orchestrate_software_delivery(
-    settings: Settings,
-    *,
-    chat_model: ChatModel,
-    invoke: OpaqueInvoke | None = None,
-) -> "OrchestrateSoftwareDelivery":
-    """Wire Software Delivery orchestration when the pack is enabled.
+class _ToolsUnavailableRunner:
+    """Tool runner for stacks with no live chat tool chain wired.
 
-    Imports pack orchestration only for configured pack IDs so disabled packs
-    are not loaded at import time.
-
-    Args:
-        settings (Settings): Runtime settings including enabled tool packs.
-        chat_model (ChatModel): Shared chat adapter for generate-test-cases.
-        invoke (OpaqueInvoke | None): Optional replacement for the tool boundary,
-            so a caller can observe the chain without a second orchestrator.
-            Defaults to the registry-backed callable.
-
-    Returns:
-        OrchestrateSoftwareDelivery: Pack orchestration use case.
-
-    Raises:
-        ConfigurationError: Pack disabled or orchestrator cannot be built.
+    The pack-disabled stack and the deterministic (non-agent) stack both land
+    here: only the agent loop can run Drive export.
     """
-    if "software-delivery" not in settings.domain_tools.enabled_packs:
-        raise ConfigurationError(
-            "software-delivery pack must be enabled to build orchestration"
-        )
-    if invoke is None:
-        invoke = build_opaque_invoke(settings, chat_model=chat_model)
 
-    import importlib
-
-    registration = importlib.import_module(
-        "packs.software_delivery.registration"
-    )
-    return registration.build_orchestrator(invoke=invoke)
+    def run(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("domain tools are not enabled")
 
 
 def _relevant_retrieve(
@@ -944,10 +917,6 @@ def build_tool_augmented_ask(
             prompt_repository=prompt_repository,
         )
 
-        class _ToolsUnavailableRunner:
-            def run(self, *args, **kwargs):  # noqa: ANN002, ANN003
-                raise RuntimeError("domain tools are not enabled")
-
         return CorrelatedAsk(
             ToolAugmentedAsk(
                 ask,
@@ -969,18 +938,9 @@ def build_tool_augmented_ask(
         prompt_repository=prompt_repository,
     )
 
-    # Tools invoke ChatModel through the opaque boundary; record safe RunMeta so
-    # latency/tokens can reach ToolRunOutcome.run without entering tool JSON.
-    # Agent loop accumulates ReAct model turns plus any tool ChatModel calls.
-    model_calls = RecordingChatModel(
-        chat_model, accumulate=settings.domain_tools.agent_loop
-    )
-
     drafts = None
     grounded_ask = None
-    citation_channel = None
-    defer_retrieval = False
-    pack_orchestrate: Orchestrate
+    runner: ToolRunner = _ToolsUnavailableRunner()
     if settings.domain_tools.agent_loop:
         from application.ask_knowledge_with_agent import AskKnowledgeWithAgent
         from application.retrieval_citation_channel import RetrievalCitationChannel
@@ -1018,6 +978,10 @@ def build_tool_augmented_ask(
 
             drafts = _EmptyDrafts()
             destinations = _EmptyDestinations()
+        # Tools invoke ChatModel through the opaque boundary; record safe RunMeta
+        # so latency/tokens reach ToolRunOutcome.run without entering tool JSON.
+        # Accumulates ReAct model turns plus any tool ChatModel calls.
+        model_calls = RecordingChatModel(chat_model, accumulate=True)
         citation_channel = RetrievalCitationChannel()
         retrieve_tool = RetrieveKnowledgeTool(
             build_rewrite_and_retrieve_knowledge(
@@ -1048,61 +1012,19 @@ def build_tool_augmented_ask(
         # Drive export stays retrieval-free: omit retrieve_tool here.
         # Pass retrieve_tool into build_agent_orchestrate only for evidence
         # multi-tool workflows that opt in.
-        pack_orchestrate = build_agent_orchestrate(
-            tool_agent,
-            drafts=drafts,
-            destinations=destinations,
+        runner = PackSoftwareDeliveryChat(
+            retrieve=_relevant_retrieve(settings, vector_store=vector_store),
+            invoke=build_opaque_invoke(settings, chat_model=model_calls),
+            orchestrate=build_agent_orchestrate(
+                tool_agent,
+                drafts=drafts,
+                destinations=destinations,
+            ),
+            model_calls=model_calls,
+            allow_empty_evidence=True,
+            defer_retrieval=True,
+            citation_channel=citation_channel,
         )
-        defer_retrieval = True
-    else:
-
-        def orchestrate(
-            *,
-            target: str,
-            hits: Sequence[ScoredChunk],
-            generate_tests: bool,
-            output_style: str,
-            invoke: OpaqueInvoke,
-            conversation_id: str | None = None,
-            response_style: object = None,
-        ):
-            del conversation_id, response_style
-            from packs.software_delivery.evidence_bundle import evidence_bundle_from_hits
-            from packs.software_delivery.orchestration_contracts import (
-                OrchestrateSoftwareDeliveryRequest,
-            )
-            from packs.software_delivery.orchestration_policy import SoftwareDeliveryIntent
-
-            # Pass the recording wrapper so any future path that builds tools from
-            # chat_model (when invoke is absent) still contributes to RunMeta.
-            orchestrator = build_orchestrate_software_delivery(
-                settings, chat_model=model_calls, invoke=invoke
-            )
-            intent = (
-                SoftwareDeliveryIntent.RISK_SCORE_GENERATE_EXPORT
-                if generate_tests
-                else SoftwareDeliveryIntent.RISK_SCORE
-            )
-            return orchestrator.execute(
-                OrchestrateSoftwareDeliveryRequest(
-                    intent=intent,
-                    target=target,
-                    evidence=evidence_bundle_from_hits(hits),
-                    output_style=cast("TestCaseStyle", output_style),
-                )
-            )
-
-        pack_orchestrate = orchestrate
-
-    runner = PackSoftwareDeliveryChat(
-        retrieve=_relevant_retrieve(settings, vector_store=vector_store),
-        invoke=build_opaque_invoke(settings, chat_model=model_calls),
-        orchestrate=pack_orchestrate,
-        model_calls=model_calls,
-        allow_empty_evidence=settings.domain_tools.agent_loop,
-        defer_retrieval=defer_retrieval,
-        citation_channel=citation_channel,
-    )
 
     from composition.test_design.facade import build_test_design_handoff_from_request
 

@@ -16,12 +16,7 @@ from presentation.http.schemas import (
 from test.software_delivery_views import software_delivery_run_view
 
 _RETIRED_FIELDS = {"risk", "test_cases", "markdown"}
-_RETIRED_SCHEMAS = {
-    "RiskScoreResponse",
-    "RiskFactorResponse",
-    "TestCasesResponse",
-    "TestCaseResponse",
-}
+_RETIRED_SCHEMA_PREFIXES = ("Risk", "TestCaseResponse", "TestCasesResponse")
 
 
 def test_tool_run_response_projects_a_typed_view() -> None:
@@ -70,7 +65,7 @@ def test_openapi_contract_has_no_retired_tool_schemas() -> None:
     document = export_openapi_document()
     schemas = document["components"]["schemas"]  # type: ignore[index]
 
-    assert set(schemas).isdisjoint(_RETIRED_SCHEMAS)
+    assert not [name for name in schemas if name.startswith(_RETIRED_SCHEMA_PREFIXES)]
     assert set(schemas["ToolRunResponse"]["properties"]).isdisjoint(
         _RETIRED_FIELDS
     )

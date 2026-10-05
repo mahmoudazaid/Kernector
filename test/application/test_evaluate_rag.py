@@ -56,7 +56,7 @@ def test_evaluate_rag_ignores_non_ask_cases() -> None:
         id="t1",
         case_class="tool",
         kind="invoke_tool",
-        tool_name="software_delivery.risk_score",
+        tool_name="pack.example_tool",
         arguments={"target": "x"},
         expected_tool_result={"level": "high"},
     )

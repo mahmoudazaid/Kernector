@@ -134,7 +134,7 @@ def test_log_operation_drops_forbidden_field_values(
             arguments={"api_key": secret},
             result=chunk,
             message=secret,
-            tool="software_delivery.risk_score",
+            tool="pack.example_tool",
         )
 
     assert len(caplog.records) == 1
@@ -144,7 +144,7 @@ def test_log_operation_drops_forbidden_field_values(
     assert chunk not in flat
     assert "user asked about AUTH-101" not in flat
     assert "system prompt leak" not in flat
-    assert payload["tool"] == "software_delivery.risk_score"
+    assert payload["tool"] == "pack.example_tool"
 
 
 def test_log_operation_error_uses_error_type_not_message(
