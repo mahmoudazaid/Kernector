@@ -8,7 +8,8 @@ that ``import composition`` stays pack-free in a fresh interpreter.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,14 +21,9 @@ from composition.software_delivery.chat import (
     ToolCallRecorder,
     ToolRunFailedError,
     project_software_delivery_run_view,
+    tool_run_answer,
 )
-from composition.software_delivery.tools import (
-    RiskFactorView,
-    RiskScoreView,
-    SoftwareDeliveryRunView,
-    TestCaseView,
-    TestCasesView,
-)
+from composition.software_delivery.tools import SoftwareDeliveryRunView
 from composition.tools.runs import ToolCallView
 from domain.errors import ToolFailureError
 from domain.knowledge import (
@@ -37,53 +33,17 @@ from domain.knowledge import (
     SourceReference,
 )
 
-_RISK_TOOL = "software_delivery.risk_score"
-_GENERATE_TOOL = "software_delivery.generate_test_cases"
-_EXPORT_TOOL = "software_delivery.export_test_cases_markdown"
+_TOOL = "pack.example_tool"
+_SECOND_TOOL = "pack.second_tool"
+_DRIVE_TOOL = "software_delivery.export_test_cases_google_drive"
+_SUMMARY = "Export finished."
 
 
 @dataclass(frozen=True)
-class _Factor:
-    factor_id: str
-    weight: int
-    references: tuple[SourceReference, ...]
-
-
-@dataclass(frozen=True)
-class _Assessment:
-    score: int
-    level: str
-    factors: tuple[_Factor, ...]
-    rationale: str
-
-
-@dataclass(frozen=True)
-class _RiskOutcome:
-    assessment: _Assessment
-
-
-@dataclass(frozen=True)
-class _Case:
-    title: str
-    steps: tuple[str, ...]
-    expected: str
-    references: tuple[SourceReference, ...]
-
-
-@dataclass(frozen=True)
-class _Generation:
-    output_style: str
-    test_cases: tuple[_Case, ...]
-
-
-@dataclass(frozen=True)
-class _TestsOutcome:
-    result: _Generation
-
-
-@dataclass(frozen=True)
-class _ExportOutcome:
-    markdown: str
+class _DriveOutcome:
+    file_id: str
+    file_name: str
+    destination_label: str
 
 
 @dataclass(frozen=True)
@@ -92,18 +52,11 @@ class _Response:
     outcomes: tuple[object, ...]
 
 
-def _assessment() -> _Assessment:
-    return _Assessment(
-        score=62,
-        level="high",
-        factors=(
-            _Factor(
-                factor_id="missing_acceptance_criteria",
-                weight=30,
-                references=(SourceReference("SRS-2", "srs"),),
-            ),
-        ),
-        rationale="Acceptance criteria are absent from a complete story.",
+def _drive() -> _DriveOutcome:
+    return _DriveOutcome(
+        file_id="file-1",
+        file_name="test-cases.md",
+        destination_label="My Drive",
     )
 
 
@@ -136,7 +89,7 @@ class _RecordingRetrieve:
 class _RecordingOrchestrate:
     """Stands in for the lazily-imported pack call the container supplies."""
 
-    def __init__(self, response: _Response, *, tools: Sequence[str] = (_RISK_TOOL,)) -> None:
+    def __init__(self, response: _Response, *, tools: Sequence[str] = (_TOOL,)) -> None:
         self._response = response
         self._tools = tuple(tools)
         self.calls: list[dict[str, object]] = []
@@ -149,19 +102,19 @@ class _RecordingOrchestrate:
 
 
 def _ok(tool_name: str, arguments: Mapping[str, object]) -> str:
-    return '{"score": 62}'
+    return '{"ok": true}'
 
 
 def test_each_successful_call_is_recorded_as_an_opaque_tool_output() -> None:
     """AC4: tool_outputs is the ledger of what actually ran, in call order."""
     recorder = ToolCallRecorder(_ok)
 
-    recorder("software_delivery.risk_score", {})
-    recorder("software_delivery.generate_test_cases", {})
+    recorder(_TOOL, {})
+    recorder(_SECOND_TOOL, {})
 
     assert recorder.tool_outputs == (
-        InvokeToolResponse("software_delivery.risk_score", '{"score": 62}'),
-        InvokeToolResponse("software_delivery.generate_test_cases", '{"score": 62}'),
+        InvokeToolResponse(_TOOL, '{"ok": true}'),
+        InvokeToolResponse(_SECOND_TOOL, '{"ok": true}'),
     )
 
 
@@ -169,135 +122,75 @@ def test_a_failed_call_is_not_recorded_as_an_output() -> None:
     """InvokeToolResponse rejects a blank result, so a failure has no entry."""
 
     def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
-        if tool_name == "software_delivery.generate_test_cases":
+        if tool_name == _SECOND_TOOL:
             raise ToolFailureError("openrouter 502 for key sk-live-abc")
-        return '{"score": 62}'
+        return '{"ok": true}'
 
     recorder = ToolCallRecorder(invoke)
-    recorder("software_delivery.risk_score", {})
+    recorder(_TOOL, {})
 
     with pytest.raises(ToolFailureError):
-        recorder("software_delivery.generate_test_cases", {})
+        recorder(_SECOND_TOOL, {})
 
-    assert recorder.tool_outputs == (
-        InvokeToolResponse("software_delivery.risk_score", '{"score": 62}'),
-    )
+    assert recorder.tool_outputs == (InvokeToolResponse(_TOOL, '{"ok": true}'),)
 
 
 def test_a_blank_result_cannot_become_a_tool_output() -> None:
     """An empty payload carries nothing and the contract will not hold it."""
     recorder = ToolCallRecorder(lambda tool_name, arguments: "")
 
-    assert recorder("software_delivery.risk_score", {}) == ""
+    assert recorder(_TOOL, {}) == ""
     assert recorder.tool_outputs == ()
 
 
 def test_a_run_retrieves_orchestrates_and_reports_what_ran() -> None:
     """The whole seam, offline: nothing here touches a model or a vector store."""
     retrieve = _RecordingRetrieve((_hit(),))
-    orchestrate = _RecordingOrchestrate(
-        _Response("Scored risk.", (_RiskOutcome(_assessment()),))
-    )
+    orchestrate = _RecordingOrchestrate(_Response(_SUMMARY, (_drive(),)))
     runner = PackSoftwareDeliveryChat(
         retrieve=retrieve, invoke=_ok, orchestrate=orchestrate
     )
 
     outcome = runner.run(
-        "Score the risk for AUTH-101", generate_tests=False, output_style="steps"
+        "Export test cases for AUTH-101", generate_tests=False, output_style="steps"
     )
 
-    assert retrieve.queries == ["Score the risk for AUTH-101"]
-    assert orchestrate.calls[0]["target"] == "Score the risk for AUTH-101"
+    assert retrieve.queries == ["Export test cases for AUTH-101"]
+    assert orchestrate.calls[0]["target"] == "Export test cases for AUTH-101"
     assert orchestrate.calls[0]["hits"] == (_hit(),)
     assert orchestrate.calls[0]["generate_tests"] is False
     assert orchestrate.calls[0]["output_style"] == "steps"
-    assert outcome.tool_outputs == (
-        InvokeToolResponse(_RISK_TOOL, '{"score": 62}'),
-    )
+    assert outcome.tool_outputs == (InvokeToolResponse(_TOOL, '{"ok": true}'),)
 
 
-def test_a_risk_only_run_answers_with_the_score_and_rationale() -> None:
+def test_a_drive_export_run_answers_with_the_exported_file_name() -> None:
     """AC1: the answer restates typed tool output, not improvised prose."""
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
         invoke=_ok,
-        orchestrate=_RecordingOrchestrate(
-            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
-        ),
+        orchestrate=_RecordingOrchestrate(_Response(_SUMMARY, (_drive(),))),
     )
 
-    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = runner.run("Export test cases for AUTH-101")
 
     assert outcome.answer == (
-        "Scored risk.\n\n"
-        "**Risk 62/100 (high)** — "
-        "Acceptance criteria are absent from a complete story."
+        "Export finished.\n\nExported **test-cases.md** to Google Drive."
     )
 
 
-def test_the_answer_carries_the_exported_cases_not_prose() -> None:
-    """AC1: generated cases reach the reader as the export tool rendered them."""
-    generation = _Generation(
-        output_style="steps",
-        test_cases=(
-            _Case(
-                title="Lock the account after five failed MFA attempts",
-                steps=("Sign in with a valid password.", "Fail MFA five times."),
-                expected="The account is locked.",
-                references=(SourceReference("AUTH-101", "user_story"),),
-            ),
-        ),
-    )
-    markdown = "# Test Cases\n\n## 1. `Lock the account`\n"
+def test_a_run_attaches_a_run_view_with_the_drive_receipt() -> None:
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
         invoke=_ok,
-        orchestrate=_RecordingOrchestrate(
-            _Response(
-                "Scored risk, generated test cases, and exported Markdown.",
-                (
-                    _RiskOutcome(_assessment()),
-                    _TestsOutcome(generation),
-                    _ExportOutcome(markdown),
-                ),
-            ),
-            tools=(_RISK_TOOL, _GENERATE_TOOL, _EXPORT_TOOL),
-        ),
+        orchestrate=_RecordingOrchestrate(_Response(_SUMMARY, (_drive(),))),
     )
 
-    outcome = runner.run("Create test cases for AUTH-101")
-
-    assert outcome.answer.startswith(
-        "Scored risk, generated test cases, and exported Markdown."
-    )
-    assert outcome.answer.endswith(markdown)
-    assert outcome.tool_outputs == (
-        InvokeToolResponse(_RISK_TOOL, '{"score": 62}'),
-        InvokeToolResponse(_GENERATE_TOOL, '{"score": 62}'),
-        InvokeToolResponse(_EXPORT_TOOL, '{"score": 62}'),
-    )
-    assert outcome.run_view is not None
-    assert outcome.run_view.markdown == markdown
-    assert outcome.run_view.risk is not None
-    assert outcome.run_view.risk.score == 62
-
-
-def test_a_risk_only_run_attaches_a_run_view_without_markdown() -> None:
-    runner = PackSoftwareDeliveryChat(
-        retrieve=_RecordingRetrieve((_hit(),)),
-        invoke=_ok,
-        orchestrate=_RecordingOrchestrate(
-            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
-        ),
-    )
-
-    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = runner.run("Export test cases for AUTH-101")
 
     assert outcome.run_view is not None
-    assert outcome.run_view.markdown == ""
-    assert outcome.run_view.test_cases is None
-    assert outcome.run_view.risk is not None
-    assert outcome.run_view.risk.score == 62
+    assert outcome.run_view.drive_file_id == "file-1"
+    assert outcome.run_view.drive_file_name == "test-cases.md"
+    assert outcome.run_view.drive_destination_label == "My Drive"
     assert outcome.run is not None
     assert outcome.run.hit_count == 1
     assert outcome.run.citation_count == 1
@@ -326,10 +219,10 @@ def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
     recording = RecordingChatModel(_Inner())  # type: ignore[arg-type]
 
     def orchestrate(**kwargs: object) -> _Response:
-        # Simulate the generate-test-cases tool calling the shared chat model.
+        # Simulate a tool calling the shared chat model.
         recording.complete("sys", (Message(role="user", content="q"),), {})
-        kwargs["invoke"](_RISK_TOOL, {})  # type: ignore[operator]
-        return _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+        kwargs["invoke"](_TOOL, {})  # type: ignore[operator]
+        return _Response(_SUMMARY, (_drive(),))
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
@@ -338,7 +231,7 @@ def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
         model_calls=recording,
     )
 
-    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = runner.run("Export test cases for AUTH-101", generate_tests=False)
 
     assert outcome.run is not None
     assert outcome.run.model == "gen-model"
@@ -350,7 +243,7 @@ def test_model_call_recorder_projects_latency_onto_tool_run_outcome() -> None:
     assert recording.consume() is None
 
 
-def test_stale_recording_before_run_is_ignored_by_model_free_risk_run() -> None:
+def test_stale_recording_before_run_is_ignored_by_model_free_run() -> None:
     from composition.chat.recording_chat import RecordingChatModel
     from domain.models import AskResult, Message, Usage
 
@@ -374,13 +267,11 @@ def test_stale_recording_before_run_is_ignored_by_model_free_risk_run() -> None:
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
         invoke=_ok,
-        orchestrate=_RecordingOrchestrate(
-            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
-        ),
+        orchestrate=_RecordingOrchestrate(_Response(_SUMMARY, (_drive(),))),
         model_calls=recording,
     )
 
-    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = runner.run("Export test cases for AUTH-101", generate_tests=False)
 
     assert outcome.run is not None
     assert outcome.run.model is None
@@ -420,19 +311,17 @@ def test_failed_run_clears_model_metadata_so_next_run_does_not_inherit_it() -> N
         model_calls=recording,
     )
     with pytest.raises(ToolRunFailedError):
-        failing.run("Create test cases for AUTH-101")
+        failing.run("Export test cases for AUTH-101")
 
     assert recording.consume() is None
 
     following = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
         invoke=_ok,
-        orchestrate=_RecordingOrchestrate(
-            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
-        ),
+        orchestrate=_RecordingOrchestrate(_Response(_SUMMARY, (_drive(),))),
         model_calls=recording,
     )
-    outcome = following.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = following.run("Export test cases for AUTH-101", generate_tests=False)
 
     assert outcome.run is not None
     assert outcome.run.model is None
@@ -463,7 +352,7 @@ def test_projection_failure_after_model_call_clears_recorder() -> None:
 
     def orchestrate(**kwargs: object) -> _Response:
         recording.complete("sys", (Message(role="user", content="q"),), {})
-        kwargs["invoke"](_RISK_TOOL, {})  # type: ignore[operator]
+        kwargs["invoke"](_TOOL, {})  # type: ignore[operator]
         return _Response("Ran something new.", (object(),))
 
     runner = PackSoftwareDeliveryChat(
@@ -473,7 +362,7 @@ def test_projection_failure_after_model_call_clears_recorder() -> None:
         model_calls=recording,
     )
     with pytest.raises(ToolRunFailedError):
-        runner.run("Create test cases for AUTH-101")
+        runner.run("Export test cases for AUTH-101")
 
     assert recording.consume() is None
 
@@ -509,8 +398,8 @@ def test_fake_recorder_protocol_works_without_inner_chat_model() -> None:
                 usage=Usage(total_tokens=2),
             )
         )
-        kwargs["invoke"](_RISK_TOOL, {})  # type: ignore[operator]
-        return _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+        kwargs["invoke"](_TOOL, {})  # type: ignore[operator]
+        return _Response(_SUMMARY, (_drive(),))
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
@@ -518,7 +407,7 @@ def test_fake_recorder_protocol_works_without_inner_chat_model() -> None:
         orchestrate=orchestrate,
         model_calls=fake,
     )
-    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = runner.run("Export test cases for AUTH-101", generate_tests=False)
 
     assert fake.cleared >= 2  # start + finally
     assert outcome.run is not None
@@ -536,12 +425,10 @@ def test_every_citation_came_from_the_retrieved_evidence() -> None:
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve(hits),
         invoke=_ok,
-        orchestrate=_RecordingOrchestrate(
-            _Response("Scored risk.", (_RiskOutcome(_assessment()),))
-        ),
+        orchestrate=_RecordingOrchestrate(_Response(_SUMMARY, (_drive(),))),
     )
 
-    outcome = runner.run("Score the risk for AUTH-101", generate_tests=False)
+    outcome = runner.run("Export test cases for AUTH-101", generate_tests=False)
 
     assert {citation.quote for citation in outcome.citations} <= {
         hit.chunk.content for hit in hits
@@ -562,7 +449,7 @@ def test_an_unrecognised_outcome_is_a_failure_not_a_silent_drop() -> None:
     )
 
     with pytest.raises(ToolRunFailedError) as excinfo:
-        runner.run("Score the risk for AUTH-101", generate_tests=False)
+        runner.run("Export test cases for AUTH-101", generate_tests=False)
 
     assert str(excinfo.value) == "The tool run produced an unrecognised result."
 
@@ -575,7 +462,7 @@ def test_nothing_relevant_retrieved_is_an_outcome_not_a_crash() -> None:
     )
 
     with pytest.raises(InsufficientEvidenceError):
-        runner.run("Create test cases for AUTH-101")
+        runner.run("Export test cases for AUTH-101")
 
     assert orchestrate.calls == []
 
@@ -588,7 +475,7 @@ def test_an_unknown_output_style_is_rejected_before_the_pack() -> None:
     )
 
     with pytest.raises(ApplicationValidationError) as excinfo:
-        runner.run("Create test cases for AUTH-101", output_style="prose")
+        runner.run("Export test cases for AUTH-101", output_style="prose")
 
     assert str(excinfo.value) == "output_style must be one of ['gherkin', 'steps']"
     assert retrieve.queries == []
@@ -600,14 +487,14 @@ def test_a_tool_failure_keeps_the_outputs_that_already_landed() -> None:
 
     def orchestrate(**kwargs: object) -> _Response:
         invoke = kwargs["invoke"]
-        invoke(_RISK_TOOL, {})  # type: ignore[operator]
-        invoke(_GENERATE_TOOL, {})  # type: ignore[operator]
+        invoke(_TOOL, {})  # type: ignore[operator]
+        invoke(_SECOND_TOOL, {})  # type: ignore[operator]
         raise AssertionError("unreachable")
 
     def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
-        if tool_name == _GENERATE_TOOL:
+        if tool_name == _SECOND_TOOL:
             raise ToolFailureError("openrouter 502 for key sk-live-abc")
-        return '{"score": 62}'
+        return '{"ok": true}'
 
     runner = PackSoftwareDeliveryChat(
         retrieve=_RecordingRetrieve((_hit(),)),
@@ -616,14 +503,12 @@ def test_a_tool_failure_keeps_the_outputs_that_already_landed() -> None:
     )
 
     with pytest.raises(ToolRunFailedError) as excinfo:
-        runner.run("Create test cases for AUTH-101")
+        runner.run("Export test cases for AUTH-101")
 
     assert str(excinfo.value) == "A tool failed during the run."
     assert "sk-live-abc" not in str(excinfo.value)
     assert isinstance(excinfo.value.__cause__, ToolFailureError)
-    assert excinfo.value.tool_outputs == (
-        InvokeToolResponse(_RISK_TOOL, '{"score": 62}'),
-    )
+    assert excinfo.value.tool_outputs == (InvokeToolResponse(_TOOL, '{"ok": true}'),)
 
 
 def test_exported_styles_match_the_pack() -> None:
@@ -633,92 +518,57 @@ def test_exported_styles_match_the_pack() -> None:
     assert set(SOFTWARE_DELIVERY_TEST_STYLES) == set(TEST_CASE_STYLES)
 
 
-def _generation() -> _Generation:
-    return _Generation(
-        output_style="steps",
-        test_cases=(
-            _Case(
-                title="Lock the account after five failed MFA attempts",
-                steps=("Sign in with a valid password.", "Fail MFA five times."),
-                expected="The account is locked.",
-                references=(SourceReference("AUTH-101", "user_story"),),
-            ),
-        ),
-    )
-
-
-def test_project_run_view_maps_full_chain_to_typed_views() -> None:
+def test_project_run_view_maps_drive_receipt_to_typed_view() -> None:
     """#178: typed outcomes become SoftwareDeliveryRunView without opaque payloads."""
-    markdown = "# Test Cases\n\n## 1. `Lock the account`\n"
-    response = _Response(
-        "Scored risk, generated test cases, and exported Markdown.",
-        (
-            _RiskOutcome(_assessment()),
-            _TestsOutcome(_generation()),
-            _ExportOutcome(markdown),
-        ),
-    )
-
-    view = project_software_delivery_run_view(response)
+    view = project_software_delivery_run_view(_Response(_SUMMARY, (_drive(),)))
 
     assert view == SoftwareDeliveryRunView(
-        summary="Scored risk, generated test cases, and exported Markdown.",
+        summary=_SUMMARY,
         calls=(
             ToolCallView(
-                _RISK_TOOL, ok=True, summary="Scored risk at 62/100"
-            ),
-            ToolCallView(
-                _GENERATE_TOOL, ok=True, summary="Generated 1 test case"
-            ),
-            ToolCallView(
-                _EXPORT_TOOL, ok=True, summary="Exported test cases as Markdown"
+                _DRIVE_TOOL, ok=True, summary="Exported test cases to Google Drive"
             ),
         ),
-        risk=RiskScoreView(
-            score=62,
-            level="high",
-            rationale="Acceptance criteria are absent from a complete story.",
-            factors=(
-                RiskFactorView(
-                    factor_id="missing_acceptance_criteria",
-                    weight=30,
-                    references=(SourceReference("SRS-2", "srs"),),
-                ),
-            ),
-        ),
-        test_cases=TestCasesView(
-            output_style="steps",
-            cases=(
-                TestCaseView(
-                    title="Lock the account after five failed MFA attempts",
-                    steps=(
-                        "Sign in with a valid password.",
-                        "Fail MFA five times.",
-                    ),
-                    expected="The account is locked.",
-                    references=(SourceReference("AUTH-101", "user_story"),),
-                ),
-            ),
-        ),
-        markdown=markdown,
+        drive_file_id="file-1",
+        drive_file_name="test-cases.md",
+        drive_destination_label="My Drive",
     )
-    rendered = " ".join(call.summary for call in view.calls)
-    assert '{"score"' not in rendered
-    assert "sk-live" not in rendered
 
 
-def test_project_run_view_maps_risk_only_without_export() -> None:
+def test_project_run_view_flags_a_missing_export_destination() -> None:
     view = project_software_delivery_run_view(
-        _Response("Scored risk.", (_RiskOutcome(_assessment()),))
+        _Response(
+            "Save a destination first.",
+            (SimpleNamespace(outcome="export_destination_required"),),
+        )
     )
 
-    assert view.risk is not None
-    assert view.risk.score == 62
-    assert view.test_cases is None
-    assert view.markdown == ""
-    assert view.calls == (
-        ToolCallView(_RISK_TOOL, ok=True, summary="Scored risk at 62/100"),
-    )
+    assert view.export_destination_required is True
+    assert view.calls == ()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        SimpleNamespace(assessment=object()),
+        SimpleNamespace(result=object()),
+        SimpleNamespace(markdown="# Test Cases\n"),
+    ],
+    ids=["assessment", "generation", "markdown"],
+)
+def test_retired_tool_outcomes_are_unrecognised(outcome: object) -> None:
+    response = _Response("Ran a retired tool.", (outcome,))
+
+    with pytest.raises(ToolRunFailedError):
+        project_software_delivery_run_view(response)
+    with pytest.raises(ToolRunFailedError):
+        tool_run_answer(response)
+
+
+def test_run_view_carries_no_retired_tool_fields() -> None:
+    names = {field.name for field in fields(SoftwareDeliveryRunView)}
+
+    assert names.isdisjoint({"risk", "test_cases", "markdown"})
 
 
 def test_project_run_view_rejects_unrecognised_outcome() -> None:

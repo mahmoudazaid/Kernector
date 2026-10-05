@@ -95,11 +95,7 @@ from composition.chat.short_term_memory import (
     build_short_term_memory_runtime,
 )
 from composition.software_delivery.tools import (
-    RiskFactorView,
-    RiskScoreView,
     SoftwareDeliveryRunView,
-    TestCaseView,
-    TestCasesView,
     software_delivery_tools_enabled,
 )
 from composition.software_delivery.chat import (
@@ -184,11 +180,7 @@ __all__ = [
     "ClarificationContextStore",
     "GroundedAsk",
     "Settings",
-    "RiskFactorView",
-    "RiskScoreView",
     "SoftwareDeliveryRunView",
-    "TestCaseView",
-    "TestCasesView",
     "ToolAugmentedAsk",
     "ToolCallView",
     "ToolRunFailedError",
