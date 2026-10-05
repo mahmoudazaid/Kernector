@@ -740,8 +740,63 @@ def test_partially_used_examples_table_is_regenerated_with_the_problem(
     assert cases["cand-2"].gherkin == _OUTLINE
 
 
+@pytest.mark.parametrize(
+    ("gherkin", "expected"),
+    [
+        (
+            "Given the Dashboard page is opened\n"
+            "And metrics return <overall_health>\n"
+            'Then the banner shows "<overall_health>"\n'
+            "Examples:\n"
+            "| overall_health |\n"
+            "| Good |",
+            "Given metrics return <overall_health>\n"
+            'Then the banner shows "<overall_health>"\n'
+            "Examples:\n"
+            "| overall_health |\n"
+            "| Good |",
+        ),
+        (
+            "Given  the dashboard page is opened \n"
+            "When the dashboard finishes loading\n"
+            "Then the banner is shown",
+            "When the dashboard finishes loading\nThen the banner is shown",
+        ),
+        (
+            "Given the Dashboard page is opened",
+            "Given the Dashboard page is opened",
+        ),
+        (
+            "Given another page is opened\n"
+            "And the Dashboard page is opened\n"
+            "Then the banner is shown",
+            "Given another page is opened\n"
+            "And the Dashboard page is opened\n"
+            "Then the banner is shown",
+        ),
+    ],
+)
+def test_scenario_steps_repeating_the_background_are_removed(
+    gherkin: str, expected: str
+) -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(gherkin)],
+            cucumber_background="Given the Dashboard page is opened",
+        )
+    )
+
+    result = _generate(chat)
+
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == expected
+    assert result.cucumber_background == "Given the Dashboard page is opened"
+
+
 def test_prompt_constrains_cucumber_scenarios() -> None:
     assert "exactly one scenario" in GENERATE_CASES_SYSTEM
     assert "no conditional logic" in GENERATE_CASES_SYSTEM
     assert "every column is used by a step" in GENERATE_CASES_SYSTEM
     assert "every outcome the candidate title names" in GENERATE_CASES_SYSTEM
+    assert "combine conflicting values" in GENERATE_CASES_SYSTEM
+    assert "never repeat Background steps" in GENERATE_CASES_SYSTEM

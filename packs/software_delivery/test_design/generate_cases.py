@@ -73,11 +73,15 @@ values.
 lists several states or values (for example "Good/Fair/Poor"), write the \
 steps with <placeholder> names and add one Examples row per listed state; \
 never cover only one of them.
+- When the title states a precedence or priority rule (for example "Poor if \
+any is Poor, else Fair"), add Examples rows that combine conflicting values \
+so the precedence is exercised, not only rows where every input agrees.
 - When any available cucumber cases are emitted, also return top-level \
 keys cucumber_feature (short Feature title, no \"Feature:\" prefix) and \
 cucumber_background (Background steps only, or empty string). This ticket \
 is one Feature: all cucumber scenarios share that single Feature and \
-Background — never emit a different Feature per case.
+Background — never emit a different Feature per case, and never repeat \
+Background steps inside a case's gherkin.
 - automation_fit must be grounded in Issue evidence; do not claim \
 applicability without support.
 """
@@ -297,6 +301,9 @@ class GenerateTestCases:
         ):
             cucumber_feature = current.cucumber_feature.strip() or cucumber_feature
             cucumber_background = current.cucumber_background
+        generated = tuple(
+            _strip_background_steps(case, cucumber_background) for case in generated
+        )
         merged = _merge_cases(retained, generated)
         has_cucumber = any(
             case.test_type == "cucumber" and case.availability == "available"
@@ -619,6 +626,42 @@ def _drop_unused_examples(case: GeneratedTestCase) -> GeneratedTestCase:
     if not examples or _PLACEHOLDER.search("\n".join(steps)):
         return case
     return replace(case, gherkin="\n".join(steps).strip())
+
+
+_STEP_KEYWORD = re.compile(r"^(given|when|then|and|but|\*)\s+", re.IGNORECASE)
+
+
+def _step_body(line: str) -> str:
+    return " ".join(_STEP_KEYWORD.sub("", line.strip()).split()).lower()
+
+
+def _strip_background_steps(
+    case: GeneratedTestCase, background: str
+) -> GeneratedTestCase:
+    """Remove leading scenario steps that repeat the shared Background."""
+    if case.test_type != "cucumber" or not background.strip():
+        return case
+    background_steps = [
+        _step_body(line)
+        for line in background.splitlines()
+        if line.strip() and not line.strip().lower().startswith("background:")
+    ]
+    steps, examples = _split_examples(case.gherkin)
+    repeated = 0
+    while (
+        repeated < min(len(steps), len(background_steps))
+        and _step_body(steps[repeated]) == background_steps[repeated]
+    ):
+        repeated += 1
+    if repeated == 0 or repeated == len(steps):
+        return case
+    remaining = steps[repeated:]
+    first = remaining[0]
+    keyword = _STEP_KEYWORD.match(first.strip())
+    if keyword is not None and keyword.group(1).lower() in ("and", "but"):
+        indent = first[: len(first) - len(first.lstrip())]
+        remaining[0] = f"{indent}Given {first.strip()[keyword.end():]}"
+    return replace(case, gherkin="\n".join([*remaining, *examples]).strip())
 
 
 def _examples_feedback(problems: Mapping[str, str]) -> str:
