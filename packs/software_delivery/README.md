@@ -124,6 +124,11 @@ contributes these tools only when composition supplies a workspace-bound
 - Manual cases carry `steps` and `expected_result`. Cucumber cases leave those
   empty and put their Given/When/Then lines in `gherkin`, with the shared
   `Feature` and `Background` under `cucumber`.
+- A generated Cucumber case whose `Examples` table disagrees with its steps
+  (no `<placeholder>` used, a column no step reads, or a placeholder with no
+  column) is regenerated once with the specific problem. If the retry still
+  uses no placeholder, the `Examples` table is dropped so the scenario claims
+  only what its literal steps test.
 
 - Arguments are strict (`additionalProperties: false`); `workspace_id` and
   `conversation_id` are never accepted. Each MCP draft gets a server-generated
