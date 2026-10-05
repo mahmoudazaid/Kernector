@@ -8,7 +8,11 @@ from dataclasses import replace
 
 import pytest
 
-from domain.errors import ToolFailureError
+from domain.errors import (
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ToolFailureError,
+)
 from domain.knowledge import SourceReference
 from domain.models import AskResult, Message
 from packs.software_delivery.test_design.errors import TestDesignValidationError
@@ -27,8 +31,11 @@ from packs.software_delivery.test_design.suggest_tests import CoverageEvidenceIt
 
 
 class _FakeChat:
-    def __init__(self, content: str = "") -> None:
+    def __init__(
+        self, content: str = "", *, followups: Sequence[str | Exception] = ()
+    ) -> None:
         self.content = content
+        self._followups = list(followups)
         self.calls: list[tuple[str, Sequence[Message], Mapping[str, object]]] = []
 
     def complete(
@@ -38,7 +45,10 @@ class _FakeChat:
         settings: Mapping[str, object],
     ) -> AskResult:
         self.calls.append((system, tuple(messages), dict(settings)))
-        return AskResult(content=self.content, model="fake")
+        content = self._followups[len(self.calls) - 2] if len(self.calls) > 1 else self.content
+        if isinstance(content, Exception):
+            raise content
+        return AskResult(content=content, model="fake")
 
 
 class _MemoryRepo:
@@ -607,7 +617,267 @@ def test_type_overrides_applied_without_demoting() -> None:
     assert result.generated_cases[0].test_type == "cucumber"
 
 
+_UNUSED_EXAMPLES = (
+    "Given two sites with all links Up\n"
+    "When the dashboard recalculates network health\n"
+    'Then the banner displays "Good"\n'
+    "Examples:\n"
+    "| overall_state | site1_links |\n"
+    "| Good | Up,Up |\n"
+    "| Poor | Down,Down |"
+)
+_OUTLINE = (
+    "Given site1 links are <site1_links>\n"
+    "When the dashboard recalculates network health\n"
+    'Then the banner displays "<overall_state>"\n'
+    "Examples:\n"
+    "| overall_state | site1_links |\n"
+    "| Good | Up,Up |\n"
+    "| Poor | Down,Down |"
+)
+
+
+def _outline_draft() -> TestCoverageDraft:
+    return _draft(
+        candidates=(
+            _candidate(candidate_id="cand-1", test_type="manual"),
+            _candidate(
+                candidate_id="cand-2", title="Banner states", test_type="cucumber"
+            ),
+        )
+    )
+
+
+def _with_gherkin(gherkin: str) -> dict[str, object]:
+    return {**_cucumber_case_payload("cand-2"), "gherkin": gherkin}
+
+
+def _generate(chat: _FakeChat) -> TestCoverageDraft:
+    return GenerateTestCases(
+        chat_model=chat, repository=_MemoryRepo(_outline_draft())
+    ).execute(
+        GenerateTestCasesRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            evidence=(_evidence(),),
+            evidence_fingerprint="fp-1",
+        )
+    ).draft
+
+
+def test_examples_table_unused_by_steps_is_regenerated_once_with_feedback() -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)],
+            cucumber_feature="Health banner",
+        ),
+        followups=[_model_payload([_with_gherkin(_OUTLINE)])],
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 2
+    retry_messages = chat.calls[1][1]
+    retry_prompt = retry_messages[-1].content
+    assert "cand-2" in retry_prompt
+    assert "<placeholder>" in retry_prompt
+    assert '"cand-1"' not in retry_messages[-3].content
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == _OUTLINE
+    assert cases["cand-1"].steps == ("Enter credentials", "Submit")
+    assert result.cucumber_feature == "Health banner"
+
+
+def test_examples_table_still_unused_after_retry_is_dropped() -> None:
+    chat = _FakeChat(
+        content=_model_payload([_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]),
+        followups=[_model_payload([_with_gherkin(_UNUSED_EXAMPLES)])],
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 2
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == (
+        "Given two sites with all links Up\n"
+        "When the dashboard recalculates network health\n"
+        'Then the banner displays "Good"'
+    )
+
+
+@pytest.mark.parametrize(
+    "retry_content",
+    [
+        _model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]
+        ),
+        '{"cases": [',
+        ProviderTimeoutError("timeout"),
+        ProviderRateLimitError("429"),
+    ],
+)
+def test_failed_examples_retry_keeps_the_first_pass(
+    retry_content: str | Exception,
+) -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]
+        ),
+        followups=[retry_content],
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 2
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-1"].steps == ("Enter credentials", "Submit")
+    assert cases["cand-2"].gherkin == (
+        "Given two sites with all links Up\n"
+        "When the dashboard recalculates network health\n"
+        'Then the banner displays "Good"'
+    )
+
+
+@pytest.mark.parametrize(
+    "gherkin", [_OUTLINE, "Given no sites\nThen the banner says \"No sites\""]
+)
+def test_consistent_cucumber_case_is_kept_without_retry(gherkin: str) -> None:
+    chat = _FakeChat(
+        content=_model_payload([_manual_case_payload("cand-1"), _with_gherkin(gherkin)])
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 1
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == gherkin
+
+
+@pytest.mark.parametrize(
+    ("gherkin", "problem"),
+    [
+        (
+            _OUTLINE.replace("<site1_links>", "Up,Up"),
+            "Examples columns not used by any step: site1_links",
+        ),
+        (
+            _OUTLINE.replace("<site1_links>", "<site2_links>"),
+            "Examples columns not used by any step: site1_links",
+        ),
+    ],
+)
+def test_partially_used_examples_table_is_regenerated_with_the_problem(
+    gherkin: str, problem: str
+) -> None:
+    chat = _FakeChat(
+        content=_model_payload([_manual_case_payload("cand-1"), _with_gherkin(gherkin)]),
+        followups=[_model_payload([_with_gherkin(_OUTLINE)])],
+    )
+
+    result = _generate(chat)
+
+    assert problem in chat.calls[1][1][-1].content
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == _OUTLINE
+
+
+@pytest.mark.parametrize(
+    ("gherkin", "expected"),
+    [
+        (
+            "Given the Dashboard page is opened\n"
+            "And metrics return <overall_health>\n"
+            'Then the banner shows "<overall_health>"\n'
+            "Examples:\n"
+            "| overall_health |\n"
+            "| Good |",
+            "Given metrics return <overall_health>\n"
+            'Then the banner shows "<overall_health>"\n'
+            "Examples:\n"
+            "| overall_health |\n"
+            "| Good |",
+        ),
+        (
+            "Given  the dashboard page is opened \n"
+            "When the dashboard finishes loading\n"
+            "Then the banner is shown",
+            "When the dashboard finishes loading\nThen the banner is shown",
+        ),
+        (
+            "Given the Dashboard page is opened",
+            "Given the Dashboard page is opened",
+        ),
+        (
+            "Given another page is opened\n"
+            "And the Dashboard page is opened\n"
+            "Then the banner is shown",
+            "Given another page is opened\n"
+            "And the Dashboard page is opened\n"
+            "Then the banner is shown",
+        ),
+    ],
+)
+def test_scenario_steps_repeating_the_background_are_removed(
+    gherkin: str, expected: str
+) -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(gherkin)],
+            cucumber_background="Given the Dashboard page is opened",
+        )
+    )
+
+    result = _generate(chat)
+
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == expected
+    assert result.cucumber_background == "Given the Dashboard page is opened"
+
+
+@pytest.mark.parametrize(
+    ("gherkin", "background"),
+    [
+        (
+            "Given the following sites exist:\n"
+            "| site | links |\n"
+            "| B | Down |\n"
+            "When the dashboard recalculates network health\n"
+            'Then the banner displays "Poor"',
+            "Given the following sites exist:\n| site | links |\n| A | Up |",
+        ),
+        (
+            "Given the following sites exist:\n"
+            "| site | links |\n"
+            "| A | Up |\n"
+            "When the dashboard recalculates network health\n"
+            'Then the banner displays "Good"',
+            "Given the following sites exist:\n"
+            "| site | links |\n"
+            "| A | Up |\n"
+            "| B | Down |",
+        ),
+    ],
+)
+def test_background_strip_never_stops_inside_a_step_argument(
+    gherkin: str, background: str
+) -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(gherkin)],
+            cucumber_background=background,
+        )
+    )
+
+    result = _generate(chat)
+
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == gherkin
+
+
 def test_prompt_constrains_cucumber_scenarios() -> None:
     assert "exactly one scenario" in GENERATE_CASES_SYSTEM
     assert "no conditional logic" in GENERATE_CASES_SYSTEM
     assert "every column is used by a step" in GENERATE_CASES_SYSTEM
+    assert "every outcome the candidate title names" in GENERATE_CASES_SYSTEM
+    assert "combine conflicting values" in GENERATE_CASES_SYSTEM
+    assert "never repeat Background steps" in GENERATE_CASES_SYSTEM

@@ -35,7 +35,7 @@
 | Advanced RAG / query translation | RAG | Done | `application/rewrite_and_retrieve.py`, `infrastructure/llm/query_rewrite.py` | #87 | [#70](https://github.com/mahmoudazaid/Kernector/issues/70) |
 | ≥3 domain tool calls | Tool | Done | `packs/software_delivery/{risk_score,generate_test_cases,export_test_cases_markdown}_tool.py`, `orchestration.py` | #92, #93, #94, #95 | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) / [#71](https://github.com/mahmoudazaid/Kernector/issues/71) |
 | Chat-time tool selection | Tool | Done | `packs/software_delivery/chat_intent.py`, `composition/tool_augmented_ask.py` | [#170](https://github.com/mahmoudazaid/Kernector/issues/170) (closed) | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
-| Domain focus + prompts | Domain | Done | `packs/software_delivery/`, `prompts/packs/` | #90, #136, #139 | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
+| Domain focus + prompts | Domain | Done | `packs/software_delivery/`, `packs/software_delivery/test_design/` | #90, #136, #139 | [#9](https://github.com/mahmoudazaid/Kernector/issues/9) |
 | Domain security measures | Domain | Done | `application/input_safety.py`, `grounded_rag_policy.py` | #97, #22 | [#72](https://github.com/mahmoudazaid/Kernector/issues/72) |
 | LangChain + OpenRouter | Technical | Done | `infrastructure/llm/openrouter.py`, `pyproject.toml` | #89 | [#70](https://github.com/mahmoudazaid/Kernector/issues/70) |
 | Error handling | Technical | Done | `domain/errors.py`, `presentation/streamlit/ask_turn.py` | #98 | [#72](https://github.com/mahmoudazaid/Kernector/issues/72) |

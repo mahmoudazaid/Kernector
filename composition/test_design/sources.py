@@ -13,6 +13,7 @@ from typing import Protocol
 from composition.test_design.errors import (
     TestDesignUnavailableError,
     TestDesignValidationError,
+    UnsupportedSourceLocatorError,
 )
 from domain.knowledge import SourceLocator, SourceType
 from domain.ports import LiveSourceReader
@@ -90,7 +91,8 @@ class TestDesignSourceRegistry:
         skipped; any other error propagates, so ``canonicalize`` must stay pure.
 
         Raises:
-            TestDesignValidationError: No source, or several, accept *locator*.
+            UnsupportedSourceLocatorError: No source accepts *locator*.
+            TestDesignValidationError: Several sources accept *locator*.
         """
         found: list[SourceLocator] = []
         for source in self._by_provider.values():
@@ -100,7 +102,9 @@ class TestDesignSourceRegistry:
                 continue
             found.append(SourceLocator(provider=source.provider, locator=canonical))
         if not found:
-            raise TestDesignValidationError("locator is not a supported source locator")
+            raise UnsupportedSourceLocatorError(
+                "locator is not a supported source locator"
+            )
         if len(found) > 1:
             raise TestDesignValidationError("locator is ambiguous across sources")
         return found[0]

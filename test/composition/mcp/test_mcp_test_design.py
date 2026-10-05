@@ -15,12 +15,14 @@ from application.errors import (
 from composition.mcp.test_design import McpTestDesignOperations, McpTestDesignWorkflow
 from composition.test_design.facade import TestDesignFacade
 from domain.errors import (
+    ConnectorNotFoundError,
     ToolArgumentValidationError,
     ToolEvidenceChangedError,
     ToolInsufficientEvidenceError,
     ToolSourceNotConnectedError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
+    ToolUnsupportedSourceError,
     ToolVersionConflictError,
 )
 from test.composition.test_design.test_design_fakes import (
@@ -190,11 +192,23 @@ def test_blank_issue_maps_to_insufficient_evidence(tmp_path: Path) -> None:
         workflow.start(issue_locator=ISSUE_LOCATOR)
 
 
-def test_invalid_locator_maps_to_argument_validation(tmp_path: Path) -> None:
+def test_missing_source_issue_maps_to_target_not_found(tmp_path: Path) -> None:
+    reader = RecordingIssueReader()
+    reader.error = ConnectorNotFoundError("issue not found")
+    workflow, _facade = _workflow(tmp_path, reader=reader)
+
+    with pytest.raises(ToolTargetNotFoundError):
+        workflow.start(issue_locator=ISSUE_LOCATOR)
+
+
+@pytest.mark.parametrize("locator", ["not a locator", "ENG-7"])
+def test_locator_no_registered_source_accepts_maps_to_unsupported_source(
+    tmp_path: Path, locator: str
+) -> None:
     workflow, _facade = _workflow(tmp_path)
 
-    with pytest.raises(ToolArgumentValidationError):
-        workflow.start(issue_locator="not a locator")
+    with pytest.raises(ToolUnsupportedSourceError):
+        workflow.start(issue_locator=locator)
 
 
 class _JiraIssueClient:
@@ -268,11 +282,11 @@ def test_start_resolves_a_github_locator_when_jira_is_registered(
     assert draft.source_reference.source_type == "github"
 
 
-def test_start_with_locator_no_source_accepts_is_validation(tmp_path: Path) -> None:
+def test_start_with_foreign_instance_url_is_unsupported_source(tmp_path: Path) -> None:
     client = _JiraIssueClient()
     workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
 
-    with pytest.raises(ToolArgumentValidationError):
+    with pytest.raises(ToolUnsupportedSourceError):
         workflow.start(issue_locator="https://other.example.com/browse/ENG-7")
     assert client.calls == []
 
@@ -286,6 +300,7 @@ def test_start_args_describe_both_locator_families_without_provider() -> None:
     description = schema["properties"]["issue_locator"]["description"]
     assert "owner/repo#number" in description
     assert "PROJ-123" in description
+    assert "over a bare key" in description
 
 
 _SENTINELS = ("SENTINEL-355-BODY", "SENTINEL-355-AC", "SENTINEL-355-URL")

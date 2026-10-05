@@ -123,7 +123,9 @@ _TEST_DESIGN_TOOLS = frozenset(
 )
 
 
-def _wired_registry(tmp_path, monkeypatch: pytest.MonkeyPatch, *, pack_on: bool = True):
+def _wired_registry(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, *, pack_on: bool = True, **facade_kwargs
+):
     import composition.container as container
     from composition.mcp.wiring import build_mcp_tool_registry
     from test.composition.test_design.test_design_fakes import build_fake_facade, settings_with_pack
@@ -132,7 +134,9 @@ def _wired_registry(tmp_path, monkeypatch: pytest.MonkeyPatch, *, pack_on: bool 
     monkeypatch.setattr(
         container,
         "build_test_design_facade",
-        lambda _settings: build_fake_facade(tmp_path, workspace_id="ws-a"),
+        lambda _settings: build_fake_facade(
+            tmp_path, workspace_id="ws-a", **facade_kwargs
+        ),
     )
     return build_mcp_tool_registry(settings, retrieve=_StubRetrieve())
 
@@ -477,6 +481,243 @@ async def test_start_from_content_requires_its_own_allowlist_entry(
     }
     assert denied.is_error is True
     assert denied.content[0].text == unknown.content[0].text
+
+
+_KERNECTOR_JIRA = "https://jira.example.com/jira"
+_START_FROM_TEXT = "software_delivery.test_design_start_from_text"
+_START_FROM_TEXT_HINT = (
+    "If you can read the issue with your own tracker tools, call the "
+    "test_design_start_from_text tool with its content."
+)
+
+
+class _KernectorJiraClient:
+    """Kernector's own Jira connection: serves ENG-7 as the Login issue."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.calls: list[str] = []
+        self.error = error
+
+    def get_issue(self, key: str, fields: object) -> dict[str, object]:
+        self.calls.append(key)
+        if self.error is not None:
+            raise self.error
+        return {
+            "id": "10001",
+            "key": key,
+            "fields": {
+                "summary": "Login",
+                "description": "Acceptance criteria: login, lockout, password length.",
+                "updated": "2026-09-14T12:00:00.000+0000",
+            },
+        }
+
+
+def _github_and_kernector_jira(
+    tmp_path, client: _KernectorJiraClient, *, token: str | None = "dc-token"
+):
+    from composition.test_design.jira_data_center_source import (
+        JiraDataCenterTestDesignSource,
+    )
+    from composition.test_design.sources import TestDesignSourceRegistry
+    from infrastructure.config import JiraDataCenterSettings
+    from infrastructure.connectors.jira.data_center_state import (
+        JiraDataCenterStateStore,
+    )
+    from test.composition.test_design.test_design_fakes import github_sources
+
+    settings = JiraDataCenterSettings(
+        base_url=_KERNECTOR_JIRA,
+        token=token,
+        state_path=tmp_path / "jira-dc-connection.json",
+    )
+    jira = JiraDataCenterTestDesignSource(
+        settings_provider=lambda: settings,
+        state_store=JiraDataCenterStateStore(settings.state_path),
+        client_factory=lambda _base_url, _token: client,
+    )
+    return TestDesignSourceRegistry((github_sources().resolve("github"), jira))
+
+
+def _jira_server(tmp_path, monkeypatch, client, *, allowlist=_TEST_DESIGN_TOOLS, **kw):
+    registry = _wired_registry(
+        tmp_path,
+        monkeypatch,
+        sources=_github_and_kernector_jira(tmp_path, client, **kw),
+    )
+    caller = McpCallerContext("ws-a", "default", allowlist)
+    return build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
+
+
+async def _start_error(server, issue_locator: str) -> dict:
+    async with Client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "software_delivery_test_design_start", {"issue_locator": issue_locator}
+        )
+    assert result.is_error is True
+    payload = json.loads(result.content[0].text)
+    assert "http" not in result.content[0].text
+    assert "example.com" not in result.content[0].text
+    return payload
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("locator", ["ENG-7", f"{_KERNECTOR_JIRA}/browse/ENG-7"])
+async def test_scenarios_1_and_3_live_start_reads_kernector_jira(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str
+) -> None:
+    jira = _KernectorJiraClient()
+    server = _jira_server(tmp_path, monkeypatch, jira)
+
+    async with Client(server, raise_exceptions=True) as client:
+        started = await _call(
+            client, "software_delivery_test_design_start", {"issue_locator": locator}
+        )
+
+    assert jira.calls == ["ENG-7"]
+    assert started["ticket_identifier"] == "ENG-7"
+    assert started["evidence_origin"] == "live"
+
+
+@pytest.mark.anyio
+async def test_scenario_2_not_connected_hints_at_start_from_text(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server = _jira_server(tmp_path, monkeypatch, _KernectorJiraClient(), token=None)
+
+    payload = await _start_error(server, "ENG-7")
+
+    assert payload == {
+        "code": "source_not_connected",
+        "message": "Source is not connected",
+        "legacy_code": "github_not_connected",
+        "hint": _START_FROM_TEXT_HINT,
+    }
+
+
+@pytest.mark.anyio
+async def test_scenario_2_missing_issue_hints_at_start_from_text(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from domain.errors import ConnectorNotFoundError
+
+    jira = _KernectorJiraClient(error=ConnectorNotFoundError("Jira 404 body"))
+    server = _jira_server(tmp_path, monkeypatch, jira)
+
+    payload = await _start_error(server, f"{_KERNECTOR_JIRA}/browse/ENG-7")
+
+    assert payload == {
+        "code": "not_found",
+        "message": "Resource not found",
+        "hint": _START_FROM_TEXT_HINT,
+    }
+
+
+@pytest.mark.anyio
+async def test_scenario_2_no_hint_when_start_from_text_is_not_allowlisted(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server = _jira_server(
+        tmp_path,
+        monkeypatch,
+        _KernectorJiraClient(),
+        allowlist=_TEST_DESIGN_TOOLS - {_START_FROM_TEXT},
+        token=None,
+    )
+
+    payload = await _start_error(server, "ENG-7")
+
+    assert payload == {
+        "code": "source_not_connected",
+        "message": "Source is not connected",
+        "legacy_code": "github_not_connected",
+    }
+
+
+_UNSUPPORTED_SOURCE_WITH_HINT = {
+    "code": "unsupported_source",
+    "message": "No connected source accepts this locator",
+    "hint": _START_FROM_TEXT_HINT,
+}
+
+
+@pytest.mark.anyio
+async def test_scenario_2_foreign_instance_url_fails_loudly_with_hint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jira = _KernectorJiraClient()
+    server = _jira_server(tmp_path, monkeypatch, jira)
+
+    payload = await _start_error(server, "https://other-jira.example.com/browse/ENG-7")
+
+    assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
+    assert jira.calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "locator", ["OIE-721", "https://jira.example.com/browse/OIE-721"]
+)
+async def test_scenario_2_tracker_kernector_has_no_source_for_hints(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str
+) -> None:
+    registry = _wired_registry(tmp_path, monkeypatch)
+    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    server = build_mcp_server(
+        registry=registry, resolver=FixedCallerContextResolver(caller)
+    )
+
+    payload = await _start_error(server, locator)
+
+    assert payload == _UNSUPPORTED_SOURCE_WITH_HINT
+
+
+_WRONG_TRACKER_SENTINELS = ("SENTINEL-361-WRONG-BODY", "SENTINEL-361-WRONG-AC")
+_WRONG_TRACKER_CONTENT = {
+    "ticket_identifier": "ENG-7",
+    "title": "Refund payments",
+    "body": "Refunds go back to the original card. SENTINEL-361-WRONG-BODY",
+    "acceptance_criteria": "- Partial refunds allowed SENTINEL-361-WRONG-AC",
+    "source_url": "https://other-jira.example.com/browse/ENG-7",
+}
+
+
+@pytest.mark.anyio
+async def test_scenario_4_wrong_client_tracker_content_is_accepted_unverified(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from composition.mcp.test_design import TestDesignDraftResult
+
+    jira = _KernectorJiraClient()
+    server = _jira_server(tmp_path, monkeypatch, jira)
+
+    async with Client(server, raise_exceptions=True) as client:
+        started = await _call(
+            client, "software_delivery_test_design_start_from_text", _WRONG_TRACKER_CONTENT
+        )
+        confirmed = await _call(
+            client,
+            "software_delivery_test_design_confirm",
+            {
+                "draft_id": started["draft_id"],
+                "expected_version": started["version"],
+                "candidate_ids": ["cand-1"],
+            },
+        )
+        assert jira.calls == []
+
+        live = await _call(
+            client, "software_delivery_test_design_start", {"issue_locator": "ENG-7"}
+        )
+
+    for result in (started, confirmed):
+        assert result["evidence_origin"] == "client_supplied"
+        assert result["ticket_identifier"] == "ENG-7"
+        assert set(result) == set(TestDesignDraftResult.model_fields)
+        for sentinel in _WRONG_TRACKER_SENTINELS:
+            assert sentinel not in json.dumps(result)
+    assert jira.calls == ["ENG-7"]
+    assert live["evidence_origin"] == "live"
 
 
 class _UnauthorizedResolver:

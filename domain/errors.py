@@ -105,6 +105,10 @@ class ToolSourceNotConnectedError(ToolFailureError):
     """The live source a tool needs has no usable authorization grant."""
 
 
+class ToolUnsupportedSourceError(ToolFailureError):
+    """No live source the tool can read accepts the requested locator."""
+
+
 class ToolInsufficientEvidenceError(ToolFailureError):
     """The live source returned no usable grounded evidence for the tool."""
 

@@ -25,6 +25,12 @@ class TestDesignValidationError(ValueError):
     __test__ = False
 
 
+class UnsupportedSourceLocatorError(TestDesignValidationError):
+    """No registered Test Design source accepts the issue locator."""
+
+    __test__ = False
+
+
 class TestDesignEvidenceChangedError(RuntimeError):
     """Live Issue evidence no longer matches the confirmed draft fingerprint."""
 
