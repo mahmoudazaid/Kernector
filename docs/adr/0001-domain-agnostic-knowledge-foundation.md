@@ -24,8 +24,7 @@ data into a shared document contract.
    shared pipeline is: normalize → chunk → embed → store → retrieve. Core does
    not retain `Ticket` or a closed `SourceType` enum as permanent types.
 2. **Domain packs** — Optional. Story Intelligence is the first example
-   (knowledge samples under `data/knowledge/packs/`, prompts under
-   `prompts/packs/`). Pack-specific fields are metadata for that pack, not
+   (knowledge samples under `data/knowledge/packs/`). Pack-specific fields are metadata for that pack, not
    universal schema requirements.
 3. **Connectors** — Replaceable adapters (upload files, seed JSON corpus,
    future GitHub / Jira / Confluence / Drive, and others) map provider payloads

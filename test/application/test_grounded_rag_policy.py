@@ -9,16 +9,12 @@ intact through a fake ``ChatModel``. What is left here are the structural
 properties no other test covers.
 """
 
-from pathlib import Path
-
 from application.grounded_rag_policy import (
     CONTEXT_CLOSE,
     CONTEXT_OPEN,
     GROUNDED_RAG_SYSTEM,
     INSUFFICIENT_KNOWLEDGE_ANSWER,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Vocabulary from the shipped packs. The reusable core is domain-agnostic
 # (ADR 0001), so platform policy may not name a product surface.
@@ -54,14 +50,3 @@ def test_insufficient_answer_is_domain_neutral_and_non_blank() -> None:
     text = INSUFFICIENT_KNOWLEDGE_ANSWER.lower()
     assert INSUFFICIENT_KNOWLEDGE_ANSWER.strip()
     assert not [term for term in PACK_VOCABULARY if term in text]
-
-
-def test_policy_is_not_reachable_as_a_selectable_pack_prompt() -> None:
-    """`PROMPT_PACKS` must not be able to shadow, disable, or re-offer the
-    policy: it is a module constant precisely so no pack file can own it."""
-    pack_bodies = [
-        path.read_text(encoding="utf-8")
-        for path in (REPO_ROOT / "prompts" / "packs").rglob("*.md")
-    ]
-    assert pack_bodies, "expected shipped prompt packs to exist"
-    assert not [body for body in pack_bodies if GROUNDED_RAG_SYSTEM in body]

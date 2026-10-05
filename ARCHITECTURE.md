@@ -218,9 +218,10 @@ Kernector distinguishes **source kinds** from **domain packs**:
 - **Domain pack** answers “what business interpretation should be applied?” —
   for example software-delivery risk scoring.
 
-**Content packs** supply example knowledge and prompts
-(`data/knowledge/packs/…`, `prompts/packs/…`). **Story Intelligence** remains
-the first content/prompt example. Pack metadata fields (for example SDLC-shaped
+**Content packs** supply example knowledge (`data/knowledge/packs/…`).
+**Story Intelligence** remains the first content example. Optional task prompts
+load from `prompts/packs/<name>/` when listed in `PROMPT_PACKS`; none ship by
+default. Pack metadata fields (for example SDLC-shaped
 `doc_type` or `severity`) are example metadata, not platform requirements.
 Task-prompt packs are optional: the app starts and General mode works with zero
 enabled prompt packs.
@@ -495,7 +496,8 @@ attacker-authored fields so a stored document cannot close the untrusted block
 early.
 
 The policy is a module constant, so `PROMPT_PACKS` can neither hide it nor offer
-it as a selectable Mode. `AskRequest.prompt_key=None` means General chat (no
+it as a selectable Mode. Where each kind of prompt is stored is recorded in
+[ADR 0009](docs/adr/0009-prompt-storage-by-role.md). `AskRequest.prompt_key=None` means General chat (no
 task template). Next.js chat always submits General turns; optional `prompt_key`
 use stays on the application contract for #149.
 
