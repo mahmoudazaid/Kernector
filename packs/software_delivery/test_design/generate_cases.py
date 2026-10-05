@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from domain.errors import ToolFailureError
+from domain.errors import ProviderError, ToolFailureError
 from domain.models import AskResult, Message
 from domain.ports import ChatModel
 from packs.software_delivery.test_design.errors import TestDesignValidationError
@@ -249,7 +249,7 @@ class GenerateTestCases:
                     requested=retry_candidates,
                     allowed_refs=allowed_refs,
                 )
-            except ToolFailureError:
+            except (ToolFailureError, ProviderError):
                 retried = ()
             generated = tuple(
                 _drop_unused_examples(case) for case in _merge_cases(generated, retried)
@@ -600,11 +600,12 @@ def _strip_background_steps(
     """Remove leading scenario steps that repeat the shared Background."""
     if case.test_type != "cucumber" or not background.strip():
         return case
-    background_steps = [
-        _step_body(line)
+    background_lines = [
+        line.strip()
         for line in background.splitlines()
         if line.strip() and not line.strip().lower().startswith("background:")
     ]
+    background_steps = [_step_body(line) for line in background_lines]
     steps, examples = _split_examples(case.gherkin)
     repeated = 0
     while (
@@ -616,6 +617,10 @@ def _strip_background_steps(
         repeated == 0
         or repeated == len(steps)
         or not _STEP_KEYWORD.match(steps[repeated].strip())
+        or (
+            repeated < len(background_lines)
+            and not _STEP_KEYWORD.match(background_lines[repeated])
+        )
     ):
         return case
     remaining = steps[repeated:]

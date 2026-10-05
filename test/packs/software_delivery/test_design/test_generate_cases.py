@@ -8,7 +8,11 @@ from dataclasses import replace
 
 import pytest
 
-from domain.errors import ToolFailureError
+from domain.errors import (
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ToolFailureError,
+)
 from domain.knowledge import SourceReference
 from domain.models import AskResult, Message
 from packs.software_delivery.test_design.errors import TestDesignValidationError
@@ -27,7 +31,9 @@ from packs.software_delivery.test_design.suggest_tests import CoverageEvidenceIt
 
 
 class _FakeChat:
-    def __init__(self, content: str = "", *, followups: Sequence[str] = ()) -> None:
+    def __init__(
+        self, content: str = "", *, followups: Sequence[str | Exception] = ()
+    ) -> None:
         self.content = content
         self._followups = list(followups)
         self.calls: list[tuple[str, Sequence[Message], Mapping[str, object]]] = []
@@ -40,6 +46,8 @@ class _FakeChat:
     ) -> AskResult:
         self.calls.append((system, tuple(messages), dict(settings)))
         content = self._followups[len(self.calls) - 2] if len(self.calls) > 1 else self.content
+        if isinstance(content, Exception):
+            raise content
         return AskResult(content=content, model="fake")
 
 
@@ -704,9 +712,13 @@ def test_examples_table_still_unused_after_retry_is_dropped() -> None:
             [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]
         ),
         '{"cases": [',
+        ProviderTimeoutError("timeout"),
+        ProviderRateLimitError("429"),
     ],
 )
-def test_failed_examples_retry_keeps_the_first_pass(retry_content: str) -> None:
+def test_failed_examples_retry_keeps_the_first_pass(
+    retry_content: str | Exception,
+) -> None:
     chat = _FakeChat(
         content=_model_payload(
             [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]
@@ -822,20 +834,37 @@ def test_scenario_steps_repeating_the_background_are_removed(
     assert result.cucumber_background == "Given the Dashboard page is opened"
 
 
-def test_background_strip_never_stops_inside_a_step_argument() -> None:
-    gherkin = (
-        "Given the following sites exist:\n"
-        "| site | links |\n"
-        "| B | Down |\n"
-        "When the dashboard recalculates network health\n"
-        'Then the banner displays "Poor"'
-    )
+@pytest.mark.parametrize(
+    ("gherkin", "background"),
+    [
+        (
+            "Given the following sites exist:\n"
+            "| site | links |\n"
+            "| B | Down |\n"
+            "When the dashboard recalculates network health\n"
+            'Then the banner displays "Poor"',
+            "Given the following sites exist:\n| site | links |\n| A | Up |",
+        ),
+        (
+            "Given the following sites exist:\n"
+            "| site | links |\n"
+            "| A | Up |\n"
+            "When the dashboard recalculates network health\n"
+            'Then the banner displays "Good"',
+            "Given the following sites exist:\n"
+            "| site | links |\n"
+            "| A | Up |\n"
+            "| B | Down |",
+        ),
+    ],
+)
+def test_background_strip_never_stops_inside_a_step_argument(
+    gherkin: str, background: str
+) -> None:
     chat = _FakeChat(
         content=_model_payload(
             [_manual_case_payload("cand-1"), _with_gherkin(gherkin)],
-            cucumber_background=(
-                "Given the following sites exist:\n| site | links |\n| A | Up |"
-            ),
+            cucumber_background=background,
         )
     )
 
