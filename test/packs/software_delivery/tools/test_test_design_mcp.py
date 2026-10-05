@@ -158,6 +158,34 @@ def test_tool_uses_binding_schemas_and_dispatches_raw_arguments(
     assert json.loads(raw) == _RESULT
 
 
+def test_start_description_recommends_a_browse_url_over_a_bare_key() -> None:
+    description = TestDesignStartTool(_FakeBinding()).description
+
+    assert "browse URL" in description
+    assert "bare key" in description
+
+
+def test_start_failures_hint_at_start_from_text() -> None:
+    hints = TestDesignStartTool(_FakeBinding()).failure_hints
+
+    assert set(hints) == {"source_not_connected", "not_found", "unsupported_source"}
+    for required_tool_id, hint in hints.values():
+        assert required_tool_id == TOOL_START_FROM_CONTENT
+        assert "test_design_start_from_text" in hint
+        assert "http" not in hint
+
+
+def test_only_start_declares_failure_hints() -> None:
+    binding = _FakeBinding()
+    hinted = [
+        tool_id
+        for tool_id, cls in TEST_DESIGN_MCP_TOOLS
+        if getattr(cls(binding), "failure_hints", None)
+    ]
+
+    assert hinted == [TOOL_START]
+
+
 def test_workflow_errors_propagate_unchanged() -> None:
     class _Boom(RuntimeError):
         pass

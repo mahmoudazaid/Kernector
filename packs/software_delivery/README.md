@@ -124,6 +124,11 @@ contributes these tools only when composition supplies a workspace-bound
 - Manual cases carry `steps` and `expected_result`. Cucumber cases leave those
   empty and put their Given/When/Then lines in `gherkin`, with the shared
   `Feature` and `Background` under `cucumber`.
+- A generated Cucumber case whose `Examples` table disagrees with its steps
+  (no `<placeholder>` used, a column no step reads, or a placeholder with no
+  column) is regenerated once with the specific problem. If the retry still
+  uses no placeholder, the `Examples` table is dropped so the scenario claims
+  only what its literal steps test.
 
 - Arguments are strict (`additionalProperties: false`); `workspace_id` and
   `conversation_id` are never accepted. Each MCP draft gets a server-generated
@@ -142,7 +147,8 @@ contributes these tools only when composition supplies a workspace-bound
   `evidence_changed`), re-read with `software_delivery.test_design_get`.
 - Errors: `validation_error`, `not_found` (unknown and other-workspace drafts
   are identical), `version_conflict`, `evidence_changed`,
-  `source_not_connected`, `insufficient_evidence`, otherwise `internal_error`.
+  `source_not_connected`, `insufficient_evidence`, `unsupported_source` (no
+  registered source accepts the `issue_locator`), otherwise `internal_error`.
   Nothing is published externally.
 - `source_not_connected` payloads also carry
   `"legacy_code": "github_not_connected"` for one release so existing clients
@@ -183,3 +189,33 @@ tracker.
   is never truncated, so acceptance criteria always reach the model in full.
 - The tool needs its own `MCP_TOOL_ALLOWLIST` entry; allowlisting
   `test_design_start` does not enable it.
+
+#### Choosing the start tool (#361)
+
+| Scenario | Client tracker tools      | Kernector                                       | Use               |
+| -------- | ------------------------- | ----------------------------------------------- | ----------------- |
+| 1        | same tracker              | same tracker                                    | `start`           |
+| 2        | can read the issue        | not connected, other instance, or no permission | `start_from_text` |
+| 3        | none                      | connected                                       | `start`           |
+| 4        | wrong project or instance | correct                                         | `start`           |
+
+- Try `test_design_start` first, with the full Issue or browse URL when you
+  have one. A bare key is read from the tracker Kernector is connected to,
+  which may be a different instance with the same key. A locator no
+  registered source accepts (a tracker Kernector has no source for, or a
+  browse URL from another instance) returns `unsupported_source`.
+- When `test_design_start` fails with `source_not_connected`, `not_found` or
+  `unsupported_source`, the payload carries a fixed `hint` pointing to
+  `test_design_start_from_text`, but only when that tool is contributed and
+  effective for the caller (allowlisted, pack enabled). Otherwise the payload
+  is unchanged, so it reveals nothing about tools the caller cannot use. The
+  hint carries no instance URL or provider detail.
+- Scenario 4 cannot be detected: when the client fetches the wrong issue with
+  its own tools and calls `test_design_start_from_text`, Kernector accepts the
+  content unverified. `evidence_origin: client_supplied` is the only signal.
+- Decided: a `source_url` on the instance Kernector is connected to gets no
+  warning or redirect, because "same instance, Kernector has no permission"
+  is a valid `start_from_text` case.
+- Decided: no capabilities tool listing the trackers and instances Kernector
+  can read. It would reveal connected sources, and the failure hint already
+  covers recovery.

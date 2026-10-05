@@ -708,7 +708,7 @@ def _load_retrieval_settings() -> RetrievalSettings:
 
 
 def _load_prompt_settings() -> PromptSettings:
-    raw = os.getenv("PROMPT_PACKS", "core")
+    raw = os.getenv("PROMPT_PACKS", "")
     names = _csv(raw)
     default_key_raw = os.getenv("PROMPT_DEFAULT_KEY")
     default_key: str | None

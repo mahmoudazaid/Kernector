@@ -7,6 +7,7 @@ import pytest
 from composition.test_design.errors import (
     TestDesignUnavailableError,
     TestDesignValidationError,
+    UnsupportedSourceLocatorError,
 )
 from composition.test_design.sources import (
     AmbiguousSourceLocatorError,
@@ -91,7 +92,7 @@ def test_resolve_locator_returns_the_single_accepting_source() -> None:
     assert registry.resolve_locator(" OTHER-1 ") == SourceLocator("other", "OTHER-1")
 
 
-def test_resolve_locator_without_an_accepting_source_is_a_validation_error() -> None:
+def test_resolve_locator_without_an_accepting_source_is_unsupported() -> None:
     registry = TestDesignSourceRegistry(
         (
             FakeTestDesignSource("acme", accepts=_hash_locators),
@@ -99,8 +100,10 @@ def test_resolve_locator_without_an_accepting_source_is_a_validation_error() -> 
         )
     )
 
-    with pytest.raises(TestDesignValidationError):
+    with pytest.raises(UnsupportedSourceLocatorError) as raised:
         registry.resolve_locator("plain words")
+
+    assert isinstance(raised.value, TestDesignValidationError)
 
 
 def test_resolve_locator_accepted_by_several_sources_is_ambiguous() -> None:
@@ -111,8 +114,10 @@ def test_resolve_locator_accepted_by_several_sources_is_ambiguous() -> None:
         )
     )
 
-    with pytest.raises(TestDesignValidationError, match="ambiguous"):
+    with pytest.raises(TestDesignValidationError, match="ambiguous") as raised:
         registry.resolve_locator("X-1")
+
+    assert not isinstance(raised.value, UnsupportedSourceLocatorError)
 
 
 def test_resolve_locator_propagates_operational_errors_while_probing() -> None:

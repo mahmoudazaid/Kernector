@@ -234,11 +234,8 @@ def test_retired_catalog_env_does_not_fail_settings_load(
     assert load_settings().document_catalog.workspace_id == "test-workspace"
 
 
-def test_prompt_packs_default_to_core(env: pytest.MonkeyPatch) -> None:
-    prompts = load_settings().prompts
-    assert prompts.pack_paths == (
-        PROJECT_ROOT / "prompts" / "packs" / "core",
-    )
+def test_prompt_packs_default_to_none(env: pytest.MonkeyPatch) -> None:
+    assert load_settings().prompts.pack_paths == ()
 
 
 def test_prompt_packs_resolves_csv_names_under_packs_root(

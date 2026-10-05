@@ -1167,10 +1167,8 @@ def test_prompt_repository_satisfies_its_port(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.delenv("PROMPT_PACKS", raising=False)
     monkeypatch.delenv("PROMPT_DEFAULT_KEY", raising=False)
     repository: PromptRepository = build_prompt_repository(load_settings())
-    prompts = repository.all()
-    assert set(prompts) == {"knowledge_qa"}
-    assert repository.default_key() == "knowledge_qa"
-    assert "role_qa" not in prompts
+    assert repository.all() == {}
+    assert repository.default_key() is None
 
 
 def test_build_prompt_repository_uses_settings_pack_paths(
