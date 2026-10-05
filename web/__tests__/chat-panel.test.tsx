@@ -86,7 +86,12 @@ const SUCCESS: ChatAskResponse = {
       chunk_index: 2,
     },
   ],
-  tools_used: [{ tool_name: "software_delivery.risk_score", result_chars: 42 }],
+  tools_used: [
+    {
+      tool_name: "software_delivery.export_test_cases_google_drive",
+      result_chars: 42,
+    },
+  ],
   run: {
     request_id: "req-1",
     outcome: "success",
@@ -94,44 +99,20 @@ const SUCCESS: ChatAskResponse = {
     model: "test-model",
     hit_count: 1,
     citation_count: 1,
-    tools: ["software_delivery.risk_score"],
+    tools: ["software_delivery.export_test_cases_google_drive"],
   },
   tool_run: {
-    summary: "Scored risk.",
+    summary: "Export finished.",
     calls: [
       {
-        tool_name: "software_delivery.risk_score",
+        tool_name: "software_delivery.export_test_cases_google_drive",
         ok: true,
-        summary: "Scored risk at 62/100",
+        summary: "Exported test cases to Google Drive",
       },
     ],
-    risk: {
-      score: 62,
-      level: "high",
-      rationale: "Missing acceptance criteria.",
-      factors: [
-        {
-          factor_id: "missing_acceptance_criteria",
-          weight: 30,
-          references: [{ source_id: "SRS-2", source_type: "srs" }],
-        },
-      ],
-    },
-    test_cases: {
-      output_style: "steps",
-      cases: [
-        {
-          title: "Lock after five failures",
-          steps: ["Fail MFA five times."],
-          expected: "Account locked.",
-          references: [{ source_id: "US-1", source_type: "user_story" }],
-        },
-      ],
-    },
-    markdown: "# Test Cases\n",
     export_destination_required: false,
-    drive_file_id: "",
-    drive_file_name: "",
+    drive_file_id: "file-1",
+    drive_file_name: "test-cases.md",
   },
 };
 
@@ -321,8 +302,9 @@ describe("ChatPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/Citations \(1\)/)).toBeInTheDocument();
     expect(screen.getByText(/Tools used \(1\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Scored risk at 62\/100/)).toBeInTheDocument();
-    expect(screen.getByText(/Lock after five failures/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Exported test cases to Google Drive/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Run details/)).toBeInTheDocument();
 
     expect(ask).toHaveBeenCalledWith(
@@ -1099,101 +1081,42 @@ describe("ChatPanel", () => {
     expect(screen.getByText("no calls array here")).toBeInTheDocument();
   });
 
-  it("keeps valid tool-run parts when risk factors are not an array", async () => {
+  it("ignores retired tool-run sections on a persisted toolRun", async () => {
     const created = createConversation({
-      title: "score",
+      title: "legacy",
       messages: [
-        { id: "1", role: "user", content: "score" },
+        { id: "1", role: "user", content: "legacy" },
         {
           id: "2",
           role: "assistant",
-          content: "Risk answer",
+          content: "Legacy answer",
           toolRun: {
-            summary: "Scored with bad factors",
-            calls: [],
+            summary: "Legacy summary",
+            calls: [
+              {
+                tool_name: "pack.example_tool",
+                ok: true,
+                summary: "Ran the example tool",
+              },
+            ],
             risk: {
               score: 40,
               level: "medium",
               rationale: "Partial risk",
-              factors: "nope",
+              factors: [],
             },
-          },
-        },
-      ],
-      draft: "",
-    });
-
-    render(
-      <ChatPanel
-        apiBaseUrl="http://127.0.0.1:8000"
-        conversationId={created.id}
-        ask={async () => SUCCESS}
-        loadSettings={stubSettings}
-      />,
-    );
-
-    expect(await screen.findByText("Risk answer")).toBeInTheDocument();
-    expect(screen.getByText("Scored with bad factors")).toBeInTheDocument();
-    expect(screen.getByText(/Score 40\/100 \(medium\)/)).toBeInTheDocument();
-    expect(screen.getByText("Partial risk")).toBeInTheDocument();
-  });
-
-  it("keeps valid tool-run parts when test_cases.cases is not an array", async () => {
-    const created = createConversation({
-      title: "cases",
-      messages: [
-        { id: "1", role: "user", content: "cases" },
-        {
-          id: "2",
-          role: "assistant",
-          content: "Cases answer",
-          toolRun: {
-            summary: "Summary with bad cases",
-            calls: [],
-            test_cases: { output_style: "steps", cases: "nope" },
-          },
-        },
-      ],
-      draft: "",
-    });
-
-    render(
-      <ChatPanel
-        apiBaseUrl="http://127.0.0.1:8000"
-        conversationId={created.id}
-        ask={async () => SUCCESS}
-        loadSettings={stubSettings}
-      />,
-    );
-
-    expect(await screen.findByText("Cases answer")).toBeInTheDocument();
-    expect(screen.getByText("Summary with bad cases")).toBeInTheDocument();
-    expect(screen.getByText(/Test cases \(steps\)/)).toBeInTheDocument();
-  });
-
-  it("keeps a test case when steps is not an array", async () => {
-    const created = createConversation({
-      title: "steps",
-      messages: [
-        { id: "1", role: "user", content: "steps" },
-        {
-          id: "2",
-          role: "assistant",
-          content: "Steps answer",
-          toolRun: {
-            summary: "Summary with bad steps",
-            calls: [],
             test_cases: {
               output_style: "steps",
               cases: [
                 {
                   title: "Lock after five failures",
-                  steps: "nope",
+                  steps: ["Fail MFA five times."],
                   expected: "Account locked.",
                   references: [],
                 },
               ],
             },
+            markdown: "# Legacy Markdown\n",
           },
         },
       ],
@@ -1209,10 +1132,16 @@ describe("ChatPanel", () => {
       />,
     );
 
-    expect(await screen.findByText("Steps answer")).toBeInTheDocument();
-    expect(screen.getByText("Summary with bad steps")).toBeInTheDocument();
-    expect(screen.getByText(/Lock after five failures/)).toBeInTheDocument();
-    expect(screen.getByText(/Account locked/)).toBeInTheDocument();
+    expect(await screen.findByText("Legacy answer")).toBeInTheDocument();
+    expect(screen.getByText("Legacy summary")).toBeInTheDocument();
+    expect(screen.getByText(/Ran the example tool/)).toBeInTheDocument();
+    expect(screen.queryByText("Risk")).not.toBeInTheDocument();
+    expect(screen.queryByText("Partial risk")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Test cases/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Lock after five failures/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Markdown preview/)).not.toBeInTheDocument();
   });
 
   it("still renders the composer when localStorage throws", async () => {
