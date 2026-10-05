@@ -17,6 +17,7 @@ from domain.errors import (
     ToolFailureError,
     ToolInsufficientEvidenceError,
     ToolSourceNotConnectedError,
+    ToolSourceProviderMismatchError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
     ToolUnsupportedSourceError,
@@ -60,6 +61,10 @@ _SAFE_FAILURES: Mapping[type[ToolFailureError], tuple[str, str]] = {
     ToolUnsupportedSourceError: (
         "unsupported_source",
         "No connected source accepts this locator",
+    ),
+    ToolSourceProviderMismatchError: (
+        VALIDATION_ERROR_CODE,
+        "Another connected provider accepts this locator; retry with that provider",
     ),
 }
 

@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from composition.test_design.errors import (
+    SourceProviderMismatchError,
     TestDesignUnavailableError,
     TestDesignValidationError,
     UnsupportedSourceLocatorError,
@@ -67,6 +68,11 @@ class TestDesignSourceRegistry:
             by_provider
         )
 
+    @property
+    def providers(self) -> tuple[str, ...]:
+        """Registered provider keys, in registration order."""
+        return tuple(source.provider for source in self._by_provider.values())
+
     def resolve(self, provider: str) -> TestDesignSource:
         """Return the registered source for *provider*.
 
@@ -109,6 +115,33 @@ class TestDesignSourceRegistry:
             raise TestDesignValidationError("locator is ambiguous across sources")
         return found[0]
 
+    def resolve_provider_locator(self, provider: str, locator: str) -> SourceLocator:
+        """Return *locator* canonicalized by the source registered as *provider*.
+
+        Raises:
+            SourceProviderMismatchError: That source rejects *locator* but
+                another registered source accepts it.
+            UnsupportedSourceLocatorError: No registered source accepts *locator*.
+            TestDesignValidationError: Provider is blank or not a known source.
+            TestDesignUnavailableError: Provider is known but not registered.
+        """
+        source = self.resolve(provider)
+        try:
+            canonical = source.canonicalize(locator)
+        except TestDesignValidationError as error:
+            if any(
+                _accepts(other, locator)
+                for other in self._by_provider.values()
+                if other is not source
+            ):
+                raise SourceProviderMismatchError(
+                    "locator belongs to another connected provider"
+                ) from error
+            raise UnsupportedSourceLocatorError(
+                "locator is not a supported source locator"
+            ) from error
+        return SourceLocator(provider=source.provider, locator=canonical)
+
     def extract_locator(self, text: str) -> SourceLocator | None:
         """Return the one source item referenced in *text*, if any.
 
@@ -123,6 +156,14 @@ class TestDesignSourceRegistry:
         if len(found) > 1:
             raise AmbiguousSourceLocatorError("Query must reference exactly one source")
         return found[0] if found else None
+
+
+def _accepts(source: TestDesignSource, locator: str) -> bool:
+    try:
+        source.canonicalize(locator)
+    except TestDesignValidationError:
+        return False
+    return True
 
 
 def _provider_key(provider: object) -> str | None:

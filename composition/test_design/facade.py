@@ -303,10 +303,17 @@ class TestDesignFacade:
         self._sources = sources
         self._repo = None
 
-    def resolve_source_locator(self, locator: str) -> SourceLocatorView:
-        """Pick the one registered source whose ``canonicalize`` accepts *locator*."""
+    def resolve_source_locator(
+        self, locator: str, provider: str | None = None
+    ) -> SourceLocatorView:
+        """Canonicalize *locator* with *provider*'s source, or pick the one
+        registered source whose ``canonicalize`` accepts it."""
         self._require_enabled()
-        resolved = self._sources.resolve_locator(locator)
+        resolved = (
+            self._sources.resolve_locator(locator)
+            if provider is None
+            else self._sources.resolve_provider_locator(provider, locator)
+        )
         return SourceLocatorView(provider=resolved.provider, locator=resolved.locator)
 
     def create_draft(

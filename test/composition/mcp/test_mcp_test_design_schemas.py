@@ -16,8 +16,8 @@ from composition.mcp.test_design import (
     TestDesignFeatureFileResult,
     TestDesignGenerateArgs,
     TestDesignGetArgs,
-    TestDesignStartArgs,
     TestDesignStartFromContentArgs,
+    start_args_for,
 )
 from composition.test_design.facade import (
     GeneratedTestCaseView,
@@ -83,8 +83,8 @@ class _FakeOperations:
         self.calls.append((name, kwargs))
         return self.draft
 
-    def start(self, *, issue_locator):
-        return self._record("start", issue_locator=issue_locator)
+    def start(self, *, provider, locator):
+        return self._record("start", provider=provider, locator=locator)
 
     def start_from_content(
         self, *, ticket_identifier, title, body, acceptance_criteria, source_url
@@ -130,23 +130,78 @@ class _FakeOperations:
         )
 
 
+_PROVIDERS = ("github", "jira")
+
+
 def _workflow(
     draft: TestCoverageDraftView | None = None,
 ) -> tuple[McpTestDesignWorkflow, _FakeOperations]:
     operations = _FakeOperations(draft)
-    return McpTestDesignWorkflow(operations), operations  # type: ignore[arg-type]
+    workflow = McpTestDesignWorkflow(
+        operations,  # type: ignore[arg-type]
+        start_args=start_args_for(_PROVIDERS),
+    )
+    return workflow, operations
 
 
 def _ids(count: int) -> list[str]:
     return [f"cand-{index}" for index in range(count)]
 
 
+def test_start_forwards_provider_and_locator() -> None:
+    workflow, operations = _workflow()
+
+    workflow.start({"provider": "jira", "locator": " ENG-7 "})
+
+    assert operations.calls == [("start", {"provider": "jira", "locator": "ENG-7"})]
+
+
+def test_deprecated_issue_locator_is_a_github_only_alias() -> None:
+    workflow, operations = _workflow()
+
+    workflow.start({"issue_locator": " acme/app#7 "})
+
+    assert operations.calls == [
+        ("start", {"provider": "github", "locator": "acme/app#7"})
+    ]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"provider": "gitlab", "locator": "acme/app#7"},
+        {"provider": "bitbucket", "locator": "acme/app#7"},
+        {"provider": "GitHub", "locator": "acme/app#7"},
+        {"provider": "github"},
+        {"locator": "acme/app#7"},
+        {"provider": "github", "locator": "  "},
+        {},
+        {"provider": "github", "locator": "acme/app#7", "issue_locator": "acme/app#7"},
+        {"locator": "acme/app#7", "issue_locator": "acme/app#7"},
+        {"provider": "github", "issue_locator": "acme/app#7"},
+        {"provider": "github", "locator": "acme/app#7", "workspace_id": "x"},
+        {"provider": "github", "locator": "acme/app#7", "conversation_id": "c"},
+    ],
+)
+def test_invalid_start_arguments_are_rejected_before_operations(
+    arguments: dict[str, object],
+) -> None:
+    workflow, operations = _workflow()
+
+    with pytest.raises(ToolArgumentValidationError):
+        workflow.start(arguments)
+
+    assert operations.calls == []
+
+
 def test_start_projects_only_mcp_safe_fields() -> None:
     workflow, operations = _workflow()
 
-    payload = workflow.start({"issue_locator": " acme/app#7 "})
+    payload = workflow.start({"provider": "github", "locator": "acme/app#7"})
 
-    assert operations.calls == [("start", {"issue_locator": "acme/app#7"})]
+    assert operations.calls == [
+        ("start", {"provider": "github", "locator": "acme/app#7"})
+    ]
     assert payload["draft_id"] == "draft-1"
     assert payload["ticket_identifier"] == "acme/app#7"
     assert payload["status"] == "coverage_review"
@@ -353,8 +408,12 @@ def test_confirm_accepts_every_candidate_a_draft_can_hold() -> None:
     assert operations.calls[0][1]["candidate_ids"] == tuple(candidate_ids)
 
 
+def _binding() -> McpTestDesignBinding:
+    return McpTestDesignBinding(lambda: None, providers=lambda: _PROVIDERS)  # type: ignore[arg-type,return-value]
+
+
 def test_schemas_never_expose_workspace_or_conversation_id() -> None:
-    binding = McpTestDesignBinding(lambda: None)  # type: ignore[arg-type,return-value]
+    binding = _binding()
     for model in (
         binding.start_args,
         binding.start_from_content_args,
@@ -384,7 +443,7 @@ def test_start_from_content_advertises_the_combined_limit() -> None:
         TestDesignStartFromContentTool,
     )
 
-    tool = TestDesignStartFromContentTool(McpTestDesignBinding(lambda: None))  # type: ignore[arg-type,return-value]
+    tool = TestDesignStartFromContentTool(_binding())
     body = TestDesignStartFromContentArgs.model_json_schema()["properties"]["body"]
 
     assert _COMBINED_LIMIT_WORDING in tool.description
@@ -392,9 +451,12 @@ def test_start_from_content_advertises_the_combined_limit() -> None:
 
 
 def test_binding_exposes_composition_schemas() -> None:
-    binding = McpTestDesignBinding(lambda: None)  # type: ignore[arg-type,return-value]
+    binding = _binding()
 
-    assert binding.start_args is TestDesignStartArgs
+    assert binding.start_providers == _PROVIDERS
+    assert binding.start_args is binding.start_args
+    provider = binding.start_args.model_json_schema()["properties"]["provider"]
+    assert provider["enum"] == list(_PROVIDERS)
     assert binding.start_from_content_args is TestDesignStartFromContentArgs
     assert binding.get_args is TestDesignGetArgs
     assert binding.confirm_args is TestDesignConfirmArgs

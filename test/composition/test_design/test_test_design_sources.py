@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from composition.test_design.errors import (
+    SourceProviderMismatchError,
     TestDesignUnavailableError,
     TestDesignValidationError,
     UnsupportedSourceLocatorError,
@@ -40,6 +41,14 @@ def test_registered_provider_resolves_case_insensitively() -> None:
     registry = TestDesignSourceRegistry((source,))
 
     assert registry.resolve(" ACME ") is source
+
+
+def test_providers_lists_registered_keys_in_registration_order() -> None:
+    registry = TestDesignSourceRegistry(
+        (FakeTestDesignSource("github"), FakeTestDesignSource("jira"))
+    )
+
+    assert registry.providers == ("github", "jira")
 
 
 def test_duplicate_provider_registration_is_rejected() -> None:
@@ -133,6 +142,45 @@ def test_resolve_locator_propagates_operational_errors_while_probing() -> None:
         registry.resolve_locator("OTHER-1")
 
     assert raised.value is failure
+
+
+def test_resolve_provider_locator_canonicalizes_with_the_chosen_source() -> None:
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", accepts=_hash_locators),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    assert registry.resolve_provider_locator("OTHER", " X-1 ") == SourceLocator(
+        "other", "X-1"
+    )
+
+
+def test_resolve_provider_locator_another_source_accepts_is_a_mismatch() -> None:
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", accepts=_hash_locators),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    with pytest.raises(SourceProviderMismatchError) as raised:
+        registry.resolve_provider_locator("acme", "X-1")
+
+    assert not isinstance(raised.value, UnsupportedSourceLocatorError)
+
+
+def test_resolve_provider_locator_no_source_accepts_is_unsupported() -> None:
+    registry = TestDesignSourceRegistry(
+        (
+            FakeTestDesignSource("acme", accepts=_hash_locators),
+            FakeTestDesignSource("other", accepts=_dash_locators),
+        )
+    )
+
+    with pytest.raises(UnsupportedSourceLocatorError):
+        registry.resolve_provider_locator("acme", "plain words")
 
 
 def test_extract_locator_propagates_source_ambiguity() -> None:
