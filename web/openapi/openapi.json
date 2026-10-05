@@ -2401,56 +2401,6 @@
         "title": "ResponseFeedbackResponse",
         "type": "object"
       },
-      "RiskFactorResponse": {
-        "description": "One risk factor with provenance ids only.",
-        "properties": {
-          "factor_id": {
-            "title": "Factor Id",
-            "type": "string"
-          },
-          "references": {
-            "items": {
-              "$ref": "#/components/schemas/SourceReferenceResponse"
-            },
-            "title": "References",
-            "type": "array"
-          },
-          "weight": {
-            "title": "Weight",
-            "type": "integer"
-          }
-        },
-        "required": ["factor_id", "weight", "references"],
-        "title": "RiskFactorResponse",
-        "type": "object"
-      },
-      "RiskScoreResponse": {
-        "description": "Structured risk assessment for the chat UI.",
-        "properties": {
-          "factors": {
-            "items": {
-              "$ref": "#/components/schemas/RiskFactorResponse"
-            },
-            "title": "Factors",
-            "type": "array"
-          },
-          "level": {
-            "title": "Level",
-            "type": "string"
-          },
-          "rationale": {
-            "title": "Rationale",
-            "type": "string"
-          },
-          "score": {
-            "title": "Score",
-            "type": "integer"
-          }
-        },
-        "required": ["score", "level", "rationale", "factors"],
-        "title": "RiskScoreResponse",
-        "type": "object"
-      },
       "RunMetaResponse": {
         "description": "Safe run fields the chat UI may display (allowlisted projection).",
         "properties": {
@@ -2844,55 +2794,6 @@
         "title": "TestCandidateResponse",
         "type": "object"
       },
-      "TestCaseResponse": {
-        "description": "One generated test case.",
-        "properties": {
-          "expected": {
-            "title": "Expected",
-            "type": "string"
-          },
-          "references": {
-            "items": {
-              "$ref": "#/components/schemas/SourceReferenceResponse"
-            },
-            "title": "References",
-            "type": "array"
-          },
-          "steps": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Steps",
-            "type": "array"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": ["title", "steps", "expected", "references"],
-        "title": "TestCaseResponse",
-        "type": "object"
-      },
-      "TestCasesResponse": {
-        "description": "Generated test cases for the chat UI.",
-        "properties": {
-          "cases": {
-            "items": {
-              "$ref": "#/components/schemas/TestCaseResponse"
-            },
-            "title": "Cases",
-            "type": "array"
-          },
-          "output_style": {
-            "title": "Output Style",
-            "type": "string"
-          }
-        },
-        "required": ["output_style", "cases"],
-        "title": "TestCasesResponse",
-        "type": "object"
-      },
       "TestCoverageDraftResponse": {
         "description": "Workspace-scoped test-design draft.",
         "properties": {
@@ -3111,34 +3012,9 @@
             "title": "Export Destination Required",
             "type": "boolean"
           },
-          "markdown": {
-            "default": "",
-            "title": "Markdown",
-            "type": "string"
-          },
-          "risk": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RiskScoreResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "summary": {
             "title": "Summary",
             "type": "string"
-          },
-          "test_cases": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TestCasesResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": ["summary", "calls"],

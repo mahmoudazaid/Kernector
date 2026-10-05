@@ -7,6 +7,7 @@ from typing import Any, get_args, get_origin
 from pydantic import BaseModel
 
 from composition.software_delivery.tools import SoftwareDeliveryRunView
+from presentation.cli.export_openapi import export_openapi_document
 from presentation.http.schemas import (
     ToolCallResponse,
     ToolRunResponse,
@@ -14,128 +15,69 @@ from presentation.http.schemas import (
 )
 from test.software_delivery_views import software_delivery_run_view
 
+_RETIRED_FIELDS = {"risk", "test_cases", "markdown"}
+_RETIRED_SCHEMAS = {
+    "RiskScoreResponse",
+    "RiskFactorResponse",
+    "TestCasesResponse",
+    "TestCaseResponse",
+}
+
 
 def test_tool_run_response_projects_a_typed_view() -> None:
     view = software_delivery_run_view()
 
     assert tool_run_response(view).model_dump() == {
-        "summary": "Scored risk and generated cases.",
+        "summary": "Export finished.",
         "calls": [
             {
-                "tool_name": "software_delivery.risk_score",
+                "tool_name": "pack.example_tool",
                 "ok": True,
-                "summary": "Scored risk at 62/100",
+                "summary": "Ran the example tool",
             },
             {
-                "tool_name": "software_delivery.generate_test_cases",
+                "tool_name": "software_delivery.export_test_cases_google_drive",
                 "ok": True,
-                "summary": "Generated 2 test cases",
+                "summary": "Exported test cases to Google Drive",
             },
         ],
-        "risk": {
-            "score": 62,
-            "level": "medium",
-            "rationale": (
-                "Model identified moderate security concerns in the codebase"
-            ),
-            "factors": [
-                {
-                    "factor_id": "auth-surface",
-                    "weight": 3,
-                    "references": [
-                        {"source_id": "doc-1", "source_type": "pdf"},
-                        {"source_id": "SRS-2", "source_type": "srs"},
-                    ],
-                },
-                {
-                    "factor_id": "missing_acceptance_criteria",
-                    "weight": 30,
-                    "references": [
-                        {"source_id": "US-1", "source_type": "user_story"},
-                    ],
-                },
-            ],
-        },
-        "test_cases": {
-            "output_style": "steps",
-            "cases": [
-                {
-                    "title": "Lock after five failures",
-                    "steps": [
-                        "Sign in with a valid password.",
-                        "Fail MFA five times.",
-                    ],
-                    "expected": "Account locked.",
-                    "references": [
-                        {"source_id": "US-1", "source_type": "user_story"},
-                    ],
-                },
-                {
-                    "title": "Require MFA on a new device",
-                    "steps": ["Sign in from an unknown device."],
-                    "expected": "MFA challenge is issued.",
-                    "references": [
-                        {"source_id": "AUTH-101", "source_type": "user_story"},
-                    ],
-                },
-            ],
-        },
-        "markdown": "# Test Cases\n",
         "export_destination_required": False,
-        "drive_file_id": "",
-        "drive_file_name": "",
+        "drive_file_id": "file-1",
+        "drive_file_name": "test-cases.md",
     }
 
 
-def test_tool_run_response_projects_absent_risk_and_test_cases_as_null() -> None:
+def test_tool_run_response_projects_an_empty_view() -> None:
     view = SoftwareDeliveryRunView(
         summary="No tools produced structured results.",
         calls=(),
-        markdown="",
     )
 
     assert tool_run_response(view).model_dump() == {
         "summary": "No tools produced structured results.",
         "calls": [],
-        "risk": None,
-        "test_cases": None,
-        "markdown": "",
         "export_destination_required": False,
         "drive_file_id": "",
         "drive_file_name": "",
     }
 
 
-def test_tool_run_response_projects_risk_only_run() -> None:
-    both = tool_run_response(software_delivery_run_view()).model_dump()
-
-    projected = tool_run_response(
-        software_delivery_run_view(test_cases=None)
-    ).model_dump()
-
-    assert projected == {**both, "test_cases": None}
+def test_tool_run_response_has_no_retired_tool_fields() -> None:
+    assert set(ToolRunResponse.model_fields).isdisjoint(_RETIRED_FIELDS)
 
 
-def test_tool_run_response_projects_test_cases_only_run() -> None:
-    both = tool_run_response(software_delivery_run_view()).model_dump()
+def test_openapi_contract_has_no_retired_tool_schemas() -> None:
+    document = export_openapi_document()
+    schemas = document["components"]["schemas"]  # type: ignore[index]
 
-    projected = tool_run_response(software_delivery_run_view(risk=None)).model_dump()
-
-    assert projected == {**both, "risk": None}
+    assert set(schemas).isdisjoint(_RETIRED_SCHEMAS)
+    assert set(schemas["ToolRunResponse"]["properties"]).isdisjoint(
+        _RETIRED_FIELDS
+    )
 
 
 def test_tool_run_projection_fields_are_locked() -> None:
     """Field names, annotations, requiredness, and wire aliases must stay pinned."""
-    # Import nested *Response models inside the test so pytest does not try to
-    # collect TestCaseResponse / TestCasesResponse as test classes.
-    from presentation.http.schemas import (
-        RiskFactorResponse,
-        RiskScoreResponse,
-        SourceReferenceResponse,
-        TestCaseResponse,
-        TestCasesResponse,
-    )
-
     expected = {
         ToolCallResponse: {
             ("tool_name", str, True),
@@ -145,37 +87,9 @@ def test_tool_run_projection_fields_are_locked() -> None:
         ToolRunResponse: {
             ("summary", str, True),
             ("calls", list[ToolCallResponse], True),
-            ("risk", RiskScoreResponse | None, False),
-            ("test_cases", TestCasesResponse | None, False),
-            ("markdown", str, False),
             ("export_destination_required", bool, False),
             ("drive_file_id", str, False),
             ("drive_file_name", str, False),
-        },
-        RiskScoreResponse: {
-            ("score", int, True),
-            ("level", str, True),
-            ("rationale", str, True),
-            ("factors", list[RiskFactorResponse], True),
-        },
-        RiskFactorResponse: {
-            ("factor_id", str, True),
-            ("weight", int, True),
-            ("references", list[SourceReferenceResponse], True),
-        },
-        SourceReferenceResponse: {
-            ("source_id", str, True),
-            ("source_type", str, True),
-        },
-        TestCasesResponse: {
-            ("output_style", str, True),
-            ("cases", list[TestCaseResponse], True),
-        },
-        TestCaseResponse: {
-            ("title", str, True),
-            ("steps", list[str], True),
-            ("expected", str, True),
-            ("references", list[SourceReferenceResponse], True),
         },
     }
 
