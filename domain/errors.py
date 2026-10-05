@@ -109,6 +109,10 @@ class ToolUnsupportedSourceError(ToolFailureError):
     """No live source the tool can read accepts the requested locator."""
 
 
+class ToolSourceProviderMismatchError(ToolFailureError):
+    """The requested provider rejects a locator another live source accepts."""
+
+
 class ToolInsufficientEvidenceError(ToolFailureError):
     """The live source returned no usable grounded evidence for the tool."""
 

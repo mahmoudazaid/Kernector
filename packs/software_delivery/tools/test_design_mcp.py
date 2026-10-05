@@ -60,6 +60,9 @@ class TestDesignMcpBinding(Protocol):
     __test__ = False
 
     @property
+    def start_providers(self) -> tuple[str, ...]: ...
+
+    @property
     def start_args(self) -> type: ...
 
     @property
@@ -122,17 +125,20 @@ class _TestDesignTool:
 
 
 class TestDesignStartTool(_TestDesignTool):
-    """Start Test Design from a live GitHub Issue and suggest candidates."""
+    """Start Test Design from a live tracker issue and suggest candidates."""
 
     __test__ = False
 
     _name = TOOL_START
     _description = (
-        "Start Test Design for a live GitHub Issue or Jira issue: fetch it, "
-        "suggest coverage candidate titles, and return a coverage_review draft "
-        "with its version. Pass the full Issue or browse URL when you have one "
-        "rather than a bare key: a bare key is read from the tracker Kernector "
-        "is connected to, which may not be the one you mean. "
+        "Start Test Design for a live issue in a tracker Kernector is "
+        "connected to ({providers}): pass provider and locator. Kernector "
+        "fetches the issue, suggests coverage candidate titles, and returns a "
+        "coverage_review draft with its version. Pass the full Issue or browse "
+        "URL as locator when you have one rather than a bare key: a bare key is "
+        "read from the tracker Kernector is connected to, which may not be the "
+        "one you mean. issue_locator is deprecated and accepts GitHub Issues "
+        "only. "
         "Show the candidate titles to the user and wait for "
         "them to choose which to keep before calling the test_design_confirm "
         "tool; never select on their behalf. "
@@ -143,6 +149,12 @@ class TestDesignStartTool(_TestDesignTool):
         code: (TOOL_START_FROM_CONTENT, _START_FROM_CONTENT_HINT)
         for code in ("source_not_connected", "not_found", "unsupported_source")
     }
+
+    @property
+    def description(self) -> str:
+        return self._description.format(
+            providers=", ".join(self._binding.start_providers)
+        )
 
     @staticmethod
     def _args_schema(binding: TestDesignMcpBinding) -> type:

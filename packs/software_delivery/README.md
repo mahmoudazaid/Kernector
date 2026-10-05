@@ -99,7 +99,7 @@ contributes these tools only when composition supplies a workspace-bound
 
 | Tool id | Arguments | Existing operation |
 | --- | --- | --- |
-| `software_delivery.test_design_start` | `issue_locator` (GitHub Issue URL or `owner/repo#number`, or Jira Data Center key `PROJ-123` or browse URL) | create draft from the one source that accepts the locator |
+| `software_delivery.test_design_start` | `provider` (one of the providers registered in the deployment: `github`, and `jira` when Jira Data Center is configured) and `locator` (for `github`, an Issue URL or `owner/repo#number`; for `jira`, a key `PROJ-123` or browse URL). Deprecated for one release: `issue_locator` alone, GitHub only (same as `provider: github`) | create draft from the chosen provider's source (#356) |
 | `software_delivery.test_design_start_from_text` | `ticket_identifier` (single token, e.g. `PROJ-123`), `title`, `body`, optional `acceptance_criteria`, optional `source_url` (http/https) | create a `client_supplied` draft from content the client already fetched (#355) |
 | `software_delivery.test_design_get` | `draft_id` | read draft |
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
@@ -130,6 +130,17 @@ contributes these tools only when composition supplies a workspace-bound
   uses no placeholder, the `Examples` table is dropped so the scenario claims
   only what its literal steps test.
 
+- The `provider` enum in the start tool's schema, and the provider list in its
+  description, are built from the registered Test Design sources, so a
+  deployment advertises only the trackers it can read. Pass either `provider`
+  with `locator`, or `issue_locator` alone; any other combination, or a
+  provider that is not registered, returns `validation_error` before any
+  workflow call.
+- `issue_locator` is deprecated and will be removed after one release. It is
+  a GitHub-only alias for `provider: github`: a Jira key or browse URL passed
+  as `issue_locator` returns `validation_error` telling the client to retry
+  with the provider that accepts it (`unsupported_source` when no registered
+  provider does).
 - Arguments are strict (`additionalProperties: false`); `workspace_id` and
   `conversation_id` are never accepted. Each MCP draft gets a server-generated
   `mcp-<uuid>` conversation id, so it cannot collide with a chat conversation.
@@ -148,14 +159,19 @@ contributes these tools only when composition supplies a workspace-bound
 - Errors: `validation_error`, `not_found` (unknown and other-workspace drafts
   are identical), `version_conflict`, `evidence_changed`,
   `source_not_connected`, `insufficient_evidence`, `unsupported_source` (no
-  registered source accepts the `issue_locator`), otherwise `internal_error`.
-  Nothing is published externally.
+  registered provider accepts the `locator`), otherwise `internal_error`. When
+  the chosen provider rejects a `locator` another registered provider accepts,
+  the result is `validation_error` with the fixed message "Another connected
+  provider accepts this locator; retry with that provider" and no hint.
+  `not_found` and `source_not_connected` payloads are identical whichever
+  provider was chosen. Nothing is published externally.
 - `source_not_connected` payloads also carry
   `"legacy_code": "github_not_connected"` for one release so existing clients
   keep working. Match on `code`; `legacy_code` will be removed.
 - Live sources are resolved through the composition-owned Test Design source
-  registry (#351). GitHub Issues is the only registered source; drafts persist
-  their `source_provider` so confirm and generate re-fetch from the same one.
+  registry (#351). GitHub Issues is always registered and Jira Data Center
+  when configured (#353); drafts persist their `source_provider` so confirm
+  and generate re-fetch from the same one.
 
 ### Live vs client-supplied evidence (#355)
 
@@ -199,11 +215,19 @@ tracker.
 | 3        | none                      | connected                                       | `start`           |
 | 4        | wrong project or instance | correct                                         | `start`           |
 
-- Try `test_design_start` first, with the full Issue or browse URL when you
-  have one. A bare key is read from the tracker Kernector is connected to,
-  which may be a different instance with the same key. A locator no
-  registered source accepts (a tracker Kernector has no source for, or a
-  browse URL from another instance) returns `unsupported_source`.
+- Try `test_design_start` first, with the issue's `provider` and the full
+  Issue or browse URL as `locator` when you have one. A bare key is read from
+  the tracker Kernector is connected to, which may be a different instance
+  with the same key. A tracker Kernector has no source for is not in the
+  `provider` enum (`validation_error`); a locator another registered provider
+  accepts returns `validation_error` asking to retry with that provider; a
+  locator no registered provider accepts (for example a browse URL from
+  another instance) returns `unsupported_source`.
+
+  ```json
+  {"provider": "jira", "locator": "https://jira.example.com/browse/PROJ-123"}
+  {"provider": "github", "locator": "https://github.com/acme/app/issues/7"}
+  ```
 - When `test_design_start` fails with `source_not_connected`, `not_found` or
   `unsupported_source`, the payload carries a fixed `hint` pointing to
   `test_design_start_from_text`, but only when that tool is contributed and

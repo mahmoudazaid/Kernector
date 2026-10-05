@@ -12,7 +12,11 @@ from application.errors import (
     GitHubReauthorizationRequiredError,
     SourceReauthorizationRequiredError,
 )
-from composition.mcp.test_design import McpTestDesignOperations, McpTestDesignWorkflow
+from composition.mcp.test_design import (
+    McpTestDesignOperations,
+    McpTestDesignWorkflow,
+    start_args_for,
+)
 from composition.test_design.facade import TestDesignFacade
 from domain.errors import (
     ConnectorNotFoundError,
@@ -20,6 +24,7 @@ from domain.errors import (
     ToolEvidenceChangedError,
     ToolInsufficientEvidenceError,
     ToolSourceNotConnectedError,
+    ToolSourceProviderMismatchError,
     ToolTargetNotFoundError,
     ToolUnavailableError,
     ToolUnsupportedSourceError,
@@ -43,7 +48,7 @@ def _workflow(
 def test_start_generates_server_side_conversation_id(tmp_path: Path) -> None:
     workflow, facade = _workflow(tmp_path)
 
-    draft = workflow.start(issue_locator=ISSUE_LOCATOR)
+    draft = workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
     assert draft.status == "coverage_review"
     assert draft.version == 1
@@ -60,8 +65,8 @@ def test_start_generates_server_side_conversation_id(tmp_path: Path) -> None:
 def test_start_never_reuses_a_conversation_id(tmp_path: Path) -> None:
     workflow, facade = _workflow(tmp_path)
 
-    first = workflow.start(issue_locator=ISSUE_LOCATOR)
-    second = workflow.start(issue_locator=ISSUE_LOCATOR)
+    first = workflow.start(provider="github", locator=ISSUE_LOCATOR)
+    second = workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
     assert (
         facade.get_draft(first.draft_id).conversation_id
@@ -71,7 +76,7 @@ def test_start_never_reuses_a_conversation_id(tmp_path: Path) -> None:
 
 def test_confirm_patches_selection_then_confirms(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
     confirmed = workflow.confirm_selection(
         draft_id=started.draft_id,
@@ -89,7 +94,7 @@ def test_confirm_on_ready_draft_with_same_selection_advances_once(
     tmp_path: Path,
 ) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
@@ -108,7 +113,7 @@ def test_confirm_on_ready_draft_with_same_selection_advances_once(
 
 def test_confirm_with_stale_version_is_conflict_without_write(tmp_path: Path) -> None:
     workflow, facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
     with pytest.raises(ToolVersionConflictError):
         workflow.confirm_selection(
@@ -126,7 +131,7 @@ def test_confirm_with_unknown_candidate_is_validation_without_write(
     tmp_path: Path,
 ) -> None:
     workflow, facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
     with pytest.raises(ToolArgumentValidationError):
         workflow.confirm_selection(
@@ -143,7 +148,7 @@ def test_confirm_with_unknown_candidate_is_validation_without_write(
 def test_confirm_evidence_changed_keeps_saved_selection(tmp_path: Path) -> None:
     reader = RecordingIssueReader()
     workflow, facade = _workflow(tmp_path, reader=reader)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
     reader.document = issue_document(source_id="issue:I_other")
 
     with pytest.raises(ToolEvidenceChangedError):
@@ -176,7 +181,7 @@ def test_source_grant_errors_map_to_source_not_connected(
     workflow, _facade = _workflow(tmp_path, oauth_preflight=_preflight)
 
     with pytest.raises(ToolSourceNotConnectedError):
-        workflow.start(issue_locator=ISSUE_LOCATOR)
+        workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
 
 def test_blank_issue_maps_to_insufficient_evidence(tmp_path: Path) -> None:
@@ -189,7 +194,7 @@ def test_blank_issue_maps_to_insufficient_evidence(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path, reader=reader)
 
     with pytest.raises(ToolInsufficientEvidenceError):
-        workflow.start(issue_locator=ISSUE_LOCATOR)
+        workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
 
 def test_missing_source_issue_maps_to_target_not_found(tmp_path: Path) -> None:
@@ -198,17 +203,17 @@ def test_missing_source_issue_maps_to_target_not_found(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path, reader=reader)
 
     with pytest.raises(ToolTargetNotFoundError):
-        workflow.start(issue_locator=ISSUE_LOCATOR)
+        workflow.start(provider="github", locator=ISSUE_LOCATOR)
 
 
 @pytest.mark.parametrize("locator", ["not a locator", "ENG-7"])
-def test_locator_no_registered_source_accepts_maps_to_unsupported_source(
+def test_locator_the_chosen_provider_rejects_maps_to_unsupported_source(
     tmp_path: Path, locator: str
 ) -> None:
     workflow, _facade = _workflow(tmp_path)
 
     with pytest.raises(ToolUnsupportedSourceError):
-        workflow.start(issue_locator=locator)
+        workflow.start(provider="github", locator=locator)
 
 
 class _JiraIssueClient:
@@ -253,54 +258,81 @@ def _github_and_jira(tmp_path: Path, client: _JiraIssueClient):  # noqa: ANN202
     return TestDesignSourceRegistry((github, jira))
 
 
+def _mcp_workflow(
+    tmp_path: Path, *, providers: tuple[str, ...] = ("github",), **kwargs
+) -> tuple[McpTestDesignWorkflow, TestDesignFacade]:
+    facade = build_fake_facade(tmp_path, **kwargs)
+    workflow = McpTestDesignWorkflow(
+        McpTestDesignOperations(facade), start_args=start_args_for(providers)
+    )
+    return workflow, facade
+
+
+def _jira_workflow(
+    tmp_path: Path, client: _JiraIssueClient
+) -> tuple[McpTestDesignWorkflow, TestDesignFacade]:
+    sources = _github_and_jira(tmp_path, client)
+    return _mcp_workflow(tmp_path, providers=sources.providers, sources=sources)
+
+
 @pytest.mark.parametrize(
     "locator", ["ENG-7", "https://jira.example.com/jira/browse/ENG-7"]
 )
-def test_start_resolves_a_jira_issue_locator_through_the_registry(
-    tmp_path: Path, locator: str
-) -> None:
+def test_start_reads_jira_when_provider_is_jira(tmp_path: Path, locator: str) -> None:
     client = _JiraIssueClient()
-    workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
+    workflow, facade = _jira_workflow(tmp_path, client)
 
-    draft = workflow.start(issue_locator=locator)
+    started = workflow.start({"provider": "jira", "locator": locator})
 
     assert client.calls == ["ENG-7"]
-    assert draft.ticket_identifier == "ENG-7"
-    assert draft.source_reference.source_type == "jira"
-    assert draft.source_reference.source_id == "issue:10001"
+    assert started["ticket_identifier"] == "ENG-7"
+    stored = facade.get_draft(started["draft_id"])
+    assert stored.source_reference.source_type == "jira"
+    assert stored.source_reference.source_id == "issue:10001"
 
 
-def test_start_resolves_a_github_locator_when_jira_is_registered(
+def test_start_reads_github_when_jira_is_also_registered(tmp_path: Path) -> None:
+    client = _JiraIssueClient()
+    workflow, facade = _jira_workflow(tmp_path, client)
+
+    started = workflow.start({"provider": "github", "locator": ISSUE_LOCATOR})
+
+    assert client.calls == []
+    assert facade.get_draft(started["draft_id"]).source_reference.source_type == "github"
+
+
+def test_locator_no_registered_provider_accepts_is_unsupported_source(
     tmp_path: Path,
 ) -> None:
     client = _JiraIssueClient()
-    workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
-
-    draft = workflow.start(issue_locator=ISSUE_LOCATOR)
-
-    assert client.calls == []
-    assert draft.source_reference.source_type == "github"
-
-
-def test_start_with_foreign_instance_url_is_unsupported_source(tmp_path: Path) -> None:
-    client = _JiraIssueClient()
-    workflow, _facade = _workflow(tmp_path, sources=_github_and_jira(tmp_path, client))
+    workflow, _facade = _jira_workflow(tmp_path, client)
 
     with pytest.raises(ToolUnsupportedSourceError):
-        workflow.start(issue_locator="https://other.example.com/browse/ENG-7")
+        workflow.start(
+            {"provider": "jira", "locator": "https://other.example.com/browse/ENG-7"}
+        )
     assert client.calls == []
 
 
-def test_start_args_describe_both_locator_families_without_provider() -> None:
-    from composition.mcp.test_design import TestDesignStartArgs
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"provider": "github", "locator": "ENG-7"},
+        {"provider": "github", "locator": "https://jira.example.com/jira/browse/ENG-7"},
+        {"provider": "jira", "locator": ISSUE_LOCATOR},
+        {"issue_locator": "ENG-7"},
+        {"issue_locator": "https://jira.example.com/jira/browse/ENG-7"},
+    ],
+)
+def test_locator_another_registered_provider_accepts_is_provider_mismatch(
+    tmp_path: Path, arguments: dict[str, str]
+) -> None:
+    client = _JiraIssueClient()
+    workflow, _facade = _jira_workflow(tmp_path, client)
 
-    schema = TestDesignStartArgs.model_json_schema()
-
-    assert set(schema["properties"]) == {"issue_locator"}
-    description = schema["properties"]["issue_locator"]["description"]
-    assert "owner/repo#number" in description
-    assert "PROJ-123" in description
-    assert "over a bare key" in description
+    with pytest.raises(ToolSourceProviderMismatchError):
+        workflow.start(arguments)
+    assert client.calls == []
 
 
 _SENTINELS = ("SENTINEL-355-BODY", "SENTINEL-355-AC", "SENTINEL-355-URL")
@@ -311,11 +343,6 @@ _CONTENT = {
     "acceptance_criteria": "- Lockout after 5 failures SENTINEL-355-AC",
     "source_url": "https://tracker.example/SENTINEL-355-URL",
 }
-
-
-def _mcp_workflow(tmp_path: Path, **kwargs) -> tuple[McpTestDesignWorkflow, TestDesignFacade]:
-    facade = build_fake_facade(tmp_path, **kwargs)
-    return McpTestDesignWorkflow(McpTestDesignOperations(facade)), facade
 
 
 def test_start_from_content_projects_client_supplied_origin(tmp_path: Path) -> None:
@@ -392,7 +419,7 @@ def test_disabled_pack_maps_to_unavailable(tmp_path: Path) -> None:
 
 def test_generate_follows_the_300_contract(tmp_path: Path) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
@@ -439,7 +466,7 @@ def test_generate_applies_one_test_type_to_every_selected_candidate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow, facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
@@ -463,7 +490,7 @@ def test_generate_type_overrides_win_over_test_type(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workflow, facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,
@@ -487,7 +514,7 @@ def test_generate_rejects_unselected_candidate_via_existing_contract(
     tmp_path: Path,
 ) -> None:
     workflow, _facade = _workflow(tmp_path)
-    started = workflow.start(issue_locator=ISSUE_LOCATOR)
+    started = workflow.start(provider="github", locator=ISSUE_LOCATOR)
     ready = workflow.confirm_selection(
         draft_id=started.draft_id,
         expected_version=started.version,

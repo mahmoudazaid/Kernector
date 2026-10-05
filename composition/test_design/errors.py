@@ -31,6 +31,12 @@ class UnsupportedSourceLocatorError(TestDesignValidationError):
     __test__ = False
 
 
+class SourceProviderMismatchError(TestDesignValidationError):
+    """The chosen provider rejects a locator another registered source accepts."""
+
+    __test__ = False
+
+
 class TestDesignEvidenceChangedError(RuntimeError):
     """Live Issue evidence no longer matches the confirmed draft fingerprint."""
 
