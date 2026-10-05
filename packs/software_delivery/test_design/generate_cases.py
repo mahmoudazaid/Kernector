@@ -266,32 +266,37 @@ class GenerateTestCases:
             retry_candidates = [
                 item for item in to_generate if item.candidate_id in problems
             ]
-            retried, _, _ = _parse_generated_cases(
-                self._chat_model.complete(
-                    GENERATE_CASES_SYSTEM,
-                    (
-                        _context_message(evidence),
-                        Message(
-                            role="user",
-                            content=_generate_user_message(
-                                current.ticket_identifier,
-                                retry_candidates,
-                                allowed_refs,
+            try:
+                retried, _, _ = _parse_generated_cases(
+                    self._chat_model.complete(
+                        GENERATE_CASES_SYSTEM,
+                        (
+                            _context_message(evidence),
+                            Message(
+                                role="user",
+                                content=_generate_user_message(
+                                    current.ticket_identifier,
+                                    retry_candidates,
+                                    allowed_refs,
+                                ),
+                            ),
+                            Message(
+                                role="assistant",
+                                content=result.content
+                                if isinstance(result.content, str)
+                                else "",
+                            ),
+                            Message(
+                                role="user", content=_examples_feedback(problems)
                             ),
                         ),
-                        Message(
-                            role="assistant",
-                            content=result.content
-                            if isinstance(result.content, str)
-                            else "",
-                        ),
-                        Message(role="user", content=_examples_feedback(problems)),
+                        GENERATE_CASES_MODEL_SETTINGS,
                     ),
-                    GENERATE_CASES_MODEL_SETTINGS,
-                ),
-                requested=retry_candidates,
-                allowed_refs=allowed_refs,
-            )
+                    requested=retry_candidates,
+                    allowed_refs=allowed_refs,
+                )
+            except ToolFailureError:
+                retried = ()
             generated = tuple(
                 _drop_unused_examples(case) for case in _merge_cases(generated, retried)
             )
@@ -653,7 +658,11 @@ def _strip_background_steps(
         and _step_body(steps[repeated]) == background_steps[repeated]
     ):
         repeated += 1
-    if repeated == 0 or repeated == len(steps):
+    if (
+        repeated == 0
+        or repeated == len(steps)
+        or not _STEP_KEYWORD.match(steps[repeated].strip())
+    ):
         return case
     remaining = steps[repeated:]
     first = remaining[0]

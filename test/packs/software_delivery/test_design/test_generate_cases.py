@@ -698,6 +698,35 @@ def test_examples_table_still_unused_after_retry_is_dropped() -> None:
 
 
 @pytest.mark.parametrize(
+    "retry_content",
+    [
+        _model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]
+        ),
+        '{"cases": [',
+    ],
+)
+def test_failed_examples_retry_keeps_the_first_pass(retry_content: str) -> None:
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(_UNUSED_EXAMPLES)]
+        ),
+        followups=[retry_content],
+    )
+
+    result = _generate(chat)
+
+    assert len(chat.calls) == 2
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-1"].steps == ("Enter credentials", "Submit")
+    assert cases["cand-2"].gherkin == (
+        "Given two sites with all links Up\n"
+        "When the dashboard recalculates network health\n"
+        'Then the banner displays "Good"'
+    )
+
+
+@pytest.mark.parametrize(
     "gherkin", [_OUTLINE, "Given no sites\nThen the banner says \"No sites\""]
 )
 def test_consistent_cucumber_case_is_kept_without_retry(gherkin: str) -> None:
@@ -791,6 +820,29 @@ def test_scenario_steps_repeating_the_background_are_removed(
     cases = {case.candidate_id: case for case in result.generated_cases}
     assert cases["cand-2"].gherkin == expected
     assert result.cucumber_background == "Given the Dashboard page is opened"
+
+
+def test_background_strip_never_stops_inside_a_step_argument() -> None:
+    gherkin = (
+        "Given the following sites exist:\n"
+        "| site | links |\n"
+        "| B | Down |\n"
+        "When the dashboard recalculates network health\n"
+        'Then the banner displays "Poor"'
+    )
+    chat = _FakeChat(
+        content=_model_payload(
+            [_manual_case_payload("cand-1"), _with_gherkin(gherkin)],
+            cucumber_background=(
+                "Given the following sites exist:\n| site | links |\n| A | Up |"
+            ),
+        )
+    )
+
+    result = _generate(chat)
+
+    cases = {case.candidate_id: case for case in result.generated_cases}
+    assert cases["cand-2"].gherkin == gherkin
 
 
 def test_prompt_constrains_cucumber_scenarios() -> None:
