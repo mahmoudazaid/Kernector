@@ -181,9 +181,6 @@ def test_agent_does_not_bind_retired_tools() -> None:
     ).run("Export to Google Drive", conversation_id="conv-1")
 
     assert agent.seen_tools == [TOOL_NAME]
-    assert "software_delivery.risk_score" not in agent.seen_tools
-    assert "software_delivery.generate_test_cases" not in agent.seen_tools
-    assert "software_delivery.export_test_cases_markdown" not in agent.seen_tools
 
 
 def test_agent_draft_unavailable_skips_tools() -> None:

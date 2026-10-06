@@ -3466,15 +3466,6 @@ a.kern-btn {
   font-weight: 500;
 }
 
-.kern-chat-pre {
-  overflow: auto;
-  padding: var(--kern-space-3);
-  border: 1px solid var(--kern-line);
-  border-radius: var(--kern-radius-sm);
-  font-size: var(--kern-text-sm);
-  white-space: pre-wrap;
-}
-
 .kern-chat-thinking {
   display: inline-flex;
   align-items: center;

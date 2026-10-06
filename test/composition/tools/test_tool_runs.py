@@ -29,14 +29,14 @@ def test_tool_call_view_fields_are_name_status_and_summary_only() -> None:
 
 def test_tool_call_view_accepts_explicitly_authored_summary() -> None:
     view = ToolCallView(
-        "software_delivery.risk_score",
+        "pack.example_tool",
         ok=True,
-        summary="Scored risk at 62/100",
+        summary="Ran the example tool",
     )
 
-    assert view.tool_name == "software_delivery.risk_score"
+    assert view.tool_name == "pack.example_tool"
     assert view.ok is True
-    assert view.summary == "Scored risk at 62/100"
+    assert view.summary == "Ran the example tool"
 
 
 def test_tool_call_view_rejects_summaries_longer_than_the_limit() -> None:
@@ -55,11 +55,11 @@ def test_composition_exports_no_raw_to_summary_helper() -> None:
 def test_unrecognised_outcome_keeps_opaque_tool_outputs() -> None:
     tool_outputs = (
         InvokeToolResponse(
-            "software_delivery.risk_score",
+            "pack.example_tool",
             '{"score": 62, "api_key": "sk-live-abc"}',
         ),
         InvokeToolResponse(
-            "software_delivery.generate_test_cases",
+            "pack.second_tool",
             '{"score": 62, "secret_token": "sk-live-abc"}',
         ),
     )
