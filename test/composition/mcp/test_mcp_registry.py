@@ -157,12 +157,12 @@ def test_stale_pack_tool_allowlist_is_unavailable_when_not_contributed() -> None
     caller = McpCallerContext(
         "ws",
         "default",
-        frozenset({"software_delivery.risk_score", TOOL_NAME}),
+        frozenset({"software_delivery.retired_tool", TOOL_NAME}),
     )
     names = [item.name for item in registry.list_effective(caller)]
     assert names == [mcp_tool_name(TOOL_NAME)]
     result = registry.invoke_authorized(
-        caller, "software_delivery.risk_score", {}
+        caller, "software_delivery.retired_tool", {}
     )
     assert result.is_error
     assert result.code == TOOL_UNAVAILABLE_CODE
@@ -559,7 +559,7 @@ def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
     caller = McpCallerContext(
         "ws",
         "default",
-        frozenset({TOOL_NAME, "software_delivery.risk_score"}),
+        frozenset({TOOL_NAME, "software_delivery.retired_tool"}),
     )
     assert [item.name for item in registry.list_effective(caller)] == [
         mcp_tool_name(TOOL_NAME)

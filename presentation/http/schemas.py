@@ -19,7 +19,6 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     DocumentChunk,
-    SourceReference,
     SourceType,
 )
 
@@ -601,47 +600,11 @@ class SourceReferenceResponse(BaseModel):
     source_type: str
 
 
-class RiskFactorResponse(BaseModel):
-    """One risk factor with provenance ids only."""
-
-    factor_id: str
-    weight: int
-    references: list[SourceReferenceResponse]
-
-
-class RiskScoreResponse(BaseModel):
-    """Structured risk assessment for the chat UI."""
-
-    score: int
-    level: str
-    rationale: str
-    factors: list[RiskFactorResponse]
-
-
-class TestCaseResponse(BaseModel):
-    """One generated test case."""
-
-    title: str
-    steps: list[str]
-    expected: str
-    references: list[SourceReferenceResponse]
-
-
-class TestCasesResponse(BaseModel):
-    """Generated test cases for the chat UI."""
-
-    output_style: str
-    cases: list[TestCaseResponse]
-
-
 class ToolRunResponse(BaseModel):
     """Projected Software Delivery tool-run view (no opaque payloads)."""
 
     summary: str
     calls: list[ToolCallResponse]
-    risk: RiskScoreResponse | None = None
-    test_cases: TestCasesResponse | None = None
-    markdown: str = ""
     export_destination_required: bool = False
     drive_file_id: str = ""
     drive_file_name: str = ""
@@ -972,48 +935,8 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
     )
 
 
-def _source_refs(
-    references: Sequence[SourceReference],
-) -> list[SourceReferenceResponse]:
-    return [
-        SourceReferenceResponse(
-            source_id=ref.source_id, source_type=ref.source_type
-        )
-        for ref in references
-    ]
-
-
 def tool_run_response(view: SoftwareDeliveryRunView) -> ToolRunResponse:
     """Project a typed Software Delivery view; opaque payloads stay out."""
-    risk = None
-    if view.risk is not None:
-        risk = RiskScoreResponse(
-            score=view.risk.score,
-            level=view.risk.level,
-            rationale=view.risk.rationale,
-            factors=[
-                RiskFactorResponse(
-                    factor_id=factor.factor_id,
-                    weight=factor.weight,
-                    references=_source_refs(factor.references),
-                )
-                for factor in view.risk.factors
-            ],
-        )
-    test_cases = None
-    if view.test_cases is not None:
-        test_cases = TestCasesResponse(
-            output_style=view.test_cases.output_style,
-            cases=[
-                TestCaseResponse(
-                    title=case.title,
-                    steps=list(case.steps),
-                    expected=case.expected,
-                    references=_source_refs(case.references),
-                )
-                for case in view.test_cases.cases
-            ],
-        )
     return ToolRunResponse(
         summary=view.summary,
         calls=[
@@ -1022,9 +945,6 @@ def tool_run_response(view: SoftwareDeliveryRunView) -> ToolRunResponse:
             )
             for call in view.calls
         ],
-        risk=risk,
-        test_cases=test_cases,
-        markdown=view.markdown,
         export_destination_required=bool(view.export_destination_required),
         drive_file_id=view.drive_file_id or "",
         drive_file_name=view.drive_file_name or "",

@@ -389,7 +389,7 @@ def test_langgraph_tool_agent_sanitises_dotted_tool_names_for_binding() -> None:
         _bind_tool_name,
     )
 
-    tool = _RecordingTool(name="software_delivery.risk_score")
+    tool = _RecordingTool(name="pack.example_tool")
     bind_name = _bind_tool_name(tool.name)
     chat = _ScriptedChat(
         [

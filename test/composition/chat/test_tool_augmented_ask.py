@@ -129,7 +129,7 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
     """AC1 + AC4: the chain runs and its opaque results reach the response."""
     ask = _RecordingAsk()
     outcome = ToolRunOutcome(
-        answer="Scored risk, generated test cases, and exported Markdown.",
+        answer="Ran two tools.",
         citations=(
             Citation(
                 reference=SourceReference("AUTH-101", "user_story"),
@@ -138,8 +138,8 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
             ),
         ),
         tool_outputs=(
-            InvokeToolResponse("software_delivery.risk_score", '{"score": 62}'),
-            InvokeToolResponse("software_delivery.generate_test_cases", '{"a": 1}'),
+            InvokeToolResponse("pack.example_tool", '{"score": 62}'),
+            InvokeToolResponse("pack.second_tool", '{"a": 1}'),
         ),
     )
     runner = _RecordingRunner(outcome)
@@ -165,8 +165,8 @@ def test_a_matched_intent_runs_the_tools_and_reports_their_outputs() -> None:
     assert response.run is not None
     assert response.run.path == "tools"
     assert response.run.tools == (
-        "software_delivery.risk_score",
-        "software_delivery.generate_test_cases",
+        "pack.example_tool",
+        "pack.second_tool",
     )
     assert '{"score": 62}' not in str(response.run)
 
@@ -179,7 +179,7 @@ def test_tool_turn_preserves_model_latency_and_tokens_on_run_meta() -> None:
     outcome = ToolRunOutcome(
         answer="Generated cases.",
         tool_outputs=(
-            InvokeToolResponse("software_delivery.generate_test_cases", "{}"),
+            InvokeToolResponse("pack.second_tool", "{}"),
         ),
         run=RunMeta(
             model="test-model",
@@ -334,7 +334,7 @@ def test_tool_turn_carries_retrieval_and_citation_counts_on_run_meta() -> None:
             ),
         ),
         tool_outputs=(
-            InvokeToolResponse("software_delivery.risk_score", '{"score": 62}'),
+            InvokeToolResponse("pack.example_tool", '{"score": 62}'),
         ),
         run=RunMeta(hit_count=2, citation_count=2),
     )
@@ -587,7 +587,7 @@ def test_tool_turn_logs_path_tools_with_shared_request_id(
     capturer = _RunnerCapturingId(
         ToolRunOutcome(
             answer="Scored risk.",
-            tool_outputs=(InvokeToolResponse("software_delivery.risk_score", "{}"),),
+            tool_outputs=(InvokeToolResponse("pack.example_tool", "{}"),),
         )
     )
     wrapper = ToolAugmentedAsk(

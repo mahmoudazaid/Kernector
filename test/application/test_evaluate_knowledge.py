@@ -307,7 +307,7 @@ def test_retrieval_aggregates_exclude_skips_and_include_misses() -> None:
         id="tool-1",
         case_class="tool",
         kind="invoke_tool",
-        tool_name="software_delivery.risk_score",
+        tool_name="pack.example_tool",
         arguments={"target": "x", "evidence": []},
         expected_tool_result={"level": "high"},
     )
@@ -587,7 +587,7 @@ def test_invoke_tool_passes_when_result_contains_expected_subset() -> None:
     report = _evaluate(
         invoke=_FakeInvoke(
             InvokeToolResponse(
-                "software_delivery.risk_score",
+                "pack.example_tool",
                 '{"level": "high", "score": 60, "rationale": "x"}',
             )
         )
@@ -597,7 +597,7 @@ def test_invoke_tool_passes_when_result_contains_expected_subset() -> None:
                 id="tool-1",
                 case_class="tool",
                 kind="invoke_tool",
-                tool_name="software_delivery.risk_score",
+                tool_name="pack.example_tool",
                 arguments={"target": "Assess authentication release risk"},
                 expected_tool_result={"level": "high", "score": 60},
             ),
@@ -617,7 +617,7 @@ def test_malformed_tool_json_fails_the_case_and_suite_continues() -> None:
     report = _evaluate(
         retrieve=_FakeRetrieve((_hit("checkout-retry"),)),
         invoke=_FakeInvoke(
-            InvokeToolResponse("software_delivery.risk_score", "{not-json")
+            InvokeToolResponse("pack.example_tool", "{not-json")
         ),
     ).execute(
         (
@@ -625,7 +625,7 @@ def test_malformed_tool_json_fails_the_case_and_suite_continues() -> None:
                 id="tool-bad",
                 case_class="tool",
                 kind="invoke_tool",
-                tool_name="software_delivery.risk_score",
+                tool_name="pack.example_tool",
                 arguments={"target": "x"},
                 expected_tool_result={"level": "high"},
             ),
@@ -648,7 +648,7 @@ def test_invoke_none_skips_only_with_tool_unavailable() -> None:
                 id="tool-1",
                 case_class="tool",
                 kind="invoke_tool",
-                tool_name="software_delivery.risk_score",
+                tool_name="pack.example_tool",
                 arguments={"target": "x"},
                 expected_tool_result={"level": "high"},
             ),

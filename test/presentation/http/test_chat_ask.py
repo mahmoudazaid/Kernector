@@ -106,7 +106,7 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
                 query_rewritten=True,
                 hit_count=4,
                 citation_count=1,
-                tools=("software_delivery.risk_score",),
+                tools=("pack.example_tool",),
                 settings={"temperature": 0.3},
                 error_type=None,
                 source_type="pdf",
@@ -151,7 +151,7 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
         "query_rewritten": True,
         "hit_count": 4,
         "citation_count": 1,
-        "tools": ["software_delivery.risk_score"],
+        "tools": ["pack.example_tool"],
         "response_style": None,
         "prompt_key": None,
         "prompt_version": None,
@@ -383,41 +383,40 @@ def test_tools_used_and_tool_run_projection_omit_opaque_payload() -> None:
     view = software_delivery_run_view(
         calls=(
             ToolCallView(
-                "software_delivery.risk_score",
+                "pack.example_tool",
                 ok=True,
-                summary="Scored risk at 62/100",
+                summary="Ran the example tool",
             ),
         ),
     )
     ask = _StubAsk(
         AskResponse(
             answer="Tool answer.",
-            tool_outputs=(InvokeToolResponse("software_delivery.risk_score", secret),),
+            tool_outputs=(InvokeToolResponse("pack.example_tool", secret),),
             run=RunMeta(request_id="req-tools", outcome="success", pack="software-delivery"),
         ),
         tool_run_view=view,
     )
     client = _client_with_ask(ask)
 
-    response = client.post("/api/v1/chat/ask", json={"query": "score this"})
+    response = client.post("/api/v1/chat/ask", json={"query": "run the tool"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["tools_used"] == [
-        {"tool_name": "software_delivery.risk_score", "result_chars": len(secret)}
+        {"tool_name": "pack.example_tool", "result_chars": len(secret)}
     ]
     assert secret not in response.text
-    assert body["tool_run"]["summary"] == "Scored risk and generated cases."
+    assert body["tool_run"]["summary"] == "Export finished."
     assert body["tool_run"]["calls"] == [
         {
-            "tool_name": "software_delivery.risk_score",
+            "tool_name": "pack.example_tool",
             "ok": True,
-            "summary": "Scored risk at 62/100",
+            "summary": "Ran the example tool",
         }
     ]
-    assert body["tool_run"]["risk"]["score"] == 62
-    assert body["tool_run"]["test_cases"]["cases"][0]["title"] == "Lock after five failures"
-    assert body["tool_run"]["markdown"] == "# Test Cases\n"
+    assert body["tool_run"]["drive_file_name"] == "test-cases.md"
+    assert "risk" not in body["tool_run"]
 
 
 def test_run_meta_projection_omits_query_and_chunk_markers() -> None:

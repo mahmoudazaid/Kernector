@@ -83,7 +83,7 @@ async def test_identical_tool_unavailable_matrix() -> None:
         frozenset(
             {
                 SEARCH_TOOL,
-                "software_delivery.risk_score",  # retired scaffolding; not contributed
+                "software_delivery.retired_tool",  # not contributed
                 "software_delivery.export_test_cases_google_drive",
             }
         ),
@@ -97,10 +97,8 @@ async def test_identical_tool_unavailable_matrix() -> None:
         results = []
         for name in (
             "nope.tool",
-            "software_delivery.risk_score",
-            "software_delivery_risk_score",
-            "software_delivery.generate_test_cases",
-            "software_delivery.export_test_cases_markdown",
+            "software_delivery.retired_tool",
+            "software_delivery_retired_tool",
             "software_delivery.export_test_cases_google_drive",
         ):
             result = await client.call_tool(name, {})

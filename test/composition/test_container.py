@@ -36,26 +36,17 @@ from domain.knowledge import (
     SourceMetadata,
     SourceReference,
 )
-from packs.software_delivery.orchestration import OrchestrateSoftwareDelivery
-from packs.software_delivery.orchestration_policy import (
-    EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    GENERATE_TEST_CASES_TOOL,
-    RISK_SCORE_TOOL,
-)
 from composition import (
     GroundedAsk,
     KnowledgeLoadError,
     Settings,
-    SoftwareDeliveryRunView,
     SUPPORTED_UPLOAD_SUFFIXES,
     ToolAugmentedAsk,
-    ToolCallView,
     available_providers,
     build_ask_service,
     build_chat_model,
     build_ingest_knowledge,
     build_invoke_tool,
-    build_orchestrate_software_delivery,
     build_prompt_repository,
     build_retrieve_knowledge,
     build_rewrite_and_retrieve_knowledge,
@@ -352,68 +343,16 @@ def test_build_invoke_tool_registers_no_export_without_oauth(
     assert invoke._registry.names() == ()
 
 
-@pytest.mark.parametrize(
-    "tool_name",
-    [
-        RISK_SCORE_TOOL,
-        GENERATE_TEST_CASES_TOOL,
-        EXPORT_TEST_CASES_MARKDOWN_TOOL,
-    ],
-)
-def test_build_invoke_tool_retired_names_are_not_invokable(
-    monkeypatch: pytest.MonkeyPatch,
-    tool_name: str,
-) -> None:
-    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
-    invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
-
-    with pytest.raises(ApplicationValidationError, match="Unknown tool name"):
-        invoke.execute(InvokeToolRequest(tool_name, {}))
-
-
-def test_build_orchestrate_software_delivery_wires_pack_orchestrator(
+def test_disabled_pack_is_not_imported_at_composition_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
-    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
-    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
-
-    use_case = build_orchestrate_software_delivery(
-        load_settings(), chat_model=_StubChat()
-    )
-
-    assert isinstance(use_case, OrchestrateSoftwareDelivery)
-    assert callable(use_case._invoke)
-
-
-def test_build_orchestrate_requires_enabled_pack(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("DOMAIN_TOOL_PACKS", raising=False)
-
-    with pytest.raises(ConfigurationError, match="software-delivery pack must be enabled"):
-        build_orchestrate_software_delivery(
-            load_settings(), chat_model=_StubChat()
-        )
-
-
-def test_disabled_orchestration_does_not_import_pack_at_composition_import(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Fresh interpreter: composition import must not load SD orchestration."""
+    """Fresh interpreter: composition import must not load the SD pack."""
     script = r"""
 import sys
 import importlib
 
 importlib.import_module("composition.container")
-names = set(sys.modules)
-assert not any(
-    name == "packs.software_delivery.orchestration"
-    or name.startswith("packs.software_delivery.orchestration.")
-    for name in names
-)
+assert not any(name.startswith("packs.software_delivery") for name in sys.modules)
 print("ok")
 """
     result = subprocess.run(
@@ -425,25 +364,6 @@ print("ok")
     )
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
-
-
-def test_build_orchestrate_software_delivery_accepts_a_recording_invoke(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The chat path records tool calls by supplying the invoke it wraps."""
-    _sd_env(monkeypatch)
-    calls: list[str] = []
-
-    def invoke(tool_name: str, arguments: Mapping[str, object]) -> str:
-        calls.append(tool_name)
-        return "{}"
-
-    use_case = build_orchestrate_software_delivery(
-        load_settings(), chat_model=_StubChat(), invoke=invoke
-    )
-
-    assert isinstance(use_case, OrchestrateSoftwareDelivery)
-    assert use_case._invoke is invoke
 
 
 def test_build_tool_augmented_ask_shares_one_store_across_pack_paths(
@@ -522,13 +442,8 @@ def test_agent_loop_flag_off_does_not_wire_agent_orchestrate(
 
     assert agent_builds == []
     assert isinstance(ask._ask, ToolAugmentedAsk)
-    # Provenance: wired callable came from the local else-branch, not the
-    # agent builder (which was never invoked and would have returned the
-    # capturing closure above). Chat cannot reach READY Drive-export with the
-    # flag off, so this closure stays dormant (see ARCHITECTURE.md).
-    assert ask._ask._runner._orchestrate.__module__ == "composition.container"
-    assert ask._ask._runner._orchestrate.__qualname__.endswith(".orchestrate")
-    assert "build_agent_orchestrate" not in ask._ask._runner._orchestrate.__qualname__
+    with pytest.raises(RuntimeError, match="domain tools are not enabled"):
+        ask._ask._runner.run("Export to Google Drive")
 
 
 def test_agent_loop_flag_on_wires_agent_orchestrate(
@@ -916,40 +831,23 @@ def test_former_generate_query_uses_grounded_ask_run_meta(
     assert ask.consume_tool_run_view() is None
 
 
-def test_dormant_orchestrate_path_with_stub_intent_and_tools(
+def test_non_agent_stack_wires_no_tool_chain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#312 TurnRouter supersedes dormant chat-intent select (#285/#170).
+    """#365: without the agent loop there is no chat tool chain to run.
 
-    Create-test-cases queries stay on grounded RAG; the deterministic
-    orchestrate closure stays wired when agent_loop is off but is unreachable
-    from chat (no READY Drive-export without the agent loop).
+    Create-test-cases queries stay on grounded RAG, and the runner refuses
+    rather than reviving the removed deterministic chain.
     """
-    from packs.software_delivery.chat_intent import ChatToolSelection
-
     _sd_env(monkeypatch)
     monkeypatch.setattr(
         "composition.container.build_rewrite_and_retrieve_knowledge",
         lambda settings, vector_store=None: _RecordingRewriteRetrieve([_scored_hit()]),
     )
-    invoke_tool = _ScriptedInvokeTool(
-        {
-            RISK_SCORE_TOOL: "{}",
-            GENERATE_TEST_CASES_TOOL: "{}",
-            EXPORT_TEST_CASES_MARKDOWN_TOOL: "# Test Cases\n",
-        }
-    )
+    invoke_tool = _ScriptedInvokeTool({})
     monkeypatch.setattr(
         "composition.container.build_invoke_tool",
         lambda settings, chat_model=None: invoke_tool,
-    )
-    monkeypatch.setattr(
-        "packs.software_delivery.registration.build_chat_intent_selector",
-        lambda **_kwargs: (
-            lambda _query: ChatToolSelection(
-                generate_tests=True, output_style="steps"
-            )
-        ),
     )
 
     ask = build_tool_augmented_ask(load_settings(), chat_model=_StubChat())
@@ -960,7 +858,8 @@ def test_dormant_orchestrate_path_with_stub_intent_and_tools(
     assert response.run is not None
     assert response.run.path == "rag"
     assert ask.consume_tool_run_view() is None
-    assert ask._ask._runner._orchestrate.__qualname__.endswith(".orchestrate")
+    with pytest.raises(RuntimeError, match="domain tools are not enabled"):
+        ask._ask._runner.run("Create test cases for AUTH-101")
 
 
 def test_a_general_chat_query_never_reaches_a_tool(

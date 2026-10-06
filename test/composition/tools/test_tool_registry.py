@@ -13,11 +13,6 @@ from composition.tools.registry import build_tool_registry, enabled_domain_tool_
 from infrastructure.config import DomainToolSettings, load_settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RETIRED_TOOLS = (
-    "software_delivery.risk_score",
-    "software_delivery.generate_test_cases",
-    "software_delivery.export_test_cases_markdown",
-)
 
 
 @pytest.fixture
@@ -41,8 +36,6 @@ def test_software_delivery_registers_no_tools_without_export_wiring(
     registry = build_tool_registry(settings)
     assert registry.names() == ()
     assert len(registry) == 0
-    for name in RETIRED_TOOLS:
-        assert name not in registry
 
 
 def test_software_delivery_registers_without_chat_model(
@@ -76,8 +69,7 @@ def test_export_tool_registers_with_atomic_collaborators(
         export_render=lambda content: f"# {content.document_title}\n",
         export_uploader=_Uploader(),
     )
-    assert TOOL_NAME in registry
-    assert RETIRED_TOOLS[0] not in registry
+    assert registry.names() == (TOOL_NAME,)
 
 
 def test_partial_export_collaborators_are_configuration_error(

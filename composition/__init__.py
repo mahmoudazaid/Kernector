@@ -13,7 +13,6 @@ from composition.container import (
     build_ingest_knowledge,
     build_invoke_tool,
     build_opaque_invoke,
-    build_orchestrate_software_delivery,
     build_probe_ollama_status,
     build_prompt_repository,
     build_retrieve_knowledge,
@@ -95,11 +94,7 @@ from composition.chat.short_term_memory import (
     build_short_term_memory_runtime,
 )
 from composition.software_delivery.tools import (
-    RiskFactorView,
-    RiskScoreView,
     SoftwareDeliveryRunView,
-    TestCaseView,
-    TestCasesView,
     software_delivery_tools_enabled,
 )
 from composition.software_delivery.chat import (
@@ -184,11 +179,7 @@ __all__ = [
     "ClarificationContextStore",
     "GroundedAsk",
     "Settings",
-    "RiskFactorView",
-    "RiskScoreView",
     "SoftwareDeliveryRunView",
-    "TestCaseView",
-    "TestCasesView",
     "ToolAugmentedAsk",
     "ToolCallView",
     "ToolRunFailedError",
@@ -207,7 +198,6 @@ __all__ = [
     "build_invoke_tool",
     "build_manage_uploaded_documents",
     "build_opaque_invoke",
-    "build_orchestrate_software_delivery",
     "build_probe_ollama_status",
     "build_prompt_repository",
     "build_retrieve_knowledge",

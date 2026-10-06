@@ -1,27 +1,6 @@
-"""Named pack-local budgets for Software Delivery test-case generation."""
+"""Named pack-local budgets for Software Delivery Google Drive export."""
 
 from __future__ import annotations
-
-from collections.abc import Mapping
-from types import MappingProxyType
-
-# Per-field (aligned with default MAX_INPUT_LENGTH for text fields)
-MAX_TARGET_CHARS = 10_000
-MAX_EVIDENCE_TEXT_CHARS = 10_000
-MAX_SOURCE_ID_CHARS = 256
-MAX_SOURCE_TYPE_CHARS = 64
-MAX_EVIDENCE_ITEMS = 32
-MAX_GENERATED_CASES = 25
-MAX_STEPS_PER_CASE = 20
-MAX_TITLE_CHARS = 200
-MAX_STEP_CHARS = 500
-MAX_EXPECTED_CHARS = 1_000
-MAX_EVIDENCE_IDS_PER_CASE = MAX_EVIDENCE_ITEMS
-
-# Cumulative: entire serialized prompt / response / result JSON
-MAX_TOTAL_INPUT_CHARS = 16_000
-MAX_MODEL_RESPONSE_CHARS = 8_192
-MAX_TOTAL_OUTPUT_CHARS = 8_192
 
 # Google Drive export (#197): titles plus optional structured cases
 MAX_EXPORT_DOCUMENT_TITLE_CHARS = 200
@@ -33,10 +12,3 @@ MAX_EXPORT_GHERKIN_CHARS = 8_000
 MAX_EXPORT_FILE_NAME_CHARS = 128
 MAX_EXPORT_ARTIFACT_BYTES = 1_048_576
 DEFAULT_EXPORT_FILE_NAME = "test-cases.md"
-
-TEST_GENERATION_MODEL_SETTINGS: Mapping[str, object] = MappingProxyType(
-    {
-        "temperature": 0,
-        "max_tokens": 2048,
-    }
-)

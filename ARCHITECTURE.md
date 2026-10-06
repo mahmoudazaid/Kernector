@@ -216,7 +216,7 @@ Kernector distinguishes **source kinds** from **domain packs**:
   Confluence, SRS, OpenAPI, code, upload, or another connector. Provenance stays
   on generic `SourceReference.source_type` (opaque string) in the shared domain.
 - **Domain pack** answers “what business interpretation should be applied?” —
-  for example software-delivery risk scoring.
+  for example Software Delivery test design.
 
 **Content packs** supply example knowledge (`data/knowledge/packs/…`).
 **Story Intelligence** remains the first content example. Optional task prompts
@@ -228,7 +228,8 @@ enabled prompt packs.
 
 **Executable packs** under `packs/` contribute domain tools and pack-local
 workflows. The first is `packs/software_delivery/`. Its scaffolding
-risk/generate/export tools are retired (#285). Google Drive export (#309) and
+risk/generate/Markdown-export tools were retired (#285), and the deterministic
+orchestration chain behind them was removed (#365). Google Drive export (#309) and
 **Test Design** (#293 / #300) are recognized via composition ``WorkflowSignal`` probes
 injected into the pack-neutral ``TurnRouter`` (#312). Incomplete intents
 clarify instead of falling through to grounded RAG (#304, #310). Shared
@@ -259,10 +260,15 @@ imported nor registered.
 agent on the Drive-export ``tool_workflow`` path when the flag is on. When the
 flag is off, recognized Drive-export intent clarifies as ``tool_unavailable``
 (never RAG for clear/partial export commands; docs/prose mentions of export
-still reach grounded RAG). The deterministic ``orchestrate`` closure remains
-wired for composition provenance but is **dormant from chat**: no WorkflowSignal
-can become READY Drive-export without the agent loop, matching how #285 retired
-the create-test-cases chat-intent path.
+still reach grounded RAG). No deterministic chain is wired: with the flag off,
+or the pack disabled, the chat tool runner reports domain tools as unavailable.
+
+**Decision (#365):** the dormant deterministic chain (risk score, test-case
+generation, Markdown export, evidence bundle, and their run-view, HTTP, and web
+projections) was removed entirely rather than kept for provenance. The
+agent-loop Drive export path is the only pack tool run. An architecture test
+(`test/architecture/test_no_retired_risk_tool.py`) keeps the retired risk tool
+out of tracked files, except historical sprint docs.
 
 #### Multi-source tool flow
 
@@ -280,14 +286,15 @@ decision boundary. Domain/application code stays pack- and LangGraph-neutral;
 composition injects ``WorkflowSignal`` probes and builds handoffs/tool runs
 **after** the decision.
 
-The Next.js **Software Delivery tool-result renderers** (#161) expose typed
-composition views — risk score with factor citations, structured test cases,
-and Markdown preview. Live chat turns feed them through the #178
-projection adapter (``project_software_delivery_run_view``), not by parsing
-opaque ``AskResponse.tool_outputs``. They are absent when no typed view was
-projected (RAG / non-pack turns). There is no standalone tool-run
-form: the only path that retrieves and orchestrates is the chat-time one
-described below.
+The Next.js **Software Delivery tool-run panel** (#161) renders the typed
+composition view's tool calls and summary; the Drive receipt and missing
+destination flags travel on the same view. Live chat turns feed it through the
+#178 projection adapter (``project_software_delivery_run_view``), not by parsing
+opaque ``AskResponse.tool_outputs``. The adapter recognises only the Drive
+export receipt and the missing-destination outcome; anything else fails as an
+unrecognised result. The panel is absent when no typed view was projected
+(RAG / non-pack turns). There is no standalone tool-run form: the only path
+that retrieves and orchestrates is the chat-time one described below.
 
 ``AskResponse.tool_outputs`` remains ``Sequence[InvokeToolResponse]`` — opaque
 tool name plus opaque result string. Generic ``InvokeTool``, ``AskResponse``,
@@ -297,7 +304,7 @@ and shared presentation code never interpret pack payloads. Presentation views
 
 The generic ``ToolCallView`` envelope carries tool name, success/failure
 status, and an explicitly authored summary (≤120 characters) built from typed
-metadata such as score or generated-case count — never from
+metadata such as the Drive receipt — never from
 ``InvokeToolResponse.result`` or truncated opaque payloads. Raw tool payloads
 are never stored, exposed, or rendered. Shared presentation code stays
 pack-agnostic; Software Delivery renderers live in `ToolRunBlock`
@@ -364,30 +371,27 @@ intent routing. Domain/application never import LangGraph.
 ``ToolAugmentedAsk`` (``composition/chat/tool_augmented_ask.py``) applies the
 task-prompt pre-rule, runs ``TurnRouter``, then dispatches. Drive
 ``tool_workflow`` runs through ``PackSoftwareDeliveryChat`` when the agent loop
-is on. Generation
-wins over risk-only for any residual scaffolding doubles in unit tests.
+is on.
 
 A matched Drive turn runs through ``PackSoftwareDeliveryChat``
 (``composition/software_delivery/chat.py``): filter-less cross-source retrieval
 with the relevance threshold applied in composition → ``require_evidence`` →
-evidence bundle → agent/orchestrate via the opaque tool boundary,
+agent orchestrate via the opaque tool boundary,
 wrapped in a ``ToolCallRecorder`` that keeps one ``InvokeToolResponse`` per
 successful call. The reply is composed deterministically from the tools' typed
-results — the export step's Markdown for generated cases, the risk step's score
-band and rationale — never from a second model call. The same typed outcomes are
+results — the Drive export receipt or the missing-destination prompt — never
+from a second model call. The same typed outcomes are
 projected into ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``
 (#178); that view is **not** placed on ``AskResponse``.
 
 **Agent loop (#43), opt-in:** ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default
-**false**) swaps only the pack ``orchestrate`` callable for a LangGraph-backed
+**false**) wires the pack ``orchestrate`` callable to a LangGraph-backed
 ``ToolCallingAgent`` adapter (``infrastructure/agents/langgraph_tool_agent.py``)
 wired through ``composition/software_delivery/agent.py``. Intent selection,
 retrieve → recorder → ordered ``tool_outputs``, stop handling, and sanitized
 ``ToolRunFailedError`` stay on the #170 path. Domain and application must not
-import LangGraph; ``langgraph`` is an infrastructure I/O package. With chat
-intent always ``None`` (#285), flipping the flag has no observable effect until
-a real tool and matcher land. Keep the deterministic chain as the default until
-the agent path is proven.
+import LangGraph; ``langgraph`` is an infrastructure I/O package. It is the
+only pack tool-run path; the deterministic chain was removed (#365).
 
 **Short-term thread memory (#213):** when the agent loop is on, composition owns
 a process-scoped ``InMemorySaver`` (``composition/chat/short_term_memory.py``) keyed
@@ -429,19 +433,20 @@ importing pack-named modules or ``packs``.
 
 - **#92** — pack-local contracts and scoring; generic ``ToolRegistry`` + single-tool
   ``InvokeTool`` that treats arguments and results as opaque strings.
-- **#95** — orchestration over a retrieved evidence bundle (delivered).
+- **#95** — orchestration over a retrieved evidence bundle (delivered; removed
+  in #365).
 - **#161** — presentation-only renderers and the generic ``ToolCallView`` envelope;
   testable with fixtures.
 - **#170** — chat intent → retrieve/orchestrate → populate
   ``AskResponse.tool_outputs`` with opaque ``InvokeToolResponse`` entries
-  (delivered; **default** orchestrate path).
+  (delivered; deterministic orchestrate removed in #365).
 - **#178** — composition projects typed pack outcomes into
   ``SoftwareDeliveryRunView`` on ``ToolRunOutcome.run_view``; Next.js chat
   renders #161 panels from the projected view without putting views on
   ``AskResponse`` (delivered).
 - **#43** — optional LangGraph agent orchestrate behind
   ``SOFTWARE_DELIVERY_AGENT_LOOP`` (default off); same runner ledger and error
-  taxonomy. Dormant while chat intent never matches (#285).
+  taxonomy. The only pack tool-run path, used by Drive export (#365).
 
 ### Grounded ask: system policy vs optional task prompts
 
@@ -449,7 +454,7 @@ Chat over ingested documents is orchestrated by `AskKnowledge`. The Next.js
 chat UI is **intent-first**: there is no Mode selector and no preselected
 workflow form. Ordinary chat turns use General grounded chat
 (`AskRequest.prompt_key` unset); composition routes explicit Software Delivery
-intents (test generation, risk) when the pack is enabled. `PromptRepository`
+intents (Test Design, Drive export) when the pack is enabled. `PromptRepository`
 and `AskRequest.prompt_key` remain so saved commands / role instructions (#149)
 can supply optional task text later without restoring a pre-chat Mode control.
 

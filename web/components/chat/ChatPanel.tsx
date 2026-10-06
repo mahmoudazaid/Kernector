@@ -207,39 +207,13 @@ function ToolRunBlock({
   const calls = Array.isArray(toolRun.calls)
     ? toolRun.calls.filter(Boolean)
     : [];
-  const riskFactors = Array.isArray(toolRun.risk?.factors)
-    ? toolRun.risk.factors.filter(Boolean)
-    : [];
-  const testCases = Array.isArray(toolRun.test_cases?.cases)
-    ? toolRun.test_cases.cases.filter(Boolean)
-    : [];
   const summary =
     typeof toolRun.summary === "string" ? toolRun.summary : undefined;
   const showSummary =
     summary !== undefined &&
     summary.trim() !== "" &&
     summary.trim() !== (answerContent ?? "").trim();
-  const markdown =
-    typeof toolRun.markdown === "string" ? toolRun.markdown : undefined;
-  const riskScore =
-    typeof toolRun.risk?.score === "number" ? toolRun.risk.score : undefined;
-  const riskLevel =
-    typeof toolRun.risk?.level === "string" ? toolRun.risk.level : undefined;
-  const riskRationale =
-    typeof toolRun.risk?.rationale === "string"
-      ? toolRun.risk.rationale
-      : undefined;
-  const outputStyle =
-    typeof toolRun.test_cases?.output_style === "string"
-      ? toolRun.test_cases.output_style
-      : undefined;
-  const hasBody =
-    calls.length > 0 ||
-    showSummary ||
-    Boolean(toolRun.risk) ||
-    Boolean(toolRun.test_cases) ||
-    Boolean(markdown);
-  if (!hasBody) {
+  if (calls.length === 0 && !showSummary) {
     return null;
   }
 
@@ -262,70 +236,6 @@ function ToolRunBlock({
         </>
       ) : null}
       {showSummary ? <p className="kern-chat-caption">{summary}</p> : null}
-      {toolRun.risk ? (
-        <div>
-          <p className="kern-chat-label">Risk</p>
-          <p>
-            Score {riskScore ?? "—"}/100 ({riskLevel ?? "—"})
-          </p>
-          {riskRationale ? <p>{riskRationale}</p> : null}
-          <ul className="kern-chat-list">
-            {riskFactors.map((factor) => (
-              <li key={factor.factor_id}>
-                <code>{factor.factor_id}</code> (weight {factor.weight})
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {toolRun.test_cases ? (
-        <div>
-          <p className="kern-chat-label">
-            Test cases{outputStyle ? ` (${outputStyle})` : ""}
-          </p>
-          {testCases.map((testCase) => {
-            const steps = Array.isArray(testCase.steps)
-              ? testCase.steps.filter(
-                  (step): step is string => typeof step === "string",
-                )
-              : [];
-            const title =
-              typeof testCase.title === "string" ? testCase.title : "Case";
-            const expected =
-              typeof testCase.expected === "string" ? testCase.expected : "";
-            return (
-              <details key={title} className="kern-chat-details">
-                <summary>{title}</summary>
-                <ol>
-                  {steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-                {expected ? (
-                  <p>
-                    <strong>Expected:</strong> {expected}
-                  </p>
-                ) : null}
-              </details>
-            );
-          })}
-        </div>
-      ) : null}
-      {markdown ? (
-        <details className="kern-chat-details">
-          <summary>Markdown preview</summary>
-          <pre className="kern-chat-pre">{markdown}</pre>
-          <Button
-            variant="secondary"
-            type="button"
-            onClick={() => {
-              void navigator.clipboard?.writeText(markdown);
-            }}
-          >
-            Copy markdown
-          </Button>
-        </details>
-      ) : null}
     </div>
   );
 }

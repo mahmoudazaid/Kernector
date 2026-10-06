@@ -4,10 +4,6 @@ from collections.abc import Callable, Sequence
 
 from domain.ports import ArtifactUploader, ChatModel, Tool
 from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_intent
-from packs.software_delivery.orchestration import (
-    OpaqueInvoke,
-    OrchestrateSoftwareDelivery,
-)
 from packs.software_delivery.tools.export_test_cases_google_drive import (
     ExportTestCasesGoogleDriveTool,
     RenderExportMarkdown,
@@ -82,11 +78,6 @@ def build_mcp_tools(
     )
 
 
-def build_orchestrator(*, invoke: OpaqueInvoke) -> OrchestrateSoftwareDelivery:
-    """Return the pack orchestration use case wired to opaque invoke."""
-    return OrchestrateSoftwareDelivery(invoke)
-
-
 def build_chat_intent_selector(
     *,
     export_intent_enabled: bool = False,
@@ -94,8 +85,8 @@ def build_chat_intent_selector(
     """Return the pack's chat-time intent policy.
 
     ``export_intent_enabled`` must track ``SOFTWARE_DELIVERY_AGENT_LOOP``. When
-    False, the selector always returns ``None`` so export phrasing cannot revive
-    the retired scaffolding chain.
+    False, the selector always returns ``None``: only the agent path can run
+    a Drive export.
     """
     if not export_intent_enabled:
         return lambda _query: None

@@ -500,7 +500,7 @@ def test_ask_response_rejects_non_tool_output_item() -> None:
 
 
 def test_ask_response_accepts_opaque_invoke_tool_response_entries() -> None:
-    output = InvokeToolResponse("software_delivery.risk_score", '{"score":62}')
+    output = InvokeToolResponse("pack.example_tool", '{"score":62}')
     response = AskResponse("answer", tool_outputs=[output])
 
     assert response.tool_outputs == (output,)
@@ -857,17 +857,6 @@ def test_contracts_serialize_with_asdict() -> None:
         "original_query": "what broke?",
         "rewritten_query": "payment failure",
     }
-
-
-def test_application_contracts_exclude_software_delivery_orchestration_types() -> None:
-    import application.contracts as contracts
-
-    forbidden = {
-        "SoftwareDeliveryIntent",
-        "OrchestrateSoftwareDeliveryRequest",
-        "OrchestrateSoftwareDeliveryResponse",
-    }
-    assert forbidden.isdisjoint(set(dir(contracts)))
 
 
 def test_retrieve_request_rejects_filter_value_without_leaking_payload() -> None:

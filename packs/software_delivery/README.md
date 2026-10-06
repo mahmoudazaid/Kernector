@@ -8,11 +8,10 @@ this pack only through [`registration.py`](registration.py).
 | Location | Responsibility |
 | --- | --- |
 | `tools/` | Real tool adapters (`tools/<name>.py`), registered from `build_tools` |
-| Pack root | Shared contracts, errors, limits, evidence-bundle helpers, orchestration, chat intent, registration |
+| Pack root | Shared contracts, errors, export limits, chat intent, registration |
 
-The three scaffolding tools (`software_delivery.risk_score`,
-`software_delivery.generate_test_cases`,
-`software_delivery.export_test_cases_markdown`) are **retired** (#285).
+The scaffolding risk, test-generation, and Markdown-export tools were retired
+(#285), and their deterministic orchestration chain was removed (#365).
 `build_tools` registers real tools under `tools/` when collaborators are
 wired. Drive export (`software_delivery.export_test_cases_google_drive`, #197)
 registers when composition supplies both the #305 Markdown render adapter and a
@@ -21,8 +20,7 @@ folder is chosen in the Test Design UI). The export carries the selected titles
 plus each available case: Cucumber as one fenced feature file (shared Feature and
 Background) and Manual as numbered Preconditions, Steps, and Expected result.
 Tests that need more detail from the ticket are listed by title only. `chat_model` is optional while only
-deterministic tools are registered. Retired tool name constants remain in
-`orchestration_policy.py` for dormant chain/projection wiring.
+deterministic tools are registered.
 
 ## Google Drive export (#197)
 

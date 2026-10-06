@@ -21,13 +21,7 @@ from application.errors import (
     InsufficientEvidenceError,
 )
 from application.retrieval_citation_channel import RetrievalCitationChannel
-from composition.software_delivery.tools import (
-    RiskFactorView,
-    RiskScoreView,
-    SoftwareDeliveryRunView,
-    TestCasesView,
-    TestCaseView,
-)
+from composition.software_delivery.tools import SoftwareDeliveryRunView
 from composition.chat.tool_augmented_ask import ToolRunOutcome
 from composition.tools.runs import ToolCallView
 from domain.errors import DomainValidationError
@@ -52,11 +46,9 @@ class ModelCallRecorder(Protocol):
 # pinned by test_exported_styles_match_the_pack.
 SOFTWARE_DELIVERY_TEST_STYLES: tuple[str, ...] = ("steps", "gherkin")
 
-# Tool names duplicated from the pack so projection can author ToolCallView
+# Tool name duplicated from the pack so projection can author ToolCallView
 # entries without importing packs at module scope.
-_RISK_TOOL = "software_delivery.risk_score"
-_GENERATE_TOOL = "software_delivery.generate_test_cases"
-_EXPORT_TOOL = "software_delivery.export_test_cases_markdown"
+_DRIVE_EXPORT_TOOL = "software_delivery.export_test_cases_google_drive"
 
 _UNKNOWN_OUTCOME_MESSAGE = "The tool run produced an unrecognised result."
 _TOOL_RUN_FAILED_MESSAGE = "A tool failed during the run."
@@ -152,11 +144,9 @@ def tool_run_answer(
 ) -> str:
     """Compose the reply from typed tool results, never from a second model call.
 
-    The pack's own summary opens it; the risk step contributes its score band and
-    rationale; the export step contributes the Markdown it already rendered, so
-    generated cases reach the reader with their structure intact. Outcomes are
-    matched structurally because ``composition`` may not import ``packs`` at
-    module scope.
+    The orchestrate summary opens it; a Drive export receipt contributes the
+    exported file name. Outcomes are matched structurally because
+    ``composition`` may not import ``packs`` at module scope.
 
     Raises:
         ToolRunFailedError: An outcome shape nothing here recognises — better a
@@ -172,22 +162,6 @@ def tool_run_answer(
             name = file_name if isinstance(file_name, str) and file_name else "file"
             sections.append(f"Exported **{name}** to Google Drive.")
             continue
-        assessment = getattr(outcome, "assessment", None)
-        if assessment is not None:
-            sections.append(
-                f"**Risk {assessment.score}/100 ({assessment.level})** — "
-                f"{assessment.rationale}"
-            )
-            continue
-        if getattr(outcome, "result", None) is not None:
-            # The generated cases reach the answer through the export step's
-            # Markdown; re-rendering them here would be a second formatter to
-            # keep in sync with `export_test_cases_markdown`.
-            continue
-        markdown = getattr(outcome, "markdown", None)
-        if markdown is not None:
-            sections.append(markdown)
-            continue
         raise ToolRunFailedError(
             _UNKNOWN_OUTCOME_MESSAGE, tool_outputs=tool_outputs
         )
@@ -201,17 +175,14 @@ def project_software_delivery_run_view(
 ) -> SoftwareDeliveryRunView:
     """Project typed pack outcomes onto presentation views.
 
-    Summaries are authored from validated typed metadata (score, case count),
-    never from opaque ``InvokeToolResponse.result`` strings. Outcomes are
-    matched structurally because ``composition`` may not import ``packs``.
+    Summaries are authored from validated typed metadata, never from opaque
+    ``InvokeToolResponse.result`` strings. Outcomes are matched structurally
+    because ``composition`` may not import ``packs``.
 
     Raises:
         ToolRunFailedError: An outcome shape nothing here recognises.
     """
     calls: list[ToolCallView] = []
-    risk: RiskScoreView | None = None
-    test_cases: TestCasesView | None = None
-    markdown = ""
     export_destination_required = False
     drive_file_id = ""
     drive_file_name = ""
@@ -231,72 +202,9 @@ def project_software_delivery_run_view(
             drive_destination_label = label if isinstance(label, str) else ""
             calls.append(
                 ToolCallView(
-                    "software_delivery.export_test_cases_google_drive",
+                    _DRIVE_EXPORT_TOOL,
                     ok=True,
                     summary="Exported test cases to Google Drive",
-                )
-            )
-            continue
-
-        assessment = getattr(outcome, "assessment", None)
-        if assessment is not None:
-            factors = tuple(
-                RiskFactorView(
-                    factor_id=factor.factor_id,
-                    weight=factor.weight,
-                    references=tuple(factor.references),
-                )
-                for factor in assessment.factors
-            )
-            risk = RiskScoreView(
-                score=assessment.score,
-                level=assessment.level,
-                rationale=assessment.rationale,
-                factors=factors,
-            )
-            calls.append(
-                ToolCallView(
-                    _RISK_TOOL,
-                    ok=True,
-                    summary=f"Scored risk at {assessment.score}/100",
-                )
-            )
-            continue
-
-        generation = getattr(outcome, "result", None)
-        if generation is not None:
-            cases = tuple(
-                TestCaseView(
-                    title=case.title,
-                    steps=tuple(case.steps),
-                    expected=case.expected,
-                    references=tuple(case.references),
-                )
-                for case in generation.test_cases
-            )
-            test_cases = TestCasesView(
-                output_style=generation.output_style,
-                cases=cases,
-            )
-            count = len(cases)
-            noun = "test case" if count == 1 else "test cases"
-            calls.append(
-                ToolCallView(
-                    _GENERATE_TOOL,
-                    ok=True,
-                    summary=f"Generated {count} {noun}",
-                )
-            )
-            continue
-
-        export_markdown = getattr(outcome, "markdown", None)
-        if export_markdown is not None:
-            markdown = export_markdown
-            calls.append(
-                ToolCallView(
-                    _EXPORT_TOOL,
-                    ok=True,
-                    summary="Exported test cases as Markdown",
                 )
             )
             continue
@@ -308,9 +216,6 @@ def project_software_delivery_run_view(
     return SoftwareDeliveryRunView(
         summary=response.summary,
         calls=tuple(calls),
-        risk=risk,
-        test_cases=test_cases,
-        markdown=markdown,
         export_destination_required=export_destination_required,
         drive_file_id=drive_file_id,
         drive_file_name=drive_file_name,

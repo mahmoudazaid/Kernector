@@ -1939,32 +1939,6 @@ export interface components {
       updated_at: string;
     };
     /**
-     * RiskFactorResponse
-     * @description One risk factor with provenance ids only.
-     */
-    RiskFactorResponse: {
-      /** Factor Id */
-      factor_id: string;
-      /** References */
-      references: components["schemas"]["SourceReferenceResponse"][];
-      /** Weight */
-      weight: number;
-    };
-    /**
-     * RiskScoreResponse
-     * @description Structured risk assessment for the chat UI.
-     */
-    RiskScoreResponse: {
-      /** Factors */
-      factors: components["schemas"]["RiskFactorResponse"][];
-      /** Level */
-      level: string;
-      /** Rationale */
-      rationale: string;
-      /** Score */
-      score: number;
-    };
-    /**
      * RunMetaResponse
      * @description Safe run fields the chat UI may display (allowlisted projection).
      */
@@ -2092,30 +2066,6 @@ export interface components {
       title: string;
     };
     /**
-     * TestCaseResponse
-     * @description One generated test case.
-     */
-    TestCaseResponse: {
-      /** Expected */
-      expected: string;
-      /** References */
-      references: components["schemas"]["SourceReferenceResponse"][];
-      /** Steps */
-      steps: string[];
-      /** Title */
-      title: string;
-    };
-    /**
-     * TestCasesResponse
-     * @description Generated test cases for the chat UI.
-     */
-    TestCasesResponse: {
-      /** Cases */
-      cases: components["schemas"]["TestCaseResponse"][];
-      /** Output Style */
-      output_style: string;
-    };
-    /**
      * TestCoverageDraftResponse
      * @description Workspace-scoped test-design draft.
      */
@@ -2236,15 +2186,8 @@ export interface components {
        * @default false
        */
       export_destination_required: boolean;
-      /**
-       * Markdown
-       * @default
-       */
-      markdown: string;
-      risk?: components["schemas"]["RiskScoreResponse"] | null;
       /** Summary */
       summary: string;
-      test_cases?: components["schemas"]["TestCasesResponse"] | null;
     };
     /**
      * ToolUsedResponse

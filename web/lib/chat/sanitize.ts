@@ -126,11 +126,6 @@ function sanitizeToolRun(
     toolRun.summary = value.summary;
   }
 
-  delete toolRun.markdown;
-  if (typeof value.markdown === "string") {
-    toolRun.markdown = value.markdown;
-  }
-
   delete toolRun.calls;
   if (Array.isArray(value.calls)) {
     toolRun.calls = value.calls.flatMap((entry) => {
@@ -146,61 +141,6 @@ function sanitizeToolRun(
       }
       return [entry];
     });
-  }
-
-  delete toolRun.risk;
-  if (isPlainObject(value.risk)) {
-    const risk: Record<string, unknown> = { ...value.risk };
-    delete risk.score;
-    if (typeof value.risk.score === "number") {
-      risk.score = value.risk.score;
-    }
-    delete risk.level;
-    if (typeof value.risk.level === "string") {
-      risk.level = value.risk.level;
-    }
-    delete risk.rationale;
-    if (typeof value.risk.rationale === "string") {
-      risk.rationale = value.risk.rationale;
-    }
-    delete risk.factors;
-    if (Array.isArray(value.risk.factors)) {
-      risk.factors = value.risk.factors.flatMap((entry) => {
-        if (
-          !isPlainObject(entry) ||
-          typeof entry.factor_id !== "string" ||
-          typeof entry.weight !== "number"
-        ) {
-          return [];
-        }
-        return [entry];
-      });
-    }
-    toolRun.risk = risk;
-  }
-
-  delete toolRun.test_cases;
-  if (isPlainObject(value.test_cases)) {
-    const testCases: Record<string, unknown> = { ...value.test_cases };
-    delete testCases.output_style;
-    if (typeof value.test_cases.output_style === "string") {
-      testCases.output_style = value.test_cases.output_style;
-    }
-    delete testCases.cases;
-    if (Array.isArray(value.test_cases.cases)) {
-      testCases.cases = value.test_cases.cases.flatMap((entry) => {
-        if (
-          !isPlainObject(entry) ||
-          typeof entry.title !== "string" ||
-          typeof entry.expected !== "string"
-        ) {
-          return [];
-        }
-        const steps = isStringArray(entry.steps) ? entry.steps : [];
-        return [{ ...entry, steps }];
-      });
-    }
-    toolRun.test_cases = testCases;
   }
 
   delete toolRun.export_destination_required;

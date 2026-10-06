@@ -81,13 +81,8 @@ GRANDFATHERED_ROOT_MODULES: dict[str, frozenset[str]] = {
             "chat_intent",
             "contracts",
             "errors",
-            "evidence_bundle",
             "limits",
-            "orchestration",
-            "orchestration_contracts",
-            "orchestration_policy",
             "registration",
-            "tool_results",
         }
     ),
 }

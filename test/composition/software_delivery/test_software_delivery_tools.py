@@ -6,15 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from composition.software_delivery.tools import (
-    RiskFactorView,
-    RiskScoreView,
     SoftwareDeliveryRunView,
-    TestCaseView,
-    TestCasesView,
     software_delivery_tools_enabled,
 )
 from composition.tools.runs import ToolCallView
-from domain.knowledge import SourceReference
 
 
 class _Settings:
@@ -26,54 +21,25 @@ class _Settings:
 
 def _fixture_view() -> SoftwareDeliveryRunView:
     return SoftwareDeliveryRunView(
-        summary="Scored risk and generated test cases.",
+        summary="Export finished.",
         calls=(
             ToolCallView(
-                "software_delivery.risk_score",
+                "software_delivery.export_test_cases_google_drive",
                 ok=True,
-                summary="Scored risk at 62/100",
-            ),
-            ToolCallView(
-                "software_delivery.generate_test_cases",
-                ok=True,
-                summary="Generated 1 test case",
+                summary="Exported test cases to Google Drive",
             ),
         ),
-        risk=RiskScoreView(
-            score=62,
-            level="high",
-            rationale="Acceptance criteria are absent from a complete story.",
-            factors=(
-                RiskFactorView(
-                    factor_id="missing_acceptance_criteria",
-                    weight=30,
-                    references=(SourceReference("SRS-2", "srs"),),
-                ),
-            ),
-        ),
-        test_cases=TestCasesView(
-            output_style="steps",
-            cases=(
-                TestCaseView(
-                    title="Lock the account after five failed MFA attempts",
-                    steps=("Sign in with a valid password.", "Fail MFA five times."),
-                    expected="The account is locked.",
-                    references=(SourceReference("US-1", "user_story"),),
-                ),
-            ),
-        ),
-        markdown="# Test Cases\n",
+        drive_file_id="file-1",
+        drive_file_name="test-cases.md",
+        drive_destination_label="My Drive",
     )
 
 
-def test_fixture_view_carries_risk_test_cases_and_markdown() -> None:
+def test_fixture_view_carries_the_drive_receipt() -> None:
     view = _fixture_view()
 
-    assert view.risk is not None
-    assert view.risk.score == 62
-    assert view.test_cases is not None
-    assert view.test_cases.cases[0].title.startswith("Lock the account")
-    assert view.markdown.startswith("# Test Cases")
+    assert view.drive_file_name == "test-cases.md"
+    assert view.drive_destination_label == "My Drive"
     assert all(isinstance(call, ToolCallView) for call in view.calls)
     assert all(not hasattr(call, "result") for call in view.calls)
 

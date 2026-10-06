@@ -167,29 +167,17 @@ describe("sanitizeStoredChatMessage", () => {
     expect(dropped?.pendingApproval).toBeUndefined();
   });
 
-  it("preserves unknown keys on toolRun, risk, and test_cases", () => {
+  it("preserves unknown keys on toolRun", () => {
     const sanitized = sanitizeStoredChatMessage({
       id: "a-1",
       role: "assistant",
       content: "answer",
       toolRun: {
         summary: "s",
-        markdown: "",
         calls: [],
         coverage: { covered: 3, total: 5 },
         confidence: 0.82,
-        risk: {
-          score: 10,
-          level: "low",
-          rationale: "ok",
-          factors: [],
-          model_version: "v2",
-        },
-        test_cases: {
-          output_style: "steps",
-          cases: [],
-          generator: "pack-v3",
-        },
+        drive_file_name: "test-cases.md",
       },
     });
 
@@ -197,8 +185,7 @@ describe("sanitizeStoredChatMessage", () => {
       summary: "s",
       coverage: { covered: 3, total: 5 },
       confidence: 0.82,
-      risk: { model_version: "v2" },
-      test_cases: { generator: "pack-v3" },
+      drive_file_name: "test-cases.md",
     });
   });
 
@@ -243,16 +230,8 @@ describe("sanitizeStoredChatMessage", () => {
           { tool_name: "u", ok: true, summary: { bad: true } },
           null,
         ],
-        risk: {
-          score: 40,
-          level: "medium",
-          rationale: "partial",
-          factors: [
-            { factor_id: "a", weight: 1, note: "keep" },
-            null,
-            { factor_id: "b" },
-          ],
-        },
+        drive_file_id: { bad: true },
+        drive_file_name: "test-cases.md",
       },
     });
 
@@ -265,13 +244,9 @@ describe("sanitizeStoredChatMessage", () => {
         { tool_name: "t", ok: true, summary: "fine" },
         { tool_name: "u", ok: true },
       ],
-      risk: {
-        score: 40,
-        level: "medium",
-        rationale: "partial",
-        factors: [{ factor_id: "a", weight: 1, note: "keep" }],
-      },
+      drive_file_name: "test-cases.md",
     });
+    expect(sanitized?.toolRun).not.toHaveProperty("drive_file_id");
   });
 
   it("drops a malformed projection without taking the message", () => {
