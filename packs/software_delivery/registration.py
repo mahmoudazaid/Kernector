@@ -2,8 +2,16 @@
 
 from collections.abc import Callable, Sequence
 
-from domain.ports import ArtifactUploader, ChatModel, Tool
+from domain.ports import ArtifactUploader, ChatModel, Tool, XrayTestImporter
 from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_intent
+from packs.software_delivery.tools.create_xray_tests import (
+    TOOL_NAME as CREATE_XRAY_TESTS_TOOL,
+)
+from packs.software_delivery.tools.create_xray_tests import (
+    CreateXrayTestsTool,
+    DraftLoader,
+    XrayMcpBinding,
+)
 from packs.software_delivery.tools.export_test_cases_google_drive import (
     ExportTestCasesGoogleDriveTool,
     RenderExportMarkdown,
@@ -25,26 +33,31 @@ def build_tools(
     chat_model: ChatModel | None = None,
     export_render: RenderExportMarkdown | None = None,
     export_uploader: ArtifactUploader | None = None,
+    xray_importer: XrayTestImporter | None = None,
+    xray_load_draft: DraftLoader | None = None,
 ) -> Sequence[Tool]:
     """Return chat-bound tools contributed by this pack.
 
-    Chat registration stays Drive-only when collaborators are wired.
-    Retired scaffolding tools (#285) are not revived here or on MCP (#320);
-    live pack tools land via follow-ups (#326/#327) through
-    :func:`build_mcp_tools`.
+    Chat registers Drive export and Xray test creation (#199) when their
+    collaborators are wired. Retired scaffolding tools (#285) are not revived
+    here or on MCP (#320).
 
     ``chat_model`` is optional until a chat tool that needs an LLM is registered.
-    Drive export collaborators must be provided as an atomic pair (both or
+    Each tool's collaborators must be provided as an atomic pair (both or
     neither).
 
     Raises:
-        SoftwareDeliveryToolWiringError: Exactly one of the export
-            collaborators was provided.
+        SoftwareDeliveryToolWiringError: Exactly one collaborator of a pair
+            was provided.
     """
     _ = chat_model  # reserved for future LLM-backed chat tools
     if (export_render is None) ^ (export_uploader is None):
         raise SoftwareDeliveryToolWiringError(
             "export_render and export_uploader must both be provided"
+        )
+    if (xray_importer is None) ^ (xray_load_draft is None):
+        raise SoftwareDeliveryToolWiringError(
+            "xray_importer and xray_load_draft must both be provided"
         )
     tools: list[Tool] = []
     if export_render is not None and export_uploader is not None:
@@ -54,6 +67,8 @@ def build_tools(
                 uploader=export_uploader,
             )
         )
+    if xray_importer is not None and xray_load_draft is not None:
+        tools.append(CreateXrayTestsTool(load_draft=xray_load_draft, importer=xray_importer))
     return tuple(tools)
 
 
@@ -61,21 +76,39 @@ def build_mcp_tools(
     *,
     chat_model_factory: Callable[[], ChatModel] | None = None,
     test_design_binding: TestDesignMcpBinding | None = None,
+    xray_binding: XrayMcpBinding | None = None,
 ) -> Sequence[tuple[str, Callable[[], Tool]]]:
     """Return MCP tool factories for this pack (excludes Drive export).
 
     Test Design tools (#338) are contributed only when composition supplies a
-    workspace-bound ``test_design_binding``; otherwise the result is empty.
-    ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
+    workspace-bound ``test_design_binding``. Xray test creation (#199) is
+    contributed only with an ``xray_binding``; the registry gates it behind
+    human approval (ADR 0010). ``chat_model_factory`` is reserved for future
+    LLM-backed MCP tools.
     """
     _ = chat_model_factory
-    if test_design_binding is None:
-        return ()
-    binding = test_design_binding
-    return tuple(
-        (tool_id, lambda tool_cls=tool_cls: tool_cls(binding))
-        for tool_id, tool_cls in TEST_DESIGN_MCP_TOOLS
-    )
+    tools: list[tuple[str, Callable[[], Tool]]] = []
+    if test_design_binding is not None:
+        binding = test_design_binding
+        tools.extend(
+            (tool_id, lambda tool_cls=tool_cls: tool_cls(binding))
+            for tool_id, tool_cls in TEST_DESIGN_MCP_TOOLS
+        )
+    if xray_binding is not None:
+        xray = xray_binding
+        tools.append(
+            (
+                CREATE_XRAY_TESTS_TOOL,
+                lambda: CreateXrayTestsTool(
+                    load_draft=xray.load_draft,
+                    importer=xray.importer,
+                    destination_label=xray.project_key,
+                    args_schema=xray.args_schema,
+                    output_schema=xray.output_schema,
+                ),
+            )
+        )
+    return tuple(tools)
 
 
 def build_chat_intent_selector(

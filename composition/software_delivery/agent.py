@@ -18,6 +18,7 @@ stays retrieval-free. Pre-orchestrate retrieve is deferred on the agent path
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, Protocol
@@ -33,6 +34,11 @@ from composition.drive_export.prepare import (
     prepare_drive_export_call,
 )
 from composition.software_delivery.chat import OpaqueInvoke, Orchestrate
+from composition.xray_export.prepare import TOOL_NAME as XRAY_PREPARED_TOOL_NAME
+from composition.xray_export.prepare import (
+    PreparedXrayExportCall,
+    XrayDraftUnavailable,
+)
 from domain.knowledge import ScoredChunk
 from domain.ports import Tool, ToolCallingAgent
 from domain.tool_approval import PendingToolApproval
@@ -40,6 +46,25 @@ from domain.tool_approval import PendingToolApproval
 # Keep the tool name as a composition-local constant so this module never
 # imports ``packs`` at load time (lazy boundary).
 TOOL_NAME = "software_delivery.export_test_cases_google_drive"
+XRAY_TOOL_NAME = XRAY_PREPARED_TOOL_NAME
+_XRAY_TARGET = re.compile(r"\bxray\b", re.IGNORECASE)
+_XRAY_UNAVAILABLE_SUMMARY = "Xray test creation is not available right now."
+_XRAY_DRAFT_UNAVAILABLE_SUMMARY = (
+    "I need a Test Design draft with generated test cases before I can create "
+    "Xray tests."
+)
+_XRAY_PENDING_SUMMARY = (
+    "I can create the generated Test Design cases as Xray tests in project "
+    "{project_key}. Review the details and approve to continue."
+)
+_XRAY_FINISHED_SUMMARY = "Xray test creation finished."
+_XRAY_CANCELLED_SUMMARY = (
+    "Understood. I cancelled the request and did not create any Xray tests."
+)
+_XRAY_FIXED_ARGS_NOTE = (
+    " The draft is fixed from the conversation’s Test Design workflow; do not "
+    "invent or rely on tool parameters."
+)
 
 _DEFAULT_MAX_STEPS = 8
 _NO_TOOLS_INVOKED = "No software-delivery tools were invoked."
@@ -80,6 +105,7 @@ PrepareDriveExport = Callable[
     [str],
     PreparedDriveExportCall | ExportDestinationRequired | DraftUnavailable,
 ]
+PrepareXrayExport = Callable[[str], PreparedXrayExportCall | XrayDraftUnavailable]
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +122,15 @@ class ExportGoogleDriveOutcome:
     file_id: str
     file_name: str
     destination_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class CreateXrayTestsOutcome:
+    """Safe Xray creation receipt for chat projection (issue keys only)."""
+
+    created_keys: tuple[str, ...]
+    failed_count: int
+    project_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,12 +177,15 @@ def build_agent_orchestrate(
     destinations: _DestinationRepository | None = None,
     max_steps: int = _DEFAULT_MAX_STEPS,
     retrieve_tool: Tool | None = None,
+    prepare_xray: PrepareXrayExport | None = None,
 ) -> Orchestrate:
     """Return an ``orchestrate`` callable backed by ``agent``.
 
     Provide either ``prepare_export`` or both ``drafts`` and ``destinations``.
     Optional ``retrieve_tool`` is bound for evidence-needing multi-tool turns;
     Drive-export-only wiring omits it so export stays retrieval-free.
+    Targets naming Xray bind only the Xray tool, and only when
+    ``prepare_xray`` is wired (#199).
     """
     run_agent = RunToolAgent(agent)
     resolve = prepare_export
@@ -175,10 +213,23 @@ def build_agent_orchestrate(
         response_style: ResponseStyle | None = None,
     ):
         del generate_tests, output_style
+        is_xray = _XRAY_TARGET.search(target or "") is not None
         if conversation_id is None or not str(conversation_id).strip():
             return AgentSoftwareDeliveryResponse(
-                summary=_DRAFT_UNAVAILABLE_SUMMARY,
+                summary=(
+                    _XRAY_DRAFT_UNAVAILABLE_SUMMARY if is_xray else _DRAFT_UNAVAILABLE_SUMMARY
+                ),
                 outcomes=(),
+            )
+        style = response_style if isinstance(response_style, ResponseStyle) else None
+        if is_xray:
+            return _run_xray(
+                run_agent,
+                prepare_xray,
+                conversation_id=str(conversation_id).strip(),
+                invoke=invoke,
+                max_steps=max_steps,
+                style=style,
             )
 
         prepared = resolve(str(conversation_id).strip())
@@ -223,7 +274,6 @@ def build_agent_orchestrate(
             )
         )
         goal = _agent_goal(target=target, hits=hits, prepared=prepared)
-        style = response_style if isinstance(response_style, ResponseStyle) else None
         turn = run_agent.execute(
             goal,
             tools,
@@ -253,6 +303,90 @@ def build_agent_orchestrate(
         )
 
     return orchestrate
+
+
+def _run_xray(
+    run_agent: RunToolAgent,
+    prepare_xray: PrepareXrayExport | None,
+    *,
+    conversation_id: str,
+    invoke: OpaqueInvoke,
+    max_steps: int,
+    style: ResponseStyle | None,
+) -> AgentSoftwareDeliveryResponse:
+    if prepare_xray is None:
+        return AgentSoftwareDeliveryResponse(summary=_XRAY_UNAVAILABLE_SUMMARY)
+    prepared = prepare_xray(conversation_id)
+    if not isinstance(prepared, PreparedXrayExportCall):
+        return AgentSoftwareDeliveryResponse(summary=_XRAY_DRAFT_UNAVAILABLE_SUMMARY)
+
+    outcomes: list[object] = []
+
+    def on_create(raw: str) -> None:
+        outcomes.append(parse_xray_receipt(raw, prepared.project_key))
+
+    tool = _BoundTool(
+        prepared.tool_name,
+        "Create the generated Test Design cases as Xray tests." + _XRAY_FIXED_ARGS_NOTE,
+        invoke,
+        prepared.arguments,
+        on_create,
+        ApprovalHints(
+            title="Create Xray tests",
+            summary=(
+                "Create Jira Test issues in Xray from the generated Test Design "
+                "cases. Each approval creates new tests; arguments stay on the server."
+            ),
+            destination_label=prepared.project_key,
+            selected_title_count=prepared.test_count,
+        ),
+    )
+    goal = (
+        f"Task: Create {prepared.test_count} Xray tests from the conversation's "
+        f"Test Design draft using the bound {prepared.tool_name} tool. "
+        "Call that tool now; do not ask clarifying questions."
+    )
+    turn = run_agent.execute(
+        goal,
+        [tool],
+        max_steps=max_steps,
+        conversation_id=conversation_id,
+        system_prompt=compose_agent_system(agent_tool_system_prompt(), style),
+    )
+    pending = getattr(turn, "pending_approval", None)
+    if isinstance(pending, PendingToolApproval):
+        return AgentSoftwareDeliveryResponse(
+            summary=_XRAY_PENDING_SUMMARY.format(project_key=prepared.project_key),
+            pending_approval=pending,
+        )
+    if outcomes:
+        summary = _XRAY_FINISHED_SUMMARY
+    elif "cancel" in turn.content.lower():
+        summary = _XRAY_CANCELLED_SUMMARY
+    else:
+        summary = _NO_TOOLS_INVOKED
+    if turn.truncated:
+        summary = summary + _TRUNCATED_NOTE
+    return AgentSoftwareDeliveryResponse(summary=summary, outcomes=tuple(outcomes))
+
+
+def parse_xray_receipt(raw: str, project_key: str) -> CreateXrayTestsOutcome:
+    """Read the tool's JSON summary; malformed input yields an empty receipt."""
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        payload = None
+    if not isinstance(payload, dict):
+        return CreateXrayTestsOutcome(created_keys=(), failed_count=0, project_key=project_key)
+    keys = payload.get("created_keys")
+    failed = payload.get("failed_count")
+    return CreateXrayTestsOutcome(
+        created_keys=(
+            tuple(key for key in keys if isinstance(key, str)) if isinstance(keys, list) else ()
+        ),
+        failed_count=failed if isinstance(failed, int) and not isinstance(failed, bool) else 0,
+        project_key=project_key,
+    )
 
 
 def _parse_drive_receipt(raw: str, destination_label: str) -> ExportGoogleDriveOutcome:

@@ -81,6 +81,19 @@ DRIVE_UNAVAILABLE_CLARIFY_ANSWER = (
     "Google Drive export is not available right now."
 )
 
+XRAY_MISSING_CASES_CLARIFY_ANSWER = (
+    "I need a Test Design draft with generated test cases before I can create "
+    "Xray tests."
+)
+
+XRAY_UNAVAILABLE_CLARIFY_ANSWER = "Xray test creation is not available right now."
+
+_XRAY_REQUEST = re.compile(
+    r"\b(?:create|export|push|send|upload|publish)\b.*\bxray\b"
+    r"|\bxray\b.*\b(?:create|export|push|send|upload|publish)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 CONFLICTING_WORKFLOWS_CLARIFY_ANSWER = (
     "I see more than one workflow in your request. Please ask for Test Design "
     "or Google Drive export separately."
@@ -370,6 +383,64 @@ def build_drive_export_workflow_signal(
     return probe
 
 
+def build_xray_export_workflow_signal(
+    *,
+    export_enabled: bool,
+    draft_ready: DraftReadyCheck | None = None,
+    drafts: _DraftRepository | None = None,
+) -> WorkflowSignal:
+    """Return a WorkflowSignal for Xray test creation (#199).
+
+    The approval card is the confirmation step, so a clear request with an
+    exportable draft is ready without a follow-up "yes".
+
+    Args:
+        export_enabled: When False, recognized intent yields ``tool_unavailable``.
+        draft_ready: Optional readiness predicate for a conversation id.
+        drafts: Optional draft repository used when ``draft_ready`` is omitted.
+    """
+
+    def _ready_for(conversation_id: str | None) -> bool:
+        if draft_ready is not None:
+            return draft_ready(conversation_id)
+        if drafts is None or not conversation_id:
+            return False
+        from composition.xray_export.prepare import exportable_case_count
+
+        draft = drafts.find_by_conversation_id(conversation_id)
+        return draft is not None and exportable_case_count(draft) > 0
+
+    def _incomplete(reason: str, missing: tuple[str, ...]) -> WorkflowSignalResult:
+        return WorkflowSignalResult(
+            workflow_hint="xray_export",
+            readiness=WorkflowReadiness.INCOMPLETE,
+            reason=reason,
+            missing_fields=missing,
+            clarification_context={"workflow_hint": "xray_export", "missing_fields": missing},
+        )
+
+    def probe(request: TurnRoutingRequest) -> WorkflowSignalResult | None:
+        query = request.query
+        if not isinstance(query, str) or not query.strip():
+            return None
+        match = _XRAY_REQUEST.search(query)
+        if match is None:
+            return None
+        if query[: match.start()].strip() and _DRIVE_DOCS_PROSE_CUES.search(query):
+            return None
+        if not export_enabled:
+            return _incomplete("tool_unavailable", ())
+        if not _ready_for(request.conversation_id):
+            return _incomplete("missing_fields", ("generated_cases",))
+        return WorkflowSignalResult(
+            workflow_hint="xray_export",
+            readiness=WorkflowReadiness.READY,
+            reason="workflow_ready",
+        )
+
+    return probe
+
+
 def clarification_answer_for(decision_reason: str, workflow_hint: str | None) -> str:
     """Map allowlisted reason codes to fixed clarification copy."""
     if decision_reason == "conflicting_workflows":
@@ -384,6 +455,10 @@ def clarification_answer_for(decision_reason: str, workflow_hint: str | None) ->
         if decision_reason == "missing_fields":
             return DRIVE_MISSING_PAYLOAD_CLARIFY_ANSWER
         return DRIVE_PARTIAL_CLARIFY_ANSWER
+    if workflow_hint == "xray_export":
+        if decision_reason == "tool_unavailable":
+            return XRAY_UNAVAILABLE_CLARIFY_ANSWER
+        return XRAY_MISSING_CASES_CLARIFY_ANSWER
     return DEFAULT_CLARIFY_ANSWER
 
 
@@ -395,7 +470,10 @@ __all__ = [
     "DRIVE_UNAVAILABLE_CLARIFY_ANSWER",
     "MIXED_CUES_CLARIFY_ANSWER",
     "TEST_DESIGN_CLARIFY_ANSWER",
+    "XRAY_MISSING_CASES_CLARIFY_ANSWER",
+    "XRAY_UNAVAILABLE_CLARIFY_ANSWER",
     "build_drive_export_workflow_signal",
     "build_test_design_workflow_signal",
+    "build_xray_export_workflow_signal",
     "clarification_answer_for",
 ]

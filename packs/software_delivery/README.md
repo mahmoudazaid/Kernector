@@ -31,6 +31,57 @@ The folder is selected in the Test Design export dialog — never returned in
 tool JSON or public errors. Wireframe:
 [`docs/wireframes/export-test-cases-google-drive.html`](../../docs/wireframes/export-test-cases-google-drive.html).
 
+## Xray test creation (#199)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `software_delivery.create_xray_tests` | `draft_id` (required), `link_source_issue` (default `true`) | `created_keys[]`, `created_count`, `failed_count` |
+
+The tool loads the Test Design draft and turns each available case of a
+selected candidate into one Xray test. Manual cases become Manual tests with
+one step per action; the expected result goes on the last step. Cucumber cases
+become Cucumber tests with Gherkin steps (shared Background first, scenario
+headers removed). When `link_source_issue` is true and the draft came from a
+Jira issue, each test is linked to that issue with `XRAY_LINK_TYPE`.
+
+The pack only uses `XrayTestImporter` and neutral models from
+`domain/test_management/xray.py`. It never sees Jira custom field ids.
+`XRAY_DEPLOYMENT` selects the importer:
+
+| Deployment | API used | Schema discovery |
+| --- | --- | --- |
+| `cloud` | `POST /api/v2/authenticate` (client id and secret), then the GraphQL `createTest` mutation at `/api/v2/graphql` | `getProjectSettings(projectIdOrKey)` test types by `kind` (`Steps`, `Gherkin`) |
+| `server` | Jira `POST /rest/api/2/issue` with a Personal Access Token (reuses `JIRA_DC_BASE_URL` / `JIRA_DC_TOKEN`) | Paged `GET /rest/api/2/issue/createmeta/{project}/issuetypes[/{id}]`, finding the Xray fields by custom type key: `com.xpandit.plugins.xray:test-type-custom-field`, `…:manual-test-steps-custom-field`, `…:automated-test-type-custom-field`, `…:steps-editor-custom-field` |
+
+The discovered schema is cached per deployment, base URL, and project. On
+`server`, any other required field without a Jira default (components, fix
+versions, labels, project-specific custom fields) is filled with no
+configuration. Kernector first copies the value from the draft's source Jira
+issue, keeping it only if it matches the field's allowed values. If the field
+has exactly one allowed value, it uses that. If a field still has no value,
+nothing is created and the tool error names the field. Kernector never guesses
+a value.
+
+**Duplicates and retries.** Tests are created one at a time with no dedupe
+key, so running the tool twice creates a second set. A test Xray rejects
+(HTTP 400, GraphQL errors, missing test type) is counted in `failed_count` and
+the batch continues. Any other failure stops the batch: if nothing was created
+yet the call fails; otherwise the remaining tests are counted as failed and the
+created keys are returned. The only retry is one schema rediscovery when the
+first create is rejected with a cached schema and nothing has been created.
+Approval confirms one call. It is not idempotency.
+
+**Chat.** The tool needs human approval (`ToolApprovalPolicy`). A clear request
+such as "create xray tests" with a draft that has generated cases runs the
+agent with fixed `{draft_id}` arguments. The approval card shows the project key
+and test count, and the receipt lists the created keys.
+
+**MCP.** The same tool class is contributed through `build_mcp_tools` when
+Xray is configured and it is allowlisted in `MCP_TOOL_ALLOWLIST`. Every call
+goes through the generic MCP approval gate
+([ADR 0010](../../docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)).
+Clients without elicitation get `approval_required`, and nothing is created.
+
 ## Chat-time routing (#312)
 
 Composition injects `WorkflowSignal` probes (see
@@ -40,6 +91,7 @@ Composition injects `WorkflowSignal` probes (see
 | --- | --- | --- | --- |
 | Test Design | Command phrases (`design tests`, `test design`, …); docs/topical mentions without an Issue locator excluded | Exactly one GitHub Issue locator | Leading command without Issue (#304) |
 | Drive export | Clear or partial export/Drive language (docs/prose mentions excluded) | Clear “export … Drive” **and** draft with selected titles **and** agent loop on | Partial phrase (#310); missing titles; agent loop off (`tool_unavailable`) |
+| Xray export | Create/export/push/send/upload/publish plus “Xray” (docs/prose mentions excluded) | Draft with generated cases **and** Xray configured with the agent loop on | No generated cases (`missing_fields`); Xray not wired (`tool_unavailable`) |
 
 Handoff/`Start Test Design` actions are built **after** a ready `tool_workflow`
 decision — not as a presentation pre-ask gate.
