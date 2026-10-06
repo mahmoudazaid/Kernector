@@ -10,7 +10,7 @@ _FORBIDDEN = re.compile(
     r"risk_score|RiskScore|RiskFactor|RiskAssessment|RiskEvidence", re.IGNORECASE
 )
 _HISTORICAL_PREFIXES = ("docs/sprint-2-", "docs/sprint-3-")
-_HISTORICAL_FILES = {"data/eval/cases.json", _SELF}
+_HISTORICAL_FILES = {_SELF}
 
 
 def _tracked_files() -> list[str]:

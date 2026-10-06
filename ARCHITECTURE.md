@@ -268,8 +268,7 @@ generation, Markdown export, evidence bundle, and their run-view, HTTP, and web
 projections) was removed entirely rather than kept for provenance. The
 agent-loop Drive export path is the only pack tool run. An architecture test
 (`test/architecture/test_no_retired_risk_tool.py`) keeps the retired risk tool
-out of tracked files, except historical sprint docs and the `pack-off-risk`
-eval case.
+out of tracked files, except historical sprint docs.
 
 #### Multi-source tool flow
 
