@@ -674,6 +674,69 @@
         "title": "ExportTestDesignGoogleDriveResponse",
         "type": "object"
       },
+      "ExportTestDesignXrayRequest": {
+        "additionalProperties": false,
+        "description": "Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/xray``.",
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "link_source_issue": {
+            "default": true,
+            "title": "Link Source Issue",
+            "type": "boolean"
+          }
+        },
+        "required": ["expected_version"],
+        "title": "ExportTestDesignXrayRequest",
+        "type": "object"
+      },
+      "ExportTestDesignXrayResponse": {
+        "description": "Safe receipt: created Jira issue keys and counts only.",
+        "properties": {
+          "browse_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browse Base Url"
+          },
+          "created_count": {
+            "title": "Created Count",
+            "type": "integer"
+          },
+          "created_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Created Keys",
+            "type": "array"
+          },
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "project_key": {
+            "title": "Project Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_key",
+          "created_keys",
+          "created_count",
+          "failed_count",
+          "browse_base_url"
+        ],
+        "title": "ExportTestDesignXrayResponse",
+        "type": "object"
+      },
       "GenerateTestDesignCasesRequest": {
         "description": "Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/generate``.",
         "properties": {
@@ -2896,6 +2959,76 @@
           "selected_candidate_ids"
         ],
         "title": "TestCoverageDraftResponse",
+        "type": "object"
+      },
+      "TestDesignXrayStatusResponse": {
+        "description": "Xray availability for a draft and the tests already created from it.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "browse_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browse Base Url"
+          },
+          "created_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Created Keys",
+            "type": "array"
+          },
+          "last_created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Created At"
+          },
+          "link_issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Issue Key"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          }
+        },
+        "required": [
+          "available",
+          "project_key",
+          "created_keys",
+          "last_created_at",
+          "browse_base_url",
+          "link_issue_key"
+        ],
+        "title": "TestDesignXrayStatusResponse",
         "type": "object"
       },
       "TestTypeOverrideRequest": {
@@ -6680,6 +6813,176 @@
           }
         },
         "summary": "Export Draft Google Drive",
+        "tags": ["test-design"]
+      }
+    },
+    "/api/v1/test-design/drafts/{draft_id}/export/xray": {
+      "get": {
+        "description": "Report whether Xray export is available and what was already created.",
+        "operationId": "get_draft_xray_status_api_v1_test_design_drafts__draft_id__export_xray_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestDesignXrayStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Get Draft Xray Status",
+        "tags": ["test-design"]
+      },
+      "post": {
+        "description": "Create Xray tests from the draft's selected, generated cases.",
+        "operationId": "export_draft_xray_api_v1_test_design_drafts__draft_id__export_xray_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportTestDesignXrayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportTestDesignXrayResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "405": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Method not allowed"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Provider error"
+          }
+        },
+        "summary": "Export Draft Xray",
         "tags": ["test-design"]
       }
     },

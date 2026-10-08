@@ -481,6 +481,17 @@ class ToolAugmentedAsk:
                     response_style=request.response_style,
                     need_evidence=False,
                 )
+            elif decision.workflow_hint == "xray_export":
+                from composition.xray_export.prepare import XRAY_EXPORT_TARGET
+
+                outcome = self._runner.run(
+                    XRAY_EXPORT_TARGET,
+                    generate_tests=True,
+                    output_style="steps",
+                    conversation_id=request.conversation_id,
+                    response_style=request.response_style,
+                    need_evidence=False,
+                )
             else:
                 outcome = self._runner.run(
                     request.query,

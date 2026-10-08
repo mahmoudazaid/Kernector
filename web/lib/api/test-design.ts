@@ -127,3 +127,40 @@ export async function exportTestDesignGoogleDrive(
     timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
   } satisfies ApiRequestOptions);
 }
+
+export type ExportTestDesignXrayRequest =
+  components["schemas"]["ExportTestDesignXrayRequest"];
+export type ExportTestDesignXrayResponse =
+  components["schemas"]["ExportTestDesignXrayResponse"];
+export type TestDesignXrayStatusResponse =
+  components["schemas"]["TestDesignXrayStatusResponse"];
+
+export async function getTestDesignXrayStatus(
+  options: BaseOptions & { draftId: string },
+): Promise<TestDesignXrayStatusResponse> {
+  const request = options.request ?? apiRequest;
+  return request<TestDesignXrayStatusResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/test-design/drafts/${encodeURIComponent(options.draftId)}/export/xray`,
+    method: "GET",
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}
+
+export async function exportTestDesignXray(
+  options: BaseOptions & {
+    draftId: string;
+    body: ExportTestDesignXrayRequest;
+  },
+): Promise<ExportTestDesignXrayResponse> {
+  const request = options.request ?? apiRequest;
+  return request<ExportTestDesignXrayResponse>({
+    baseUrl: options.baseUrl,
+    path: `/api/v1/test-design/drafts/${encodeURIComponent(options.draftId)}/export/xray`,
+    method: "POST",
+    body: options.body,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? TEST_DESIGN_TIMEOUT_MS,
+  } satisfies ApiRequestOptions);
+}

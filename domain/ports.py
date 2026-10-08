@@ -20,6 +20,7 @@ from domain.knowledge import (
 )
 from domain.models import AgentTurnResult, AskResult, Message, PromptVariant
 from domain.response_feedback import ResponseFeedback, RunProvenance
+from domain.test_management.xray import XrayImportResult, XrayTestCreateSchema, XrayTestSpec
 
 
 class ChatModel(Protocol):
@@ -385,6 +386,34 @@ class ArtifactUploader(Protocol):
 
     def upload(self, artifact: Artifact, *, parent_id: str) -> ArtifactReceipt:
         """Persist ``artifact`` under ``parent_id`` and return its receipt."""
+        ...
+
+
+class XrayTestImporter(Protocol):
+    """Creates tests in the configured Xray project (#199).
+
+    Implementations never expose custom-field ids, endpoints, credentials, or
+    vendor response bodies through results or errors.
+    """
+
+    def schema(self) -> XrayTestCreateSchema:
+        """Return the project's business-level create capabilities.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Xray is unreachable or throttling.
+            ConnectorError: Discovery failed or the project cannot create tests.
+        """
+        ...
+
+    def import_tests(self, specs: Sequence[XrayTestSpec]) -> XrayImportResult:
+        """Create one Xray test per spec and report what was created.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Xray is unreachable or throttling.
+            ConnectorError: Any other create failure.
+        """
         ...
 
 

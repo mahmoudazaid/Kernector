@@ -8,7 +8,7 @@ from typing import Any
 
 from application.errors import ConfigurationError
 from application.invoke_tool import ToolRegistry
-from domain.ports import ArtifactUploader, ChatModel, Tool
+from domain.ports import ArtifactUploader, ChatModel, Tool, XrayTestImporter
 from infrastructure.config import Settings
 
 # Explicit allowlist: env pack IDs never become unchecked import paths.
@@ -46,6 +46,9 @@ def build_tool_registry(
     chat_model: ChatModel | None = None,
     export_render: ExportRender | None = None,
     export_uploader: ArtifactUploader | None = None,
+    xray_importer: XrayTestImporter | None = None,
+    xray_load_draft: Callable[[str], Any] | None = None,
+    xray_on_created: Callable[[str, tuple[str, ...]], None] | None = None,
 ) -> ToolRegistry:
     """Build a tool registry from enabled domain tool packs.
 
@@ -61,17 +64,24 @@ def build_tool_registry(
         chat_model: Optional chat collaborator for future LLM-backed tools.
         export_render: Composition #305 adapter for test-case export.
         export_uploader: Bound Google Drive ``ArtifactUploader``.
+        xray_importer: Deployment-specific Xray importer (#199).
+        xray_load_draft: Workspace-bound ``draft_id`` lookup for Xray export.
+        xray_on_created: Records the keys each Xray run created for its draft.
 
     Returns:
         Registry of tools contributed by enabled packs.
 
     Raises:
         ConfigurationError: Unknown pack ID, invalid registration target, or
-            partial export collaborator wiring.
+            partial export or Xray collaborator wiring.
     """
     if (export_render is None) ^ (export_uploader is None):
         raise ConfigurationError(
             "export_render and export_uploader must both be provided"
+        )
+    if (xray_importer is None) ^ (xray_load_draft is None):
+        raise ConfigurationError(
+            "xray_importer and xray_load_draft must both be provided"
         )
     tools: list[Tool] = []
     for pack_id in settings.domain_tools.enabled_packs:
@@ -93,6 +103,9 @@ def build_tool_registry(
                     chat_model=chat_model,
                     export_render=export_render,
                     export_uploader=export_uploader,
+                    xray_importer=xray_importer,
+                    xray_load_draft=xray_load_draft,
+                    xray_on_created=xray_on_created,
                 )
             except ValueError as exc:
                 raise ConfigurationError(str(exc)) from exc

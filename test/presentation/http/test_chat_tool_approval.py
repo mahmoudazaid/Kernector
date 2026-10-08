@@ -63,8 +63,7 @@ def test_decide_approval_returns_answer_and_cancelled_flag() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["answer"] == (
-        "Understood. I cancelled the export and did not write anything "
-        "to Google Drive."
+        "Understood. I cancelled the action and did not change anything."
     )
     assert body["cancelled"] is True
     assert body["pending_approval"] is None
@@ -72,6 +71,40 @@ def test_decide_approval_returns_answer_and_cancelled_flag() -> None:
     assert decide.last.conversation_id == "conv-1"
     assert decide.last.approval_id == "appr-9"
     assert decide.last.decision == "reject"
+
+
+@dataclass
+class _ReceiptRuntime(_StubRuntime):
+    raw: str = ""
+
+    def take_approval_result(self, approval_id: str) -> str:
+        del approval_id
+        return self.raw
+
+
+def test_approved_xray_creation_returns_a_safe_receipt() -> None:
+    decide = _StubDecide(
+        response=DecideToolApprovalResponse(turn=AgentTurnResult(content="Done."))
+    )
+    raw = '{"created_keys": ["QA-1", "QA-2"], "created_count": 2, "failed_count": 1}'
+    client = _client(_ReceiptRuntime(decide, raw=raw))
+
+    response = client.post(
+        "/api/v1/chat/threads/conv-1/approvals/appr-9",
+        json={"decision": "approve"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    receipt = "Created 2 Xray tests: QA-1, QA-2. 1 could not be created."
+    assert body["answer"] == receipt
+    [call] = body["tool_run"]["calls"]
+    assert call == {
+        "tool_name": "software_delivery.create_xray_tests",
+        "ok": True,
+        "summary": receipt,
+    }
+    assert body["tool_run"]["drive_file_id"] == ""
 
 
 def test_decide_approval_conflict_is_problem_details() -> None:

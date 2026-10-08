@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
+import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-import anyio
+import anyio.from_thread
+import anyio.to_thread
 from mcp import types
-from mcp.server.lowlevel.server import Server, ServerRequestContext
+from mcp_types.version import is_version_at_least
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel.server import Server
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -30,6 +35,7 @@ from composition.mcp.tool_registry import (
     McpToolRegistry,
     TOOL_UNAVAILABLE_CODE,
 )
+from domain.tool_approval import PendingToolApproval
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +63,125 @@ def _to_mcp_tool(descriptor: McpToolDescriptor) -> types.Tool:
     return types.Tool(
         name=descriptor.name,
         description=descriptor.description,
-        inputSchema=dict(descriptor.input_schema),
-        outputSchema=(
+        input_schema=dict(descriptor.input_schema),
+        output_schema=(
             dict(descriptor.output_schema)
             if descriptor.output_schema is not None
             else None
         ),
     )
+
+
+_INPUT_REQUIRED_VERSION = "2026-07-28"
+_APPROVAL_INPUT_KEY = "kernector_approval"
+_APPROVAL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "approve": {
+            "type": "boolean",
+            "title": "Approve",
+            "description": "Run this tool call now.",
+        }
+    },
+    "required": ["approve"],
+}
+
+
+def _approval_message(pending: PendingToolApproval) -> str:
+    lines = [pending.title, pending.summary]
+    if pending.destination_label:
+        lines.append(f"Destination: {pending.destination_label}")
+    if pending.selected_title_count is not None:
+        lines.append(f"Items: {pending.selected_title_count}")
+    return "\n".join(lines)
+
+
+def _approved(result: object) -> bool:
+    if not isinstance(result, types.ElicitResult):
+        return False
+    content = result.content or {}
+    return result.action == "accept" and content.get("approve") is True
+
+
+def _approval_binding(name: str, arguments: Mapping[str, object] | None) -> str:
+    canonical = json.dumps(
+        {"tool": name, "arguments": arguments or {}},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class _ApprovalInputRequired(Exception):
+    """Ends the first round so the handler can return an input request."""
+
+
+class _ElicitationGate:
+    """Approval gate called from the registry worker thread.
+
+    Protocol >= 2026-07-28 has no mid-call back-channel: the first round
+    records the prompt and fails closed, the handler answers with an
+    ``InputRequiredResult``, and the retry carries the user's answer. A retry
+    answer only counts when ``request_state`` matches this exact call.
+    """
+
+    def __init__(
+        self,
+        ctx: ServerRequestContext[Any],
+        params: types.CallToolRequestParams,
+        arguments: Mapping[str, object] | None,
+    ) -> None:
+        self._ctx = ctx
+        self._binding = _approval_binding(params.name, arguments)
+        self._answer = (params.input_responses or {}).get(_APPROVAL_INPUT_KEY)
+        self._request_state = params.request_state
+        self._input_required = is_version_at_least(
+            ctx.protocol_version or "", _INPUT_REQUIRED_VERSION
+        )
+        self.pending: PendingToolApproval | None = None
+
+    def __call__(self, pending: PendingToolApproval) -> bool:
+        if not self._input_required:
+            return anyio.from_thread.run(self._ask, pending)
+        if self._answer is not None and self._request_state == self._binding:
+            return _approved(self._answer)
+        self.pending = pending
+        raise _ApprovalInputRequired
+
+    async def _ask(self, pending: PendingToolApproval) -> bool:
+        result = await self._ctx.session.elicit_form(
+            _approval_message(pending),
+            _APPROVAL_SCHEMA,
+            related_request_id=self._ctx.request_id,
+        )
+        return _approved(result)
+
+    def input_required(self) -> types.InputRequiredResult | None:
+        if self.pending is None:
+            return None
+        request = types.ElicitRequest(
+            params=types.ElicitRequestFormParams(
+                message=_approval_message(self.pending),
+                requested_schema=_APPROVAL_SCHEMA,
+            )
+        )
+        return types.InputRequiredResult(
+            input_requests={_APPROVAL_INPUT_KEY: request},
+            request_state=self._binding,
+        )
+
+
+def _elicitation_gate(
+    ctx: ServerRequestContext[Any],
+    params: types.CallToolRequestParams,
+    arguments: Mapping[str, object] | None,
+) -> _ElicitationGate | None:
+    """Return an approval gate, or None when the client cannot elicit."""
+    capability = types.ClientCapabilities(elicitation=types.ElicitationCapability())
+    if not ctx.session.check_client_capability(capability):
+        return None
+    return _ElicitationGate(ctx, params, arguments)
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
@@ -140,7 +258,7 @@ def build_mcp_server(
     async def on_call_tool(
         ctx: ServerRequestContext[Any],
         params: types.CallToolRequestParams,
-    ) -> types.CallToolResult:
+    ) -> types.CallToolResult | types.InputRequiredResult:
         try:
             caller = resolver.resolve(ctx.request)
         except MissingCallerContextError:
@@ -164,12 +282,17 @@ def build_mcp_server(
             arguments = dict(raw_args)
         else:
             arguments = {}
+        gate = _elicitation_gate(ctx, params, arguments)
         result = await anyio.to_thread.run_sync(
             registry.invoke_authorized,
             caller,
             params.name,
             arguments,
+            gate,
         )
+        input_required = None if gate is None else gate.input_required()
+        if input_required is not None:
+            return input_required
         return _to_call_tool_result(result)
 
     return Server(

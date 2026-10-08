@@ -57,6 +57,7 @@ from composition.errors import (
 from composition.software_delivery.chat import ToolRunFailedError
 from composition.test_design.errors import (
     TestDesignEvidenceChangedError,
+    TestDesignExportFailedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,
     TestDesignValidationError,
@@ -392,6 +393,15 @@ def problem_from_exception(
             title="Test design version conflict",
             status=409,
             detail=_TEST_DESIGN_VERSION_CONFLICT_DETAIL,
+            instance=instance,
+            request_id=request_id,
+        )
+    if isinstance(exc, TestDesignExportFailedError):
+        return _problem(
+            code="xray_export_failed",
+            title="Xray export failed",
+            status=502,
+            detail=str(exc),
             instance=instance,
             request_id=request_id,
         )

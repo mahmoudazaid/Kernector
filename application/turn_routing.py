@@ -55,7 +55,7 @@ REASON_CODES: frozenset[str] = frozenset(
 )
 REASON_CODES_DISPLAY = str(sorted(REASON_CODES))
 
-WORKFLOW_HINTS: frozenset[str] = frozenset({"test_design", "drive_export"})
+WORKFLOW_HINTS: frozenset[str] = frozenset({"test_design", "drive_export", "xray_export"})
 WORKFLOW_HINTS_DISPLAY = str(sorted(WORKFLOW_HINTS))
 
 

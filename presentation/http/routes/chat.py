@@ -116,10 +116,7 @@ def decide_tool_approval(
         tool_view = _tool_run_view_from_approval_result(raw_result)
 
     if result.cancelled:
-        answer = (
-            "Understood. I cancelled the export and did not write anything "
-            "to Google Drive."
-        )
+        answer = "Understood. I cancelled the action and did not change anything."
     elif result.pending_approval is not None:
         answer = result.turn.content
     elif tool_view is not None and tool_view.drive_file_id:
@@ -127,6 +124,8 @@ def decide_tool_approval(
             "Export finished. The Markdown file is in your Google Drive "
             "destination."
         )
+    elif tool_view is not None and tool_view.calls[0].tool_name == _XRAY_TOOL:
+        answer = tool_view.summary
     else:
         # Prefer the resumed turn text so we never claim success after a no-op.
         answer = result.turn.content
@@ -139,12 +138,16 @@ def decide_tool_approval(
     )
 
 
+_XRAY_TOOL = "software_delivery.create_xray_tests"
+
+
 def _tool_run_view_from_approval_result(raw: str):
-    """Best-effort Drive receipt projection from a resumed tool JSON string."""
+    """Best-effort Drive or Xray receipt projection from a resumed tool JSON string."""
     import json
 
     from composition.software_delivery.tools import SoftwareDeliveryRunView
     from composition.tools.runs import ToolCallView
+    from composition.xray_export.receipt import xray_receipt_summary
 
     try:
         payload = json.loads(raw)
@@ -152,6 +155,17 @@ def _tool_run_view_from_approval_result(raw: str):
         return None
     if not isinstance(payload, dict):
         return None
+    created_keys = payload.get("created_keys")
+    if isinstance(created_keys, list):
+        failed = payload.get("failed_count")
+        receipt = xray_receipt_summary(
+            tuple(key for key in created_keys if isinstance(key, str)),
+            failed if isinstance(failed, int) and not isinstance(failed, bool) else 0,
+        )
+        return SoftwareDeliveryRunView(
+            summary=receipt,
+            calls=(ToolCallView(_XRAY_TOOL, ok=True, summary=receipt),),
+        )
     file_id = payload.get("file_id")
     file_name = payload.get("file_name")
     if not isinstance(file_id, str) and not isinstance(file_name, str):
