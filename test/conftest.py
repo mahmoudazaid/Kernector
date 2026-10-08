@@ -26,3 +26,4 @@ def _isolate_settings_from_dotenv(
     monkeypatch.delenv("DOCUMENT_CATALOG_PATH", raising=False)
     monkeypatch.delenv("JIRA_DC_BASE_URL", raising=False)
     monkeypatch.delenv("JIRA_DC_TOKEN", raising=False)
+    monkeypatch.delenv("XRAY_DEPLOYMENT", raising=False)

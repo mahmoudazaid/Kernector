@@ -9,7 +9,10 @@ from typing import Literal
 Decision = Literal["approve", "reject"]
 
 _DEFAULT_ALLOWLIST = frozenset(
-    {"software_delivery.export_test_cases_google_drive"}
+    {
+        "software_delivery.export_test_cases_google_drive",
+        "software_delivery.create_xray_tests",
+    }
 )
 
 

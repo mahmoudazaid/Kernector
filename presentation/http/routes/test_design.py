@@ -20,6 +20,9 @@ from presentation.http.schemas import (
     ExpectedVersionRequest,
     ExportTestDesignGoogleDriveRequest,
     ExportTestDesignGoogleDriveResponse,
+    ExportTestDesignXrayRequest,
+    ExportTestDesignXrayResponse,
+    TestDesignXrayStatusResponse,
     GenerateTestDesignCasesRequest,
     PatchTestDesignDraftRequest,
     TestCoverageDraftResponse,
@@ -185,4 +188,48 @@ def export_draft_google_drive(
     return ExportTestDesignGoogleDriveResponse(
         file_id=receipt.file_id,
         file_name=receipt.file_name,
+    )
+
+
+@router.get(
+    "/drafts/{draft_id}/export/xray",
+    responses=problem_responses(404, 405, 500),
+)
+def get_draft_xray_status(
+    draft_id: str,
+    facade: TestDesignFacadeDep,
+) -> TestDesignXrayStatusResponse:
+    """Report whether Xray export is available and what was already created."""
+    status = facade.xray_export_status(draft_id)
+    return TestDesignXrayStatusResponse(
+        available=status.available,
+        project_key=status.project_key,
+        created_keys=list(status.created_keys),
+        last_created_at=status.last_created_at,
+        browse_base_url=status.browse_base_url,
+        link_issue_key=status.link_issue_key,
+    )
+
+
+@router.post(
+    "/drafts/{draft_id}/export/xray",
+    responses=problem_responses(404, 405, 409, 422, 500, 502),
+)
+def export_draft_xray(
+    draft_id: str,
+    body: ExportTestDesignXrayRequest,
+    facade: TestDesignFacadeDep,
+) -> ExportTestDesignXrayResponse:
+    """Create Xray tests from the draft's selected, generated cases."""
+    receipt = facade.export_to_xray(
+        draft_id,
+        expected_version=body.expected_version,
+        link_source_issue=body.link_source_issue,
+    )
+    return ExportTestDesignXrayResponse(
+        project_key=receipt.project_key,
+        created_keys=list(receipt.created_keys),
+        created_count=len(receipt.created_keys),
+        failed_count=receipt.failed_count,
+        browse_base_url=receipt.browse_base_url,
     )

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from application.contracts import (
     Citation,
@@ -771,6 +771,38 @@ class ExportTestDesignGoogleDriveResponse(BaseModel):
 
     file_id: str
     file_name: str
+
+
+class ExportTestDesignXrayRequest(BaseModel):
+    """Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/xray``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    link_source_issue: bool = True
+
+
+class ExportTestDesignXrayResponse(BaseModel):
+    """Safe receipt: created Jira issue keys and counts only."""
+
+    project_key: str
+    created_keys: list[str]
+    created_count: int
+    failed_count: int
+    browse_base_url: str | None
+
+
+class TestDesignXrayStatusResponse(BaseModel):
+    """Xray availability for a draft and the tests already created from it."""
+
+    __test__ = False
+
+    available: bool
+    project_key: str | None
+    created_keys: list[str]
+    last_created_at: str | None
+    browse_base_url: str | None
+    link_issue_key: str | None
 
 
 class ChatExportDestinationRequest(BaseModel):

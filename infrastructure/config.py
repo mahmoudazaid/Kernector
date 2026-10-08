@@ -427,6 +427,34 @@ class JiraDataCenterSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class XraySettings:
+    """Xray test creation; disabled unless ``XRAY_DEPLOYMENT`` is set.
+
+    Cloud uses client credentials; Server/Data Center reuses ``JIRA_DC_*``. The
+    client secret is never returned on HTTP responses or logged.
+    """
+
+    deployment: str | None = None
+    project_key: str | None = None
+    link_type: str = "Test"
+    client_id: str | None = None
+    client_secret: str | None = None
+    cloud_base_url: str = "https://xray.cloud.getxray.app"
+
+    @property
+    def configured(self) -> bool:
+        return self.deployment is not None and self.project_key is not None
+
+    def __repr__(self) -> str:
+        return (
+            "XraySettings("
+            f"deployment={self.deployment!r}, project_key={self.project_key!r}, "
+            f"link_type={self.link_type!r}, client_id={self.client_id!r}, "
+            f"client_secret='***', cloud_base_url={self.cloud_base_url!r})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     provider: str
     max_input_length: int
@@ -450,6 +478,7 @@ class Settings:
     jira: JiraSettings = field(default_factory=JiraSettings)
     jira_oauth: JiraOAuthSettings = field(default_factory=JiraOAuthSettings)
     jira_data_center: JiraDataCenterSettings | None = None
+    xray: XraySettings = field(default_factory=XraySettings)
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
@@ -505,6 +534,7 @@ def load_settings() -> Settings:
         jira=_load_jira_settings(),
         jira_oauth=jira_oauth,
         jira_data_center=jira_data_center,
+        xray=_load_xray_settings(jira_data_center),
     )
 
 
@@ -1116,6 +1146,69 @@ def _load_jira_data_center_settings() -> JiraDataCenterSettings | None:
             "JIRA_DC_ACCEPTANCE_CRITERIA_FIELD"
         ),
     )
+
+
+_XRAY_DEPLOYMENTS = frozenset({"cloud", "server"})
+_JIRA_PROJECT_KEY = re.compile(r"[A-Z][A-Z0-9_]*")
+
+
+def _load_xray_settings(jira_data_center: JiraDataCenterSettings | None) -> XraySettings:
+    """Parse ``XRAY_*``; an unset ``XRAY_DEPLOYMENT`` keeps Xray disabled."""
+    raw_deployment = _optional_env("XRAY_DEPLOYMENT")
+    if raw_deployment is None:
+        return XraySettings()
+    deployment = raw_deployment.strip().lower()
+    if deployment not in _XRAY_DEPLOYMENTS:
+        raise ValueError("XRAY_DEPLOYMENT must be 'cloud' or 'server'")
+    project_key = _optional_env("XRAY_PROJECT_KEY")
+    if project_key is None:
+        raise ValueError("XRAY_PROJECT_KEY is required when XRAY_DEPLOYMENT is set")
+    project_key = project_key.strip()
+    if _JIRA_PROJECT_KEY.fullmatch(project_key) is None:
+        raise ValueError("XRAY_PROJECT_KEY must be a Jira project key such as QA")
+    link_type = os.getenv("XRAY_LINK_TYPE", "Test").strip()
+    if deployment == "server":
+        if jira_data_center is None or not jira_data_center.configured:
+            raise ValueError(
+                "XRAY_DEPLOYMENT=server requires JIRA_DC_BASE_URL and JIRA_DC_TOKEN"
+            )
+        return XraySettings(deployment=deployment, project_key=project_key, link_type=link_type)
+    client_id = _optional_env("XRAY_CLIENT_ID")
+    client_secret = _optional_env("XRAY_CLIENT_SECRET")
+    if client_id is None:
+        raise ValueError("XRAY_CLIENT_ID is required when XRAY_DEPLOYMENT=cloud")
+    if client_secret is None:
+        raise ValueError("XRAY_CLIENT_SECRET is required when XRAY_DEPLOYMENT=cloud")
+    raw_base_url = _optional_env("XRAY_CLOUD_BASE_URL")
+    return XraySettings(
+        deployment=deployment,
+        project_key=project_key,
+        link_type=link_type,
+        client_id=client_id,
+        client_secret=client_secret,
+        cloud_base_url=(
+            _require_xray_cloud_base_url(raw_base_url)
+            if raw_base_url
+            else XraySettings().cloud_base_url
+        ),
+    )
+
+
+def _require_xray_cloud_base_url(raw: str) -> str:
+    parsed = urlparse(raw)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or "?" in raw
+        or "#" in raw
+    ):
+        raise ValueError(
+            "XRAY_CLOUD_BASE_URL must be an absolute https URL without credentials, "
+            "query, or fragment"
+        )
+    return raw.rstrip("/")
 
 
 _JIRA_CUSTOM_FIELD = re.compile(r"customfield_\d+")

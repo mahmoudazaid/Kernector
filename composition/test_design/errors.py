@@ -41,3 +41,13 @@ class TestDesignEvidenceChangedError(RuntimeError):
     """Live Issue evidence no longer matches the confirmed draft fingerprint."""
 
     __test__ = False
+
+
+class TestDesignExportFailedError(RuntimeError):
+    """An export destination refused or failed the export.
+
+    The message is fixed, secret-free text (it may name required Jira fields)
+    and is safe to show to the user.
+    """
+
+    __test__ = False

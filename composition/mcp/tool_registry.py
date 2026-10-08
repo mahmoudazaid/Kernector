@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -24,12 +25,25 @@ from domain.errors import (
     ToolVersionConflictError,
 )
 from domain.ports import Tool
+from domain.tool_approval import (
+    PendingToolApproval,
+    ToolApprovalPolicy,
+    project_pending_approval,
+)
 
 logger = logging.getLogger(__name__)
 
 TOOL_UNAVAILABLE_CODE = "tool_unavailable"
 GENERIC_ERROR_CODE = "internal_error"
 VALIDATION_ERROR_CODE = "validation_error"
+APPROVAL_REQUIRED_CODE = "approval_required"
+APPROVAL_DECLINED_CODE = "approval_declined"
+# A tool may set an optional ``approval_hints(arguments)`` method (not on the
+# ``Tool`` port) returning ``ApprovalHints`` for the approval prompt. It only
+# runs for tools the approval policy lists (ADR 0010).
+
+# Presentation-owned approval gate: returns True only on explicit approval.
+McpApprovalGate = Callable[[PendingToolApproval], bool]
 # An args schema may raise ``PydanticCustomError(SAFE_VALIDATION_ERROR_TYPE,
 # message)`` with a fixed message that never interpolates input; only that
 # message replaces the generic validation text.
@@ -154,6 +168,14 @@ def _safe_failure(code: str, message: str, hint: str | None = None) -> McpInvoke
     )
 
 
+def _approval_required() -> McpInvokeResult:
+    return _safe_failure(APPROVAL_REQUIRED_CODE, "Human approval is required for this tool")
+
+
+def _approval_declined() -> McpInvokeResult:
+    return _safe_failure(APPROVAL_DECLINED_CODE, "The tool call was not approved")
+
+
 def _generic_error() -> McpInvokeResult:
     payload = {"code": GENERIC_ERROR_CODE, "message": "Tool invocation failed"}
     return McpInvokeResult(
@@ -199,6 +221,7 @@ class McpToolRegistry:
         *,
         contributions: Sequence[McpToolContribution],
         enabled_packs: Sequence[str],
+        approval_policy: ToolApprovalPolicy | None = None,
     ) -> None:
         by_id: dict[str, McpToolContribution] = {}
         id_by_name: dict[str, str] = {}
@@ -218,6 +241,7 @@ class McpToolRegistry:
             enabled_packs=frozenset(enabled_packs),
             tool_pack=tool_pack,
         )
+        self._approval_policy = approval_policy or ToolApprovalPolicy()
 
     def list_effective(self, caller: McpCallerContext) -> tuple[McpToolDescriptor, ...]:
         """Return descriptors for tools effective for *caller*."""
@@ -254,10 +278,13 @@ class McpToolRegistry:
         caller: McpCallerContext,
         tool_id: str,
         arguments: Mapping[str, object] | None,
+        approve: McpApprovalGate | None = None,
     ) -> McpInvokeResult:
-        """Atomically authorize, validate, and invoke *tool_id*.
+        """Atomically authorize, validate, approve, and invoke *tool_id*.
 
         *tool_id* may be the dotted registry id or its advertised MCP name.
+        Tools the approval policy lists run only after *approve* returns True;
+        a missing or failing gate fails closed (ADR 0010).
         """
         tool_id = self._id_by_name.get(tool_id, tool_id)
         if not self._policy.is_effective(caller, tool_id):
@@ -275,22 +302,14 @@ class McpToolRegistry:
                 args_schema.model_validate(args)
             except Exception as error:
                 return _schema_validation_error(error)
+        if self._approval_policy.requires_approval(tool_id):
+            denied = self._approve(caller, tool_id, tool, args, approve)
+            if denied is not None:
+                return denied
         try:
             result = tool.run(args)
-        except ToolArgumentValidationError:
-            return _validation_error()
-        except ToolFailureError as error:
-            if type(error) is ToolUnavailableError:
-                return _tool_unavailable()
-            safe = _SAFE_FAILURES.get(type(error))
-            if safe is not None:
-                logger.info("mcp_tool_outcome tool=%s code=%s", tool_id, safe[0])
-                return _safe_failure(*safe, self._failure_hint(caller, tool, safe[0]))
-            logger.info("mcp_tool_failure tool=%s", tool_id)
-            return _generic_error()
-        except Exception:
-            logger.exception("mcp_tool_unexpected tool=%s", tool_id)
-            return _generic_error()
+        except Exception as error:
+            return self._failure(caller, tool_id, tool, error)
         if not isinstance(result, str):
             logger.error("mcp_tool_non_string tool=%s", tool_id)
             return _generic_error()
@@ -307,3 +326,58 @@ class McpToolRegistry:
                 logger.exception("mcp_tool_output_invalid tool=%s", tool_id)
                 return _generic_error()
         return McpInvokeResult(is_error=False, text=result, structured=structured)
+
+    def _approve(
+        self,
+        caller: McpCallerContext,
+        tool_id: str,
+        tool: Tool,
+        args: Mapping[str, object],
+        approve: McpApprovalGate | None,
+    ) -> McpInvokeResult | None:
+        if approve is None:
+            logger.info("mcp_tool_approval tool=%s outcome=required", tool_id)
+            return _approval_required()
+        hints_for = getattr(tool, "approval_hints", None)
+        try:
+            hints = hints_for(args) if callable(hints_for) else None
+        except Exception as error:
+            return self._failure(caller, tool_id, tool, error)
+        pending = project_pending_approval(
+            approval_id=uuid.uuid4().hex,
+            tool_name=tool_id,
+            arguments={},
+            hints=hints,
+        )
+        try:
+            approved = approve(pending) is True
+        except Exception:
+            logger.info("mcp_tool_approval tool=%s outcome=gate_unavailable", tool_id)
+            return _approval_required()
+        logger.info(
+            "mcp_tool_approval tool=%s outcome=%s",
+            tool_id,
+            "approved" if approved else "declined",
+        )
+        return None if approved else _approval_declined()
+
+    def _failure(
+        self,
+        caller: McpCallerContext,
+        tool_id: str,
+        tool: Tool,
+        error: Exception,
+    ) -> McpInvokeResult:
+        if isinstance(error, ToolArgumentValidationError):
+            return _validation_error()
+        if isinstance(error, ToolFailureError):
+            if type(error) is ToolUnavailableError:
+                return _tool_unavailable()
+            safe = _SAFE_FAILURES.get(type(error))
+            if safe is not None:
+                logger.info("mcp_tool_outcome tool=%s code=%s", tool_id, safe[0])
+                return _safe_failure(*safe, self._failure_hint(caller, tool, safe[0]))
+            logger.info("mcp_tool_failure tool=%s", tool_id)
+            return _generic_error()
+        logger.exception("mcp_tool_unexpected tool=%s", tool_id, exc_info=error)
+        return _generic_error()

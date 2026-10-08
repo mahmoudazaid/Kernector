@@ -73,7 +73,10 @@ def _routed_factory(
             grounded_ask,  # type: ignore[arg-type]
             runner=tool_runner,  # type: ignore[arg-type]
             signals=(
-                build_test_design_workflow_signal(enabled=True),
+                build_test_design_workflow_signal(
+                    enabled=True,
+                    extract_locator=build_test_design_sources(settings).extract_locator,
+                ),
                 build_drive_export_workflow_signal(
                     export_enabled=export_enabled,
                     draft_ready=lambda _cid: draft_ready,

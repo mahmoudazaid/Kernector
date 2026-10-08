@@ -7,10 +7,13 @@ import type { RuntimeSettingsResponse } from "@/lib/api/settings";
 import {
   confirmTestDesignDraft,
   exportTestDesignGoogleDrive,
+  exportTestDesignXray,
   generateTestDesignCases,
   getTestDesignDraft,
+  getTestDesignXrayStatus,
   patchTestDesignDraft,
   type TestCoverageDraftResponse,
+  type TestDesignXrayStatusResponse,
 } from "@/lib/api/test-design";
 import { SETTINGS_CATALOG_UNAVAILABLE } from "@/lib/settings/use-runtime-catalog";
 
@@ -24,10 +27,26 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/api/test-design", () => ({
   confirmTestDesignDraft: vi.fn(),
   exportTestDesignGoogleDrive: vi.fn(),
+  exportTestDesignXray: vi.fn(),
   generateTestDesignCases: vi.fn(),
   getTestDesignDraft: vi.fn(),
+  getTestDesignXrayStatus: vi.fn(),
   patchTestDesignDraft: vi.fn(),
 }));
+
+function xrayStatus(
+  overrides: Partial<TestDesignXrayStatusResponse> = {},
+): TestDesignXrayStatusResponse {
+  return {
+    available: true,
+    project_key: "OIE",
+    created_keys: [],
+    last_created_at: null,
+    browse_base_url: "https://jira.example.com/browse/",
+    link_issue_key: "OIE-721",
+    ...overrides,
+  };
+}
 
 vi.mock("@/components/documents/GoogleDrivePicker", () => ({
   GoogleDrivePicker: ({
@@ -242,6 +261,91 @@ describe("TestDesignWorkspace", () => {
     vi.mocked(exportTestDesignGoogleDrive).mockResolvedValue({
       file_id: "drive-1",
       file_name: "mahmoudazaid-Kernector-293.md",
+    });
+    vi.mocked(exportTestDesignXray).mockReset();
+    vi.mocked(getTestDesignXrayStatus).mockReset();
+    vi.mocked(getTestDesignXrayStatus).mockResolvedValue(
+      xrayStatus({ available: false, project_key: null }),
+    );
+  });
+
+  describe("Create in Xray", () => {
+    it("hides the button when Xray is not configured", async () => {
+      await renderStepsWorkspace();
+
+      await waitFor(() => expect(getTestDesignXrayStatus).toHaveBeenCalled());
+      expect(
+        screen.queryByRole("button", { name: /create in xray/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("confirms project, count, and story, then shows Jira links", async () => {
+      const user = userEvent.setup();
+      vi.mocked(getTestDesignXrayStatus).mockResolvedValue(xrayStatus());
+      vi.mocked(exportTestDesignXray).mockResolvedValue({
+        project_key: "OIE",
+        created_keys: ["OIE-801"],
+        created_count: 1,
+        failed_count: 0,
+        browse_base_url: "https://jira.example.com/browse/",
+      });
+      await renderStepsWorkspace();
+
+      await user.click(await screen.findByRole("button", { name: /create in xray/i }));
+      const dialog = await screen.findByRole("dialog", { name: /create xray tests/i });
+      expect(dialog).toHaveTextContent(/1 test in OIE/i);
+      expect(dialog).toHaveTextContent(/OIE-721/);
+      expect(dialog).not.toHaveTextContent(/already created/i);
+      await user.click(within(dialog).getByRole("button", { name: /^create$/i }));
+
+      expect(exportTestDesignXray).toHaveBeenCalledWith(
+        expect.objectContaining({
+          draftId: "draft-1",
+          body: { expected_version: 3, link_source_issue: true },
+        }),
+      );
+      const link = await screen.findByRole("link", { name: "OIE-801" });
+      expect(link).toHaveAttribute("href", "https://jira.example.com/browse/OIE-801");
+    });
+
+    it("warns before creating the same tests again", async () => {
+      const user = userEvent.setup();
+      vi.mocked(getTestDesignXrayStatus).mockResolvedValue(
+        xrayStatus({
+          created_keys: ["OIE-801", "OIE-802"],
+          last_created_at: "2026-10-08T09:00:00+00:00",
+        }),
+      );
+      await renderStepsWorkspace();
+
+      await user.click(await screen.findByRole("button", { name: /create in xray/i }));
+      const dialog = await screen.findByRole("dialog", { name: /create xray tests/i });
+      expect(dialog).toHaveTextContent(/already created OIE-801, OIE-802/i);
+      expect(
+        within(dialog).getByRole("button", { name: /create again/i }),
+      ).toBeInTheDocument();
+      await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
+      expect(exportTestDesignXray).not.toHaveBeenCalled();
+    });
+
+    it("shows the server's reason when Xray rejects the export", async () => {
+      const user = userEvent.setup();
+      vi.mocked(getTestDesignXrayStatus).mockResolvedValue(xrayStatus());
+      vi.mocked(exportTestDesignXray).mockRejectedValueOnce(
+        new ApiError({
+          status: 502,
+          title: "Xray export failed",
+          detail: "The Xray project requires Jira fields: Component/s",
+          code: "xray_export_failed",
+        }),
+      );
+      await renderStepsWorkspace();
+
+      await user.click(await screen.findByRole("button", { name: /create in xray/i }));
+      const dialog = await screen.findByRole("dialog", { name: /create xray tests/i });
+      await user.click(within(dialog).getByRole("button", { name: /^create$/i }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/component\/s/i);
     });
   });
 

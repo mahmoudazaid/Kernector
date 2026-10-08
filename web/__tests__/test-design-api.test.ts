@@ -1,8 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createTestDesignDraft,
+  exportTestDesignXray,
+  getTestDesignXrayStatus,
   TEST_DESIGN_TIMEOUT_MS,
 } from "@/lib/api/test-design";
+
+describe("Xray export client", () => {
+  it("GETs the draft's Xray status", async () => {
+    const request = vi.fn().mockResolvedValue({ available: true });
+
+    await getTestDesignXrayStatus({
+      baseUrl: "http://127.0.0.1:8000",
+      draftId: "draft 1",
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/api/v1/test-design/drafts/draft%201/export/xray",
+        method: "GET",
+      }),
+    );
+  });
+
+  it("POSTs the expected version and link choice", async () => {
+    const request = vi.fn().mockResolvedValue({ created_keys: [] });
+
+    await exportTestDesignXray({
+      baseUrl: "http://127.0.0.1:8000",
+      draftId: "draft-1",
+      body: { expected_version: 3, link_source_issue: false },
+      request,
+    });
+
+    expect(request).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:8000",
+      path: "/api/v1/test-design/drafts/draft-1/export/xray",
+      method: "POST",
+      body: { expected_version: 3, link_source_issue: false },
+      signal: undefined,
+      timeoutMs: TEST_DESIGN_TIMEOUT_MS,
+    });
+  });
+});
 
 describe("createTestDesignDraft", () => {
   it("POSTs with a long default timeout so LLM create is not cut off", async () => {

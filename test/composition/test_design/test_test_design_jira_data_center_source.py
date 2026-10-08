@@ -240,6 +240,15 @@ def test_extraction_only_takes_bare_keys_from_selected_projects(env: Env) -> Non
     assert source.extract_locator("Design tests for UTF-8 handling") is None
 
 
+def test_lowercase_keys_of_selected_projects_are_extracted_uppercased(env: Env) -> None:
+    env.select("ENG")
+    source = env.source()
+
+    assert source.extract_locator("start test design eng-7") == "ENG-7"
+    assert source.extract_locator("start test design ops-3") is None
+    assert source.extract_locator("Design tests for utf-8 handling") is None
+
+
 def test_without_a_saved_selection_no_bare_key_is_extracted(env: Env) -> None:
     assert env.source().extract_locator("Design tests for ENG-7") is None
 

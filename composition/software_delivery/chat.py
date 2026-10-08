@@ -24,6 +24,7 @@ from application.retrieval_citation_channel import RetrievalCitationChannel
 from composition.software_delivery.tools import SoftwareDeliveryRunView
 from composition.chat.tool_augmented_ask import ToolRunOutcome
 from composition.tools.runs import ToolCallView
+from composition.xray_export.receipt import xray_receipt_summary
 from domain.errors import DomainValidationError
 from domain.knowledge import ScoredChunk
 
@@ -49,6 +50,7 @@ SOFTWARE_DELIVERY_TEST_STYLES: tuple[str, ...] = ("steps", "gherkin")
 # Tool name duplicated from the pack so projection can author ToolCallView
 # entries without importing packs at module scope.
 _DRIVE_EXPORT_TOOL = "software_delivery.export_test_cases_google_drive"
+_XRAY_TOOL = "software_delivery.create_xray_tests"
 
 _UNKNOWN_OUTCOME_MESSAGE = "The tool run produced an unrecognised result."
 _TOOL_RUN_FAILED_MESSAGE = "A tool failed during the run."
@@ -156,6 +158,10 @@ def tool_run_answer(
     for outcome in response.outcomes:
         if getattr(outcome, "outcome", None) == "export_destination_required":
             continue
+        xray_summary = _xray_summary(outcome)
+        if xray_summary is not None:
+            sections.append(xray_summary)
+            continue
         file_id = getattr(outcome, "file_id", None)
         file_name = getattr(outcome, "file_name", None)
         if file_id is not None or file_name is not None:
@@ -166,6 +172,19 @@ def tool_run_answer(
             _UNKNOWN_OUTCOME_MESSAGE, tool_outputs=tool_outputs
         )
     return "\n\n".join(sections)
+
+
+def _xray_summary(outcome: object) -> str | None:
+    keys = getattr(outcome, "created_keys", None)
+    if not isinstance(keys, tuple):
+        return None
+    failed = getattr(outcome, "failed_count", 0)
+    project_key = getattr(outcome, "project_key", None)
+    return xray_receipt_summary(
+        tuple(key for key in keys if isinstance(key, str)),
+        failed if isinstance(failed, int) and not isinstance(failed, bool) else 0,
+        project_key if isinstance(project_key, str) else None,
+    )
 
 
 def project_software_delivery_run_view(
@@ -191,6 +210,11 @@ def project_software_delivery_run_view(
     for outcome in response.outcomes:
         if getattr(outcome, "outcome", None) == "export_destination_required":
             export_destination_required = True
+            continue
+
+        xray_summary = _xray_summary(outcome)
+        if xray_summary is not None:
+            calls.append(ToolCallView(_XRAY_TOOL, ok=True, summary=xray_summary))
             continue
 
         file_id = getattr(outcome, "file_id", None)

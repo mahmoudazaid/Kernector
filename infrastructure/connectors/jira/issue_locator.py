@@ -13,8 +13,11 @@ from urllib.parse import urlsplit
 
 _KEY = r"[A-Z][A-Z0-9_]+-[1-9][0-9]*"
 _KEY_PATTERN = re.compile(_KEY)
-# Bare keys in prose: uppercase only, never inside a path, ref or longer token.
-_BARE_KEY_IN_TEXT = re.compile(rf"(?<![A-Za-z0-9_/#.\-])(?P<key>{_KEY})(?![A-Za-z0-9_\-])")
+# Bare keys in prose: any case (only selected projects are taken), never inside
+# a path, ref or longer token.
+_BARE_KEY_IN_TEXT = re.compile(
+    rf"(?<![A-Za-z0-9_/#.\-])(?P<key>{_KEY})(?![A-Za-z0-9_\-])", re.IGNORECASE
+)
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>()\[\]{}\"'`]+", re.IGNORECASE)
 _TRAILING_PUNCTUATION = ".,;:!?"
 _DEFAULT_PORTS = {"https": 443, "http": 80}
@@ -80,7 +83,8 @@ def extract_jira_issue_locator(
     """Extract exactly one issue from free text.
 
     Browse URLs of the configured instance are extracted regardless of
-    ``project_keys``; bare uppercase keys only when their project is listed.
+    ``project_keys``; bare keys (any case, returned uppercase) only when their
+    project is listed.
     Duplicate mentions are accepted; several distinct issues raise
     ``AmbiguousJiraIssueLocatorError``.
     """
@@ -93,7 +97,7 @@ def extract_jira_issue_locator(
             found.add(key)
     allowed = {project.upper() for project in project_keys}
     for match in _BARE_KEY_IN_TEXT.finditer(text):
-        key = match.group("key")
+        key = match.group("key").upper()
         if key.rsplit("-", 1)[0] in allowed:
             found.add(key)
     if len(found) > 1:

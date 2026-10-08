@@ -770,14 +770,60 @@ def build_invoke_tool(
                 settings.google_oauth.token_path
             ),
         )
+    xray_importer, xray_load_draft = _xray_tool_collaborators(settings)
     return InvokeTool(
         build_tool_registry(
             settings,
             chat_model=chat_model,
             export_render=export_render,
             export_uploader=export_uploader,
+            xray_importer=xray_importer,
+            xray_load_draft=xray_load_draft,
+            xray_on_created=(
+                None if xray_importer is None else _xray_receipt_recorder(settings)
+            ),
         )
     )
+
+
+def _xray_tool_collaborators(settings: Settings):
+    """Return ``(importer, load_draft)`` for Xray export, or ``(None, None)``."""
+    if (
+        "software-delivery" not in settings.domain_tools.enabled_packs
+        or not settings.xray.configured
+    ):
+        return None, None
+    try:
+        _require_workspace_id(settings)
+    except ConfigurationError as error:
+        logger.warning("Xray test creation disabled: %s", error)
+        return None, None
+    from composition.xray_export.wiring import build_xray_importer
+
+    importer = build_xray_importer(settings)
+    if importer is None:
+        return None, None
+
+    def load_draft(draft_id: str):
+        return _agent_draft_repository(settings).get(draft_id)
+
+    return importer, load_draft
+
+
+def _xray_receipt_recorder(settings: Settings):
+    """Record keys created by chat and MCP runs where the Test Design page reads them."""
+    from composition.xray_export.receipt_store import (
+        VersionedXrayReceiptRepository,
+        receipt_recorder,
+    )
+    from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+
+    repository = VersionedXrayReceiptRepository(
+        VersionedWorkspaceStore(
+            _workspace_store_path(settings), _require_workspace_id(settings)
+        )
+    )
+    return receipt_recorder(repository, project_key=settings.xray.project_key or "")
 
 def build_opaque_invoke(
     settings: Settings, *, chat_model: ChatModel | None = None
@@ -895,6 +941,7 @@ def build_tool_augmented_ask(
     from composition.chat.workflow_signals import (
         build_drive_export_workflow_signal,
         build_test_design_workflow_signal,
+        build_xray_export_workflow_signal,
     )
 
     if clarification_context_store is None:
@@ -940,6 +987,7 @@ def build_tool_augmented_ask(
 
     drafts = None
     grounded_ask = None
+    xray_export_enabled = False
     runner: ToolRunner = _ToolsUnavailableRunner()
     if settings.domain_tools.agent_loop:
         from application.ask_knowledge_with_agent import AskKnowledgeWithAgent
@@ -1009,6 +1057,21 @@ def build_tool_augmented_ask(
             citation_channel,
             max_input_length=settings.max_input_length,
         )
+        prepare_xray = None
+        if _xray_tool_collaborators(settings)[0] is not None:
+            from composition.xray_export.prepare import prepare_xray_export_call
+
+            xray_drafts = drafts
+            project_key = settings.xray.project_key or ""
+            xray_export_enabled = True
+
+            def prepare_xray(conversation_id: str):
+                return prepare_xray_export_call(
+                    conversation_id=conversation_id,
+                    drafts=xray_drafts,
+                    project_key=project_key,
+                )
+
         # Drive export stays retrieval-free: omit retrieve_tool here.
         # Pass retrieve_tool into build_agent_orchestrate only for evidence
         # multi-tool workflows that opt in.
@@ -1019,6 +1082,7 @@ def build_tool_augmented_ask(
                 tool_agent,
                 drafts=drafts,
                 destinations=destinations,
+                prepare_xray=prepare_xray,
             ),
             model_calls=model_calls,
             allow_empty_evidence=True,
@@ -1030,9 +1094,15 @@ def build_tool_augmented_ask(
 
     test_design_sources = build_test_design_sources(settings)
     signals = (
-        build_test_design_workflow_signal(enabled=True),
+        build_test_design_workflow_signal(
+            enabled=True, extract_locator=test_design_sources.extract_locator
+        ),
         build_drive_export_workflow_signal(
             export_enabled=settings.domain_tools.agent_loop,
+            drafts=drafts,
+        ),
+        build_xray_export_workflow_signal(
+            export_enabled=xray_export_enabled,
             drafts=drafts,
         ),
     )
