@@ -50,13 +50,14 @@ class XrayMcpBinding:
     importer: XrayTestImporter
     load_draft: Callable[[str], object]
     project_key: str
+    on_created: Callable[[str, tuple[str, ...]], None] | None = None
     args_schema: type = field(default=CreateXrayTestsArgs)
     output_schema: type = field(default=CreateXrayTestsResult)
 
 
 def build_mcp_xray_binding(settings: Settings) -> XrayMcpBinding | None:
     """Return the workspace-bound binding, or None when Xray is not configured."""
-    from composition.container import _xray_tool_collaborators
+    from composition.container import _xray_receipt_recorder, _xray_tool_collaborators
 
     importer, load_draft = _xray_tool_collaborators(settings)
     if importer is None or load_draft is None:
@@ -65,4 +66,5 @@ def build_mcp_xray_binding(settings: Settings) -> XrayMcpBinding | None:
         importer=importer,
         load_draft=load_draft,
         project_key=settings.xray.project_key or "",
+        on_created=_xray_receipt_recorder(settings),
     )

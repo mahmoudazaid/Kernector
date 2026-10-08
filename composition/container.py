@@ -779,6 +779,9 @@ def build_invoke_tool(
             export_uploader=export_uploader,
             xray_importer=xray_importer,
             xray_load_draft=xray_load_draft,
+            xray_on_created=(
+                None if xray_importer is None else _xray_receipt_recorder(settings)
+            ),
         )
     )
 
@@ -805,6 +808,22 @@ def _xray_tool_collaborators(settings: Settings):
         return _agent_draft_repository(settings).get(draft_id)
 
     return importer, load_draft
+
+
+def _xray_receipt_recorder(settings: Settings):
+    """Record keys created by chat and MCP runs where the Test Design page reads them."""
+    from composition.xray_export.receipt_store import (
+        VersionedXrayReceiptRepository,
+        receipt_recorder,
+    )
+    from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+
+    repository = VersionedXrayReceiptRepository(
+        VersionedWorkspaceStore(
+            _workspace_store_path(settings), _require_workspace_id(settings)
+        )
+    )
+    return receipt_recorder(repository, project_key=settings.xray.project_key or "")
 
 def build_opaque_invoke(
     settings: Settings, *, chat_model: ChatModel | None = None

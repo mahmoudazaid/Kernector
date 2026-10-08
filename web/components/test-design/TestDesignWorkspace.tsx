@@ -23,6 +23,7 @@ import {
   type TestDesignXrayStatusResponse,
 } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
+import { formatTimestamp } from "@/lib/format/timestamp";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
 import { recordTestDesignCoverageConfirmed } from "@/lib/session/conversations";
 import { useRuntimeCatalog } from "@/lib/settings/use-runtime-catalog";
@@ -281,10 +282,7 @@ function xrayConfirmText(
       ? ` and ${keys.length - XRAY_KEYS_SHOWN} more`
       : "";
   const when = status?.last_created_at
-    ? ` on ${new Date(status.last_created_at).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-      })}`
+    ? ` on ${formatTimestamp(status.last_created_at)}`
     : "";
   return `Already created ${shown}${more}${when}. ${create}`;
 }

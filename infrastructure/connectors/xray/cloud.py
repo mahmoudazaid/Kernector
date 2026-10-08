@@ -13,10 +13,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from domain.errors import ConnectorError
+from domain.errors import ConnectorAuthError, ConnectorError
 from domain.test_management.xray import XrayImportResult, XrayTestCreateSchema, XrayTestSpec
 from infrastructure.connectors.xray.batch import create_each
 from infrastructure.connectors.xray.errors import (
+    MSG_AUTH,
     MSG_REQUEST_FAILED,
     XrayRejectedError,
     XraySchemaError,
@@ -37,6 +38,13 @@ _CREATE_TEST_MUTATION = (
     "$gherkin: String, $jira: JSON!) { createTest(testType: $testType, steps: $steps, "
     'gherkin: $gherkin, jira: $jira) { test { issueId jira(fields: ["key"]) } warnings } }'
 )
+
+
+class _UnauthorizedError(ConnectorAuthError):
+    """Xray answered HTTP 401; a cached bearer token may have expired."""
+
+    def __init__(self) -> None:
+        super().__init__(MSG_AUTH)
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,14 +186,25 @@ class XrayCloudImporter:
     def _graphql_payload(
         self, query: str, variables: Mapping[str, object]
     ) -> Mapping[str, object]:
-        payload = self._request(
-            "/graphql",
-            json={"query": query, "variables": dict(variables)},
-            headers={"Authorization": f"Bearer {self._bearer()}"},
-        )
+        body = {"query": query, "variables": dict(variables)}
+        reused_token = self._token is not None
+        try:
+            payload = self._post_graphql(body)
+        except _UnauthorizedError:
+            # A 401 means Xray refused the call before running it, so one retry
+            # with a fresh token cannot duplicate a create.
+            if not reused_token:
+                raise
+            self._token = None
+            payload = self._post_graphql(body)
         if not isinstance(payload, Mapping):
             raise ConnectorError(MSG_REQUEST_FAILED)
         return payload
+
+    def _post_graphql(self, body: Mapping[str, object]) -> object:
+        return self._request(
+            "/graphql", json=body, headers={"Authorization": f"Bearer {self._bearer()}"}
+        )
 
     def _bearer(self) -> str:
         if self._token is None:
@@ -212,6 +231,8 @@ class XrayCloudImporter:
         except Exception as error:
             mapped = map_http_error(error, self._httpx)
             cause = diagnostic(error, self._httpx)
+            if isinstance(error, self._httpx.HTTPStatusError) and error.response.status_code == 401:
+                mapped = _UnauthorizedError()
         # Raised outside the handler so the httpx error is not kept as __context__.
         raise mapped from cause
 

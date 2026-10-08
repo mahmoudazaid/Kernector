@@ -43,22 +43,28 @@ class _Importer:
         return XrayImportResult(created_keys=("QA-7", "QA-8"), failed_count=1)
 
 
-def _binding(importer: _Importer) -> XrayMcpBinding:
+def _binding(
+    importer: _Importer, recorded: list[tuple[str, tuple[str, ...]]] | None = None
+) -> XrayMcpBinding:
     draft = _draft(
         candidates=(_candidate("cand-1"), _candidate("cand-2")),
         cases=(_manual_case("cand-1"), _manual_case("cand-2")),
     )
+    sink = [] if recorded is None else recorded
     return XrayMcpBinding(
         importer=importer,
         load_draft=lambda draft_id: draft if draft_id == "draft-1" else None,
         project_key="QA",
+        on_created=lambda draft_id, keys: sink.append((draft_id, keys)),
     )
 
 
-def _registry(importer: _Importer) -> McpToolRegistry:
+def _registry(
+    importer: _Importer, recorded: list[tuple[str, tuple[str, ...]]] | None = None
+) -> McpToolRegistry:
     contributions = tuple(
         McpToolContribution(tool_id, "software-delivery", factory)
-        for tool_id, factory in build_mcp_tools(xray_binding=_binding(importer))
+        for tool_id, factory in build_mcp_tools(xray_binding=_binding(importer, recorded))
     )
     return McpToolRegistry(contributions=contributions, enabled_packs=("software-delivery",))
 
@@ -115,25 +121,29 @@ def test_unauthorized_caller_is_unavailable_and_never_reaches_xray() -> None:
 )
 def test_missing_or_declined_approval_never_reaches_xray(approve, code: str) -> None:  # noqa: ANN001
     importer = _Importer()
+    recorded: list[tuple[str, tuple[str, ...]]] = []
 
-    result = _registry(importer).invoke_authorized(
+    result = _registry(importer, recorded).invoke_authorized(
         _caller(TOOL_NAME), TOOL_NAME, {"draft_id": "draft-1"}, approve=approve
     )
 
     assert result.code == code
     assert (importer.schema_calls, importer.imports) == (0, [])
+    assert recorded == []
 
 
 def test_approved_call_creates_once_and_returns_the_safe_receipt() -> None:
     importer = _Importer()
     gate = _Gate(True)
+    recorded: list[tuple[str, tuple[str, ...]]] = []
 
-    result = _registry(importer).invoke_authorized(
+    result = _registry(importer, recorded).invoke_authorized(
         _caller(TOOL_NAME), TOOL_NAME, {"draft_id": "draft-1"}, approve=gate
     )
 
     assert result.is_error is False
     assert len(importer.imports) == 1
+    assert recorded == [("draft-1", ("QA-7", "QA-8"))]
     assert json.loads(result.text) == {
         "created_keys": ["QA-7", "QA-8"],
         "created_count": 2,

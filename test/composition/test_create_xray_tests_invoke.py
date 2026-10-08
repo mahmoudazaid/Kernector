@@ -90,6 +90,54 @@ def test_invoke_tool_result_stays_opaque_json(env) -> None:
     assert importer.specs
 
 
+def test_registry_passes_the_receipt_recorder_to_the_tool(env) -> None:
+    from test.packs.software_delivery.tools.test_create_xray_tests import _draft
+
+    recorded: list[tuple[str, tuple[str, ...]]] = []
+    invoke = InvokeTool(
+        build_tool_registry(
+            load_settings(),
+            xray_importer=_Importer(),
+            xray_load_draft=lambda _id: _draft(),
+            xray_on_created=lambda draft_id, keys: recorded.append((draft_id, keys)),
+        )
+    )
+
+    invoke.execute(InvokeToolRequest(TOOL_NAME, {"draft_id": "draft-1"}))
+
+    assert recorded == [("draft-1", ("QA-1",))]
+
+
+def test_receipt_recorder_writes_where_the_test_design_page_reads(env) -> None:
+    from composition.container import _workspace_store_path, _xray_receipt_recorder
+    from composition.xray_export.receipt_store import VersionedXrayReceiptRepository
+    from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+
+    _cloud(env)
+    settings = load_settings()
+
+    _xray_receipt_recorder(settings)("draft-1", ("QA-1", "QA-2"))
+
+    repository = VersionedXrayReceiptRepository(
+        VersionedWorkspaceStore(
+            _workspace_store_path(settings), settings.document_catalog.workspace_id
+        )
+    )
+    record = repository.get("draft-1")
+    assert record is not None
+    assert (record.project_key, record.created_keys) == ("QA", ("QA-1", "QA-2"))
+
+
+def test_receipt_store_failure_does_not_fail_the_completed_create() -> None:
+    from composition.xray_export.receipt_store import receipt_recorder
+
+    class _BrokenRepository:
+        def append(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("store down")
+
+    receipt_recorder(_BrokenRepository(), project_key="QA")("draft-1", ("QA-1",))  # type: ignore[arg-type]
+
+
 def test_build_invoke_tool_registers_xray_when_configured(env) -> None:
     from composition.container import build_invoke_tool
 

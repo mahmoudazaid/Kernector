@@ -7,6 +7,8 @@ drop the record. Only issue keys, the project key and a timestamp are stored.
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -18,6 +20,8 @@ from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
 
 XRAY_RECEIPT_NAMESPACE = "software-delivery:xray-receipt"
 _MAX_KEYS = 500
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +71,24 @@ class VersionedXrayReceiptRepository:
                 continue
             return merged
         raise VersionedStoreConflictError("xray receipt changed concurrently")
+
+
+def receipt_recorder(
+    repository: VersionedXrayReceiptRepository, *, project_key: str
+) -> Callable[[str, tuple[str, ...]], None]:
+    """Return a ``(draft_id, created_keys)`` callback for chat and MCP runs.
+
+    The tests already exist when it runs, so a store failure is logged rather
+    than turning the run into an error the caller might retry.
+    """
+
+    def record(draft_id: str, created_keys: tuple[str, ...]) -> None:
+        try:
+            repository.append(draft_id, project_key=project_key, created_keys=created_keys)
+        except Exception as error:  # noqa: BLE001 - never fail a completed create
+            logger.warning("Xray receipt could not be recorded: %s", type(error).__name__)
+
+    return record
 
 
 def _encode(record: XrayExportRecord) -> str:

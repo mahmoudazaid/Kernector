@@ -444,6 +444,37 @@ def test_nothing_created_is_a_tool_failure() -> None:
         _tool(importer, _draft()).run({"draft_id": "draft-1"})
 
 
+def test_created_keys_are_reported_to_the_recorder_with_the_draft_id() -> None:
+    importer = _FakeImporter(
+        result=XrayImportResult(created_keys=("QA-3", "QA-4"), failed_count=1)
+    )
+    recorded: list[tuple[str, tuple[str, ...]]] = []
+    tool = CreateXrayTestsTool(
+        load_draft={"draft-1": _draft()}.get,
+        importer=importer,
+        on_created=lambda draft_id, keys: recorded.append((draft_id, keys)),
+    )
+
+    tool.run({"draft_id": " draft-1 "})
+
+    assert recorded == [("draft-1", ("QA-3", "QA-4"))]
+
+
+def test_recorder_is_not_called_when_nothing_was_created() -> None:
+    importer = _FakeImporter(result=XrayImportResult(created_keys=(), failed_count=1))
+    recorded: list[object] = []
+    tool = CreateXrayTestsTool(
+        load_draft={"draft-1": _draft()}.get,
+        importer=importer,
+        on_created=lambda *args: recorded.append(args),
+    )
+
+    with pytest.raises(ToolFailureError):
+        tool.run({"draft_id": "draft-1"})
+
+    assert recorded == []
+
+
 def test_partial_create_reports_created_keys_and_failed_count() -> None:
     draft = _draft(
         candidates=(_candidate("cand-1"), _candidate("cand-2", title="Locked")),

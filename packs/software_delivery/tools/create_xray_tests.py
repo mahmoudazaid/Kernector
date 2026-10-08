@@ -54,6 +54,8 @@ _APPROVAL_SUMMARY = (
 )
 
 DraftLoader = Callable[[str], TestCoverageDraft | None]
+CreatedRecorder = Callable[[str, tuple[str, ...]], None]
+"""Receives ``(draft_id, created_keys)`` after a run created at least one test."""
 _T = TypeVar("_T")
 
 
@@ -68,6 +70,9 @@ class XrayMcpBinding(Protocol):
 
     @property
     def project_key(self) -> str: ...
+
+    @property
+    def on_created(self) -> CreatedRecorder | None: ...
 
     @property
     def args_schema(self) -> type: ...
@@ -85,12 +90,14 @@ class CreateXrayTestsTool:
         load_draft: DraftLoader,
         importer: XrayTestImporter,
         destination_label: str | None = None,
+        on_created: CreatedRecorder | None = None,
         args_schema: type | None = None,
         output_schema: type | None = None,
     ) -> None:
         self._load_draft = load_draft
         self._importer = importer
         self._destination_label = destination_label
+        self._on_created = on_created
         self.args_schema = args_schema
         self.output_schema = output_schema
 
@@ -119,6 +126,9 @@ class CreateXrayTestsTool:
         result = _call_xray(lambda: self._importer.import_tests(specs))
         if not result.created_keys:
             raise ToolFailureError(_MSG_NOTHING_CREATED)
+        if self._on_created is not None:
+            draft_id, _ = _parse_request(arguments)
+            self._on_created(draft_id, tuple(result.created_keys))
         return json.dumps(
             {
                 "created_keys": list(result.created_keys),

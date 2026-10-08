@@ -8,6 +8,7 @@ from packs.software_delivery.tools.create_xray_tests import (
     TOOL_NAME as CREATE_XRAY_TESTS_TOOL,
 )
 from packs.software_delivery.tools.create_xray_tests import (
+    CreatedRecorder,
     CreateXrayTestsTool,
     DraftLoader,
     XrayMcpBinding,
@@ -35,6 +36,7 @@ def build_tools(
     export_uploader: ArtifactUploader | None = None,
     xray_importer: XrayTestImporter | None = None,
     xray_load_draft: DraftLoader | None = None,
+    xray_on_created: CreatedRecorder | None = None,
 ) -> Sequence[Tool]:
     """Return chat-bound tools contributed by this pack.
 
@@ -44,7 +46,8 @@ def build_tools(
 
     ``chat_model`` is optional until a chat tool that needs an LLM is registered.
     Each tool's collaborators must be provided as an atomic pair (both or
-    neither).
+    neither). ``xray_on_created`` optionally records the keys each Xray run
+    created for its draft.
 
     Raises:
         SoftwareDeliveryToolWiringError: Exactly one collaborator of a pair
@@ -68,7 +71,13 @@ def build_tools(
             )
         )
     if xray_importer is not None and xray_load_draft is not None:
-        tools.append(CreateXrayTestsTool(load_draft=xray_load_draft, importer=xray_importer))
+        tools.append(
+            CreateXrayTestsTool(
+                load_draft=xray_load_draft,
+                importer=xray_importer,
+                on_created=xray_on_created,
+            )
+        )
     return tuple(tools)
 
 
@@ -103,6 +112,7 @@ def build_mcp_tools(
                     load_draft=xray.load_draft,
                     importer=xray.importer,
                     destination_label=xray.project_key,
+                    on_created=xray.on_created,
                     args_schema=xray.args_schema,
                     output_schema=xray.output_schema,
                 ),

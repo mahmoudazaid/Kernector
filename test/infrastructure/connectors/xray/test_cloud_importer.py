@@ -177,11 +177,56 @@ def test_ambiguous_failure_after_a_create_stops_and_reports_partial_result() -> 
 
 
 def test_auth_failure_after_a_create_reports_partial_result() -> None:
-    xray = _Xray(_created("QA-1"), _status(401))
+    xray = _Xray(_created("QA-1"), _status(401), _status(401))
 
     result = _importer(xray).import_tests([_MANUAL, _MANUAL])
 
     assert result == XrayImportResult(created_keys=("QA-1",), failed_count=1)
+    assert len(xray.create_bodies) == 3
+
+
+def test_expired_token_is_refreshed_once_and_the_request_retried() -> None:
+    tokens = iter(["token-1", "token-2", "token-3"])
+    state = {"current": "", "auth_calls": 0, "valid": "token-1"}
+    keys = iter(["QA-1", "QA-2", "QA-3"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/authenticate":
+            state["auth_calls"] += 1
+            state["current"] = next(tokens)
+            return httpx.Response(200, json=state["current"])
+        if request.headers["Authorization"] != f"Bearer {state['valid']}":
+            return httpx.Response(401, text="expired")
+        body = json.loads(request.content)
+        if "getProjectSettings" in body["query"]:
+            settings = {"testTypeSettings": {"testTypes": _TEST_TYPES}}
+            return httpx.Response(200, json={"data": {"getProjectSettings": settings}})
+        return _created(next(keys))(request)
+
+    importer = _importer(handler)
+    assert importer.import_tests([_MANUAL]).created_keys == ("QA-1",)
+
+    state["valid"] = "token-2"
+    assert importer.import_tests([_MANUAL]).created_keys == ("QA-2",)
+    assert importer.import_tests([_MANUAL]).created_keys == ("QA-3",)
+    assert state["auth_calls"] == 2
+
+
+def test_fresh_token_rejected_with_401_is_not_refreshed_again() -> None:
+    auth_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal auth_calls
+        if request.url.path == "/api/v2/authenticate":
+            auth_calls += 1
+            return httpx.Response(200, json=TOKEN)
+        return httpx.Response(401, text=f"vendor body {CLIENT_SECRET}")
+
+    with pytest.raises(ConnectorAuthError) as caught:
+        _importer(handler).import_tests([_MANUAL])
+
+    assert auth_calls == 1
+    _assert_secret_free(caught.value)
 
 
 def test_stale_cached_schema_is_rediscovered_once_and_the_create_retried() -> None:
