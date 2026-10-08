@@ -133,7 +133,7 @@ class CreateXrayTestsTool:
         draft = self._load_draft(draft_id)
         if draft is None:
             raise XrayExportValidationError(_MSG_DRAFT_NOT_FOUND)
-        source_key = _jira_issue_key(draft)
+        source_key = jira_issue_key(draft)
         link_key = source_key if link_source_issue else None
         specs = tuple(
             replace(spec, link_issue_key=link_key, source_issue_key=source_key)
@@ -191,7 +191,8 @@ def _supported(schema: XrayTestCreateSchema, specs: Sequence[XrayTestSpec]) -> b
     return schema.supports_issue_link or not linking
 
 
-def _jira_issue_key(draft: TestCoverageDraft) -> str | None:
+def jira_issue_key(draft: TestCoverageDraft) -> str | None:
+    """Return the Jira story key the draft's Xray tests link to, if any."""
     key = draft.ticket_identifier.strip()
     if draft.source_provider != "jira" or _JIRA_ISSUE_KEY.fullmatch(key) is None:
         return None

@@ -851,6 +851,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/test-design/drafts/{draft_id}/export/xray": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Draft Xray Status
+     * @description Report whether Xray export is available and what was already created.
+     */
+    get: operations["get_draft_xray_status_api_v1_test_design_drafts__draft_id__export_xray_get"];
+    put?: never;
+    /**
+     * Export Draft Xray
+     * @description Create Xray tests from the draft's selected, generated cases.
+     */
+    post: operations["export_draft_xray_api_v1_test_design_drafts__draft_id__export_xray_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/test-design/drafts/{draft_id}/generate": {
     parameters: {
       query?: never;
@@ -1171,6 +1195,35 @@ export interface components {
       file_id: string;
       /** File Name */
       file_name: string;
+    };
+    /**
+     * ExportTestDesignXrayRequest
+     * @description Wire body for ``POST /api/v1/test-design/drafts/{draft_id}/export/xray``.
+     */
+    ExportTestDesignXrayRequest: {
+      /** Expected Version */
+      expected_version: number;
+      /**
+       * Link Source Issue
+       * @default true
+       */
+      link_source_issue: boolean;
+    };
+    /**
+     * ExportTestDesignXrayResponse
+     * @description Safe receipt: created Jira issue keys and counts only.
+     */
+    ExportTestDesignXrayResponse: {
+      /** Browse Base Url */
+      browse_base_url: string | null;
+      /** Created Count */
+      created_count: number;
+      /** Created Keys */
+      created_keys: string[];
+      /** Failed Count */
+      failed_count: number;
+      /** Project Key */
+      project_key: string;
     };
     /**
      * GenerateTestDesignCasesRequest
@@ -2111,6 +2164,24 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /**
+     * TestDesignXrayStatusResponse
+     * @description Xray availability for a draft and the tests already created from it.
+     */
+    TestDesignXrayStatusResponse: {
+      /** Available */
+      available: boolean;
+      /** Browse Base Url */
+      browse_base_url: string | null;
+      /** Created Keys */
+      created_keys: string[];
+      /** Last Created At */
+      last_created_at: string | null;
+      /** Link Issue Key */
+      link_issue_key: string | null;
+      /** Project Key */
+      project_key: string | null;
     };
     /**
      * TestTypeOverrideRequest
@@ -5102,6 +5173,144 @@ export interface operations {
       };
       /** @description Server error */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_draft_xray_status_api_v1_test_design_drafts__draft_id__export_xray_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TestDesignXrayStatusResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  export_draft_xray_api_v1_test_design_drafts__draft_id__export_xray_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExportTestDesignXrayRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExportTestDesignXrayResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Method not allowed */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Provider error */
+      502: {
         headers: {
           [name: string]: unknown;
         };

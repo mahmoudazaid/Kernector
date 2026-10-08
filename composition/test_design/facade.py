@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from collections.abc import Callable
@@ -13,6 +14,7 @@ from application.errors import InsufficientEvidenceError
 from composition.software_delivery.tools import software_delivery_tools_enabled
 from composition.test_design.errors import (
     TestDesignEvidenceChangedError,
+    TestDesignExportFailedError,
     TestDesignNotFoundError,
     TestDesignUnavailableError,
     TestDesignValidationError,
@@ -65,7 +67,7 @@ _TEST_DESIGN_COMMAND = re.compile(
 )
 
 TEST_DESIGN_HANDOFF_ANSWER = (
-    "I can start Test Design from that GitHub Issue. "
+    "I can start Test Design from that issue. "
     "Use Start Test Design to fetch the issue live and plan coverage."
 )
 
@@ -172,6 +174,28 @@ class GenerateTestDesignCasesRequest:
 class GoogleDriveExportReceiptView:
     file_id: str
     file_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class XrayExportReceiptView:
+    """Tests created by one Xray export; ``browse_base_url`` + key opens one."""
+
+    project_key: str
+    created_keys: tuple[str, ...]
+    failed_count: int
+    browse_base_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class XrayExportStatusView:
+    """Whether Xray export is available and what was already created."""
+
+    available: bool
+    project_key: str | None
+    created_keys: tuple[str, ...]
+    last_created_at: str | None
+    browse_base_url: str | None
+    link_issue_key: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -823,8 +847,6 @@ class TestDesignFacade:
         destination_label: str | None = None,
     ) -> GoogleDriveExportReceiptView:
         """Export selected tests and their cases into a Google Drive folder."""
-        import json
-
         from application.contracts import InvokeToolRequest
         from application.errors import ApplicationValidationError
         from composition.container import build_invoke_tool
@@ -917,6 +939,94 @@ class TestDesignFacade:
         return GoogleDriveExportReceiptView(
             file_id=file_id.strip(),
             file_name=exported_name.strip(),
+        )
+
+    def xray_export_status(self, draft_id: str) -> XrayExportStatusView:
+        """Report Xray availability and the tests already created from the draft."""
+        from packs.software_delivery.tools.create_xray_tests import jira_issue_key
+
+        self._require_enabled()
+        draft = self._repository().get(draft_id)
+        if draft is None:
+            raise TestDesignNotFoundError("draft not found")
+        available = self._build_xray_importer() is not None
+        record = self._xray_receipts().get(draft_id)
+        return XrayExportStatusView(
+            available=available,
+            project_key=self._settings.xray.project_key if available else None,
+            created_keys=() if record is None else record.created_keys,
+            last_created_at=None if record is None else record.last_created_at,
+            browse_base_url=self._xray_browse_base_url(),
+            link_issue_key=jira_issue_key(draft),
+        )
+
+    def export_to_xray(
+        self,
+        draft_id: str,
+        *,
+        expected_version: int,
+        link_source_issue: bool = True,
+    ) -> XrayExportReceiptView:
+        """Create Xray tests from the draft's selected, generated cases.
+
+        The caller's confirmation is the human approval. Each call creates new
+        tests; created keys are recorded so the UI can warn before repeating.
+        """
+        from domain.errors import ToolFailureError
+        from packs.software_delivery.errors import XrayExportValidationError
+        from packs.software_delivery.tools.create_xray_tests import CreateXrayTestsTool
+
+        self._require_enabled()
+        current = self._repository().get(draft_id)
+        if current is None:
+            raise TestDesignNotFoundError("draft not found")
+        if current.version != expected_version:
+            raise TestDesignVersionConflictError("draft version changed")
+        importer = self._build_xray_importer()
+        project_key = self._settings.xray.project_key
+        if importer is None or project_key is None:
+            raise TestDesignUnavailableError("Xray export is unavailable")
+        tool = CreateXrayTestsTool(
+            load_draft=lambda _draft_id: current,
+            importer=importer,
+            destination_label=project_key,
+        )
+        try:
+            payload = json.loads(
+                tool.run({"draft_id": draft_id, "link_source_issue": link_source_issue})
+            )
+        except XrayExportValidationError as error:
+            raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
+        except ToolFailureError as error:
+            raise TestDesignExportFailedError(str(error)) from error
+        created = tuple(str(key) for key in payload["created_keys"])
+        self._xray_receipts().append(
+            draft_id, project_key=project_key, created_keys=created
+        )
+        return XrayExportReceiptView(
+            project_key=project_key,
+            created_keys=created,
+            failed_count=int(payload["failed_count"]),
+            browse_base_url=self._xray_browse_base_url(),
+        )
+
+    def _build_xray_importer(self):
+        from composition.xray_export.wiring import build_xray_importer
+
+        return build_xray_importer(self._settings)
+
+    def _xray_browse_base_url(self) -> str | None:
+        jira = self._settings.jira_data_center
+        if self._settings.xray.deployment != "server" or jira is None or not jira.base_url:
+            return None
+        return f"{jira.base_url.rstrip('/')}/browse/"
+
+    def _xray_receipts(self):
+        from composition.xray_export.receipt_store import VersionedXrayReceiptRepository
+        from infrastructure.workspace_store.sql_store import VersionedWorkspaceStore
+
+        return VersionedXrayReceiptRepository(
+            VersionedWorkspaceStore(self._store_path, self._workspace_id)
         )
 
     def set_export_destination(

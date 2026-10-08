@@ -1075,7 +1075,9 @@ def build_tool_augmented_ask(
 
     test_design_sources = build_test_design_sources(settings)
     signals = (
-        build_test_design_workflow_signal(enabled=True),
+        build_test_design_workflow_signal(
+            enabled=True, extract_locator=test_design_sources.extract_locator
+        ),
         build_drive_export_workflow_signal(
             export_enabled=settings.domain_tools.agent_loop,
             drafts=drafts,

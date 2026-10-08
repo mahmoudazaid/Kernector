@@ -63,7 +63,7 @@ _EXPORT_PARTIAL = re.compile(
 
 TEST_DESIGN_CLARIFY_ANSWER = (
     "I can start Test Design once you share a GitHub Issue URL or "
-    "owner/repo#N reference."
+    "owner/repo#N reference, or a Jira issue key such as PROJ-123."
 )
 
 DRIVE_PARTIAL_CLARIFY_ANSWER = (
@@ -174,8 +174,22 @@ def _prior_missing_field(
 def build_test_design_workflow_signal(
     *,
     enabled: bool = True,
+    extract_locator: Callable[[str], object | None] | None = None,
 ) -> WorkflowSignal:
-    """Return a WorkflowSignal for Test Design command + Issue readiness."""
+    """Return a WorkflowSignal for Test Design command + Issue readiness.
+
+    ``extract_locator`` is the source registry's extractor (GitHub, Jira, ...);
+    it raises ``AmbiguousSourceLocatorError`` for several items. Without it
+    only GitHub Issue locators are recognised.
+    """
+    from composition.test_design.sources import AmbiguousSourceLocatorError
+    from infrastructure.connectors.github.issue_locator import (
+        AmbiguousGitHubIssueLocatorError,
+        extract_github_issue_locator,
+    )
+
+    extract = extract_locator or extract_github_issue_locator
+    ambiguous_errors = (AmbiguousGitHubIssueLocatorError, AmbiguousSourceLocatorError)
 
     def _prior_awaiting_locator(request: TurnRoutingRequest) -> bool:
         return _prior_missing_field(
@@ -225,20 +239,15 @@ def build_test_design_workflow_signal(
         match = _TEST_DESIGN_COMMAND.search(query)
         if match is None and not from_prior:
             return None
-        from infrastructure.connectors.github.issue_locator import (
-            AmbiguousGitHubIssueLocatorError,
-            extract_github_issue_locator,
-        )
-
         try:
-            parsed = extract_github_issue_locator(query)
-        except AmbiguousGitHubIssueLocatorError as error:
+            parsed = extract(query)
+        except ambiguous_errors as error:
             # Ambiguity is only a hard error when this turn issued the command.
             # Follow-ups / plain questions fall through (same as test_design.py).
             if match is None:
                 return None
             raise TestDesignValidationError(
-                "Query must reference exactly one GitHub Issue"
+                "Query must reference exactly one issue"
             ) from error
         if parsed is not None:
             return WorkflowSignalResult(

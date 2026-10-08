@@ -12,11 +12,15 @@ import { UnavailableState } from "@/components/states/UnavailableState";
 import {
   confirmTestDesignDraft,
   exportTestDesignGoogleDrive,
+  exportTestDesignXray,
   generateTestDesignCases,
   getTestDesignDraft,
+  getTestDesignXrayStatus,
   patchTestDesignDraft,
+  type ExportTestDesignXrayResponse,
   type PatchTestDesignDraftRequest,
   type TestCoverageDraftResponse,
+  type TestDesignXrayStatusResponse,
 } from "@/lib/api/test-design";
 import { ApiError } from "@/lib/api/errors";
 import { GoogleDrivePicker } from "@/components/documents/GoogleDrivePicker";
@@ -256,6 +260,35 @@ function newManualCandidateId(): string {
   return `manual-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const XRAY_KEYS_SHOWN = 5;
+
+function xrayConfirmText(
+  status: TestDesignXrayStatusResponse | null,
+  count: number,
+): string {
+  const tests = `${count} test${count === 1 ? "" : "s"}`;
+  const target = status?.link_issue_key
+    ? ` linked to ${status.link_issue_key}`
+    : "";
+  const create = `Create ${tests} in ${status?.project_key ?? "Xray"}${target}. Every run creates new tests.`;
+  const keys = status?.created_keys ?? [];
+  if (keys.length === 0) {
+    return create;
+  }
+  const shown = keys.slice(0, XRAY_KEYS_SHOWN).join(", ");
+  const more =
+    keys.length > XRAY_KEYS_SHOWN
+      ? ` and ${keys.length - XRAY_KEYS_SHOWN} more`
+      : "";
+  const when = status?.last_created_at
+    ? ` on ${new Date(status.last_created_at).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      })}`
+    : "";
+  return `Already created ${shown}${more}${when}. ${create}`;
+}
+
 export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const router = useRouter();
   const {
@@ -277,6 +310,11 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const [viewStep, setViewStep] = useState<WorkspaceStep | null>(null);
   const [exitOpen, setExitOpen] = useState(false);
   const [autosaving, setAutosaving] = useState(false);
+  const [xrayStatus, setXrayStatus] =
+    useState<TestDesignXrayStatusResponse | null>(null);
+  const [xrayOpen, setXrayOpen] = useState(false);
+  const [xrayReceipt, setXrayReceipt] =
+    useState<ExportTestDesignXrayResponse | null>(null);
   const editRevision = useRef(0);
   const failedRevision = useRef(-1);
   const hasUnsaved = dirty || casesDirty || autosaving;
@@ -342,6 +380,27 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
         }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBaseUrl, draftId, packEnabled]);
+
+  useEffect(() => {
+    if (!packEnabled) {
+      return;
+    }
+    let cancelled = false;
+    getTestDesignXrayStatus({ baseUrl: apiBaseUrl, draftId })
+      .then((status) => {
+        if (!cancelled) {
+          setXrayStatus(status);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setXrayStatus(null);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -1050,6 +1109,67 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
     }
   }
 
+  async function openXrayDialog() {
+    if (!draft || xrayCount === 0 || busy) {
+      return;
+    }
+    setError(null);
+    if (casesDirty) {
+      if (!(await saveCases())) {
+        return;
+      }
+    } else if (dirty && !(await saveDraft())) {
+      return;
+    }
+    setXrayOpen(true);
+  }
+
+  async function createInXray() {
+    if (!draft) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSaveNote(null);
+    setXrayReceipt(null);
+    try {
+      const receipt = await exportTestDesignXray({
+        baseUrl: apiBaseUrl,
+        draftId: draft.draft_id,
+        body: { expected_version: draft.version, link_source_issue: true },
+      });
+      setXrayOpen(false);
+      setXrayReceipt(receipt);
+      setXrayStatus((current) =>
+        current
+          ? {
+              ...current,
+              created_keys: [
+                ...new Set([...current.created_keys, ...receipt.created_keys]),
+              ],
+              last_created_at: new Date().toISOString(),
+            }
+          : current,
+      );
+    } catch (caught) {
+      setXrayOpen(false);
+      if (caught instanceof ApiError && caught.code === "test_design_unavailable") {
+        setError("Xray export is unavailable.");
+      } else if (caught instanceof ApiError && caught.status === 409) {
+        setError("This draft changed elsewhere. Reload it before creating Xray tests.");
+      } else if (
+        caught instanceof ApiError &&
+        (caught.status === 422 || caught.status === 502)
+      ) {
+        setError(caught.detail);
+      } else {
+        setError("Could not create tests in Xray.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const selectedCount = draft.candidates.filter((c) => c.selected).length;
   const generatedCases = draft.generated_cases ?? [];
   const hasSteps = draft.status === "case_editing" && generatedCases.length > 0;
@@ -1062,6 +1182,14 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
   const canRegenerate =
     (draft.status === "ready" || draft.status === "case_editing") && !actionsLocked;
   const canExport = selectedCount > 0 && !actionsLocked;
+  const selectedIds = new Set(
+    draft.candidates.filter((c) => c.selected).map((c) => c.candidate_id),
+  );
+  const xrayCount = generatedCases.filter(
+    (item) =>
+      item.availability === "available" && selectedIds.has(item.candidate_id),
+  ).length;
+  const canCreateInXray = xrayCount > 0 && !actionsLocked;
   const chatHref = `/chat/${encodeURIComponent(draft.conversation_id)}`;
   const cucumberCases = generatedCases.filter(
     (item) =>
@@ -1229,6 +1357,37 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           role="status"
         >
           <p>{saveNote}</p>
+        </div>
+      ) : null}
+      {xrayReceipt ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--ok"
+          role="status"
+        >
+          <p>
+            Created {xrayReceipt.created_count} test
+            {xrayReceipt.created_count === 1 ? "" : "s"} in{" "}
+            {xrayReceipt.project_key}:{" "}
+            {xrayReceipt.created_keys.map((key, index) => (
+              <span key={key}>
+                {index > 0 ? ", " : null}
+                {xrayReceipt.browse_base_url ? (
+                  <a
+                    href={`${xrayReceipt.browse_base_url}${encodeURIComponent(key)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {key}
+                  </a>
+                ) : (
+                  key
+                )}
+              </span>
+            ))}
+            {xrayReceipt.failed_count > 0
+              ? `. ${xrayReceipt.failed_count} failed.`
+              : "."}
+          </p>
         </div>
       ) : null}
 
@@ -1806,6 +1965,15 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
               >
                 Export to Google Drive
               </Button>
+              {xrayStatus?.available ? (
+                <Button
+                  type="button"
+                  disabled={!canCreateInXray}
+                  onClick={() => void openXrayDialog()}
+                >
+                  Create in Xray
+                </Button>
+              ) : null}
             </>
           )}
         </div>
@@ -1825,6 +1993,20 @@ export function TestDesignWorkspace({ apiBaseUrl, draftId }: Props) {
           router.push(chatHref);
         }}
         onCancel={() => setExitOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={xrayOpen}
+        title="Create Xray tests"
+        description={xrayConfirmText(xrayStatus, xrayCount)}
+        confirmLabel={xrayStatus?.created_keys.length ? "Create again" : "Create"}
+        busy={busy}
+        onConfirm={() => void createInXray()}
+        onCancel={() => {
+          if (!busy) {
+            setXrayOpen(false);
+          }
+        }}
       />
 
       <GoogleDrivePicker

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from application.turn_routing import (
     RoutingKind,
     TurnRoutingRequest,
@@ -17,6 +19,9 @@ from composition.chat.workflow_signals import (
     build_test_design_workflow_signal,
     clarification_answer_for,
 )
+from composition.test_design.errors import TestDesignValidationError
+from composition.test_design.sources import AmbiguousSourceLocatorError
+from domain.knowledge import SourceLocator
 
 
 def test_test_design_command_without_issue_is_incomplete() -> None:
@@ -35,6 +40,49 @@ def test_test_design_command_with_issue_is_ready() -> None:
     )
     assert result is not None
     assert result.readiness is WorkflowReadiness.READY
+
+
+def _jira_extract(text: str) -> SourceLocator | None:
+    if "eng-7" in text.casefold():
+        return SourceLocator(provider="jira", locator="ENG-7")
+    return None
+
+
+def test_test_design_command_with_registered_source_locator_is_ready() -> None:
+    signal = build_test_design_workflow_signal(
+        enabled=True, extract_locator=_jira_extract
+    )
+
+    result = signal(TurnRoutingRequest(query="start test design eng-7"))
+
+    assert result is not None
+    assert result.readiness is WorkflowReadiness.READY
+
+
+def test_test_design_prior_context_plus_registered_source_locator_is_ready() -> None:
+    signal = build_test_design_workflow_signal(
+        enabled=True, extract_locator=_jira_extract
+    )
+    prior = {"workflow_hint": "test_design", "missing_fields": ("issue_locator",)}
+
+    result = signal(TurnRoutingRequest(query="ENG-7", clarification_context=prior))
+
+    assert result is not None
+    assert result.readiness is WorkflowReadiness.READY
+
+
+def test_test_design_command_with_ambiguous_source_locators_is_rejected() -> None:
+    def ambiguous(_text: str) -> SourceLocator | None:
+        raise AmbiguousSourceLocatorError("Query must reference exactly one source")
+
+    signal = build_test_design_workflow_signal(enabled=True, extract_locator=ambiguous)
+
+    with pytest.raises(TestDesignValidationError):
+        signal(TurnRoutingRequest(query="design tests for ENG-7 and ENG-8"))
+
+
+def test_test_design_clarification_mentions_jira_keys() -> None:
+    assert "Jira" in TEST_DESIGN_CLARIFY_ANSWER
 
 
 def test_test_design_prior_context_plus_locator_is_ready() -> None:

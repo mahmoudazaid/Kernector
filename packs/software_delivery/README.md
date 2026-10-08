@@ -82,6 +82,16 @@ goes through the generic MCP approval gate
 ([ADR 0010](../../docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)).
 Clients without elicitation get `approval_required`, and nothing is created.
 
+**Test Design page.** On the Test steps step, **Create in Xray** sits next to
+Export to Google Drive when Xray is configured. Its confirm dialog is the
+approval: it shows the project, the test count, and the Jira story the tests
+link to. `GET /api/v1/test-design/drafts/{draft_id}/export/xray` reports
+availability and the keys already created from the draft;
+`POST` the same path with `{expected_version}` runs the same tool. Created keys
+are stored per draft, so the dialog warns "Already created …" before a repeat
+run. Xray rejections (such as required fields Kernector could not fill) return
+502 `xray_export_failed` with a safe detail.
+
 ## Chat-time routing (#312)
 
 Composition injects `WorkflowSignal` probes (see
