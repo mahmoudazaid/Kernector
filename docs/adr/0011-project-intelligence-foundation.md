@@ -65,7 +65,7 @@ and does not renumber existing ADRs.
 An **association** links a project to part of a connected source:
 
 ```text
-(project_id, connector_id, scope_kind, scope_value) + context roles + optional component
+(project_id, connector_id, scope_kind, scope_value) + context roles
 ```
 
 - **Many-to-many.** A project can have many associations, and the same scope
@@ -77,7 +77,9 @@ An **association** links a project to part of a connected source:
 - **Context roles.** Zero or more registered context tokens (decision 10). A
   role is the default context for that scope's artifacts. Zero roles is valid
   only when no context vocabulary is registered.
-- **Component.** An association may belong to a component (decision 11).
+- **No component field.** An association does not name a component.
+  Component membership is stored only in each component's members
+  (decision 11), so one association can belong to several components.
 - **Confirmation.** An association is `suggested`, `confirmed` or `rejected`.
   Only `confirmed` associations scope retrieval, classification or
   relationships. Only an operator confirms or rejects. Nothing confirms
@@ -115,6 +117,10 @@ An **association** links a project to part of a connected source:
   following the `SourceType` precedent. The core hardcodes no kind, relation,
   context, role or purpose literal. The well-known values in this ADR are
   documented here and defined in the pack.
+- **One exception: the built-in `answer` purpose.** The core owns exactly one
+  purpose, the context-free `answer` (decision 10.3), so it exists even when
+  no pack is enabled. Packs cannot register or redefine `answer`. No other
+  purpose literal is allowed in the core, and the architecture tests pin this.
 
 ### 4. Relationships
 
@@ -246,7 +252,7 @@ and [ADR 0008](0008-group-modules-by-concern.md). Nothing here relaxes them.
 - **`domain/`** — Project Intelligence contracts (`project_id`,
   `ArtifactDescriptor`, relationship, evidence, outcome) and ports. Imports the
   standard library only. Contains no context, relation, kind, purpose or role
-  literals.
+  literals, except the built-in `answer` purpose (decision 3).
 - **`application/`** — use cases such as associate, classify, reconcile and
   assemble. Imports `domain` only and reaches storage only through `domain`
   ports.
@@ -279,9 +285,9 @@ Kernector keeps seven **logically separated but connected** project contexts.
   Delivery pack registers the seven contexts below and their default
   classification rules as data.
 - **When no vocabulary is registered** (the pack is disabled), associations are
-  valid with zero contexts and only context-free purposes, such as `answer`,
-  run. A purpose that needs contexts reports that it is unavailable and never
-  guesses.
+  valid with zero contexts and only the built-in `answer` purpose (decision 3)
+  runs. A pack purpose is unavailable because its pack is not loaded; Kernector
+  reports that and never guesses.
 - **Approved decisions are not a context.** They come from [#331] in their own
   bundle section.
 
@@ -337,12 +343,16 @@ directions and may show the inverse name, so `OIE-123` lists
 
 #### 10.3 Task-aware selection
 
-- Each consumer **purpose** declares one or more **evidence roles** per
-  context. Packs register these policies as data. The core assembler hardcodes
-  no purpose.
+- Each consumer **purpose** declares a set of **evidence roles** per context.
+  Packs register these policies as data. The core assembler hardcodes no
+  purpose other than the built-in `answer`.
 - Evidence roles are opaque policy tokens. The initial set is `behaviour`
   (intended or specified behaviour), `implementation` (what is currently
-  built), `coverage`, `conventions`, and the reserved `excluded`.
+  built), `coverage` and `conventions`.
+- **Exclusion is structural, not a token.** A pack purpose excludes a context
+  by declaring an empty role set for it or by not listing it. The core reads
+  only the shape of the policy, so it needs no `excluded` literal. An excluded
+  context reports the `excluded_by_purpose` outcome (decision 10.5).
 - A purpose may label relation types with an **assertion**, for example
   `implementation_evidence` or `mention`. A file that merely mentions a story
   is never presented as proof that the story is implemented.
@@ -360,10 +370,12 @@ The initial policies the pack registers for those two purposes:
 | `backend` | `behaviour`, `implementation` | `behaviour`, `implementation` |
 | `documentation` | `behaviour`, `conventions` | `behaviour`, `conventions` |
 | `testing` | `coverage`, `conventions` | `coverage`, `conventions` |
-| `operations` | `excluded` | `conventions` |
+| `operations` | — (excluded) | `conventions` |
 
-The context-free `answer` purpose declares no evidence roles and works with or
-without a registered vocabulary.
+The built-in `answer` purpose is owned by the core (decision 3). It has no
+policy: it selects no evidence roles, excludes no context, and ranks all
+project evidence by decision 7. It works with or without a registered
+vocabulary.
 
 #### 10.4 Conflicts
 
@@ -389,6 +401,10 @@ Every result reports each context with exactly one outcome:
 | `not_associated` | No confirmed association provides this context for the project or component. |
 | `unsupported` | A source exists, but its format cannot be parsed safely, so it contributes nothing. |
 | `stale_only` | The only matching evidence is `stale`. It is included with that label and never presented as current. |
+| `excluded_by_purpose` | The purpose's policy excludes this context (decision 10.3). Nothing from it is included, whether or not evidence matched. |
+
+The outcome values are a fixed core contract in `domain/`, not pack
+vocabulary.
 
 Consumers report these outcomes instead of filling gaps with invented
 evidence.
@@ -417,14 +433,22 @@ evidence.
 
 ### 11. Components
 
-- A project has one or more **components**: separately deployed or owned
-  units such as a web app, a service, or a test suite.
+- A project has zero or more **components**: separately deployed or owned
+  units such as a web app, a service, or a test suite. A new project, or one
+  whose associations form no components (for example only Jira or Drive
+  scopes), has none. Project-scoped retrieval does not need components; the
+  component filter in decision 7 is optional.
 - A component is `component_id` + `name` + members. Each member is a confirmed
-  association scope plus an optional path prefix, for monorepos.
-- Each confirmed repository association gets a **default component** (reason
-  `association_default`) **only if the operator has not assigned it to another
-  component**. An operator's assignment is kept, and later syncs never
-  overwrite it.
+  association scope plus an optional path prefix, for monorepos. Members are
+  the only record of membership, so one association can be a member of several
+  components, for example `repo=acme/mono` with `web/` and `services/`.
+- **Default components are declared by connectors.** A connector may declare
+  that one of its scope kinds forms a default component, for example GitHub
+  `repo`. The core reads that declaration and never interprets the scope kind
+  itself. A confirmed association whose scope kind is declared this way gets a
+  default component (reason `association_default`) **only if the operator has
+  not assigned it to another component**. An operator's assignment is kept,
+  and later syncs never overwrite it.
 - Components have **no type field**. A component's contexts are **derived from
   its artifacts' classifications**.
 - **Component dependencies are not stored.** They are aggregated at read time
@@ -477,8 +501,8 @@ Approved decisions stay in [#331], and history stays in [#344].
 - Child tickets [#372]–[#379] build on these contract names and do not add
   their own stores or vocabularies.
 - The core gains generic project, artifact and relationship contracts, but no
-  Software Delivery literal. Disabling the pack leaves context-free features
-  working.
+  Software Delivery literal. Disabling the pack leaves the built-in `answer`
+  purpose working.
 - Inferred relationships always need a human to become evidence, so recall
   from inference grows only as fast as people confirm candidates.
 - Storage stays inside SQLite. The revisit triggers above decide when that
@@ -491,14 +515,16 @@ Approved decisions stay in [#331], and history stays in [#344].
 Workspace `acme` holds project `oie` (`project_id` `prj_7f…`) with four
 confirmed associations:
 
-| Connector | Scope | Context roles | Component |
-|---|---|---|---|
-| Jira | `project_key=OIE` | `business` | — |
-| GitHub | `repo=acme/oie-web` | `frontend` | `oie-web` (default) |
-| GitHub | `repo=acme/oie-orders` | `backend`, `api_contract` | `oie-orders` (default) |
-| GitHub | `repo=acme/oie-tests` | `testing` | `oie-tests` (default) |
+| Connector | Scope | Context roles |
+|---|---|---|
+| Jira | `project_key=OIE` | `business` |
+| GitHub | `repo=acme/oie-web` | `frontend` |
+| GitHub | `repo=acme/oie-orders` | `backend`, `api_contract` |
+| GitHub | `repo=acme/oie-tests` | `testing` |
 
-Each repository is its own default component (reason `association_default`).
+The GitHub connector declares `repo` as component-forming, so each repository
+becomes its own default component (reason `association_default`): `oie-web`,
+`oie-orders` and `oie-tests`. The Jira scope is a member of no component.
 
 The relationship `OIE-140 —tests→ OIE-123` has:
 
