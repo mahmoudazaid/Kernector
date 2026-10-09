@@ -15,8 +15,10 @@ from application.project.associations import (
     ConfirmAssociation,
     RemoveAssociation,
 )
+from application.project.coverage import ProjectContextCoverage
 from application.project.projects import CreateProject, GetProject, ListProjects
 from application.project.resolve import ResolveProjectsForSource
+from composition.project.vocabulary import build_context_vocabulary
 from domain.knowledge import SourceType
 from domain.project.ports import SourceScopeResolver
 from infrastructure.config import Settings
@@ -35,6 +37,7 @@ class ProjectUseCases:
     associate: AssociateSource
     confirm: ConfirmAssociation
     remove: RemoveAssociation
+    coverage: ProjectContextCoverage
 
 
 def build_scope_resolvers() -> Mapping[str, SourceScopeResolver]:
@@ -61,13 +64,15 @@ def build_project_store(settings: Settings) -> SqlProjectStore:
 def build_project_use_cases(settings: Settings) -> ProjectUseCases:
     """Wire the project use cases for HTTP and MCP."""
     store = build_project_store(settings)
+    vocabulary = build_context_vocabulary(settings)
     return ProjectUseCases(
         create=CreateProject(store=store),
         list=ListProjects(store=store),
-        get=GetProject(store=store),
-        associate=AssociateSource(store=store),
-        confirm=ConfirmAssociation(store=store),
+        get=GetProject(store=store, vocabulary=vocabulary),
+        associate=AssociateSource(store=store, vocabulary=vocabulary),
+        confirm=ConfirmAssociation(store=store, vocabulary=vocabulary),
         remove=RemoveAssociation(store=store),
+        coverage=ProjectContextCoverage(store=store, vocabulary=vocabulary),
     )
 
 

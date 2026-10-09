@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 
 from domain.ports import ArtifactUploader, ChatModel, Tool, XrayTestImporter
 from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_intent
+from packs.software_delivery.project.contexts import SoftwareDeliveryContextVocabulary
 from packs.software_delivery.tools.create_xray_tests import (
     TOOL_NAME as CREATE_XRAY_TESTS_TOOL,
 )
@@ -134,3 +135,8 @@ def build_chat_intent_selector(
     if not export_intent_enabled:
         return lambda _query: None
     return select_chat_intent
+
+
+def build_context_vocabulary() -> SoftwareDeliveryContextVocabulary:
+    """Return the project contexts this pack registers (ADR 0011 section 10)."""
+    return SoftwareDeliveryContextVocabulary()

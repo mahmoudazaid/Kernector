@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from composition.project.container import build_project_store
@@ -39,7 +40,8 @@ def _assert_problem(response, status: int, code: str) -> dict:
     return body
 
 
-def test_create_list_and_get_project() -> None:
+def test_create_list_and_get_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "")
     client = _client()
 
     created = _create(client, "oie")
@@ -53,6 +55,29 @@ def test_create_list_and_get_project() -> None:
     assert detail["slug"] == "oie"
     assert detail["associations"] == []
     assert detail["components"] == []
+    assert detail["context_coverage"] == []
+
+
+def test_detail_reports_context_coverage_with_pack_vocabulary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    client = _client()
+    project_id = _create(client, "oie")["project_id"]
+
+    unknown = _associate(client, project_id, roles=["database"])
+    _assert_problem(unknown, 422, "project_invalid_input")
+    assert _associate(client, project_id, roles=["backend"]).status_code == 201
+
+    coverage = client.get(f"/api/v1/projects/{project_id}").json()["context_coverage"]
+    assert [c["status"] for c in coverage if c["context"] == "backend"] == [
+        "associated"
+    ]
+    assert {c["context"]: c["status"] for c in coverage}["operations"] == (
+        "not_associated"
+    )
+    backend = next(c for c in coverage if c["context"] == "backend")
+    assert backend["scopes"] == [LIB]
 
 
 def test_unknown_project_is_404() -> None:

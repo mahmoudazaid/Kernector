@@ -1203,11 +1203,28 @@ class ProjectComponentResponse(BaseModel):
     members: list[ProjectComponentMemberResponse]
 
 
+class ProjectScopeResponse(BaseModel):
+    """An opaque connector scope."""
+
+    connector_id: str
+    scope_kind: str
+    scope_value: str
+
+
+class ProjectContextCoverageResponse(BaseModel):
+    """Structural coverage of one registered context; not an evidence outcome."""
+
+    context: str
+    status: Literal["associated", "not_associated"]
+    scopes: list[ProjectScopeResponse]
+
+
 class ProjectDetailResponse(ProjectResponse):
-    """A project with its associations and components."""
+    """A project with its associations, components and context coverage."""
 
     associations: list[ProjectAssociationResponse]
     components: list[ProjectComponentResponse]
+    context_coverage: list[ProjectContextCoverageResponse]
 
 
 def project_response(project: object) -> ProjectResponse:
@@ -1281,4 +1298,19 @@ def project_detail_response(detail: object) -> ProjectDetailResponse:
         **base.model_dump(),
         associations=[project_association_response(a) for a in detail.associations],
         components=[project_component_response(c) for c in detail.components],
+        context_coverage=[
+            ProjectContextCoverageResponse(
+                context=coverage.context,
+                status=coverage.status.value,
+                scopes=[
+                    ProjectScopeResponse(
+                        connector_id=scope.connector_id,
+                        scope_kind=scope.scope_kind,
+                        scope_value=scope.scope_value,
+                    )
+                    for scope in coverage.scopes
+                ],
+            )
+            for coverage in detail.context_coverage
+        ],
     )

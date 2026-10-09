@@ -23,7 +23,11 @@ from domain.project.models import (
     SourceScope,
     can_transition,
 )
-from domain.project.ports import ProjectTransaction, ProjectUnitOfWork
+from domain.project.ports import (
+    ContextVocabulary,
+    ProjectTransaction,
+    ProjectUnitOfWork,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +72,28 @@ def require_shared_acknowledgement(
         raise SharedScopeConfirmationRequiredError(tuple(others))
 
 
+def require_known_roles(
+    roles: tuple[str, ...], vocabulary: ContextVocabulary | None
+) -> None:
+    """Reject roles outside the registered vocabulary (any role without one)."""
+    known = frozenset(() if vocabulary is None else vocabulary.contexts)
+    if vocabulary is None and roles:
+        raise ProjectInputError("roles need a registered context vocabulary")
+    if not set(roles) <= known:
+        raise ProjectInputError("roles must be registered contexts")
+
+
 class AssociateSource:
     """Explicitly associate a scope with a project as ``confirmed``."""
 
-    def __init__(self, *, store: ProjectUnitOfWork) -> None:
+    def __init__(
+        self,
+        *,
+        store: ProjectUnitOfWork,
+        vocabulary: ContextVocabulary | None = None,
+    ) -> None:
         self._store = store
+        self._vocabulary = vocabulary
 
     def execute(self, request: AssociateSourceRequest) -> SourceAssociation:
         """Raises:
@@ -100,6 +121,7 @@ class AssociateSource:
                 request.scope,
                 request.acknowledged_shared_with,
             )
+            require_known_roles(association.roles, self._vocabulary)
             tx.associations.add(association)
         return association
 
@@ -107,8 +129,14 @@ class AssociateSource:
 class ConfirmAssociation:
     """Confirm a suggested or rejected association with compare-and-swap."""
 
-    def __init__(self, *, store: ProjectUnitOfWork) -> None:
+    def __init__(
+        self,
+        *,
+        store: ProjectUnitOfWork,
+        vocabulary: ContextVocabulary | None = None,
+    ) -> None:
         self._store = store
+        self._vocabulary = vocabulary
 
     def execute(self, request: ConfirmAssociationRequest) -> SourceAssociation:
         """Raises:
@@ -141,6 +169,7 @@ class ConfirmAssociation:
                 state=AssociationState.CONFIRMED,
                 roles=current.roles if request.roles is None else request.roles,
             )
+            require_known_roles(updated.roles, self._vocabulary)
             return tx.associations.update(
                 updated, expected_version=request.expected_version
             )

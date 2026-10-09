@@ -5,15 +5,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from application.project.coverage import context_coverage
 from domain.project.errors import ProjectNotFoundError
 from domain.project.models import (
     AssociationState,
+    ContextAssociationCoverage,
     Project,
     ProjectComponent,
     SourceAssociation,
     new_project_id,
 )
-from domain.project.ports import ProjectTransaction, ProjectUnitOfWork
+from domain.project.ports import (
+    ContextVocabulary,
+    ProjectTransaction,
+    ProjectUnitOfWork,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,27 +73,36 @@ class ListProjects:
 
 @dataclass(frozen=True, slots=True)
 class ProjectDetail:
-    """A project with every association and component."""
+    """A project with every association, component and its context coverage."""
 
     project: Project
     associations: tuple[SourceAssociation, ...]
     components: tuple[ProjectComponent, ...]
+    context_coverage: tuple[ContextAssociationCoverage, ...] = ()
 
 
 class GetProject:
-    """Fetch one project with its associations and components."""
+    """Fetch one project with its associations, components and coverage."""
 
-    def __init__(self, *, store: ProjectUnitOfWork) -> None:
+    def __init__(
+        self,
+        *,
+        store: ProjectUnitOfWork,
+        vocabulary: ContextVocabulary | None = None,
+    ) -> None:
         self._store = store
+        self._vocabulary = vocabulary
 
     def execute(self, project_id: str) -> ProjectDetail:
         """Raises ``ProjectNotFoundError`` for an unknown ``project_id``."""
         with self._store.read() as tx:
             project = require_project(tx, project_id)
+            associations = tx.associations.for_project(project_id)
             return ProjectDetail(
                 project,
-                tx.associations.for_project(project_id),
+                associations,
                 tx.components.for_project(project_id),
+                context_coverage(associations, self._vocabulary),
             )
 
 

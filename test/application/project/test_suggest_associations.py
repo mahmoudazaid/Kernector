@@ -26,6 +26,12 @@ from domain.project.models import (
 )
 from test.application.project.project_fakes import InMemoryProjectStore, confirmed
 
+
+@dataclass(frozen=True)
+class _Vocabulary:
+    contexts: tuple[str, ...] = ("documentation",)
+
+
 OIE_JIRA = SourceScope("jira-1", "project_key", "OIE")
 PAY_JIRA = SourceScope("jira-1", "project_key", "PAY")
 OIE_DOCS = SourceScope("gh-1", "repo", "acme/oie-docs")
@@ -143,7 +149,7 @@ def test_confirming_a_suggestion_for_a_shared_scope_needs_acknowledgement(
     with store.transaction() as tx:
         tx.associations.add(confirmed("prj_pay", OIE_DOCS, ("documentation",)))
     (suggestion,) = _suggest(store, _evidence())
-    confirm = ConfirmAssociation(store=store)
+    confirm = ConfirmAssociation(store=store, vocabulary=_Vocabulary())
 
     with pytest.raises(SharedScopeConfirmationRequiredError) as raised:
         confirm.execute(
