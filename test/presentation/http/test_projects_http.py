@@ -14,6 +14,11 @@ _PROBLEM = "application/problem+json"
 LIB = {"connector_id": "gh-1", "scope_kind": "repo", "scope_value": "acme/shared-lib"}
 
 
+@pytest.fixture(autouse=True)
+def _no_pack_vocabulary_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "")
+
+
 def _client() -> TestClient:
     return TestClient(create_app(cors_origins=()), raise_server_exceptions=False)
 
@@ -40,8 +45,7 @@ def _assert_problem(response, status: int, code: str) -> dict:
     return body
 
 
-def test_create_list_and_get_project(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "")
+def test_create_list_and_get_project() -> None:
     client = _client()
 
     created = _create(client, "oie")
@@ -78,6 +82,43 @@ def test_detail_reports_context_coverage_with_pack_vocabulary(
     )
     backend = next(c for c in coverage if c["context"] == "backend")
     assert backend["scopes"] == [LIB]
+
+
+def _seed_suggestion(project_id: str) -> None:
+    with build_project_store(load_settings()).transaction() as tx:
+        tx.associations.add(
+            SourceAssociation(
+                project_id,
+                SourceScope(**LIB),
+                (),
+                AssociationState.SUGGESTED,
+                (),
+                "evidence",
+                1,
+            )
+        )
+
+
+def test_confirmed_associations_need_roles_with_pack_vocabulary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    client = _client()
+    project_id = _create(client, "oie")["project_id"]
+
+    _assert_problem(_associate(client, project_id), 422, "project_invalid_input")
+    _seed_suggestion(project_id)
+    before = client.get(f"/api/v1/projects/{project_id}").json()
+    url = f"/api/v1/projects/{project_id}/sources/confirm"
+    omitted = client.post(url, json={**LIB, "expected_version": 1})
+    empty = client.post(url, json={**LIB, "expected_version": 1, "roles": []})
+
+    _assert_problem(omitted, 422, "project_invalid_input")
+    _assert_problem(empty, 422, "project_invalid_input")
+    after = client.get(f"/api/v1/projects/{project_id}").json()
+    assert after == before
+    assert [a["state"] for a in after["associations"]] == ["suggested"]
+    assert after["components"] == []
 
 
 def test_unknown_project_is_404() -> None:
@@ -193,3 +234,24 @@ def test_remove_association_with_cas() -> None:
     detail = client.get(f"/api/v1/projects/{project_id}").json()
     assert detail["associations"] == []
     assert detail["components"] == []
+
+
+def test_replayed_delete_after_recreate_is_a_version_conflict() -> None:
+    client = _client()
+    project_id = _create(client, "oie")["project_id"]
+    url = f"/api/v1/projects/{project_id}/sources"
+    assert _associate(client, project_id).json()["version"] == 1
+    stale_delete = {**LIB, "expected_version": 1}
+    assert client.delete(url, params=stale_delete).status_code == 204
+    recreated = _associate(client, project_id)
+    assert recreated.status_code == 201, recreated.text
+    before = client.get(f"/api/v1/projects/{project_id}").json()
+
+    replay = client.delete(url, params=stale_delete)
+
+    _assert_problem(replay, 409, "project_version_conflict")
+    assert recreated.json()["version"] > 1
+    after = client.get(f"/api/v1/projects/{project_id}").json()
+    assert after == before
+    assert after["associations"][0]["version"] == recreated.json()["version"]
+    assert after["components"][0]["members"] == [{**LIB, "path_prefix": ""}]

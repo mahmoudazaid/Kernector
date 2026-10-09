@@ -36,8 +36,11 @@ class ProjectRepository(Protocol):
 
 
 class SourceAssociationRepository(Protocol):
-    def add(self, association: SourceAssociation) -> None:
-        """Insert ``association``.
+    def add(self, association: SourceAssociation) -> SourceAssociation:
+        """Insert ``association`` and return it as stored.
+
+        Versions are never reused for the same project and scope: after a
+        removal the stored version continues past the removed one.
 
         Raises:
             AssociationExistsError: The project already has this scope.

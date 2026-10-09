@@ -105,6 +105,55 @@ def test_confirm_validates_new_roles(store: InMemoryProjectStore) -> None:
     assert confirmed.roles == ("documentation",)
 
 
+def test_associate_without_roles_is_rejected_with_a_vocabulary(
+    store: InMemoryProjectStore,
+) -> None:
+    associate = AssociateSource(
+        store=store, vocabulary=VOCABULARY, component_forming_kinds=frozenset({"repo"})
+    )
+
+    with pytest.raises(ProjectInputError):
+        associate.execute(AssociateSourceRequest("prj_oie", ORDERS, (), "operator"))
+
+    with store.read() as tx:
+        assert tx.associations.get("prj_oie", ORDERS) is None
+        assert tx.components.for_project("prj_oie") == ()
+
+
+@pytest.mark.parametrize("roles", [None, ()], ids=["omitted", "empty"])
+def test_confirming_a_suggestion_without_roles_is_rejected_with_a_vocabulary(
+    store: InMemoryProjectStore, roles: tuple[str, ...] | None
+) -> None:
+    _suggest(store, DOCS)
+    with store.read() as tx:
+        suggestion = tx.associations.get("prj_oie", DOCS)
+    confirm = ConfirmAssociation(
+        store=store, vocabulary=VOCABULARY, component_forming_kinds=frozenset({"repo"})
+    )
+
+    with pytest.raises(ProjectInputError):
+        confirm.execute(ConfirmAssociationRequest("prj_oie", DOCS, 1, roles=roles))
+
+    assert suggestion is not None
+    assert suggestion.roles == ()
+    with store.read() as tx:
+        assert tx.associations.get("prj_oie", DOCS) == suggestion
+        assert tx.components.for_project("prj_oie") == ()
+
+
+def test_confirming_without_roles_is_allowed_without_a_vocabulary(
+    store: InMemoryProjectStore,
+) -> None:
+    _suggest(store, DOCS)
+
+    confirmed = ConfirmAssociation(store=store, vocabulary=None).execute(
+        ConfirmAssociationRequest("prj_oie", DOCS, 1)
+    )
+
+    assert confirmed.state is AssociationState.CONFIRMED
+    assert confirmed.roles == ()
+
+
 def test_coverage_reports_every_registered_context(
     store: InMemoryProjectStore,
 ) -> None:

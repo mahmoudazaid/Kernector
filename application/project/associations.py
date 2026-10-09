@@ -81,10 +81,18 @@ def require_shared_acknowledgement(
 def require_known_roles(
     roles: tuple[str, ...], vocabulary: ContextVocabulary | None
 ) -> None:
-    """Reject roles outside the registered vocabulary (any role without one)."""
+    """Validate the roles of an association entering ``confirmed``.
+
+    With a non-empty vocabulary at least one registered role is required;
+    without one, roles must be empty.
+    """
     known = frozenset(() if vocabulary is None else vocabulary.contexts)
-    if vocabulary is None and roles:
-        raise ProjectInputError("roles need a registered context vocabulary")
+    if not known:
+        if roles:
+            raise ProjectInputError("roles need a registered context vocabulary")
+        return
+    if not roles:
+        raise ProjectInputError("a confirmed association needs at least one role")
     if not set(roles) <= known:
         raise ProjectInputError("roles must be registered contexts")
 
@@ -132,7 +140,7 @@ class AssociateSource:
                 request.acknowledged_shared_with,
             )
             require_known_roles(association.roles, self._vocabulary)
-            tx.associations.add(association)
+            stored = tx.associations.add(association)
             ensure_default_component(
                 tx,
                 request.project_id,
@@ -140,7 +148,7 @@ class AssociateSource:
                 self._component_forming_kinds,
                 self._new_component_id,
             )
-        return association
+        return stored
 
 
 class ConfirmAssociation:

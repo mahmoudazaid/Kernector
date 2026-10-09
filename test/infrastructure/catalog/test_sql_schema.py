@@ -23,10 +23,10 @@ def test_missing_database_reports_version_zero_without_creating_file(
     assert not path.parent.exists()
 
 
-def test_apply_shipped_migration_advances_to_version_four(tmp_path: Path) -> None:
+def test_apply_shipped_migration_advances_to_version_five(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
     apply_migrations(path)
-    assert current_schema_version(path) == 4
+    assert current_schema_version(path) == 5
     assert path.is_file()
 
 
@@ -89,7 +89,7 @@ def test_legacy_uploaded_at_backfills_created_and_updated_then_drops_column(
         connection.close()
 
     apply_migrations(path)
-    assert current_schema_version(path) == 4
+    assert current_schema_version(path) == 5
 
     connection = sqlite3.connect(path)
     try:
@@ -226,7 +226,7 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
         for future in futures:
                 future.result(timeout=15)
 
-    assert current_schema_version(path) == 4
+    assert current_schema_version(path) == 5
     connection = sqlite3.connect(path)
     try:
         recorded_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]

@@ -138,7 +138,18 @@ class _Associations:
         self._connection = connection
         self._workspace_id = workspace_id
 
-    def add(self, association: SourceAssociation) -> None:
+    def _retired_version(self, project_id: str, scope: SourceScope) -> int | None:
+        row = self._connection.execute(
+            "SELECT last_version FROM source_association_versions "
+            f"WHERE workspace_id = ? AND project_id = ? AND {_SCOPE_WHERE}",
+            (self._workspace_id, project_id, *_scope_params(scope)),
+        ).fetchone()
+        return None if row is None else int(row["last_version"])
+
+    def add(self, association: SourceAssociation) -> SourceAssociation:
+        retired = self._retired_version(association.project_id, association.scope)
+        if retired is not None:
+            association = replace(association, version=retired + 1)
         now = _now()
         try:
             self._connection.execute(
@@ -161,6 +172,7 @@ class _Associations:
             raise AssociationExistsError(
                 "the project already has an association for this scope"
             ) from error
+        return association
 
     def get(self, project_id: str, scope: SourceScope) -> SourceAssociation | None:
         row = self._connection.execute(
@@ -220,6 +232,15 @@ class _Associations:
             "DELETE FROM source_associations "
             f"WHERE workspace_id = ? AND project_id = ? AND {_SCOPE_WHERE} "
             "AND version = ?",
+            (self._workspace_id, project_id, *_scope_params(scope), expected_version),
+        )
+        self._connection.execute(
+            "INSERT INTO source_association_versions (workspace_id, project_id, "
+            "connector_id, scope_kind, scope_value, last_version) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (workspace_id, project_id, connector_id, scope_kind, "
+            "scope_value) DO UPDATE SET "
+            "last_version = MAX(last_version, excluded.last_version)",
             (self._workspace_id, project_id, *_scope_params(scope), expected_version),
         )
 

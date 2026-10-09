@@ -37,6 +37,7 @@ class _State:
         default_factory=dict
     )
     components: dict[tuple[str, str], ProjectComponent] = field(default_factory=dict)
+    retired_versions: dict[tuple[str, SourceScope], int] = field(default_factory=dict)
 
 
 def _check(current: int | None, expected: int, missing: Exception) -> None:
@@ -85,12 +86,16 @@ class _Associations:
     def _rows(self) -> dict[tuple[str, SourceScope], SourceAssociation]:
         return self._tx._state.associations
 
-    def add(self, association: SourceAssociation) -> None:
+    def add(self, association: SourceAssociation) -> SourceAssociation:
         self._tx.maybe_fail("associations.add")
         key = (association.project_id, association.scope)
         if key in self._rows:
             raise AssociationExistsError("association exists")
+        retired = self._tx._state.retired_versions.get(key)
+        if retired is not None:
+            association = replace(association, version=retired + 1)
         self._rows[key] = association
+        return association
 
     def get(self, project_id: str, scope: SourceScope) -> SourceAssociation | None:
         return self._rows.get((project_id, scope))
@@ -121,6 +126,10 @@ class _Associations:
             AssociationNotFoundError("missing"),
         )
         del self._rows[(project_id, scope)]
+        retired = self._tx._state.retired_versions
+        retired[(project_id, scope)] = max(
+            retired.get((project_id, scope), 0), expected_version
+        )
 
     def for_project(self, project_id: str) -> tuple[SourceAssociation, ...]:
         return tuple(a for (pid, _), a in self._rows.items() if pid == project_id)
