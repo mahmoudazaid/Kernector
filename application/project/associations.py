@@ -7,8 +7,13 @@ bypassed by a stale acknowledgement.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
+from application.project.components import (
+    ensure_default_component,
+    remove_scope_members,
+)
 from application.project.projects import require_project
 from domain.project.errors import (
     AssociationExistsError,
@@ -22,6 +27,7 @@ from domain.project.models import (
     SourceAssociation,
     SourceScope,
     can_transition,
+    new_component_id,
 )
 from domain.project.ports import (
     ContextVocabulary,
@@ -91,9 +97,13 @@ class AssociateSource:
         *,
         store: ProjectUnitOfWork,
         vocabulary: ContextVocabulary | None = None,
+        component_forming_kinds: frozenset[str] = frozenset(),
+        new_component_id: Callable[[], str] = new_component_id,
     ) -> None:
         self._store = store
         self._vocabulary = vocabulary
+        self._component_forming_kinds = component_forming_kinds
+        self._new_component_id = new_component_id
 
     def execute(self, request: AssociateSourceRequest) -> SourceAssociation:
         """Raises:
@@ -123,6 +133,13 @@ class AssociateSource:
             )
             require_known_roles(association.roles, self._vocabulary)
             tx.associations.add(association)
+            ensure_default_component(
+                tx,
+                request.project_id,
+                request.scope,
+                self._component_forming_kinds,
+                self._new_component_id,
+            )
         return association
 
 
@@ -134,9 +151,13 @@ class ConfirmAssociation:
         *,
         store: ProjectUnitOfWork,
         vocabulary: ContextVocabulary | None = None,
+        component_forming_kinds: frozenset[str] = frozenset(),
+        new_component_id: Callable[[], str] = new_component_id,
     ) -> None:
         self._store = store
         self._vocabulary = vocabulary
+        self._component_forming_kinds = component_forming_kinds
+        self._new_component_id = new_component_id
 
     def execute(self, request: ConfirmAssociationRequest) -> SourceAssociation:
         """Raises:
@@ -170,9 +191,17 @@ class ConfirmAssociation:
                 roles=current.roles if request.roles is None else request.roles,
             )
             require_known_roles(updated.roles, self._vocabulary)
-            return tx.associations.update(
+            stored = tx.associations.update(
                 updated, expected_version=request.expected_version
             )
+            ensure_default_component(
+                tx,
+                request.project_id,
+                request.scope,
+                self._component_forming_kinds,
+                self._new_component_id,
+            )
+            return stored
 
 
 class RemoveAssociation:
@@ -193,3 +222,4 @@ class RemoveAssociation:
                 request.scope,
                 expected_version=request.expected_version,
             )
+            remove_scope_members(tx, request.project_id, request.scope)

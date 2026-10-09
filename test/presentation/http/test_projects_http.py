@@ -114,6 +114,9 @@ def test_associate_source_is_confirmed() -> None:
     assert body["state"] == "confirmed"
     assert body["version"] == 1
     assert body["scope_value"] == "acme/shared-lib"
+    (component,) = client.get(f"/api/v1/projects/{project_id}").json()["components"]
+    assert component["reason"] == "association_default"
+    assert component["members"] == [{**LIB, "path_prefix": ""}]
 
 
 def test_associate_unknown_project_is_404() -> None:
@@ -187,4 +190,6 @@ def test_remove_association_with_cas() -> None:
     removed = client.delete(url, params={**LIB, "expected_version": 1})
 
     assert removed.status_code == 204
-    assert client.get(f"/api/v1/projects/{project_id}").json()["associations"] == []
+    detail = client.get(f"/api/v1/projects/{project_id}").json()
+    assert detail["associations"] == []
+    assert detail["components"] == []

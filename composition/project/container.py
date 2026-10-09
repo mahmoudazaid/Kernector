@@ -15,6 +15,7 @@ from application.project.associations import (
     ConfirmAssociation,
     RemoveAssociation,
 )
+from application.project.components import ResolveComponentsForSource
 from application.project.coverage import ProjectContextCoverage
 from application.project.projects import CreateProject, GetProject, ListProjects
 from application.project.resolve import ResolveProjectsForSource
@@ -48,6 +49,15 @@ def build_scope_resolvers() -> Mapping[str, SourceScopeResolver]:
     }
 
 
+def component_forming_kinds(
+    resolvers: Mapping[str, SourceScopeResolver],
+) -> frozenset[str]:
+    """Union of the scope kinds connectors declare component-forming."""
+    return frozenset().union(
+        *(resolver.component_forming_scope_kinds for resolver in resolvers.values())
+    )
+
+
 def build_project_store(settings: Settings) -> SqlProjectStore:
     """Return the project store bound to ``DOCUMENT_CATALOG_WORKSPACE_ID``."""
     from composition.container import _require_workspace_id
@@ -65,12 +75,17 @@ def build_project_use_cases(settings: Settings) -> ProjectUseCases:
     """Wire the project use cases for HTTP and MCP."""
     store = build_project_store(settings)
     vocabulary = build_context_vocabulary(settings)
+    kinds = component_forming_kinds(build_scope_resolvers())
     return ProjectUseCases(
         create=CreateProject(store=store),
         list=ListProjects(store=store),
         get=GetProject(store=store, vocabulary=vocabulary),
-        associate=AssociateSource(store=store, vocabulary=vocabulary),
-        confirm=ConfirmAssociation(store=store, vocabulary=vocabulary),
+        associate=AssociateSource(
+            store=store, vocabulary=vocabulary, component_forming_kinds=kinds
+        ),
+        confirm=ConfirmAssociation(
+            store=store, vocabulary=vocabulary, component_forming_kinds=kinds
+        ),
         remove=RemoveAssociation(store=store),
         coverage=ProjectContextCoverage(store=store, vocabulary=vocabulary),
     )
@@ -81,6 +96,19 @@ def build_resolve_projects_for_source(settings: Settings) -> ResolveProjectsForS
     from composition.container import build_document_catalog
 
     return ResolveProjectsForSource(
+        store=build_project_store(settings),
+        catalog=build_document_catalog(settings),
+        resolvers=build_scope_resolvers(),
+    )
+
+
+def build_resolve_components_for_source(
+    settings: Settings,
+) -> ResolveComponentsForSource:
+    """Wire document-to-component resolution over the catalog."""
+    from composition.container import build_document_catalog
+
+    return ResolveComponentsForSource(
         store=build_project_store(settings),
         catalog=build_document_catalog(settings),
         resolvers=build_scope_resolvers(),
