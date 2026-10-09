@@ -7,6 +7,8 @@ from collections.abc import Callable, Mapping
 
 from application.errors import ConfigurationError
 from application.retrieve_knowledge import RetrieveKnowledge
+from composition.mcp.project_list import TOOL_NAME as PROJECT_LIST_TOOL
+from composition.mcp.project_list import ProjectListTool
 from composition.mcp.search_knowledge import TOOL_NAME as SEARCH_KNOWLEDGE_TOOL
 from composition.mcp.search_knowledge import SearchKnowledgeTool
 from composition.mcp.tool_registry import McpToolContribution, McpToolRegistry
@@ -37,7 +39,12 @@ def build_mcp_tool_registry(
             tool_id=SEARCH_KNOWLEDGE_TOOL,
             pack_id=None,
             factory=lambda: SearchKnowledgeTool(retrieve),
-        )
+        ),
+        McpToolContribution(
+            tool_id=PROJECT_LIST_TOOL,
+            pack_id=None,
+            factory=lambda: _project_list_tool(settings),
+        ),
     ]
     for pack_id in settings.domain_tools.enabled_packs:
         target = SUPPORTED_MCP_TOOL_PACKS.get(pack_id)
@@ -65,6 +72,12 @@ def build_mcp_tool_registry(
         contributions=contributions,
         enabled_packs=settings.domain_tools.enabled_packs,
     )
+
+
+def _project_list_tool(settings: Settings) -> ProjectListTool:
+    from composition.project.container import build_project_use_cases
+
+    return ProjectListTool(build_project_use_cases(settings).list)
 
 
 def _pack_mcp_kwargs(pack_id: str, settings: Settings) -> dict[str, object]:

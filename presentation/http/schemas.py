@@ -1126,3 +1126,159 @@ def document_chunk_response(chunk: DocumentChunk) -> DocumentChunkResponse:
         extra=dict(chunk.metadata.extra),
     )
 
+
+
+class CreateProjectBody(BaseModel):
+    """Body for creating a project; the ``project_id`` is generated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=512)
+    slug: str = Field(min_length=1, max_length=64)
+
+
+class ProjectResponse(BaseModel):
+    """A project in the bound workspace."""
+
+    project_id: str
+    name: str
+    slug: str
+    version: int
+
+
+class SourceScopeBody(BaseModel):
+    """Opaque connector scope; the connector owns its meaning."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    connector_id: str = Field(min_length=1, max_length=512)
+    scope_kind: str = Field(min_length=1, max_length=64)
+    scope_value: str = Field(min_length=1, max_length=512)
+
+
+class AssociateSourceBody(SourceScopeBody):
+    """Explicitly associate a scope with a project as ``confirmed``."""
+
+    roles: list[str] = Field(default_factory=list, max_length=32)
+    acknowledged_shared_with: list[str] = Field(default_factory=list, max_length=256)
+
+
+class ConfirmAssociationBody(SourceScopeBody):
+    """Confirm a suggested or rejected association with compare-and-swap."""
+
+    expected_version: int = Field(ge=1)
+    roles: list[str] | None = Field(default=None, max_length=32)
+    acknowledged_shared_with: list[str] = Field(default_factory=list, max_length=256)
+
+
+class ProjectAssociationResponse(BaseModel):
+    """One source association of a project."""
+
+    connector_id: str
+    scope_kind: str
+    scope_value: str
+    roles: list[str]
+    state: Literal["suggested", "confirmed", "rejected"]
+    evidence: list[SourceReferenceResponse]
+    created_by: str
+    version: int
+
+
+class ProjectComponentMemberResponse(BaseModel):
+    """A component member: a scope narrowed by an optional path prefix."""
+
+    connector_id: str
+    scope_kind: str
+    scope_value: str
+    path_prefix: str
+
+
+class ProjectComponentResponse(BaseModel):
+    """A project component; it has no type field."""
+
+    component_id: str
+    name: str
+    reason: Literal["association_default", "operator"]
+    version: int
+    members: list[ProjectComponentMemberResponse]
+
+
+class ProjectDetailResponse(ProjectResponse):
+    """A project with its associations and components."""
+
+    associations: list[ProjectAssociationResponse]
+    components: list[ProjectComponentResponse]
+
+
+def project_response(project: object) -> ProjectResponse:
+    """Project a domain ``Project`` to the HTTP schema."""
+    from domain.project.models import Project
+
+    if not isinstance(project, Project):
+        raise TypeError("project must be a Project")
+    return ProjectResponse(
+        project_id=project.project_id,
+        name=project.name,
+        slug=project.slug,
+        version=project.version,
+    )
+
+
+def project_association_response(association: object) -> ProjectAssociationResponse:
+    """Project a domain ``SourceAssociation`` to the HTTP schema."""
+    from domain.project.models import SourceAssociation
+
+    if not isinstance(association, SourceAssociation):
+        raise TypeError("association must be a SourceAssociation")
+    return ProjectAssociationResponse(
+        connector_id=association.scope.connector_id,
+        scope_kind=association.scope.scope_kind,
+        scope_value=association.scope.scope_value,
+        roles=list(association.roles),
+        state=association.state.value,
+        evidence=[
+            SourceReferenceResponse(
+                source_id=ref.source_id, source_type=str(ref.source_type)
+            )
+            for ref in association.evidence
+        ],
+        created_by=association.created_by,
+        version=association.version,
+    )
+
+
+def project_component_response(component: object) -> ProjectComponentResponse:
+    """Project a domain ``ProjectComponent`` to the HTTP schema."""
+    from domain.project.models import ProjectComponent
+
+    if not isinstance(component, ProjectComponent):
+        raise TypeError("component must be a ProjectComponent")
+    return ProjectComponentResponse(
+        component_id=component.component_id,
+        name=component.name,
+        reason=component.reason,
+        version=component.version,
+        members=[
+            ProjectComponentMemberResponse(
+                connector_id=member.scope.connector_id,
+                scope_kind=member.scope.scope_kind,
+                scope_value=member.scope.scope_value,
+                path_prefix=member.path_prefix,
+            )
+            for member in component.members
+        ],
+    )
+
+
+def project_detail_response(detail: object) -> ProjectDetailResponse:
+    """Project an application ``ProjectDetail`` to the HTTP schema."""
+    from application.project.projects import ProjectDetail
+
+    if not isinstance(detail, ProjectDetail):
+        raise TypeError("detail must be a ProjectDetail")
+    base = project_response(detail.project)
+    return ProjectDetailResponse(
+        **base.model_dump(),
+        associations=[project_association_response(a) for a in detail.associations],
+        components=[project_component_response(c) for c in detail.components],
+    )

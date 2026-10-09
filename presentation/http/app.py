@@ -31,6 +31,7 @@ from presentation.http.routes import jira as jira_routes
 from presentation.http.routes import google_drive as google_drive_routes
 from presentation.http.routes import health as health_routes
 from presentation.http.routes import ollama_status as ollama_status_routes
+from presentation.http.routes import projects as projects_routes
 from presentation.http.routes import settings as settings_routes
 from presentation.http.routes import test_design as test_design_routes
 
@@ -238,6 +239,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     app.include_router(github_routes.router)
     app.include_router(jira_routes.router)
     app.include_router(test_design_routes.router)
+    app.include_router(projects_routes.router)
 
     def custom_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:
