@@ -47,6 +47,5 @@ class SharedScopeConfirmationRequiredError(ProjectError):
     def __init__(self, project_ids: tuple[str, ...]) -> None:
         self.project_ids = tuple(sorted(project_ids))
         super().__init__(
-            "scope is already confirmed in other projects: "
-            + ", ".join(self.project_ids)
+            "scope is already confirmed in other projects; acknowledge them to share it"
         )
