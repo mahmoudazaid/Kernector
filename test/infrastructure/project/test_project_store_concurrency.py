@@ -58,7 +58,9 @@ def test_concurrent_unacknowledged_confirmations_leave_one_winner(
         outcomes = [future.result(timeout=15) for future in futures]
 
     winners = [o for o in outcomes if isinstance(o, str)]
-    losers = [o for o in outcomes if isinstance(o, SharedScopeConfirmationRequiredError)]
+    losers = [
+        o for o in outcomes if isinstance(o, SharedScopeConfirmationRequiredError)
+    ]
     assert len(winners) == 1 and len(losers) == 1
     assert losers[0].project_ids == tuple(winners)
     with _store(path).read() as tx:

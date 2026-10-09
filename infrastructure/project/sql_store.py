@@ -170,7 +170,9 @@ class _Associations:
         ).fetchone()
         return None if row is None else _association_from_row(row)
 
-    def _locked_version(self, project_id: str, scope: SourceScope) -> sqlite3.Row | None:
+    def _locked_version(
+        self, project_id: str, scope: SourceScope
+    ) -> sqlite3.Row | None:
         return self._connection.execute(
             "SELECT version FROM source_associations "
             f"WHERE workspace_id = ? AND project_id = ? AND {_SCOPE_WHERE}",
@@ -296,7 +298,9 @@ class _Components:
             raise AssociationExistsError("component_id already exists") from error
         self._insert_members(component)
 
-    def _members(self, project_id: str, component_id: str) -> tuple[ComponentMember, ...]:
+    def _members(
+        self, project_id: str, component_id: str
+    ) -> tuple[ComponentMember, ...]:
         rows = self._connection.execute(
             "SELECT connector_id, scope_kind, scope_value, path_prefix "
             "FROM project_component_members "

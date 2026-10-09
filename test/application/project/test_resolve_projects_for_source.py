@@ -106,7 +106,9 @@ def test_removed_association_is_excluded_immediately(
     assert resolve.execute(_ref("orders_file")) == ()
 
 
-def test_unknown_document_resolves_to_nothing(resolve: ResolveProjectsForSource) -> None:
+def test_unknown_document_resolves_to_nothing(
+    resolve: ResolveProjectsForSource,
+) -> None:
     assert resolve.execute(SourceReference("acme/x:y", "github")) == ()
 
 

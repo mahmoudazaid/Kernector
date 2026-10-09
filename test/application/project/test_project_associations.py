@@ -33,7 +33,11 @@ def store() -> InMemoryProjectStore:
 
 
 def _create(store: InMemoryProjectStore, slug: str) -> str:
-    return CreateProject(store=store).execute(CreateProjectRequest(slug.upper(), slug)).project_id
+    return (
+        CreateProject(store=store)
+        .execute(CreateProjectRequest(slug.upper(), slug))
+        .project_id
+    )
 
 
 def _associate(
@@ -54,7 +58,9 @@ def _associate(
 
 
 def test_create_project_generates_an_opaque_id(store: InMemoryProjectStore) -> None:
-    project = CreateProject(store=store).execute(CreateProjectRequest("Order Intake", "oie"))
+    project = CreateProject(store=store).execute(
+        CreateProjectRequest("Order Intake", "oie")
+    )
 
     assert project.project_id.startswith("prj_")
     assert project.project_id != "oie"
@@ -136,13 +142,17 @@ def test_confirm_needs_the_current_version(store: InMemoryProjectStore) -> None:
     oie = _create(store, "oie")
     with store.transaction() as tx:
         tx.associations.add(
-            SourceAssociation(oie, ORDERS, (), AssociationState.SUGGESTED, (), "pack", 1)
+            SourceAssociation(
+                oie, ORDERS, (), AssociationState.SUGGESTED, (), "pack", 1
+            )
         )
     confirm = ConfirmAssociation(store=store)
 
     with pytest.raises(ProjectRecordVersionConflictError):
         confirm.execute(ConfirmAssociationRequest(oie, ORDERS, expected_version=3))
-    confirmed = confirm.execute(ConfirmAssociationRequest(oie, ORDERS, expected_version=1))
+    confirmed = confirm.execute(
+        ConfirmAssociationRequest(oie, ORDERS, expected_version=1)
+    )
 
     assert confirmed.state is AssociationState.CONFIRMED
     assert confirmed.version == 2

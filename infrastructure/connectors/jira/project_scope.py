@@ -29,7 +29,7 @@ def _project_key(document: CatalogDocument) -> str | None:
     prefix = f"{project_key}-"
     if not issue_key.startswith(prefix):
         return None
-    if not _ISSUE_NUMBER.fullmatch(issue_key[len(prefix):]):
+    if not _ISSUE_NUMBER.fullmatch(issue_key[len(prefix) :]):
         return None
     return project_key
 
@@ -47,7 +47,9 @@ class JiraSourceScopeResolver:
         project_key = _project_key(document)
         if project_key is None:
             return ()
-        return (SourceScope(document.connector_id, PROJECT_KEY_SCOPE_KIND, project_key),)
+        return (
+            SourceScope(document.connector_id, PROJECT_KEY_SCOPE_KIND, project_key),
+        )
 
     def path_for(self, document: CatalogDocument) -> str | None:
         return None

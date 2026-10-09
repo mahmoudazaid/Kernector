@@ -152,9 +152,7 @@ def can_transition(current: AssociationState, target: AssociationState) -> bool:
 def require_roles(roles: object) -> tuple[str, ...]:
     """Return ``roles`` when it is a tuple of unique context tokens."""
     if not isinstance(roles, tuple):
-        raise ProjectInputError(
-            f"roles must be a tuple, got {type(roles).__name__}"
-        )
+        raise ProjectInputError(f"roles must be a tuple, got {type(roles).__name__}")
     for role in roles:
         require_token(role, "role")
     if len(set(roles)) != len(roles):
