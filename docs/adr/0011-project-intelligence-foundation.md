@@ -328,10 +328,12 @@ relation types for each context pair. The initial set is:
 | `documentation` | any | `describes` | — |
 | any | any | `mentions` | `mention` |
 
-`tests` and `tested_by` are inverses. An edge is stored once, in the direction
-its evidence declares, and traversal follows both directions. Relations within
-one context, such as provider-declared `blocks` or `duplicates`, need no pair
-rule.
+`tests` and `tested_by` are inverses. An edge is stored once, in the outward
+direction of the provider link type or rule that declares it, for example
+`OIE-140 tests OIE-123` for a Jira "tests" link. Traversal follows both
+directions and may show the inverse name, so `OIE-123` lists
+`tested_by OIE-140`. Relations within one context, such as provider-declared
+`blocks` or `duplicates`, need no pair rule.
 
 #### 10.3 Task-aware selection
 
