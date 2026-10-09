@@ -588,6 +588,31 @@ Same-host concurrent writers are safe via `os.replace` plus a per-path lock.
 (`Connection.backup` or `VACUUM INTO`). Do not assemble a live `.sqlite` file
 together with WAL/SHM files by hand.
 
+### Project Intelligence (planned)
+
+[ADR 0011](docs/adr/0011-project-intelligence-foundation.md) decides project
+identity (`workspace_id + project_id`), explicit source-to-project
+associations, artifacts, evidence-backed relationships, project contexts,
+components, and relational storage in the existing SQLite database. **None of
+it is implemented yet**; the child tickets of
+[EPIC #369](https://github.com/mahmoudazaid/Kernector/issues/369) build it.
+
+The planned responsibilities follow the [layer table](#layers) and its import
+rules unchanged:
+
+- `domain/` — project, artifact descriptor, relationship, evidence and outcome
+  contracts, plus their ports. No context, relation, kind, purpose or role
+  literals, except the built-in `answer` purpose (ADR 0011 decision 3).
+- `application/` — association, classification, reconciliation and context
+  assembly use cases, reaching storage only through `domain` ports.
+- `infrastructure/` — SQLite adapters on the numbered migration runner, and
+  connector extractors for artifact descriptors and provider-declared links.
+- `packs/software_delivery` — the context vocabulary, classification rules,
+  relation types and purpose policies, registered as data.
+- `composition/` — wiring, with packs loaded lazily.
+- `presentation/` — exposure only through the existing MCP registry and HTTP
+  API.
+
 ## Error taxonomy
 
 Operational failures cross the port boundary as typed errors so presentation can
