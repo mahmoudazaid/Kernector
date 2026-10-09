@@ -819,3 +819,14 @@ ClearResponseFeedbackDep = Annotated[
 GetResponseFeedbackDep = Annotated[
     object, Depends(get_get_response_feedback)
 ]
+
+
+@lru_cache(maxsize=1)
+def get_project_use_cases():
+    """Process-cached project identity and association use cases."""
+    from composition.project.container import build_project_use_cases
+
+    return build_project_use_cases(get_settings())
+
+
+ProjectUseCasesDep = Annotated[object, Depends(get_project_use_cases)]

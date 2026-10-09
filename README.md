@@ -561,6 +561,43 @@ non-text values are ignored. An issue with neither description nor acceptance
 criteria has insufficient evidence. Changes to the issue's `updated` time
 alone do not invalidate a confirmed draft; changes to the evidence text do.
 
+## Projects and source associations
+
+A project groups the sources that describe one product (#372). Create it, then
+associate connector scopes with it. Projects live in the catalog database for
+`DOCUMENT_CATALOG_WORKSPACE_ID`.
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/projects \
+  -H 'Content-Type: application/json' -d '{"name":"Order Intake","slug":"oie"}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/projects/<project_id>/sources \
+  -H 'Content-Type: application/json' \
+  -d '{"connector_id":"<id>","scope_kind":"repo","scope_value":"acme/oie-orders","roles":["backend","api_contract"]}'
+curl -s http://127.0.0.1:8000/api/v1/projects/<project_id>
+```
+
+- Scopes: GitHub `repo` = `owner/name`; Jira `project_key` = `OIE`. Google
+  Drive files and GitHub ProjectV2 issues have no scope yet and cannot be
+  associated.
+- Roles must be contexts registered by an enabled pack
+  (`DOMAIN_TOOL_PACKS=software-delivery`: `business`, `api_contract`,
+  `frontend`, `backend`, `operations`, `testing`, `documentation`). Without a
+  pack, roles must be empty.
+- A scope already confirmed in other projects needs
+  `"acknowledged_shared_with": ["<their project_id>", …]`; otherwise the
+  request fails with `409 shared_scope_confirmation_required` listing them.
+- Confirm (`POST …/sources/confirm`) and remove (`DELETE …/sources?…`) need the
+  association's current `expected_version`; a stale one returns
+  `409 project_version_conflict`.
+- Each GitHub repository becomes a default component. The project detail
+  lists components and the structural `context_coverage`
+  (`associated` / `not_associated` per registered context).
+- Kernector does not suggest associations yet: no connector supplies
+  authoritative link evidence.
+
+MCP clients can list projects with the read-only `core.project_list` tool when
+it is in `MCP_TOOL_ALLOWLIST`.
+
 ## Logging and monitoring
 
 Kernector emits structured stdlib logging for ask, rewrite/retrieve, ingest, and

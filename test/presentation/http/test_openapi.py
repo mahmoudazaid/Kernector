@@ -72,6 +72,33 @@ _JIRA_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
 }
 
 
+_PROJECT_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("/api/v1/projects", "get"): ("500",),
+    ("/api/v1/projects", "post"): ("409", "422", "500"),
+    ("/api/v1/projects/{project_id}", "get"): ("404", "422", "500"),
+    ("/api/v1/projects/{project_id}/sources", "post"): ("404", "409", "422", "500"),
+    ("/api/v1/projects/{project_id}/sources", "delete"): ("404", "409", "422", "500"),
+    ("/api/v1/projects/{project_id}/sources/confirm", "post"): (
+        "404",
+        "409",
+        "422",
+        "500",
+    ),
+}
+
+
+def test_openapi_project_routes_declare_problem_errors() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    for (path, method), statuses in _PROJECT_ERROR_STATUSES.items():
+        responses = schema["paths"][path][method]["responses"]
+        for status in statuses:
+            content = responses[status]["content"]
+            assert list(content) == [_PROBLEM], f"{path} {method} {status}"
+    project = schema["components"]["schemas"]["ProjectResponse"]["properties"]
+    assert "workspace_id" not in project
+
+
 def test_openapi_jira_routes_declare_problem_errors() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
 
