@@ -588,17 +588,59 @@ Same-host concurrent writers are safe via `os.replace` plus a per-path lock.
 (`Connection.backup` or `VACUUM INTO`). Do not assemble a live `.sqlite` file
 together with WAL/SHM files by hand.
 
-### Project Intelligence (planned)
+### Project Intelligence
 
 [ADR 0011](docs/adr/0011-project-intelligence-foundation.md) decides project
 identity (`workspace_id + project_id`), explicit source-to-project
 associations, artifacts, evidence-backed relationships, project contexts,
-components, and relational storage in the existing SQLite database. **None of
-it is implemented yet**; the child tickets of
-[EPIC #369](https://github.com/mahmoudazaid/Kernector/issues/369) build it.
+components, and relational storage in the existing SQLite database. The child
+tickets of [EPIC #369](https://github.com/mahmoudazaid/Kernector/issues/369)
+build it.
 
-The planned responsibilities follow the [layer table](#layers) and its import
-rules unchanged:
+#### Project identity and associations (#372)
+
+- **Identity.** A project is `workspace_id + project_id` (`prj_<hex>`, opaque)
+  with a unique per-workspace `slug`. There is no default project.
+  `workspace_id` comes from `DOCUMENT_CATALOG_WORKSPACE_ID` and never appears
+  in responses.
+- **Associations** link a project to an opaque connector scope
+  `(connector_id, scope_kind, scope_value)` with context `roles` and a state:
+  `suggested`, `confirmed` or `rejected`. Only `confirmed` associations drive
+  resolution and coverage. A scope may be shared by several projects; every
+  transition into `confirmed` must name the other projects already confirmed
+  for that scope in `acknowledged_shared_with`, checked inside the write
+  transaction. Mutations of existing records require `expected_version`.
+- **Connector scopes.** Infrastructure adapters implement
+  `SourceScopeResolver`, dispatched by `source_type`: GitHub repository files
+  (`{owner}/{repo}:{path}`) map to `repo`, Jira issues
+  (`{instance}/{PROJECT}:{KEY}`) map to `project_key`. GitHub ProjectV2 issues,
+  Google Drive files and documents without a `connector_id` have no scope and
+  resolve to no project.
+- **Components.** A scope kind the connector declares component-forming
+  (`repo`) gets one default component (`association_default`, whole-scope
+  member) when first confirmed in a project. Operators assign, split and merge
+  components with compare-and-swap in one transaction; removing an association
+  deletes its members and any component left empty.
+- **Path prefixes** are provider-neutral (`domain/project/paths.py`): `""` or
+  `seg(/seg)*`, case-sensitive, one trailing `/` dropped; `\`, `.`/`..`,
+  empty segments and control characters are rejected. Matching respects
+  directory boundaries (`web` never matches `website/x`); the longest prefix
+  wins per project, `""` is the fallback; outcomes are `resolved`,
+  `unassigned`, `invalid_path` or `ambiguous`.
+- **Context coverage** is structural: each context registered by an enabled
+  pack is `associated` (a confirmed association lists it as a role) or
+  `not_associated`. It says nothing about sync, freshness or evidence. Without
+  a registered vocabulary the report is empty and roles must be empty.
+- **Suggestions.** `SuggestAssociations` creates `suggested` rows only from
+  authoritative provider-declared evidence through `AssociationEvidenceSource`.
+  No production source supplies that evidence yet (the Jira connector does not
+  fetch remote links or development-panel data), so it is not wired or exposed.
+- **Transactions.** The SQLite store (`infrastructure/project/sql_store.py`,
+  migration `004`) runs each use case in one `BEGIN IMMEDIATE` transaction;
+  any failure rolls back every record it touched.
+
+The responsibilities follow the [layer table](#layers) and its import rules
+unchanged:
 
 - `domain/` — project, artifact descriptor, relationship, evidence and outcome
   contracts, plus their ports. No context, relation, kind, purpose or role
@@ -782,7 +824,8 @@ check. Feature-migration readiness:
 
 Issue [#320](https://github.com/mahmoudazaid/Kernector/issues/320): one shared
 Kernector MCP server exposes `core.search_knowledge` (bounded untrusted
-evidence + citations; no LLM ask). Pack tools are contributed via
+evidence + citations; no LLM ask) and the read-only `core.project_list`
+(projects and their confirmed associations, #372). Pack tools are contributed via
 `build_mcp_tools()`; Test Design (#338) is the first. Coding assistants remain
 the agents; Kernector supplies evidence and allowlisted tools.
 
