@@ -30,6 +30,10 @@ class GitHubSourceScopeResolver:
     """Map repository files to ``repo={owner}/{repo}`` plus their path."""
 
     @property
+    def scope_kinds(self) -> frozenset[str]:
+        return frozenset({REPO_SCOPE_KIND})
+
+    @property
     def component_forming_scope_kinds(self) -> frozenset[str]:
         return frozenset({REPO_SCOPE_KIND})
 

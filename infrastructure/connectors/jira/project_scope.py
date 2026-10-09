@@ -38,6 +38,10 @@ class JiraSourceScopeResolver:
     """Map issues to ``project_key={KEY}``; issues have no path."""
 
     @property
+    def scope_kinds(self) -> frozenset[str]:
+        return frozenset({PROJECT_KEY_SCOPE_KIND})
+
+    @property
     def component_forming_scope_kinds(self) -> frozenset[str]:
         return frozenset()
 

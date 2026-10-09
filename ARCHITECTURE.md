@@ -615,7 +615,10 @@ build it.
   (`{owner}/{repo}:{path}`) map to `repo`, Jira issues
   (`{instance}/{PROJECT}:{KEY}`) map to `project_key`. GitHub ProjectV2 issues,
   Google Drive files and documents without a `connector_id` have no scope and
-  resolve to no project.
+  resolve to no project. Each resolver declares the `scope_kinds` it accepts;
+  associating or confirming a kind no connector declares is rejected with
+  `project_invalid_input` (422). `connector_id` itself is not yet checked
+  against the configured connectors (follow-up).
 - **Components.** A scope kind the connector declares component-forming
   (`repo`) gets one default component (`association_default`, whole-scope
   member) when first confirmed in a project. Operators assign, split and merge

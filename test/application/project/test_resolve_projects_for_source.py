@@ -143,5 +143,7 @@ def test_resolvers_expose_scope_and_path() -> None:
     assert github.path_for(orders) == "orders/cancel:v2.py"
     assert jira.scopes_for(story) == (OIE_JIRA,)
     assert jira.path_for(story) is None
+    assert github.scope_kinds == frozenset({"repo"})
+    assert jira.scope_kinds == frozenset({"project_key"})
     assert github.component_forming_scope_kinds == frozenset({"repo"})
     assert jira.component_forming_scope_kinds == frozenset()

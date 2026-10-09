@@ -15,6 +15,7 @@ from application.project.associations import (
 from application.project.projects import CreateProject, CreateProjectRequest
 from domain.project.errors import (
     AssociationExistsError,
+    ProjectInputError,
     ProjectNotFoundError,
     ProjectRecordVersionConflictError,
     ProjectSlugTakenError,
@@ -169,3 +170,38 @@ def test_remove_needs_the_current_version(store: InMemoryProjectStore) -> None:
 
     with store.read() as tx:
         assert tx.associations.get(oie, LIB) is None
+
+
+def test_associate_rejects_a_scope_kind_no_connector_declares(
+    store: InMemoryProjectStore,
+) -> None:
+    oie = _create(store, "oie")
+    associate = AssociateSource(store=store, scope_kinds=frozenset({"repo"}))
+    unknown = SourceScope("gh-1", "repository", "acme/oie-orders")
+
+    with pytest.raises(ProjectInputError):
+        associate.execute(AssociateSourceRequest(oie, unknown, (), "operator"))
+
+    with store.read() as tx:
+        assert tx.associations.get(oie, unknown) is None
+    stored = associate.execute(AssociateSourceRequest(oie, ORDERS, (), "operator"))
+    assert stored.state is AssociationState.CONFIRMED
+
+
+def test_confirm_rejects_a_scope_kind_no_connector_declares(
+    store: InMemoryProjectStore,
+) -> None:
+    oie = _create(store, "oie")
+    unknown = SourceScope("gh-1", "repository", "acme/oie-orders")
+    suggested = SourceAssociation(
+        oie, unknown, (), AssociationState.SUGGESTED, (), "pack", 1
+    )
+    with store.transaction() as tx:
+        tx.associations.add(suggested)
+    confirm = ConfirmAssociation(store=store, scope_kinds=frozenset({"repo"}))
+
+    with pytest.raises(ProjectInputError):
+        confirm.execute(ConfirmAssociationRequest(oie, unknown, expected_version=1))
+
+    with store.read() as tx:
+        assert tx.associations.get(oie, unknown) == suggested

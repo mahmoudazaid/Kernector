@@ -50,6 +50,5 @@ class SuggestAssociations:
                     created_by=SUGGESTION_ACTOR,
                     version=1,
                 )
-                tx.associations.add(suggestion)
-                created.append(suggestion)
+                created.append(tx.associations.add(suggestion))
         return tuple(created)

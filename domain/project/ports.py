@@ -139,6 +139,11 @@ class SourceScopeResolver(Protocol):
     """Connector-owned mapping from a catalog document to its scope."""
 
     @property
+    def scope_kinds(self) -> frozenset[str]:
+        """Scope kinds this connector accepts in an association."""
+        ...
+
+    @property
     def component_forming_scope_kinds(self) -> frozenset[str]: ...
 
     def scopes_for(self, document: CatalogDocument) -> tuple[SourceScope, ...]:

@@ -160,6 +160,18 @@ def test_associate_source_is_confirmed() -> None:
     assert component["members"] == [{**LIB, "path_prefix": ""}]
 
 
+def test_associate_undeclared_scope_kind_is_422() -> None:
+    client = _client()
+    project_id = _create(client, "oie")["project_id"]
+
+    response = _associate(client, project_id, scope_kind="repository")
+
+    _assert_problem(response, 422, "project_invalid_input")
+    detail = client.get(f"/api/v1/projects/{project_id}").json()
+    assert detail["associations"] == []
+    assert detail["components"] == []
+
+
 def test_associate_unknown_project_is_404() -> None:
     _assert_problem(_associate(_client(), "prj_missing"), 404, "project_not_found")
 

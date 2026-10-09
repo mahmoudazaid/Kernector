@@ -49,6 +49,13 @@ def build_scope_resolvers() -> Mapping[str, SourceScopeResolver]:
     }
 
 
+def declared_scope_kinds(
+    resolvers: Mapping[str, SourceScopeResolver],
+) -> frozenset[str]:
+    """Union of the scope kinds connectors accept in an association."""
+    return frozenset().union(*(resolver.scope_kinds for resolver in resolvers.values()))
+
+
 def component_forming_kinds(
     resolvers: Mapping[str, SourceScopeResolver],
 ) -> frozenset[str]:
@@ -75,16 +82,24 @@ def build_project_use_cases(settings: Settings) -> ProjectUseCases:
     """Wire the project use cases for HTTP and MCP."""
     store = build_project_store(settings)
     vocabulary = build_context_vocabulary(settings)
-    kinds = component_forming_kinds(build_scope_resolvers())
+    resolvers = build_scope_resolvers()
+    scope_kinds = declared_scope_kinds(resolvers)
+    kinds = component_forming_kinds(resolvers)
     return ProjectUseCases(
         create=CreateProject(store=store),
         list=ListProjects(store=store),
         get=GetProject(store=store, vocabulary=vocabulary),
         associate=AssociateSource(
-            store=store, vocabulary=vocabulary, component_forming_kinds=kinds
+            store=store,
+            vocabulary=vocabulary,
+            scope_kinds=scope_kinds,
+            component_forming_kinds=kinds,
         ),
         confirm=ConfirmAssociation(
-            store=store, vocabulary=vocabulary, component_forming_kinds=kinds
+            store=store,
+            vocabulary=vocabulary,
+            scope_kinds=scope_kinds,
+            component_forming_kinds=kinds,
         ),
         remove=RemoveAssociation(store=store),
         coverage=ProjectContextCoverage(store=store, vocabulary=vocabulary),

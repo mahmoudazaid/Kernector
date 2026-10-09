@@ -12,11 +12,21 @@ from application.project.associations import (
     RemoveAssociation,
     RemoveAssociationRequest,
 )
+from application.project.suggest import SuggestAssociations
+from domain.knowledge import SourceReference
 from domain.project.errors import ProjectRecordVersionConflictError
-from domain.project.models import ComponentMember, Project, SourceScope
+from domain.project.models import (
+    AssociationEvidence,
+    AssociationState,
+    ComponentMember,
+    Project,
+    SourceScope,
+)
 from infrastructure.project.sql_store import SqlProjectStore
+from test.application.project.project_fakes import confirmed
 
 ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
+OIE_JIRA = SourceScope("jira-1", "project_key", "OIE")
 
 
 def _open(path: Path, workspace_id: str = "ws") -> SqlProjectStore:
@@ -112,3 +122,24 @@ def test_version_history_is_isolated_per_workspace(path: Path) -> None:
     _seed(other)
 
     assert _associate(other) == 1
+
+
+class _Evidence:
+    def evidence(self) -> tuple[AssociationEvidence, ...]:
+        reference = SourceReference("cloud-abc/OIE:OIE-123", "jira")
+        return (AssociationEvidence(OIE_JIRA, ORDERS, reference, "remotelinks"),)
+
+
+def test_suggestion_after_removal_returns_the_stored_version(path: Path) -> None:
+    store = _open(path)
+    _seed(store)
+    with store.transaction() as tx:
+        tx.associations.add(confirmed("prj_oie", OIE_JIRA))
+    _remove(store, _associate(store))
+
+    (suggestion,) = SuggestAssociations(store=store, evidence=_Evidence()).execute()
+
+    assert suggestion.state is AssociationState.SUGGESTED
+    assert suggestion.version > 1
+    stored, _ = _snapshot(store)
+    assert stored == suggestion
