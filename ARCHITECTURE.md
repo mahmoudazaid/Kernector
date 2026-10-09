@@ -602,7 +602,7 @@ rules unchanged:
 
 - `domain/` — project, artifact descriptor, relationship, evidence and outcome
   contracts, plus their ports. No context, relation, kind, purpose or role
-  literals.
+  literals, except the built-in `answer` purpose (ADR 0011 decision 3).
 - `application/` — association, classification, reconciliation and context
   assembly use cases, reaching storage only through `domain` ports.
 - `infrastructure/` — SQLite adapters on the numbered migration runner, and
