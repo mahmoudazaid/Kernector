@@ -19,6 +19,7 @@ from application.project.components import ResolveComponentsForSource
 from application.project.coverage import ProjectContextCoverage
 from application.project.projects import CreateProject, GetProject, ListProjects
 from application.project.resolve import ResolveProjectsForSource
+from composition.project.connectors import ConfiguredConnectorScopeKinds
 from composition.project.vocabulary import build_context_vocabulary
 from domain.knowledge import SourceType
 from domain.project.ports import SourceScopeResolver
@@ -49,13 +50,6 @@ def build_scope_resolvers() -> Mapping[str, SourceScopeResolver]:
     }
 
 
-def declared_scope_kinds(
-    resolvers: Mapping[str, SourceScopeResolver],
-) -> frozenset[str]:
-    """Union of the scope kinds connectors accept in an association."""
-    return frozenset().union(*(resolver.scope_kinds for resolver in resolvers.values()))
-
-
 def component_forming_kinds(
     resolvers: Mapping[str, SourceScopeResolver],
 ) -> frozenset[str]:
@@ -83,7 +77,7 @@ def build_project_use_cases(settings: Settings) -> ProjectUseCases:
     store = build_project_store(settings)
     vocabulary = build_context_vocabulary(settings)
     resolvers = build_scope_resolvers()
-    scope_kinds = declared_scope_kinds(resolvers)
+    connectors = ConfiguredConnectorScopeKinds(settings, resolvers)
     kinds = component_forming_kinds(resolvers)
     return ProjectUseCases(
         create=CreateProject(store=store),
@@ -92,13 +86,13 @@ def build_project_use_cases(settings: Settings) -> ProjectUseCases:
         associate=AssociateSource(
             store=store,
             vocabulary=vocabulary,
-            scope_kinds=scope_kinds,
+            connectors=connectors,
             component_forming_kinds=kinds,
         ),
         confirm=ConfirmAssociation(
             store=store,
             vocabulary=vocabulary,
-            scope_kinds=scope_kinds,
+            connectors=connectors,
             component_forming_kinds=kinds,
         ),
         remove=RemoveAssociation(store=store),

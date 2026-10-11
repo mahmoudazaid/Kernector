@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+
 import pytest
 
 from application.project.associations import (
@@ -172,33 +175,54 @@ def test_remove_needs_the_current_version(store: InMemoryProjectStore) -> None:
         assert tx.associations.get(oie, LIB) is None
 
 
-def test_associate_rejects_a_scope_kind_no_connector_declares(
-    store: InMemoryProjectStore,
+@dataclass(frozen=True)
+class _Connectors:
+    kinds: Mapping[str, frozenset[str]]
+
+    def scope_kinds_for(self, connector_id: str) -> frozenset[str] | None:
+        return self.kinds.get(connector_id)
+
+
+CONNECTORS = _Connectors(
+    {"gh-1": frozenset({"repo"}), "jira-1": frozenset({"project_key"})}
+)
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        SourceScope("no-such-connector", "repo", "acme/oie-orders"),
+        SourceScope("gh-1", "repository", "acme/oie-orders"),
+        SourceScope("jira-1", "repo", "acme/oie-orders"),
+    ],
+    ids=["unknown-connector", "undeclared-kind", "kind-of-another-connector"],
+)
+def test_associate_rejects_a_scope_its_connector_does_not_accept(
+    store: InMemoryProjectStore, scope: SourceScope
 ) -> None:
     oie = _create(store, "oie")
-    associate = AssociateSource(store=store, scope_kinds=frozenset({"repo"}))
-    unknown = SourceScope("gh-1", "repository", "acme/oie-orders")
+    associate = AssociateSource(store=store, connectors=CONNECTORS)
 
     with pytest.raises(ProjectInputError):
-        associate.execute(AssociateSourceRequest(oie, unknown, (), "operator"))
+        associate.execute(AssociateSourceRequest(oie, scope, (), "operator"))
 
     with store.read() as tx:
-        assert tx.associations.get(oie, unknown) is None
+        assert tx.associations.get(oie, scope) is None
     stored = associate.execute(AssociateSourceRequest(oie, ORDERS, (), "operator"))
     assert stored.state is AssociationState.CONFIRMED
 
 
-def test_confirm_rejects_a_scope_kind_no_connector_declares(
+def test_confirm_rejects_a_scope_its_connector_does_not_accept(
     store: InMemoryProjectStore,
 ) -> None:
     oie = _create(store, "oie")
-    unknown = SourceScope("gh-1", "repository", "acme/oie-orders")
+    unknown = SourceScope("no-such-connector", "repo", "acme/oie-orders")
     suggested = SourceAssociation(
         oie, unknown, (), AssociationState.SUGGESTED, (), "pack", 1
     )
     with store.transaction() as tx:
         tx.associations.add(suggested)
-    confirm = ConfirmAssociation(store=store, scope_kinds=frozenset({"repo"}))
+    confirm = ConfirmAssociation(store=store, connectors=CONNECTORS)
 
     with pytest.raises(ProjectInputError):
         confirm.execute(ConfirmAssociationRequest(oie, unknown, expected_version=1))

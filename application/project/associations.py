@@ -30,6 +30,7 @@ from domain.project.models import (
     new_component_id,
 )
 from domain.project.ports import (
+    ConnectorScopeKinds,
     ContextVocabulary,
     ProjectTransaction,
     ProjectUnitOfWork,
@@ -78,12 +79,20 @@ def require_shared_acknowledgement(
         raise SharedScopeConfirmationRequiredError(tuple(others))
 
 
-def require_known_scope_kind(
-    scope: SourceScope, scope_kinds: frozenset[str] | None
+def require_accepted_scope(
+    scope: SourceScope, connectors: ConnectorScopeKinds | None
 ) -> None:
-    """Reject a scope kind no connector declares; ``None`` skips the check."""
-    if scope_kinds is not None and scope.scope_kind not in scope_kinds:
-        raise ProjectInputError("scope_kind is not declared by any connector")
+    """Reject a scope whose connector is unknown or does not accept its kind.
+
+    ``None`` skips the check.
+    """
+    if connectors is None:
+        return
+    kinds = connectors.scope_kinds_for(scope.connector_id)
+    if kinds is None:
+        raise ProjectInputError("connector_id is not a configured connector")
+    if scope.scope_kind not in kinds:
+        raise ProjectInputError("scope_kind is not accepted by this connector")
 
 
 def require_known_roles(
@@ -113,13 +122,13 @@ class AssociateSource:
         *,
         store: ProjectUnitOfWork,
         vocabulary: ContextVocabulary | None = None,
-        scope_kinds: frozenset[str] | None = None,
+        connectors: ConnectorScopeKinds | None = None,
         component_forming_kinds: frozenset[str] = frozenset(),
         new_component_id: Callable[[], str] = new_component_id,
     ) -> None:
         self._store = store
         self._vocabulary = vocabulary
-        self._scope_kinds = scope_kinds
+        self._connectors = connectors
         self._component_forming_kinds = component_forming_kinds
         self._new_component_id = new_component_id
 
@@ -128,7 +137,7 @@ class AssociateSource:
         ProjectNotFoundError, AssociationExistsError,
         SharedScopeConfirmationRequiredError, ProjectInputError.
         """
-        require_known_scope_kind(request.scope, self._scope_kinds)
+        require_accepted_scope(request.scope, self._connectors)
         association = SourceAssociation(
             project_id=request.project_id,
             scope=request.scope,
@@ -170,13 +179,13 @@ class ConfirmAssociation:
         *,
         store: ProjectUnitOfWork,
         vocabulary: ContextVocabulary | None = None,
-        scope_kinds: frozenset[str] | None = None,
+        connectors: ConnectorScopeKinds | None = None,
         component_forming_kinds: frozenset[str] = frozenset(),
         new_component_id: Callable[[], str] = new_component_id,
     ) -> None:
         self._store = store
         self._vocabulary = vocabulary
-        self._scope_kinds = scope_kinds
+        self._connectors = connectors
         self._component_forming_kinds = component_forming_kinds
         self._new_component_id = new_component_id
 
@@ -186,7 +195,7 @@ class ConfirmAssociation:
         ProjectRecordVersionConflictError, SharedScopeConfirmationRequiredError,
         ProjectInputError.
         """
-        require_known_scope_kind(request.scope, self._scope_kinds)
+        require_accepted_scope(request.scope, self._connectors)
         with self._store.transaction() as tx:
             require_project(tx, request.project_id)
             current = tx.associations.get(request.project_id, request.scope)

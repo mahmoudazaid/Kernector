@@ -155,6 +155,14 @@ class SourceScopeResolver(Protocol):
         ...
 
 
+class ConnectorScopeKinds(Protocol):
+    """Scope kinds accepted by each configured connector."""
+
+    def scope_kinds_for(self, connector_id: str) -> frozenset[str] | None:
+        """Return the kinds ``connector_id`` accepts, or ``None`` if not configured."""
+        ...
+
+
 class ContextVocabulary(Protocol):
     """Context tokens registered by enabled packs."""
 

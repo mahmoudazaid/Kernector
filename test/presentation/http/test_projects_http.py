@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -17,6 +19,19 @@ LIB = {"connector_id": "gh-1", "scope_kind": "repo", "scope_value": "acme/shared
 @pytest.fixture(autouse=True)
 def _no_pack_vocabulary_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "")
+
+
+@pytest.fixture(autouse=True)
+def _configured_github_connector(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_CONNECTOR_ID", LIB["connector_id"])
+    monkeypatch.setenv(
+        "GITHUB_OAUTH_TOKEN_PATH", str(tmp_path / "github-oauth-connection.json")
+    )
+    monkeypatch.setenv(
+        "JIRA_OAUTH_TOKEN_PATH", str(tmp_path / "jira-oauth-connection.json")
+    )
 
 
 def _client() -> TestClient:
@@ -160,11 +175,18 @@ def test_associate_source_is_confirmed() -> None:
     assert component["members"] == [{**LIB, "path_prefix": ""}]
 
 
-def test_associate_undeclared_scope_kind_is_422() -> None:
+@pytest.mark.parametrize(
+    "scope",
+    [{"scope_kind": "repository"}, {"connector_id": "no-such-connector"}],
+    ids=["undeclared-kind", "unknown-connector"],
+)
+def test_associate_scope_its_connector_does_not_accept_is_422(
+    scope: dict[str, str],
+) -> None:
     client = _client()
     project_id = _create(client, "oie")["project_id"]
 
-    response = _associate(client, project_id, scope_kind="repository")
+    response = _associate(client, project_id, **scope)
 
     _assert_problem(response, 422, "project_invalid_input")
     detail = client.get(f"/api/v1/projects/{project_id}").json()
