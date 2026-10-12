@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from application.ask_knowledge import AskKnowledge
+from application.chunking import CHUNKER_VERSION
 from application.ask_service import AskService
 from application.errors import (
     ConfigurationError,
@@ -47,6 +48,7 @@ from composition.tools.registry import (
     build_tool_registry,
 )
 from domain.knowledge import (
+    ProcessingProfile,
     ScoredChunk,
     SourceDocument,
 )
@@ -272,6 +274,16 @@ def build_vector_store(settings: Settings) -> VectorStore:
     lexical = Bm25LexicalIndex()
     lexical.upsert(chroma.list_embedded_chunks())
     return DualWriteVectorStore(chroma, lexical)
+
+
+def build_processing_profile(settings: Settings) -> ProcessingProfile:
+    """Return the chunking and embedding profile fingerprinted on READY rows."""
+    return ProcessingProfile(
+        chunker_version=CHUNKER_VERSION,
+        chunk_size=settings.chunking.chunk_size,
+        chunk_overlap=settings.chunking.chunk_overlap,
+        embedding_model=settings.openrouter.embedding_model,
+    )
 
 
 def build_ingest_knowledge(

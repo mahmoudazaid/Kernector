@@ -93,6 +93,7 @@ def sync_github(
                 settings,
                 vector_store=get_store(),
             ),
+            processing_profile=_container.build_processing_profile(settings),
             reconcile_missing=True,
             reconcile_source_types=frozenset({SourceType.GITHUB}),
             reconcile_connector_ids=connector_ids,

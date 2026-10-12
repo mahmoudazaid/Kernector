@@ -268,7 +268,6 @@ def sync_google_drive(
                 "reconcile_missing": True,
                 "reconcile_source_types": frozenset({SourceType.GOOGLE_DRIVE}),
                 "reconcile_source_id_prefixes": frozenset({""}),
-                "vector_store_factory": get_store,
             }
 
         return SyncConnectorDocuments(
@@ -278,6 +277,8 @@ def sync_google_drive(
                 settings,
                 vector_store=get_store(),
             ),
+            processing_profile=_container.build_processing_profile(settings),
+            vector_store_factory=get_store,
             **reconcile_kwargs,
         ).execute()
     except ConnectorError as error:

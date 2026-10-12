@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -21,23 +22,46 @@ from domain.errors import (
     ConnectorError,
     ConnectorTimeoutError,
     ConnectorUnavailableError,
+    VectorStoreError,
 )
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     ConnectorDocument,
+    DocumentChunk,
+    EmbeddedChunk,
+    ProcessingProfile,
     SourceDocument,
     SourceMetadata,
     SourceReference,
     SourceType,
+    fingerprint_metadata,
+    fingerprint_text,
 )
+from infrastructure.vectorstore.dual_write import DualWriteVectorStore
 from test.document_doubles import FixedClock, InMemoryDocumentCatalog
-from test.doubles import InMemoryVectorStore, StubEmbeddingModel
+from test.doubles import (
+    InMemoryLexicalIndex,
+    InMemoryVectorStore,
+    StubEmbeddingModel,
+)
 from test.log_record import flatten_log_record, operation_records
 
 NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
 CONTENT = "abcdefghijklmnopqrstuvwxyz"
 SECRET = "DRIVE-SECRET-TOKEN-LEAK"
+PROFILE = ProcessingProfile(
+    chunker_version="1",
+    chunk_size=10,
+    chunk_overlap=2,
+    embedding_model="test-embedding",
+)
+OTHER_PROFILE_FP = ProcessingProfile(
+    chunker_version="1",
+    chunk_size=20,
+    chunk_overlap=2,
+    embedding_model="test-embedding",
+).fingerprint
 
 
 def _reference(source_id: str = "file-1") -> SourceReference:
@@ -49,11 +73,13 @@ def _listed(
     *,
     file_name: str = "guide.md",
     revision: str = "1",
+    content_hash: str | None = None,
 ) -> ConnectorDocument:
     return ConnectorDocument(
         reference=_reference(source_id),
         file_name=file_name,
         revision=revision,
+        content_hash=content_hash,
     )
 
 
@@ -82,6 +108,10 @@ def _row(
     revision: str | None = "1",
     error: str | None = None,
     connector_id: str | None = None,
+    processing_fingerprint: str | None = PROFILE.fingerprint,
+    content_fingerprint: str | None = None,
+    metadata_fingerprint: str | None = None,
+    provider_content_hash: str | None = None,
 ) -> CatalogDocument:
     return CatalogDocument(
         reference=document.reference,
@@ -97,6 +127,10 @@ def _row(
         connector_id=connector_id
         if connector_id is not None
         else document.extra.get("connector_id"),
+        content_fingerprint=content_fingerprint,
+        metadata_fingerprint=metadata_fingerprint,
+        processing_fingerprint=processing_fingerprint,
+        provider_content_hash=provider_content_hash,
     )
 
 
@@ -186,6 +220,7 @@ def _use_case(
         catalog=catalog,
         ingest_factory=factory or (lambda: ingest),
         now=FixedClock(NOW),
+        processing_profile=PROFILE,
         reconcile_missing=reconcile_missing,
         reconcile_source_types=reconcile_source_types,
         reconcile_source_id_prefixes=reconcile_source_id_prefixes,
@@ -332,6 +367,7 @@ def test_changed_revision_replaces_old_chunks() -> None:
         catalog=catalog,
         ingest_factory=lambda: ingest,
         now=FixedClock(later),
+        processing_profile=PROFILE,
     ).execute()
 
     assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
@@ -376,6 +412,7 @@ def test_fewer_new_chunks_leave_no_stale_higher_index_chunks() -> None:
         catalog=catalog,
         ingest_factory=lambda: long_ingest,
         now=FixedClock(NOW),
+        processing_profile=PROFILE,
     ).execute()
 
     assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
@@ -389,30 +426,27 @@ def test_fewer_new_chunks_leave_no_stale_higher_index_chunks() -> None:
 
 
 def test_revision_change_is_not_hidden_by_unchanged_checksum_extra() -> None:
-    listed = ConnectorDocument(
-        reference=_reference(),
-        file_name="renamed.md",
-        revision="2",
-        extra={"md5_checksum": "same"},
-    )
-    previous = ConnectorDocument(
-        reference=_reference(),
-        file_name="old.md",
-        revision="1",
-        extra={"md5_checksum": "same"},
-    )
+    """A rename with the same provider hash is metadata-only (issue #380)."""
+    previous = _listed(file_name="old.md", revision="1", content_hash="same")
+    listed = _listed(file_name="renamed.md", revision="2", content_hash="same")
     catalog = InMemoryDocumentCatalog()
-    catalog.upsert(_row(previous, revision="1"))
-    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="same"))
+    store = InMemoryVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+    connector = DescribingConnector((listed,), {})
     ingest = RecordingIngest(chunk_count=1)
-    response = _use_case(connector, catalog, ingest=ingest).execute()
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
 
-    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+    assert response.outcomes[0].chunk_count == 3
     stored = catalog.get(listed.reference)
     assert stored is not None
     assert stored.revision == "2"
     assert stored.file_name == "renamed.md"
-    assert connector.fetched == [listed]
+    assert connector.fetched == []
+    assert ingest.calls == []
 
 
 def test_documents_leaving_the_listing_are_not_deleted() -> None:
@@ -988,6 +1022,7 @@ def test_reconcile_requires_vector_store_factory() -> None:
             connector=RecordingConnector(()),
             catalog=InMemoryDocumentCatalog(),
             ingest_factory=lambda: RecordingIngest(),
+            processing_profile=PROFILE,
             reconcile_missing=True,
             reconcile_source_types=frozenset({"github"}),
         )
@@ -999,6 +1034,7 @@ def test_reconcile_requires_non_empty_source_types() -> None:
             connector=RecordingConnector(()),
             catalog=InMemoryDocumentCatalog(),
             ingest_factory=lambda: RecordingIngest(),
+            processing_profile=PROFILE,
             reconcile_missing=True,
             vector_store_factory=lambda: RecordingVectorStore(),
         )
@@ -1010,6 +1046,7 @@ def test_reconcile_requires_connector_ids_or_prefixes() -> None:
             connector=RecordingConnector(()),
             catalog=InMemoryDocumentCatalog(),
             ingest_factory=lambda: RecordingIngest(),
+            processing_profile=PROFILE,
             reconcile_missing=True,
             reconcile_source_types=frozenset({"github"}),
             vector_store_factory=lambda: RecordingVectorStore(),
@@ -1139,3 +1176,648 @@ def test_failed_listing_outcome_skips_reconcile() -> None:
     assert catalog.get(stale.reference) is not None
     assert store.delete_calls == []
 
+
+
+# --------------------------------------------------------------------------
+# Fingerprint decision table (#380)
+# --------------------------------------------------------------------------
+
+
+class DescribingConnector(RecordingConnector):
+    """Connector that can rebuild metadata from the listing without fetching."""
+
+    def __init__(
+        self,
+        documents: Sequence[ConnectorDocument],
+        sources: dict[str, SourceDocument] | None = None,
+        *,
+        describe_error: BaseException | None = None,
+    ) -> None:
+        super().__init__(documents, sources)
+        self.describe_error = describe_error
+        self.described: list[tuple[ConnectorDocument, SourceMetadata]] = []
+
+    def describe_document(
+        self, document: ConnectorDocument, previous: SourceMetadata
+    ) -> SourceMetadata:
+        self.described.append((document, previous))
+        if self.describe_error is not None:
+            raise self.describe_error
+        return SourceMetadata(
+            document.reference,
+            title=document.file_name.rsplit(".", 1)[0],
+            provider="google_drive",
+            content_format=previous.content_format,
+            extra={"file_name": document.file_name},
+        )
+
+
+class CountingVectorStore(InMemoryVectorStore):
+    """Records metadata updates; can fail them or report a fixed count."""
+
+    def __init__(
+        self,
+        *,
+        update_error: BaseException | None = None,
+        reported_count: int | None = None,
+    ) -> None:
+        super().__init__()
+        self.update_error = update_error
+        self.reported_count = reported_count
+        self.updates: list[tuple[SourceReference, SourceMetadata]] = []
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        self.updates.append((reference, metadata))
+        if self.update_error is not None:
+            raise self.update_error
+        count = super().update_source_metadata(reference, metadata)
+        return count if self.reported_count is None else self.reported_count
+
+
+class FailingLexicalIndex(InMemoryLexicalIndex):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_updates = True
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        if self.fail_updates:
+            raise RuntimeError("bm25 rebuild failed")
+        return super().update_source_metadata(reference, metadata)
+
+
+def _fingerprinted_row(
+    document: ConnectorDocument,
+    *,
+    content: str = CONTENT,
+    chunk_count: int = 3,
+    provider_content_hash: str | None = None,
+    processing_fingerprint: str | None = PROFILE.fingerprint,
+) -> CatalogDocument:
+    """A READY row written by a fingerprinting sync for ``_source(document)``."""
+    return _row(
+        document,
+        revision=document.revision,
+        chunk_count=chunk_count,
+        processing_fingerprint=processing_fingerprint,
+        content_fingerprint=fingerprint_text(content),
+        metadata_fingerprint=fingerprint_metadata(_source(document).metadata),
+        provider_content_hash=provider_content_hash,
+    )
+
+
+def _seed_chunks(
+    store: InMemoryVectorStore, source: SourceDocument, *, count: int
+) -> None:
+    metadata = dataclasses.replace(source.metadata, created_at=NOW, updated_at=NOW)
+    store.upsert(
+        [
+            EmbeddedChunk(
+                DocumentChunk(metadata, index, f"chunk {index}"), [1.0, 0.0]
+            )
+            for index in range(count)
+        ]
+    )
+
+
+def _chunk_metadata(
+    store: InMemoryVectorStore, reference: SourceReference
+) -> list[SourceMetadata]:
+    return [chunk.metadata for chunk in store.list_source_chunks(reference).chunks]
+
+
+def test_provider_hash_rename_updates_metadata_without_fetch_or_embed() -> None:
+    previous = _listed(file_name="spec.md", revision="41", content_hash="9f1")
+    listed = _listed(
+        file_name="Cancellation spec.md", revision="42", content_hash="9f1"
+    )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, chunk_count=6, provider_content_hash="9f1"))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=6)
+    connector = DescribingConnector((listed,), {})
+    ingest = RecordingIngest()
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+    assert response.outcomes[0].chunk_count == 6
+    assert response.metadata_updated_count == 1
+    assert connector.fetched == []
+    assert ingest.calls == []
+    expected = SourceMetadata(
+        listed.reference,
+        title="Cancellation spec",
+        provider="google_drive",
+        content_format="markdown",
+        extra={"file_name": "Cancellation spec.md"},
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    assert _chunk_metadata(store, listed.reference) == [expected] * 6
+    assert [chunk.content for chunk in store.list_source_chunks(listed.reference).chunks] == [
+        f"chunk {index}" for index in range(6)
+    ]
+    stored = catalog.get(listed.reference)
+    assert stored == CatalogDocument(
+        reference=listed.reference,
+        file_name="Cancellation spec.md",
+        title="Cancellation spec",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        created_at=NOW,
+        updated_at=NOW,
+        chunk_count=6,
+        error=None,
+        revision="42",
+        content_fingerprint=fingerprint_text(CONTENT),
+        metadata_fingerprint=fingerprint_metadata(expected),
+        processing_fingerprint=PROFILE.fingerprint,
+        provider_content_hash="9f1",
+    )
+
+
+def test_equal_text_with_changed_metadata_rewrites_vectors_once_fetched() -> None:
+    previous = _listed(file_name="old.md", revision="1")
+    listed = _listed(file_name="renamed.md", revision="2")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, chunk_count=2))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=2)
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest()
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+    assert connector.fetched == [listed]
+    assert ingest.calls == []
+    assert len(store.updates) == 1
+    assert {metadata.title for metadata in _chunk_metadata(store, listed.reference)} == {
+        "renamed"
+    }
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.revision == "2"
+    assert stored.file_name == "renamed.md"
+    assert stored.title == "renamed"
+    assert stored.metadata_fingerprint == fingerprint_metadata(_source(listed).metadata)
+    assert stored.content_fingerprint == fingerprint_text(CONTENT)
+
+
+def test_equal_text_and_metadata_advances_catalog_without_vector_writes() -> None:
+    previous = _listed(revision="1")
+    listed = _listed(revision="2")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, chunk_count=2))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=2)
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest()
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+    assert response.outcomes[0].chunk_count == 2
+    assert store.updates == []
+    assert ingest.calls == []
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.revision == "2"
+
+
+def test_changed_text_reingests_and_stores_new_fingerprints() -> None:
+    previous = _listed(revision="1")
+    listed = _listed(revision="2", content_hash="new-hash")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="old-hash"))
+    edited = _source(listed, content="edited body")
+    connector = DescribingConnector((listed,), {listed.source_id: edited})
+    ingest = RecordingIngest(chunk_count=4)
+    store = CountingVectorStore()
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert connector.described == []
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+    assert store.updates == []
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.status is CatalogStatus.READY
+    assert stored.chunk_count == 4
+    assert stored.content_fingerprint == fingerprint_text("edited body")
+    assert stored.metadata_fingerprint == fingerprint_metadata(edited.metadata)
+    assert stored.processing_fingerprint == PROFILE.fingerprint
+    assert stored.provider_content_hash == "new-hash"
+
+
+def test_new_document_ready_row_carries_fingerprints() -> None:
+    listed = _listed(content_hash="9f1")
+    source = _source(listed)
+    connector = RecordingConnector((listed,), {listed.source_id: source})
+    catalog = InMemoryDocumentCatalog()
+
+    _use_case(connector, catalog).execute()
+
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.content_fingerprint == fingerprint_text(CONTENT)
+    assert stored.metadata_fingerprint == fingerprint_metadata(source.metadata)
+    assert stored.processing_fingerprint == PROFILE.fingerprint
+    assert stored.provider_content_hash == "9f1"
+
+
+def test_processing_profile_change_reingests_unchanged_revision() -> None:
+    listed = _listed(revision="7", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        _fingerprinted_row(
+            listed, provider_content_hash="9f1", processing_fingerprint=OTHER_PROFILE_FP
+        )
+    )
+    connector = DescribingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=5)
+
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.processing_fingerprint == PROFILE.fingerprint
+    assert stored.chunk_count == 5
+
+
+def test_profile_change_with_failed_reingest_keeps_old_profile() -> None:
+    listed = _listed(revision="7")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(listed, processing_fingerprint=OTHER_PROFILE_FP))
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(
+        error=IngestFailure("dimension mismatch", vector_mutation_started=True)
+    )
+
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.FAILED
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.status is CatalogStatus.DEGRADED
+    assert stored.processing_fingerprint == OTHER_PROFILE_FP
+    assert stored.content_fingerprint == fingerprint_text(CONTENT)
+
+
+def test_legacy_row_with_same_revision_adopts_profile_without_fetch(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    listed = _listed(revision="7")
+    legacy = _row(listed, revision="7", chunk_count=4, processing_fingerprint=None)
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(legacy)
+    connector = RecordingConnector((listed,), {})
+    ingest = RecordingIngest()
+
+    with caplog.at_level(logging.INFO):
+        response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.SKIPPED
+    assert response.outcomes[0].chunk_count == 4
+    assert connector.fetched == []
+    assert ingest.calls == []
+    assert catalog.get(listed.reference) == _row(
+        listed, revision="7", chunk_count=4, processing_fingerprint=PROFILE.fingerprint
+    )
+    outcomes = [
+        record.getMessage()
+        for record in operation_records(caplog.records, operation="connector_sync")
+    ]
+    assert any('"outcome":"processing_profile_adopted"' in line for line in outcomes)
+
+
+def test_legacy_row_with_changed_revision_is_fetched_and_reingested() -> None:
+    previous = _listed(revision="1")
+    listed = _listed(revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(previous, revision="1", processing_fingerprint=None))
+    connector = DescribingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=2)
+
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert connector.described == []
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.processing_fingerprint == PROFILE.fingerprint
+    assert stored.content_fingerprint == fingerprint_text(CONTENT)
+    assert stored.provider_content_hash == "9f1"
+
+
+def test_legacy_row_whose_reingest_fails_keeps_unknown_profile() -> None:
+    previous = _listed(revision="1")
+    listed = _listed(revision="2")
+    legacy = _row(previous, revision="1", processing_fingerprint=None)
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(legacy)
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(
+        error=IngestFailure("embed failed", vector_mutation_started=False)
+    )
+
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.FAILED
+    assert catalog.get(listed.reference) == legacy
+
+
+@pytest.mark.parametrize(
+    ("stored_hash", "listed_hash"),
+    [(None, "9f1"), ("9f1", None), (None, None), ("9f1", "other")],
+)
+def test_provider_hash_shortcut_needs_both_hashes_equal(
+    stored_hash: str | None, listed_hash: str | None
+) -> None:
+    previous = _listed(revision="1")
+    listed = _listed(revision="2", content_hash=listed_hash)
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash=stored_hash))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+    connector = DescribingConnector((listed,), {listed.source_id: _source(listed)})
+
+    response = _use_case(
+        connector, catalog, vector_store_factory=lambda: store
+    ).execute()
+
+    assert connector.described == []
+    assert connector.fetched == [listed]
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+
+
+def test_provider_hash_shortcut_needs_a_describing_connector() -> None:
+    previous = _listed(revision="1", content_hash="9f1")
+    listed = _listed(revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="9f1"))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+
+    response = _use_case(
+        connector, catalog, vector_store_factory=lambda: store
+    ).execute()
+
+    assert connector.fetched == [listed]
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+
+
+def test_describe_failure_falls_back_to_fetch() -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="9f1"))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+    connector = DescribingConnector(
+        (listed,),
+        {listed.source_id: _source(listed)},
+        describe_error=ConnectorError("previous metadata unusable"),
+    )
+
+    response = _use_case(
+        connector, catalog, vector_store_factory=lambda: store
+    ).execute()
+
+    assert len(connector.described) == 1
+    assert connector.fetched == [listed]
+    assert response.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+    assert {metadata.title for metadata in _chunk_metadata(store, listed.reference)} == {
+        "new"
+    }
+
+
+def test_missing_previous_chunks_on_hash_path_reingests() -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="9f1"))
+    store = CountingVectorStore()
+    connector = DescribingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=2)
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert response.metadata_updated_count == 0
+    assert connector.described == []
+    assert store.updates == []
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.chunk_count == 2
+
+
+@pytest.mark.parametrize("reported_count", [0, 2])
+def test_inconsistent_update_count_on_hash_path_reingests(reported_count: int) -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="9f1"))
+    store = CountingVectorStore(reported_count=reported_count)
+    _seed_chunks(store, _source(previous), count=3)
+    connector = DescribingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=3)
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+
+
+@pytest.mark.parametrize("reported_count", [0, 1])
+def test_inconsistent_update_count_on_text_path_reuses_fetched_source(
+    reported_count: int,
+) -> None:
+    previous = _listed(file_name="old.md", revision="1")
+    listed = _listed(file_name="new.md", revision="2")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, chunk_count=3))
+    store = CountingVectorStore(reported_count=reported_count)
+    _seed_chunks(store, _source(previous), count=3)
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=3)
+    pending_seen: list[CatalogDocument] = []
+
+    class SpyCatalog(InMemoryDocumentCatalog):
+        def upsert(self, document: CatalogDocument) -> None:
+            pending_seen.append(document)
+            super().upsert(document)
+
+    spy = SpyCatalog()
+    spy.upsert(catalog.get(previous.reference))  # type: ignore[arg-type]
+    pending_seen.clear()
+
+    response = _use_case(
+        connector, spy, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert response.metadata_updated_count == 0
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+    assert ingest.calls[0].documents[0].content == CONTENT
+    assert [row.status for row in pending_seen] == [
+        CatalogStatus.PENDING,
+        CatalogStatus.READY,
+    ]
+
+
+def test_vector_store_failure_on_metadata_path_leaves_catalog_unchanged() -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    row = _fingerprinted_row(previous, provider_content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(row)
+    store = CountingVectorStore(update_error=VectorStoreError("chroma down"))
+    _seed_chunks(store, _source(previous), count=3)
+    connector = DescribingConnector((listed,), {})
+    ingest = RecordingIngest()
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.FAILED
+    assert response.outcomes[0].error_type == "VectorStoreError"
+    assert catalog.get(listed.reference) == row
+    assert ingest.calls == []
+
+
+def test_unknown_error_on_metadata_path_propagates_without_catalog_write() -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    row = _fingerprinted_row(previous, provider_content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(row)
+    store = CountingVectorStore(update_error=RuntimeError("unexpected"))
+    _seed_chunks(store, _source(previous), count=3)
+
+    with pytest.raises(RuntimeError, match="unexpected"):
+        _use_case(
+            DescribingConnector((listed,), {}),
+            catalog,
+            vector_store_factory=lambda: store,
+        ).execute()
+
+    assert catalog.get(listed.reference) == row
+
+
+def test_lexical_failure_fails_closed_and_next_sync_converges() -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    row = _fingerprinted_row(previous, provider_content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(row)
+    vector = InMemoryVectorStore()
+    lexical = FailingLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    _seed_chunks(vector, _source(previous), count=3)
+    _seed_chunks(lexical, _source(previous), count=3)  # type: ignore[arg-type]
+    connector = DescribingConnector((listed,), {})
+
+    first = _use_case(connector, catalog, vector_store_factory=lambda: store).execute()
+
+    assert first.outcomes[0].status is ConnectorSyncStatus.FAILED
+    assert first.outcomes[0].error_type == "VectorStoreError"
+    assert catalog.get(listed.reference) == row
+    assert {metadata.title for metadata in _chunk_metadata(vector, listed.reference)} == {
+        "new"
+    }
+
+    lexical.fail_updates = False
+    second = _use_case(connector, catalog, vector_store_factory=lambda: store).execute()
+
+    assert second.outcomes[0].status is ConnectorSyncStatus.METADATA_UPDATED
+    assert {item.chunk.metadata.title for item in lexical.records.values()} == {"new"}
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.revision == "2"
+    assert connector.fetched == []
+
+
+def test_catalog_failure_after_vector_update_aborts_the_run() -> None:
+    previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
+    listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
+    catalog = CountingFailCatalog(fail_on_call=2)
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="9f1"))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+
+    with pytest.raises(RuntimeError, match="catalog upsert failed"):
+        _use_case(
+            DescribingConnector((listed,), {}),
+            catalog,
+            vector_store_factory=lambda: store,
+        ).execute()
+
+    assert len(store.updates) == 1
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.revision == "1"
+
+
+def test_metadata_change_without_vector_store_factory_reingests() -> None:
+    previous = _listed(file_name="old.md", revision="1")
+    listed = _listed(file_name="new.md", revision="2")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous))
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=3)
+
+    response = _use_case(connector, catalog, ingest=ingest).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert connector.fetched == [listed]
+    assert len(ingest.calls) == 1
+
+
+def test_metadata_updated_counts_separately_from_other_statuses() -> None:
+    previous = _listed(revision="1", content_hash="9f1")
+    listed = _listed(revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_fingerprinted_row(previous, provider_content_hash="9f1"))
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+
+    response = _use_case(
+        DescribingConnector((listed,), {}),
+        catalog,
+        vector_store_factory=lambda: store,
+    ).execute()
+
+    assert response.metadata_updated_count == 1
+    assert response.updated_count == 0
+    assert response.skipped_count == 0
+    assert response.ingested_count == 0
