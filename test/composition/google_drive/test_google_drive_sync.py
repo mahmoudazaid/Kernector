@@ -23,15 +23,20 @@ from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     ConnectorDocument,
+    DocumentChunk,
+    EmbeddedChunk,
     SourceDocument,
     SourceMetadata,
     SourceReference,
     SourceType,
+    fingerprint_metadata,
+    fingerprint_text,
 )
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.config import GoogleDriveSettings, Settings, load_settings
 from infrastructure.connectors.google_drive import GoogleDriveConfigError
 from test.document_doubles import InMemoryDocumentCatalog
+from test.doubles import InMemoryVectorStore
 
 SECRET = "DRIVE-SECRET-TOKEN-LEAK"
 NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
@@ -406,3 +411,89 @@ def test_load_runtime_settings_still_works_without_drive_config(
     monkeypatch.delenv("GOOGLE_DRIVE_PAGE_SIZE", raising=False)
     loaded = load_runtime_settings()
     assert loaded.google_drive.folder_id is None
+
+
+def test_build_processing_profile_reflects_chunking_and_embedding_settings(
+    settings: Settings,
+) -> None:
+    from application.chunking import CHUNKER_VERSION
+
+    profile = composition_container.build_processing_profile(settings)
+
+    assert profile.chunker_version == CHUNKER_VERSION
+    assert profile.chunk_size == settings.chunking.chunk_size
+    assert profile.chunk_overlap == settings.chunking.chunk_overlap
+    assert profile.embedding_model == settings.openrouter.embedding_model
+
+
+def test_ingested_rows_carry_the_settings_processing_profile(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listed = _listed()
+    catalog = InMemoryDocumentCatalog()
+    monkeypatch.setattr(
+        composition_container,
+        "build_ingest_knowledge",
+        lambda _settings, *, vector_store=None: RecordingIngest(),
+    )
+    monkeypatch.setattr(
+        composition_container, "build_vector_store", lambda _settings: RecordingStore()
+    )
+
+    sync_google_drive(
+        settings,
+        connector=RecordingConnector((listed,), sources={listed.source_id: _source(listed)}),
+        catalog=catalog,
+    )
+
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert (
+        stored.processing_fingerprint
+        == composition_container.build_processing_profile(settings).fingerprint
+    )
+
+
+def test_drive_sync_without_reconcile_rewrites_metadata_in_place(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    previous = _listed(revision="1")
+    renamed = ConnectorDocument(
+        reference=previous.reference,
+        file_name="renamed.md",
+        revision="2",
+    )
+    old_source = _source(previous)
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        replace(
+            _ready_row(previous),
+            chunk_count=1,
+            content_fingerprint=fingerprint_text(old_source.content),
+            metadata_fingerprint=fingerprint_metadata(old_source.metadata),
+            processing_fingerprint=composition_container.build_processing_profile(
+                settings
+            ).fingerprint,
+        )
+    )
+    store = InMemoryVectorStore()
+    store.upsert(
+        [EmbeddedChunk(DocumentChunk(old_source.metadata, 0, "body"), [1.0, 0.0])]
+    )
+
+    def _ingest(_settings: Settings, *, vector_store: object | None = None) -> RecordingIngest:
+        raise AssertionError("a metadata-only change must not re-embed")
+
+    monkeypatch.setattr(composition_container, "build_ingest_knowledge", _ingest)
+    response = sync_google_drive(
+        settings,
+        connector=RecordingConnector(
+            (renamed,), sources={renamed.source_id: _source(renamed)}
+        ),
+        catalog=catalog,
+        vector_store=store,
+    )
+
+    assert response.metadata_updated_count == 1
+    [chunk] = store.list_source_chunks(previous.reference).chunks
+    assert chunk.metadata.title == "renamed"

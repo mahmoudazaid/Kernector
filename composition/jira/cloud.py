@@ -810,7 +810,9 @@ def sync_jira_oauth(
             current,
             last_synced_at=synced_at,
             last_sync_new=result.ingested_count,
-            last_sync_updated=result.updated_count,
+            last_sync_updated=(
+                result.updated_count + result.metadata_updated_count
+            ),
             last_sync_unchanged=result.skipped_count,
             last_sync_removed=result.removed_count,
             last_sync_failed=result.failed_count,

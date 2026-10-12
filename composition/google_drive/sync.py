@@ -167,7 +167,7 @@ def sync_google_drive_oauth(
             mark_drive_reauth(tokens_store, error)
         raise
     new_count = result.ingested_count
-    updated_count = result.updated_count
+    updated_count = result.updated_count + result.metadata_updated_count
     synced_at = datetime.now(timezone.utc).isoformat()
     tokens_store.mutate(
         lambda current: None

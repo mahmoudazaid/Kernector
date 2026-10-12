@@ -229,19 +229,7 @@ export type GitHubStatusResponse = {
   setup_required?: boolean;
 };
 
-export type GitHubSyncResponse = {
-  ingested_count: number;
-  updated_count: number;
-  skipped_count: number;
-  failed_count: number;
-  removed_count: number;
-  outcomes: Array<{
-    source_id: string;
-    status: "ingested" | "updated" | "skipped" | "failed" | "removed";
-    chunk_count: number;
-    error_type: string | null;
-  }>;
-};
+export type GitHubSyncResponse = components["schemas"]["GitHubSyncResponse"];
 
 export type GitHubRepoItemResponse = {
   owner: string;

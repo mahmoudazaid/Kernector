@@ -251,6 +251,7 @@ def test_google_drive_sync_returns_ingested_skipped_failed() -> None:
     assert response.json() == {
         "ingested_count": 1,
         "updated_count": 0,
+        "metadata_updated_count": 0,
         "skipped_count": 2,
         "failed_count": 0,
         "removed_count": 0,
@@ -719,3 +720,35 @@ def test_get_selection_accepts_long_drive_names() -> None:
 
     assert response.status_code == 200
     assert response.json()["folders"][0]["name"] == "n" * 3000
+
+
+def test_google_drive_sync_projects_metadata_updated_outcomes() -> None:
+    app = create_app()
+    app.dependency_overrides[get_google_drive_status] = lambda: _status(
+        connected=True, oauth_ready=True
+    )
+    app.dependency_overrides[get_google_drive_sync] = lambda: (
+        lambda: ConnectorSyncResponse(
+            outcomes=(
+                ConnectorSyncOutcome(
+                    source_id="drive:renamed",
+                    status=ConnectorSyncStatus.METADATA_UPDATED,
+                    chunk_count=6,
+                ),
+            )
+        )
+    )
+    client = TestClient(app)
+
+    body = client.post("/api/v1/connectors/google-drive/sync").json()
+
+    assert body["metadata_updated_count"] == 1
+    assert body["updated_count"] == 0
+    assert body["outcomes"] == [
+        {
+            "source_id": "drive:renamed",
+            "status": "metadata_updated",
+            "chunk_count": 6,
+            "error_type": None,
+        }
+    ]

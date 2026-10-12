@@ -365,7 +365,9 @@ class ConnectorSyncOutcomeResponse(BaseModel):
     """One listed Drive document outcome from a sync run."""
 
     source_id: str
-    status: Literal["ingested", "updated", "skipped", "failed", "removed"]
+    status: Literal[
+        "ingested", "updated", "metadata_updated", "skipped", "failed", "removed"
+    ]
     chunk_count: int
     error_type: str | None = None
 
@@ -375,6 +377,7 @@ class GoogleDriveSyncResponse(BaseModel):
 
     ingested_count: int
     updated_count: int = 0
+    metadata_updated_count: int = 0
     skipped_count: int
     failed_count: int
     removed_count: int = 0
@@ -396,6 +399,7 @@ def connector_sync_response(
     return GoogleDriveSyncResponse(
         ingested_count=response.ingested_count,
         updated_count=response.updated_count,
+        metadata_updated_count=response.metadata_updated_count,
         skipped_count=response.skipped_count,
         failed_count=response.failed_count,
         removed_count=response.removed_count,
