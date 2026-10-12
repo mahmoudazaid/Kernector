@@ -8,10 +8,18 @@ from datetime import UTC, datetime
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
+    ProcessingProfile,
     SourceDocument,
     SourceReference,
     SourceType,
     UploadPayload,
+)
+
+UPLOAD_PROFILE = ProcessingProfile(
+    chunker_version="1",
+    chunk_size=10,
+    chunk_overlap=2,
+    embedding_model="test-embedding",
 )
 
 

@@ -17,8 +17,11 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
     UploadPayload,
+    fingerprint_metadata,
+    fingerprint_text,
 )
 from test.document_doubles import (
+    UPLOAD_PROFILE,
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
@@ -72,6 +75,7 @@ def _use_case(
         now=clock
         or FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
 
 
@@ -166,6 +170,7 @@ def test_oversized_create_is_rejected_before_extract_or_catalog() -> None:
         new_source_id=FixedIdFactory("id-oversized"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=limit,
+        processing_profile=UPLOAD_PROFILE,
     )
 
     with pytest.raises(UploadTooLargeError, match="at most 16 bytes") as raised:
@@ -232,6 +237,7 @@ def test_create_ready_stores_blob() -> None:
         new_source_id=FixedIdFactory("blob-ready"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
 
     created = use_case.create(payload)
@@ -259,6 +265,7 @@ def test_create_ready_blob_put_failure_degrades_without_raising() -> None:
         new_source_id=FixedIdFactory("blob-put-fail"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
 
     created = use_case.create(
@@ -269,3 +276,18 @@ def test_create_ready_blob_put_failure_degrades_without_raising() -> None:
     assert created.error == "document ingested but original bytes could not be stored"
     assert store.records
     assert blob_store.get(created.reference) is None
+
+
+def test_create_ready_row_stores_fingerprints() -> None:
+    catalog = InMemoryDocumentCatalog()
+    payload = UploadPayload(file_name="guide.md", content=b"x")
+
+    ready = _use_case(catalog).create(payload)
+
+    reference = ready.reference
+    expected_metadata = _document_factory(payload, reference).metadata
+    assert ready.content_fingerprint == fingerprint_text(CONTENT)
+    assert ready.metadata_fingerprint == fingerprint_metadata(expected_metadata)
+    assert ready.processing_fingerprint == UPLOAD_PROFILE.fingerprint
+    assert ready.provider_content_hash is None
+    assert catalog.get(reference) == ready

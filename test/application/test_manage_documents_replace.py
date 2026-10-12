@@ -23,8 +23,10 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
     UploadPayload,
+    fingerprint_text,
 )
 from test.document_doubles import (
+    UPLOAD_PROFILE,
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
@@ -97,6 +99,7 @@ def _seed_ready(
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     return use_case.create(UploadPayload(file_name=file_name, content=b"v1"))
 
@@ -116,6 +119,7 @@ def test_replace_rejects_unknown_id(caplog: pytest.LogCaptureFixture) -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     with caplog.at_level(logging.ERROR, logger="application.manage_documents"):
         with pytest.raises(UnknownDocumentError) as raised:
@@ -154,6 +158,7 @@ def test_replace_preserves_source_id_and_updates_metadata() -> None:
         new_source_id=FixedIdFactory("should-not-be-used"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     replaced = use_case.replace(
         original.reference,
@@ -193,6 +198,7 @@ def test_replace_preserves_created_at_and_bumps_updated_at_on_catalog_and_chunks
         new_source_id=FixedIdFactory("should-not-be-used"),
         now=FixedClock(updated),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     replaced = use_case.replace(
         original.reference,
@@ -227,6 +233,7 @@ def test_replace_failure_before_vector_mutation_leaves_previous_blob_and_previou
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     with pytest.raises(IngestFailure) as raised:
         use_case.replace(
@@ -265,6 +272,7 @@ def test_replace_validation_failure_leaves_previous_blob() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     with pytest.raises(ApplicationValidationError):
         use_case.replace(
@@ -314,6 +322,7 @@ def test_degraded_replace_stores_new_blob() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     with pytest.raises(IngestFailure) as raised:
         use_case.replace(
@@ -348,6 +357,7 @@ def test_replace_unknown_document_wins_over_oversize() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=16,
+        processing_profile=UPLOAD_PROFILE,
     )
     missing = SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT)
 
@@ -377,6 +387,7 @@ def test_oversized_replace_is_rejected_before_extract() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=limit,
+        processing_profile=UPLOAD_PROFILE,
     )
 
     with pytest.raises(UploadTooLargeError, match="at most 16 bytes") as raised:
@@ -417,6 +428,7 @@ def test_replace_blob_put_failure_keeps_ready_with_missing_blob_note() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     replaced = use_case.replace(
         original.reference,
@@ -466,6 +478,7 @@ def test_degraded_replace_keeps_prior_blob_when_put_fails() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
     )
     with pytest.raises(IngestFailure):
         use_case.replace(
@@ -481,3 +494,66 @@ def test_degraded_replace_keeps_prior_blob_when_put_fails() -> None:
     assert blob_store.get(reference) == UploadPayload(
         file_name="guide.md", content=b"v1"
     )
+
+
+def _replacing_use_case(
+    catalog: InMemoryDocumentCatalog,
+    store: InMemoryVectorStore,
+    *,
+    embedding_model: object,
+) -> ManageUploadedDocuments:
+    return ManageUploadedDocuments(
+        catalog=catalog,
+        blob_store=InMemoryUploadBlobStore(),
+        extractor=RecordingExtractor(document_factory=_document_factory(CONTENT_V2)),
+        ingest_factory=lambda: IngestKnowledge(
+            embedding_model,  # type: ignore[arg-type]
+            store,
+            chunk_size=10,
+            chunk_overlap=2,
+        ),
+        vector_store_factory=lambda: store,
+        new_source_id=FixedIdFactory("unused"),
+        now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
+        max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile=UPLOAD_PROFILE,
+    )
+
+
+def test_replace_ready_row_stores_new_fingerprints() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    original = _seed_ready(catalog, store)
+    assert original.content_fingerprint == fingerprint_text(CONTENT_V1)
+
+    replaced = _replacing_use_case(
+        catalog, store, embedding_model=StubEmbeddingModel()
+    ).replace(
+        original.reference, UploadPayload(file_name="guide-v2.md", content=b"v2")
+    )
+
+    assert replaced.content_fingerprint == fingerprint_text(CONTENT_V2)
+    assert replaced.metadata_fingerprint != original.metadata_fingerprint
+    assert replaced.processing_fingerprint == UPLOAD_PROFILE.fingerprint
+    assert catalog.get(original.reference) == replaced
+
+
+def test_failed_replace_keeps_previous_fingerprints() -> None:
+    catalog = InMemoryDocumentCatalog()
+    store = FailingUpsertStore()
+    original = _seed_ready(catalog, InMemoryVectorStore())
+
+    with pytest.raises(IngestFailure):
+        _replacing_use_case(
+            catalog, store, embedding_model=StubEmbeddingModel()
+        ).replace(
+            original.reference,
+            UploadPayload(file_name="guide-v2.md", content=b"v2"),
+        )
+
+    degraded = catalog.get(original.reference)
+    assert degraded is not None
+    assert degraded.status is CatalogStatus.DEGRADED
+    assert degraded.content_fingerprint == original.content_fingerprint
+    assert degraded.metadata_fingerprint == original.metadata_fingerprint
+    assert degraded.processing_fingerprint == original.processing_fingerprint
