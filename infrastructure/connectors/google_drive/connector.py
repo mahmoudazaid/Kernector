@@ -39,7 +39,7 @@ _GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _GOOGLE_APPS_PREFIX = "application/vnd.google-apps."
 _FILE_FIELDS = (
-    "id,name,mimeType,version,md5Checksum,size,modifiedTime,trashed,"
+    "id,name,mimeType,version,md5Checksum,size,modifiedTime,trashed,parents,"
     "capabilities(canDownload)"
 )
 _LIST_FIELDS = f"nextPageToken,files({_FILE_FIELDS})"
@@ -47,6 +47,7 @@ _MSG_UNREADABLE = "A Google Drive file could not be read as text."
 _MSG_TOO_LARGE = "A Google Drive file exceeded the configured size limit."
 _MSG_CONFIG = "Google Drive connector configuration is invalid."
 _MSG_CREDENTIALS = "Google Drive connector credentials could not be read."
+_MSG_DESCRIBE = "Google Drive document metadata could not be rebuilt."
 
 
 class GoogleDriveConfigError(RuntimeError):
@@ -361,7 +362,38 @@ class GoogleDriveConnector:
             )
         except DocumentExtractionError as error:
             raise ConnectorError(_MSG_UNREADABLE) from error
-        return _normalize_source(document, extracted, mime_type, content)
+        page_count = extracted.metadata.extra.get("page_count")
+        return SourceDocument(
+            _source_metadata(
+                document,
+                content_format=extracted.metadata.content_format,
+                byte_size=str(len(content)),
+                page_count=page_count,
+            ),
+            extracted.content,
+        )
+
+    def describe_document(
+        self, document: ConnectorDocument, previous: SourceMetadata
+    ) -> SourceMetadata:
+        """Rebuild ``fetch_document`` metadata from the listing without download.
+
+        Listing-derived fields come from ``document``; extraction-only fields
+        (``content_format``, ``byte_size``, ``page_count``) are kept from
+        ``previous``, which is only valid while the content is unchanged.
+
+        Raises:
+            ConnectorError: ``previous`` belongs to another reference or lacks
+                the extracted content format.
+        """
+        if previous.reference != document.reference or not previous.content_format:
+            raise ConnectorError(_MSG_DESCRIBE)
+        return _source_metadata(
+            document,
+            content_format=previous.content_format,
+            byte_size=previous.extra.get("byte_size"),
+            page_count=previous.extra.get("page_count"),
+        )
 
     def _download(self, request: object) -> bytes:
         buffer = BytesIO()
@@ -470,13 +502,23 @@ def _document_from_file(entry: object) -> ConnectorDocument | None:
     if size is not None:
         extra["size"] = str(size)
     checksum = entry.get("md5Checksum")
-    if isinstance(checksum, str) and checksum:
+    content_hash: str | None = None
+    if isinstance(checksum, str) and checksum.strip():
         extra["md5_checksum"] = checksum
+        content_hash = checksum
+    parents = entry.get("parents")
+    if isinstance(parents, list):
+        parent_ids = sorted(
+            parent for parent in parents if isinstance(parent, str) and parent
+        )
+        if parent_ids:
+            extra["drive_parent_ids"] = ",".join(parent_ids)
     return ConnectorDocument(
         reference=SourceReference(file_id, SourceType.GOOGLE_DRIVE),
         file_name=file_name,
         revision=revision,
         extra=extra,
+        content_hash=content_hash,
     )
 
 
@@ -548,30 +590,31 @@ def _payload_file_name(file_name: str, mime_type: str) -> str:
     return file_name
 
 
-def _normalize_source(
+def _source_metadata(
     document: ConnectorDocument,
-    extracted: SourceDocument,
-    mime_type: str,
-    content: bytes,
-) -> SourceDocument:
-    preserved: dict[str, str] = {}
-    page_count = extracted.metadata.extra.get("page_count")
+    *,
+    content_format: str | None,
+    byte_size: str | None,
+    page_count: str | None,
+) -> SourceMetadata:
+    """Build the one metadata shape shared by fetch and describe."""
+    extra = {
+        "file_name": document.file_name,
+        "drive_file_id": document.source_id,
+        "drive_mime_type": document.extra.get("mime_type", ""),
+        "drive_revision": document.revision,
+    }
+    if byte_size is not None:
+        extra["byte_size"] = byte_size
+    parent_ids = document.extra.get("drive_parent_ids")
+    if parent_ids:
+        extra["drive_parent_ids"] = parent_ids
     if page_count is not None:
-        preserved["page_count"] = page_count
-    return SourceDocument(
-        SourceMetadata(
-            reference=document.reference,
-            title=Path(document.file_name).stem,
-            provider="google_drive",
-            content_format=extracted.metadata.content_format,
-            extra={
-                "file_name": document.file_name,
-                "drive_file_id": document.source_id,
-                "drive_mime_type": mime_type,
-                "drive_revision": document.revision,
-                "byte_size": str(len(content)),
-                **preserved,
-            },
-        ),
-        extracted.content,
+        extra["page_count"] = page_count
+    return SourceMetadata(
+        reference=document.reference,
+        title=Path(document.file_name).stem,
+        provider="google_drive",
+        content_format=content_format,
+        extra=extra,
     )

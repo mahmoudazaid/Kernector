@@ -110,9 +110,7 @@ def issue_payload_to_source_document(
         repository=repo_full,
         url=issue_url,
         created_at=created_at,
-        updated_at=updated_at.strip(),
         closed_at=closed_at,
-        revision=updated_at.strip(),
     )
     source_id = f"{ISSUE_SOURCE_ID_PREFIX}{node_id.strip()}"
     return SourceDocument(
@@ -190,9 +188,7 @@ def _markdown_for_issue(
     repository: str,
     url: str,
     created_at: str,
-    updated_at: str,
     closed_at: str,
-    revision: str,
 ) -> str:
     lines = [
         f"# {title}",
@@ -206,12 +202,10 @@ def _markdown_for_issue(
     ]
     if created_at:
         lines.append(f"- Created: {created_at}")
-    lines.append(f"- Updated: {updated_at}")
     if closed_at:
         lines.append(f"- Closed: {closed_at}")
     lines.extend(
         [
-            f"- Revision: {revision}",
             "",
             "## Body",
             "",

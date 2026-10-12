@@ -120,3 +120,15 @@ def test_reader_fetch_uses_client() -> None:
         SourceLocator(provider="github", locator="mahmoudazaid/Kernector#293")
     )
     assert doc.source_id == "issue:I_kwDOExample"
+
+
+def test_issue_timestamp_change_alone_keeps_the_same_text() -> None:
+    expected = parse_github_issue_locator("mahmoudazaid/Kernector#293")
+    assert expected is not None
+    original = issue_payload_to_source_document(_payload(), expected=expected)
+    touched = issue_payload_to_source_document(
+        _payload(updated_at="2026-09-20T08:00:00Z"), expected=expected
+    )
+
+    assert touched.content == original.content
+    assert touched.metadata.extra["revision"] == "2026-09-20T08:00:00Z"

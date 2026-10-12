@@ -27,6 +27,7 @@ from domain.knowledge import (
     SourceType,
     UploadPayload,
 )
+from domain.ports import MetadataDescribingConnector
 from infrastructure.config import GoogleDriveSettings
 from infrastructure.connectors.google_drive.connector import (
     GoogleDriveConfigError,
@@ -223,12 +224,15 @@ def _file(
     md5: str | None = "abc",
     size: object | None = "12",
     can_download: bool | None = True,
+    parents: Sequence[str] | None = None,
 ) -> dict[str, object]:
     entry: dict[str, object] = {
         "id": file_id,
         "name": name,
         "mimeType": mime_type,
     }
+    if parents is not None:
+        entry["parents"] = list(parents)
     if version is not None:
         entry["version"] = version
     if md5 is not None:
@@ -821,3 +825,133 @@ def test_get_item_uses_id_not_name() -> None:
     item = _connector(files).get_item("drive-id-1")
     assert item.id == "drive-id-1"
     assert item.name == "Renamed.md"
+
+
+# --------------------------------------------------------------------------
+# Content hash, parents, and describe_document (#380)
+# --------------------------------------------------------------------------
+
+
+def test_list_sets_content_hash_from_md5_and_none_for_google_docs() -> None:
+    files = FakeDriveFiles(
+        [
+            {
+                "files": [
+                    _file("blob", "a.txt", md5="9f1"),
+                    _file("gdoc", "Spec", mime_type=GOOGLE_DOC, md5=None, size=None),
+                ]
+            }
+        ]
+    )
+    blob, google_doc = _connector(files).list_documents()
+    assert blob.content_hash == "9f1"
+    assert google_doc.content_hash is None
+    assert "parents" in str(files.list_calls[0]["fields"])
+
+
+def test_list_records_sorted_parent_ids() -> None:
+    files = FakeDriveFiles(
+        [{"files": [_file("a", "a.txt", parents=["p2", "p1"]), _file("b", "b.txt")]}]
+    )
+    first, second = _connector(files).list_documents()
+    assert first.extra["drive_parent_ids"] == "p1,p2"
+    assert "drive_parent_ids" not in second.extra
+
+
+def _listed_blob(
+    *, file_name: str = "guide.md", revision: str = "4", parents: str | None = "p1"
+) -> ConnectorDocument:
+    extra = {"mime_type": "text/markdown", "size": "5", "md5_checksum": "9f1"}
+    if parents is not None:
+        extra["drive_parent_ids"] = parents
+    return ConnectorDocument(
+        reference=SourceReference("file-1", SourceType.GOOGLE_DRIVE),
+        file_name=file_name,
+        revision=revision,
+        extra=extra,
+        content_hash="9f1",
+    )
+
+
+def test_fetch_carries_parent_ids_into_source_metadata() -> None:
+    document = _connector(FakeDriveFiles()).fetch_document(_listed_blob())
+    assert document.metadata.extra["drive_parent_ids"] == "p1"
+
+
+def test_drive_connector_can_describe_metadata() -> None:
+    assert isinstance(_connector(FakeDriveFiles()), MetadataDescribingConnector)
+
+
+def test_describe_matches_fetch_for_the_same_listing() -> None:
+    listed = _listed_blob()
+    files = FakeDriveFiles()
+    connector = _connector(files)
+    fetched = connector.fetch_document(listed)
+    downloads = list(files.get_media_ids)
+
+    described = connector.describe_document(listed, fetched.metadata)
+
+    assert described == fetched.metadata
+    assert files.get_media_ids == downloads
+
+
+def test_describe_rebuilds_listing_fields_and_keeps_extraction_fields() -> None:
+    connector = _connector(FakeDriveFiles())
+    previous = connector.fetch_document(_listed_blob()).metadata
+    moved = _listed_blob(file_name="Renamed guide.md", revision="5", parents="p9")
+
+    described = connector.describe_document(moved, previous)
+
+    assert described == connector.fetch_document(moved).metadata
+    assert described.title == "Renamed guide"
+    assert described.extra["file_name"] == "Renamed guide.md"
+    assert described.extra["drive_revision"] == "5"
+    assert described.extra["drive_parent_ids"] == "p9"
+    assert described.extra["page_count"] == "3"
+    assert described.extra["byte_size"] == "5"
+    assert described.content_format == "markdown"
+
+
+def test_describe_drops_parent_ids_that_left_the_listing() -> None:
+    connector = _connector(FakeDriveFiles())
+    previous = connector.fetch_document(_listed_blob()).metadata
+
+    described = connector.describe_document(_listed_blob(parents=None), previous)
+
+    assert "drive_parent_ids" not in described.extra
+
+
+def test_describe_rejects_a_different_reference() -> None:
+    connector = _connector(FakeDriveFiles())
+    previous = SourceMetadata(
+        SourceReference("other", SourceType.GOOGLE_DRIVE),
+        content_format="markdown",
+    )
+    with pytest.raises(ConnectorError):
+        connector.describe_document(_listed_blob(), previous)
+
+
+def test_describe_requires_previous_content_format() -> None:
+    connector = _connector(FakeDriveFiles())
+    previous = SourceMetadata(
+        SourceReference("file-1", SourceType.GOOGLE_DRIVE),
+        extra={"byte_size": "5"},
+    )
+    with pytest.raises(ConnectorError):
+        connector.describe_document(_listed_blob(), previous)
+
+
+def test_describe_drops_obsolete_previous_fields() -> None:
+    connector = _connector(FakeDriveFiles())
+    fetched = connector.fetch_document(_listed_blob()).metadata
+    previous = SourceMetadata(
+        fetched.reference,
+        title="stale",
+        provider="upload",
+        content_format=fetched.content_format,
+        extra={**fetched.extra, "legacy_field": "x", "modified_at": "old"},
+    )
+
+    described = connector.describe_document(_listed_blob(), previous)
+
+    assert described == fetched

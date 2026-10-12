@@ -121,3 +121,36 @@ def test_fetch_renders_issue_markdown_with_comments() -> None:
     assert "## Comments" in source.content
     assert "### Comment by hubot" in source.content
     assert "I can reproduce this." in source.content
+
+
+def _fetched_content(issue: dict[str, object]) -> str:
+    adapter = GitHubIssueDocuments(
+        FakeGitHubClient([issue]), GitHubIssueConfig(project_node_id="PVT_1")
+    )
+    return adapter.fetch_document(adapter.list_documents()[0]).content
+
+
+def test_issue_timestamp_change_alone_keeps_the_same_text() -> None:
+    touched = _fetched_content(_issue(updatedAt="2026-02-01T00:00:00Z"))
+
+    assert touched == _fetched_content(_issue())
+    assert "- Updated:" not in touched.split("## Comments", 1)[0]
+
+
+def test_new_issue_comment_changes_the_text() -> None:
+    comments = _issue()["comments"]
+    assert isinstance(comments, dict)
+    added = {
+        "nodes": [
+            *comments["nodes"],
+            {
+                "author": {"login": "mona"},
+                "body": "Fixed on main.",
+                "createdAt": "2026-01-04T00:00:00Z",
+                "updatedAt": "2026-01-04T00:00:00Z",
+                "url": "https://github.com/octo/hello/issues/42#issuecomment-2",
+            },
+        ]
+    }
+
+    assert _fetched_content(_issue(comments=added)) != _fetched_content(_issue())
