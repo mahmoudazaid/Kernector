@@ -277,7 +277,15 @@ def build_vector_store(settings: Settings) -> VectorStore:
 
 
 def build_processing_profile(settings: Settings) -> ProcessingProfile:
-    """Return the chunking and embedding profile fingerprinted on READY rows."""
+    """Return the chunking and embedding profile fingerprinted on READY rows.
+
+    Raises:
+        ConfigurationError: ``OPENROUTER_EMBEDDING_MODEL`` is blank.
+    """
+    if not settings.openrouter.embedding_model.strip():
+        raise ConfigurationError(
+            "Missing OPENROUTER_EMBEDDING_MODEL. Add it to .env before embedding."
+        )
     return ProcessingProfile(
         chunker_version=CHUNKER_VERSION,
         chunk_size=settings.chunking.chunk_size,

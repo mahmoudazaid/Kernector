@@ -426,6 +426,18 @@ def test_build_processing_profile_reflects_chunking_and_embedding_settings(
     assert profile.embedding_model == settings.openrouter.embedding_model
 
 
+@pytest.mark.parametrize("embedding_model", ["", "   "])
+def test_build_processing_profile_rejects_blank_embedding_model(
+    settings: Settings, embedding_model: str
+) -> None:
+    blank = replace(
+        settings, openrouter=replace(settings.openrouter, embedding_model=embedding_model)
+    )
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_EMBEDDING_MODEL"):
+        composition_container.build_processing_profile(blank)
+
+
 def test_ingested_rows_carry_the_settings_processing_profile(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

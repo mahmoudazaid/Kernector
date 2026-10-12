@@ -27,6 +27,7 @@ from domain.knowledge import (
 )
 from test.document_doubles import (
     UPLOAD_PROFILE,
+    upload_profile,
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
@@ -99,7 +100,7 @@ def _seed_ready(
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     return use_case.create(UploadPayload(file_name=file_name, content=b"v1"))
 
@@ -119,7 +120,7 @@ def test_replace_rejects_unknown_id(caplog: pytest.LogCaptureFixture) -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     with caplog.at_level(logging.ERROR, logger="application.manage_documents"):
         with pytest.raises(UnknownDocumentError) as raised:
@@ -158,7 +159,7 @@ def test_replace_preserves_source_id_and_updates_metadata() -> None:
         new_source_id=FixedIdFactory("should-not-be-used"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     replaced = use_case.replace(
         original.reference,
@@ -198,7 +199,7 @@ def test_replace_preserves_created_at_and_bumps_updated_at_on_catalog_and_chunks
         new_source_id=FixedIdFactory("should-not-be-used"),
         now=FixedClock(updated),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     replaced = use_case.replace(
         original.reference,
@@ -233,7 +234,7 @@ def test_replace_failure_before_vector_mutation_leaves_previous_blob_and_previou
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     with pytest.raises(IngestFailure) as raised:
         use_case.replace(
@@ -272,7 +273,7 @@ def test_replace_validation_failure_leaves_previous_blob() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     with pytest.raises(ApplicationValidationError):
         use_case.replace(
@@ -322,7 +323,7 @@ def test_degraded_replace_stores_new_blob() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     with pytest.raises(IngestFailure) as raised:
         use_case.replace(
@@ -357,7 +358,7 @@ def test_replace_unknown_document_wins_over_oversize() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=16,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     missing = SourceReference("missing", SourceType.KNOWLEDGE_DOCUMENT)
 
@@ -387,7 +388,7 @@ def test_oversized_replace_is_rejected_before_extract() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=limit,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(UploadTooLargeError, match="at most 16 bytes") as raised:
@@ -428,7 +429,7 @@ def test_replace_blob_put_failure_keeps_ready_with_missing_blob_note() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     replaced = use_case.replace(
         original.reference,
@@ -478,7 +479,7 @@ def test_degraded_replace_keeps_prior_blob_when_put_fails() -> None:
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
     with pytest.raises(IngestFailure):
         use_case.replace(
@@ -516,7 +517,7 @@ def _replacing_use_case(
         new_source_id=FixedIdFactory("unused"),
         now=FixedClock(datetime(2026, 8, 28, 13, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
-        processing_profile=UPLOAD_PROFILE,
+        processing_profile_factory=upload_profile,
     )
 
 

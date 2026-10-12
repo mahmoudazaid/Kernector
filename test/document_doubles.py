@@ -23,6 +23,11 @@ UPLOAD_PROFILE = ProcessingProfile(
 )
 
 
+def upload_profile() -> ProcessingProfile:
+    """Processing-profile factory for ``ManageUploadedDocuments`` tests."""
+    return UPLOAD_PROFILE
+
+
 class InMemoryDocumentCatalog:
     """Dict-backed DocumentCatalog for application tests."""
 
