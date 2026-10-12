@@ -719,6 +719,94 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Projects
+     * @description List the bound workspace's projects.
+     */
+    get: operations["list_projects_api_v1_projects_get"];
+    put?: never;
+    /**
+     * Create Project
+     * @description Create a project in the bound workspace.
+     */
+    post: operations["create_project_api_v1_projects_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/projects/{project_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Project
+     * @description Return a project with its associations and components.
+     */
+    get: operations["get_project_api_v1_projects__project_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/projects/{project_id}/sources": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Associate Source
+     * @description Explicitly associate a connector scope with the project.
+     */
+    post: operations["associate_source_api_v1_projects__project_id__sources_post"];
+    /**
+     * Remove Association
+     * @description Remove an association; resolution excludes it immediately.
+     */
+    delete: operations["remove_association_api_v1_projects__project_id__sources_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/projects/{project_id}/sources/confirm": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Confirm Association
+     * @description Confirm a suggested or rejected association.
+     */
+    post: operations["confirm_association_api_v1_projects__project_id__sources_confirm_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/responses/{request_id}/feedback": {
     parameters: {
       query?: never;
@@ -919,6 +1007,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * AssociateSourceBody
+     * @description Explicitly associate a scope with a project as ``confirmed``.
+     */
+    AssociateSourceBody: {
+      /** Acknowledged Shared With */
+      acknowledged_shared_with?: string[];
+      /** Connector Id */
+      connector_id: string;
+      /** Roles */
+      roles?: string[];
+      /** Scope Kind */
+      scope_kind: string;
+      /** Scope Value */
+      scope_value: string;
+    };
     /** Body_create_document_api_v1_documents_post */
     Body_create_document_api_v1_documents_post: {
       /** File */
@@ -1082,6 +1186,24 @@ export interface components {
       source_type: string;
     };
     /**
+     * ConfirmAssociationBody
+     * @description Confirm a suggested or rejected association with compare-and-swap.
+     */
+    ConfirmAssociationBody: {
+      /** Acknowledged Shared With */
+      acknowledged_shared_with?: string[];
+      /** Connector Id */
+      connector_id: string;
+      /** Expected Version */
+      expected_version: number;
+      /** Roles */
+      roles?: string[] | null;
+      /** Scope Kind */
+      scope_kind: string;
+      /** Scope Value */
+      scope_value: string;
+    };
+    /**
      * ConnectorSyncOutcomeResponse
      * @description One listed Drive document outcome from a sync run.
      */
@@ -1110,6 +1232,16 @@ export interface components {
       category: string;
       /** Detail */
       detail: string;
+    };
+    /**
+     * CreateProjectBody
+     * @description Body for creating a project; the ``project_id`` is generated.
+     */
+    CreateProjectBody: {
+      /** Name */
+      name: string;
+      /** Slug */
+      slug: string;
     };
     /**
      * CreateTestDesignDraftRequest
@@ -1944,6 +2076,125 @@ export interface components {
       detail: string;
       /** Pointer */
       pointer: string;
+    };
+    /**
+     * ProjectAssociationResponse
+     * @description One source association of a project.
+     */
+    ProjectAssociationResponse: {
+      /** Connector Id */
+      connector_id: string;
+      /** Created By */
+      created_by: string;
+      /** Evidence */
+      evidence: components["schemas"]["SourceReferenceResponse"][];
+      /** Roles */
+      roles: string[];
+      /** Scope Kind */
+      scope_kind: string;
+      /** Scope Value */
+      scope_value: string;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: "suggested" | "confirmed" | "rejected";
+      /** Version */
+      version: number;
+    };
+    /**
+     * ProjectComponentMemberResponse
+     * @description A component member: a scope narrowed by an optional path prefix.
+     */
+    ProjectComponentMemberResponse: {
+      /** Connector Id */
+      connector_id: string;
+      /** Path Prefix */
+      path_prefix: string;
+      /** Scope Kind */
+      scope_kind: string;
+      /** Scope Value */
+      scope_value: string;
+    };
+    /**
+     * ProjectComponentResponse
+     * @description A project component; it has no type field.
+     */
+    ProjectComponentResponse: {
+      /** Component Id */
+      component_id: string;
+      /** Members */
+      members: components["schemas"]["ProjectComponentMemberResponse"][];
+      /** Name */
+      name: string;
+      /**
+       * Reason
+       * @enum {string}
+       */
+      reason: "association_default" | "operator";
+      /** Version */
+      version: number;
+    };
+    /**
+     * ProjectContextCoverageResponse
+     * @description Structural coverage of one registered context; not an evidence outcome.
+     */
+    ProjectContextCoverageResponse: {
+      /** Context */
+      context: string;
+      /** Scopes */
+      scopes: components["schemas"]["ProjectScopeResponse"][];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "associated" | "not_associated";
+    };
+    /**
+     * ProjectDetailResponse
+     * @description A project with its associations, components and context coverage.
+     */
+    ProjectDetailResponse: {
+      /** Associations */
+      associations: components["schemas"]["ProjectAssociationResponse"][];
+      /** Components */
+      components: components["schemas"]["ProjectComponentResponse"][];
+      /** Context Coverage */
+      context_coverage: components["schemas"]["ProjectContextCoverageResponse"][];
+      /** Name */
+      name: string;
+      /** Project Id */
+      project_id: string;
+      /** Slug */
+      slug: string;
+      /** Version */
+      version: number;
+    };
+    /**
+     * ProjectResponse
+     * @description A project in the bound workspace.
+     */
+    ProjectResponse: {
+      /** Name */
+      name: string;
+      /** Project Id */
+      project_id: string;
+      /** Slug */
+      slug: string;
+      /** Version */
+      version: number;
+    };
+    /**
+     * ProjectScopeResponse
+     * @description An opaque connector scope.
+     */
+    ProjectScopeResponse: {
+      /** Connector Id */
+      connector_id: string;
+      /** Scope Kind */
+      scope_kind: string;
+      /** Scope Value */
+      scope_value: string;
     };
     /**
      * ResponseFeedbackResponse
@@ -4606,6 +4857,320 @@ export interface operations {
       };
       /** @description Conflict */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_projects_api_v1_projects_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectResponse"][];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  create_project_api_v1_projects_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateProjectBody"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectResponse"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  get_project_api_v1_projects__project_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectDetailResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  associate_source_api_v1_projects__project_id__sources_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AssociateSourceBody"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectAssociationResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  remove_association_api_v1_projects__project_id__sources_delete: {
+    parameters: {
+      query: {
+        connector_id: string;
+        scope_kind: string;
+        scope_value: string;
+        expected_version: number;
+      };
+      header?: never;
+      path: {
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  confirm_association_api_v1_projects__project_id__sources_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConfirmAssociationBody"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectAssociationResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
         headers: {
           [name: string]: unknown;
         };
