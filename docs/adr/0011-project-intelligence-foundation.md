@@ -73,7 +73,9 @@ An **association** links a project to part of a connected source:
 - **Provider-neutral scope.** `scope_kind` and `scope_value` are opaque tokens.
   Examples: `project_key=OIE` (Jira), `repo=acme/oie-orders` (GitHub),
   `folder=1AbC…` (Drive). The connector that owns `connector_id` validates its
-  own scope kinds; the core only checks shape.
+  own scope kinds; the core only checks shape. Associating or confirming a
+  scope is rejected unless `connector_id` is a configured connector and that
+  connector declares `scope_kind` as one it accepts.
 - **Context roles.** Zero or more registered context tokens (decision 10). A
   role is the default context for that scope's artifacts. Zero roles is valid
   only when no context vocabulary is registered.

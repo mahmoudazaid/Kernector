@@ -83,6 +83,16 @@ from domain.errors import (
     ToolFailureError,
     VectorStoreError,
 )
+from domain.project.errors import (
+    AssociationExistsError,
+    AssociationNotFoundError,
+    ComponentNotFoundError,
+    ProjectInputError,
+    ProjectNotFoundError,
+    ProjectRecordVersionConflictError,
+    ProjectSlugTakenError,
+    SharedScopeConfirmationRequiredError,
+)
 from presentation.failure_messages import (
     OPERATIONAL_FAILURE_MESSAGE,
     PROVIDER_AUTH_FAILURE_MESSAGE,
@@ -107,6 +117,44 @@ _TEST_DESIGN_VERSION_CONFLICT_DETAIL = (
     "The draft was updated elsewhere. Reload or retry with the latest version."
 )
 _TEST_DESIGN_VALIDATION_DETAIL = "The test-design request was invalid."
+_PROJECT_PROBLEMS: dict[type[Exception], tuple[str, str, int, str]] = {
+    ProjectNotFoundError: (
+        "project_not_found",
+        "Project not found",
+        404,
+        "The project was not found in this workspace.",
+    ),
+    AssociationNotFoundError: (
+        "association_not_found",
+        "Association not found",
+        404,
+        "The project has no association for this scope.",
+    ),
+    ComponentNotFoundError: (
+        "component_not_found",
+        "Component not found",
+        404,
+        "The project has no such component.",
+    ),
+    ProjectRecordVersionConflictError: (
+        "project_version_conflict",
+        "Version conflict",
+        409,
+        "The record was updated elsewhere. Reload and retry with the latest version.",
+    ),
+    AssociationExistsError: (
+        "association_exists",
+        "Association exists",
+        409,
+        "The project already has an association for this scope.",
+    ),
+    ProjectSlugTakenError: (
+        "project_slug_taken",
+        "Project slug taken",
+        409,
+        "Another project in this workspace already uses this slug.",
+    ),
+}
 _TEST_DESIGN_EVIDENCE_CHANGED_DETAIL = (
     "The source issue evidence changed since coverage was confirmed. "
     "Reconfirm coverage against the current issue, then generate again."
@@ -351,6 +399,41 @@ def problem_from_exception(
             instance=instance,
             request_id=request_id,
         )
+    if isinstance(exc, SharedScopeConfirmationRequiredError):
+        return _problem(
+            code="shared_scope_confirmation_required",
+            title="Shared scope confirmation required",
+            status=409,
+            detail=(
+                "This scope is already confirmed in other projects; list them in "
+                "acknowledged_shared_with to share it."
+            ),
+            instance=instance,
+            request_id=request_id,
+            errors=[
+                ProblemError(pointer="/acknowledged_shared_with", detail=project_id)
+                for project_id in exc.project_ids
+            ],
+        )
+    if isinstance(exc, ProjectInputError):
+        return _problem(
+            code="project_invalid_input",
+            title="Invalid project input",
+            status=422,
+            detail=str(exc),
+            instance=instance,
+            request_id=request_id,
+        )
+    for project_error, (code, title, status, detail) in _PROJECT_PROBLEMS.items():
+        if isinstance(exc, project_error):
+            return _problem(
+                code=code,
+                title=title,
+                status=status,
+                detail=detail,
+                instance=instance,
+                request_id=request_id,
+            )
     if isinstance(exc, (ApplicationValidationError, DomainValidationError)):
         return _problem(
             code="operational_error",
