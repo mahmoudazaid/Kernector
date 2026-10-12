@@ -1395,6 +1395,33 @@ def test_equal_text_and_metadata_advances_catalog_without_vector_writes() -> Non
     assert stored.revision == "2"
 
 
+def test_equal_text_with_changed_content_format_reingests() -> None:
+    previous = _listed(file_name="notes.txt", revision="1")
+    listed = _listed(file_name="notes.md", revision="2")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        dataclasses.replace(
+            _fingerprinted_row(previous, chunk_count=2), content_format="txt"
+        )
+    )
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=2)
+    connector = RecordingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=3)
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    assert len(ingest.calls) == 1
+    assert store.updates == []
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.content_format == "markdown"
+    assert stored.chunk_count == 3
+
+
 def test_changed_text_reingests_and_stores_new_fingerprints() -> None:
     previous = _listed(revision="1")
     listed = _listed(revision="2", content_hash="new-hash")

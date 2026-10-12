@@ -59,7 +59,8 @@ class SyncConnectorDocuments:
     successful re-ingest. When content is unchanged but metadata differs, chunk
     metadata is rewritten through ``vector_store_factory`` without re-embedding
     and the outcome is ``metadata_updated``; without a vector store factory
-    such documents are re-ingested. Missing or inconsistent stored chunks fall
+    such documents are re-ingested. A changed ``content_format`` also
+    re-ingests, because chunk boundaries depend on it. Missing or inconsistent stored chunks fall
     back to re-ingest. Fingerprints are written only on READY rows.
 
     The ingest pipeline is built lazily once per run so a skip-only sync never
@@ -206,6 +207,7 @@ class SyncConnectorDocuments:
             and ready is not None
             and current_profile
             and ready.content_fingerprint == content_fingerprint
+            and ready.content_format == fetched.metadata.content_format
         ):
             applied = self._apply_metadata(
                 document, ready, fetched.metadata, content_fingerprint

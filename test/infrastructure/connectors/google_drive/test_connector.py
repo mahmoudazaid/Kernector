@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from collections.abc import Sequence
@@ -910,6 +911,18 @@ def test_describe_rebuilds_listing_fields_and_keeps_extraction_fields() -> None:
     assert described.extra["page_count"] == "3"
     assert described.extra["byte_size"] == "5"
     assert described.content_format == "markdown"
+
+
+def test_describe_rejects_a_rename_that_changes_content_format() -> None:
+    connector = _connector(FakeDriveFiles())
+    previous = dataclasses.replace(
+        connector.fetch_document(_listed_blob(file_name="notes.txt")).metadata,
+        content_format="txt",
+    )
+    renamed = _listed_blob(file_name="notes.md", revision="5")
+
+    with pytest.raises(ConnectorError):
+        connector.describe_document(renamed, previous)
 
 
 def test_describe_drops_parent_ids_that_left_the_listing() -> None:

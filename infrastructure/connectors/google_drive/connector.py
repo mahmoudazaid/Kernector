@@ -32,6 +32,7 @@ from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     DocumentExtractionError,
     UploadedFileExtractor,
+    content_format_for_name,
 )
 
 _SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
@@ -379,14 +380,21 @@ class GoogleDriveConnector:
         """Rebuild ``fetch_document`` metadata from the listing without download.
 
         Listing-derived fields come from ``document``; extraction-only fields
-        (``content_format``, ``byte_size``, ``page_count``) are kept from
-        ``previous``, which is only valid while the content is unchanged.
+        (``byte_size``, ``page_count``) are kept from ``previous``, which is
+        only valid while the content is unchanged. ``content_format`` follows
+        the file-name suffix, so it must still match ``previous``.
 
         Raises:
-            ConnectorError: ``previous`` belongs to another reference or lacks
-                the extracted content format.
+            ConnectorError: ``previous`` belongs to another reference, lacks
+                the extracted content format, or the file name now maps to a
+                different content format.
         """
         if previous.reference != document.reference or not previous.content_format:
+            raise ConnectorError(_MSG_DESCRIBE)
+        payload_name = _payload_file_name(
+            document.file_name, document.extra.get("mime_type", "")
+        )
+        if content_format_for_name(payload_name) != previous.content_format:
             raise ConnectorError(_MSG_DESCRIBE)
         return _source_metadata(
             document,
