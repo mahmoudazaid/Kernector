@@ -1838,3 +1838,188 @@ def test_records_survive_a_process_restart(tmp_path: Path) -> None:
     )
     assert reader.returncode == 0, reader.stderr
     assert "reader ok" in reader.stdout
+
+
+# --------------------------------------------------------------------------
+# Source metadata update without re-embedding (#380)
+# --------------------------------------------------------------------------
+
+
+def _drive_metadata(
+    source_id: str = "doc-1",
+    source_type: str = SourceType.GOOGLE_DRIVE,
+    **fields: object,
+) -> SourceMetadata:
+    return SourceMetadata(
+        reference=SourceReference(source_id, source_type), **fields
+    )
+
+
+def _embedded_by_key(
+    store: ChromaVectorStore,
+) -> dict[tuple[str, str, int], tuple[tuple[float, ...], str, SourceMetadata]]:
+    return {
+        (
+            str(item.chunk.reference.source_type),
+            item.chunk.source_id,
+            item.chunk.index,
+        ): (tuple(item.vector), item.chunk.content, item.chunk.metadata)
+        for item in store.list_embedded_chunks()
+    }
+
+
+def _seed_metadata_sources(store: ChromaVectorStore) -> SourceMetadata:
+    old = _drive_metadata(
+        title="spec",
+        provider="google_drive",
+        content_format="markdown",
+        extra={
+            "file_name": "spec.md",
+            "drive_parent_ids": "folder-a",
+            "obsolete": "gone-soon",
+        },
+    )
+    store.upsert(
+        [
+            EmbeddedChunk(DocumentChunk(old, 0, "first body"), list(ALIGNED)),
+            EmbeddedChunk(DocumentChunk(old, 1, "second body"), list(ORTHOGONAL)),
+            make_embedded(
+                source_id="doc-1",
+                source_type=SourceType.GITHUB,
+                vector=ALIGNED,
+                extra={"drive_parent_ids": "folder-a"},
+            ),
+            make_embedded(
+                source_id="doc-2",
+                source_type=SourceType.GOOGLE_DRIVE,
+                vector=OPPOSING,
+                extra={"drive_parent_ids": "folder-a"},
+            ),
+        ]
+    )
+    return old
+
+
+def test_update_source_metadata_replaces_metadata_and_keeps_chunks(
+    store: ChromaVectorStore,
+) -> None:
+    _seed_metadata_sources(store)
+    before = _embedded_by_key(store)
+    reference = SourceReference("doc-1", SourceType.GOOGLE_DRIVE)
+    new = _drive_metadata(
+        title="Cancellation spec",
+        provider="google_drive",
+        content_format="markdown",
+        extra={"file_name": "Cancellation spec.md", "drive_parent_ids": "folder-b"},
+    )
+
+    rewritten = store.update_source_metadata(reference, new)
+
+    assert rewritten == 2
+    after = _embedded_by_key(store)
+    assert set(after) == set(before)
+    for key in (
+        (SourceType.GOOGLE_DRIVE, "doc-1", 0),
+        (SourceType.GOOGLE_DRIVE, "doc-1", 1),
+    ):
+        assert after[key][:2] == before[key][:2]
+        assert after[key][2] == new
+    for key in (
+        (SourceType.GITHUB, "doc-1", 0),
+        (SourceType.GOOGLE_DRIVE, "doc-2", 0),
+    ):
+        assert after[key] == before[key]
+    page = store.list_source_chunks(reference)
+    assert [(chunk.index, chunk.content) for chunk in page.chunks] == [
+        (0, "first body"),
+        (1, "second body"),
+    ]
+
+
+def test_update_source_metadata_drops_obsolete_and_changed_filter_keys(
+    store: ChromaVectorStore,
+) -> None:
+    _seed_metadata_sources(store)
+    reference = SourceReference("doc-1", SourceType.GOOGLE_DRIVE)
+
+    store.update_source_metadata(
+        reference,
+        _drive_metadata(extra={"drive_parent_ids": "folder-b"}),
+    )
+
+    assert store.search(ALIGNED, 10, metadata_filters={"obsolete": "gone-soon"}) == ()
+    moved = store.search(ALIGNED, 10, metadata_filters={"drive_parent_ids": "folder-b"})
+    assert sorted((hit.chunk.source_id, hit.chunk.index) for hit in moved) == [
+        ("doc-1", 0),
+        ("doc-1", 1),
+    ]
+    stayed = store.search(ALIGNED, 10, metadata_filters={"drive_parent_ids": "folder-a"})
+    assert sorted(
+        (str(hit.chunk.reference.source_type), hit.chunk.source_id) for hit in stayed
+    ) == [(SourceType.GITHUB, "doc-1"), (SourceType.GOOGLE_DRIVE, "doc-2")]
+    for hit in moved:
+        assert dict(hit.chunk.metadata.extra) == {"drive_parent_ids": "folder-b"}
+        assert hit.chunk.metadata.title is None
+
+
+def test_update_source_metadata_of_missing_source_is_zero(
+    store: ChromaVectorStore,
+) -> None:
+    _seed_metadata_sources(store)
+    before = _embedded_by_key(store)
+    reference = SourceReference("absent", SourceType.GOOGLE_DRIVE)
+
+    assert store.update_source_metadata(reference, _drive_metadata("absent")) == 0
+    assert _embedded_by_key(store) == before
+
+
+def test_update_source_metadata_rejects_mismatched_reference(
+    store: ChromaVectorStore,
+) -> None:
+    _seed_metadata_sources(store)
+
+    with pytest.raises(ChromaStoreError, match="reference"):
+        store.update_source_metadata(
+            SourceReference("doc-1", SourceType.GOOGLE_DRIVE),
+            _drive_metadata("doc-2"),
+        )
+
+
+def test_failed_source_metadata_update_restores_previous_metadata(
+    store: ChromaVectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_metadata_sources(store)
+    before = _embedded_by_key(store)
+    real_add = store._collection.add
+    calls = {"n": 0}
+
+    def flaky_add(*args: object, **kwargs: object) -> object:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("simulated metadata write failure")
+        return real_add(*args, **kwargs)
+
+    monkeypatch.setattr(store._collection, "add", flaky_add)
+
+    with pytest.raises(ChromaStoreError, match="simulated metadata write failure"):
+        store.update_source_metadata(
+            SourceReference("doc-1", SourceType.GOOGLE_DRIVE),
+            _drive_metadata(extra={"drive_parent_ids": "folder-b"}),
+        )
+
+    assert _embedded_by_key(store) == before
+
+
+def test_update_source_metadata_refreshes_paged_listing(
+    store: ChromaVectorStore,
+) -> None:
+    _seed_metadata_sources(store)
+    reference = SourceReference("doc-1", SourceType.GOOGLE_DRIVE)
+    store.list_source_chunks(reference, limit=1)
+    new = _drive_metadata(title="Renamed")
+
+    store.update_source_metadata(reference, new)
+
+    page = store.list_source_chunks(reference, limit=1)
+    assert [chunk.metadata for chunk in page.chunks] == [new]
+    assert page.has_more is True

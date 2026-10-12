@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from rank_bm25 import BM25Okapi
 
-from domain.knowledge import EmbeddedChunk, ScoredChunk, SourceReference
+from domain.knowledge import EmbeddedChunk, ScoredChunk, SourceMetadata, SourceReference
 from domain.errors import VectorStoreError
 
 # Unicode letters/numbers with optional hyphenated continuations (ERR-4021).
@@ -67,6 +68,23 @@ class Bm25LexicalIndex:
                 del self._records[key]
         self._order = survivors
         self._rebuild()
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        """Replace one source's metadata on its records; text is untouched."""
+        if not isinstance(metadata, SourceMetadata) or metadata.reference != reference:
+            raise VectorStoreError(
+                "metadata.reference must equal the updated source reference"
+            )
+        scope = (str(reference.source_type), reference.source_id)
+        keys = [key for key in self._order if key[:2] == scope]
+        for key in keys:
+            item = self._records[key]
+            self._records[key] = replace(
+                item, chunk=replace(item.chunk, metadata=metadata)
+            )
+        return len(keys)
 
     def search(
         self,

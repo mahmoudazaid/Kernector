@@ -9,12 +9,14 @@ and `pythonpath = ["."]` puts the repo root ahead of the stdlib `test` package
 
 import hashlib
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from domain.knowledge import (
     ChunkPage,
     DocumentChunk,
     EmbeddedChunk,
     ScoredChunk,
+    SourceMetadata,
     SourceReference,
     Vector,
 )
@@ -147,6 +149,22 @@ def _matches_extra_filters(
     return all(extra.get(key) == value for key, value in metadata_filters.items())
 
 
+def _replace_source_metadata(
+    records: dict[tuple[str, str, int], EmbeddedChunk],
+    reference: SourceReference,
+    metadata: SourceMetadata,
+) -> int:
+    """Rewrite one source's metadata in place, as the real stores do."""
+    if metadata.reference != reference:
+        raise VectorStoreError("metadata.reference must equal reference")
+    scope = (str(reference.source_type), reference.source_id)
+    keys = [key for key in records if key[:2] == scope]
+    for key in keys:
+        item = records[key]
+        records[key] = replace(item, chunk=replace(item.chunk, metadata=metadata))
+    return len(keys)
+
+
 class InMemoryVectorStore:
     """A dict-backed VectorStore, so use-case tests need no real store.
 
@@ -186,6 +204,11 @@ class InMemoryVectorStore:
             ScoredChunk(chunk=item.chunk, score=1.0)
             for item in list(matched)[:limit]
         )
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        return _replace_source_metadata(self.records, reference, metadata)
 
     def delete_source(self, reference: SourceReference) -> None:
         scope = (str(reference.source_type), reference.source_id)
@@ -259,6 +282,11 @@ class InMemoryLexicalIndex:
             scored.append(ScoredChunk(chunk=item.chunk, score=score))
         scored.sort(key=lambda hit: hit.score, reverse=True)
         return tuple(scored[:limit])
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        return _replace_source_metadata(self.records, reference, metadata)
 
     def delete_source(self, reference: SourceReference) -> None:
         scope = (str(reference.source_type), reference.source_id)

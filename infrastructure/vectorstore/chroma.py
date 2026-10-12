@@ -6,7 +6,7 @@ import logging
 import re
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from math import isfinite
 from pathlib import Path
@@ -1104,14 +1104,73 @@ class ChromaVectorStore:
             ChromaStoreError: On adapter or decode failure. If the rewrite write
                 and restoration both fail, the error reports both failures.
         """
-        try:
-            result = self._collection.get(
-                include=["metadatas", "documents", "embeddings"]
+        rewritten = self._rewrite_records(
+            where=None,
+            rebuild=lambda chunk: chunk,
+            purpose="filter-metadata reindex",
+        )
+        _ordered_ids_cache_invalidate()
+        return rewritten
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        """Replace one source's metadata on every stored chunk without embedding.
+
+        See `domain.ports.VectorStore`. Record IDs, chunk indexes, text, and
+        embeddings are kept. Each record is replaced via delete-then-add from
+        a fresh metadata dict, because chromadb merges metadata on update and
+        would keep promoted ``x:`` keys the new metadata no longer has. Rows
+        are snapshotted first and restored if the write fails.
+
+        Raises:
+            ChromaStoreError: On a reference mismatch or any adapter failure.
+        """
+        if not isinstance(reference, SourceReference):
+            raise ChromaStoreError(
+                f"reference must be a SourceReference, got {reference!r}"
             )
+        if not isinstance(metadata, SourceMetadata) or metadata.reference != reference:
+            raise ChromaStoreError(
+                f"metadata.reference must equal reference {reference.source_type}:"
+                f"{reference.source_id}"
+            )
+        rewritten = self._rewrite_records(
+            where=_source_where(reference),
+            rebuild=lambda chunk: replace(chunk, metadata=metadata),
+            purpose=(
+                f"source metadata update of {reference.source_type}:"
+                f"{reference.source_id}"
+            ),
+        )
+        _ordered_ids_cache_invalidate(
+            _ordered_ids_cache_key(
+                self._config.persist_path,
+                self._config.collection,
+                reference,
+            )
+        )
+        return rewritten
+
+    def _rewrite_records(
+        self,
+        *,
+        where: Mapping[str, object] | None,
+        rebuild: Callable[[DocumentChunk], DocumentChunk],
+        purpose: str,
+    ) -> int:
+        """Re-encode matching records' metadata, keeping IDs, text, and vectors."""
+        kwargs: dict[str, object] = {
+            "include": ["metadatas", "documents", "embeddings"]
+        }
+        if where is not None:
+            kwargs["where"] = where
+        try:
+            result = self._collection.get(**kwargs)
         except (ChromaError, ValueError) as exc:
             raise ChromaStoreError(
                 f"could not read collection {self._collection.name!r} for "
-                f"filter-metadata reindex: {exc}"
+                f"{purpose}: {exc}"
             ) from exc
         ids = result.get("ids") or []
         if not ids:
@@ -1121,7 +1180,7 @@ class ChromaVectorStore:
         embeddings = result.get("embeddings")
         if embeddings is None:
             raise ChromaStoreError(
-                f"collection {self._collection.name!r}: reindex requires stored "
+                f"collection {self._collection.name!r}: {purpose} requires stored "
                 "embeddings, but none were returned"
             )
         if not (
@@ -1130,7 +1189,7 @@ class ChromaVectorStore:
             and len(embeddings) == len(ids)
         ):
             raise ChromaStoreError(
-                f"collection {self._collection.name!r}: reindex get() returned "
+                f"collection {self._collection.name!r}: {purpose} get() returned "
                 f"mismatched lengths ids={len(ids)} documents={len(documents)} "
                 f"metadatas={len(metadatas)} embeddings={len(embeddings)}"
             )
@@ -1146,7 +1205,7 @@ class ChromaVectorStore:
         for record_id, document, metadata, embedding in zip(
             ids, documents, metadatas, embeddings, strict=True
         ):
-            chunk = _decode_chunk(record_id, document, metadata)
+            chunk = rebuild(_decode_chunk(record_id, document, metadata))
             vectors.append(_validate_vector(list(embedding), f"record {record_id}"))
             texts.append(chunk.content)
             rewritten.append(_encode_metadata(chunk))
@@ -1166,10 +1225,9 @@ class ChromaVectorStore:
             write=write,
             failure_message=(
                 f"could not rewrite {len(ids)} record(s) in collection "
-                f"{self._collection.name!r} during filter-metadata reindex"
+                f"{self._collection.name!r} during {purpose}"
             ),
         )
-        _ordered_ids_cache_invalidate()
         return len(ids)
 
     def list_embedded_chunks(self) -> Sequence[EmbeddedChunk]:

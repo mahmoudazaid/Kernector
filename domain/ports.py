@@ -13,6 +13,7 @@ from domain.knowledge import (
     ScoredChunk,
     SourceDocument,
     SourceLocator,
+    SourceMetadata,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -151,6 +152,26 @@ class VectorStore(Protocol):
             VectorStoreError: On any adapter-level failure.
         """
 
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        """Replace the source metadata on every stored chunk of one source.
+
+        Never embeds. Each chunk keeps its identity, index, text, and
+        embedding; only the source-level metadata changes, and source fields
+        absent from ``metadata`` are removed (including their filter keys).
+        Scoped by the whole ``SourceReference``. A reference matching no stored
+        record returns 0 and writes nothing.
+
+        Returns:
+            The number of chunks rewritten.
+
+        Raises:
+            VectorStoreError: When ``metadata.reference`` differs from
+                ``reference``, or on any adapter-level failure. On failure the
+                previous metadata is kept.
+        """
+
     def list_source_chunks(
         self,
         reference: SourceReference,
@@ -203,6 +224,14 @@ class LexicalIndex(Protocol):
 
     def delete_source(self, reference: SourceReference) -> None:
         """Remove all chunks for ``reference``. Missing references are a no-op."""
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        """Replace one source's metadata on its chunks; text is untouched.
+
+        Same contract as ``VectorStore.update_source_metadata``.
+        """
 
 
 class Tool(Protocol):
