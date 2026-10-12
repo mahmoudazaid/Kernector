@@ -1,7 +1,7 @@
 """Ports: the interfaces infrastructure must satisfy."""
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from domain.artifacts import Artifact, ArtifactReceipt
 from domain.knowledge import (
@@ -382,6 +382,33 @@ class KnowledgeConnector(Protocol):
             ConnectorError: The file could not be read without exposing provider details.
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
+        """
+        ...
+
+
+@runtime_checkable
+class MetadataDescribingConnector(Protocol):
+    """Optional connector capability: rebuild source metadata without fetching.
+
+    Used by sync when a listed document's provider ``content_hash`` equals the
+    stored one, so the bytes are unchanged and only metadata may differ.
+    """
+
+    def describe_document(
+        self,
+        document: ConnectorDocument,
+        previous: SourceMetadata,
+    ) -> SourceMetadata:
+        """Return the metadata ``fetch_document`` would produce for ``document``.
+
+        Fields derived from the listing are rebuilt from ``document``. Fields
+        only extraction can produce (content format, byte size, page count) are
+        taken from ``previous``, the metadata stored with the current chunks.
+        Every other field of ``previous`` is dropped.
+
+        Raises:
+            ConnectorError: ``previous`` belongs to another reference or lacks
+                a required extraction-only field.
         """
         ...
 
