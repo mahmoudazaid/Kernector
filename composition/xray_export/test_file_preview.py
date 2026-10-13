@@ -96,6 +96,7 @@ class DocStringOut(_Out):
     delimiter: str
     media_type: str
     lines: list[str]
+    indent: int
 
 
 class StepOut(_Out):
