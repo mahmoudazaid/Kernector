@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from pydantic_core import PydanticCustomError
 
-from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE
+from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE, McpToolPrompt
 from packs.software_delivery.limits import (
     MAX_TEST_FILE_BYTES,
     MAX_TEST_FILE_PATH_CHARS,
@@ -154,6 +154,37 @@ class PreviewTestFileScenariosResult(_Out):
     scenario_count: int
 
 
+PREVIEW_PROMPT_NAME = "preview_xray_scenarios"
+
+
+def _render_preview_prompt(tool_name: str, file: str | None) -> str:
+    target = (
+        f"the file `{file}`"
+        if file
+        else "the .feature or .robot file open in the editor (or the one I mentioned)"
+    )
+    return (
+        f"Preview the Xray scenarios of {target}. Read the file from the workspace "
+        f"yourself, then call the `{tool_name}` tool with "
+        '{"files": [{"path": <workspace-relative path>, "content": <exact full text>}]}. '
+        "Send the content unchanged: do not reformat, trim or shorten it. Then list "
+        "each scenario's line, summary, kind, story_key and xray_key, point out the "
+        "scenarios without an xray_key, and show any validation_error message as returned."
+    )
+
+
+PREVIEW_PROMPT = McpToolPrompt(
+    name=PREVIEW_PROMPT_NAME,
+    description="Preview the Xray scenarios, keys and tags of a .feature or .robot file",
+    argument="file",
+    argument_description=(
+        "Workspace-relative path of the .feature or .robot file; "
+        "leave empty for the file open in the editor"
+    ),
+    render=_render_preview_prompt,
+)
+
+
 @dataclass(frozen=True, slots=True)
 class TestFilePreviewMcpBinding:
     """Collaborators for the pack's ``build_mcp_tools(test_file_binding=...)``."""
@@ -163,6 +194,7 @@ class TestFilePreviewMcpBinding:
     tags: TestFileTagConfig
     args_schema: type = field(default=PreviewTestFileScenariosArgs)
     output_schema: type = field(default=PreviewTestFileScenariosResult)
+    mcp_prompt: object = field(default=PREVIEW_PROMPT)
 
 
 def build_test_file_tags(settings: Settings) -> TestFileTagConfig:

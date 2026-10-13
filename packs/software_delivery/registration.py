@@ -142,6 +142,7 @@ def build_mcp_tools(
                     preview.tags,
                     args_schema=preview.args_schema,
                     output_schema=preview.output_schema,
+                    mcp_prompt=preview.mcp_prompt,
                 ),
             )
         )

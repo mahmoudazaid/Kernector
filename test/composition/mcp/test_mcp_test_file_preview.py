@@ -15,11 +15,15 @@ from composition.mcp.access import McpCallerContext
 from composition.mcp.tool_registry import (
     TOOL_UNAVAILABLE_CODE,
     VALIDATION_ERROR_CODE,
+    McpPromptArgumentError,
     McpToolContribution,
     McpToolRegistry,
     mcp_tool_name,
 )
-from composition.xray_export.test_file_preview import TestFilePreviewMcpBinding
+from composition.xray_export.test_file_preview import (
+    PREVIEW_PROMPT_NAME,
+    TestFilePreviewMcpBinding,
+)
 from packs.software_delivery.errors import TestFileErrorReason as Reason
 from packs.software_delivery.registration import build_mcp_tools
 from packs.software_delivery.test_files.models import TestFileTagConfig
@@ -172,3 +176,40 @@ def test_mcp_wiring_contributes_the_tool_without_xray_configured(monkeypatch) ->
         mcp_tool_name(TOOL_NAME)
     ]
     assert json.loads(result.text)["files"][0]["scenarios"][0]["xray_key"] == "ABC-2"
+
+
+def test_tool_description_tells_clients_when_to_use_it_and_to_send_the_file_text() -> None:
+    description = PreviewTestFileScenariosTool(TAGS).description
+
+    for phrase in (".feature", ".robot", "Xray", "open in the editor", "exact full text"):
+        assert phrase in description
+
+
+def test_preview_prompt_is_listed_only_for_callers_allowed_the_tool() -> None:
+    registry = _registry()
+
+    assert registry.list_prompts(_caller()) == ()
+    [prompt] = registry.list_prompts(_caller(TOOL_NAME))
+    assert prompt.name == PREVIEW_PROMPT_NAME
+    assert prompt.argument == "file"
+
+
+def test_preview_prompt_renders_the_wire_tool_name_and_the_target_file() -> None:
+    registry = _registry()
+    caller = _caller(TOOL_NAME)
+
+    named = registry.get_prompt(caller, PREVIEW_PROMPT_NAME, {"file": "features/login.feature"})
+    open_file = registry.get_prompt(caller, PREVIEW_PROMPT_NAME, None)
+
+    assert named is not None and open_file is not None
+    assert mcp_tool_name(TOOL_NAME) in named
+    assert "`features/login.feature`" in named
+    assert "open in the editor" in open_file
+    assert registry.get_prompt(_caller(), PREVIEW_PROMPT_NAME, None) is None
+    assert registry.get_prompt(caller, "unknown", None) is None
+
+
+@pytest.mark.parametrize("value", ["a\x00.feature", "a" * 513, 1])
+def test_preview_prompt_rejects_unsafe_arguments(value: object) -> None:
+    with pytest.raises(McpPromptArgumentError):
+        _registry().get_prompt(_caller(TOOL_NAME), PREVIEW_PROMPT_NAME, {"file": value})  # type: ignore[dict-item]

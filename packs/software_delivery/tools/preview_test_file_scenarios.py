@@ -31,9 +31,15 @@ from packs.software_delivery.test_files.parser import (
 
 TOOL_NAME = "software_delivery.preview_test_file_scenarios"
 TOOL_DESCRIPTION = (
-    "Preview the scenarios Kernector extracts from Robot Framework (.robot) and "
-    "Gherkin (.feature) test files. Pass each file's workspace-relative path and "
-    "full text; Kernector never reads the disk and makes no Jira/Xray calls."
+    "Preview the scenarios, Xray test keys, story keys and tags Kernector extracts "
+    "from Cucumber/Gherkin (.feature) and Robot Framework (.robot) test files, and "
+    "report syntax or tagging problems with file and line. Use it when the user asks "
+    "to check, preview or validate a test file, e.g. 'what will go to Xray from this "
+    "feature?', 'check the tags in this file' or 'which scenarios have no Xray key?'. "
+    "When the user means the file open in the editor or a file they mention, read it "
+    "from the workspace yourself and pass its workspace-relative path and exact full "
+    "text, unchanged; do not ask the user for the path. Several files may be sent in "
+    "one call. Kernector never reads the disk and makes no Jira/Xray calls."
 )
 
 _ALLOWED_KEYS = frozenset({"files"})
@@ -54,6 +60,9 @@ class TestFilePreviewMcpBinding(Protocol):
     @property
     def output_schema(self) -> type: ...
 
+    @property
+    def mcp_prompt(self) -> object: ...
+
 
 class PreviewTestFileScenariosTool:
     """Implements ``domain.ports.Tool``; no approval and no Jira/Xray client."""
@@ -64,10 +73,12 @@ class PreviewTestFileScenariosTool:
         *,
         args_schema: type | None = None,
         output_schema: type | None = None,
+        mcp_prompt: object | None = None,
     ) -> None:
         self._tags = tags
         self.args_schema = args_schema
         self.output_schema = output_schema
+        self.mcp_prompt = mcp_prompt
 
     @property
     def name(self) -> str:

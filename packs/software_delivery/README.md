@@ -104,7 +104,12 @@ file's workspace-relative path and full text. Kernector never reads the disk,
 never scans a workspace, and makes no Jira or Xray calls; creating tests from
 the result is #397. The tool is registered whenever the pack is enabled, on
 chat (`InvokeTool`) and on MCP (allowlist it in `MCP_TOOL_ALLOWLIST`), and
-needs no approval. The ticket's "faked Jira/Xray client" criterion does not
+needs no approval. Its description tells client agents when to pick it (for
+example "what will go to Xray from this feature?") and to read the open or
+mentioned file themselves, so users need not name the tool or the path. MCP
+clients also get the `preview_xray_scenarios` prompt (in VS Code,
+`/mcp.kernector.preview_xray_scenarios`), with an optional `file` argument that
+defaults to the file open in the editor. The ticket's "faked Jira/Xray client" criterion does not
 apply: the tool takes no client, and the MCP tests run with no Xray
 configuration to prove it.
 

@@ -873,6 +873,12 @@ the agents; Kernector supplies evidence and allowlisted tools.
   fixed `safe_message` (`path:line: reason`, path sanitized) is the only
   tool-raised validation text `_failure` passes through; every other
   `ToolArgumentValidationError` stays the generic "Invalid tool arguments".
+- Prompts and instructions: the server sends fixed, tool-neutral
+  `instructions` (clients read files themselves and send exact text). A tool
+  may carry an optional `mcp_prompt` (`McpToolPrompt`, read via `getattr`);
+  `prompts/list` and `prompts/get` expose it only while that tool is
+  effective for the caller, and reject unknown prompts and non-printable or
+  over-long arguments with fixed messages. `presentation/mcp` stays pack-unaware.
 - Effective tools = contributed ∩ enabled packs ∩ `MCP_TOOL_ALLOWLIST`, with an
   authenticated caller. Denied tools are absent from `tools/list`, and
   invoking them returns one identical `tool_unavailable` payload.
