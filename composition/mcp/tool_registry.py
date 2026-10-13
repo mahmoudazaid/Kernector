@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from composition.mcp.access import McpAccessPolicy, McpCallerContext
 from domain.errors import (
     ToolArgumentValidationError,
+    TrustedToolValidationError,
     ToolEvidenceChangedError,
     ToolFailureError,
     ToolInsufficientEvidenceError,
@@ -48,6 +49,10 @@ McpApprovalGate = Callable[[PendingToolApproval], bool]
 # message)`` with a fixed message that never interpolates input; only that
 # message replaces the generic validation text.
 SAFE_VALIDATION_ERROR_TYPE = "mcp_safe_validation"
+# A tool may set an optional ``mcp_prompt`` attribute (MCP-only, not on the
+# ``Tool`` port) holding an ``McpToolPrompt``. It is listed as an MCP prompt
+# only while that tool is effective for the caller.
+MAX_PROMPT_ARGUMENT_CHARS = 512
 # A tool may set an optional ``failure_hints`` attribute (MCP-only, not on the
 # ``Tool`` port) mapping a safe wire code to ``(required_tool_id, hint)``. The
 # fixed hint is added only when that tool is contributed and effective for the
@@ -88,6 +93,25 @@ _LEGACY_CODE_ALIASES: Mapping[str, str] = {
 }
 
 ToolFactory = Callable[[], Tool]
+
+
+class McpPromptArgumentError(ValueError):
+    """A prompt argument is not a short, printable string."""
+
+
+@dataclass(frozen=True, slots=True)
+class McpToolPrompt:
+    """A client prompt a tool contributes, with one optional text argument.
+
+    ``render(tool_name, value)`` receives the advertised MCP tool name and the
+    stripped argument value (``None`` when omitted or blank).
+    """
+
+    name: str
+    description: str
+    argument: str
+    argument_description: str
+    render: Callable[[str, str | None], str]
 
 
 def mcp_tool_name(tool_id: str) -> str:
@@ -186,6 +210,18 @@ def _generic_error() -> McpInvokeResult:
     )
 
 
+def _prompt_argument(value: object) -> str | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or len(value) > MAX_PROMPT_ARGUMENT_CHARS
+        or not value.isprintable()
+    ):
+        raise McpPromptArgumentError("invalid prompt argument")
+    return value.strip() or None
+
+
 def _schema_for_tool(tool: Tool) -> tuple[Mapping[str, Any], Mapping[str, Any] | None]:
     args_schema = getattr(tool, "args_schema", None)
     if args_schema is None:
@@ -258,6 +294,38 @@ class McpToolRegistry:
                 )
             )
         return tuple(descriptors)
+
+    def list_prompts(self, caller: McpCallerContext) -> tuple[McpToolPrompt, ...]:
+        """Return prompts contributed by tools effective for *caller*."""
+        return tuple(prompt for _tool_id, prompt in self._effective_prompts(caller))
+
+    def get_prompt(
+        self,
+        caller: McpCallerContext,
+        name: str,
+        arguments: Mapping[str, object] | None,
+    ) -> str | None:
+        """Render prompt *name*, or None when no effective tool contributes it.
+
+        Raises:
+            McpPromptArgumentError: The argument is not a printable string of
+                at most ``MAX_PROMPT_ARGUMENT_CHARS`` characters.
+        """
+        for tool_id, prompt in self._effective_prompts(caller):
+            if prompt.name == name:
+                value = _prompt_argument((arguments or {}).get(prompt.argument))
+                return prompt.render(mcp_tool_name(tool_id), value)
+        return None
+
+    def _effective_prompts(
+        self, caller: McpCallerContext
+    ) -> list[tuple[str, McpToolPrompt]]:
+        prompts: list[tuple[str, McpToolPrompt]] = []
+        for tool_id in self._policy.effective_ids(caller):
+            prompt = getattr(self._by_id[tool_id].get(), "mcp_prompt", None)
+            if isinstance(prompt, McpToolPrompt):
+                prompts.append((tool_id, prompt))
+        return prompts
 
     def _failure_hint(
         self, caller: McpCallerContext, tool: Tool, code: str
@@ -368,6 +436,8 @@ class McpToolRegistry:
         tool: Tool,
         error: Exception,
     ) -> McpInvokeResult:
+        if isinstance(error, TrustedToolValidationError):
+            return _validation_error(error.safe_message)
         if isinstance(error, ToolArgumentValidationError):
             return _validation_error()
         if isinstance(error, ToolFailureError):

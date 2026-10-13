@@ -18,6 +18,9 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
         "XRAY_CLIENT_ID",
         "XRAY_CLIENT_SECRET",
         "XRAY_CLOUD_BASE_URL",
+        "XRAY_TEST_TAG",
+        "XRAY_STORY_TAG",
+        "XRAY_MANUAL_TAGS",
         "JIRA_OAUTH_CLIENT_ID",
         "JIRA_OAUTH_CLIENT_SECRET",
     ):
@@ -128,3 +131,61 @@ def test_server_reuses_jira_data_center_credentials(env: pytest.MonkeyPatch) -> 
     assert settings.xray.configured is True
     assert settings.xray.deployment == "server"
     assert settings.xray.client_secret is None
+
+
+def test_test_file_tag_names_default_without_a_deployment(env: pytest.MonkeyPatch) -> None:
+    xray = load_settings().xray
+
+    assert xray.configured is False
+    assert (xray.test_tag, xray.story_tag, xray.manual_tags) == (
+        "XRay",
+        "Story",
+        ("manual", "scaffold"),
+    )
+
+
+def test_test_file_tag_names_are_read_from_the_environment(env: pytest.MonkeyPatch) -> None:
+    env.setenv("XRAY_TEST_TAG", " TestKey ")
+    env.setenv("XRAY_STORY_TAG", "Requirement")
+    env.setenv("XRAY_MANUAL_TAGS", " manual , todo,draft ")
+
+    xray = load_settings().xray
+
+    assert (xray.test_tag, xray.story_tag, xray.manual_tags) == (
+        "TestKey",
+        "Requirement",
+        ("manual", "todo", "draft"),
+    )
+
+
+def test_test_file_tag_names_survive_a_configured_deployment(env: pytest.MonkeyPatch) -> None:
+    _cloud(env)
+    env.setenv("XRAY_TEST_TAG", "TestKey")
+
+    assert load_settings().xray.test_tag == "TestKey"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("XRAY_TEST_TAG", "X Ray"),
+        ("XRAY_TEST_TAG", "@XRay"),
+        ("XRAY_STORY_TAG", "Story:"),
+        ("XRAY_STORY_TAG", "St=ory"),
+        ("XRAY_TEST_TAG", "X|Ray"),
+        ("XRAY_TEST_TAG", "ABC-1"),
+        ("XRAY_MANUAL_TAGS", "manual,,todo"),
+        ("XRAY_MANUAL_TAGS", "manual, ,todo"),
+        ("XRAY_MANUAL_TAGS", "manual,to do"),
+        ("XRAY_MANUAL_TAGS", "manual,MANUAL"),
+        ("XRAY_MANUAL_TAGS", "manual,xray"),
+        ("XRAY_STORY_TAG", "xray"),
+    ],
+)
+def test_invalid_test_file_tag_names_are_rejected(
+    env: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    env.setenv(name, value)
+
+    with pytest.raises(ValueError, match=name):
+        load_settings()

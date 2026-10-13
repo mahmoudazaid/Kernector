@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -431,7 +431,8 @@ class XraySettings:
     """Xray test creation; disabled unless ``XRAY_DEPLOYMENT`` is set.
 
     Cloud uses client credentials; Server/Data Center reuses ``JIRA_DC_*``. The
-    client secret is never returned on HTTP responses or logged.
+    client secret is never returned on HTTP responses or logged. The test file
+    tag names (#396) load even when Xray is disabled.
     """
 
     deployment: str | None = None
@@ -440,6 +441,9 @@ class XraySettings:
     client_id: str | None = None
     client_secret: str | None = None
     cloud_base_url: str = "https://xray.cloud.getxray.app"
+    test_tag: str = "XRay"
+    story_tag: str = "Story"
+    manual_tags: tuple[str, ...] = ("manual", "scaffold")
 
     @property
     def configured(self) -> bool:
@@ -450,7 +454,9 @@ class XraySettings:
             "XraySettings("
             f"deployment={self.deployment!r}, project_key={self.project_key!r}, "
             f"link_type={self.link_type!r}, client_id={self.client_id!r}, "
-            f"client_secret='***', cloud_base_url={self.cloud_base_url!r})"
+            f"client_secret='***', cloud_base_url={self.cloud_base_url!r}, "
+            f"test_tag={self.test_tag!r}, story_tag={self.story_tag!r}, "
+            f"manual_tags={self.manual_tags!r})"
         )
 
 
@@ -1154,9 +1160,59 @@ _JIRA_PROJECT_KEY = re.compile(r"[A-Z][A-Z0-9_]*")
 
 def _load_xray_settings(jira_data_center: JiraDataCenterSettings | None) -> XraySettings:
     """Parse ``XRAY_*``; an unset ``XRAY_DEPLOYMENT`` keeps Xray disabled."""
+    tags = _load_xray_test_file_tags()
     raw_deployment = _optional_env("XRAY_DEPLOYMENT")
     if raw_deployment is None:
-        return XraySettings()
+        return replace(XraySettings(), **tags)
+    return replace(_load_xray_deployment(raw_deployment, jira_data_center), **tags)
+
+
+_XRAY_TAG_FORBIDDEN = frozenset("@:=|,")
+_XRAY_TAG_ISSUE_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_]*-[0-9]+")
+
+
+def _load_xray_test_file_tags() -> dict[str, object]:
+    """Parse the test file tag names (#396); blank values keep the defaults."""
+    defaults = XraySettings()
+    test_tag = _xray_tag_name("XRAY_TEST_TAG", _optional_env("XRAY_TEST_TAG") or defaults.test_tag)
+    story_tag = _xray_tag_name(
+        "XRAY_STORY_TAG", _optional_env("XRAY_STORY_TAG") or defaults.story_tag
+    )
+    if story_tag.casefold() == test_tag.casefold():
+        raise ValueError("XRAY_STORY_TAG must differ from XRAY_TEST_TAG (case-insensitive)")
+    raw_manual = _optional_env("XRAY_MANUAL_TAGS")
+    manual_tags = (
+        defaults.manual_tags
+        if raw_manual is None
+        else tuple(_xray_tag_name("XRAY_MANUAL_TAGS", item) for item in raw_manual.split(","))
+    )
+    folded = [tag.casefold() for tag in manual_tags]
+    if len(set(folded)) != len(folded):
+        raise ValueError("XRAY_MANUAL_TAGS must not repeat a tag (case-insensitive)")
+    if {test_tag.casefold(), story_tag.casefold()} & set(folded):
+        raise ValueError(
+            "XRAY_MANUAL_TAGS must not reuse XRAY_TEST_TAG or XRAY_STORY_TAG (case-insensitive)"
+        )
+    return {"test_tag": test_tag, "story_tag": story_tag, "manual_tags": manual_tags}
+
+
+def _xray_tag_name(env_name: str, raw: str) -> str:
+    value = raw.strip()
+    if (
+        not value
+        or any(char.isspace() or char in _XRAY_TAG_FORBIDDEN for char in value)
+        or _XRAY_TAG_ISSUE_KEY.fullmatch(value) is not None
+    ):
+        raise ValueError(
+            f"{env_name} entries must be single non-empty tags without whitespace, "
+            "'@', ':', '=', '|' or ',' and must not look like an issue key"
+        )
+    return value
+
+
+def _load_xray_deployment(
+    raw_deployment: str, jira_data_center: JiraDataCenterSettings | None
+) -> XraySettings:
     deployment = raw_deployment.strip().lower()
     if deployment not in _XRAY_DEPLOYMENTS:
         raise ValueError("XRAY_DEPLOYMENT must be 'cloud' or 'server'")
