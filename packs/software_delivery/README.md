@@ -192,9 +192,10 @@ its story. Registered on chat and MCP only when `XRAY_DEPLOYMENT` is
 configured; **every call needs approval, including `dry_run`**. The approval
 prompt shows the destination (`Jira project QA on jira.example.com`, or
 `Jira project QA (Xray Cloud)`), the number of untagged scenarios and up to 10
-of their names as `summary (path:line)`, each cut to 120 characters, plus
-`+N more`. Steps and other file content are never shown. The result repeats
-the destination.
+of them as `file:line · summary` (file name only), each cut to 120 characters,
+plus `+N more`. A `dry_run` call is titled "Dry run: plan Xray tests from
+files" and says nothing is created. Steps and other file content are never
+shown. The result repeats the destination.
 
 Tests always go to `XRAY_PROJECT_KEY`; the story can live in another project.
 The read-only `software_delivery.xray_target` tool (no arguments, no approval)
