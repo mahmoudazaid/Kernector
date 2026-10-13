@@ -9,16 +9,25 @@ configured base URL; redirects are never followed.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from domain.errors import ConnectorAuthError, ConnectorError
-from domain.test_management.xray import XrayImportResult, XrayTestCreateSchema, XrayTestSpec
+from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
+from domain.test_management.xray import (
+    IssueLookupResult,
+    JiraIssueSummary,
+    XrayCreateWarning,
+    XrayImportResult,
+    XrayTestCreateSchema,
+    XrayTestSpec,
+)
 from infrastructure.connectors.xray.batch import create_each
 from infrastructure.connectors.xray.errors import (
     MSG_AUTH,
     MSG_REQUEST_FAILED,
+    MSG_UNAVAILABLE,
     XrayRejectedError,
     XraySchemaError,
     diagnostic,
@@ -36,8 +45,27 @@ _PROJECT_SETTINGS_QUERY = (
 _CREATE_TEST_MUTATION = (
     "mutation($testType: UpdateTestTypeInput, $steps: [CreateStepInput], "
     "$gherkin: String, $jira: JSON!) { createTest(testType: $testType, steps: $steps, "
-    'gherkin: $gherkin, jira: $jira) { test { issueId jira(fields: ["key"]) } warnings } }'
+    "gherkin: $gherkin, jira: $jira) { test { issueId scenarioType "
+    'jira(fields: ["key"]) } warnings } }'
 )
+_SEARCH_SELECTION = (
+    '{ total start limit results { jira(fields: ["key", "summary", "issuetype"]) } }'
+)
+_GET_TESTS = "getTests"
+_GET_COVERABLE = "getCoverableIssues"
+_SEARCH_QUERIES = {
+    name: (
+        "query($jql: String, $start: Int, $limit: Int!) { "
+        f"{name}(jql: $jql, start: $start, limit: $limit) {_SEARCH_SELECTION} }}"
+    )
+    for name in (_GET_TESTS, _GET_COVERABLE)
+}
+_ISSUE_KEY = re.compile(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*")
+_OUTLINE_TYPES = frozenset({"scenario_outline", "scenario outline"})
+_PAGE_LIMIT = 100
+_MAX_PAGES = 20
+_KEY_CHUNK = 50
+_MAX_KEY_FALLBACKS = 100
 
 
 class _UnauthorizedError(ConnectorAuthError):
@@ -45,6 +73,10 @@ class _UnauthorizedError(ConnectorAuthError):
 
     def __init__(self) -> None:
         super().__init__(MSG_AUTH)
+
+
+class _SearchRefusedError(Exception):
+    """A search answered with GraphQL ``errors``; never treated as an empty result."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +88,13 @@ class CloudTestTypes:
 
 
 class XrayCloudImporter:
-    """:class:`domain.ports.XrayTestImporter` for Xray Cloud."""
+    """:class:`domain.ports.XrayTestImporter` and :class:`domain.ports.XrayIssueLookup`
+    for Xray Cloud.
+
+    Lookups go through Xray JQL searches, so a key is never reported missing:
+    a key neither search returns stays unresolved. Searches are chunked and
+    paged within fixed bounds; an incomplete search raises.
+    """
 
     def __init__(
         self,
@@ -105,26 +143,103 @@ class XrayCloudImporter:
             supports_manual=types.manual_id is not None,
             supports_cucumber=types.cucumber_id is not None,
             supports_issue_link=bool(self._link_type),
+            supports_cucumber_outline=types.cucumber_id is not None,
         )
 
     def import_tests(self, specs: Sequence[XrayTestSpec]) -> XrayImportResult:
         types, from_cache = self._cache.get_or_discover(self._schema_key, self._discover)
-        return create_each(
+        warnings: list[XrayCreateWarning] = []
+
+        def create(spec: XrayTestSpec, current: CloudTestTypes) -> str:
+            return self._create(spec, current, warnings)
+
+        result = create_each(
             specs,
             mapping=types,
             from_cache=from_cache,
             rediscover=self._rediscover,
-            create=self._create,
+            create=create,
         )
+        return replace(result, warnings=tuple(warnings))
+
+    def find_issues(self, keys: Sequence[str]) -> IssueLookupResult:
+        """Resolve keys through ``getTests`` and ``getCoverableIssues``; never reports missing."""
+        valid = [key for key in dict.fromkeys(keys) if _ISSUE_KEY.fullmatch(key)]
+        found: dict[str, JiraIssueSummary] = {}
+        fallbacks = 0
+        for index in range(0, len(valid), _KEY_CHUNK):
+            chunk = valid[index : index + _KEY_CHUNK]
+            try:
+                found.update(self._resolve(chunk))
+                continue
+            except _SearchRefusedError:
+                pass
+            for key in chunk:
+                fallbacks += 1
+                if fallbacks > _MAX_KEY_FALLBACKS:
+                    raise ConnectorUnavailableError(MSG_UNAVAILABLE)
+                try:
+                    found.update(self._resolve([key]))
+                except _SearchRefusedError:
+                    continue
+        return IssueLookupResult(found=found, missing=frozenset())
+
+    def linked_tests(self, story_key: str) -> tuple[JiraIssueSummary, ...]:
+        """Every test linked to ``story_key``; GraphQL errors or incomplete paging raise."""
+        if not _ISSUE_KEY.fullmatch(story_key):
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        try:
+            items = self._search(_GET_TESTS, f'issue in linkedIssues("{story_key}")')
+        except _SearchRefusedError:
+            raise ConnectorError(MSG_REQUEST_FAILED) from None
+        return tuple(_issue_summary(item, is_test=True) for item in items)
+
+    def _resolve(self, keys: Sequence[str]) -> dict[str, JiraIssueSummary]:
+        jql = f"key in ({', '.join(keys)})"
+        wanted = set(keys)
+        found: dict[str, JiraIssueSummary] = {}
+        for item in self._search(_GET_TESTS, jql):
+            summary = _issue_summary(item, is_test=True)
+            if summary.key in wanted:
+                found[summary.key] = summary
+        for item in self._search(_GET_COVERABLE, jql):
+            summary = _issue_summary(item, is_test=False)
+            if summary.key in wanted and summary.key not in found:
+                found[summary.key] = summary
+        return found
+
+    def _search(self, name: str, jql: str) -> list[object]:
+        items: list[object] = []
+        for _ in range(_MAX_PAGES):
+            variables = {"jql": jql, "start": len(items), "limit": _PAGE_LIMIT}
+            payload = self._graphql_payload(_SEARCH_QUERIES[name], variables)
+            if payload.get("errors"):
+                raise _SearchRefusedError()
+            data = payload.get("data")
+            page = data.get(name) if isinstance(data, Mapping) else None
+            total = page.get("total") if isinstance(page, Mapping) else None
+            results = page.get("results") if isinstance(page, Mapping) else None
+            if not isinstance(results, list) or not isinstance(total, int) or isinstance(
+                total, bool
+            ):
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            items.extend(results)
+            if len(items) >= total:
+                return items
+            if not results:
+                raise ConnectorError(MSG_REQUEST_FAILED)
+        raise ConnectorUnavailableError(MSG_UNAVAILABLE)
 
     def _rediscover(self) -> CloudTestTypes:
         self._cache.invalidate(self._schema_key)
         types, _ = self._cache.get_or_discover(self._schema_key, self._discover)
         return types
 
-    def _create(self, spec: XrayTestSpec, types: CloudTestTypes) -> str:
+    def _create(
+        self, spec: XrayTestSpec, types: CloudTestTypes, warnings: list[XrayCreateWarning]
+    ) -> str:
         type_id = types.manual_id if spec.kind == "manual" else types.cucumber_id
-        if type_id is None:
+        if type_id is None or (spec.link_issue_key and not self._link_type):
             raise XrayRejectedError()
         payload = self._graphql_payload(_CREATE_TEST_MUTATION, self._create_variables(spec, type_id))
         if payload.get("errors"):
@@ -136,14 +251,23 @@ class XrayCloudImporter:
         key = jira.get("key") if isinstance(jira, Mapping) else None
         if not isinstance(key, str) or not key:
             raise ConnectorError(MSG_REQUEST_FAILED)
+        assert isinstance(created, Mapping) and isinstance(test, Mapping)
+        if spec.link_issue_key and created.get("warnings"):
+            warnings.append(XrayCreateWarning(key, "link_not_confirmed"))
+        elif spec.kind == "cucumber" and spec.outline:
+            scenario_type = test.get("scenarioType")
+            if not isinstance(scenario_type, str) or scenario_type.casefold() not in _OUTLINE_TYPES:
+                warnings.append(XrayCreateWarning(key, "outline_not_confirmed"))
         return key
 
     def _create_variables(self, spec: XrayTestSpec, type_id: str) -> dict[str, object]:
         fields: dict[str, object] = {"summary": spec.title, "project": {"key": self._project_key}}
         if spec.preconditions:
             fields["description"] = spec.preconditions
+        if spec.component:
+            fields["components"] = [{"name": spec.component}]
         jira: dict[str, object] = {"fields": fields}
-        if spec.link_issue_key and self._link_type:
+        if spec.link_issue_key:
             jira["update"] = {
                 "issuelinks": [
                     {
@@ -235,6 +359,26 @@ class XrayCloudImporter:
                 mapped = _UnauthorizedError()
         # Raised outside the handler so the httpx error is not kept as __context__.
         raise mapped from cause
+
+
+def _issue_summary(item: object, *, is_test: bool) -> JiraIssueSummary:
+    jira = item.get("jira") if isinstance(item, Mapping) else None
+    key = jira.get("key") if isinstance(jira, Mapping) else None
+    summary = jira.get("summary") if isinstance(jira, Mapping) else None
+    issue_type = jira.get("issuetype") if isinstance(jira, Mapping) else None
+    type_id = issue_type.get("id") if isinstance(issue_type, Mapping) else None
+    type_name = issue_type.get("name") if isinstance(issue_type, Mapping) else None
+    if (
+        not isinstance(key, str)
+        or not _ISSUE_KEY.fullmatch(key)
+        or not isinstance(summary, str)
+        or not isinstance(type_id, str)
+        or not type_id
+        or not isinstance(type_name, str)
+        or not type_name
+    ):
+        raise ConnectorError(MSG_REQUEST_FAILED)
+    return JiraIssueSummary(key, summary, type_id, type_name, is_test)
 
 
 def _pick_type(test_types: list[Mapping[str, object]], *, kind: str, preferred: str) -> str | None:

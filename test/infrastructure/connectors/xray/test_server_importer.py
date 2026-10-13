@@ -9,8 +9,10 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from domain.errors import ConnectorAuthError, ConnectorUnavailableError
+from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
 from domain.test_management.xray import (
+    IssueLookupResult,
+    JiraIssueSummary,
     XrayImportResult,
     XrayRequiredFieldsError,
     XrayTestSpec,
@@ -332,10 +334,185 @@ def test_unresolvable_required_fields_fail_by_name_before_any_create() -> None:
     assert jira.create_bodies == []
 
 
-def test_link_is_omitted_when_the_project_has_no_issuelinks_field() -> None:
+def test_requested_link_that_cannot_be_sent_is_rejected_without_a_request() -> None:
     fields = [f for f in xray_fields() if f["fieldId"] != "issuelinks"]
-    jira = _Jira(_created("QA-1"), fields=fields)
+    jira = _Jira(fields=fields)
 
-    _importer(jira).import_tests([_MANUAL])
+    result = _importer(jira).import_tests([_MANUAL])
 
-    assert "update" not in jira.create_bodies[0]
+    assert result == XrayImportResult(created_keys=(), failed_count=1)
+    assert jira.create_bodies == []
+
+
+def test_requested_link_without_a_configured_link_type_is_rejected() -> None:
+    jira = _Jira()
+    importer = XrayServerImporter(
+        base_url=BASE_URL,
+        token=TOKEN,
+        project_key="QA",
+        link_type=" ",
+        cache=XraySchemaCache(),
+        transport=httpx.MockTransport(jira),
+    )
+
+    assert importer.import_tests([_MANUAL]).failed_count == 1
+    assert jira.create_bodies == []
+
+
+def test_configured_component_overrides_required_component_resolution() -> None:
+    jira = _Jira(
+        _created("QA-1"),
+        fields=[*xray_fields(), _COMPONENTS],
+        source={"components": [{"id": "10", "name": "SD_WAN"}]},
+    )
+
+    _importer(jira).import_tests([replace(_SOURCED, component="Checkout")])
+
+    assert jira.create_bodies[0]["fields"]["components"] == [{"name": "Checkout"}]
+    assert jira.source_requests == []
+
+
+def test_configured_component_is_sent_when_not_required() -> None:
+    jira = _Jira(_created("QA-1"))
+
+    _importer(jira).import_tests([replace(_CUCUMBER, component="Checkout")])
+
+    assert jira.create_bodies[0]["fields"]["components"] == [{"name": "Checkout"}]
+
+
+def test_without_a_configured_component_a_required_single_component_is_used() -> None:
+    only = _field(
+        "components",
+        required=True,
+        type_="array",
+        name="Component/s",
+        allowedValues=[{"id": "10", "name": "SD_WAN"}],
+    )
+    jira = _Jira(_created("QA-1"), fields=[*xray_fields(), only])
+
+    _importer(jira).import_tests([_CUCUMBER])
+
+    assert jira.create_bodies[0]["fields"]["components"] == [{"id": "10"}]
+
+
+def test_outline_spec_uses_the_scenario_outline_option() -> None:
+    jira = _Jira(_created("QA-1"))
+
+    _importer(jira).import_tests([replace(_CUCUMBER, outline=True)])
+
+    assert jira.create_bodies[0]["fields"]["customfield_10201"] == {"id": "402"}
+
+
+def test_outline_without_a_scenario_outline_option_is_rejected_without_a_request() -> None:
+    fields = xray_fields()
+    fields[7] = _field(
+        "customfield_10201",
+        custom="com.xpandit.plugins.xray:automated-test-type-custom-field",
+        allowedValues=[{"id": "401", "value": "Scenario"}],
+    )
+    jira = _Jira(fields=fields)
+    importer = _importer(jira)
+
+    result = importer.import_tests([replace(_CUCUMBER, outline=True)])
+
+    assert importer.schema().supports_cucumber_outline is False
+    assert result == XrayImportResult(created_keys=(), failed_count=1)
+    assert jira.create_bodies == []
+
+
+class _Lookup:
+    """Jira answering issue reads for the lookup port."""
+
+    def __init__(self, issues: dict[str, object], *, status: int | None = None) -> None:
+        self.issues = issues
+        self.status = status
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == f"{API}/issue/createmeta/QA/issuetypes":
+            return httpx.Response(200, json={"values": [{"id": "10100", "name": "Test"}]})
+        if path == f"{API}/issue/createmeta/QA/issuetypes/10100":
+            return httpx.Response(200, json={"values": xray_fields(), "isLast": True})
+        self.requests.append(request)
+        if self.status is not None:
+            return httpx.Response(self.status, text=f"vendor {TOKEN}")
+        key = path.rsplit("/", 1)[-1]
+        if key not in self.issues:
+            return httpx.Response(404)
+        return httpx.Response(200, json=self.issues[key])
+
+
+def _issue(key: str, summary: str, type_id: str, type_name: str, **fields) -> dict:
+    return {
+        "key": key,
+        "fields": {"summary": summary, "issuetype": {"id": type_id, "name": type_name}, **fields},
+    }
+
+
+def _link(issue: dict, direction: str = "outwardIssue") -> dict:
+    return {"id": "1", "type": {"name": "Test"}, direction: issue}
+
+
+def test_find_issues_reads_each_key_and_reports_404_as_missing() -> None:
+    jira = _Lookup(
+        {
+            "QA-5": _issue("QA-5", "Login", "10100", "Test"),
+            "ABC-1": _issue("ABC-1", "Story", "10001", "Story"),
+        }
+    )
+
+    result = _importer(jira).find_issues(["QA-5", "ABC-1", "ABC-9"])
+
+    assert result == IssueLookupResult(
+        found={
+            "QA-5": JiraIssueSummary("QA-5", "Login", "10100", "Test", True),
+            "ABC-1": JiraIssueSummary("ABC-1", "Story", "10001", "Story", False),
+        },
+        missing=frozenset({"ABC-9"}),
+    )
+    assert {r.url.params["fields"] for r in jira.requests} == {"issuetype,summary"}
+
+
+def test_find_issues_is_test_follows_the_discovered_type_id_not_the_name() -> None:
+    jira = _Lookup({"QA-5": _issue("QA-5", "Login", "555", "Test")})
+
+    assert _importer(jira).find_issues(["QA-5"]).found["QA-5"].is_test is False
+
+
+def test_find_issues_fails_closed_on_errors_and_malformed_answers() -> None:
+    with pytest.raises(ConnectorUnavailableError):
+        _importer(_Lookup({}, status=500)).find_issues(["QA-5"])
+    with pytest.raises(ConnectorAuthError):
+        _importer(_Lookup({}, status=401)).find_issues(["QA-5"])
+    with pytest.raises(ConnectorError):
+        _importer(_Lookup({"QA-5": {"key": "QA-5", "fields": {"summary": 3}}})).find_issues(
+            ["QA-5"]
+        )
+
+
+def test_linked_tests_keeps_only_test_issues_in_either_direction() -> None:
+    story = _issue(
+        "ABC-1",
+        "Story",
+        "10001",
+        "Story",
+        issuelinks=[
+            _link(_issue("QA-5", "Login", "10100", "Test")),
+            _link(_issue("QA-6", "Logout", "10100", "Test"), "inwardIssue"),
+            _link(_issue("ABC-2", "Other", "10001", "Story")),
+        ],
+    )
+    jira = _Lookup({"ABC-1": story})
+
+    linked = _importer(jira).linked_tests("ABC-1")
+
+    assert [t.key for t in linked] == ["QA-5", "QA-6"]
+    assert jira.requests[0].url.params["fields"] == "issuelinks"
+
+
+def test_linked_tests_raises_on_a_malformed_link() -> None:
+    story = _issue("ABC-1", "Story", "10001", "Story", issuelinks=[{"id": "1"}])
+
+    with pytest.raises(ConnectorError):
+        _importer(_Lookup({"ABC-1": story})).linked_tests("ABC-1")

@@ -112,6 +112,7 @@ def test_schema_discovers_xray_fields_from_create_metadata() -> None:
         supports_manual=True,
         supports_cucumber=True,
         supports_issue_link=True,
+        supports_cucumber_outline=True,
     )
     types_request, fields_request = jira.requests
     assert types_request.headers["Authorization"] == f"Bearer {TOKEN}"

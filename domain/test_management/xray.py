@@ -7,12 +7,14 @@ stay inside the infrastructure adapters.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Literal
 
 from domain.errors import ConnectorError
 
 XrayTestKind = Literal["manual", "cucumber"]
+XrayCreateWarningReason = Literal["link_not_confirmed", "outline_not_confirmed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +36,8 @@ class XrayTestSpec:
     gherkin: str = ""
     link_issue_key: str | None = None
     source_issue_key: str | None = None
+    component: str | None = None
+    outline: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +48,15 @@ class XrayTestCreateSchema:
     supports_manual: bool
     supports_cucumber: bool
     supports_issue_link: bool
+    supports_cucumber_outline: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class XrayCreateWarning:
+    """A test was created but Xray did not confirm part of the request."""
+
+    key: str
+    reason: XrayCreateWarningReason
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +65,31 @@ class XrayImportResult:
 
     created_keys: tuple[str, ...]
     failed_count: int
+    warnings: tuple[XrayCreateWarning, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class JiraIssueSummary:
+    """Identity of one Jira issue; ``is_test`` follows the adapter's discovered Test type."""
+
+    key: str
+    summary: str
+    issue_type_id: str
+    issue_type_name: str
+    is_test: bool
+
+
+@dataclass(frozen=True, slots=True)
+class IssueLookupResult:
+    """Outcome of a key lookup.
+
+    ``missing`` holds only keys Jira definitively reported absent. A requested
+    key in neither ``found`` nor ``missing`` is unresolved and must never be
+    treated as absent.
+    """
+
+    found: Mapping[str, JiraIssueSummary] = field(default_factory=dict)
+    missing: frozenset[str] = frozenset()
 
 
 class XrayRequiredFieldsError(ConnectorError):

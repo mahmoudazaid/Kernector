@@ -76,6 +76,7 @@ def test_schema_discovers_test_types_by_kind_after_authenticating() -> None:
         supports_manual=True,
         supports_cucumber=True,
         supports_issue_link=True,
+        supports_cucumber_outline=True,
     )
     auth, query = xray.requests
     assert auth.method == "POST"

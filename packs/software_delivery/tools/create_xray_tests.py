@@ -6,16 +6,11 @@ import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from typing import Protocol, TypeVar
+from typing import Protocol
 
-from domain.errors import (
-    ConnectorAuthError,
-    ConnectorUnavailableError,
-    ToolFailureError,
-)
+from domain.errors import ToolFailureError
 from domain.ports import XrayTestImporter
 from domain.test_management.xray import (
-    XrayRequiredFieldsError,
     XrayTestCreateSchema,
     XrayTestSpec,
     XrayTestStep,
@@ -26,6 +21,7 @@ from packs.software_delivery.test_design.models import (
     GeneratedTestCase,
     TestCoverageDraft,
 )
+from packs.software_delivery.tools.xray_calls import call_xray as _call_xray
 
 TOOL_NAME = "software_delivery.create_xray_tests"
 TOOL_DESCRIPTION = (
@@ -37,13 +33,6 @@ _MSG_DRAFT_NOT_FOUND = "Test Design draft not found"
 _MSG_NOTHING_TO_CREATE = "The draft has no generated test cases ready to create"
 _MSG_UNSUPPORTED = "The Xray project cannot create these tests"
 _MSG_NOTHING_CREATED = "Xray did not create any tests"
-_MSG_XRAY_UNAVAILABLE = "Xray is temporarily unavailable"
-_MSG_XRAY_FAILED = "Creating Xray tests failed"
-_MSG_REQUIRED_FIELDS = (
-    "The Xray project requires Jira fields Kernector could not fill from the "
-    "source issue or allowed values; nothing was created"
-)
-_MAX_FIELD_NAMES = 10
 _ALLOWED_KEYS = frozenset({"draft_id", "link_source_issue"})
 _MAX_DRAFT_ID_CHARS = 128
 
@@ -56,7 +45,6 @@ _APPROVAL_SUMMARY = (
 DraftLoader = Callable[[str], TestCoverageDraft | None]
 CreatedRecorder = Callable[[str, tuple[str, ...]], None]
 """Receives ``(draft_id, created_keys)`` after a run created at least one test."""
-_T = TypeVar("_T")
 
 
 class XrayMcpBinding(Protocol):
@@ -157,20 +145,6 @@ class CreateXrayTestsTool:
 _SCENARIO_HEADERS = ("scenario:", "scenario outline:", "scenario template:", "example:")
 _BACKGROUND_HEADERS = ("background:",)
 _JIRA_ISSUE_KEY = re.compile(r"^[A-Z][A-Z0-9_]*-[1-9][0-9]*$")
-
-
-def _call_xray(call: Callable[[], _T]) -> _T:
-    try:
-        return call()
-    except ConnectorAuthError:
-        raise
-    except XrayRequiredFieldsError as exc:
-        names = ", ".join(exc.field_names[:_MAX_FIELD_NAMES])
-        raise ToolFailureError(f"{_MSG_REQUIRED_FIELDS}: {names}") from exc
-    except ConnectorUnavailableError as exc:
-        raise ToolFailureError(_MSG_XRAY_UNAVAILABLE) from exc
-    except Exception as exc:  # noqa: BLE001 - map connector and unexpected failures
-        raise ToolFailureError(_MSG_XRAY_FAILED) from exc
 
 
 def _parse_request(arguments: Mapping[str, object]) -> tuple[str, bool]:

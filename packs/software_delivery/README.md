@@ -102,7 +102,7 @@ are stored per draft on every path (page, chat, and MCP), so the dialog warns
 A read-only, pure parser ([`test_files/`](test_files/)). The caller sends each
 file's workspace-relative path and full text. Kernector never reads the disk,
 never scans a workspace, and makes no Jira or Xray calls; creating tests from
-the result is #397. The tool is registered whenever the pack is enabled, on
+the result is #397 (below). The tool is registered whenever the pack is enabled, on
 chat (`InvokeTool`) and on MCP (allowlist it in `MCP_TOOL_ALLOWLIST`), and
 needs no approval. Its description tells client agents when to pick it (for
 example "what will go to Xray from this feature?") and to read the open or
@@ -180,6 +180,65 @@ when any of them is a manual tag, otherwise `cucumber`.
 `manual,scaffold`). They load even without `XRAY_DEPLOYMENT`. Each name is
 one token without whitespace or `@ : = | ,`, must not look like an issue key,
 and names may not collide (case-insensitive).
+
+## Xray tests from test files (#397)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `software_delivery.create_xray_tests_from_files` | `files[]` of `{path, content}` (same limits as the preview), `dry_run` (default `false`) | `results[]` (`path`, `line`, `summary`, `status`, `key`, `candidate_keys`, `story_key`, `reason`), `created` (`path::scenario` → key), `dry_run`, `counts`, `stopped`, `stop_reason` |
+
+Creates an Xray test for each scenario without an Xray key tag and links it to
+its story. Registered on chat and MCP only when `XRAY_DEPLOYMENT` is
+configured; **every call needs approval, including `dry_run`**. The approval
+prompt shows the project and the number of untagged scenarios, never file
+content.
+
+**Two phases.** The plan phase parses the files, makes every Jira read the
+matcher needs (one batched issue lookup, then the tests linked to each story),
+matches and builds specs. `dry_run` returns this plan (`WOULD_CREATE` instead of
+`CREATED`). The write phase then creates the planned tests one at a time, in
+file and line order.
+
+**Statuses.** `CREATED`, `WOULD_CREATE`, `EXISTS_UNTAGGED` (an existing test
+was found; tag the file with `key`), `AMBIGUOUS` (several candidates in
+`candidate_keys`, or the same story and summary twice in one run), `NO_STORY`
+(no story key, story not found, or not one of `XRAY_STORY_ISSUE_TYPES`) and
+`ERROR` with a `reason` code.
+
+**Matching** ([`test_files/matching.py`](test_files/matching.py), shared with
+#398). A scenario's identity is `path::summary`; a repeated identity, or a
+repeated path, is a validation error before any call. A bare key on the
+scenario that resolves to a Test is used as that test (`EXISTS_UNTAGGED`)
+unless another scenario already claims it. Otherwise the story (local story
+key, then the first bare key for Robot; the scenario's `story_key` for Gherkin)
+must resolve to an issue whose type name or id is in `XRAY_STORY_ISSUE_TYPES`
+and is not a Test. Among the tests linked to the story, only an exact summary
+match counts; keys tagged elsewhere in the files, or matched or planned earlier
+in the run, are never reused. Steps are never compared.
+
+**Fail closed.** Only Server/DC answers "not found" (HTTP 404). Xray Cloud
+looks issues up through `getTests` and `getCoverableIssues` JQL searches, in
+chunks of 50 keys and pages of 100, at most 20 pages; a key neither returns is
+**unresolved** (`ERROR`), never missing. GraphQL errors on a chunk fall back to
+one key at a time; incomplete or malformed pages raise.
+
+**Specs.** The Background is prepended. Manual tests turn `Given`/`When` (and
+the `And`/`But` after them) into actions and `Then` (and its `And`/`But`)
+into the expected result; a `Then` before any action is
+`assertion_without_action`, and a manual outline is
+`manual_outline_unsupported`. Cucumber tests keep the steps, data tables and
+doc strings with their line, and outlines keep their Examples. Each spec sets
+the story as both source and link issue and `XRAY_DEFAULT_COMPONENT` when set.
+A project that cannot create the spec as built (manual, Cucumber, outline or
+link) gets an `ERROR`; nothing is downgraded.
+
+**Write stop rules.** A definite rejection (`rejected`, `required_fields`)
+continues with the next scenario. An outcome that may have written a test
+(`outcome_unknown`), a later auth failure (`auth_failed`) or an unconfirmed
+link or outline (`link_not_confirmed`, `outline_not_confirmed`, key kept in
+`created`) stops the run: the remaining scenarios are `not_attempted`, and
+earlier results and keys are kept. An auth failure before anything was created
+fails the call.
 
 ## Chat-time routing (#312)
 

@@ -12,6 +12,7 @@ _DEFAULT_ALLOWLIST = frozenset(
     {
         "software_delivery.export_test_cases_google_drive",
         "software_delivery.create_xray_tests",
+        "software_delivery.create_xray_tests_from_files",
     }
 )
 
