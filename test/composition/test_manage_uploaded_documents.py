@@ -579,8 +579,15 @@ def test_list_and_delete_need_no_embedding_model(
 
 
 def test_create_with_blank_embedding_model_is_a_configuration_error(
-    settings: Settings,
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
     blank = replace(settings, openrouter=replace(settings.openrouter, embedding_model=""))
 
     with pytest.raises(ConfigurationError, match="OPENROUTER_EMBEDDING_MODEL"):
