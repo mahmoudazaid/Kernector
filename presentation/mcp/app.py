@@ -14,7 +14,7 @@ import anyio.from_thread
 import anyio.to_thread
 from mcp import MCPError, types
 from mcp_types.version import is_version_at_least
-from mcp.server.context import ServerRequestContext
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.lowlevel.server import Server
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -295,6 +295,17 @@ async def _healthz(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+async def _answer_modern_ping(
+    ctx: ServerRequestContext[Any], call_next: CallNext
+) -> HandlerResult:
+    """Answer ``ping`` on 2026-07-28, which dropped it; clients still send it as a keepalive."""
+    if ctx.method == "ping" and is_version_at_least(
+        ctx.protocol_version or "", _INPUT_REQUIRED_VERSION
+    ):
+        return {"resultType": "complete"}
+    return await call_next(ctx)
+
+
 def build_mcp_server(
     *,
     registry: McpToolRegistry,
@@ -407,7 +418,7 @@ def build_mcp_server(
     ) -> types.ListResourceTemplatesResult:
         return types.ListResourceTemplatesResult(resource_templates=[])
 
-    return Server(
+    server = Server(
         name,
         version="0.1.0",
         instructions=SERVER_INSTRUCTIONS,
@@ -418,6 +429,8 @@ def build_mcp_server(
         on_list_resources=on_list_resources,
         on_list_resource_templates=on_list_resource_templates,
     )
+    server.middleware.append(_answer_modern_ping)
+    return server
 
 
 def create_mcp_app(
