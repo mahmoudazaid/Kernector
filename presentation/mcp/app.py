@@ -11,7 +11,7 @@ from typing import Any
 
 import anyio.from_thread
 import anyio.to_thread
-from mcp import types
+from mcp import MCPError, types
 from mcp_types.version import is_version_at_least
 from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel.server import Server
@@ -31,13 +31,22 @@ from composition.mcp.access import (
 from composition.mcp.settings import McpSettings, load_mcp_settings
 from composition.mcp.tool_registry import (
     McpInvokeResult,
+    McpPromptArgumentError,
     McpToolDescriptor,
+    McpToolPrompt,
     McpToolRegistry,
     TOOL_UNAVAILABLE_CODE,
 )
 from domain.tool_approval import PendingToolApproval
 
 logger = logging.getLogger(__name__)
+
+SERVER_INSTRUCTIONS = (
+    "Kernector never reads your workspace or disk. When a Kernector tool takes "
+    "file paths and file content, read the files yourself and send each "
+    "workspace-relative path with the file's exact, unmodified text. Use the "
+    "prompts this server lists to start its guided workflows."
+)
 
 _UNAUTHORIZED = JSONResponse(
     {"detail": "Unauthorized"},
@@ -69,6 +78,20 @@ def _to_mcp_tool(descriptor: McpToolDescriptor) -> types.Tool:
             if descriptor.output_schema is not None
             else None
         ),
+    )
+
+
+def _to_mcp_prompt(prompt: McpToolPrompt) -> types.Prompt:
+    return types.Prompt(
+        name=prompt.name,
+        description=prompt.description,
+        arguments=[
+            types.PromptArgument(
+                name=prompt.argument,
+                description=prompt.argument_description,
+                required=False,
+            )
+        ],
     )
 
 
@@ -295,11 +318,51 @@ def build_mcp_server(
             return input_required
         return _to_call_tool_result(result)
 
+    async def on_list_prompts(
+        ctx: ServerRequestContext[Any],
+        _params: types.PaginatedRequestParams | None,
+    ) -> types.ListPromptsResult:
+        try:
+            caller = resolver.resolve(ctx.request)
+        except MissingCallerContextError:
+            logger.warning("mcp_list_prompts_missing_caller")
+            return types.ListPromptsResult(prompts=[])
+        prompts = await anyio.to_thread.run_sync(registry.list_prompts, caller)
+        return types.ListPromptsResult(prompts=[_to_mcp_prompt(item) for item in prompts])
+
+    async def on_get_prompt(
+        ctx: ServerRequestContext[Any],
+        params: types.GetPromptRequestParams,
+    ) -> types.GetPromptResult:
+        try:
+            caller = resolver.resolve(ctx.request)
+        except MissingCallerContextError:
+            logger.warning("mcp_get_prompt_missing_caller")
+            raise MCPError(types.INVALID_PARAMS, "Unknown prompt") from None
+        try:
+            text = await anyio.to_thread.run_sync(
+                registry.get_prompt, caller, params.name, params.arguments
+            )
+        except McpPromptArgumentError:
+            raise MCPError(types.INVALID_PARAMS, "Invalid prompt arguments") from None
+        if text is None:
+            raise MCPError(types.INVALID_PARAMS, "Unknown prompt")
+        return types.GetPromptResult(
+            messages=[
+                types.PromptMessage(
+                    role="user", content=types.TextContent(type="text", text=text)
+                )
+            ]
+        )
+
     return Server(
         name,
         version="0.1.0",
+        instructions=SERVER_INSTRUCTIONS,
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,
+        on_list_prompts=on_list_prompts,
+        on_get_prompt=on_get_prompt,
     )
 
 

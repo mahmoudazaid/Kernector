@@ -78,6 +78,19 @@ class ToolArgumentValidationError(DomainValidationError):
     """
 
 
+class TrustedToolValidationError(ToolArgumentValidationError):
+    """Tool argument rejection whose ``safe_message`` may reach MCP callers.
+
+    Subclasses must build ``safe_message`` only from fixed text and bounded,
+    sanitized identifiers (never raw input content). Other
+    ``ToolArgumentValidationError`` types stay behind the generic MCP message.
+    """
+
+    def __init__(self, safe_message: str) -> None:
+        super().__init__(safe_message)
+        self.safe_message = safe_message
+
+
 class ToolFailureError(RuntimeError):
     """A tool port invocation failed after valid arguments were accepted.
 

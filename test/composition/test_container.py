@@ -337,10 +337,14 @@ def test_build_invoke_tool_registers_no_export_without_oauth(
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
 
+    from packs.software_delivery.tools.export_test_cases_google_drive import (
+        TOOL_NAME as EXPORT_TOOL,
+    )
+
     invoke = build_invoke_tool(load_settings(), chat_model=_StubChat())
 
     assert isinstance(invoke, InvokeTool)
-    assert invoke._registry.names() == ()
+    assert EXPORT_TOOL not in invoke._registry.names()
 
 
 def test_disabled_pack_is_not_imported_at_composition_import(

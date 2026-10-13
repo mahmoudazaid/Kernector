@@ -49,6 +49,7 @@ def build_tool_registry(
     xray_importer: XrayTestImporter | None = None,
     xray_load_draft: Callable[[str], Any] | None = None,
     xray_on_created: Callable[[str, tuple[str, ...]], None] | None = None,
+    test_file_tags: Any | None = None,
 ) -> ToolRegistry:
     """Build a tool registry from enabled domain tool packs.
 
@@ -67,6 +68,8 @@ def build_tool_registry(
         xray_importer: Deployment-specific Xray importer (#199).
         xray_load_draft: Workspace-bound ``draft_id`` lookup for Xray export.
         xray_on_created: Records the keys each Xray run created for its draft.
+        test_file_tags: Pack ``TestFileTagConfig`` that registers the read-only
+            test file preview (#396).
 
     Returns:
         Registry of tools contributed by enabled packs.
@@ -106,6 +109,7 @@ def build_tool_registry(
                     xray_importer=xray_importer,
                     xray_load_draft=xray_load_draft,
                     xray_on_created=xray_on_created,
+                    test_file_tags=test_file_tags,
                 )
             except ValueError as exc:
                 raise ConfigurationError(str(exc)) from exc
