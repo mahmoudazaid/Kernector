@@ -29,12 +29,15 @@ class PendingToolApproval:
     destination_label: str | None = None
     file_name: str | None = None
     selected_title_count: int | None = None
+    item_titles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name in ("approval_id", "tool_name", "title", "summary", "status"):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must be a non-empty string")
+        if not all(isinstance(item, str) and item.strip() for item in self.item_titles):
+            raise ValueError("item_titles must be non-empty strings")
         if self.selected_title_count is not None:
             if (
                 not isinstance(self.selected_title_count, int)
@@ -58,13 +61,18 @@ class ToolApprovalPolicy:
 
 @dataclass(frozen=True, slots=True)
 class ApprovalHints:
-    """Optional presentation hints attached beside a bound Tool."""
+    """Optional presentation hints attached beside a bound Tool.
+
+    ``item_titles`` names what the call acts on; the tool keeps it short and
+    free of content the user has not already seen.
+    """
 
     title: str
     summary: str
     destination_label: str | None = None
     file_name: str | None = None
     selected_title_count: int | None = None
+    item_titles: tuple[str, ...] = ()
 
 
 def project_pending_approval(
@@ -91,6 +99,7 @@ def project_pending_approval(
                 if hints.selected_title_count is not None
                 else selected_count
             ),
+            item_titles=tuple(hints.item_titles),
         )
     return PendingToolApproval(
         approval_id=approval_id,

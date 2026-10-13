@@ -647,6 +647,7 @@ class PendingToolApprovalResponse(BaseModel):
     destination_label: str | None = None
     file_name: str | None = None
     selected_title_count: int | None = None
+    item_titles: list[str] = Field(default_factory=list)
 
 
 class ToolApprovalDecisionRequest(BaseModel):
@@ -1002,6 +1003,7 @@ def pending_tool_approval_response(
         destination_label=getattr(pending, "destination_label", None),
         file_name=getattr(pending, "file_name", None),
         selected_title_count=getattr(pending, "selected_title_count", None),
+        item_titles=list(getattr(pending, "item_titles", ())),
     )
 
 

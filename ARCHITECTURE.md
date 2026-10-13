@@ -888,7 +888,10 @@ the agents; Kernector supplies evidence and allowlisted tools.
   chat and MCP, contributed with an `XrayFileCreateBinding`
   (`composition/xray_export/test_file_create.py` owns the strict schemas)
   only when `XRAY_DEPLOYMENT` is configured. Every call, `dry_run` included,
-  needs approval.
+  needs approval; the prompt names the destination project and host and lists
+  capped scenario names (`ApprovalHints.item_titles`). The read-only
+  `software_delivery.xray_target` is contributed with it and reports the
+  configured destination after checking the project.
 - Prompts and instructions: the server sends fixed, tool-neutral
   `instructions` (clients read files themselves and send exact text). A tool
   may carry an optional `mcp_prompt` (`McpToolPrompt`, read via `getattr`);

@@ -794,8 +794,37 @@ def test_approval_hints_give_project_and_untagged_count_only() -> None:
 
     assert hints.destination_label == "QA"
     assert hints.selected_title_count == 3
-    assert "Given" not in hints.summary
+    assert hints.item_titles == ("One (t.robot:4)", "Two (t.robot:6)", "Three (t.robot:8)")
+    assert "Given" not in hints.summary + "".join(hints.item_titles)
     assert xray.lookups == [] and xray.created == []
+
+
+def test_approval_titles_are_capped_and_shortened() -> None:
+    long_name = "L" * 200
+    scenarios = [f"Scenario: S{n}\n    Given a" for n in range(11)]
+    text = _robot(
+        "*** Settings ***",
+        "Default Tags    Story ABC-1",
+        "*** Test Cases ***",
+        f"Scenario: {long_name}",
+        "    Given a",
+        *scenarios,
+    )
+
+    hints = _tool(_FakeXray()).approval_hints({"files": [{"path": "t.robot", "content": text}]})
+
+    assert hints.selected_title_count == 12
+    assert len(hints.item_titles) == 11
+    assert hints.item_titles[-1] == "+2 more"
+    assert len(hints.item_titles[0]) == 120 and hints.item_titles[0].endswith("…")
+
+
+def test_result_names_the_destination() -> None:
+    xray = _FakeXray(issues=[_story("ABC-1")])
+
+    payload = _run(xray, ("t.robot", _three()), dry_run=True)
+
+    assert payload["destination"] == "QA"
 
 
 def test_arguments_are_validated() -> None:

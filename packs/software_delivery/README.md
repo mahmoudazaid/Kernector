@@ -190,8 +190,17 @@ and names may not collide (case-insensitive).
 Creates an Xray test for each scenario without an Xray key tag and links it to
 its story. Registered on chat and MCP only when `XRAY_DEPLOYMENT` is
 configured; **every call needs approval, including `dry_run`**. The approval
-prompt shows the project and the number of untagged scenarios, never file
-content.
+prompt shows the destination (`Jira project QA on jira.example.com`, or
+`Jira project QA (Xray Cloud)`), the number of untagged scenarios and up to 10
+of their names as `summary (path:line)`, each cut to 120 characters, plus
+`+N more`. Steps and other file content are never shown. The result repeats
+the destination.
+
+Tests always go to `XRAY_PROJECT_KEY`; the story can live in another project.
+The read-only `software_delivery.xray_target` tool (no arguments, no approval)
+reports that destination and what its project supports, after checking the
+project through schema discovery, so the user can confirm it before creating.
+To use another project, change `XRAY_PROJECT_KEY` and restart the server.
 
 **Two phases.** The plan phase parses the files, makes every Jira read the
 matcher needs (one batched issue lookup, then the tests linked to each story),

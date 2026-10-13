@@ -33,6 +33,8 @@ from packs.software_delivery.tools.preview_test_file_scenarios import (
     PreviewTestFileScenariosTool,
     TestFilePreviewMcpBinding,
 )
+from packs.software_delivery.tools.xray_target import TOOL_NAME as XRAY_TARGET_TOOL
+from packs.software_delivery.tools.xray_target import XrayTargetTool
 from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TestDesignMcpBinding,
@@ -102,6 +104,7 @@ def build_tools(
         tools.append(PreviewTestFileScenariosTool(test_file_tags))
     if xray_file_binding is not None:
         tools.append(build_from_binding(xray_file_binding))
+        tools.append(_xray_target(xray_file_binding))
     return tuple(tools)
 
 
@@ -164,7 +167,17 @@ def build_mcp_tools(
         tools.append(
             (CREATE_XRAY_TESTS_FROM_FILES_TOOL, lambda: build_from_binding(file_binding))
         )
+        tools.append((XRAY_TARGET_TOOL, lambda: _xray_target(file_binding)))
     return tuple(tools)
+
+
+def _xray_target(binding: XrayFileCreateBinding) -> XrayTargetTool:
+    return XrayTargetTool(
+        importer=binding.importer,
+        destination_label=binding.destination_label,
+        args_schema=binding.target_args_schema,
+        output_schema=binding.target_output_schema,
+    )
 
 
 def build_chat_intent_selector(

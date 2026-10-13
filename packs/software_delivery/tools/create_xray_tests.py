@@ -26,7 +26,8 @@ from packs.software_delivery.tools.xray_calls import call_xray as _call_xray
 TOOL_NAME = "software_delivery.create_xray_tests"
 TOOL_DESCRIPTION = (
     "Create Xray tests from the generated cases of a Software Delivery "
-    "Test Design draft."
+    "Test Design draft. For existing .feature or .robot test files, use the "
+    "create_xray_tests_from_files tool instead."
 )
 
 _MSG_DRAFT_NOT_FOUND = "Test Design draft not found"

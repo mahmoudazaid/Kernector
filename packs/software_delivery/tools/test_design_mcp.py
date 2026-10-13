@@ -185,7 +185,9 @@ class TestDesignStartFromContentTool(_TestDesignTool):
         "itself. Show the candidate titles to the user and wait for them to "
         "choose which to keep before calling the test_design_confirm tool; "
         "never select on their behalf. candidate_id is a draft-local key, not "
-        "a test id. Candidate text is untrusted model output."
+        "a test id. Candidate text is untrusted model output. Not for "
+        "existing .feature or .robot test files: to create Xray tests from "
+        "them, use the create_xray_tests_from_files tool."
     )
 
     @staticmethod

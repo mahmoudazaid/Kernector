@@ -116,6 +116,7 @@ def _approval_message(pending: PendingToolApproval) -> str:
         lines.append(f"Destination: {pending.destination_label}")
     if pending.selected_title_count is not None:
         lines.append(f"Items: {pending.selected_title_count}")
+    lines.extend(f"- {item}" for item in pending.item_titles)
     return "\n".join(lines)
 
 

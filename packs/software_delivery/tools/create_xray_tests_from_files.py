@@ -30,7 +30,11 @@ from packs.software_delivery.test_files.matching import (
     reject_duplicate_identities,
     untagged,
 )
-from packs.software_delivery.test_files.models import ParsedTestFile, TestFileTagConfig
+from packs.software_delivery.test_files.models import (
+    ParsedTestFile,
+    TestFileScenario,
+    TestFileTagConfig,
+)
 from packs.software_delivery.test_files.request import (
     parse_files,
     read_files,
@@ -47,11 +51,15 @@ TOOL_DESCRIPTION = (
     "their key instead of being created. Read each file from the workspace yourself "
     "and pass its workspace-relative path and exact full text, unchanged. Set "
     "dry_run to true to see the planned actions without changing Jira. Returns the "
-    "created keys mapped to path::scenario so the files can be tagged."
+    "created keys mapped to path::scenario so the files can be tagged. Call the "
+    "xray_target tool first to confirm the Jira project the tests go to. Do not "
+    "start a Test Design draft for existing test files."
 )
 
 _ALLOWED_KEYS = frozenset({"files", "dry_run"})
 _STATUSES = ("CREATED", "WOULD_CREATE", "EXISTS_UNTAGGED", "AMBIGUOUS", "NO_STORY", "ERROR")
+_MAX_APPROVAL_TITLES = 10
+_MAX_APPROVAL_TITLE_CHARS = 120
 _APPROVAL_TITLE = "Create Xray tests from files"
 _APPROVAL_SUMMARY = (
     "Create Jira Test issues in Xray for the file scenarios that have no Xray key yet "
@@ -75,6 +83,9 @@ class XrayFileCreateBinding(Protocol):
     def project_key(self) -> str: ...
 
     @property
+    def destination_label(self) -> str: ...
+
+    @property
     def story_issue_types(self) -> frozenset[str]: ...
 
     @property
@@ -86,6 +97,12 @@ class XrayFileCreateBinding(Protocol):
     @property
     def output_schema(self) -> type | None: ...
 
+    @property
+    def target_args_schema(self) -> type | None: ...
+
+    @property
+    def target_output_schema(self) -> type | None: ...
+
 
 def build_from_binding(binding: XrayFileCreateBinding) -> CreateXrayTestsFromFilesTool:
     """Build the tool from a composition binding (chat and MCP share one shape)."""
@@ -95,7 +112,7 @@ def build_from_binding(binding: XrayFileCreateBinding) -> CreateXrayTestsFromFil
         tags=binding.tags,
         story_issue_types=binding.story_issue_types,
         default_component=binding.default_component,
-        destination_label=binding.project_key,
+        destination_label=binding.destination_label,
         args_schema=binding.args_schema,
         output_schema=binding.output_schema,
     )
@@ -144,13 +161,15 @@ class CreateXrayTestsFromFilesTool:
         return TOOL_DESCRIPTION
 
     def approval_hints(self, arguments: Mapping[str, object]) -> ApprovalHints:
-        """Safe approval prompt: project and untagged scenario count, never file content."""
+        """Safe approval prompt: destination and untagged scenario names, never steps."""
         parsed, _dry_run = self._parse(arguments)
+        pending = untagged(parsed)
         return ApprovalHints(
             title=_APPROVAL_TITLE,
             summary=_APPROVAL_SUMMARY,
             destination_label=self._destination_label,
-            selected_title_count=len(untagged(parsed)),
+            selected_title_count=len(pending),
+            item_titles=_approval_titles(pending),
         )
 
     def run(self, arguments: Mapping[str, object]) -> str:
@@ -162,7 +181,13 @@ class CreateXrayTestsFromFilesTool:
             repeat_key = created.get(entry.match.repeat_of or "")
             if repeat_key is not None:
                 entry.candidate_keys = (*entry.candidate_keys, repeat_key)
-        return _payload(entries, created, dry_run=dry_run, stop_reason=stop_reason)
+        return _payload(
+            entries,
+            created,
+            dry_run=dry_run,
+            stop_reason=stop_reason,
+            destination=self._destination_label,
+        )
 
     def _parse(self, arguments: Mapping[str, object]) -> tuple[list[ParsedTestFile], bool]:
         if not isinstance(arguments, Mapping):
@@ -265,6 +290,24 @@ class CreateXrayTestsFromFilesTool:
         return entry.reason
 
 
+def _approval_titles(
+    pending: Sequence[tuple[ParsedTestFile, TestFileScenario]],
+) -> tuple[str, ...]:
+    titles = [
+        _shorten(f"{scenario.summary} ({parsed.path}:{scenario.line})")
+        for parsed, scenario in pending[:_MAX_APPROVAL_TITLES]
+    ]
+    if len(pending) > _MAX_APPROVAL_TITLES:
+        titles.append(f"+{len(pending) - _MAX_APPROVAL_TITLES} more")
+    return tuple(titles)
+
+
+def _shorten(text: str) -> str:
+    if len(text) <= _MAX_APPROVAL_TITLE_CHARS:
+        return text
+    return text[: _MAX_APPROVAL_TITLE_CHARS - 1] + "…"
+
+
 def _unsupported(schema: XrayTestCreateSchema, spec: XrayTestSpec) -> str | None:
     """Reason the project cannot create ``spec`` exactly as built; never downgrade it."""
     if spec.kind == "manual" and not schema.supports_manual:
@@ -284,12 +327,14 @@ def _payload(
     *,
     dry_run: bool,
     stop_reason: str | None,
+    destination: str | None,
 ) -> str:
     counts = dict.fromkeys(_STATUSES, 0)
     for entry in entries:
         counts[entry.status] += 1
     return json.dumps(
         {
+            "destination": destination,
             "results": [
                 {
                     "path": entry.match.path,

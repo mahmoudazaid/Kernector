@@ -36,11 +36,14 @@ from packs.software_delivery.tools.create_xray_tests_from_files import (
     TOOL_NAME,
     CreateXrayTestsFromFilesTool,
 )
+from packs.software_delivery.tools.xray_target import TOOL_NAME as TARGET_TOOL
+from packs.software_delivery.tools.xray_target import XrayTargetTool
 from test.composition.mcp.test_mcp_xray_exposure import _Gate
 
 TAGS = TestFileTagConfig("XRay", "Story", ("manual",))
 FEATURE = "@Story:ABC-1\nFeature: F\n  Scenario: Login\n    Given x\n    Then y\n"
 ARGS = {"files": [{"path": "f/a.feature", "content": FEATURE}]}
+LABEL = "Jira project QA (Xray Cloud)"
 
 
 class _Xray:
@@ -71,6 +74,7 @@ def _binding(xray: _Xray) -> XrayFileCreateBinding:
         lookup=xray,
         tags=TAGS,
         project_key="QA",
+        destination_label=LABEL,
         story_issue_types=frozenset({"Story"}),
     )
 
@@ -114,13 +118,34 @@ def _cloud(env: pytest.MonkeyPatch) -> None:
     env.setenv("XRAY_CLIENT_SECRET", "client-secret")
 
 
-def test_build_mcp_tools_contributes_the_tool_only_with_a_binding() -> None:
+def test_build_mcp_tools_contributes_the_tools_only_with_a_binding() -> None:
     assert build_mcp_tools() == ()
 
-    [(tool_id, factory)] = build_mcp_tools(xray_file_binding=_binding(_Xray()))
+    tools = dict(build_mcp_tools(xray_file_binding=_binding(_Xray())))
 
-    assert tool_id == TOOL_NAME
-    assert type(factory()) is CreateXrayTestsFromFilesTool
+    assert set(tools) == {TOOL_NAME, TARGET_TOOL}
+    assert type(tools[TOOL_NAME]()) is CreateXrayTestsFromFilesTool
+    assert type(tools[TARGET_TOOL]()) is XrayTargetTool
+
+
+def test_target_tool_runs_without_approval_and_names_the_destination() -> None:
+    xray = _Xray()
+
+    result = _registry(xray).invoke_authorized(_caller(TARGET_TOOL), TARGET_TOOL, {})
+
+    assert result.is_error is False
+    assert result.structured is not None
+    assert result.structured["destination"] == LABEL
+    assert result.structured["project_key"] == "QA"
+    assert xray.calls == ["schema"]
+
+
+def test_target_tool_rejects_arguments() -> None:
+    result = _registry(_Xray()).invoke_authorized(
+        _caller(TARGET_TOOL), TARGET_TOOL, {"project_key": "OIE"}
+    )
+
+    assert result.code == VALIDATION_ERROR_CODE
 
 
 def test_every_call_requires_approval() -> None:
@@ -199,9 +224,11 @@ def test_approved_call_returns_the_structured_result_and_safe_prompt() -> None:
     assert payload == result.structured
     assert payload["created"] == {"f/a.feature::Login": "QA-9"}
     assert payload["results"][0]["status"] == "CREATED"
+    assert payload["destination"] == LABEL
     [request] = gate.requests
-    assert (request.destination_label, request.selected_title_count) == ("QA", 1)
-    assert FEATURE not in repr(request)
+    assert (request.destination_label, request.selected_title_count) == (LABEL, 1)
+    assert request.item_titles == ("Login (f/a.feature:3)",)
+    assert "Given" not in repr(request)
 
 
 def test_binding_is_built_only_when_xray_is_configured(env: pytest.MonkeyPatch) -> None:
@@ -217,18 +244,34 @@ def test_binding_is_built_only_when_xray_is_configured(env: pytest.MonkeyPatch) 
     assert binding.default_component == "Checkout"
     assert binding.story_issue_types == frozenset({"Story", "User Story"})
     assert binding.importer is binding.lookup
+    assert binding.destination_label == "Jira project QA (Xray Cloud)"
 
 
-def test_mcp_wiring_contributes_the_tool_only_when_configured(env: pytest.MonkeyPatch) -> None:
+def test_server_binding_names_the_jira_host(env: pytest.MonkeyPatch) -> None:
+    env.setenv("XRAY_DEPLOYMENT", "server")
+    env.setenv("XRAY_PROJECT_KEY", "QA")
+    env.setenv("JIRA_DC_BASE_URL", "https://jira.example.test/jira")
+    env.setenv("JIRA_DC_TOKEN", "dc-token")
+
+    binding = build_xray_file_create_binding(load_settings())
+
+    assert binding is not None
+    assert binding.destination_label == "Jira project QA on jira.example.test"
+
+
+def test_mcp_wiring_contributes_the_tools_only_when_configured(env: pytest.MonkeyPatch) -> None:
     from composition.mcp.wiring import build_mcp_tool_registry
 
-    caller = _caller(TOOL_NAME)
+    caller = _caller(TOOL_NAME, TARGET_TOOL)
     registry = build_mcp_tool_registry(load_settings(), retrieve=object())  # type: ignore[arg-type]
     assert registry.list_effective(caller) == ()
 
     _cloud(env)
     registry = build_mcp_tool_registry(load_settings(), retrieve=object())  # type: ignore[arg-type]
-    assert [item.name for item in registry.list_effective(caller)] == [mcp_tool_name(TOOL_NAME)]
+    assert {item.name for item in registry.list_effective(caller)} == {
+        mcp_tool_name(TOOL_NAME),
+        mcp_tool_name(TARGET_TOOL),
+    }
 
 
 def test_chat_registry_lists_the_tool_with_a_binding(env: pytest.MonkeyPatch) -> None:
@@ -238,7 +281,7 @@ def test_chat_registry_lists_the_tool_with_a_binding(env: pytest.MonkeyPatch) ->
 
     assert TOOL_NAME not in build_tool_registry(settings).names()
     registry = build_tool_registry(settings, xray_file_binding=_binding(_Xray()))
-    assert TOOL_NAME in registry.names()
+    assert {TOOL_NAME, TARGET_TOOL} <= set(registry.names())
 
 
 def test_chat_wiring_registers_the_tool_only_when_configured(env: pytest.MonkeyPatch) -> None:
