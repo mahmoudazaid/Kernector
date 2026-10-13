@@ -24,6 +24,7 @@ from domain.knowledge import (
     UploadPayload,
 )
 from test.document_doubles import (
+    upload_profile,
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
@@ -111,6 +112,7 @@ def test_extraction_failure_writes_no_blob() -> None:
         new_source_id=FixedIdFactory("id-1"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(RuntimeError, match="unreadable upload"):
@@ -138,6 +140,7 @@ def test_create_ingest_failure_stores_blob_alongside_failed_row() -> None:
         new_source_id=FixedIdFactory("id-fail"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(IngestFailure) as raised:
@@ -178,6 +181,7 @@ def test_create_ingest_failure_survives_blob_put_failure() -> None:
         new_source_id=FixedIdFactory("id-fail-blob"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(IngestFailure):
@@ -211,6 +215,7 @@ def test_create_records_degraded_when_mutation_may_have_started() -> None:
         new_source_id=FixedIdFactory("id-partial"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(IngestFailure) as raised:
@@ -244,6 +249,7 @@ def test_create_recovery_write_failure_keeps_both_failures() -> None:
         new_source_id=FixedIdFactory("id-both"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(PartialCreateFailure) as raised:
@@ -277,6 +283,7 @@ def test_create_recovery_write_failure_after_vector_mutation_keeps_both() -> Non
         new_source_id=FixedIdFactory("id-both-degraded"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(PartialCreateFailure) as raised:
@@ -316,6 +323,7 @@ def _use_case_with_both_failures(
         new_source_id=FixedIdFactory("id-leak"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
 
@@ -363,6 +371,7 @@ def test_partial_create_failure_message_is_fixed_across_causes() -> None:
         new_source_id=FixedIdFactory("id-other"),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with pytest.raises(PartialCreateFailure) as raised:
@@ -405,6 +414,7 @@ def test_create_rejects_colliding_generated_source_id_without_echoing_it(
         new_source_id=FixedIdFactory(colliding_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
     with caplog.at_level(logging.ERROR, logger="application.manage_documents"):

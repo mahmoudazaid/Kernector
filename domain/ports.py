@@ -1,7 +1,7 @@
 """Ports: the interfaces infrastructure must satisfy."""
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from domain.artifacts import Artifact, ArtifactReceipt
 from domain.knowledge import (
@@ -13,6 +13,7 @@ from domain.knowledge import (
     ScoredChunk,
     SourceDocument,
     SourceLocator,
+    SourceMetadata,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -151,6 +152,26 @@ class VectorStore(Protocol):
             VectorStoreError: On any adapter-level failure.
         """
 
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        """Replace the source metadata on every stored chunk of one source.
+
+        Never embeds. Each chunk keeps its identity, index, text, and
+        embedding; only the source-level metadata changes, and source fields
+        absent from ``metadata`` are removed (including their filter keys).
+        Scoped by the whole ``SourceReference``. A reference matching no stored
+        record returns 0 and writes nothing.
+
+        Returns:
+            The number of chunks rewritten.
+
+        Raises:
+            VectorStoreError: When ``metadata.reference`` differs from
+                ``reference``, or on any adapter-level failure. On failure the
+                previous metadata is kept.
+        """
+
     def list_source_chunks(
         self,
         reference: SourceReference,
@@ -203,6 +224,14 @@ class LexicalIndex(Protocol):
 
     def delete_source(self, reference: SourceReference) -> None:
         """Remove all chunks for ``reference``. Missing references are a no-op."""
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        """Replace one source's metadata on its chunks; text is untouched.
+
+        Same contract as ``VectorStore.update_source_metadata``.
+        """
 
 
 class Tool(Protocol):
@@ -353,6 +382,37 @@ class KnowledgeConnector(Protocol):
             ConnectorError: The file could not be read without exposing provider details.
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: The provider is unreachable or throttling.
+        """
+        ...
+
+
+@runtime_checkable
+class MetadataDescribingConnector(Protocol):
+    """Optional connector capability: rebuild source metadata without fetching.
+
+    Used by sync when a listed document's provider ``content_hash`` equals the
+    stored one, so the bytes are unchanged and only metadata may differ.
+    """
+
+    def describe_document(
+        self,
+        document: ConnectorDocument,
+        previous: SourceMetadata,
+    ) -> SourceMetadata:
+        """Return the metadata ``fetch_document`` would produce for ``document``.
+
+        Fields derived from the listing are rebuilt from ``document``.
+        ``content_format`` must be what ``fetch_document`` would derive for the
+        listed document, not a copy of ``previous``: chunk boundaries depend on
+        it. Only extraction-only fields (byte size, page count) are taken from
+        ``previous``, the metadata stored with the current chunks. Every other
+        field of ``previous`` is dropped.
+
+        Raises:
+            ConnectorError: ``previous`` belongs to another reference, lacks a
+                required field, or its ``content_format`` cannot be proven
+                equal to the listed document's (for example, a rename to a
+                suffix with another format). Sync then falls back to fetching.
         """
         ...
 

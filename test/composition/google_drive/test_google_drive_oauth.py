@@ -833,6 +833,16 @@ def test_oauth_sync_persists_last_sync_counts(
                     status=ConnectorSyncStatus.SKIPPED,
                     chunk_count=1,
                 ),
+                ConnectorSyncOutcome(
+                    source_id="drive:edited",
+                    status=ConnectorSyncStatus.UPDATED,
+                    chunk_count=1,
+                ),
+                ConnectorSyncOutcome(
+                    source_id="drive:renamed",
+                    status=ConnectorSyncStatus.METADATA_UPDATED,
+                    chunk_count=1,
+                ),
             )
         ),
     )
@@ -875,7 +885,7 @@ def test_oauth_sync_persists_last_sync_counts(
     stored = tokens.load()
     assert stored is not None
     assert stored.last_sync_new == 1
-    assert stored.last_sync_updated == 0
+    assert stored.last_sync_updated == 2
     assert stored.last_sync_unchanged == 1
     assert stored.last_sync_failed == 0
     assert stored.last_synced_at is not None

@@ -76,3 +76,33 @@ def test_connector_document_rejects_blank_revision(blank: str) -> None:
 
 def test_source_type_includes_google_drive() -> None:
     assert SourceType.GOOGLE_DRIVE == "google_drive"
+
+
+def test_connector_document_content_hash_defaults_to_none() -> None:
+    document = ConnectorDocument(
+        reference=_reference(),
+        file_name="guide.md",
+        revision="1",
+    )
+    assert document.content_hash is None
+
+
+def test_connector_document_accepts_provider_content_hash() -> None:
+    document = ConnectorDocument(
+        reference=_reference(),
+        file_name="guide.md",
+        revision="2",
+        content_hash="9f1",
+    )
+    assert document.content_hash == "9f1"
+
+
+@pytest.mark.parametrize("blank", BLANK)
+def test_connector_document_rejects_blank_content_hash(blank: str) -> None:
+    with pytest.raises(DomainValidationError, match="content_hash"):
+        ConnectorDocument(
+            reference=_reference(),
+            file_name="guide.md",
+            revision="1",
+            content_hash=blank,
+        )

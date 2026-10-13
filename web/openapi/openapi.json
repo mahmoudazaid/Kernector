@@ -571,7 +571,14 @@
             "type": "string"
           },
           "status": {
-            "enum": ["ingested", "updated", "skipped", "failed", "removed"],
+            "enum": [
+              "ingested",
+              "updated",
+              "metadata_updated",
+              "skipped",
+              "failed",
+              "removed"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -1350,6 +1357,11 @@
             "title": "Ingested Count",
             "type": "integer"
           },
+          "metadata_updated_count": {
+            "default": 0,
+            "title": "Metadata Updated Count",
+            "type": "integer"
+          },
           "outcomes": {
             "items": {
               "$ref": "#/components/schemas/ConnectorSyncOutcomeResponse"
@@ -1696,6 +1708,11 @@
           },
           "ingested_count": {
             "title": "Ingested Count",
+            "type": "integer"
+          },
+          "metadata_updated_count": {
+            "default": 0,
+            "title": "Metadata Updated Count",
             "type": "integer"
           },
           "outcomes": {
@@ -2058,6 +2075,11 @@
           },
           "ingested_count": {
             "title": "Ingested Count",
+            "type": "integer"
+          },
+          "metadata_updated_count": {
+            "default": 0,
+            "title": "Metadata Updated Count",
             "type": "integer"
           },
           "outcomes": {

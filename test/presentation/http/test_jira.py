@@ -172,7 +172,10 @@ def test_sync_projects_counts() -> None:
     client = _client(
         get_jira_sync=lambda: (
             lambda: ConnectorSyncResponse(
-                outcomes=(ConnectorSyncOutcome("a", ConnectorSyncStatus.INGESTED, 2),)
+                outcomes=(
+                    ConnectorSyncOutcome("a", ConnectorSyncStatus.INGESTED, 2),
+                    ConnectorSyncOutcome("b", ConnectorSyncStatus.METADATA_UPDATED, 4),
+                )
             )
         )
     )
@@ -180,7 +183,9 @@ def test_sync_projects_counts() -> None:
     body = client.post(f"{BASE}/sync").json()
 
     assert body["ingested_count"] == 1
+    assert body["metadata_updated_count"] == 1
     assert body["outcomes"][0]["source_id"] == "a"
+    assert body["outcomes"][1]["status"] == "metadata_updated"
 
 
 def test_disconnect_returns_204() -> None:

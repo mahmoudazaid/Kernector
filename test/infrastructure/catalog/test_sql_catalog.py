@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -299,3 +300,27 @@ def test_connector_id_round_trip_and_workspace_isolation(tmp_path: Path) -> None
     assert left.get(shared_ref) is None
     assert right.get(shared_ref) == right_doc
 
+
+
+def test_fingerprints_round_trip_and_can_be_cleared(tmp_path: Path) -> None:
+    catalog = SqlDocumentCatalog(tmp_path / "catalog.sqlite", "ws-a")
+    fingerprinted = dataclasses.replace(
+        _document(revision="42"),
+        content_fingerprint="text-fp",
+        metadata_fingerprint="meta-fp",
+        processing_fingerprint="profile-fp",
+        provider_content_hash="9f1",
+    )
+
+    catalog.upsert(fingerprinted)
+    assert catalog.get(fingerprinted.reference) == fingerprinted
+
+    cleared = dataclasses.replace(
+        fingerprinted,
+        content_fingerprint=None,
+        metadata_fingerprint=None,
+        processing_fingerprint=None,
+        provider_content_hash=None,
+    )
+    catalog.upsert(cleared)
+    assert catalog.get(fingerprinted.reference) == cleared

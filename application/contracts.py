@@ -714,6 +714,7 @@ class ConnectorSyncStatus(StrEnum):
 
     INGESTED = "ingested"
     UPDATED = "updated"
+    METADATA_UPDATED = "metadata_updated"
     SKIPPED = "skipped"
     FAILED = "failed"
     REMOVED = "removed"
@@ -728,8 +729,10 @@ class ConnectorSyncOutcome:
 
     Args:
         source_id (str): Connector identity of the listed document.
-        status (ConnectorSyncStatus): Ingested, updated, skipped, failed, or removed.
-        chunk_count (int): Chunks stored for ingested/updated/skipped rows;
+        status (ConnectorSyncStatus): Ingested, updated, metadata-updated,
+            skipped, failed, or removed.
+        chunk_count (int): Chunks stored for ingested/updated/metadata-updated/
+            skipped rows;
             ``0`` when failed or removed.
         error_type (str | None): Exception class name when ``status`` is failed.
     """
@@ -791,6 +794,15 @@ class ConnectorSyncResponse:
             1
             for outcome in self.outcomes
             if outcome.status is ConnectorSyncStatus.UPDATED
+        )
+
+    @property
+    def metadata_updated_count(self) -> int:
+        """Number of documents whose metadata changed without re-embedding."""
+        return sum(
+            1
+            for outcome in self.outcomes
+            if outcome.status is ConnectorSyncStatus.METADATA_UPDATED
         )
 
     @property

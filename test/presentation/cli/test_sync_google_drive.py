@@ -166,3 +166,19 @@ def test_secret_marker_never_appears_in_output_or_logs(
     assert SECRET not in log_text
     assert SECRET not in caplog.text
     assert "failed source_id=bad error_type=ConnectorAuthError" in captured.err
+
+
+def test_prints_metadata_updated_count(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _patch(
+        monkeypatch,
+        response=_response(
+            ConnectorSyncOutcome("a", ConnectorSyncStatus.METADATA_UPDATED, 2),
+        ),
+    )
+    code = sync_cli.main()
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "metadata_updated=1" in captured.out
+    assert "\nupdated=0" in captured.out

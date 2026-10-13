@@ -109,7 +109,6 @@ def _markdown_for_issue(issue: Mapping[str, object]) -> str:
         f"- Repository: {_repository_name(issue)}",
         f"- URL: {_optional_text(issue.get('url')) or ''}",
         f"- Created: {_optional_text(issue.get('createdAt')) or ''}",
-        f"- Updated: {_required_text(issue, 'updatedAt')}",
         f"- Closed: {_optional_text(issue.get('closedAt')) or ''}",
         f"- Labels: {', '.join(_names_from_connection(issue.get('labels'), 'name'))}",
         f"- Assignees: {', '.join(_names_from_connection(issue.get('assignees'), 'login'))}",

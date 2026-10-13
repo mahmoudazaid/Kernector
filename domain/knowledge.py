@@ -1,5 +1,7 @@
 """Knowledge-domain entities: sources, provenance, and chunks."""
 
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -153,6 +155,74 @@ class SourceMetadata:
         """The originating source identifier, preserved for traceability."""
         return self.reference.source_id
 
+
+def _sha256_of_canonical_json(payload: object) -> str:
+    encoded = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def fingerprint_text(text: str) -> str:
+    """Return the SHA-256 of extracted text with line endings normalized to LF.
+
+    Only line endings are normalized; any other whitespace change is a content
+    change.
+    """
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def fingerprint_metadata(metadata: SourceMetadata) -> str:
+    """Return the SHA-256 of the described source metadata.
+
+    Covers title, provider, content format, and ``extra`` as canonical JSON.
+    ``created_at`` and ``updated_at`` are excluded so restamping a document
+    does not look like a metadata change.
+    """
+    return _sha256_of_canonical_json(
+        {
+            "title": metadata.title,
+            "provider": metadata.provider,
+            "content_format": metadata.content_format,
+            "extra": dict(metadata.extra),
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessingProfile:
+    """Settings that determine how stored chunks were built.
+
+    Documents indexed under a different profile fingerprint are re-ingested.
+    """
+
+    chunker_version: str
+    chunk_size: int
+    chunk_overlap: int
+    embedding_model: str
+
+    def __post_init__(self) -> None:
+        _require_text(self.chunker_version, "chunker_version")
+        _require_text(self.embedding_model, "embedding_model")
+        _require_index(self.chunk_size, "chunk_size")
+        _require_index(self.chunk_overlap, "chunk_overlap")
+        if self.chunk_size == 0:
+            raise DomainValidationError("chunk_size must be positive")
+
+    @property
+    def fingerprint(self) -> str:
+        """SHA-256 of the canonical JSON of every profile field."""
+        return _sha256_of_canonical_json(
+            {
+                "chunker_version": self.chunker_version,
+                "chunk_size": self.chunk_size,
+                "chunk_overlap": self.chunk_overlap,
+                "embedding_model": self.embedding_model,
+            }
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class SourceDocument:
     """A knowledge document available for retrieval."""
@@ -286,12 +356,16 @@ class ConnectorDocument:
         file_name (str): Remote file name, including any suffix.
         revision (str): Provider revision marker used to skip unchanged files.
         extra (Mapping[str, str]): Opaque connector metadata (MIME type, size, flags).
+        content_hash (str | None): Provider hash of the raw bytes (Drive
+            ``md5Checksum``, GitHub blob SHA) when the provider declares one.
+            A change detector only, never an identity.
     """
 
     reference: SourceReference
     file_name: str
     revision: str
     extra: Mapping[str, str] = field(default_factory=dict)
+    content_hash: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
@@ -300,6 +374,8 @@ class ConnectorDocument:
             )
         _require_text(self.file_name, "file_name")
         _require_text(self.revision, "revision")
+        if self.content_hash is not None:
+            _require_text(self.content_hash, "content_hash")
 
     @property
     def source_id(self) -> str:
@@ -324,7 +400,11 @@ class UploadPayload:
 
 @dataclass(frozen=True, slots=True)
 class CatalogDocument:
-    """Durable metadata for one catalogued knowledge document."""
+    """Durable metadata for one catalogued knowledge document.
+
+    The fingerprint fields are NULL when unknown (legacy rows, or rows that
+    never reached READY). A NULL fingerprint never compares equal.
+    """
 
     reference: SourceReference
     file_name: str
@@ -337,6 +417,10 @@ class CatalogDocument:
     error: str | None
     revision: str | None = None
     connector_id: str | None = None
+    content_fingerprint: str | None = None
+    metadata_fingerprint: str | None = None
+    processing_fingerprint: str | None = None
+    provider_content_hash: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.reference, SourceReference):
@@ -360,3 +444,12 @@ class CatalogDocument:
             )
         if self.connector_id is not None:
             _require_text(self.connector_id, "connector_id")
+        for name in (
+            "content_fingerprint",
+            "metadata_fingerprint",
+            "processing_fingerprint",
+            "provider_content_hash",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                _require_text(value, name)

@@ -2,6 +2,7 @@
 
 import pytest
 
+from domain.errors import VectorStoreError
 from domain.knowledge import (
     ChunkPage,
     DocumentChunk,
@@ -149,3 +150,57 @@ def test_dual_write_list_source_chunks_forwards_limit_and_offset(
         "limit": 2,
         "offset": 1,
     }
+
+
+class _FailingLexicalIndex(InMemoryLexicalIndex):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_updates = True
+
+    def update_source_metadata(
+        self, reference: SourceReference, metadata: SourceMetadata
+    ) -> int:
+        if self.fail_updates:
+            raise RuntimeError("bm25 rebuild failed")
+        return super().update_source_metadata(reference, metadata)
+
+
+def _metadata_of(records: dict[tuple[str, str, int], EmbeddedChunk]) -> set[str | None]:
+    return {item.chunk.metadata.title for item in records.values()}
+
+
+def test_dual_write_update_source_metadata_updates_both_stores() -> None:
+    vector = InMemoryVectorStore()
+    lexical = InMemoryLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    store.upsert([_embed(_chunk("doc", "alpha")), _embed(_chunk("doc", "beta", index=1))])
+    reference = SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
+
+    count = store.update_source_metadata(
+        reference, SourceMetadata(reference, title="Renamed")
+    )
+
+    assert count == 2
+    assert _metadata_of(vector.records) == {"Renamed"}
+    assert _metadata_of(lexical.records) == {"Renamed"}
+
+
+def test_dual_write_lexical_failure_fails_closed_and_retry_converges() -> None:
+    vector = InMemoryVectorStore()
+    lexical = _FailingLexicalIndex()
+    store = DualWriteVectorStore(vector, lexical)
+    store.upsert([_embed(_chunk("doc", "alpha"))])
+    reference = SourceReference("doc", SourceType.KNOWLEDGE_DOCUMENT)
+    renamed = SourceMetadata(reference, title="Renamed")
+
+    with pytest.raises(VectorStoreError, match="lexical") as raised:
+        store.update_source_metadata(reference, renamed)
+
+    assert isinstance(raised.value.__cause__, RuntimeError)
+    assert _metadata_of(vector.records) == {"Renamed"}
+    assert _metadata_of(lexical.records) == {None}
+
+    lexical.fail_updates = False
+    assert store.update_source_metadata(reference, renamed) == 1
+    assert _metadata_of(vector.records) == {"Renamed"}
+    assert _metadata_of(lexical.records) == {"Renamed"}

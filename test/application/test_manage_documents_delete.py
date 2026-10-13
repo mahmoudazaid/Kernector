@@ -24,6 +24,7 @@ from domain.knowledge import (
     UploadPayload,
 )
 from test.document_doubles import (
+    upload_profile,
     FixedClock,
     FixedIdFactory,
     InMemoryDocumentCatalog,
@@ -93,6 +94,7 @@ def _seed(
         new_source_id=FixedIdFactory(source_id),
         now=FixedClock(datetime(2026, 8, 28, 12, 0, tzinfo=UTC)),
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
     return use_case.create(
         UploadPayload(file_name="guide.md", content=b"x")
@@ -113,6 +115,7 @@ def _use_case(
         ),
         vector_store_factory=lambda: store,
         max_upload_bytes=_MAX_UPLOAD_BYTES,
+        processing_profile_factory=upload_profile,
     )
 
 

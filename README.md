@@ -285,11 +285,9 @@ outcome appears above the document list. A failure that left chunks or a catalog
 row behind says so and names the action to retry; one that changed nothing says
 only what went wrong.
 
-If ingest fails because the store expects a different embedding size, remove the local Chroma directory and try again:
-
-```bash
-rm -rf data/chroma
-```
+If ingest fails because the store expects a different embedding size, follow
+the [embedding-model rebuild](#changing-the-embedding-model) procedure. Removing
+`data/chroma` alone is not enough: catalog rows would still look indexed.
 
 ## Sync documents from Google Drive
 
@@ -361,7 +359,7 @@ Exit codes:
 | `1` | At least one document failed, or the run aborted operationally |
 | `2` | Connector or embedding configuration is invalid |
 
-Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped; a changed version replaces stored chunks. Re-ingests report `updated=` in the CLI.
+Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped. A changed version is re-embedded only when the text or content format changed; renames and moves report `metadata_updated=`, while re-ingests (including a rename that changes the format, such as `.txt` to `.md`) report `updated=` in the CLI (see [Incremental sync and re-embedding](#incremental-sync-and-re-embedding)).
 
 ## Sync documents from GitHub
 
@@ -446,7 +444,8 @@ There is no CLI or API-token path. Tokens stay on the server.
 
 Each issue becomes one Markdown document with its summary, description,
 status, type, priority, labels, assignee, reporter, components, fix versions,
-parent, created, and updated. Comments are included only when
+parent, and created time. The `updated` timestamp is the revision, not part of
+the text, so a touch without content changes is not re-embedded. Comments are included only when
 `JIRA_INCLUDE_COMMENTS=true`. Source ids are `{cloudId}/{PROJECT}:{KEY}`, the
 revision is the issue's `updated` timestamp, and citations link to
 `https://<site>/browse/<KEY>`.
@@ -560,6 +559,59 @@ acceptance-criteria text field, converted to Markdown. Set
 non-text values are ignored. An issue with neither description nor acceptance
 criteria has insufficient evidence. Changes to the issue's `updated` time
 alone do not invalidate a confirmed draft; changes to the evidence text do.
+
+## Incremental sync and re-embedding
+
+Connector sync fingerprints each READY document so unchanged text is not
+re-embedded ([ADR 0012](docs/adr/0012-document-identity-fingerprints-sync-state.md)).
+Each catalog row stores the extracted-text fingerprint, the source-metadata
+fingerprint, the processing profile (chunker version, `CHUNK_SIZE`,
+`CHUNK_OVERLAP`, `OPENROUTER_EMBEDDING_MODEL`), and the provider content hash
+when the provider has one (Drive `md5Checksum`, GitHub blob SHA).
+
+For a READY row, sync decides in this order:
+
+| Situation | Fetch | Embed | Outcome |
+| --- | --- | --- | --- |
+| Stored profile differs from the current one | yes | yes | `updated` |
+| Same revision | no | no | `skipped` |
+| Both provider hashes present and equal, connector can rebuild metadata, content format unchanged | no | no | `metadata_updated` |
+| Fetched text and content format unchanged, metadata unchanged | yes | no | `metadata_updated` |
+| Fetched text and content format unchanged, metadata changed | yes | no (chunk metadata rewritten in place) | `metadata_updated` |
+| Fetched text changed, content format changed (for example `.txt` renamed to `.md`), or no stored text fingerprint | yes | yes | `updated` |
+
+A metadata rewrite that finds no chunks, or a chunk count different from the
+catalog row, falls back to a full re-ingest. A vector-store or BM25 failure
+fails that document without advancing the catalog, so the next sync retries it.
+
+**Legacy rows.** Rows written before fingerprints existed have no stored
+profile. They count as unknown, not as a mismatch: an unchanged revision is
+skipped and adopts the current profile (logged as
+`processing_profile_adopted`); a changed revision is fetched and re-ingested.
+
+**Changing `CHUNK_SIZE` or `CHUNK_OVERLAP`.** The next sync re-ingests every
+READY row whose stored profile is known and different. Uploaded documents are
+re-chunked when they are next replaced.
+
+### Changing the embedding model
+
+Replacing documents one by one is not a supported way to switch embedding
+models. A different vector size breaks both upsert and query against the
+existing collection, and the same size would mix two vector spaces. Rebuild
+instead:
+
+1. Stop the API, MCP server, and any sync CLI.
+2. Point `CHROMA_COLLECTION` at a new collection name, or remove the directory
+   at `CHROMA_PERSIST_PATH` (default `data/chroma`).
+3. Clear the workspace's catalog rows. Until dedicated tooling lands
+   ([#201](https://github.com/mahmoudazaid/Kernector/issues/201)), back up the
+   SQLite file and run
+   `sqlite3 data/catalog/catalog.sqlite "DELETE FROM catalog_documents WHERE workspace_id = '<DOCUMENT_CATALOG_WORKSPACE_ID>';"`.
+   Without this step, legacy rows are skipped and never reach the new
+   collection.
+4. Set `OPENROUTER_EMBEDDING_MODEL`, start the app, re-run every connector
+   sync, and re-upload uploaded documents.
+5. Delete the old collection once the new one is verified.
 
 ## Projects and source associations
 

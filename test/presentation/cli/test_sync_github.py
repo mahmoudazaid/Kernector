@@ -48,14 +48,16 @@ def test_prints_discovered_and_updated_counts(
             ConnectorSyncOutcome("b", ConnectorSyncStatus.UPDATED, 1),
             ConnectorSyncOutcome("c", ConnectorSyncStatus.SKIPPED, 3),
             ConnectorSyncOutcome("d", ConnectorSyncStatus.REMOVED, 0),
+            ConnectorSyncOutcome("e", ConnectorSyncStatus.METADATA_UPDATED, 4),
         ),
     )
     code = sync_cli.main()
     captured = capsys.readouterr()
     assert code == 0
-    assert "discovered=3" in captured.out
+    assert "discovered=4" in captured.out
     assert "ingested=1" in captured.out
-    assert "updated=1" in captured.out
+    assert "\nupdated=1" in captured.out
+    assert "metadata_updated=1" in captured.out
     assert "skipped=1" in captured.out
     assert "removed=1" in captured.out
     assert "failed=0" in captured.out

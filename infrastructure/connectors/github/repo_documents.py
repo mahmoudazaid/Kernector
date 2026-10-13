@@ -191,6 +191,7 @@ class GitHubRepoDocuments:
             ),
             file_name=Path(path).name,
             revision=blob_sha,
+            content_hash=blob_sha,
             extra={
                 "github_kind": "repo",
                 "owner": self._config.owner,

@@ -265,7 +265,6 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
             "- Fix versions: 2026.10",
             "- URL: https://acme.atlassian.net/browse/KAN-9",
             "- Created: 2026-08-01T09:00:00.000+0000",
-            "- Updated: 2026-09-01T10:00:00.000+0000",
             "",
             "## Description",
             "",
@@ -607,3 +606,41 @@ def test_server_page_cap_below_page_size_paginates_through() -> None:
 
     assert len(documents) == 1200
     assert client.calls == 60
+
+
+def _fetched_content(issue: dict[str, object]) -> str:
+    connector = _connector(
+        FakeJiraClient({"KAN": [_page(issue)]}), include_comments=True
+    )
+    [document] = connector.list_documents()
+    return connector.fetch_document(document).content
+
+
+def test_issue_timestamp_change_alone_keeps_the_same_text() -> None:
+    touched = _rich_issue()
+    fields = touched["fields"]
+    assert isinstance(fields, dict)
+    fields["updated"] = "2026-09-05T08:00:00.000+0000"
+
+    assert _fetched_content(touched) == _fetched_content(_rich_issue())
+
+
+def test_new_issue_comment_changes_the_text() -> None:
+    commented = _rich_issue()
+    fields = commented["fields"]
+    assert isinstance(fields, dict)
+    fields["comment"]["comments"].append(  # type: ignore[index]
+        {
+            "author": {"displayName": "Mia"},
+            "created": "2026-09-02T09:00:00.000+0000",
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "Fixed."}]}
+                ],
+            },
+        }
+    )
+
+    assert _fetched_content(commented) != _fetched_content(_rich_issue())

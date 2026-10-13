@@ -108,6 +108,15 @@ def _extract_pdf(path: Path) -> tuple[str, int]:
     return _PAGE_SEPARATOR.join(page for page in pages if page), len(pages)
 
 
+def content_format_for_name(name: str) -> str | None:
+    """Return the canonical ``content_format`` the extractor gives ``name``.
+
+    Returns:
+        str | None: The format, or None when the suffix is unsupported.
+    """
+    return _FORMAT_BY_SUFFIX.get(Path(name).suffix.lower())
+
+
 def _content_format_for(name: str, *, described_as: object) -> str:
     """Map a file name's suffix to its canonical `content_format`.
 

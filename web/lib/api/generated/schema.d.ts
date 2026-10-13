@@ -1218,7 +1218,13 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: "ingested" | "updated" | "skipped" | "failed" | "removed";
+      status:
+        | "ingested"
+        | "updated"
+        | "metadata_updated"
+        | "skipped"
+        | "failed"
+        | "removed";
     };
     /**
      * CoverageGapResponse
@@ -1568,6 +1574,11 @@ export interface components {
       failed_count: number;
       /** Ingested Count */
       ingested_count: number;
+      /**
+       * Metadata Updated Count
+       * @default 0
+       */
+      metadata_updated_count: number;
       /** Outcomes */
       outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
       /**
@@ -1733,6 +1744,11 @@ export interface components {
       failed_count: number;
       /** Ingested Count */
       ingested_count: number;
+      /**
+       * Metadata Updated Count
+       * @default 0
+       */
+      metadata_updated_count: number;
       /** Outcomes */
       outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
       /**
@@ -1925,6 +1941,11 @@ export interface components {
       failed_count: number;
       /** Ingested Count */
       ingested_count: number;
+      /**
+       * Metadata Updated Count
+       * @default 0
+       */
+      metadata_updated_count: number;
       /** Outcomes */
       outcomes: components["schemas"]["ConnectorSyncOutcomeResponse"][];
       /**
