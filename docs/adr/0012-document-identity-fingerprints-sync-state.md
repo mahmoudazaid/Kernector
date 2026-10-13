@@ -46,7 +46,7 @@ takes the next free number.
 | `revision` | Provider marker (Drive `version`, GitHub blob SHA, Jira `updated`) | Whether anything may have changed; equal means skip without fetching |
 | `provider_content_hash` | Provider hash of raw bytes (Drive `md5Checksum`, GitHub blob SHA), declared as `ConnectorDocument.content_hash` | Whether the bytes are unchanged without fetching |
 | `content_fingerprint` | `fingerprint_text`: SHA-256 of extracted text, line endings normalized to LF | Whether the indexed text is unchanged after fetching |
-| `metadata_fingerprint` | `fingerprint_metadata`: SHA-256 of canonical JSON of title, provider, content format, and `extra`; timestamps excluded | Whether stored chunk metadata needs rewriting |
+| `metadata_fingerprint` | `fingerprint_metadata`: SHA-256 of canonical JSON of title, provider, content format, and `extra`; timestamps excluded | Whether stored chunk metadata needs rewriting. A content-format change is the exception: chunk boundaries depend on it, so it forces a re-ingest (rule 3) |
 | `processing_fingerprint` | `ProcessingProfile(chunker_version, chunk_size, chunk_overlap, embedding_model).fingerprint` | Whether stored chunks were built under the current settings |
 
 Hashes and fingerprints are change detectors only; they never identify a
@@ -88,11 +88,15 @@ document.
      connector can describe metadata without fetching
      (`MetadataDescribingConnector`): rebuild metadata from the listing plus the
      previously stored chunk metadata, rewrite the vector metadata, then the
-     catalog row (`metadata_updated`).
-   - Otherwise fetch and fingerprint the text. Equal text fingerprint:
-     `metadata_updated`, rewriting vector metadata only when the metadata
-     fingerprint changed (or is NULL). Different or NULL text fingerprint:
-     re-ingest (`updated`).
+     catalog row (`metadata_updated`). The connector derives the content
+     format from the listed document and must refuse to describe (raise
+     `ConnectorError`) when it may differ from the stored one, for example a
+     `.txt` to `.md` rename; sync also falls back to fetching when the
+     described format differs from the row's.
+   - Otherwise fetch and fingerprint the text. Equal text fingerprint and
+     equal content format: `metadata_updated`, rewriting vector metadata only
+     when the metadata fingerprint changed (or is NULL). Different or NULL
+     text fingerprint, or a changed content format: re-ingest (`updated`).
 
 Rows in any other status, and new documents, keep the existing fetch-and-ingest
 path.
@@ -151,8 +155,9 @@ per document through rule 1.
 
 ## Consequences
 
-- Drive renames and moves of binary files, and metadata-only issue changes,
-  update catalog and chunk metadata with zero embedding calls.
+- Drive renames and moves of binary files that keep the content format, and
+  metadata-only issue changes, update catalog and chunk metadata with zero
+  embedding calls. A rename that changes the content format re-ingests.
 - Chunker setting changes re-index exactly the READY documents built under a
   different known profile. Legacy rows adopt the current profile without
   re-embedding, as [#380] intends; operators force a re-embed with a full

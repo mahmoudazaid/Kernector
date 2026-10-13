@@ -359,7 +359,7 @@ Exit codes:
 | `1` | At least one document failed, or the run aborted operationally |
 | `2` | Connector or embedding configuration is invalid |
 
-Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped. A changed version is re-embedded only when the text changed; renames and moves report `metadata_updated=` and re-ingests report `updated=` in the CLI (see [Incremental sync and re-embedding](#incremental-sync-and-re-embedding)).
+Supported files are the same as upload: `.txt`, `.md`, `.markdown`, and text-based `.pdf`. Google Docs are exported as Markdown. Sync is **direct-child-only** (no recursive folder walk) and **add/update-only** (files missing from Drive are not deleted from the catalog). Unchanged Drive `version` values are skipped. A changed version is re-embedded only when the text or content format changed; renames and moves report `metadata_updated=`, while re-ingests (including a rename that changes the format, such as `.txt` to `.md`) report `updated=` in the CLI (see [Incremental sync and re-embedding](#incremental-sync-and-re-embedding)).
 
 ## Sync documents from GitHub
 
@@ -575,10 +575,10 @@ For a READY row, sync decides in this order:
 | --- | --- | --- | --- |
 | Stored profile differs from the current one | yes | yes | `updated` |
 | Same revision | no | no | `skipped` |
-| Both provider hashes present and equal, connector can rebuild metadata | no | no | `metadata_updated` |
-| Fetched text unchanged, metadata unchanged | yes | no | `metadata_updated` |
-| Fetched text unchanged, metadata changed | yes | no (chunk metadata rewritten in place) | `metadata_updated` |
-| Fetched text changed, or no stored text fingerprint | yes | yes | `updated` |
+| Both provider hashes present and equal, connector can rebuild metadata, content format unchanged | no | no | `metadata_updated` |
+| Fetched text and content format unchanged, metadata unchanged | yes | no | `metadata_updated` |
+| Fetched text and content format unchanged, metadata changed | yes | no (chunk metadata rewritten in place) | `metadata_updated` |
+| Fetched text changed, content format changed (for example `.txt` renamed to `.md`), or no stored text fingerprint | yes | yes | `updated` |
 
 A metadata rewrite that finds no chunks, or a chunk count different from the
 catalog row, falls back to a full re-ingest. A vector-store or BM25 failure

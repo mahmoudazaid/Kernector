@@ -401,14 +401,18 @@ class MetadataDescribingConnector(Protocol):
     ) -> SourceMetadata:
         """Return the metadata ``fetch_document`` would produce for ``document``.
 
-        Fields derived from the listing are rebuilt from ``document``. Fields
-        only extraction can produce (content format, byte size, page count) are
-        taken from ``previous``, the metadata stored with the current chunks.
-        Every other field of ``previous`` is dropped.
+        Fields derived from the listing are rebuilt from ``document``.
+        ``content_format`` must be what ``fetch_document`` would derive for the
+        listed document, not a copy of ``previous``: chunk boundaries depend on
+        it. Only extraction-only fields (byte size, page count) are taken from
+        ``previous``, the metadata stored with the current chunks. Every other
+        field of ``previous`` is dropped.
 
         Raises:
-            ConnectorError: ``previous`` belongs to another reference or lacks
-                a required extraction-only field.
+            ConnectorError: ``previous`` belongs to another reference, lacks a
+                required field, or its ``content_format`` cannot be proven
+                equal to the listed document's (for example, a rename to a
+                suffix with another format). Sync then falls back to fetching.
         """
         ...
 

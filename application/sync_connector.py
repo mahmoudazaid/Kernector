@@ -246,7 +246,11 @@ class SyncConnectorDocuments:
     def _try_provider_hash(
         self, document: ConnectorDocument, previous: CatalogDocument
     ) -> ConnectorSyncOutcome | _Fallback:
-        """Describe metadata without fetching when both provider hashes match."""
+        """Describe metadata without fetching when both provider hashes match.
+
+        A described ``content_format`` that differs from the row's falls back
+        to fetching, because chunk boundaries depend on it.
+        """
         if (
             document.content_hash is None
             or previous.provider_content_hash != document.content_hash
@@ -271,6 +275,8 @@ class SyncConnectorDocuments:
         except (ConnectorAuthError, ConnectorUnavailableError):
             raise
         except ConnectorError:
+            return _Fallback.FETCH_AND_COMPARE
+        if metadata.content_format != previous.content_format:
             return _Fallback.FETCH_AND_COMPARE
         return self._apply_metadata(
             document, previous, metadata, previous.content_fingerprint

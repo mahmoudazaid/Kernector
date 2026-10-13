@@ -1639,6 +1639,35 @@ def test_describe_failure_falls_back_to_fetch() -> None:
     }
 
 
+def test_described_content_format_change_falls_back_to_fetch_and_reingests() -> None:
+    previous = _listed(file_name="notes.txt", revision="1", content_hash="9f1")
+    listed = _listed(file_name="notes.md", revision="2", content_hash="9f1")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        dataclasses.replace(
+            _fingerprinted_row(previous, provider_content_hash="9f1"),
+            content_format="txt",
+        )
+    )
+    store = CountingVectorStore()
+    _seed_chunks(store, _source(previous), count=3)
+    connector = DescribingConnector((listed,), {listed.source_id: _source(listed)})
+    ingest = RecordingIngest(chunk_count=4)
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, vector_store_factory=lambda: store
+    ).execute()
+
+    assert len(connector.described) == 1
+    assert connector.fetched == [listed]
+    assert store.updates == []
+    assert len(ingest.calls) == 1
+    assert response.outcomes[0].status is ConnectorSyncStatus.UPDATED
+    stored = catalog.get(listed.reference)
+    assert stored is not None
+    assert stored.content_format == "markdown"
+
+
 def test_missing_previous_chunks_on_hash_path_reingests() -> None:
     previous = _listed(file_name="old.md", revision="1", content_hash="9f1")
     listed = _listed(file_name="new.md", revision="2", content_hash="9f1")
