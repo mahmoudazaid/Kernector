@@ -21,6 +21,8 @@ from urllib.parse import quote
 
 from domain.errors import ConnectorError, ConnectorUnavailableError
 from domain.test_management.xray import (
+    IssueLookupResult,
+    JiraIssueSummary,
     XrayImportResult,
     XrayRequiredFieldsError,
     XrayTestCreateSchema,
@@ -74,6 +76,7 @@ class ServerFieldMapping:
     cucumber_option: str | None = None
     cucumber_type_field: str | None = None
     scenario_option: str | None = None
+    scenario_outline_option: str | None = None
     scenario_field: str | None = None
     has_issue_links: bool = False
     required_fields: tuple[RequiredField, ...] = ()
@@ -96,9 +99,18 @@ class ServerFieldMapping:
             self.scenario_field,
         )
 
+    @property
+    def outline_ready(self) -> bool:
+        return self.cucumber_ready and self.scenario_outline_option is not None
+
 
 class XrayServerImporter:
-    """:class:`domain.ports.XrayTestImporter` for Xray Server/Data Center."""
+    """:class:`domain.ports.XrayTestImporter` and :class:`domain.ports.XrayIssueLookup`
+    for Xray Server/Data Center.
+
+    A requested story link or Scenario Outline type that cannot be sent is a
+    rejection before any request; neither is ever silently dropped.
+    """
 
     def __init__(
         self,
@@ -147,16 +159,21 @@ class XrayServerImporter:
             supports_manual=mapping.manual_ready,
             supports_cucumber=mapping.cucumber_ready,
             supports_issue_link=mapping.has_issue_links and bool(self._link_type),
+            supports_cucumber_outline=mapping.outline_ready,
         )
 
     def import_tests(self, specs: Sequence[XrayTestSpec]) -> XrayImportResult:
         mapping, from_cache = self._cache.get_or_discover(self._schema_key, self._discover)
         sources: dict[tuple[str, tuple[str, ...]], Mapping[str, object]] = {}
-        for source_key in dict.fromkeys(spec.source_issue_key for spec in specs):
-            self._required_values(mapping, source_key, sources)
+        for source_key, skip in dict.fromkeys(
+            (spec.source_issue_key, _overridden(spec)) for spec in specs
+        ):
+            self._required_values(mapping, source_key, sources, skip)
 
         def create(spec: XrayTestSpec, current: ServerFieldMapping) -> str:
-            extra = self._required_values(current, spec.source_issue_key, sources)
+            extra = self._required_values(
+                current, spec.source_issue_key, sources, _overridden(spec)
+            )
             return self._create(spec, current, extra)
 
         return create_each(
@@ -172,13 +189,15 @@ class XrayServerImporter:
         mapping: ServerFieldMapping,
         source_key: str | None,
         sources: dict[tuple[str, tuple[str, ...]], Mapping[str, object]],
+        skip: frozenset[str] = frozenset(),
     ) -> dict[str, object]:
-        if not mapping.required_fields:
+        required = tuple(f for f in mapping.required_fields if f.field_id not in skip)
+        if not required:
             return {}
-        source = self._source_fields(mapping, source_key, sources) if source_key else {}
+        source = self._source_fields(required, source_key, sources) if source_key else {}
         values: dict[str, object] = {}
         missing: list[str] = []
-        for field in mapping.required_fields:
+        for field in required:
             value = _resolve(field, source.get(field.field_id))
             if value is None:
                 missing.append(field.name)
@@ -190,11 +209,11 @@ class XrayServerImporter:
 
     def _source_fields(
         self,
-        mapping: ServerFieldMapping,
+        required: tuple[RequiredField, ...],
         source_key: str,
         sources: dict[tuple[str, tuple[str, ...]], Mapping[str, object]],
     ) -> Mapping[str, object]:
-        ids = tuple(field.field_id for field in mapping.required_fields)
+        ids = tuple(field.field_id for field in required)
         memo_key = (source_key, ids)
         if memo_key not in sources:
             payload = self._request(
@@ -207,6 +226,46 @@ class XrayServerImporter:
             sources[memo_key] = fields if isinstance(fields, Mapping) else {}
         return sources[memo_key]
 
+    def find_issues(self, keys: Sequence[str]) -> IssueLookupResult:
+        """Read each key; only a 404 counts as missing, every other failure raises."""
+        mapping, _ = self._cache.get_or_discover(self._schema_key, self._discover)
+        found: dict[str, JiraIssueSummary] = {}
+        missing: set[str] = set()
+        for key in dict.fromkeys(keys):
+            payload = self._request(
+                "GET",
+                f"/issue/{quote(key, safe='')}",
+                params={"fields": "issuetype,summary"},
+                missing_ok=True,
+            )
+            if payload is None:
+                missing.add(key)
+            else:
+                found[key] = _issue_summary(payload, mapping.issue_type_id)
+        return IssueLookupResult(found=found, missing=frozenset(missing))
+
+    def linked_tests(self, story_key: str) -> tuple[JiraIssueSummary, ...]:
+        """Test issues linked to ``story_key`` in either direction; malformed links raise."""
+        mapping, _ = self._cache.get_or_discover(self._schema_key, self._discover)
+        payload = self._request(
+            "GET", f"/issue/{quote(story_key, safe='')}", params={"fields": "issuelinks"}
+        )
+        fields = payload.get("fields") if isinstance(payload, Mapping) else None
+        links = fields.get("issuelinks") if isinstance(fields, Mapping) else None
+        if not isinstance(links, list):
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        tests: list[JiraIssueSummary] = []
+        for link in links:
+            issue = None
+            if isinstance(link, Mapping):
+                issue = link.get("outwardIssue") or link.get("inwardIssue")
+            if not isinstance(issue, Mapping):
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            summary = _issue_summary(issue, mapping.issue_type_id)
+            if summary.is_test:
+                tests.append(summary)
+        return tuple(tests)
+
     def _rediscover(self) -> ServerFieldMapping:
         self._cache.invalidate(self._schema_key)
         mapping, _ = self._cache.get_or_discover(self._schema_key, self._discover)
@@ -216,6 +275,10 @@ class XrayServerImporter:
         self, spec: XrayTestSpec, mapping: ServerFieldMapping, extra: Mapping[str, object]
     ) -> str:
         ready = mapping.manual_ready if spec.kind == "manual" else mapping.cucumber_ready
+        if spec.kind == "cucumber" and spec.outline:
+            ready = mapping.outline_ready
+        if spec.link_issue_key and not (self._link_type and mapping.has_issue_links):
+            ready = False
         if not ready:
             raise XrayRejectedError()
         payload = self._request("POST", "/issue", json=self._issue_payload(spec, mapping, extra))
@@ -235,6 +298,8 @@ class XrayServerImporter:
         }
         if spec.preconditions:
             fields["description"] = spec.preconditions
+        if spec.component:
+            fields["components"] = [{"name": spec.component}]
         if spec.kind == "manual":
             fields[str(mapping.test_type_field)] = {"id": mapping.manual_option}
             fields[str(mapping.steps_field)] = {
@@ -252,10 +317,11 @@ class XrayServerImporter:
             }
         else:
             fields[str(mapping.test_type_field)] = {"id": mapping.cucumber_option}
-            fields[str(mapping.cucumber_type_field)] = {"id": mapping.scenario_option}
+            option = mapping.scenario_outline_option if spec.outline else mapping.scenario_option
+            fields[str(mapping.cucumber_type_field)] = {"id": option}
             fields[str(mapping.scenario_field)] = spec.gherkin
         payload: dict[str, object] = {"fields": fields}
-        if spec.link_issue_key and self._link_type and mapping.has_issue_links:
+        if spec.link_issue_key:
             payload["update"] = {
                 "issuelinks": [
                     {
@@ -329,6 +395,31 @@ class XrayServerImporter:
         raise mapped from cause
 
 
+def _overridden(spec: XrayTestSpec) -> frozenset[str]:
+    """Required fields the spec sets itself, so they skip default/inheritance resolution."""
+    return frozenset({"components"}) if spec.component else frozenset()
+
+
+def _issue_summary(payload: object, test_type_id: str) -> JiraIssueSummary:
+    fields = payload.get("fields") if isinstance(payload, Mapping) else None
+    issue_type = fields.get("issuetype") if isinstance(fields, Mapping) else None
+    key = payload.get("key") if isinstance(payload, Mapping) else None
+    summary = fields.get("summary") if isinstance(fields, Mapping) else None
+    type_id = issue_type.get("id") if isinstance(issue_type, Mapping) else None
+    type_name = issue_type.get("name") if isinstance(issue_type, Mapping) else None
+    if not all(isinstance(v, str) and v for v in (key, type_id, type_name)) or not isinstance(
+        summary, str
+    ):
+        raise ConnectorError(MSG_REQUEST_FAILED)
+    return JiraIssueSummary(
+        key=str(key),
+        summary=summary,
+        issue_type_id=str(type_id),
+        issue_type_name=str(type_name),
+        is_test=type_id == test_type_id,
+    )
+
+
 def _mapping(issue_type_id: str, fields: list[Mapping[str, object]]) -> ServerFieldMapping:
     by_type: dict[str, Mapping[str, object]] = {}
     required: list[RequiredField] = []
@@ -365,6 +456,7 @@ def _mapping(issue_type_id: str, fields: list[Mapping[str, object]]) -> ServerFi
         cucumber_option=_option_id(test_type, "Cucumber"),
         cucumber_type_field=_field_id(cucumber_type),
         scenario_option=_option_id(cucumber_type, "Scenario"),
+        scenario_outline_option=_option_id(cucumber_type, "Scenario Outline"),
         scenario_field=_field_id(by_type.get(_SCENARIO_FIELD)),
         has_issue_links=has_issue_links,
         required_fields=tuple(required),

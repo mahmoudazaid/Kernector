@@ -86,10 +86,12 @@ def _pack_mcp_kwargs(pack_id: str, settings: Settings) -> dict[str, object]:
         return {}
     from composition.mcp.test_design import build_mcp_test_design_binding
     from composition.xray_export.mcp import build_mcp_xray_binding
+    from composition.xray_export.test_file_create import build_xray_file_create_binding
     from composition.xray_export.test_file_preview import build_mcp_test_file_binding
 
     return {
         "test_design_binding": build_mcp_test_design_binding(settings),
         "xray_binding": build_mcp_xray_binding(settings),
         "test_file_binding": build_mcp_test_file_binding(settings),
+        "xray_file_binding": build_xray_file_create_binding(settings),
     }

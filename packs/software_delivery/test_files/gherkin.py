@@ -75,6 +75,7 @@ class _OpenDoc:
     line: int
     delimiter: str
     media_type: str
+    indent: int
     step: _Step
     lines: list[str] = field(default_factory=list)
 
@@ -139,7 +140,7 @@ def _line(state: _State, number: int, raw: str) -> None:
     if stripped.startswith("|"):
         _table_row(state, number, stripped)
     elif stripped.startswith(_DOC_DELIMITERS):
-        _open_doc(state, number, stripped)
+        _open_doc(state, number, stripped, len(raw) - len(raw.lstrip()))
     elif (step := _STEP.match(stripped)) is not None:
         _step(state, number, step.group(1), stripped)
     else:
@@ -157,6 +158,7 @@ def _doc_line(state: _State, raw: str) -> None:
         delimiter=doc.delimiter,
         media_type=doc.media_type,
         lines=tuple(doc.lines),
+        indent=doc.indent,
     )
     state.doc = None
     state.attach = None
@@ -289,12 +291,12 @@ def _row_cells(stripped: str) -> tuple[str, ...] | None:
     return tuple(cells)
 
 
-def _open_doc(state: _State, number: int, stripped: str) -> None:
+def _open_doc(state: _State, number: int, stripped: str, indent: int) -> None:
     step = state.attach
     if step is None or step.table or step.doc is not None:
         raise state.fail(number, Reason.ORPHAN_DOC_STRING)
     delimiter = '"""' if stripped.startswith('"""') else "```"
-    state.doc = _OpenDoc(number, delimiter, stripped[len(delimiter) :].strip(), step)
+    state.doc = _OpenDoc(number, delimiter, stripped[len(delimiter) :].strip(), indent, step)
 
 
 def _step(state: _State, number: int, keyword: str, stripped: str) -> None:

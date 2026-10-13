@@ -2364,6 +2364,13 @@
             ],
             "title": "File Name"
           },
+          "item_titles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Item Titles",
+            "type": "array"
+          },
           "selected_title_count": {
             "anyOf": [
               {

@@ -189,6 +189,16 @@ Examples, tag roles). It reads no files and takes no Jira/Xray client. Tag
 names come from `XRAY_TEST_TAG`, `XRAY_STORY_TAG` and `XRAY_MANUAL_TAGS`,
 loaded even when `XRAY_DEPLOYMENT` is unset.
 
+Creating tests from those files (#397) adds `XrayIssueLookup`
+(`find_issues`, `linked_tests`) beside `XrayTestImporter`; both deployment
+adapters implement both. Lookups fail closed: only Server/DC 404 reports a key
+missing, and Cloud's bounded, batched `getTests` / `getCoverableIssues`
+searches leave unreturned keys unresolved. The tool plans first (all reads,
+matching in `test_files/matching.py`, shared with #398, and spec building)
+and then writes one spec per `import_tests` call, stopping on any outcome that
+may have written a test. Story issue types (`XRAY_STORY_ISSUE_TYPES`) and the
+optional component (`XRAY_DEFAULT_COMPONENT`) come from settings.
+
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
@@ -422,7 +432,7 @@ or global clear and no normal-UI "reset memory" control. Long-term memory is
 deferred to #299. Absent ``conversation_id``, the agent stays stateless.
 
 **HITL tool approval (#214):** allowlisted tools (Drive export and Xray test
-creation, #199) pause
+creation, #199 and #397) pause
 via LangGraph ``interrupt()`` immediately before ``Tool.run``. Pending Tool
 arguments stay in process-local checkpoint/ledger state; the browser sends only
 ``approve`` / ``reject``. The same ``InMemorySaver`` process-local limits apply:
@@ -846,9 +856,9 @@ the agents; Kernector supplies evidence and allowlisted tools.
   MVP, **not** OAuth). Profile allowlist `MCP_TOOL_ALLOWLIST` is tool
   authorization. `MCP_ALLOWED_HOSTS` is required; missing Origin is allowed,
   present Origin must match `MCP_ALLOWED_ORIGINS`.
-- Chat `build_tools()` registers Drive export and Xray test creation when
-  their collaborators are wired, and the read-only test file preview
-  whenever the pack is enabled; MCP `build_mcp_tools()` is the pack seam.
+- Chat `build_tools()` registers Drive export and Xray test creation (from
+  drafts and from files) when their collaborators are wired, and the
+  read-only test file preview whenever the pack is enabled; MCP `build_mcp_tools()` is the pack seam.
   Drive export is never auto-exposed on MCP.
 - Side-effect tools ([ADR 0010](docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)):
   `invoke_authorized` runs authorization → argument validation →
@@ -873,6 +883,15 @@ the agents; Kernector supplies evidence and allowlisted tools.
   fixed `safe_message` (`path:line: reason`, path sanitized) is the only
   tool-raised validation text `_failure` passes through; every other
   `ToolArgumentValidationError` stays the generic "Invalid tool arguments".
+- Xray tests from files (#397):
+  `software_delivery.create_xray_tests_from_files` is one pack tool class on
+  chat and MCP, contributed with an `XrayFileCreateBinding`
+  (`composition/xray_export/test_file_create.py` owns the strict schemas)
+  only when `XRAY_DEPLOYMENT` is configured. Every call, `dry_run` included,
+  needs approval; the prompt names the destination project and host and lists
+  capped scenario names (`ApprovalHints.item_titles`). The read-only
+  `software_delivery.xray_target` is contributed with it and reports the
+  configured destination after checking the project.
 - Prompts and instructions: the server sends fixed, tool-neutral
   `instructions` (clients read files themselves and send exact text). A tool
   may carry an optional `mcp_prompt` (`McpToolPrompt`, read via `getattr`);

@@ -133,6 +133,7 @@ def test_preview_returns_the_parsed_files_as_compact_json() -> None:
         "delimiter": '"""',
         "media_type": "json",
         "lines": ["      {}"],
+        "indent": 6,
     }
     assert outline["examples"] == [
         {

@@ -27,6 +27,7 @@ from domain.errors import (
 )
 from domain.ports import Tool
 from domain.tool_approval import (
+    ApprovalDeferredError,
     PendingToolApproval,
     ToolApprovalPolicy,
     project_pending_approval,
@@ -419,8 +420,15 @@ class McpToolRegistry:
         )
         try:
             approved = approve(pending) is True
-        except Exception:
-            logger.info("mcp_tool_approval tool=%s outcome=gate_unavailable", tool_id)
+        except ApprovalDeferredError:
+            logger.info("mcp_tool_approval tool=%s outcome=input_required", tool_id)
+            return _approval_required()
+        except Exception as exc:
+            logger.warning(
+                "mcp_tool_approval tool=%s outcome=gate_unavailable error=%s",
+                tool_id,
+                type(exc).__name__,
+            )
             return _approval_required()
         logger.info(
             "mcp_tool_approval tool=%s outcome=%s",
