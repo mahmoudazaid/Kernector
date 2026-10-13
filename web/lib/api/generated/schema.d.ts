@@ -2043,6 +2043,8 @@ export interface components {
       destination_label?: string | null;
       /** File Name */
       file_name?: string | null;
+      /** Item Titles */
+      item_titles?: string[];
       /** Selected Title Count */
       selected_title_count?: number | null;
       /**

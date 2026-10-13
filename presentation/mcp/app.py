@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
@@ -13,7 +14,7 @@ import anyio.from_thread
 import anyio.to_thread
 from mcp import MCPError, types
 from mcp_types.version import is_version_at_least
-from mcp.server.context import ServerRequestContext
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.lowlevel.server import Server
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -37,7 +38,7 @@ from composition.mcp.tool_registry import (
     McpToolRegistry,
     TOOL_UNAVAILABLE_CODE,
 )
-from domain.tool_approval import PendingToolApproval
+from domain.tool_approval import ApprovalDeferredError, PendingToolApproval
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ def _approval_message(pending: PendingToolApproval) -> str:
         lines.append(f"Destination: {pending.destination_label}")
     if pending.selected_title_count is not None:
         lines.append(f"Items: {pending.selected_title_count}")
+    lines.extend(f"- {item}" for item in pending.item_titles)
     return "\n".join(lines)
 
 
@@ -136,7 +138,7 @@ def _approval_binding(name: str, arguments: Mapping[str, object] | None) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-class _ApprovalInputRequired(Exception):
+class _ApprovalInputRequired(ApprovalDeferredError):
     """Ends the first round so the handler can return an input request."""
 
 
@@ -249,11 +251,59 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 # graceful shutdown until a forced second Ctrl+C.
                 return _NO_STANDALONE_STREAM
             request.state.mcp_caller = self._caller_factory()
+            if request.method == "POST":
+                body = await request.body()
+                response = await call_next(request)
+                if response.status_code >= 400:
+                    logger.warning(
+                        "mcp_http_error status=%s method=%s protocol=%s session=%s",
+                        response.status_code,
+                        _jsonrpc_method(body),
+                        _log_token(request.headers.get("mcp-protocol-version")),
+                        "yes" if request.headers.get("mcp-session-id") else "no",
+                    )
+                return response
         return await call_next(request)
+
+
+_LOGGABLE_TOKEN = re.compile(r"[A-Za-z0-9_./-]{1,64}")
+
+
+def _log_token(value: object) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, str) and _LOGGABLE_TOKEN.fullmatch(value):
+        return value
+    return "invalid"
+
+
+def _jsonrpc_method(body: bytes) -> str:
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return "invalid"
+    if isinstance(message, list):
+        return "batch"
+    if not isinstance(message, dict):
+        return "invalid"
+    if "method" not in message:
+        return "response"
+    return _log_token(message["method"])
 
 
 async def _healthz(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
+
+
+async def _answer_modern_ping(
+    ctx: ServerRequestContext[Any], call_next: CallNext
+) -> HandlerResult:
+    """Answer ``ping`` on 2026-07-28, which dropped it; clients still send it as a keepalive."""
+    if ctx.method == "ping" and is_version_at_least(
+        ctx.protocol_version or "", _INPUT_REQUIRED_VERSION
+    ):
+        return {"resultType": "complete"}
+    return await call_next(ctx)
 
 
 def build_mcp_server(
@@ -355,7 +405,20 @@ def build_mcp_server(
             ]
         )
 
-    return Server(
+    # Clients poll these even when unadvertised; "Method not found" maps to HTTP 404.
+    async def on_list_resources(
+        _ctx: ServerRequestContext[Any],
+        _params: types.PaginatedRequestParams | None,
+    ) -> types.ListResourcesResult:
+        return types.ListResourcesResult(resources=[])
+
+    async def on_list_resource_templates(
+        _ctx: ServerRequestContext[Any],
+        _params: types.PaginatedRequestParams | None,
+    ) -> types.ListResourceTemplatesResult:
+        return types.ListResourceTemplatesResult(resource_templates=[])
+
+    server = Server(
         name,
         version="0.1.0",
         instructions=SERVER_INSTRUCTIONS,
@@ -363,7 +426,11 @@ def build_mcp_server(
         on_call_tool=on_call_tool,
         on_list_prompts=on_list_prompts,
         on_get_prompt=on_get_prompt,
+        on_list_resources=on_list_resources,
+        on_list_resource_templates=on_list_resource_templates,
     )
+    server.middleware.append(_answer_modern_ping)
+    return server
 
 
 def create_mcp_app(

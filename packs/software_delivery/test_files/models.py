@@ -53,12 +53,17 @@ class DataTable:
 
 @dataclass(frozen=True, slots=True)
 class DocString:
-    """Doc string with its delimiter, media type and verbatim source lines."""
+    """Doc string with its delimiter, media type and verbatim source lines.
+
+    ``indent`` is the opening delimiter's column; content indentation is
+    relative to it.
+    """
 
     line: int
     delimiter: str
     media_type: str
     lines: tuple[str, ...]
+    indent: int
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from domain.ports import XrayTestImporter
+from typing import Protocol
+
+from domain.ports import XrayIssueLookup, XrayTestImporter
 from infrastructure.config import Settings
 from infrastructure.connectors.xray.schema import XraySchemaCache
 
@@ -10,9 +12,13 @@ from infrastructure.connectors.xray.schema import XraySchemaCache
 _SCHEMA_CACHE = XraySchemaCache()
 
 
+class XrayClient(XrayTestImporter, XrayIssueLookup, Protocol):
+    """Both deployment adapters create tests and look up Jira issues."""
+
+
 def build_xray_importer(
     settings: Settings, *, cache: XraySchemaCache | None = None
-) -> XrayTestImporter | None:
+) -> XrayClient | None:
     """Return the configured importer, or ``None`` when Xray is disabled."""
     xray = settings.xray
     if not xray.configured or xray.project_key is None:

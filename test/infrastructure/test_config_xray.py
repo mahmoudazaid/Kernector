@@ -21,6 +21,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
         "XRAY_TEST_TAG",
         "XRAY_STORY_TAG",
         "XRAY_MANUAL_TAGS",
+        "XRAY_DEFAULT_COMPONENT",
+        "XRAY_STORY_ISSUE_TYPES",
         "JIRA_OAUTH_CLIENT_ID",
         "JIRA_OAUTH_CLIENT_SECRET",
     ):
@@ -188,4 +190,43 @@ def test_invalid_test_file_tag_names_are_rejected(
     env.setenv(name, value)
 
     with pytest.raises(ValueError, match=name):
+        load_settings()
+
+
+def test_default_component_is_unset_by_default_and_blank_means_unset(
+    env: pytest.MonkeyPatch,
+) -> None:
+    _cloud(env)
+    assert load_settings().xray.default_component is None
+
+    env.setenv("XRAY_DEFAULT_COMPONENT", "   ")
+    assert load_settings().xray.default_component is None
+
+
+def test_default_component_is_trimmed(env: pytest.MonkeyPatch) -> None:
+    _cloud(env)
+    env.setenv("XRAY_DEFAULT_COMPONENT", "  Checkout  ")
+
+    assert load_settings().xray.default_component == "Checkout"
+
+
+def test_story_issue_types_default_to_story(env: pytest.MonkeyPatch) -> None:
+    _cloud(env)
+
+    assert load_settings().xray.story_issue_types == ("Story",)
+
+
+def test_story_issue_types_are_parsed_and_trimmed(env: pytest.MonkeyPatch) -> None:
+    _cloud(env)
+    env.setenv("XRAY_STORY_ISSUE_TYPES", " Story , User Story,10001 ")
+
+    assert load_settings().xray.story_issue_types == ("Story", "User Story", "10001")
+
+
+@pytest.mark.parametrize("value", ["Story,,Epic", "Story, ", "Story,story"])
+def test_invalid_story_issue_types_are_rejected(env: pytest.MonkeyPatch, value: str) -> None:
+    _cloud(env)
+    env.setenv("XRAY_STORY_ISSUE_TYPES", value)
+
+    with pytest.raises(ValueError, match="XRAY_STORY_ISSUE_TYPES"):
         load_settings()

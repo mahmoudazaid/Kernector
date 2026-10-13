@@ -104,6 +104,22 @@ def test_invoke_needs_no_approval_gate_and_returns_structured_scenarios() -> Non
     )
 
 
+def test_doc_strings_pass_output_validation_with_their_indent() -> None:
+    content = FEATURE + '      """json\n      {}\n      """\n'
+
+    result = _invoke({"files": [{"path": "f/a.feature", "content": content}]})
+
+    assert result.is_error is False
+    [step] = json.loads(result.text)["files"][0]["scenarios"][0]["steps"]
+    assert step["doc_string"] == {
+        "line": 6,
+        "delimiter": '"""',
+        "media_type": "json",
+        "lines": ["      {}"],
+        "indent": 6,
+    }
+
+
 def test_malformed_file_returns_its_sanitized_location_and_reason() -> None:
     result = _invoke({"files": [{"path": "f/a.feature", "content": "Feature: F\n  | a |\n"}]})
 

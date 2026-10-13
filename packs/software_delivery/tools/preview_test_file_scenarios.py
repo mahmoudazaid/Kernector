@@ -7,27 +7,13 @@ what Kernector extracted. It never reads the disk and never calls Jira/Xray.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Protocol
 
-from packs.software_delivery.errors import TestFileErrorReason as Reason
-from packs.software_delivery.errors import (
-    TestFilePreviewValidationError,
-    TestFileValidationError,
-)
-from packs.software_delivery.limits import (
-    MAX_TEST_FILE_BYTES,
-    MAX_TEST_FILE_PATH_CHARS,
-    MAX_TEST_FILE_SCENARIOS,
-    MAX_TEST_FILES,
-    MAX_TEST_FILES_TOTAL_BYTES,
-)
+from packs.software_delivery.errors import TestFilePreviewValidationError
 from packs.software_delivery.test_files.models import ParsedTestFile, TestFileTagConfig
-from packs.software_delivery.test_files.parser import (
-    is_supported_test_file,
-    parse_test_file,
-)
+from packs.software_delivery.test_files.request import parse_files, read_files
 
 TOOL_NAME = "software_delivery.preview_test_file_scenarios"
 TOOL_DESCRIPTION = (
@@ -43,7 +29,6 @@ TOOL_DESCRIPTION = (
 )
 
 _ALLOWED_KEYS = frozenset({"files"})
-_FILE_KEYS = frozenset({"path", "content"})
 
 
 class TestFilePreviewMcpBinding(Protocol):
@@ -89,65 +74,20 @@ class PreviewTestFileScenariosTool:
         return TOOL_DESCRIPTION
 
     def run(self, arguments: Mapping[str, object]) -> str:
-        files = _parse_request(arguments)
-        _check_sizes(files)
-        remaining = MAX_TEST_FILE_SCENARIOS
-        parsed: list[ParsedTestFile] = []
-        for path, content in files:
-            result = parse_test_file(path, content, self._tags, max_scenarios=remaining)
-            remaining -= len(result.scenarios)
-            parsed.append(result)
+        if not isinstance(arguments, Mapping):
+            raise TestFilePreviewValidationError("arguments must be an object")
+        if set(arguments) != _ALLOWED_KEYS:
+            raise TestFilePreviewValidationError("arguments must contain only files")
+        files = read_files(arguments["files"], TestFilePreviewValidationError)
+        parsed = parse_files(files, self._tags)
         return json.dumps(
             {
                 "files": [_file_json(item) for item in parsed],
-                "scenario_count": MAX_TEST_FILE_SCENARIOS - remaining,
+                "scenario_count": sum(len(item.scenarios) for item in parsed),
             },
             separators=(",", ":"),
             ensure_ascii=False,
         )
-
-
-def _parse_request(arguments: Mapping[str, object]) -> list[tuple[str, str]]:
-    if not isinstance(arguments, Mapping):
-        raise TestFilePreviewValidationError("arguments must be an object")
-    if set(arguments) != _ALLOWED_KEYS:
-        raise TestFilePreviewValidationError("arguments must contain only files")
-    files = arguments["files"]
-    if not isinstance(files, Sequence) or isinstance(files, str) or not files:
-        raise TestFilePreviewValidationError("files must be a non-empty list")
-    if len(files) > MAX_TEST_FILES:
-        raise TestFileValidationError(None, None, Reason.TOO_MANY_FILES)
-    return [_file_item(item) for item in files]
-
-
-def _file_item(item: object) -> tuple[str, str]:
-    if not isinstance(item, Mapping) or set(item) != _FILE_KEYS:
-        raise TestFilePreviewValidationError("each file must have only path and content")
-    path, content = item["path"], item["content"]
-    if not isinstance(path, str) or not path.strip():
-        raise TestFilePreviewValidationError("path must be a non-empty string")
-    if len(path) > MAX_TEST_FILE_PATH_CHARS:
-        raise TestFilePreviewValidationError(
-            f"path must be at most {MAX_TEST_FILE_PATH_CHARS} characters"
-        )
-    if any(not char.isprintable() for char in path):
-        raise TestFilePreviewValidationError("path must not contain control characters")
-    if not isinstance(content, str) or not content.strip():
-        raise TestFilePreviewValidationError("content must be non-blank text")
-    return path.strip(), content
-
-
-def _check_sizes(files: list[tuple[str, str]]) -> None:
-    total = 0
-    for path, content in files:
-        if not is_supported_test_file(path):
-            raise TestFileValidationError(path, None, Reason.UNSUPPORTED_EXTENSION)
-        size = len(content.encode("utf-8"))
-        if size > MAX_TEST_FILE_BYTES:
-            raise TestFileValidationError(path, None, Reason.FILE_TOO_LARGE)
-        total += size
-    if total > MAX_TEST_FILES_TOTAL_BYTES:
-        raise TestFileValidationError(None, None, Reason.TOTAL_TOO_LARGE)
 
 
 def _file_json(parsed: ParsedTestFile) -> dict[str, object]:

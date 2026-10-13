@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
+from dataclasses import replace
 
 import httpx
 import pytest
 
 from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
-from domain.test_management.xray import XrayImportResult, XrayTestSpec, XrayTestStep
+from domain.test_management.xray import (
+    IssueLookupResult,
+    JiraIssueSummary,
+    XrayCreateWarning,
+    XrayImportResult,
+    XrayTestSpec,
+    XrayTestStep,
+)
 from infrastructure.connectors.xray.cloud import XrayCloudImporter
 from infrastructure.connectors.xray.schema import XraySchemaCache
 
@@ -298,3 +307,259 @@ def _assert_secret_free(error: BaseException) -> None:
     rendered = " ".join(str(e) for e in chain if e is not None)
     for secret in (CLIENT_SECRET, TOKEN, "vendor body", "customfield"):
         assert secret not in rendered
+
+
+def _created_with(key: str, *, warnings=(), scenario_type: str | None = None) -> CreateReply:
+    def reply(request: httpx.Request) -> httpx.Response:
+        test: dict[str, object] = {"issueId": "1", "jira": {"key": key}}
+        if scenario_type is not None:
+            test["scenarioType"] = scenario_type
+        return httpx.Response(
+            200,
+            json={"data": {"createTest": {"test": test, "warnings": list(warnings)}}},
+        )
+
+    return reply
+
+
+_LINKED = replace(_CUCUMBER, link_issue_key="ABC-1")
+
+
+def test_configured_component_is_sent_in_the_jira_fields() -> None:
+    xray = _Xray(_created("QA-1"))
+
+    _importer(xray).import_tests([replace(_CUCUMBER, component="Checkout")])
+
+    assert xray.create_bodies[0]["variables"]["jira"]["fields"]["components"] == [
+        {"name": "Checkout"}
+    ]
+
+
+def test_link_warning_is_reported_as_an_unconfirmed_link() -> None:
+    xray = _Xray(_created_with("QA-1", warnings=[f"link failed {TOKEN}"]))
+
+    result = _importer(xray).import_tests([_LINKED])
+
+    assert result == XrayImportResult(
+        created_keys=("QA-1",),
+        failed_count=0,
+        warnings=(XrayCreateWarning("QA-1", "link_not_confirmed"),),
+    )
+
+
+def test_requested_link_without_a_link_type_is_rejected_without_a_request() -> None:
+    xray = _Xray()
+    importer = XrayCloudImporter(
+        base_url=BASE_URL,
+        client_id="cloud-client-id",
+        client_secret=CLIENT_SECRET,
+        project_key="QA",
+        link_type="",
+        cache=XraySchemaCache(),
+        transport=httpx.MockTransport(xray),
+    )
+
+    assert importer.import_tests([_LINKED]) == XrayImportResult(created_keys=(), failed_count=1)
+    assert xray.create_bodies == []
+
+
+def test_outline_is_confirmed_from_the_returned_scenario_type() -> None:
+    outline = replace(_CUCUMBER, outline=True, gherkin="Given <x>\n\nExamples:\n  | x |\n  | 1 |")
+    xray = _Xray(
+        _created_with("QA-1", scenario_type="scenario_outline"),
+        _created_with("QA-2", scenario_type="scenario"),
+    )
+
+    importer = _importer(xray)
+    confirmed = importer.import_tests([outline])
+    downgraded = importer.import_tests([outline])
+
+    assert confirmed.warnings == ()
+    assert "scenarioType" in xray.create_bodies[0]["query"]
+    assert xray.create_bodies[0]["variables"]["gherkin"] == outline.gherkin
+    assert downgraded.warnings == (XrayCreateWarning("QA-2", "outline_not_confirmed"),)
+    assert importer.schema().supports_cucumber_outline is True
+
+
+def _jira(key: str, summary: str, type_id: str, type_name: str) -> dict[str, object]:
+    return {
+        "jira": {"key": key, "summary": summary, "issuetype": {"id": type_id, "name": type_name}}
+    }
+
+
+class _Search:
+    """Xray Cloud answering getTests / getCoverableIssues searches."""
+
+    def __init__(self, tests=(), coverable=(), *, page: int = 100, errors_for=()) -> None:
+        self.tests = list(tests)
+        self.coverable = list(coverable)
+        self.page = page
+        self.errors_for = set(errors_for)
+        self.queries: list[dict[str, object]] = []
+        self.total_override: int | None = None
+        self.raw: dict[str, object] | None = None
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/authenticate":
+            return httpx.Response(200, json=TOKEN)
+        body = json.loads(request.content)
+        self.queries.append(body)
+        if self.raw is not None:
+            return httpx.Response(200, json=self.raw)
+        jql = body["variables"]["jql"]
+        jql_keys = set(re.findall(r"[A-Z][A-Z0-9_]*-[0-9]+", jql))
+        if jql_keys & self.errors_for:
+            return httpx.Response(200, json={"errors": [{"message": "bad key"}], "data": None})
+        name = "getTests" if "getTests" in body["query"] else "getCoverableIssues"
+        items = self.tests if name == "getTests" else self.coverable
+        items = [i for i in items if i["jira"]["key"] in jql_keys or "linkedIssues" in jql]
+        start = body["variables"]["start"]
+        assert body["variables"]["limit"] <= 100
+        page = items[start : start + self.page]
+        total = len(items) if self.total_override is None else self.total_override
+        return httpx.Response(
+            200,
+            json={"data": {name: {"total": total, "start": start, "results": page}}},
+        )
+
+
+def test_find_issues_reads_tests_and_coverable_issues_with_their_types() -> None:
+    xray = _Search(
+        tests=[_jira("QA-5", "Login", "10002", "Test")],
+        coverable=[_jira("ABC-1", "Story", "10001", "Story")],
+    )
+
+    result = _importer(xray).find_issues(["QA-5", "ABC-1", "ABC-2"])
+
+    assert result == IssueLookupResult(
+        found={
+            "QA-5": JiraIssueSummary("QA-5", "Login", "10002", "Test", True),
+            "ABC-1": JiraIssueSummary("ABC-1", "Story", "10001", "Story", False),
+        },
+        missing=frozenset(),
+    )
+    assert all("key in (QA-5, ABC-1, ABC-2)" == q["variables"]["jql"] for q in xray.queries)
+
+
+def test_find_issues_queries_keys_in_bounded_chunks() -> None:
+    xray = _Search()
+    keys = [f"ABC-{n}" for n in range(1, 121)]
+
+    _importer(xray).find_issues(keys)
+
+    assert len(xray.queries) == 6
+    assert max(q["variables"]["jql"].count(",") + 1 for q in xray.queries) == 50
+
+
+def test_find_issues_pages_until_total() -> None:
+    xray = _Search(tests=[_jira(f"QA-{n}", "T", "1", "Test") for n in range(1, 6)], page=2)
+
+    result = _importer(xray).find_issues([f"QA-{n}" for n in range(1, 6)])
+
+    assert len(result.found) == 5
+    assert [q["variables"]["start"] for q in xray.queries if "getTests" in q["query"]] == [0, 2, 4]
+
+
+def test_search_beyond_the_page_bound_is_unavailable() -> None:
+    xray = _Search(tests=[_jira(f"QA-{n}", "T", "1", "Test") for n in range(1, 30)], page=1)
+
+    with pytest.raises(ConnectorUnavailableError):
+        _importer(xray).linked_tests("ABC-1")
+
+    assert len(xray.queries) == 20
+
+
+def test_search_whose_pages_end_before_total_raises() -> None:
+    xray = _Search(tests=[_jira("QA-1", "T", "1", "Test")])
+    xray.total_override = 5
+
+    with pytest.raises(ConnectorError):
+        _importer(xray).linked_tests("ABC-1")
+
+
+def test_chunk_errors_fall_back_per_key_and_failing_keys_stay_unresolved() -> None:
+    xray = _Search(tests=[_jira("QA-5", "Login", "1", "Test")], errors_for=["ABC-404"])
+
+    result = _importer(xray).find_issues(["QA-5", "ABC-404"])
+
+    assert set(result.found) == {"QA-5"}
+    assert result.missing == frozenset()
+
+
+def test_refused_keys_in_several_chunks_stay_unresolved_without_failing_the_lookup() -> None:
+    keys = [f"ABC-{n}" for n in range(1, 102)]
+    bad = {"ABC-7", "ABC-57", "ABC-101"}
+    xray = _Search(coverable=[_jira(k, "Story", "1", "Story") for k in keys], errors_for=bad)
+
+    result = _importer(xray).find_issues(keys)
+
+    assert set(result.found) == set(keys) - bad
+    assert result.missing == frozenset()
+
+
+def test_refused_chunk_splits_are_capped_and_leftover_keys_stay_unresolved() -> None:
+    keys = [f"ABC-{n}" for n in range(1, 501)]
+    xray = _Search(coverable=[_jira(k, "Story", "1", "Story") for k in keys], errors_for=keys)
+
+    result = _importer(xray).find_issues(keys)
+
+    assert result == IssueLookupResult(found={}, missing=frozenset())
+    assert len(xray.queries) == 10 + 2 * 50
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"data": {"getTests": {"total": 1, "results": "nope"}}},
+        {"data": {"getTests": {"results": []}}},
+        {"data": {"getTests": {"total": 1, "results": [{"jira": {"key": "QA-1"}}]}}},
+        {"data": None},
+    ],
+)
+def test_malformed_search_answers_raise(raw: dict[str, object]) -> None:
+    xray = _Search()
+    xray.raw = raw
+
+    with pytest.raises(ConnectorError):
+        _importer(xray).find_issues(["QA-1"])
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_unauthorized_search_raises_auth_error(code: int) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v2/authenticate":
+            return httpx.Response(200, json=TOKEN)
+        return httpx.Response(code, text=f"vendor body {CLIENT_SECRET}")
+
+    with pytest.raises(ConnectorAuthError) as caught:
+        _importer(handler).find_issues(["QA-1"])
+
+    _assert_secret_free(caught.value)
+
+
+def test_invalid_keys_are_never_put_into_jql() -> None:
+    xray = _Search()
+
+    result = _importer(xray).find_issues(['QA-1") OR key in ("X-1'])
+
+    assert xray.queries == []
+    assert result.found == {}
+
+
+def test_linked_tests_pages_through_tests_linked_to_the_story() -> None:
+    xray = _Search(
+        tests=[_jira("QA-5", "Login", "1", "Test"), _jira("QA-6", "Logout", "1", "Test")], page=1
+    )
+
+    linked = _importer(xray).linked_tests("ABC-1")
+
+    assert [t.key for t in linked] == ["QA-5", "QA-6"]
+    assert all(t.is_test for t in linked)
+    assert xray.queries[0]["variables"]["jql"] == 'issue in linkedIssues("ABC-1")'
+
+
+def test_linked_tests_fails_closed_on_graphql_errors() -> None:
+    xray = _Search(errors_for=["ABC-1"])
+
+    with pytest.raises(ConnectorError):
+        _importer(xray).linked_tests("ABC-1")

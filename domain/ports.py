@@ -21,7 +21,13 @@ from domain.knowledge import (
 )
 from domain.models import AgentTurnResult, AskResult, Message, PromptVariant
 from domain.response_feedback import ResponseFeedback, RunProvenance
-from domain.test_management.xray import XrayImportResult, XrayTestCreateSchema, XrayTestSpec
+from domain.test_management.xray import (
+    IssueLookupResult,
+    JiraIssueSummary,
+    XrayImportResult,
+    XrayTestCreateSchema,
+    XrayTestSpec,
+)
 
 
 class ChatModel(Protocol):
@@ -473,6 +479,34 @@ class XrayTestImporter(Protocol):
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: Xray is unreachable or throttling.
             ConnectorError: Any other create failure.
+        """
+        ...
+
+
+class XrayIssueLookup(Protocol):
+    """Reads the Jira issues Xray test matching needs (#397).
+
+    Lookups fail closed: an unauthorized, unavailable, malformed or incomplete
+    answer raises rather than reporting a key or link as absent.
+    """
+
+    def find_issues(self, keys: Sequence[str]) -> IssueLookupResult:
+        """Resolve ``keys``; a key absent from both result sets is unresolved.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Jira/Xray is unreachable or the search is incomplete.
+            ConnectorError: The answer was malformed.
+        """
+        ...
+
+    def linked_tests(self, story_key: str) -> tuple[JiraIssueSummary, ...]:
+        """Return every Test issue linked to ``story_key``, complete or not at all.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Jira/Xray is unreachable or the search is incomplete.
+            ConnectorError: The answer was malformed.
         """
         ...
 

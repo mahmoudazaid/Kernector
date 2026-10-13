@@ -792,10 +792,13 @@ def build_invoke_tool(
         )
     xray_importer, xray_load_draft = _xray_tool_collaborators(settings)
     test_file_tags = None
+    xray_file_binding = None
     if "software-delivery" in settings.domain_tools.enabled_packs:
+        from composition.xray_export.test_file_create import build_xray_file_create_binding
         from composition.xray_export.test_file_preview import build_test_file_tags
 
         test_file_tags = build_test_file_tags(settings)
+        xray_file_binding = build_xray_file_create_binding(settings)
     return InvokeTool(
         build_tool_registry(
             settings,
@@ -808,6 +811,7 @@ def build_invoke_tool(
                 None if xray_importer is None else _xray_receipt_recorder(settings)
             ),
             test_file_tags=test_file_tags,
+            xray_file_binding=xray_file_binding,
         )
     )
 

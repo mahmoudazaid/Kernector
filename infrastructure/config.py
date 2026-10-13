@@ -432,7 +432,8 @@ class XraySettings:
 
     Cloud uses client credentials; Server/Data Center reuses ``JIRA_DC_*``. The
     client secret is never returned on HTTP responses or logged. The test file
-    tag names (#396) load even when Xray is disabled.
+    tag names (#396), the default component and the story issue types (#397)
+    load even when Xray is disabled.
     """
 
     deployment: str | None = None
@@ -444,6 +445,8 @@ class XraySettings:
     test_tag: str = "XRay"
     story_tag: str = "Story"
     manual_tags: tuple[str, ...] = ("manual", "scaffold")
+    default_component: str | None = None
+    story_issue_types: tuple[str, ...] = ("Story",)
 
     @property
     def configured(self) -> bool:
@@ -456,7 +459,9 @@ class XraySettings:
             f"link_type={self.link_type!r}, client_id={self.client_id!r}, "
             f"client_secret='***', cloud_base_url={self.cloud_base_url!r}, "
             f"test_tag={self.test_tag!r}, story_tag={self.story_tag!r}, "
-            f"manual_tags={self.manual_tags!r})"
+            f"manual_tags={self.manual_tags!r}, "
+            f"default_component={self.default_component!r}, "
+            f"story_issue_types={self.story_issue_types!r})"
         )
 
 
@@ -1160,11 +1165,29 @@ _JIRA_PROJECT_KEY = re.compile(r"[A-Z][A-Z0-9_]*")
 
 def _load_xray_settings(jira_data_center: JiraDataCenterSettings | None) -> XraySettings:
     """Parse ``XRAY_*``; an unset ``XRAY_DEPLOYMENT`` keeps Xray disabled."""
-    tags = _load_xray_test_file_tags()
+    shared = {**_load_xray_test_file_tags(), **_load_xray_test_creation()}
     raw_deployment = _optional_env("XRAY_DEPLOYMENT")
     if raw_deployment is None:
-        return replace(XraySettings(), **tags)
-    return replace(_load_xray_deployment(raw_deployment, jira_data_center), **tags)
+        return replace(XraySettings(), **shared)
+    return replace(_load_xray_deployment(raw_deployment, jira_data_center), **shared)
+
+
+def _load_xray_test_creation() -> dict[str, object]:
+    """Parse the file-based test creation settings (#397)."""
+    raw_types = _optional_env("XRAY_STORY_ISSUE_TYPES")
+    story_issue_types = XraySettings().story_issue_types
+    if raw_types is not None:
+        story_issue_types = tuple(item.strip() for item in raw_types.split(","))
+        folded = [item.casefold() for item in story_issue_types]
+        if not all(story_issue_types) or len(set(folded)) != len(folded):
+            raise ValueError(
+                "XRAY_STORY_ISSUE_TYPES must be a comma-separated list of non-empty, "
+                "distinct issue type names or ids"
+            )
+    return {
+        "default_component": _optional_env("XRAY_DEFAULT_COMPONENT"),
+        "story_issue_types": story_issue_types,
+    }
 
 
 _XRAY_TAG_FORBIDDEN = frozenset("@:=|,")
