@@ -29,12 +29,14 @@ def main() -> int:
     discovered = (
         response.ingested_count
         + response.updated_count
+        + response.metadata_updated_count
         + response.skipped_count
         + response.failed_count
     )
     print(f"discovered={discovered}")
     print(f"ingested={response.ingested_count}")
     print(f"updated={response.updated_count}")
+    print(f"metadata_updated={response.metadata_updated_count}")
     print(f"skipped={response.skipped_count}")
     print(f"removed={response.removed_count}")
     print(f"failed={response.failed_count}")

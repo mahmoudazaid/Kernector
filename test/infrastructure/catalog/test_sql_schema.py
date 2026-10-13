@@ -23,10 +23,10 @@ def test_missing_database_reports_version_zero_without_creating_file(
     assert not path.parent.exists()
 
 
-def test_apply_shipped_migration_advances_to_version_five(tmp_path: Path) -> None:
+def test_apply_shipped_migration_advances_to_version_six(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
     apply_migrations(path)
-    assert current_schema_version(path) == 5
+    assert current_schema_version(path) == 6
     assert path.is_file()
 
 
@@ -89,7 +89,7 @@ def test_legacy_uploaded_at_backfills_created_and_updated_then_drops_column(
         connection.close()
 
     apply_migrations(path)
-    assert current_schema_version(path) == 5
+    assert current_schema_version(path) == 6
 
     connection = sqlite3.connect(path)
     try:
@@ -226,7 +226,7 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
         for future in futures:
                 future.result(timeout=15)
 
-    assert current_schema_version(path) == 5
+    assert current_schema_version(path) == 6
     connection = sqlite3.connect(path)
     try:
         recorded_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
@@ -297,3 +297,53 @@ def test_non_sqlite_file_reports_catalog_error_not_version_zero(
         current_schema_version(path)
     with pytest.raises(CatalogError):
         apply_migrations(path)
+
+
+def test_rows_written_before_fingerprints_read_back_with_null_fingerprints(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from domain.knowledge import SourceReference, SourceType
+    from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
+
+    shipped_dir = (
+        Path(__file__).resolve().parents[3]
+        / "infrastructure"
+        / "catalog"
+        / "migrations"
+    )
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for source in sorted(shipped_dir.glob("00[1-5]_*.sql")):
+        (migrations / source.name).write_text(
+            source.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    path = tmp_path / "catalog.sqlite"
+    apply_migrations(path, migrations_dir=migrations)
+    assert current_schema_version(path) == 5
+    stamp = datetime(2026, 8, 28, 12, 0, tzinfo=UTC).isoformat()
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            "INSERT INTO catalog_documents ("
+            "workspace_id, source_id, source_type, file_name, status, "
+            "created_at, updated_at, chunk_count, revision"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ws-a", "1AbC", "google_drive", "spec.md", "ready", stamp, stamp, 6, "41"),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    document = SqlDocumentCatalog(path, "ws-a").get(
+        SourceReference("1AbC", SourceType.GOOGLE_DRIVE)
+    )
+
+    assert current_schema_version(path) == 6
+    assert document is not None
+    assert document.revision == "41"
+    assert document.content_fingerprint is None
+    assert document.metadata_fingerprint is None
+    assert document.processing_fingerprint is None
+    assert document.provider_content_hash is None

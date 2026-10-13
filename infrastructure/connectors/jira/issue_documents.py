@@ -206,7 +206,6 @@ class JiraIssueDocuments:
                 f"- Fix versions: {', '.join(_names(fields.get('fixVersions')))}",
                 f"- URL: {self._config.site.browse_url(key)}",
                 f"- Created: {_text(fields.get('created'))}",
-                f"- Updated: {_required_text(fields, 'updated')}",
             ]
         )
         description = self._config.render_text(fields.get("description"))

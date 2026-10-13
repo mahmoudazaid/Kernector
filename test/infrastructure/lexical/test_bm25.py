@@ -7,6 +7,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
+from domain.errors import VectorStoreError
 from infrastructure.lexical.bm25 import Bm25LexicalIndex
 from test.doubles import InMemoryLexicalIndex, vector_for
 import pytest
@@ -228,3 +229,54 @@ def test_tokenize_preserves_hyphenated_identifier() -> None:
     from infrastructure.lexical.bm25 import tokenize
 
     assert "err-4021" in tokenize("see ERR-4021 now")
+
+
+def test_bm25_update_source_metadata_replaces_metadata_and_keeps_text() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert(
+        [
+            _embed(_chunk("a", "restart runbook", extra={"folder": "x", "old": "1"})),
+            _embed(
+                _chunk("a", "rollback runbook", extra={"folder": "x", "old": "1"}, index=1)
+            ),
+            _embed(_chunk("b", "restart runbook", extra={"folder": "x"})),
+        ]
+    )
+    reference = SourceReference("a", SourceType.KNOWLEDGE_DOCUMENT)
+    new = SourceMetadata(reference, title="Renamed", extra={"folder": "y"})
+
+    assert index.update_source_metadata(reference, new) == 2
+
+    moved = index.search("runbook", 10, metadata_filters={"folder": "y"})
+    assert sorted((hit.chunk.source_id, hit.chunk.index) for hit in moved) == [
+        ("a", 0),
+        ("a", 1),
+    ]
+    assert all(hit.chunk.metadata == new for hit in moved)
+    assert index.search("runbook", 10, metadata_filters={"old": "1"}) == ()
+    assert [
+        hit.chunk.source_id
+        for hit in index.search("runbook", 10, metadata_filters={"folder": "x"})
+    ] == ["b"]
+    assert {hit.chunk.content for hit in index.search("rollback", 10)} == {
+        "rollback runbook"
+    }
+
+
+def test_bm25_update_source_metadata_of_missing_source_is_zero() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert([_embed(_chunk("a", "restart runbook"))])
+    reference = SourceReference("absent", SourceType.KNOWLEDGE_DOCUMENT)
+
+    assert index.update_source_metadata(reference, SourceMetadata(reference)) == 0
+
+
+def test_bm25_update_source_metadata_rejects_mismatched_reference() -> None:
+    index = Bm25LexicalIndex()
+    index.upsert([_embed(_chunk("a", "restart runbook"))])
+
+    with pytest.raises(VectorStoreError, match="reference"):
+        index.update_source_metadata(
+            SourceReference("a", SourceType.KNOWLEDGE_DOCUMENT),
+            SourceMetadata(SourceReference("b", SourceType.KNOWLEDGE_DOCUMENT)),
+        )

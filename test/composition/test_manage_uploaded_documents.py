@@ -555,6 +555,48 @@ def test_list_and_delete_need_no_embedding_credentials(
     assert composition_documents.list_uploaded_documents(settings) == ()
 
 
+def test_list_and_delete_need_no_embedding_model(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    created = composition_documents.create_uploaded_document(
+        settings,
+        UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
+    )
+    blank = replace(settings, openrouter=replace(settings.openrouter, embedding_model=""))
+
+    listed = composition_documents.list_uploaded_documents(blank)
+    assert [row.reference for row in listed] == [created.reference]
+
+    composition_documents.delete_uploaded_document(blank, created.reference)
+    assert composition_documents.list_uploaded_documents(blank) == ()
+
+
+def test_create_with_blank_embedding_model_is_a_configuration_error(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test.doubles import StubEmbeddingModel
+
+    monkeypatch.setattr(
+        composition_container,
+        "build_embedding_model",
+        lambda _settings: StubEmbeddingModel(),
+    )
+    blank = replace(settings, openrouter=replace(settings.openrouter, embedding_model=""))
+
+    with pytest.raises(ConfigurationError, match="OPENROUTER_EMBEDDING_MODEL"):
+        composition_documents.create_uploaded_document(
+            blank,
+            UploadPayload(file_name="guide.md", content=b"# Hello world content\n" * 20),
+        )
+
+
 def test_partial_delete_is_translated(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:

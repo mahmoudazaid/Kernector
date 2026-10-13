@@ -410,6 +410,7 @@ def sync(
         ingest_factory=lambda: _container.build_ingest_knowledge(
             settings, vector_store=get_store()
         ),
+        processing_profile=_container.build_processing_profile(settings),
         reconcile_missing=True,
         reconcile_source_types=frozenset({SourceType.JIRA}),
         reconcile_source_id_prefixes=frozenset({f"{site.instance_id}/"}),
@@ -430,7 +431,9 @@ def sync(
             current,
             last_synced_at=synced_at,
             last_sync_new=result.ingested_count,
-            last_sync_updated=result.updated_count,
+            last_sync_updated=(
+                result.updated_count + result.metadata_updated_count
+            ),
             last_sync_unchanged=result.skipped_count,
             last_sync_removed=result.removed_count,
             last_sync_failed=result.failed_count,

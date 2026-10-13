@@ -18,10 +18,13 @@ from domain.knowledge import (
     CatalogStatus,
     ChunkPage,
     HUB_SOURCE_TYPES,
+    ProcessingProfile,
     SourceDocument,
     SourceReference,
     SourceType,
     UploadPayload,
+    fingerprint_metadata,
+    fingerprint_text,
 )
 from domain.ports import (
     DocumentCatalog,
@@ -199,6 +202,10 @@ class ManageUploadedDocuments:
     them eagerly would make listing a JSON file fail whenever embedding
     credentials are absent, and would open a vector-store client per call for
     operations that never read one.
+
+    Content, metadata, and processing-profile fingerprints are written only on
+    READY rows; failure and restore paths keep the previous values. The profile
+    is also a factory so list, content, and delete need no embedding settings.
     """
 
     _HUB_SOURCE_TYPES = HUB_SOURCE_TYPES
@@ -214,6 +221,7 @@ class ManageUploadedDocuments:
         new_source_id: Callable[[], str] | None = None,
         now: Callable[[], datetime] | None = None,
         max_upload_bytes: int,
+        processing_profile_factory: Callable[[], ProcessingProfile],
     ) -> None:
         self._catalog = catalog
         self._blob_store = blob_store
@@ -223,6 +231,7 @@ class ManageUploadedDocuments:
         self._new_source_id = new_source_id or (lambda: str(uuid.uuid4()))
         self._now = now or (lambda: datetime.now(UTC))
         self._max_upload_bytes = max_upload_bytes
+        self._processing_profile_factory = processing_profile_factory
 
     def list(self) -> Sequence[CatalogDocument]:
         """Return catalog rows shown in the shared documents hub."""
@@ -308,7 +317,7 @@ class ManageUploadedDocuments:
         now = self._now()
         document = self._with_timestamps(document, created_at=now, updated_at=now)
         pending = self._pending_row(
-            reference, payload, document, created_at=now, updated_at=now
+            reference, payload, document, None, created_at=now, updated_at=now
         )
         self._catalog.upsert(pending)
         try:
@@ -316,11 +325,7 @@ class ManageUploadedDocuments:
         except Exception as error:
             self._record_create_failure(pending, payload, error)
             raise
-        ready = dataclasses.replace(
-            pending,
-            status=CatalogStatus.READY,
-            chunk_count=response.chunk_count,
-        )
+        ready = self._ready_row(pending, document, response)
         return self._finalize_ready(ready, payload, operation="create")
 
     def replace(
@@ -341,6 +346,7 @@ class ManageUploadedDocuments:
             reference,
             payload,
             document,
+            previous,
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -361,11 +367,7 @@ class ManageUploadedDocuments:
             # Unknown failure outside the typed ingest boundary: assume mutation.
             self._write_degraded(pending, payload, error)
             raise
-        ready = dataclasses.replace(
-            pending,
-            status=CatalogStatus.READY,
-            chunk_count=response.chunk_count,
-        )
+        ready = self._ready_row(pending, document, response)
         return self._finalize_ready(ready, payload, operation="replace")
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
@@ -525,6 +527,7 @@ class ManageUploadedDocuments:
         reference: SourceReference,
         payload: UploadPayload,
         document: SourceDocument,
+        previous: CatalogDocument | None,
         *,
         created_at: datetime,
         updated_at: datetime,
@@ -540,6 +543,26 @@ class ManageUploadedDocuments:
             updated_at=updated_at,
             chunk_count=0,
             error=None,
+            content_fingerprint=previous.content_fingerprint if previous else None,
+            metadata_fingerprint=previous.metadata_fingerprint if previous else None,
+            processing_fingerprint=(
+                previous.processing_fingerprint if previous else None
+            ),
+        )
+
+    def _ready_row(
+        self,
+        pending: CatalogDocument,
+        document: SourceDocument,
+        response: IngestResponse,
+    ) -> CatalogDocument:
+        return dataclasses.replace(
+            pending,
+            status=CatalogStatus.READY,
+            chunk_count=response.chunk_count,
+            content_fingerprint=fingerprint_text(document.content),
+            metadata_fingerprint=fingerprint_metadata(document.metadata),
+            processing_fingerprint=self._processing_profile_factory().fingerprint,
         )
 
     @staticmethod

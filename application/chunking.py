@@ -7,6 +7,9 @@ import re
 from application.errors import ApplicationValidationError
 from domain.knowledge import DocumentChunk, SourceDocument
 
+CHUNKER_VERSION = "1"
+"""Bump whenever chunk boundaries change for the same input and settings."""
+
 _ORDERED_LIST = re.compile(r"^\s*\d+\.\s")
 _TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*:?-+:?\s*\|)+\s*$")
 

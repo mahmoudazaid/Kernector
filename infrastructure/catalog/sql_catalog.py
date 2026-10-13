@@ -167,4 +167,12 @@ def _document_from_row(row: sqlite3.Row) -> CatalogDocument:
         error=None if error is None else str(error),
         revision=None if revision is None else str(revision),
         connector_id=None if connector_id is None else str(connector_id),
+        content_fingerprint=_optional_text(row["content_fingerprint"]),
+        metadata_fingerprint=_optional_text(row["metadata_fingerprint"]),
+        processing_fingerprint=_optional_text(row["processing_fingerprint"]),
+        provider_content_hash=_optional_text(row["provider_content_hash"]),
     )
+
+
+def _optional_text(value: object) -> str | None:
+    return None if value is None else str(value)

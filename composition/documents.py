@@ -191,6 +191,7 @@ def build_manage_uploaded_documents(
         ingest_factory=_ingest,
         vector_store_factory=_vector_store,
         max_upload_bytes=settings.max_upload_bytes,
+        processing_profile_factory=lambda: _container.build_processing_profile(settings),
     )
 
 

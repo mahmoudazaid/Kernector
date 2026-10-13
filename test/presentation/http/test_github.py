@@ -93,6 +93,7 @@ def test_sync_projects_updated_and_removed_counts() -> None:
     assert response.json() == {
         "ingested_count": 1,
         "updated_count": 1,
+        "metadata_updated_count": 0,
         "skipped_count": 0,
         "failed_count": 0,
         "removed_count": 1,

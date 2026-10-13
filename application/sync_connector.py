@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import logging
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -16,21 +17,51 @@ from application.contracts import (
 from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.observability import log_operation
-from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
+from domain.errors import (
+    ConnectorAuthError,
+    ConnectorError,
+    ConnectorUnavailableError,
+    VectorStoreError,
+)
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
     ConnectorDocument,
+    ProcessingProfile,
     SourceDocument,
+    SourceMetadata,
     SourceReference,
+    fingerprint_metadata,
+    fingerprint_text,
 )
-from domain.ports import DocumentCatalog, KnowledgeConnector, VectorStore
+from domain.ports import (
+    DocumentCatalog,
+    KnowledgeConnector,
+    MetadataDescribingConnector,
+    VectorStore,
+)
 
 logger = logging.getLogger(__name__)
 
 
+class _Fallback(enum.Enum):
+    FETCH_AND_COMPARE = enum.auto()
+    REINGEST = enum.auto()
+
+
 class SyncConnectorDocuments:
     """List remote documents, skip unchanged READY rows, and ingest the rest.
+
+    READY rows are compared by revision, processing profile, provider content
+    hash, and content/metadata fingerprints (ADR 0012). A stored processing
+    fingerprint that differs from ``processing_profile`` forces re-ingest; a
+    NULL one is unknown and adopts the current profile after a skip or a
+    successful re-ingest. When content is unchanged but metadata differs, chunk
+    metadata is rewritten through ``vector_store_factory`` without re-embedding
+    and the outcome is ``metadata_updated``; without a vector store factory
+    such documents are re-ingested. A changed ``content_format`` also
+    re-ingests, because chunk boundaries depend on it. Missing or inconsistent stored chunks fall
+    back to re-ingest. Fingerprints are written only on READY rows.
 
     The ingest pipeline is built lazily once per run so a skip-only sync never
     constructs embedding credentials, while a multi-document run reuses one
@@ -68,9 +99,11 @@ class SyncConnectorDocuments:
             eligible for reconcile (narrower than source type alone).
         reconcile_connector_ids (frozenset[str]): When non-empty, only rows
             whose ``connector_id`` is in this set are eligible for reconcile.
+        processing_profile (ProcessingProfile): Current chunking and embedding
+            profile; its fingerprint is stored on READY rows.
         vector_store_factory (Callable[[], VectorStore] | None): Lazy vector
-            store getter used only for reconcile deletes. Required when
-            ``reconcile_missing`` is True.
+            store getter used for reconcile deletes and metadata-only updates.
+            Required when ``reconcile_missing`` is True.
     """
 
     def __init__(
@@ -80,6 +113,7 @@ class SyncConnectorDocuments:
         ingest_factory: Callable[[], IngestKnowledge],
         now: Callable[[], datetime] | None = None,
         *,
+        processing_profile: ProcessingProfile,
         reconcile_missing: bool = False,
         reconcile_source_types: frozenset[str] = frozenset(),
         reconcile_source_id_prefixes: frozenset[str] = frozenset(),
@@ -111,6 +145,7 @@ class SyncConnectorDocuments:
         self._reconcile_source_id_prefixes = reconcile_source_id_prefixes
         self._reconcile_connector_ids = reconcile_connector_ids
         self._vector_store_factory = vector_store_factory
+        self._processing_fingerprint = processing_profile.fingerprint
 
     def execute(self) -> ConnectorSyncResponse:
         """Synchronize listed connector documents in listing order.
@@ -143,24 +178,172 @@ class SyncConnectorDocuments:
         document: ConnectorDocument,
         previous: CatalogDocument | None,
     ) -> ConnectorSyncOutcome:
-        if _is_unchanged(previous, document):
-            assert previous is not None
-            stamped = _connector_id_of(document)
-            if stamped and previous.connector_id != stamped:
-                self._catalog.upsert(
-                    dataclasses.replace(previous, connector_id=stamped)
-                )
-            return ConnectorSyncOutcome(
-                source_id=document.source_id,
-                status=ConnectorSyncStatus.SKIPPED,
-                chunk_count=previous.chunk_count,
+        ready = (
+            previous
+            if previous is not None and previous.status is CatalogStatus.READY
+            else None
+        )
+        current_profile = (
+            ready is not None
+            and ready.processing_fingerprint == self._processing_fingerprint
+        )
+        if ready is not None and (
+            current_profile or ready.processing_fingerprint is None
+        ):
+            if ready.revision == document.revision:
+                return self._skip(document, ready)
+        fallback = _Fallback.FETCH_AND_COMPARE
+        if ready is not None and current_profile:
+            shortcut = self._try_provider_hash(document, ready)
+            if isinstance(shortcut, ConnectorSyncOutcome):
+                return shortcut
+            fallback = shortcut
+        fetched = self._fetch(document, previous)
+        if isinstance(fetched, ConnectorSyncOutcome):
+            return fetched
+        content_fingerprint = fingerprint_text(fetched.content)
+        if (
+            fallback is _Fallback.FETCH_AND_COMPARE
+            and ready is not None
+            and current_profile
+            and ready.content_fingerprint == content_fingerprint
+            and ready.content_format == fetched.metadata.content_format
+        ):
+            applied = self._apply_metadata(
+                document, ready, fetched.metadata, content_fingerprint
             )
+            if isinstance(applied, ConnectorSyncOutcome):
+                return applied
+        return self._ingest_source(document, previous, fetched)
+
+    def _skip(
+        self, document: ConnectorDocument, previous: CatalogDocument
+    ) -> ConnectorSyncOutcome:
+        stamped = _connector_id_of(document)
+        adopted = previous.processing_fingerprint is None
+        if adopted or (stamped and previous.connector_id != stamped):
+            self._catalog.upsert(
+                dataclasses.replace(
+                    previous,
+                    connector_id=stamped or previous.connector_id,
+                    processing_fingerprint=self._processing_fingerprint,
+                )
+            )
+        if adopted:
+            log_operation(
+                logger,
+                operation="connector_sync",
+                outcome="processing_profile_adopted",
+                source_id=document.source_id,
+                source_type=document.reference.source_type,
+            )
+        return ConnectorSyncOutcome(
+            source_id=document.source_id,
+            status=ConnectorSyncStatus.SKIPPED,
+            chunk_count=previous.chunk_count,
+        )
+
+    def _try_provider_hash(
+        self, document: ConnectorDocument, previous: CatalogDocument
+    ) -> ConnectorSyncOutcome | _Fallback:
+        """Describe metadata without fetching when both provider hashes match.
+
+        A described ``content_format`` that differs from the row's falls back
+        to fetching, because chunk boundaries depend on it.
+        """
+        if (
+            document.content_hash is None
+            or previous.provider_content_hash != document.content_hash
+            or previous.content_fingerprint is None
+            or self._vector_store_factory is None
+            or not isinstance(self._connector, MetadataDescribingConnector)
+        ):
+            return _Fallback.FETCH_AND_COMPARE
         try:
-            source = self._connector.fetch_document(document)
+            page = self._vector_store_factory().list_source_chunks(
+                previous.reference, limit=1
+            )
+        except VectorStoreError as error:
+            return _failed_outcome(document, error)
+        if not page.chunks:
+            _log_vector_recovery(document, "vector_chunks_missing")
+            return _Fallback.REINGEST
+        try:
+            metadata = self._connector.describe_document(
+                document, page.chunks[0].metadata
+            )
+        except (ConnectorAuthError, ConnectorUnavailableError):
+            raise
+        except ConnectorError:
+            return _Fallback.FETCH_AND_COMPARE
+        if metadata.content_format != previous.content_format:
+            return _Fallback.FETCH_AND_COMPARE
+        return self._apply_metadata(
+            document, previous, metadata, previous.content_fingerprint
+        )
+
+    def _apply_metadata(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument,
+        metadata: SourceMetadata,
+        content_fingerprint: str,
+    ) -> ConnectorSyncOutcome | _Fallback:
+        """Advance an unchanged-content row, rewriting chunk metadata if needed.
+
+        The catalog is only written after the vector store reports exactly the
+        row's chunk count, so a failed or partial rewrite is retried next run.
+        """
+        metadata_fingerprint = fingerprint_metadata(metadata)
+        updated_at = self._now()
+        if previous.metadata_fingerprint != metadata_fingerprint:
+            if self._vector_store_factory is None:
+                return _Fallback.REINGEST
+            stamped = dataclasses.replace(
+                metadata, created_at=previous.created_at, updated_at=updated_at
+            )
+            try:
+                count = self._vector_store_factory().update_source_metadata(
+                    previous.reference, stamped
+                )
+            except VectorStoreError as error:
+                return _failed_outcome(document, error)
+            if count == 0 or count != previous.chunk_count:
+                _log_vector_recovery(document, "vector_chunks_inconsistent")
+                return _Fallback.REINGEST
+        self._catalog.upsert(
+            dataclasses.replace(
+                previous,
+                file_name=document.file_name,
+                title=metadata.title,
+                content_format=metadata.content_format,
+                status=CatalogStatus.READY,
+                updated_at=updated_at,
+                error=None,
+                revision=document.revision,
+                connector_id=_connector_id_of(document),
+                content_fingerprint=content_fingerprint,
+                metadata_fingerprint=metadata_fingerprint,
+                processing_fingerprint=self._processing_fingerprint,
+                provider_content_hash=document.content_hash,
+            )
+        )
+        return ConnectorSyncOutcome(
+            source_id=document.source_id,
+            status=ConnectorSyncStatus.METADATA_UPDATED,
+            chunk_count=previous.chunk_count,
+        )
+
+    def _fetch(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument | None,
+    ) -> SourceDocument | ConnectorSyncOutcome:
+        try:
+            return self._connector.fetch_document(document)
         except (ConnectorAuthError, ConnectorUnavailableError):
             raise
         except ConnectorError as error:
-            _log_document_failure(document, error)
             if previous is None:
                 now = self._now()
                 self._catalog.upsert(
@@ -171,12 +354,14 @@ class SyncConnectorDocuments:
                         error=error,
                     )
                 )
-            return ConnectorSyncOutcome(
-                source_id=document.source_id,
-                status=ConnectorSyncStatus.FAILED,
-                chunk_count=0,
-                error_type=type(error).__name__,
-            )
+            return _failed_outcome(document, error)
+
+    def _ingest_source(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument | None,
+        source: SourceDocument,
+    ) -> ConnectorSyncOutcome:
         ingest = self._ingest()
         updated_at = self._now()
         created_at = previous.created_at if previous is not None else updated_at
@@ -191,6 +376,7 @@ class SyncConnectorDocuments:
         pending = _pending_row(
             document,
             source,
+            previous,
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -199,22 +385,10 @@ class SyncConnectorDocuments:
             response = ingest.execute(IngestRequest(documents=(source,)))
         except IngestFailure as error:
             self._recover_ingest_failure(previous, pending, error)
-            _log_document_failure(document, error)
-            return ConnectorSyncOutcome(
-                source_id=document.source_id,
-                status=ConnectorSyncStatus.FAILED,
-                chunk_count=0,
-                error_type=type(error).__name__,
-            )
+            return _failed_outcome(document, error)
         except ApplicationValidationError as error:
             self._recover_pre_mutation(previous, pending, error)
-            _log_document_failure(document, error)
-            return ConnectorSyncOutcome(
-                source_id=document.source_id,
-                status=ConnectorSyncStatus.FAILED,
-                chunk_count=0,
-                error_type=type(error).__name__,
-            )
+            return _failed_outcome(document, error)
         except Exception as error:
             self._write_status(pending, CatalogStatus.DEGRADED, error)
             _log_document_failure(document, error)
@@ -223,6 +397,10 @@ class SyncConnectorDocuments:
             pending,
             status=CatalogStatus.READY,
             chunk_count=response.chunk_count,
+            content_fingerprint=fingerprint_text(source.content),
+            metadata_fingerprint=fingerprint_metadata(source.metadata),
+            processing_fingerprint=self._processing_fingerprint,
+            provider_content_hash=document.content_hash,
         )
         self._catalog.upsert(ready)
         status = (
@@ -332,16 +510,6 @@ class SyncConnectorDocuments:
         )
 
 
-def _is_unchanged(
-    existing: CatalogDocument | None, document: ConnectorDocument
-) -> bool:
-    return (
-        existing is not None
-        and existing.status is CatalogStatus.READY
-        and existing.revision == document.revision
-    )
-
-
 def _connector_id_of(document: ConnectorDocument) -> str | None:
     value = document.extra.get("connector_id")
     if isinstance(value, str) and value.strip():
@@ -403,10 +571,12 @@ def _failed_row(
 def _pending_row(
     document: ConnectorDocument,
     source: SourceDocument,
+    previous: CatalogDocument | None,
     *,
     created_at: datetime,
     updated_at: datetime,
 ) -> CatalogDocument:
+    """Build the PENDING row; fingerprints stay at the previous row's values."""
     return CatalogDocument(
         reference=document.reference,
         file_name=document.file_name,
@@ -419,6 +589,37 @@ def _pending_row(
         error=None,
         revision=document.revision,
         connector_id=_connector_id_of(document),
+        content_fingerprint=previous.content_fingerprint if previous else None,
+        metadata_fingerprint=previous.metadata_fingerprint if previous else None,
+        processing_fingerprint=(
+            previous.processing_fingerprint if previous else None
+        ),
+        provider_content_hash=(
+            previous.provider_content_hash if previous else None
+        ),
+    )
+
+
+def _failed_outcome(
+    document: ConnectorDocument, error: BaseException
+) -> ConnectorSyncOutcome:
+    _log_document_failure(document, error)
+    return ConnectorSyncOutcome(
+        source_id=document.source_id,
+        status=ConnectorSyncStatus.FAILED,
+        chunk_count=0,
+        error_type=type(error).__name__,
+    )
+
+
+def _log_vector_recovery(document: ConnectorDocument, outcome: str) -> None:
+    log_operation(
+        logger,
+        operation="connector_sync",
+        outcome=outcome,
+        level=logging.WARNING,
+        source_id=document.source_id,
+        source_type=document.reference.source_type,
     )
 
 

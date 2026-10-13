@@ -79,6 +79,7 @@ def test_lists_supported_repo_blobs_with_commit_provenance() -> None:
     assert [doc.source_id for doc in docs] == ["octo/hello:docs/readme.md"]
     assert docs[0].reference.source_type == SourceType.GITHUB
     assert docs[0].revision == "blob-1"
+    assert docs[0].content_hash == "blob-1"
     assert docs[0].extra["url"] == (
         "https://github.com/octo/hello/blob/commit-sha/docs/readme.md"
     )

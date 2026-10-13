@@ -283,3 +283,47 @@ def test_source_metadata_rejects_naive_updated_at() -> None:
             reference=_reference(),
             updated_at=datetime(2026, 8, 28, 12, 0),
         )
+
+
+FINGERPRINT_FIELDS = (
+    "content_fingerprint",
+    "metadata_fingerprint",
+    "processing_fingerprint",
+    "provider_content_hash",
+)
+
+
+def _catalog_document(**overrides: object) -> CatalogDocument:
+    values: dict[str, object] = {
+        "reference": _reference(),
+        "file_name": "guide.md",
+        "title": None,
+        "content_format": None,
+        "status": CatalogStatus.READY,
+        "created_at": _aware_now(),
+        "updated_at": _aware_now(),
+        "chunk_count": 1,
+        "error": None,
+    }
+    values.update(overrides)
+    return CatalogDocument(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("field_name", FINGERPRINT_FIELDS)
+def test_catalog_document_fingerprints_default_to_none(field_name: str) -> None:
+    assert getattr(_catalog_document(), field_name) is None
+
+
+@pytest.mark.parametrize("field_name", FINGERPRINT_FIELDS)
+def test_catalog_document_accepts_fingerprint(field_name: str) -> None:
+    document = _catalog_document(**{field_name: "abc123"})
+    assert getattr(document, field_name) == "abc123"
+
+
+@pytest.mark.parametrize("field_name", FINGERPRINT_FIELDS)
+@pytest.mark.parametrize("value", ["", "  ", 42])
+def test_catalog_document_rejects_invalid_fingerprint(
+    field_name: str, value: object
+) -> None:
+    with pytest.raises(DomainValidationError, match=field_name):
+        _catalog_document(**{field_name: value})
