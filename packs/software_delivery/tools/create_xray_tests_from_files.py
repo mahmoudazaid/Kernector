@@ -65,6 +65,11 @@ _APPROVAL_SUMMARY = (
     "Create Jira Test issues in Xray for the file scenarios that have no Xray key yet "
     "and link each one to its story. Existing tests are reported, not created."
 )
+_DRY_RUN_TITLE = "Dry run: plan Xray tests from files"
+_DRY_RUN_SUMMARY = (
+    "Nothing is created in Jira. Kernector reads Jira to report which file "
+    "scenarios would be created, already exist or need attention."
+)
 
 
 class XrayFileCreateBinding(Protocol):
@@ -162,11 +167,11 @@ class CreateXrayTestsFromFilesTool:
 
     def approval_hints(self, arguments: Mapping[str, object]) -> ApprovalHints:
         """Safe approval prompt: destination and untagged scenario names, never steps."""
-        parsed, _dry_run = self._parse(arguments)
+        parsed, dry_run = self._parse(arguments)
         pending = untagged(parsed)
         return ApprovalHints(
-            title=_APPROVAL_TITLE,
-            summary=_APPROVAL_SUMMARY,
+            title=_DRY_RUN_TITLE if dry_run else _APPROVAL_TITLE,
+            summary=_DRY_RUN_SUMMARY if dry_run else _APPROVAL_SUMMARY,
             destination_label=self._destination_label,
             selected_title_count=len(pending),
             item_titles=_approval_titles(pending),
@@ -294,7 +299,7 @@ def _approval_titles(
     pending: Sequence[tuple[ParsedTestFile, TestFileScenario]],
 ) -> tuple[str, ...]:
     titles = [
-        _shorten(f"{scenario.summary} ({parsed.path}:{scenario.line})")
+        _shorten(f"{parsed.path.rsplit('/', 1)[-1]}:{scenario.line} · {scenario.summary}")
         for parsed, scenario in pending[:_MAX_APPROVAL_TITLES]
     ]
     if len(pending) > _MAX_APPROVAL_TITLES:

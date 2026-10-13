@@ -227,7 +227,7 @@ def test_approved_call_returns_the_structured_result_and_safe_prompt() -> None:
     assert payload["destination"] == LABEL
     [request] = gate.requests
     assert (request.destination_label, request.selected_title_count) == (LABEL, 1)
-    assert request.item_titles == ("Login (f/a.feature:3)",)
+    assert request.item_titles == ("a.feature:3 · Login",)
     assert "Given" not in repr(request)
 
 

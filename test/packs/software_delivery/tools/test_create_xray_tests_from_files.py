@@ -785,18 +785,28 @@ def test_unconfirmed_link_is_an_error_with_its_key_and_stops_the_run() -> None:
     assert payload["counts"]["ERROR"] == 3
 
 
-def test_approval_hints_give_project_and_untagged_count_only() -> None:
+def test_approval_hints_give_project_and_untagged_scenarios_only() -> None:
     xray = _FakeXray(issues=[_story("ABC-1")])
 
     hints = _tool(xray).approval_hints(
+        {"files": [{"path": "suite/login/t.robot", "content": _three()}]}
+    )
+
+    assert hints.title == "Create Xray tests from files"
+    assert hints.destination_label == "QA"
+    assert hints.selected_title_count == 3
+    assert hints.item_titles == ("t.robot:4 · One", "t.robot:6 · Two", "t.robot:8 · Three")
+    assert "Given" not in hints.summary + "".join(hints.item_titles)
+    assert xray.lookups == [] and xray.created == []
+
+
+def test_dry_run_approval_says_nothing_is_created() -> None:
+    hints = _tool(_FakeXray()).approval_hints(
         {"files": [{"path": "t.robot", "content": _three()}], "dry_run": True}
     )
 
-    assert hints.destination_label == "QA"
-    assert hints.selected_title_count == 3
-    assert hints.item_titles == ("One (t.robot:4)", "Two (t.robot:6)", "Three (t.robot:8)")
-    assert "Given" not in hints.summary + "".join(hints.item_titles)
-    assert xray.lookups == [] and xray.created == []
+    assert hints.title == "Dry run: plan Xray tests from files"
+    assert "Nothing is created" in hints.summary
 
 
 def test_approval_titles_are_capped_and_shortened() -> None:
