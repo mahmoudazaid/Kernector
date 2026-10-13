@@ -18,7 +18,12 @@ from composition.mcp.tool_registry import (
     McpToolRegistry,
 )
 from domain.errors import ToolTargetNotFoundError
-from domain.tool_approval import ApprovalHints, PendingToolApproval, ToolApprovalPolicy
+from domain.tool_approval import (
+    ApprovalDeferredError,
+    ApprovalHints,
+    PendingToolApproval,
+    ToolApprovalPolicy,
+)
 
 SIDE_EFFECT = "fake.create_things"
 READ_ONLY = "fake.read_things"
@@ -138,6 +143,41 @@ def test_a_failing_gate_fails_closed() -> None:
     assert result.code == APPROVAL_REQUIRED_CODE
     assert "back channel" not in result.text
     assert tool.runs == []
+
+
+def test_a_failing_gate_logs_the_error_type_without_its_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="composition.mcp.tool_registry")
+
+    _registry(_FakeTool(SIDE_EFFECT)).invoke_authorized(
+        _caller(SIDE_EFFECT),
+        SIDE_EFFECT,
+        {"thing_id": "t"},
+        approve=_Gate(TimeoutError("secret detail")),
+    )
+
+    assert "outcome=gate_unavailable error=TimeoutError" in caplog.text
+    assert "secret detail" not in caplog.text
+
+
+def test_a_deferred_approval_is_logged_as_input_required(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="composition.mcp.tool_registry")
+    tool = _FakeTool(SIDE_EFFECT)
+
+    result = _registry(tool).invoke_authorized(
+        _caller(SIDE_EFFECT),
+        SIDE_EFFECT,
+        {"thing_id": "t"},
+        approve=_Gate(ApprovalDeferredError()),
+    )
+
+    assert result.code == APPROVAL_REQUIRED_CODE
+    assert tool.runs == []
+    assert "outcome=input_required" in caplog.text
+    assert "gate_unavailable" not in caplog.text
 
 
 def test_unauthorized_caller_is_unavailable_before_any_approval_work() -> None:

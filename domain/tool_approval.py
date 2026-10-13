@@ -17,6 +17,10 @@ _DEFAULT_ALLOWLIST = frozenset(
 )
 
 
+class ApprovalDeferredError(Exception):
+    """The gate will ask the user on a later round; the tool must not run now."""
+
+
 @dataclass(frozen=True, slots=True)
 class PendingToolApproval:
     """Presentation-safe pending approval; never carries raw Tool arguments."""

@@ -37,7 +37,7 @@ from composition.mcp.tool_registry import (
     McpToolRegistry,
     TOOL_UNAVAILABLE_CODE,
 )
-from domain.tool_approval import PendingToolApproval
+from domain.tool_approval import ApprovalDeferredError, PendingToolApproval
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def _approval_binding(name: str, arguments: Mapping[str, object] | None) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-class _ApprovalInputRequired(Exception):
+class _ApprovalInputRequired(ApprovalDeferredError):
     """Ends the first round so the handler can return an input request."""
 
 
@@ -356,6 +356,19 @@ def build_mcp_server(
             ]
         )
 
+    # Clients poll these even when unadvertised; "Method not found" maps to HTTP 404.
+    async def on_list_resources(
+        _ctx: ServerRequestContext[Any],
+        _params: types.PaginatedRequestParams | None,
+    ) -> types.ListResourcesResult:
+        return types.ListResourcesResult(resources=[])
+
+    async def on_list_resource_templates(
+        _ctx: ServerRequestContext[Any],
+        _params: types.PaginatedRequestParams | None,
+    ) -> types.ListResourceTemplatesResult:
+        return types.ListResourceTemplatesResult(resource_templates=[])
+
     return Server(
         name,
         version="0.1.0",
@@ -364,6 +377,8 @@ def build_mcp_server(
         on_call_tool=on_call_tool,
         on_list_prompts=on_list_prompts,
         on_get_prompt=on_get_prompt,
+        on_list_resources=on_list_resources,
+        on_list_resource_templates=on_list_resource_templates,
     )
 
 
