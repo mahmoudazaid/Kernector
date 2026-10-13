@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
@@ -250,7 +251,44 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 # graceful shutdown until a forced second Ctrl+C.
                 return _NO_STANDALONE_STREAM
             request.state.mcp_caller = self._caller_factory()
+            if request.method == "POST":
+                body = await request.body()
+                response = await call_next(request)
+                if response.status_code >= 400:
+                    logger.warning(
+                        "mcp_http_error status=%s method=%s protocol=%s session=%s",
+                        response.status_code,
+                        _jsonrpc_method(body),
+                        _log_token(request.headers.get("mcp-protocol-version")),
+                        "yes" if request.headers.get("mcp-session-id") else "no",
+                    )
+                return response
         return await call_next(request)
+
+
+_LOGGABLE_TOKEN = re.compile(r"[A-Za-z0-9_./-]{1,64}")
+
+
+def _log_token(value: object) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, str) and _LOGGABLE_TOKEN.fullmatch(value):
+        return value
+    return "invalid"
+
+
+def _jsonrpc_method(body: bytes) -> str:
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return "invalid"
+    if isinstance(message, list):
+        return "batch"
+    if not isinstance(message, dict):
+        return "invalid"
+    if "method" not in message:
+        return "response"
+    return _log_token(message["method"])
 
 
 async def _healthz(_request: Request) -> JSONResponse:
