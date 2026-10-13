@@ -251,7 +251,7 @@ def test_manual_data_tables_and_doc_strings_stay_with_their_line() -> None:
         XrayTestStep(action="Given a clean database"),
         XrayTestStep(
             action="Given these users\n| name | role |\n| ann | admin |",
-            expected='Then the response is\n"""json\n      {"ok": true}\n"""',
+            expected='Then the response is\n"""json\n{"ok": true}\n"""',
         ),
     )
 
@@ -268,8 +268,11 @@ def test_cucumber_scenario_gherkin_keeps_background_tables_and_doc_strings() -> 
         "      | name |",
         "      | ann  |",
         "    When the API is called with",
-        '      """',
-        "      body",
+        '      """json',
+        "      {",
+        '        "id": 1',
+        "",
+        "    }",
         '      """',
         "    Then it works",
     )
@@ -286,8 +289,11 @@ def test_cucumber_scenario_gherkin_keeps_background_tables_and_doc_strings() -> 
             "  | name |",
             "  | ann |",
             "When the API is called with",
-            '  """',
-            "      body",
+            '  """json',
+            "  {",
+            '    "id": 1',
+            "",
+            "  }",
             '  """',
             "Then it works",
         ]

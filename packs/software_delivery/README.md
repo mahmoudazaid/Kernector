@@ -229,8 +229,10 @@ in the run, are never reused. Steps are never compared.
 **Fail closed.** Only Server/DC answers "not found" (HTTP 404). Xray Cloud
 looks issues up through `getTests` and `getCoverableIssues` JQL searches, in
 chunks of 50 keys and pages of 100, at most 20 pages; a key neither returns is
-**unresolved** (`ERROR`), never missing. GraphQL errors on a chunk fall back to
-one key at a time; incomplete or malformed pages raise.
+**unresolved** (`ERROR`), never missing. A chunk refused with GraphQL errors is
+split in half until the refused keys are isolated, at most 50 splits per call;
+keys still in a refused chunk stay unresolved. Incomplete or malformed pages
+raise.
 
 **Specs.** The Background is prepended. Manual tests turn `Given`/`When` (and
 the `And`/`But` after them) into actions and `Then` (and its `And`/`But`)

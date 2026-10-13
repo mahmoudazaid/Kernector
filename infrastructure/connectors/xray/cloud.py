@@ -65,7 +65,7 @@ _OUTLINE_TYPES = frozenset({"scenario_outline", "scenario outline"})
 _PAGE_LIMIT = 100
 _MAX_PAGES = 20
 _KEY_CHUNK = 50
-_MAX_KEY_FALLBACKS = 100
+_MAX_CHUNK_SPLITS = 50
 
 
 class _UnauthorizedError(ConnectorAuthError):
@@ -93,7 +93,9 @@ class XrayCloudImporter:
 
     Lookups go through Xray JQL searches, so a key is never reported missing:
     a key neither search returns stays unresolved. Searches are chunked and
-    paged within fixed bounds; an incomplete search raises.
+    paged within fixed bounds; an incomplete search raises. A chunk refused
+    with GraphQL errors is bisected within a fixed split budget; keys left in
+    refused chunks stay unresolved.
     """
 
     def __init__(
@@ -166,22 +168,18 @@ class XrayCloudImporter:
         """Resolve keys through ``getTests`` and ``getCoverableIssues``; never reports missing."""
         valid = [key for key in dict.fromkeys(keys) if _ISSUE_KEY.fullmatch(key)]
         found: dict[str, JiraIssueSummary] = {}
-        fallbacks = 0
-        for index in range(0, len(valid), _KEY_CHUNK):
-            chunk = valid[index : index + _KEY_CHUNK]
+        pending = [valid[index : index + _KEY_CHUNK] for index in range(0, len(valid), _KEY_CHUNK)]
+        pending.reverse()
+        splits = 0
+        while pending:
+            chunk = pending.pop()
             try:
                 found.update(self._resolve(chunk))
-                continue
             except _SearchRefusedError:
-                pass
-            for key in chunk:
-                fallbacks += 1
-                if fallbacks > _MAX_KEY_FALLBACKS:
-                    raise ConnectorUnavailableError(MSG_UNAVAILABLE)
-                try:
-                    found.update(self._resolve([key]))
-                except _SearchRefusedError:
-                    continue
+                if len(chunk) > 1 and splits < _MAX_CHUNK_SPLITS:
+                    splits += 1
+                    half = len(chunk) // 2
+                    pending.extend((chunk[half:], chunk[:half]))
         return IssueLookupResult(found=found, missing=frozenset())
 
     def linked_tests(self, story_key: str) -> tuple[JiraIssueSummary, ...]:

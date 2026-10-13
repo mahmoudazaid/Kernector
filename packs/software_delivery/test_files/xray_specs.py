@@ -106,9 +106,15 @@ def _step_lines(step: TestStep, indent: str) -> list[str]:
     doc = step.doc_string
     if doc is not None:
         lines.append(f"{indent}{doc.delimiter}{doc.media_type}")
-        lines.extend(doc.lines)
+        lines.extend(_doc_content(line, doc.indent, indent) for line in doc.lines)
         lines.append(f"{indent}{doc.delimiter}")
     return lines
+
+
+def _doc_content(line: str, column: int, indent: str) -> str:
+    """Re-indent ``line`` under a delimiter at ``indent``, as Gherkin strips up to ``column``."""
+    content = line[min(column, len(line) - len(line.lstrip())) :]
+    return f"{indent}{content}" if content else ""
 
 
 def _examples_lines(examples: ExamplesBlock) -> list[str]:

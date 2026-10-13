@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -406,11 +407,12 @@ class _Search:
         if self.raw is not None:
             return httpx.Response(200, json=self.raw)
         jql = body["variables"]["jql"]
-        if any(key in jql for key in self.errors_for):
+        jql_keys = set(re.findall(r"[A-Z][A-Z0-9_]*-[0-9]+", jql))
+        if jql_keys & self.errors_for:
             return httpx.Response(200, json={"errors": [{"message": "bad key"}], "data": None})
         name = "getTests" if "getTests" in body["query"] else "getCoverableIssues"
         items = self.tests if name == "getTests" else self.coverable
-        items = [i for i in items if i["jira"]["key"] in jql or "linkedIssues" in jql]
+        items = [i for i in items if i["jira"]["key"] in jql_keys or "linkedIssues" in jql]
         start = body["variables"]["start"]
         assert body["variables"]["limit"] <= 100
         page = items[start : start + self.page]
@@ -482,6 +484,27 @@ def test_chunk_errors_fall_back_per_key_and_failing_keys_stay_unresolved() -> No
 
     assert set(result.found) == {"QA-5"}
     assert result.missing == frozenset()
+
+
+def test_refused_keys_in_several_chunks_stay_unresolved_without_failing_the_lookup() -> None:
+    keys = [f"ABC-{n}" for n in range(1, 102)]
+    bad = {"ABC-7", "ABC-57", "ABC-101"}
+    xray = _Search(coverable=[_jira(k, "Story", "1", "Story") for k in keys], errors_for=bad)
+
+    result = _importer(xray).find_issues(keys)
+
+    assert set(result.found) == set(keys) - bad
+    assert result.missing == frozenset()
+
+
+def test_refused_chunk_splits_are_capped_and_leftover_keys_stay_unresolved() -> None:
+    keys = [f"ABC-{n}" for n in range(1, 501)]
+    xray = _Search(coverable=[_jira(k, "Story", "1", "Story") for k in keys], errors_for=keys)
+
+    result = _importer(xray).find_issues(keys)
+
+    assert result == IssueLookupResult(found={}, missing=frozenset())
+    assert len(xray.queries) == 10 + 2 * 50
 
 
 @pytest.mark.parametrize(
