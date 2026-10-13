@@ -70,6 +70,40 @@ def test_pipe_and_tab_separated_cells_and_continuations_attach_to_the_step() -> 
     ]
 
 
+def test_mixed_whitespace_runs_are_one_separator_and_tight_pipes_keep_empty_cells() -> None:
+    text = _robot(
+        "*** Test Cases ***",
+        "Scenario: Mixed whitespace",
+        "    [Tags]  \tsmoke    XRay ABC-1",
+        "    Given user opens  \tadmin",
+        "| Scenario: Tight pipes |",
+        "| | Given user opens | | admin |",
+    )
+
+    mixed, tight = parse_test_file("t.robot", text, TAGS).scenarios
+
+    assert mixed.tags.local.plain == ("smoke",)
+    assert mixed.xray_key == "ABC-1"
+    [step] = mixed.steps
+    assert (step.arguments, step.text) == (("user opens", "admin"), "Given user opens    admin")
+    assert [s.arguments for s in tight.steps] == [("user opens", "", "admin")]
+
+
+def test_a_leading_bom_is_ignored() -> None:
+    text = "\ufeff" + _robot(
+        "*** Settings ***",
+        "Default Tags    Story ABC-9    manual",
+        "*** Test Cases ***",
+        "Scenario: A",
+        "    Given something",
+    )
+
+    parsed = parse_test_file("t.robot", text, TAGS)
+
+    [scenario] = parsed.scenarios
+    assert (parsed.story_key, scenario.kind) == ("ABC-9", "manual")
+
+
 def test_tags_lines_merge_with_continuations_and_manual_tags_set_the_kind() -> None:
     text = _robot(
         "*** Test Cases ***",

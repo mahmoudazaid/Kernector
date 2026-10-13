@@ -55,6 +55,14 @@ def _story(*header: str):
     return parsed.story_key, parsed.story_candidates
 
 
+def test_a_leading_bom_is_ignored() -> None:
+    parsed = parse_test_file(
+        "f.feature", "\ufeff" + _feature("Feature: F", "  Scenario: A", "    Given x"), TAGS
+    )
+
+    assert [scenario.summary for scenario in parsed.scenarios] == ["A"]
+
+
 def test_file_story_prefers_the_tag_then_the_title_bracket_and_never_guesses() -> None:
     assert _story("@ABC-1", "Feature: [ABC-2] Title") == ("ABC-1", ("ABC-1",))
     assert _story("Feature: [ABC-2] Title") == ("ABC-2", ())

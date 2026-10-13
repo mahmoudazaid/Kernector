@@ -9,6 +9,7 @@ from packs.software_delivery.test_files.robot import parse_robot
 
 ROBOT_EXTENSION = ".robot"
 GHERKIN_EXTENSION = ".feature"
+_BOM = "\ufeff"
 
 
 def parse_test_file(
@@ -34,7 +35,7 @@ def parse_test_file(
     if not is_supported_test_file(path):
         raise TestFileValidationError(path, None, TestFileErrorReason.UNSUPPORTED_EXTENSION)
     parse = parse_gherkin if path.lower().endswith(GHERKIN_EXTENSION) else parse_robot
-    return parse(path, text, tags, max_scenarios)
+    return parse(path, text.removeprefix(_BOM), tags, max_scenarios)
 
 
 def is_supported_test_file(path: str) -> bool:

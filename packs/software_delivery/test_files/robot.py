@@ -19,8 +19,8 @@ from packs.software_delivery.test_files.models import (
 from packs.software_delivery.test_files.tags import classify
 
 _SECTION = re.compile(r"^\*+\s*([^*]+?)\s*\**$")
-_SPACE_SEPARATOR = re.compile(r" {2,}|\t+")
-_PIPE_SEPARATOR = re.compile(r" \|(?: |$)")
+_SPACE_SEPARATOR = re.compile(r"\s{2,}|\t")
+_PIPE_SEPARATOR = re.compile(r"(?:\A|\s+)\|(?:\s+|\Z)")
 _SCENARIO = re.compile(r"^scenario:\s*", re.IGNORECASE)
 _BDD_STEP = re.compile(r"^(given|when|then|and|but)\s+(\S.*)$", re.IGNORECASE)
 _CONTINUATION = "..."
@@ -139,18 +139,28 @@ def _settings_row(suite: _SuiteTags, row: _Row) -> None:
 
 def _rows(text: str) -> Iterator[_Row]:
     for number, raw in enumerate(text.splitlines(), start=1):
-        if raw.startswith("|"):
-            cells = _PIPE_SEPARATOR.split(raw[1:].rstrip().removesuffix("|").rstrip() + " ")
-            cells = [cell.strip() for cell in cells]
+        line = raw.rstrip()
+        if line[:1] == "|" and line[:2].strip() == "|":
+            cells = [cell.strip() for cell in _pipe_cells(line)]
             indented = not cells[0]
         else:
             indented = raw[:1].isspace()
-            cells = _SPACE_SEPARATOR.split(raw.strip())
+            cells = _SPACE_SEPARATOR.split(line.strip())
         while cells and not cells[0]:
             cells.pop(0)
         cells = _without_comment(cells)
+        while cells and not cells[-1]:
+            cells.pop()
         if cells:
             yield _Row(number, indented, cells)
+
+
+def _pipe_cells(line: str) -> list[str]:
+    cells: list[str] = []
+    while (separator := _PIPE_SEPARATOR.search(line)) is not None:
+        cells.append(line[: separator.start()])
+        line = line[separator.end() :]
+    return [*cells[1:], line]
 
 
 def _without_comment(cells: list[str]) -> list[str]:
