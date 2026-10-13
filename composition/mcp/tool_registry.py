@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from composition.mcp.access import McpAccessPolicy, McpCallerContext
 from domain.errors import (
     ToolArgumentValidationError,
+    TrustedToolValidationError,
     ToolEvidenceChangedError,
     ToolFailureError,
     ToolInsufficientEvidenceError,
@@ -368,6 +369,8 @@ class McpToolRegistry:
         tool: Tool,
         error: Exception,
     ) -> McpInvokeResult:
+        if isinstance(error, TrustedToolValidationError):
+            return _validation_error(error.safe_message)
         if isinstance(error, ToolArgumentValidationError):
             return _validation_error()
         if isinstance(error, ToolFailureError):

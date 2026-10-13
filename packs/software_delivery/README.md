@@ -8,6 +8,7 @@ this pack only through [`registration.py`](registration.py).
 | Location | Responsibility |
 | --- | --- |
 | `tools/` | Real tool adapters (`tools/<name>.py`), registered from `build_tools` |
+| `test_files/` | Pure Robot Framework / Gherkin parser for the test file preview (#396) |
 | Pack root | Shared contracts, errors, export limits, chat intent, registration |
 
 The scaffolding risk, test-generation, and Markdown-export tools were retired
@@ -91,6 +92,89 @@ availability and the keys already created from the draft;
 are stored per draft on every path (page, chat, and MCP), so the dialog warns
 "Already created …" before a repeat run. Xray rejections (such as required fields Kernector could not fill) return
 502 `xray_export_failed` with a safe detail.
+
+## Test file scenario preview (#396)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `software_delivery.preview_test_file_scenarios` | `files[]` of `{path, content}` (1 to 20; `path` ends in `.robot` or `.feature`) | `files[]` of parsed scenario specs, `scenario_count` |
+
+A read-only, pure parser ([`test_files/`](test_files/)). The caller sends each
+file's workspace-relative path and full text. Kernector never reads the disk,
+never scans a workspace, and makes no Jira or Xray calls; creating tests from
+the result is #397. The tool is registered whenever the pack is enabled, on
+chat (`InvokeTool`) and on MCP (allowlist it in `MCP_TOOL_ALLOWLIST`), and
+needs no approval. The ticket's "faked Jira/Xray client" criterion does not
+apply: the tool takes no client, and the MCP tests run with no Xray
+configuration to prove it.
+
+**Limits.** At most 20 files, 512-character paths, 256 KiB per file and
+1 MiB in total (UTF-8 bytes), all checked before anything is parsed, and 500
+scenarios per call. Errors are `validation_error` with a fixed message
+`path:line: reason`; the path is stripped of control characters and long
+paths keep only their last 117 characters after `...`. No file content is
+echoed.
+
+**Robot Framework.** Only `*** Test Cases ***` entries whose name starts with
+`Scenario:` become scenarios; other test cases are skipped. Space (two or
+more), tab and pipe separators are supported. Body rows starting with
+`Given`, `When`, `Then`, `And` or `But` are steps, with the remaining cells
+kept verbatim as arguments; `...` continues the previous step or `[Tags]`.
+Tags come from `[Tags]` (multiple rows allowed), `Default Tags` and
+`Test Tags` / `Force Tags`. As in Robot, a test with its own `[Tags]` does
+not inherit the `Default Tags` plain tags, but a story key there still
+applies. An empty scenario name or a `...` with nothing to
+continue is rejected.
+
+**Gherkin.** One `Feature:` per file, an optional `Background:` before the
+first scenario, `Scenario:` / `Example:`, and `Scenario Outline:` /
+`Scenario Template:` with one or more `Examples:` / `Scenarios:` blocks (each
+with its own tags, a header row and at least one data row). Steps carry an
+optional data table or doc string (`"""` or ```` ``` ````, with media type);
+doc-string lines are kept verbatim, including lines that look like comments,
+tags, tables or keywords. Outline placeholders stay as written: one outline is
+one scenario spec, and Examples rows are not expanded. Rejected with file and
+line: `Rule:`, a non-English `# language:`, a second `Feature:` or
+`Background:`, a Background after a scenario, steps or tables with nothing to
+attach to, unclosed doc strings, rows of different widths, Examples outside an
+outline, an outline without Examples, and tags not followed by a Feature,
+scenario or Examples.
+
+**Combination rule.** The spec of each scenario is the Background steps
+(once, in `background`), then the scenario's own steps, then its Examples
+blocks. Consumers (#397) prepend the Background when building a test.
+
+**Tag roles.** With the defaults below:
+
+| Tag | Robot | Gherkin | Role |
+| --- | --- | --- | --- |
+| Xray test key | `XRay ABC-1`, `XRay:ABC-1`, `XRay=ABC-1` | `@XRay:ABC-1`, `@XRay=ABC-1` | `xray_key` (scenario only) |
+| Story key | `Story ABC-1`, `Story:ABC-1`, `Story=ABC-1` | `@Story:ABC-1`, `@Story=ABC-1` | `story_key` |
+| Bare key | `ABC-1` | `@ABC-1` | story candidate |
+| Manual marker | `manual`, `scaffold` | `@manual`, `@scaffold` | plain; sets `kind: manual` |
+| Anything else | `smoke`, `env:prod` | `@smoke`, `@env:prod` | plain, kept whole |
+
+A composite is split only when one side is a configured marker (any case) and
+the other an issue key. Every token on a Gherkin tag line must start with `@`,
+so `@XRay ABC-1` is rejected; `@XRay @ABC-1` is a plain tag plus a candidate.
+There is no Bug role: `@Bug:ABC-9` is plain.
+
+**Scope and precedence.** Feature tags and Robot `Default`/`Test Tags` are
+file scope (`inherited`); scenario tags are `local`. The scenario's
+`story_key` is its local story key, else the file's explicit story key, else
+the file's only bare key; with two or more bare file keys the file story is
+`null` and all keys are listed in `story_candidates`. A Gherkin Feature title
+bracket (`Feature: [ABC-1] Login`) is used only when the file has no story
+key and no candidates. `xray_key` comes only from scenario tags; a file-level
+Xray key, or two different Xray or story keys in one scope, is an error.
+`effective_plain` is the inherited plus local plain tags; `kind` is `manual`
+when any of them is a manual tag, otherwise `cucumber`.
+
+**Configuration.** `XRAY_TEST_TAG` (default `XRay`), `XRAY_STORY_TAG`
+(default `Story`) and `XRAY_MANUAL_TAGS` (comma-separated, default
+`manual,scaffold`). They load even without `XRAY_DEPLOYMENT`. Each name is
+one token without whitespace or `@ : = | ,`, must not look like an issue key,
+and names may not collide (case-insensitive).
 
 ## Chat-time routing (#312)
 

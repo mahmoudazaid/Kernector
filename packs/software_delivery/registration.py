@@ -5,6 +5,7 @@ from collections.abc import Callable, Sequence
 from domain.ports import ArtifactUploader, ChatModel, Tool, XrayTestImporter
 from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_intent
 from packs.software_delivery.project.contexts import SoftwareDeliveryContextVocabulary
+from packs.software_delivery.test_files.models import TestFileTagConfig
 from packs.software_delivery.tools.create_xray_tests import (
     TOOL_NAME as CREATE_XRAY_TESTS_TOOL,
 )
@@ -17,6 +18,13 @@ from packs.software_delivery.tools.create_xray_tests import (
 from packs.software_delivery.tools.export_test_cases_google_drive import (
     ExportTestCasesGoogleDriveTool,
     RenderExportMarkdown,
+)
+from packs.software_delivery.tools.preview_test_file_scenarios import (
+    TOOL_NAME as PREVIEW_TEST_FILE_SCENARIOS_TOOL,
+)
+from packs.software_delivery.tools.preview_test_file_scenarios import (
+    PreviewTestFileScenariosTool,
+    TestFilePreviewMcpBinding,
 )
 from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
@@ -38,11 +46,13 @@ def build_tools(
     xray_importer: XrayTestImporter | None = None,
     xray_load_draft: DraftLoader | None = None,
     xray_on_created: CreatedRecorder | None = None,
+    test_file_tags: TestFileTagConfig | None = None,
 ) -> Sequence[Tool]:
     """Return chat-bound tools contributed by this pack.
 
     Chat registers Drive export and Xray test creation (#199) when their
-    collaborators are wired. Retired scaffolding tools (#285) are not revived
+    collaborators are wired, and the read-only test file preview (#396)
+    when ``test_file_tags`` is supplied. Retired scaffolding tools (#285) are not revived
     here or on MCP (#320).
 
     ``chat_model`` is optional until a chat tool that needs an LLM is registered.
@@ -79,6 +89,8 @@ def build_tools(
                 on_created=xray_on_created,
             )
         )
+    if test_file_tags is not None:
+        tools.append(PreviewTestFileScenariosTool(test_file_tags))
     return tuple(tools)
 
 
@@ -87,14 +99,16 @@ def build_mcp_tools(
     chat_model_factory: Callable[[], ChatModel] | None = None,
     test_design_binding: TestDesignMcpBinding | None = None,
     xray_binding: XrayMcpBinding | None = None,
+    test_file_binding: TestFilePreviewMcpBinding | None = None,
 ) -> Sequence[tuple[str, Callable[[], Tool]]]:
     """Return MCP tool factories for this pack (excludes Drive export).
 
     Test Design tools (#338) are contributed only when composition supplies a
     workspace-bound ``test_design_binding``. Xray test creation (#199) is
     contributed only with an ``xray_binding``; the registry gates it behind
-    human approval (ADR 0010). ``chat_model_factory`` is reserved for future
-    LLM-backed MCP tools.
+    human approval (ADR 0010). The read-only test file preview (#396) is
+    contributed with a ``test_file_binding`` and needs no approval.
+    ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
     """
     _ = chat_model_factory
     tools: list[tuple[str, Callable[[], Tool]]] = []
@@ -116,6 +130,18 @@ def build_mcp_tools(
                     on_created=xray.on_created,
                     args_schema=xray.args_schema,
                     output_schema=xray.output_schema,
+                ),
+            )
+        )
+    if test_file_binding is not None:
+        preview = test_file_binding
+        tools.append(
+            (
+                PREVIEW_TEST_FILE_SCENARIOS_TOOL,
+                lambda: PreviewTestFileScenariosTool(
+                    preview.tags,
+                    args_schema=preview.args_schema,
+                    output_schema=preview.output_schema,
                 ),
             )
         )

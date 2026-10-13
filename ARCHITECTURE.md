@@ -182,6 +182,13 @@ semantics (`batch.py`). Neither the pack nor the domain sees `customfield_*`
 ids. `XRAY_DEPLOYMENT` selects the importer; Server reuses the Jira DC base URL
 and PAT.
 
+Test file scenario preview (#396) is the read side of that flow: a pure
+parser in `packs/software_delivery/test_files/` turns caller-supplied `.robot`
+and `.feature` text into typed scenario specs (steps, tables, doc strings,
+Examples, tag roles). It reads no files and takes no Jira/Xray client. Tag
+names come from `XRAY_TEST_TAG`, `XRAY_STORY_TAG` and `XRAY_MANUAL_TAGS`,
+loaded even when `XRAY_DEPLOYMENT` is unset.
+
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
@@ -840,7 +847,8 @@ the agents; Kernector supplies evidence and allowlisted tools.
   authorization. `MCP_ALLOWED_HOSTS` is required; missing Origin is allowed,
   present Origin must match `MCP_ALLOWED_ORIGINS`.
 - Chat `build_tools()` registers Drive export and Xray test creation when
-  their collaborators are wired; MCP `build_mcp_tools()` is the pack seam.
+  their collaborators are wired, and the read-only test file preview
+  whenever the pack is enabled; MCP `build_mcp_tools()` is the pack seam.
   Drive export is never auto-exposed on MCP.
 - Side-effect tools ([ADR 0010](docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)):
   `invoke_authorized` runs authorization → argument validation →
@@ -857,6 +865,14 @@ the agents; Kernector supplies evidence and allowlisted tools.
   pack tool class as chat, contributed with a workspace-bound
   `XrayMcpBinding` (`composition/xray_export/mcp.py` owns the pydantic
   schemas) only when `XRAY_DEPLOYMENT` is configured.
+- Test file preview (#396): `software_delivery.preview_test_file_scenarios`
+  is contributed whenever `software-delivery` is enabled, with composition
+  (`composition/xray_export/test_file_preview.py`) owning the strict schemas
+  and tag binding. It is read-only (no approval). Its typed
+  `TestFileValidationError` subclasses `TrustedToolValidationError`, whose
+  fixed `safe_message` (`path:line: reason`, path sanitized) is the only
+  tool-raised validation text `_failure` passes through; every other
+  `ToolArgumentValidationError` stays the generic "Invalid tool arguments".
 - Effective tools = contributed ∩ enabled packs ∩ `MCP_TOOL_ALLOWLIST`, with an
   authenticated caller. Denied tools are absent from `tools/list`, and
   invoking them returns one identical `tool_unavailable` payload.
