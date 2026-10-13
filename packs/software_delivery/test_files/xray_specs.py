@@ -43,10 +43,10 @@ def build_spec(
     parsed: ParsedTestFile,
     scenario: TestFileScenario,
     *,
-    story_key: str,
+    story_key: str | None,
     component: str | None,
 ) -> XrayTestSpec | SpecProblem:
-    """Return the spec linked to ``story_key``, or why the scenario cannot be created."""
+    """Return the spec linked to ``story_key``, or why the scenario cannot be built."""
     background = parsed.background.steps if parsed.background is not None else ()
     steps = (*background, *scenario.steps)
     if scenario.kind == "manual":

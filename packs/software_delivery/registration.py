@@ -1,6 +1,7 @@
 """Registration entrypoint for the Software Delivery domain tool pack."""
 
 from collections.abc import Callable, Sequence
+from typing import Protocol
 
 from domain.ports import ArtifactUploader, ChatModel, Tool, XrayTestImporter
 from packs.software_delivery.chat_intent import ChatToolSelection, select_chat_intent
@@ -35,12 +36,23 @@ from packs.software_delivery.tools.preview_test_file_scenarios import (
 )
 from packs.software_delivery.tools.xray_target import TOOL_NAME as XRAY_TARGET_TOOL
 from packs.software_delivery.tools.xray_target import XrayTargetTool
+from packs.software_delivery.tools.update_xray_tests_from_files import (
+    TOOL_NAME as UPDATE_XRAY_TESTS_FROM_FILES_TOOL,
+)
+from packs.software_delivery.tools.update_xray_tests_from_files import (
+    XrayFileUpdateBinding,
+    build_update_from_binding,
+)
 from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TestDesignMcpBinding,
 )
 
 SelectChatIntent = Callable[[str], ChatToolSelection | None]
+
+
+class XrayFileBinding(XrayFileCreateBinding, XrayFileUpdateBinding, Protocol):
+    """One composition binding serves creating (#397) and updating (#398) from files."""
 
 
 class SoftwareDeliveryToolWiringError(ValueError):
@@ -56,14 +68,14 @@ def build_tools(
     xray_load_draft: DraftLoader | None = None,
     xray_on_created: CreatedRecorder | None = None,
     test_file_tags: TestFileTagConfig | None = None,
-    xray_file_binding: XrayFileCreateBinding | None = None,
+    xray_file_binding: XrayFileBinding | None = None,
 ) -> Sequence[Tool]:
     """Return chat-bound tools contributed by this pack.
 
     Chat registers Drive export and Xray test creation (#199) when their
     collaborators are wired, the read-only test file preview (#396)
     when ``test_file_tags`` is supplied, and Xray test creation from files
-    (#397) with an ``xray_file_binding``. Retired scaffolding tools (#285) are not revived
+    (#397) and updates from files (#398) with an ``xray_file_binding``. Retired scaffolding tools (#285) are not revived
     here or on MCP (#320).
 
     ``chat_model`` is optional until a chat tool that needs an LLM is registered.
@@ -104,6 +116,7 @@ def build_tools(
         tools.append(PreviewTestFileScenariosTool(test_file_tags))
     if xray_file_binding is not None:
         tools.append(build_from_binding(xray_file_binding))
+        tools.append(build_update_from_binding(xray_file_binding))
         tools.append(_xray_target(xray_file_binding))
     return tuple(tools)
 
@@ -114,7 +127,7 @@ def build_mcp_tools(
     test_design_binding: TestDesignMcpBinding | None = None,
     xray_binding: XrayMcpBinding | None = None,
     test_file_binding: TestFilePreviewMcpBinding | None = None,
-    xray_file_binding: XrayFileCreateBinding | None = None,
+    xray_file_binding: XrayFileBinding | None = None,
 ) -> Sequence[tuple[str, Callable[[], Tool]]]:
     """Return MCP tool factories for this pack (excludes Drive export).
 
@@ -123,7 +136,8 @@ def build_mcp_tools(
     contributed only with an ``xray_binding``; the registry gates it behind
     human approval (ADR 0010). The read-only test file preview (#396) is
     contributed with a ``test_file_binding`` and needs no approval. Xray test
-    creation from files (#397) needs an ``xray_file_binding`` and approval.
+    creation (#397) and update (#398) from files need an ``xray_file_binding``
+    and approval.
     ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
     """
     _ = chat_model_factory
@@ -167,11 +181,17 @@ def build_mcp_tools(
         tools.append(
             (CREATE_XRAY_TESTS_FROM_FILES_TOOL, lambda: build_from_binding(file_binding))
         )
+        tools.append(
+            (
+                UPDATE_XRAY_TESTS_FROM_FILES_TOOL,
+                lambda: build_update_from_binding(file_binding),
+            )
+        )
         tools.append((XRAY_TARGET_TOOL, lambda: _xray_target(file_binding)))
     return tuple(tools)
 
 
-def _xray_target(binding: XrayFileCreateBinding) -> XrayTargetTool:
+def _xray_target(binding: XrayFileBinding) -> XrayTargetTool:
     return XrayTargetTool(
         importer=binding.importer,
         destination_label=binding.destination_label,

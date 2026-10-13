@@ -411,6 +411,30 @@ def test_bare_key_that_is_a_test_exists_untagged_and_nothing_is_created() -> Non
     assert xray.created == []
 
 
+def test_bare_test_key_match_still_skips_story_resolution_after_398() -> None:
+    xray = _FakeXray(issues=[_story("ABC-1"), _test("QA-5")])
+
+    result = _one(xray, _login("QA-5    Story ABC-1"))
+
+    assert (result["status"], result["story_key"]) == ("EXISTS_UNTAGGED", None)
+    assert xray.linked_calls == []
+
+
+def test_tagged_scenarios_with_the_same_name_are_still_allowed_after_398() -> None:
+    xray = _FakeXray()
+    text = _robot(
+        "*** Test Cases ***",
+        LOGIN_WITH,
+        "    [Tags]    XRay QA-5",
+        "    Given a",
+        LOGIN_WITH,
+        "    [Tags]    XRay QA-6",
+        "    Given b",
+    )
+
+    assert _run(xray, ("t.robot", text))["results"] == []
+
+
 def test_claimed_bare_test_key_is_an_error_and_never_the_story() -> None:
     xray = _FakeXray(issues=[_story("ABC-1"), _test("QA-5")])
     text = _robot(

@@ -1,7 +1,8 @@
 """MCP schemas and binding for ``software_delivery.create_xray_tests_from_files`` (#397).
 
 Composition owns the strict argument and result schemas so the pack stays free
-of pydantic. One binding serves chat and MCP; every call needs approval.
+of pydantic. One binding serves chat and MCP for creating (#397) and updating
+(#398) tests from files; every call needs approval.
 """
 
 from __future__ import annotations
@@ -13,10 +14,14 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from composition.xray_export.test_file_preview import TestFileInput, build_test_file_tags
+from composition.xray_export.test_file_update import (
+    UpdateXrayTestsFromFilesArgs,
+    UpdateXrayTestsFromFilesResult,
+)
 from packs.software_delivery.limits import MAX_TEST_FILES
 
 if TYPE_CHECKING:
-    from domain.ports import XrayIssueLookup, XrayTestImporter
+    from domain.ports import XrayIssueLookup, XrayTestImporter, XrayTestUpdater
     from infrastructure.config import Settings
     from packs.software_delivery.test_files.models import TestFileTagConfig
 
@@ -124,15 +129,19 @@ class XrayFileCreateBinding:
 
     importer: XrayTestImporter
     lookup: XrayIssueLookup
+    updater: XrayTestUpdater
     tags: TestFileTagConfig
     project_key: str
     destination_label: str
     story_issue_types: frozenset[str]
+    link_type: str
     default_component: str | None = None
     args_schema: type | None = field(default=CreateXrayTestsFromFilesArgs)
     output_schema: type | None = field(default=CreateXrayTestsFromFilesResult)
     target_args_schema: type | None = field(default=XrayTargetArgs)
     target_output_schema: type | None = field(default=XrayTargetResult)
+    update_args_schema: type | None = field(default=UpdateXrayTestsFromFilesArgs)
+    update_output_schema: type | None = field(default=UpdateXrayTestsFromFilesResult)
 
 
 def build_xray_file_create_binding(settings: Settings) -> XrayFileCreateBinding | None:
@@ -147,10 +156,12 @@ def build_xray_file_create_binding(settings: Settings) -> XrayFileCreateBinding 
     return XrayFileCreateBinding(
         importer=client,
         lookup=client,
+        updater=client,
         tags=build_test_file_tags(settings),
         project_key=project_key,
         destination_label=xray_destination_label(settings, project_key),
         story_issue_types=frozenset(xray.story_issue_types),
+        link_type=xray.link_type,
         default_component=xray.default_component,
     )
 

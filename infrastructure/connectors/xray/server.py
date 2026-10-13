@@ -19,40 +19,58 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from domain.errors import ConnectorError, ConnectorUnavailableError
+from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailableError
 from domain.test_management.xray import (
     IssueLookupResult,
     JiraIssueSummary,
     XrayImportResult,
     XrayRequiredFieldsError,
     XrayTestCreateSchema,
+    XrayTestDetails,
+    XrayTestDetailsResult,
+    XrayTestPatch,
     XrayTestSpec,
+    XrayUpdateCapabilities,
+    XrayUpdateNotConfirmedError,
+    XrayUpdateRejectedError,
+    XrayUpdateUncertainError,
 )
 from infrastructure.connectors.xray.batch import create_each
 from infrastructure.connectors.xray.errors import (
+    MSG_AUTH,
     MSG_REQUEST_FAILED,
     MSG_UNAVAILABLE,
+    XrayHttpDiagnostic,
     XrayRejectedError,
     XraySchemaError,
     diagnostic,
     map_http_error,
 )
+from infrastructure.connectors.xray.details import Unreadable, confirms_definition
 from infrastructure.connectors.xray.schema import SchemaKey, XraySchemaCache
+from infrastructure.connectors.xray.server_update import (
+    CUCUMBER_TYPE_FIELD,
+    DETAILS_PARAMS,
+    MANUAL_STEPS_FIELD,
+    SCENARIO_FIELD,
+    TEST_TYPE_FIELD,
+    EditTarget,
+    parse_issue,
+    steps_value,
+    update_body,
+)
 
 if TYPE_CHECKING:
     import httpx
 
 _TEST_ISSUE_TYPE = "test"
-_TEST_TYPE_FIELD = "com.xpandit.plugins.xray:test-type-custom-field"
-_MANUAL_STEPS_FIELD = "com.xpandit.plugins.xray:manual-test-steps-custom-field"
-_CUCUMBER_TYPE_FIELD = "com.xpandit.plugins.xray:automated-test-type-custom-field"
-_SCENARIO_FIELD = "com.xpandit.plugins.xray:steps-editor-custom-field"
 _HANDLED_SYSTEM_FIELDS = frozenset(
     {"project", "summary", "issuetype", "reporter", "description", "issuelinks"}
 )
 _LABEL_KEYS = ("name", "value")
 _PAGE_SIZE = 100
 _MAX_PAGES = 20
+_UNREADABLE = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +284,79 @@ class XrayServerImporter:
                 tests.append(summary)
         return tuple(tests)
 
+    def capabilities(self) -> XrayUpdateCapabilities:
+        """Jira fields are writable here; the story link needs a known link type."""
+        payload = self._request("GET", "/issueLinkType")
+        types = payload.get("issueLinkTypes") if isinstance(payload, Mapping) else None
+        if not isinstance(types, list):
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        names = {t.get("name") for t in types if isinstance(t, Mapping)}
+        return XrayUpdateCapabilities(
+            jira_fields=True, story_link_type=bool(self._link_type) and self._link_type in names
+        )
+
+    def test_details(self, keys: Sequence[str]) -> XrayTestDetailsResult:
+        """Read each test; a 404 is left out, malformed answers are unreadable."""
+        found: dict[str, XrayTestDetails] = {}
+        unreadable: set[str] = set()
+        for key in dict.fromkeys(keys):
+            read = self._read_test(key)
+            if read is _UNREADABLE:
+                unreadable.add(key)
+            elif read is not None:
+                found[key] = read[0]
+        return XrayTestDetailsResult(found=found, unreadable=frozenset(unreadable))
+
+    def update_test(self, patch: XrayTestPatch) -> None:
+        """One sparse ``PUT``; a kind switch is read back to confirm the old definition is gone."""
+        current = self._read_test(patch.key)
+        body = update_body(patch, current[1]) if isinstance(current, tuple) else None
+        if body is None:
+            raise XrayUpdateRejectedError()
+        self._put(f"/issue/{quote(patch.key, safe='')}", body)
+        if patch.kind_change is None:
+            return
+        try:
+            after = self._read_test(patch.key)
+        except ConnectorError:
+            after = None
+        if not isinstance(after, tuple) or not confirms_definition(patch, after[0]):
+            raise XrayUpdateNotConfirmedError()
+
+    def _put(self, path: str, body: Mapping[str, object]) -> None:
+        """``PUT`` with update outcomes: 401 is auth, other 4xx rejected, else uncertain."""
+        failure: ConnectorError
+        try:
+            response = self._client.request("PUT", path, json=body)
+        except Exception as error:
+            failure, cause = XrayUpdateUncertainError(partial=False), diagnostic(error, self._httpx)
+        else:
+            status = response.status_code
+            if 200 <= status < 300:
+                return
+            if status == 401:
+                failure = ConnectorAuthError(MSG_AUTH)
+            elif 400 <= status < 500:
+                failure = XrayUpdateRejectedError()
+            else:
+                failure = XrayUpdateUncertainError(partial=False)
+            cause = XrayHttpDiagnostic(f"HTTP {status}", status)
+        # Raised outside the handler so the httpx error is not kept as __context__.
+        raise failure from cause
+
+    def _read_test(
+        self, key: str
+    ) -> tuple[XrayTestDetails, EditTarget] | None | object:
+        payload = self._request(
+            "GET", f"/issue/{quote(key, safe='')}", params=DETAILS_PARAMS, missing_ok=True
+        )
+        if payload is None:
+            return None
+        try:
+            return parse_issue(key, payload)
+        except Unreadable:
+            return _UNREADABLE
+
     def _rediscover(self) -> ServerFieldMapping:
         self._cache.invalidate(self._schema_key)
         mapping, _ = self._cache.get_or_discover(self._schema_key, self._discover)
@@ -302,19 +393,7 @@ class XrayServerImporter:
             fields["components"] = [{"name": spec.component}]
         if spec.kind == "manual":
             fields[str(mapping.test_type_field)] = {"id": mapping.manual_option}
-            fields[str(mapping.steps_field)] = {
-                "steps": [
-                    {
-                        "index": index,
-                        "fields": {
-                            "action": step.action,
-                            "data": "",
-                            "expected result": step.expected,
-                        },
-                    }
-                    for index, step in enumerate(spec.steps, start=1)
-                ]
-            }
+            fields[str(mapping.steps_field)] = steps_value(spec.steps)
         else:
             fields[str(mapping.test_type_field)] = {"id": mapping.cucumber_option}
             option = mapping.scenario_outline_option if spec.outline else mapping.scenario_option
@@ -433,10 +512,10 @@ def _mapping(issue_type_id: str, fields: list[Mapping[str, object]]) -> ServerFi
         if field_id == "issuelinks":
             has_issue_links = True
         if isinstance(custom, str) and custom in {
-            _TEST_TYPE_FIELD,
-            _MANUAL_STEPS_FIELD,
-            _CUCUMBER_TYPE_FIELD,
-            _SCENARIO_FIELD,
+            TEST_TYPE_FIELD,
+            MANUAL_STEPS_FIELD,
+            CUCUMBER_TYPE_FIELD,
+            SCENARIO_FIELD,
         }:
             by_type.setdefault(custom, field)
             continue
@@ -446,18 +525,18 @@ def _mapping(issue_type_id: str, fields: list[Mapping[str, object]]) -> ServerFi
             and field_id not in _HANDLED_SYSTEM_FIELDS
         ):
             required.append(_required_field(field_id, field, schema))
-    test_type = by_type.get(_TEST_TYPE_FIELD)
-    cucumber_type = by_type.get(_CUCUMBER_TYPE_FIELD)
+    test_type = by_type.get(TEST_TYPE_FIELD)
+    cucumber_type = by_type.get(CUCUMBER_TYPE_FIELD)
     return ServerFieldMapping(
         issue_type_id=issue_type_id,
         test_type_field=_field_id(test_type),
         manual_option=_option_id(test_type, "Manual"),
-        steps_field=_field_id(by_type.get(_MANUAL_STEPS_FIELD)),
+        steps_field=_field_id(by_type.get(MANUAL_STEPS_FIELD)),
         cucumber_option=_option_id(test_type, "Cucumber"),
         cucumber_type_field=_field_id(cucumber_type),
         scenario_option=_option_id(cucumber_type, "Scenario"),
         scenario_outline_option=_option_id(cucumber_type, "Scenario Outline"),
-        scenario_field=_field_id(by_type.get(_SCENARIO_FIELD)),
+        scenario_field=_field_id(by_type.get(SCENARIO_FIELD)),
         has_issue_links=has_issue_links,
         required_fields=tuple(required),
     )

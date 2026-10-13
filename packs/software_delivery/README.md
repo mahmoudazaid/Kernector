@@ -252,6 +252,77 @@ link or outline (`link_not_confirmed`, `outline_not_confirmed`, key kept in
 earlier results and keys are kept. An auth failure before anything was created
 fails the call.
 
+## Updating Xray tests from test files (#398)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `software_delivery.update_xray_tests_from_files` | `files[]` of `{path, content}` (same limits as the preview), `dry_run` (default `false`) | `results[]` (`path`, `line`, `summary`, `status`, `key`, `candidate_keys`, `story_key`, `story_problem`, `changes`, `reason`), `dry_run`, `counts`, `stopped`, `stop_reason` |
+
+Updates the existing Xray test of each scenario so it matches the file; it
+never creates, deletes or edits the files themselves. It is registered with the
+#397 tool and uses the same configuration, destination and approval rules:
+**every call needs approval, including `dry_run`**. The prompt shows the
+destination and up to 10 scenarios as `file:line · summary`, never steps, and
+warns that a test switched between Manual and Cucumber loses its previous
+steps or Gherkin.
+
+**Statuses.** A real run reports `UPDATED`, `SKIPPED` (the test already matches)
+or `ERROR` with a `reason`. A dry run reports `WOULD_UPDATE` in place of
+`UPDATED`. `changes` names what is (or would be) sent: `summary`, `test_type`,
+`scenario_type`, `steps`, `gherkin`, `component`, `story_link`. A claimed key
+is an `ERROR`, never `SKIPPED`.
+
+**Matching** ([`test_files/matching.py`](test_files/matching.py)), in order:
+the Xray key tag, then a bare key that resolves to a Test, then the one test
+linked to the scenario's story with the same summary. Explicit claims (tags and
+bare Test keys) are collected across all files first; a key claimed by two
+scenarios is `test_key_claimed` for both, and summary matching never offers a
+claimed key. A tag or bare key that is missing (`issue_not_found`), unresolved
+(`issue_unresolved`) or not a Test (`not_a_test`) is an `ERROR` with no
+fallback. Two scenarios with the same `path::summary` are rejected before any
+call, tagged or not. The story is resolved for every match (the bare Test key is
+never taken as the Robot story). For a tag or bare-key match, a story problem
+is reported in `story_problem` and only the link is skipped; the summary match
+needs the story, so there it is an `ERROR`.
+
+**Diff** ([`test_files/xray_diff.py`](test_files/xray_diff.py)). Only changed
+members are sent. The summary is compared exactly, so a renamed test that was
+matched by key is renamed. Manual steps compare action and expected result;
+Gherkin is compared after normalizing line endings and trailing whitespace.
+Scenario versus Scenario Outline is its own change. A Manual and Cucumber
+switch sends the complete new definition, and the adapter clears the old one.
+The component (`XRAY_DEFAULT_COMPONENT`) and the story link (`XRAY_LINK_TYPE`,
+outward from the test) are only added; nothing is removed, and a link of
+another type or direction does not count.
+
+**Checked before any write** (`ERROR`, nothing sent): `unsupported_test_type`
+(neither Manual nor Cucumber), `jira_fields_unsupported`, `field_not_editable`,
+`component_not_allowed`, `link_type_unavailable`, `details_missing`,
+`details_unreadable`, and `type_change_drops_preconditions`, because Xray drops
+preconditions when the test type changes.
+
+**Server/DC** reads each test with `GET /issue/{key}?expand=schema,editmeta` and
+treats a change as editable only when editmeta offers the needed operation
+(`set`, or `add` for components and links). It sends one `PUT /issue/{key}`
+with just the changed fields; Jira screens and permissions apply. A type switch
+is read back to confirm the old definition is gone (`not_confirmed`).
+
+**Xray Cloud limit.** Xray Cloud's GraphQL API has no mutation for Jira fields
+or issue links, so with the configured Xray-only credentials this adapter
+changes only the test type, steps and Gherkin. A summary, component or story
+link change is `jira_fields_unsupported`. This is a limit of this adapter's
+credentials, not of Jira Cloud. Steps are replaced with `removeAllTestSteps`
+and `addTestStep`; Gherkin with `updateGherkinTestDefinition`. A type switch
+clears the old definition, calls `updateTestType`, writes the new one and reads
+it back. Outline changes are read back too.
+
+**Write stop rules.** A rejection (`rejected`, nothing written) continues with
+the next scenario. An auth failure before any update fails the call; after one
+it is `auth_failed`. An outcome that may have written (`outcome_unknown`), a
+partly applied Cloud sequence (`partially_applied`) or a write that did not
+read back (`not_confirmed`) stops the run, and the remaining scenarios are
+`not_attempted`.
+
 ## Chat-time routing (#312)
 
 Composition injects `WorkflowSignal` probes (see

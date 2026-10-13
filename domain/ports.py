@@ -26,7 +26,10 @@ from domain.test_management.xray import (
     JiraIssueSummary,
     XrayImportResult,
     XrayTestCreateSchema,
+    XrayTestDetailsResult,
+    XrayTestPatch,
     XrayTestSpec,
+    XrayUpdateCapabilities,
 )
 
 
@@ -507,6 +510,45 @@ class XrayIssueLookup(Protocol):
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: Jira/Xray is unreachable or the search is incomplete.
             ConnectorError: The answer was malformed.
+        """
+        ...
+
+
+class XrayTestUpdater(Protocol):
+    """Reads and updates existing Xray tests in the configured project (#398).
+
+    Reads fail closed. Writes respect Jira screens and permissions and never
+    expose field ids, endpoints, credentials or vendor bodies.
+    """
+
+    def capabilities(self) -> XrayUpdateCapabilities:
+        """Return what this adapter can update.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Jira/Xray is unreachable or throttling.
+            ConnectorError: Discovery failed.
+        """
+        ...
+
+    def test_details(self, keys: Sequence[str]) -> XrayTestDetailsResult:
+        """Read ``keys``; a malformed row is ``unreadable``, a key not returned is absent.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Jira/Xray is unreachable or the read is incomplete.
+            ConnectorError: The answer was malformed as a whole.
+        """
+        ...
+
+    def update_test(self, patch: XrayTestPatch) -> None:
+        """Write only the members ``patch`` sets.
+
+        Raises:
+            XrayUpdateRejectedError: Xray refused the update; nothing was written.
+            XrayUpdateUncertainError: The update may have been (partly) written.
+            XrayUpdateNotConfirmedError: Written, but the read-back did not match.
+            ConnectorAuthError: Credentials or permissions were rejected.
         """
         ...
 
