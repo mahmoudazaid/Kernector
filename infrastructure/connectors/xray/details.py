@@ -54,6 +54,14 @@ def parse_names(value: object) -> tuple[str, ...]:
     return tuple(str(name) for name in names)
 
 
+def parse_project_key(value: object) -> str:
+    """Key of the Jira ``project`` field."""
+    key = mapping(value).get("key")
+    if not isinstance(key, str) or not key:
+        raise Unreadable("project")
+    return key
+
+
 def confirms_definition(patch: XrayTestPatch, details: XrayTestDetails) -> bool:
     """The read-back shows the patch's kind and definition and no other definition."""
     definition = patch.definition

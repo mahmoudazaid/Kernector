@@ -62,7 +62,9 @@ _APPROVAL_TITLE = "Update Xray tests from files"
 _APPROVAL_SUMMARY = (
     "Update existing Jira Test issues in Xray so they match the file scenarios. "
     "Only changed fields are sent; no test is created or deleted. A test switched "
-    "between Manual and Cucumber loses its previous steps or Gherkin."
+    "between Manual and Cucumber loses its previous steps or Gherkin. When steps "
+    "change, a step whose action or expected result changed loses its Xray Data. "
+    "Tests outside the configured project are never changed."
 )
 _DRY_RUN_TITLE = "Dry run: plan Xray test updates from files"
 _DRY_RUN_SUMMARY = (
@@ -82,6 +84,9 @@ class XrayFileUpdateBinding(Protocol):
 
     @property
     def tags(self) -> TestFileTagConfig: ...
+
+    @property
+    def project_key(self) -> str: ...
 
     @property
     def destination_label(self) -> str: ...
@@ -108,6 +113,7 @@ def build_update_from_binding(binding: XrayFileUpdateBinding) -> UpdateXrayTests
         lookup=binding.lookup,
         updater=binding.updater,
         tags=binding.tags,
+        project_key=binding.project_key,
         story_issue_types=binding.story_issue_types,
         link_type=binding.link_type,
         default_component=binding.default_component,
@@ -138,6 +144,7 @@ class UpdateXrayTestsFromFilesTool:
         lookup: XrayIssueLookup,
         updater: XrayTestUpdater,
         tags: TestFileTagConfig,
+        project_key: str,
         story_issue_types: frozenset[str],
         link_type: str,
         default_component: str | None = None,
@@ -148,6 +155,7 @@ class UpdateXrayTestsFromFilesTool:
         self._lookup = lookup
         self._updater = updater
         self._tags = tags
+        self._project_key = project_key
         self._story_issue_types = story_issue_types
         self._link_type = link_type.strip()
         self._default_component = default_component
@@ -234,6 +242,9 @@ class UpdateXrayTestsFromFilesTool:
                     "details_missing"
                 )
                 entries.append(_Entry(match, "ERROR", reason))
+                continue
+            if current.project_key != self._project_key:
+                entries.append(_Entry(match, "ERROR", "other_project"))
                 continue
             spec = build_spec(
                 by_path[match.path],

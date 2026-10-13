@@ -64,6 +64,7 @@ def _manual(
         issue_id=f"id-{key}",
         summary=summary,
         kind="manual",
+        project_key="QA",
         steps=tuple(XrayTestStep(action=step) for step in steps),
         links=links,
         editable=EDITABLE,
@@ -85,6 +86,7 @@ def _cucumber(
         issue_id=f"id-{key}",
         summary=summary,
         kind="cucumber",
+        project_key="QA",
         scenario_type="scenario_outline" if outline else "scenario",
         gherkin=gherkin,
         links=links,
@@ -154,6 +156,7 @@ def _tool(xray: _FakeXray, *, component: str | None = None) -> UpdateXrayTestsFr
         lookup=xray,
         updater=xray,
         tags=TAGS,
+        project_key="QA",
         story_issue_types=STORY_TYPES,
         link_type=LINK_TYPE,
         default_component=component,
@@ -585,11 +588,10 @@ def test_cucumber_test_switched_to_manual_carries_the_complete_steps() -> None:
 @pytest.mark.parametrize(
     "existing",
     [
-        (XrayTestStep(action="Given another page"),),
-        (XrayTestStep(action="Given the login page", data="admin"),),
+        (XrayTestStep(action="Given another page", data="admin"),),
         (XrayTestStep(action="Given the login page"), XrayTestStep(action="Then more")),
     ],
-    ids=["action", "data", "count"],
+    ids=["action", "count"],
 )
 def test_steps_only_change_sends_only_the_steps(existing: tuple[XrayTestStep, ...]) -> None:
     details = _manual("QA-7", "User logs in", links=(_link(),))
@@ -606,6 +608,64 @@ def test_steps_only_change_sends_only_the_steps(existing: tuple[XrayTestStep, ..
         issue_id="id-QA-7",
         definition=ManualDefinition((XrayTestStep(action="Given the login page"),)),
     )
+
+
+def test_existing_step_data_alone_is_not_a_change() -> None:
+    details = _manual("QA-7", "User logs in", links=(_link(),))
+    xray = _FakeXray(
+        issues=[_test("QA-7"), _story("ABC-1")],
+        details=[
+            replace(details, steps=(XrayTestStep(action="Given the login page", data="admin"),))
+        ],
+    )
+
+    result, patch = _single(xray, "t.robot", _tagged_robot())
+
+    assert (result["status"], patch) == ("SKIPPED", None)
+
+
+def test_rewritten_steps_keep_the_data_of_unchanged_steps() -> None:
+    details = _manual("QA-7", "User logs in", links=(_link(),))
+    existing = (
+        XrayTestStep(action="Given the login page", data="admin"),
+        XrayTestStep(action="When the old step", data="stale"),
+    )
+    xray = _FakeXray(
+        issues=[_test("QA-7"), _story("ABC-1")], details=[replace(details, steps=existing)]
+    )
+    robot = _lines(
+        "*** Test Cases ***",
+        "Scenario: User logs in",
+        "    [Tags]    manual    XRay QA-7    Story ABC-1",
+        "    Given the login page",
+        "    When the new step",
+    )
+
+    result, patch = _single(xray, "t.robot", robot)
+
+    assert result["changes"] == ["steps"]
+    assert patch is not None
+    assert patch.definition == ManualDefinition(
+        (
+            XrayTestStep(action="Given the login page", data="admin"),
+            XrayTestStep(action="When the new step"),
+        )
+    )
+
+
+def test_test_outside_the_configured_project_is_an_error_before_any_write() -> None:
+    details = _manual("OTHER-5", "Old name", "Given another page", links=(_link(),))
+    xray = _FakeXray(
+        issues=[_test("OTHER-5"), _story("ABC-1")],
+        details=[replace(details, project_key="OTHER")],
+    )
+
+    payload = _run(xray, ("t.robot", _tagged_robot("XRay OTHER-5    Story ABC-1")))
+
+    [result] = payload["results"]
+    assert _error(result) == ("ERROR", "other_project")
+    assert result["changes"] == []
+    assert xray.patches == []
 
 
 def test_gherkin_only_change_sends_only_the_gherkin_and_ignores_line_endings() -> None:

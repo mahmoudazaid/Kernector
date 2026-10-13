@@ -114,6 +114,7 @@ class XrayTestDetails:
     """Current state of one existing Xray test, read before any update (#398).
 
     ``issue_id`` is kept because Xray Cloud mutations address tests by id.
+    ``project_key`` is the Jira project the test belongs to, read from Jira.
     ``editable`` names the :data:`XrayPatchField` values this test accepts;
     ``allowed_components`` is ``None`` when the adapter cannot list them.
     """
@@ -122,6 +123,7 @@ class XrayTestDetails:
     issue_id: str
     summary: str
     kind: XrayDetailsKind
+    project_key: str = ""
     scenario_type: XrayScenarioType | None = None
     steps: tuple[XrayTestStep, ...] = ()
     gherkin: str = ""

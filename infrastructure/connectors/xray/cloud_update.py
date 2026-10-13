@@ -28,6 +28,7 @@ from infrastructure.connectors.xray.details import (
     optional_text,
     parse_links,
     parse_names,
+    parse_project_key,
 )
 from infrastructure.connectors.xray.errors import MSG_REQUEST_FAILED
 
@@ -35,7 +36,7 @@ DETAILS_SELECTION = (
     "{ total start limit results { issueId testType { id name kind } "
     "steps { id action data result } gherkin scenarioType "
     "preconditions(limit: 1) { total } "
-    'jira(fields: ["key", "summary", "components", "issuelinks"]) } }'
+    'jira(fields: ["key", "summary", "project", "components", "issuelinks"]) } }'
 )
 _REMOVE_ALL_STEPS = "mutation($issueId: String!) { removeAllTestSteps(issueId: $issueId) }"
 _ADD_STEP = (
@@ -163,6 +164,7 @@ def _details(
         issue_id=issue_id,
         summary=summary,
         kind=kind_of(mapping(row.get("testType")).get("kind")),
+        project_key=parse_project_key(jira.get("project")),
         scenario_type=scenario_type,
         steps=_steps(row.get("steps")),
         gherkin=gherkin,

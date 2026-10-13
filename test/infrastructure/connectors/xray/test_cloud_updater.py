@@ -66,6 +66,7 @@ def _test(
         "jira": {
             "key": key,
             "summary": "Login works",
+            "project": {"id": "10000", "key": key.split("-")[0]},
             "components": [{"name": name} for name in components],
             "issuelinks": list(links),
         },
@@ -192,6 +193,7 @@ def test_manual_details_are_read_with_issue_id_links_and_definition_capabilities
             issue_id="10007",
             summary="Login works",
             kind="manual",
+            project_key="QA",
             steps=(
                 XrayTestStep(action="Open login", expected="Form"),
                 XrayTestStep(action="Submit", data="user=ann"),
@@ -208,8 +210,27 @@ def test_manual_details_are_read_with_issue_id_links_and_definition_capabilities
     }
     [search] = xray.searches
     assert search["variables"]["jql"] == "key in (QA-7)"
-    for selection in ("issueId", "testType", "steps", "scenarioType", "preconditions", "issuelinks"):
+    for selection in (
+        "issueId",
+        "testType",
+        "steps",
+        "scenarioType",
+        "preconditions",
+        "issuelinks",
+        '"project"',
+    ):
         assert selection in search["query"]
+
+
+def test_details_report_the_project_and_a_row_without_one_is_unreadable() -> None:
+    no_project = _test("QA-8")
+    no_project["jira"]["project"] = None  # type: ignore[index]
+    xray = _Xray(_test("OTHER-5"), no_project)
+
+    result = _importer(xray).test_details(["OTHER-5", "QA-8"])
+
+    assert result.found["OTHER-5"].project_key == "OTHER"
+    assert result.unreadable == {"QA-8"}
 
 
 def test_cucumber_outline_kind_is_casefolded_and_keeps_its_scenario_type() -> None:

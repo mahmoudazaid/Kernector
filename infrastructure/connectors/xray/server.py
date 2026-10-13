@@ -308,9 +308,16 @@ class XrayServerImporter:
         return XrayTestDetailsResult(found=found, unreadable=frozenset(unreadable))
 
     def update_test(self, patch: XrayTestPatch) -> None:
-        """One sparse ``PUT``; a kind switch is read back to confirm the old definition is gone."""
+        """One sparse ``PUT``; a kind switch is read back to confirm the old definition is gone.
+
+        A test outside the configured project is rejected before the ``PUT``.
+        """
         current = self._read_test(patch.key)
-        body = update_body(patch, current[1]) if isinstance(current, tuple) else None
+        body = (
+            update_body(patch, current[1])
+            if isinstance(current, tuple) and current[0].project_key == self._project_key
+            else None
+        )
         if body is None:
             raise XrayUpdateRejectedError()
         self._put(f"/issue/{quote(patch.key, safe='')}", body)

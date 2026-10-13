@@ -49,6 +49,7 @@ Reason = Literal[
     "manual_outline_unsupported",
     "details_missing",
     "details_unreadable",
+    "other_project",
     "unsupported_test_type",
     "jira_fields_unsupported",
     "field_not_editable",

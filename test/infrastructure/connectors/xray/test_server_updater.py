@@ -94,6 +94,7 @@ def _issue(
         "key": key,
         "fields": {
             "summary": "Login works",
+            "project": {"id": "10000", "key": key.split("-")[0]},
             "issuetype": {"id": "10100", "name": "Test"},
             "components": [{"name": name} for name in components],
             "issuelinks": list(links),
@@ -215,6 +216,7 @@ def test_manual_test_details_are_read_with_links_steps_and_edit_capabilities() -
             issue_id="10007",
             summary="Login works",
             kind="manual",
+            project_key="QA",
             steps=(
                 XrayTestStep(action="Open login", expected="Form"),
                 XrayTestStep(action="Submit", data="user=ann"),
@@ -261,10 +263,20 @@ def test_missing_key_is_neither_found_nor_unreadable_and_malformed_rows_are_unre
         _issue("QA-4"),
     )
 
-    result = _importer(jira).test_details(["QA-1", "QA-2", "QA-3", "QA-4", "QA-9"])
+    no_project = _issue("QA-5")
+    no_project["fields"]["project"] = None  # type: ignore[index]
+    jira.issues["QA-5"] = no_project
 
-    assert result.unreadable == {"QA-1", "QA-2", "QA-3"}
+    result = _importer(jira).test_details(["QA-1", "QA-2", "QA-3", "QA-4", "QA-5", "QA-9"])
+
+    assert result.unreadable == {"QA-1", "QA-2", "QA-3", "QA-5"}
     assert set(result.found) == {"QA-4"}
+
+
+def test_details_report_the_project_of_a_test_outside_the_configured_one() -> None:
+    jira = _Jira(_issue("OTHER-5"))
+
+    assert _importer(jira).test_details(["OTHER-5"]).found["OTHER-5"].project_key == "OTHER"
 
 
 @pytest.mark.parametrize(
@@ -388,6 +400,17 @@ def test_put_body_holds_only_the_patch_members(patch: XrayTestPatch, body: objec
     _importer(jira).update_test(patch)
 
     assert jira.put_bodies == [body]
+
+
+def test_update_of_a_test_outside_the_configured_project_is_rejected_before_the_put() -> None:
+    jira = _Jira(_issue("OTHER-5"))
+
+    with pytest.raises(XrayUpdateRejectedError):
+        _importer(jira).update_test(
+            XrayTestPatch(key="OTHER-5", issue_id="10007", summary="New name")
+        )
+
+    assert jira.put_bodies == []
 
 
 def test_manual_to_cucumber_switch_writes_the_target_and_clears_the_steps() -> None:

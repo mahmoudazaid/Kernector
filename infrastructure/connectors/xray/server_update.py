@@ -27,6 +27,7 @@ from infrastructure.connectors.xray.details import (
     optional_text,
     parse_links,
     parse_names,
+    parse_project_key,
 )
 
 TEST_TYPE_FIELD = "com.xpandit.plugins.xray:test-type-custom-field"
@@ -112,6 +113,7 @@ def parse_issue(key: str, payload: object) -> tuple[XrayTestDetails, EditTarget]
         issue_id=str(issue_id),
         summary=summary,
         kind=kind,
+        project_key=parse_project_key(fields.get("project")),
         scenario_type=scenario_type,
         steps=_steps(fields.get(ids.get(MANUAL_STEPS_FIELD, ""))),
         gherkin=optional_text(fields.get(ids.get(SCENARIO_FIELD, ""))),

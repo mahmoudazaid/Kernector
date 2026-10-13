@@ -3,12 +3,14 @@
 A Manual <-> Cucumber switch carries the complete target definition. A
 Scenario <-> Scenario Outline switch stays Cucumber and carries the Gherkin
 even when the text alone is unchanged. The summary comparison only detects a
-rename; it never blocks the update of an explicitly matched test.
+rename; it never blocks the update of an explicitly matched test. Manual steps
+ignore Xray Data when comparing; a rewrite keeps the Data of each step whose
+action and expected result are unchanged at the same position.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from domain.test_management.xray import (
     CucumberDefinition,
@@ -17,6 +19,7 @@ from domain.test_management.xray import (
     XrayTestDetails,
     XrayTestPatch,
     XrayTestSpec,
+    XrayTestStep,
 )
 
 
@@ -61,7 +64,7 @@ def diff_test(
         elif _normalized(spec.gherkin) != _normalized(details.gherkin):
             values["definition"] = target
     elif not _same_steps(spec, details):
-        values["definition"] = target
+        values["definition"] = ManualDefinition(_keep_data(spec, details))
     if component and component not in details.components:
         values["add_component"] = component
     if story_key is not None:
@@ -77,11 +80,25 @@ def _same_steps(spec: XrayTestSpec, details: XrayTestDetails) -> bool:
     if len(spec.steps) != len(details.steps):
         return False
     return all(
-        _normalized(want.action) == _normalized(have.action)
-        and _normalized(want.expected) == _normalized(have.expected)
-        and not have.data
-        for want, have in zip(spec.steps, details.steps, strict=True)
+        _same_step(want, have) for want, have in zip(spec.steps, details.steps, strict=True)
     )
+
+
+def _keep_data(spec: XrayTestSpec, details: XrayTestDetails) -> tuple[XrayTestStep, ...]:
+    """Spec steps, keeping the existing Data of a step unchanged at the same position."""
+    steps: list[XrayTestStep] = []
+    for index, want in enumerate(spec.steps):
+        have = details.steps[index] if index < len(details.steps) else None
+        if have is not None and not want.data and _same_step(want, have):
+            want = replace(want, data=have.data)
+        steps.append(want)
+    return tuple(steps)
+
+
+def _same_step(want: XrayTestStep, have: XrayTestStep) -> bool:
+    return _normalized(want.action) == _normalized(have.action) and _normalized(
+        want.expected
+    ) == _normalized(have.expected)
 
 
 def _normalized(text: str) -> str:

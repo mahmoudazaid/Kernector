@@ -88,6 +88,7 @@ class _Xray:
             issue_id="10007",
             summary="Old login",
             kind="cucumber",
+            project_key="QA",
             scenario_type="scenario",
             gherkin="Given x\nThen y",
             links=(IssueLinkRef("Test", "outward", "ABC-1"),),

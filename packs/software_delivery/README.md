@@ -264,7 +264,7 @@ never creates, deletes or edits the files themselves. It is registered with the
 **every call needs approval, including `dry_run`**. The prompt shows the
 destination and up to 10 scenarios as `file:line · summary`, never steps, and
 warns that a test switched between Manual and Cucumber loses its previous
-steps or Gherkin.
+steps or Gherkin, and that a changed step loses its Xray Data.
 
 **Statuses.** A real run reports `UPDATED`, `SKIPPED` (the test already matches)
 or `ERROR` with a `reason`. A dry run reports `WOULD_UPDATE` in place of
@@ -288,14 +288,19 @@ needs the story, so there it is an `ERROR`.
 **Diff** ([`test_files/xray_diff.py`](test_files/xray_diff.py)). Only changed
 members are sent. The summary is compared exactly, so a renamed test that was
 matched by key is renamed. Manual steps compare action and expected result;
-Gherkin is compared after normalizing line endings and trailing whitespace.
+Xray Data is not compared. When steps are rewritten, a step whose action and
+expected result are unchanged at the same position keeps its Data; any other
+step is written without Data. Gherkin is compared after normalizing line endings and trailing whitespace.
 Scenario versus Scenario Outline is its own change. A Manual and Cucumber
 switch sends the complete new definition, and the adapter clears the old one.
 The component (`XRAY_DEFAULT_COMPONENT`) and the story link (`XRAY_LINK_TYPE`,
 outward from the test) are only added; nothing is removed, and a link of
 another type or direction does not count.
 
-**Checked before any write** (`ERROR`, nothing sent): `unsupported_test_type`
+**Checked before any write** (`ERROR`, nothing sent): `other_project` (the
+matched test is not in `XRAY_PROJECT_KEY`; the project is read with the test
+details, and the Server/DC adapter checks it again before its `PUT`),
+`unsupported_test_type`
 (neither Manual nor Cucumber), `jira_fields_unsupported`, `field_not_editable`,
 `component_not_allowed`, `link_type_unavailable`, `details_missing`,
 `details_unreadable`, and `type_change_drops_preconditions`, because Xray drops
