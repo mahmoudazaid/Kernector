@@ -34,7 +34,7 @@ def test_registry_lists_the_tool_when_tags_are_supplied(env: pytest.MonkeyPatch)
         load_settings(), test_file_tags=TestFileTagConfig("Draft", "Story", ("manual",))
     )
 
-    assert registry.names() == (TOOL_NAME,)
+    assert TOOL_NAME in registry.names()
 
 
 def test_invoke_tool_runs_the_preview_with_configured_tags(env: pytest.MonkeyPatch) -> None:

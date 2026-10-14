@@ -51,7 +51,9 @@ TOOL_DESCRIPTION = (
     "their key instead of being created. Read each file from the workspace yourself "
     "and pass its workspace-relative path and exact full text, unchanged. Set "
     "dry_run to true to see the planned actions without changing Jira. Returns the "
-    "created keys mapped to path::scenario so the files can be tagged. Call the "
+    "created keys mapped to path::scenario; existing tests are only in results "
+    "(EXISTS_UNTAGGED with path, summary and key). Tag the files with both through "
+    "the write_xray_keys_to_files tool. Call the "
     "xray_target tool first to confirm the Jira project the tests go to. Do not "
     "start a Test Design draft for existing test files."
 )

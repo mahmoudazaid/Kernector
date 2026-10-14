@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from packs.software_delivery.errors import TestFileErrorReason as Reason
 from packs.software_delivery.errors import TestFileValidationError
 from packs.software_delivery.test_files.effective import effective_tags, file_story
+from packs.software_delivery.test_files.layout import FileLayout, ScenarioLayout, TagRow
 from packs.software_delivery.test_files.models import (
     Background,
     DataTable,
@@ -32,6 +33,7 @@ _HEADER = re.compile(
     r"|Examples|Scenarios|Rule):(.*)$"
 )
 _STEP = re.compile(r"^(Given|When|Then|And|But|\*)\s+\S")
+_TOKEN = re.compile(r"\S+")
 _LANGUAGE = re.compile(r"^#\s*language\s*:\s*(\S+)\s*$")
 _TITLE_KEY = re.compile(r"\[([A-Z][A-Z0-9_]*-[1-9][0-9]*)\]")
 _DOC_DELIMITERS = ('"""', "```")
@@ -68,6 +70,8 @@ class _Block:
     outline: bool = False
     steps: list[_Step] = field(default_factory=list)
     examples: list[_Examples] = field(default_factory=list)
+    indent: str = ""
+    tag_rows: tuple[TagRow, ...] = ()
 
 
 @dataclass(slots=True)
@@ -87,6 +91,7 @@ class _State:
     feature_name: str | None = None
     feature_tags: list[tuple[int, str]] = field(default_factory=list)
     pending_tags: list[tuple[int, str]] = field(default_factory=list)
+    pending_rows: list[TagRow] = field(default_factory=list)
     background: _Block | None = None
     scenarios: list[_Block] = field(default_factory=list)
     block: _Block | None = None
@@ -101,6 +106,13 @@ class _State:
 def parse_gherkin(
     path: str, text: str, tags: TestFileTagConfig, max_scenarios: int | None = None
 ) -> ParsedTestFile:
+    return parse_gherkin_layout(path, text, tags, max_scenarios)[0]
+
+
+def parse_gherkin_layout(
+    path: str, text: str, tags: TestFileTagConfig, max_scenarios: int | None = None
+) -> tuple[ParsedTestFile, FileLayout]:
+    """Parse like ``parse_gherkin`` and also report each scenario's tag lines."""
     state = _State(path, max_scenarios)
     for number, raw in enumerate(text.splitlines(), start=1):
         _line(state, number, raw)
@@ -111,7 +123,13 @@ def parse_gherkin(
     if state.feature_name is None:
         raise state.fail(None, Reason.MISSING_FEATURE)
     _close_block(state)
-    return _parsed(state, tags)
+    layout = FileLayout(
+        scenarios=tuple(
+            ScenarioLayout(line=block.line, tag_rows=block.tag_rows, header_indent=block.indent)
+            for block in state.scenarios
+        )
+    )
+    return _parsed(state, tags), layout
 
 
 def _line(state: _State, number: int, raw: str) -> None:
@@ -126,12 +144,15 @@ def _line(state: _State, number: int, raw: str) -> None:
         if state.feature_name is None and language and language.group(1).lower() != _DIALECT:
             raise state.fail(number, Reason.UNSUPPORTED_LANGUAGE)
         return
+    indent = raw[: len(raw) - len(raw.lstrip())]
     if stripped.startswith("@"):
-        state.pending_tags.extend((number, tag) for tag in _tag_tokens(state, number, stripped))
+        tokens, comment = _tag_tokens(state, number, stripped)
+        state.pending_tags.extend((number, tag) for tag in tokens)
+        state.pending_rows.append(TagRow(number, "", tuple(tokens), comment, indent))
         return
     header = _HEADER.match(stripped)
     if header is not None:
-        _header(state, number, header.group(1), header.group(2).strip())
+        _header(state, number, header.group(1), header.group(2).strip(), indent)
         return
     if state.feature_name is None:
         raise state.fail(number, Reason.MISSING_FEATURE)
@@ -164,21 +185,23 @@ def _doc_line(state: _State, raw: str) -> None:
     state.attach = None
 
 
-def _tag_tokens(state: _State, number: int, stripped: str) -> list[str]:
+def _tag_tokens(state: _State, number: int, stripped: str) -> tuple[list[str], str | None]:
     tokens: list[str] = []
-    for token in stripped.split():
+    for match in _TOKEN.finditer(stripped):
+        token = match.group()
         if token.startswith("#"):
-            break
+            return tokens, stripped[match.start() :]
         if not token.startswith("@") or len(token) == 1:
             raise state.fail(number, Reason.MALFORMED_TAG)
         tokens.append(token[1:])
-    return tokens
+    return tokens, None
 
 
-def _header(state: _State, number: int, keyword: str, name: str) -> None:
+def _header(state: _State, number: int, keyword: str, name: str, indent: str) -> None:
     if keyword == "Rule":
         raise state.fail(number, Reason.UNSUPPORTED_RULE)
     tags, state.pending_tags = state.pending_tags, []
+    rows, state.pending_rows = tuple(state.pending_rows), []
     state.attach = None
     if keyword == "Feature":
         if state.feature_name is not None:
@@ -199,7 +222,15 @@ def _header(state: _State, number: int, keyword: str, name: str) -> None:
         raise state.fail(number, Reason.EMPTY_SCENARIO_NAME)
     if state.max_scenarios is not None and len(state.scenarios) >= state.max_scenarios:
         raise state.fail(number, Reason.TOO_MANY_SCENARIOS)
-    state.block = _Block(number, keyword, name, tags, outline=keyword in _OUTLINE_KEYWORDS)
+    state.block = _Block(
+        number,
+        keyword,
+        name,
+        tags,
+        outline=keyword in _OUTLINE_KEYWORDS,
+        indent=indent,
+        tag_rows=rows,
+    )
     state.scenarios.append(state.block)
 
 

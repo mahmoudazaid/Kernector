@@ -19,3 +19,7 @@ MAX_TEST_FILE_PATH_CHARS = 512
 MAX_TEST_FILE_BYTES = 262_144
 MAX_TEST_FILES_TOTAL_BYTES = 1_048_576
 MAX_TEST_FILE_SCENARIOS = 500
+
+# Xray key write-back (#399): full rewritten content plus diffs in one result;
+# over the cap the call is rejected, never truncated.
+MAX_XRAY_KEY_WRITEBACK_RESULT_BYTES = 2 * MAX_TEST_FILES_TOTAL_BYTES

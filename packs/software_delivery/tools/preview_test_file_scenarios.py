@@ -32,7 +32,10 @@ _ALLOWED_KEYS = frozenset({"files"})
 
 
 class TestFilePreviewMcpBinding(Protocol):
-    """Configured tag names and MCP schemas supplied by composition."""
+    """Configured tag names and MCP schemas supplied by composition.
+
+    The ``writeback_*`` schemas serve ``write_xray_keys_to_files`` (#399).
+    """
 
     __test__ = False
 
@@ -47,6 +50,12 @@ class TestFilePreviewMcpBinding(Protocol):
 
     @property
     def mcp_prompt(self) -> object: ...
+
+    @property
+    def writeback_args_schema(self) -> type: ...
+
+    @property
+    def writeback_output_schema(self) -> type: ...
 
 
 class PreviewTestFileScenariosTool:

@@ -8,7 +8,7 @@ this pack only through [`registration.py`](registration.py).
 | Location | Responsibility |
 | --- | --- |
 | `tools/` | Real tool adapters (`tools/<name>.py`), registered from `build_tools` |
-| `test_files/` | Pure Robot Framework / Gherkin parser for the test file preview (#396) |
+| `test_files/` | Pure Robot Framework / Gherkin parser for the test file preview (#396), and the Xray key write-back rewrite (`writeback.py`, `key_ownership.py`, #399) |
 | Pack root | Shared contracts, errors, export limits, chat intent, registration |
 
 The scaffolding risk, test-generation, and Markdown-export tools were retired
@@ -328,6 +328,60 @@ it is `auth_failed`. An outcome that may have written (`outcome_unknown`), a
 partly applied Cloud sequence (`partially_applied`) or a write that did not
 read back (`not_confirmed`) stops the run, and the remaining scenarios are
 `not_attempted`.
+
+## Writing Xray keys back into test files (#399)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `software_delivery.write_xray_keys_to_files` | `files[]` of `{path, content}` (same limits as the preview), `keys` (`path::scenario` → Xray key, at most 500) | `files[]` (`path`, `changed`, `content`, `diff`), `results[]` (`path`, `line`, `summary`, `key`, `previous_key`, `status`), `counts` |
+
+Tags each mapped scenario with its Xray key so the next #397/#398 sync finds
+the test by key. The tool is pure: it returns the full new text and a unified
+diff (`a/<path>` / `b/<path>`, with `\ No newline at end of file` where it
+applies) for the caller to apply; it never reads or writes files or
+repositories and never calls Jira/Xray. It is registered on chat and MCP
+whenever the pack is enabled, needs no approval, and writes the marker from
+`XRAY_TEST_TAG`: `@<marker>:<KEY>` in Gherkin and `<marker> <KEY>` in Robot.
+
+`keys` comes from the #397 result: the `created` map holds only `CREATED`
+entries, so `EXISTS_UNTAGGED` keys are built from `results` as
+`path::summary`. Unmapped scenarios and files are returned unchanged. A second
+call with the same input changes nothing (`UNCHANGED`).
+
+**Statuses.** `TAGGED` (no Xray key before), `REPLACED` (another key before;
+`previous_key` is the key the parser read, the first marker), `NORMALIZED` (the
+key was already right but the text changed, for example a non-canonical
+`XRay=KEY` form, a duplicate marker or a bare copy of the key) and `UNCHANGED`.
+
+**What changes.** Only Xray markers in any #396 form and bare copies of the
+assigned key are removed; one canonical marker takes the place of the first
+old marker, else of the first bare copy, else goes last. Every other tag keeps
+its order; line endings, a BOM and a missing final newline are kept.
+
+- *Gherkin*: tag lines above the scenario are rewritten in place, joined with
+  one space, and a line left empty is dropped. With no tag line, a new line
+  with the header's indent is inserted above the header. Comments are only
+  standalone lines; a tag line carrying a `#` token is never edited, and one
+  holding an Xray marker is rejected (`commented tag line`).
+- *Robot*: all `[Tags]` and continuation rows are merged into the first row
+  with four-space separators, and each removed row's comment stays on its line.
+  With no `[Tags]`, a row is inserted after the header using the body indent
+  (four spaces when the body is empty) and a copy of `Default Tags`, because
+  Robot ignores `Default Tags` for a test with its own `[Tags]`. Pipe-format
+  rows are rejected.
+
+**Rejected before anything is returned** (validation error naming the file and
+line): an unknown path or scenario, a malformed key, a repeated path or
+`path::summary`, two scenarios owning the same key after the mapping is
+applied (an existing marker moved to another scenario in the same call is
+allowed), a key that is already a story key or bare key elsewhere, and a
+rewrite that would change another tag role of the scenario (story, kind,
+manual or plain tags, Robot story choice). A result over
+`MAX_XRAY_KEY_WRITEBACK_RESULT_BYTES` (2 MiB) fails with `send fewer files`;
+nothing is truncated and there is no partial result.
+
+**Chat limit.** On chat the result only feeds the agent; HTTP exposes
+`result_chars`, not the text. Use MCP to apply the edits from a client.
 
 ## Chat-time routing (#312)
 

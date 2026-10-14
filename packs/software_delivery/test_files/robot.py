@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from packs.software_delivery.errors import TestFileErrorReason as Reason
 from packs.software_delivery.errors import TestFileValidationError
 from packs.software_delivery.test_files.effective import effective_tags, file_story
+from packs.software_delivery.test_files.layout import FileLayout, ScenarioLayout, TagRow
 from packs.software_delivery.test_files.models import (
     ParsedTestFile,
     TagRoles,
@@ -21,6 +22,7 @@ from packs.software_delivery.test_files.tags import classify
 _SECTION = re.compile(r"^\*+\s*([^*]+?)\s*\**$")
 _SPACE_SEPARATOR = re.compile(r"\s{2,}|\t")
 _PIPE_SEPARATOR = re.compile(r"(?:\A|\s+)\|(?:\s+|\Z)")
+_COMMENT = re.compile(r"(?:\A|\s{2,}|\t)(#.*)\Z")
 _SCENARIO = re.compile(r"^scenario:\s*", re.IGNORECASE)
 _BDD_STEP = re.compile(r"^(given|when|then|and|but)\s+(\S.*)$", re.IGNORECASE)
 _CONTINUATION = "..."
@@ -43,6 +45,9 @@ class _Row:
     line: int
     indented: bool
     cells: list[str]
+    pipe: bool = False
+    indent: str = ""
+    comment: str | None = None
 
 
 @dataclass(slots=True)
@@ -61,11 +66,22 @@ class _Case:
     has_tags: bool = False
     started: bool = False
     continues: _Step | list[tuple[int, str]] | None = None
+    header_pipe: bool = False
+    end_line: int = 0
+    body_indent: str | None = None
+    tag_rows: list[TagRow] = field(default_factory=list)
 
 
 def parse_robot(
     path: str, text: str, tags: TestFileTagConfig, max_scenarios: int | None = None
 ) -> ParsedTestFile:
+    return parse_robot_layout(path, text, tags, max_scenarios)[0]
+
+
+def parse_robot_layout(
+    path: str, text: str, tags: TestFileTagConfig, max_scenarios: int | None = None
+) -> tuple[ParsedTestFile, FileLayout]:
+    """Parse like ``parse_robot`` and also report each scenario's source rows."""
     section = ""
     suite = _SuiteTags()
     cases: list[_Case] = []
@@ -94,7 +110,7 @@ def parse_robot(
     story = file_story(file_roles)
     default_plain = classify(suite.default, tags, "robot", path=path, scope="file").plain
     always_plain = classify(suite.always, tags, "robot", path=path, scope="file").plain
-    return ParsedTestFile(
+    parsed = ParsedTestFile(
         path=path,
         format="robot",
         file_tags=file_roles,
@@ -117,6 +133,20 @@ def parse_robot(
             for case in cases
         ),
     )
+    layout = FileLayout(
+        scenarios=tuple(
+            ScenarioLayout(
+                line=case.line,
+                tag_rows=tuple(case.tag_rows),
+                header_pipe=case.header_pipe,
+                end_line=case.end_line,
+                body_indent=case.body_indent,
+            )
+            for case in cases
+        ),
+        default_tags=tuple(cell for _line, cell in suite.default),
+    )
+    return parsed, layout
 
 
 def _settings_row(suite: _SuiteTags, row: _Row) -> None:
@@ -140,19 +170,24 @@ def _settings_row(suite: _SuiteTags, row: _Row) -> None:
 def _rows(text: str) -> Iterator[_Row]:
     for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.rstrip()
-        if line[:1] == "|" and line[:2].strip() == "|":
+        pipe = line[:1] == "|" and line[:2].strip() == "|"
+        comment = None
+        if pipe:
             cells = [cell.strip() for cell in _pipe_cells(line)]
             indented = not cells[0]
         else:
             indented = raw[:1].isspace()
             cells = _SPACE_SEPARATOR.split(line.strip())
+            found = _COMMENT.search(line.strip())
+            comment = None if found is None else found.group(1)
         while cells and not cells[0]:
             cells.pop(0)
         cells = _without_comment(cells)
         while cells and not cells[-1]:
             cells.pop()
         if cells:
-            yield _Row(number, indented, cells)
+            indent = "" if pipe else raw[: len(raw) - len(raw.lstrip())]
+            yield _Row(number, indented, cells, pipe, indent, comment)
 
 
 def _pipe_cells(line: str) -> list[str]:
@@ -178,11 +213,14 @@ def _start_case(path: str, row: _Row) -> _Case | None:
     summary = name[match.end() :].strip()
     if not summary:
         raise TestFileValidationError(path, row.line, Reason.EMPTY_SCENARIO_NAME)
-    return _Case(line=row.line, summary=summary)
+    return _Case(line=row.line, summary=summary, header_pipe=row.pipe, end_line=row.line)
 
 
 def _body_row(path: str, case: _Case, row: _Row) -> None:
     first = row.cells[0]
+    case.end_line = row.line
+    if case.body_indent is None:
+        case.body_indent = row.indent
     if first == _CONTINUATION:
         if not case.started:
             raise TestFileValidationError(path, row.line, Reason.LEADING_CONTINUATION)
@@ -190,12 +228,14 @@ def _body_row(path: str, case: _Case, row: _Row) -> None:
             case.continues.arguments.extend(row.cells[1:])
         elif case.continues is not None:
             case.continues.extend((row.line, cell) for cell in row.cells[1:])
+            case.tag_rows.append(_tag_row(row))
         return
     case.started = True
     if first.casefold() == _TAGS_SETTING:
         case.has_tags = True
         case.tags.extend((row.line, cell) for cell in row.cells[1:])
         case.continues = case.tags
+        case.tag_rows.append(_tag_row(row))
         return
     step = _BDD_STEP.match(first)
     if step is None:
@@ -203,6 +243,17 @@ def _body_row(path: str, case: _Case, row: _Row) -> None:
         return
     case.continues = _Step(row.line, step.group(1), [step.group(2), *row.cells[1:]])
     case.steps.append(case.continues)
+
+
+def _tag_row(row: _Row) -> TagRow:
+    return TagRow(
+        line=row.line,
+        name=row.cells[0],
+        cells=tuple(row.cells[1:]),
+        comment=row.comment,
+        indent=row.indent,
+        pipe=row.pipe,
+    )
 
 
 def _scenario(

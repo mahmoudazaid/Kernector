@@ -47,6 +47,10 @@ from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TestDesignMcpBinding,
 )
+from packs.software_delivery.tools.write_xray_keys_to_files import (
+    TOOL_NAME as WRITE_XRAY_KEYS_TO_FILES_TOOL,
+)
+from packs.software_delivery.tools.write_xray_keys_to_files import WriteXrayKeysToFilesTool
 
 SelectChatIntent = Callable[[str], ChatToolSelection | None]
 
@@ -73,8 +77,9 @@ def build_tools(
     """Return chat-bound tools contributed by this pack.
 
     Chat registers Drive export and Xray test creation (#199) when their
-    collaborators are wired, the read-only test file preview (#396)
-    when ``test_file_tags`` is supplied, and Xray test creation from files
+    collaborators are wired, the read-only test file preview (#396) and Xray
+    key write-back (#399) when ``test_file_tags`` is supplied, and Xray test
+    creation from files
     (#397) and updates from files (#398) with an ``xray_file_binding``. Retired scaffolding tools (#285) are not revived
     here or on MCP (#320).
 
@@ -114,6 +119,7 @@ def build_tools(
         )
     if test_file_tags is not None:
         tools.append(PreviewTestFileScenariosTool(test_file_tags))
+        tools.append(WriteXrayKeysToFilesTool(test_file_tags))
     if xray_file_binding is not None:
         tools.append(build_from_binding(xray_file_binding))
         tools.append(build_update_from_binding(xray_file_binding))
@@ -134,8 +140,9 @@ def build_mcp_tools(
     Test Design tools (#338) are contributed only when composition supplies a
     workspace-bound ``test_design_binding``. Xray test creation (#199) is
     contributed only with an ``xray_binding``; the registry gates it behind
-    human approval (ADR 0010). The read-only test file preview (#396) is
-    contributed with a ``test_file_binding`` and needs no approval. Xray test
+    human approval (ADR 0010). The read-only test file preview (#396) and
+    Xray key write-back (#399) are contributed with a ``test_file_binding``
+    and need no approval. Xray test
     creation (#397) and update (#398) from files need an ``xray_file_binding``
     and approval.
     ``chat_model_factory`` is reserved for future LLM-backed MCP tools.
@@ -173,6 +180,16 @@ def build_mcp_tools(
                     args_schema=preview.args_schema,
                     output_schema=preview.output_schema,
                     mcp_prompt=preview.mcp_prompt,
+                ),
+            )
+        )
+        tools.append(
+            (
+                WRITE_XRAY_KEYS_TO_FILES_TOOL,
+                lambda: WriteXrayKeysToFilesTool(
+                    preview.tags,
+                    args_schema=preview.writeback_args_schema,
+                    output_schema=preview.writeback_output_schema,
                 ),
             )
         )
