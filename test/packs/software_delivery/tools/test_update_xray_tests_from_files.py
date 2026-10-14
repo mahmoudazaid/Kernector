@@ -624,33 +624,60 @@ def test_existing_step_data_alone_is_not_a_change() -> None:
     assert (result["status"], patch) == ("SKIPPED", None)
 
 
-def test_rewritten_steps_keep_the_data_of_unchanged_steps() -> None:
+_EXISTING_STEPS = (
+    XrayTestStep(action="Given the login page", data="url=/login"),
+    XrayTestStep(action="When the user submits", data="user=ann"),
+    XrayTestStep(action="When the user signs out", data="role=admin"),
+)
+
+
+@pytest.mark.parametrize(
+    ("file_steps", "expected"),
+    [
+        (
+            ("Given the login page", "When the user submits", "When the user leaves"),
+            (
+                XrayTestStep(action="Given the login page", data="url=/login"),
+                XrayTestStep(action="When the user submits", data="user=ann"),
+                XrayTestStep(action="When the user leaves"),
+            ),
+        ),
+        (
+            (
+                "Given cookies are accepted",
+                "Given the login page",
+                "When the user submits",
+                "When the user signs out",
+            ),
+            (XrayTestStep(action="Given cookies are accepted"), *_EXISTING_STEPS),
+        ),
+        (
+            ("When the user submits", "When the user signs out"),
+            _EXISTING_STEPS[1:],
+        ),
+    ],
+    ids=["edited", "inserted", "removed"],
+)
+def test_rewritten_steps_keep_the_data_of_unchanged_steps(
+    file_steps: tuple[str, ...], expected: tuple[XrayTestStep, ...]
+) -> None:
     details = _manual("QA-7", "User logs in", links=(_link(),))
-    existing = (
-        XrayTestStep(action="Given the login page", data="admin"),
-        XrayTestStep(action="When the old step", data="stale"),
-    )
     xray = _FakeXray(
-        issues=[_test("QA-7"), _story("ABC-1")], details=[replace(details, steps=existing)]
+        issues=[_test("QA-7"), _story("ABC-1")],
+        details=[replace(details, steps=_EXISTING_STEPS)],
     )
     robot = _lines(
         "*** Test Cases ***",
         "Scenario: User logs in",
         "    [Tags]    manual    XRay QA-7    Story ABC-1",
-        "    Given the login page",
-        "    When the new step",
+        *(f"    {step}" for step in file_steps),
     )
 
     result, patch = _single(xray, "t.robot", robot)
 
     assert result["changes"] == ["steps"]
     assert patch is not None
-    assert patch.definition == ManualDefinition(
-        (
-            XrayTestStep(action="Given the login page", data="admin"),
-            XrayTestStep(action="When the new step"),
-        )
-    )
+    assert patch.definition == ManualDefinition(expected)
 
 
 def test_test_outside_the_configured_project_is_an_error_before_any_write() -> None:

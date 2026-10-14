@@ -264,7 +264,7 @@ never creates, deletes or edits the files themselves. It is registered with the
 **every call needs approval, including `dry_run`**. The prompt shows the
 destination and up to 10 scenarios as `file:line · summary`, never steps, and
 warns that a test switched between Manual and Cucumber loses its previous
-steps or Gherkin, and that a changed step loses its Xray Data.
+steps or Gherkin, and that a new or edited step has no Xray Data.
 
 **Statuses.** A real run reports `UPDATED`, `SKIPPED` (the test already matches)
 or `ERROR` with a `reason`. A dry run reports `WOULD_UPDATE` in place of
@@ -288,9 +288,10 @@ needs the story, so there it is an `ERROR`.
 **Diff** ([`test_files/xray_diff.py`](test_files/xray_diff.py)). Only changed
 members are sent. The summary is compared exactly, so a renamed test that was
 matched by key is renamed. Manual steps compare action and expected result;
-Xray Data is not compared. When steps are rewritten, a step whose action and
-expected result are unchanged at the same position keeps its Data; any other
-step is written without Data. Gherkin is compared after normalizing line endings and trailing whitespace.
+Xray Data is not compared. When steps are rewritten, they are aligned with the
+existing steps by action and expected result (`difflib.SequenceMatcher`), so an
+unchanged step keeps its Data even when steps are added or removed around it;
+a new or edited step is written without Data. Gherkin is compared after normalizing line endings and trailing whitespace.
 Scenario versus Scenario Outline is its own change. A Manual and Cucumber
 switch sends the complete new definition, and the adapter clears the old one.
 The component (`XRAY_DEFAULT_COMPONENT`) and the story link (`XRAY_LINK_TYPE`,

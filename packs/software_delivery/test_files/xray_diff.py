@@ -5,12 +5,13 @@ Scenario <-> Scenario Outline switch stays Cucumber and carries the Gherkin
 even when the text alone is unchanged. The summary comparison only detects a
 rename; it never blocks the update of an explicitly matched test. Manual steps
 ignore Xray Data when comparing; a rewrite keeps the Data of each step whose
-action and expected result are unchanged at the same position.
+action and expected result are unchanged, aligned by content.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from difflib import SequenceMatcher
 
 from domain.test_management.xray import (
     CucumberDefinition,
@@ -77,28 +78,33 @@ def diff_test(
 
 
 def _same_steps(spec: XrayTestSpec, details: XrayTestDetails) -> bool:
-    if len(spec.steps) != len(details.steps):
-        return False
-    return all(
-        _same_step(want, have) for want, have in zip(spec.steps, details.steps, strict=True)
-    )
+    return [_step_key(step) for step in spec.steps] == [_step_key(s) for s in details.steps]
 
 
 def _keep_data(spec: XrayTestSpec, details: XrayTestDetails) -> tuple[XrayTestStep, ...]:
-    """Spec steps, keeping the existing Data of a step unchanged at the same position."""
-    steps: list[XrayTestStep] = []
-    for index, want in enumerate(spec.steps):
-        have = details.steps[index] if index < len(details.steps) else None
-        if have is not None and not want.data and _same_step(want, have):
-            want = replace(want, data=have.data)
-        steps.append(want)
+    """Spec steps, keeping the existing Data of every step aligned as unchanged.
+
+    Steps are aligned by content, so inserting or removing a step does not drop
+    the Data of the unchanged steps around it.
+    """
+    steps = list(spec.steps)
+    matcher = SequenceMatcher(
+        None,
+        [_step_key(step) for step in spec.steps],
+        [_step_key(step) for step in details.steps],
+        autojunk=False,
+    )
+    for want_start, have_start, size in matcher.get_matching_blocks():
+        for offset in range(size):
+            want = steps[want_start + offset]
+            if not want.data:
+                have = details.steps[have_start + offset]
+                steps[want_start + offset] = replace(want, data=have.data)
     return tuple(steps)
 
 
-def _same_step(want: XrayTestStep, have: XrayTestStep) -> bool:
-    return _normalized(want.action) == _normalized(have.action) and _normalized(
-        want.expected
-    ) == _normalized(have.expected)
+def _step_key(step: XrayTestStep) -> tuple[str, str]:
+    return _normalized(step.action), _normalized(step.expected)
 
 
 def _normalized(text: str) -> str:

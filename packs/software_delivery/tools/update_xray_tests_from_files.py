@@ -63,7 +63,8 @@ _APPROVAL_SUMMARY = (
     "Update existing Jira Test issues in Xray so they match the file scenarios. "
     "Only changed fields are sent; no test is created or deleted. A test switched "
     "between Manual and Cucumber loses its previous steps or Gherkin. When steps "
-    "change, a step whose action or expected result changed loses its Xray Data. "
+    "change, unchanged steps keep their Xray Data, even if steps are added or "
+    "removed around them; a new or edited step has no Data. "
     "Tests outside the configured project are never changed."
 )
 _DRY_RUN_TITLE = "Dry run: plan Xray test updates from files"
