@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from packs.software_delivery.errors import TestFileErrorReason, TestFileValidationError
-from packs.software_delivery.test_files.gherkin import parse_gherkin
+from packs.software_delivery.test_files.gherkin import parse_gherkin_layout
+from packs.software_delivery.test_files.layout import FileLayout
 from packs.software_delivery.test_files.models import ParsedTestFile, TestFileTagConfig
-from packs.software_delivery.test_files.robot import parse_robot
+from packs.software_delivery.test_files.robot import parse_robot_layout
 
 ROBOT_EXTENSION = ".robot"
 GHERKIN_EXTENSION = ".feature"
@@ -32,9 +33,26 @@ def parse_test_file(
             syntax, conflicting key tags, or the budget exceeded; names the
             file and line.
     """
+    return parse_test_file_layout(path, text, tags, max_scenarios=max_scenarios)[0]
+
+
+def parse_test_file_layout(
+    path: str,
+    text: str,
+    tags: TestFileTagConfig,
+    *,
+    max_scenarios: int | None = None,
+) -> tuple[ParsedTestFile, FileLayout]:
+    """Like ``parse_test_file``, plus each scenario's source rows for write-back (#399).
+
+    Raises:
+        TestFileValidationError: As ``parse_test_file``.
+    """
     if not is_supported_test_file(path):
         raise TestFileValidationError(path, None, TestFileErrorReason.UNSUPPORTED_EXTENSION)
-    parse = parse_gherkin if path.lower().endswith(GHERKIN_EXTENSION) else parse_robot
+    parse = (
+        parse_gherkin_layout if path.lower().endswith(GHERKIN_EXTENSION) else parse_robot_layout
+    )
     return parse(path, text.removeprefix(_BOM), tags, max_scenarios)
 
 

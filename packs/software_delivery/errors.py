@@ -27,6 +27,10 @@ class TestFilePreviewValidationError(ToolArgumentValidationError):
     __test__ = False
 
 
+class XrayKeyWritebackValidationError(ToolArgumentValidationError):
+    """Malformed arguments for writing Xray keys back into test files (#399)."""
+
+
 class OrchestrationValidationError(DomainValidationError):
     """Invalid Software Delivery chat tool selection."""
 
@@ -67,6 +71,17 @@ class TestFileErrorReason(StrEnum):
     DUPLICATE_FILE_PATH = "the same file path was sent more than once"
     DUPLICATE_SCENARIO_SUMMARY = "another scenario without an Xray key has the same name"
     DUPLICATE_SCENARIO_NAME = "another scenario in this file has the same name"
+    UNKNOWN_FILE = "an Xray key names a file that was not sent"
+    UNKNOWN_SCENARIO = "an Xray key names a scenario that is not in this file"
+    INVALID_XRAY_KEY = "the Xray key is not a Jira issue key"
+    DUPLICATE_KEY_OWNER = "another scenario would carry the same Xray key"
+    KEY_USED_AS_OTHER_TAG = (
+        "the Xray key is already a story, file-level or another scenario's key tag"
+    )
+    PIPE_ROWS_UNSUPPORTED = "pipe-separated rows cannot be rewritten"
+    COMMENTED_TAG_LINE = "a tag line with a # comment cannot be rewritten"
+    ROLE_CHANGE = "writing the Xray key would change this scenario's other tags"
+    RESULT_TOO_LARGE = "the rewritten files exceed the result size limit; send fewer files"
 
 
 class TestFileValidationError(TrustedToolValidationError):

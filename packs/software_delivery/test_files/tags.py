@@ -47,7 +47,7 @@ def classify(
     candidates: list[str] = []
     plain: list[str] = []
     for line, tag in tags:
-        role, value = _role(tag, config, syntax)
+        role, value = tag_role(tag, config, syntax)
         if role == "xray" and scope == "file":
             raise TestFileValidationError(path, line, Reason.FILE_LEVEL_XRAY_KEY)
         bucket = {"xray": xray, "story": story, "candidate": candidates, "plain": plain}[role]
@@ -64,7 +64,8 @@ def classify(
     )
 
 
-def _role(tag: str, config: TestFileTagConfig, syntax: TagSyntax) -> tuple[str, str]:
+def tag_role(tag: str, config: TestFileTagConfig, syntax: TagSyntax) -> tuple[str, str]:
+    """Return ``(role, value)``: ``xray``/``story`` with the key, ``candidate`` or ``plain``."""
     if ISSUE_KEY.fullmatch(tag) is not None:
         return "candidate", tag
     pattern = _ROBOT_COMPOSITE if syntax == "robot" else _GHERKIN_COMPOSITE

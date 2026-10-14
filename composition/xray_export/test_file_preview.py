@@ -186,9 +186,24 @@ PREVIEW_PROMPT = McpToolPrompt(
 )
 
 
+def _writeback_args_schema() -> type:
+    from composition.xray_export.test_file_writeback import WriteXrayKeysToFilesArgs
+
+    return WriteXrayKeysToFilesArgs
+
+
+def _writeback_output_schema() -> type:
+    from composition.xray_export.test_file_writeback import WriteXrayKeysToFilesResult
+
+    return WriteXrayKeysToFilesResult
+
+
 @dataclass(frozen=True, slots=True)
 class TestFilePreviewMcpBinding:
-    """Collaborators for the pack's ``build_mcp_tools(test_file_binding=...)``."""
+    """Collaborators for the pack's ``build_mcp_tools(test_file_binding=...)``.
+
+    It also serves the Xray key write-back tool (#399), which needs only tags.
+    """
 
     __test__ = False
 
@@ -196,6 +211,8 @@ class TestFilePreviewMcpBinding:
     args_schema: type = field(default=PreviewTestFileScenariosArgs)
     output_schema: type = field(default=PreviewTestFileScenariosResult)
     mcp_prompt: object = field(default=PREVIEW_PROMPT)
+    writeback_args_schema: type = field(default_factory=_writeback_args_schema)
+    writeback_output_schema: type = field(default_factory=_writeback_output_schema)
 
 
 def build_test_file_tags(settings: Settings) -> TestFileTagConfig:
