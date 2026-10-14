@@ -8,16 +8,18 @@ import "./globals.css";
 
 const publicEnv = loadPublicEnv();
 
-// Self-hosted so the build never fetches from Google Fonts.
+// Self-hosted so the build never fetches from Google Fonts. These are IBM's
+// complete (non-subset) files: Latin, Latin Extended, Cyrillic, Greek (Sans
+// only) and Vietnamese.
 const plexSans = localFont({
   src: [
     {
-      path: "./fonts/ibm-plex-sans-latin-400-normal.woff2",
+      path: "./fonts/IBMPlexSans-Regular.woff2",
       weight: "400",
       style: "normal",
     },
     {
-      path: "./fonts/ibm-plex-sans-latin-500-normal.woff2",
+      path: "./fonts/IBMPlexSans-Medium.woff2",
       weight: "500",
       style: "normal",
     },
@@ -28,12 +30,12 @@ const plexSans = localFont({
 const plexMono = localFont({
   src: [
     {
-      path: "./fonts/ibm-plex-mono-latin-400-normal.woff2",
+      path: "./fonts/IBMPlexMono-Regular.woff2",
       weight: "400",
       style: "normal",
     },
     {
-      path: "./fonts/ibm-plex-mono-latin-500-normal.woff2",
+      path: "./fonts/IBMPlexMono-Medium.woff2",
       weight: "500",
       style: "normal",
     },
