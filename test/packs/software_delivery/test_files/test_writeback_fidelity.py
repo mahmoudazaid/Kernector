@@ -22,13 +22,43 @@ def test_crlf_endings_are_kept_and_inserted_lines_use_them() -> None:
     assert rewrite_file("t.robot", result.content, {"Login": "ABC-9"}, TAGS).changed is False
 
 
-def test_bom_is_kept_in_content_and_left_out_of_the_diff() -> None:
+def test_bom_is_kept_in_content_and_on_the_first_diff_line() -> None:
     text = "\ufeffFeature: F\n  Scenario: A\n    Given x\n"
 
     result = rewrite_file("f.feature", text, {"A": "ABC-9"}, TAGS)
 
     assert result.content == "\ufeffFeature: F\n  @XRay:ABC-9\n  Scenario: A\n    Given x\n"
-    assert "\ufeff" not in result.diff
+    assert result.diff == (
+        "--- a/f.feature\n"
+        "+++ b/f.feature\n"
+        "@@ -1,3 +1,4 @@\n"
+        " \ufeffFeature: F\n"
+        "+  @XRay:ABC-9\n"
+        "   Scenario: A\n"
+        "     Given x\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "tail"),
+    [
+        (
+            "*** Test Cases ***\nScenario: S\n    [Tags]    a\n    ...    b",
+            "    [Tags]    a    b    XRay ABC-1",
+        ),
+        (
+            "*** Test Cases ***\nScenario: S\n    [Tags]    a\n    Given x\n    [Tags]    b",
+            "    Given x",
+        ),
+    ],
+)
+def test_missing_final_newline_stays_missing_when_the_last_row_is_removed(
+    text: str, tail: str
+) -> None:
+    result = rewrite_file("t.robot", text, {"S": "ABC-1"}, TAGS)
+
+    assert result.content.endswith(tail)
+    assert result.diff.endswith("\\ No newline at end of file\n")
 
 
 def test_missing_final_newline_stays_missing_and_is_marked_in_the_diff() -> None:

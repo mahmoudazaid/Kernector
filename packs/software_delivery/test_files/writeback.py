@@ -92,14 +92,17 @@ def rewrite_file(
             )
         )
     new_lines = [out for index, line in enumerate(lines) for out in edits.get(index, [line])]
+    if lines and new_lines and not _ending(lines[-1]):
+        new_lines[-1] = new_lines[-1].removesuffix(_ending(new_lines[-1]))
     new_body = "".join(new_lines)
+    bom = text[: len(text) - len(body)]
     if new_body != body:
         _guard_roles(path, parsed, new_body, keys, tags)
     return FileRewrite(
         path=path,
-        content=text[: len(text) - len(body)] + new_body,
+        content=bom + new_body,
         changed=new_body != body,
-        diff="" if new_body == body else _diff(path, lines, new_lines),
+        diff="" if new_body == body else _diff(path, bom, lines, new_lines),
         scenarios=tuple(results),
     )
 
@@ -261,7 +264,10 @@ def _ending(line: str) -> str:
     return line[len(body) :]
 
 
-def _diff(path: str, old: list[str], new: list[str]) -> str:
+def _diff(path: str, bom: str, old: list[str], new: list[str]) -> str:
+    """Line 1 is never edited, so the BOM rides on it as on disk."""
+    old = [bom + old[0], *old[1:]]
+    new = [bom + new[0], *new[1:]]
     out: list[str] = []
     for line in difflib.unified_diff(old, new, f"a/{path}", f"b/{path}"):
         out.append(line)

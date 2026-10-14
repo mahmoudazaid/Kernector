@@ -340,7 +340,8 @@ the test by key. The tool is pure: it returns the full new text and a unified
 diff (`a/<path>` / `b/<path>`, with `\ No newline at end of file` where it
 applies) for the caller to apply; it never reads or writes files or
 repositories and never calls Jira/Xray. It is registered on chat and MCP
-whenever the pack is enabled, needs no approval, and writes the marker from
+whenever the pack is enabled (on MCP, allowlist it in `MCP_TOOL_ALLOWLIST`),
+needs no approval, and writes the marker from
 `XRAY_TEST_TAG`: `@<marker>:<KEY>` in Gherkin and `<marker> <KEY>` in Robot.
 
 `keys` comes from the #397 result: the `created` map holds only `CREATED`
