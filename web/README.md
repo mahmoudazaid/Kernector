@@ -35,18 +35,18 @@ npm run dev   # origin must be http://localhost:3000 (matches HTTP_CORS_ORIGINS 
 
 ## Scripts
 
-| Command                | Purpose                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------ |
-| `npm run dev`          | Local App Router server (Turbopack)                                            |
-| `npm run build`        | Production build                                                               |
-| `npm start`            | Serve the production build                                                     |
-| `npm run lint`         | ESLint                                                                         |
-| `npm run typecheck`    | TypeScript (`tsc --noEmit`)                                                    |
-| `npm test`             | Vitest unit/component tests                                                    |
-| `npm run format`       | Prettier write                                                                 |
-| `npm run format:check` | Prettier check                                                                 |
-| `npm run api:export`   | Write `openapi/openapi.json` from FastAPI                                      |
-| `npm run api:generate` | Export OpenAPI + regenerate `lib/api/generated/schema.d.ts`                    |
+| Command                | Purpose                                                                |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`          | Local App Router server (Turbopack)                                    |
+| `npm run build`        | Production build                                                       |
+| `npm start`            | Serve the production build                                             |
+| `npm run lint`         | ESLint                                                                 |
+| `npm run typecheck`    | TypeScript (`tsc --noEmit`)                                            |
+| `npm test`             | Vitest unit/component tests                                            |
+| `npm run format`       | Prettier write                                                         |
+| `npm run format:check` | Prettier check                                                         |
+| `npm run api:export`   | Write `openapi/openapi.json` from FastAPI                              |
+| `npm run api:generate` | Export OpenAPI + regenerate `lib/api/generated/schema.d.ts`            |
 | `npm run api:check`    | Fail if committed OpenAPI/client artifacts are stale (PR CI on `main`) |
 
 ## Routes
@@ -64,28 +64,28 @@ Global UI states: `loading.tsx`, `error.tsx`, `global-error.tsx` (root layout fa
 
 **Instrument panel** — a cool, professional AI knowledge workspace identity (not a wireframe, not a marketing landing page). Full decision record: [ADR 0003](../docs/adr/0003-nextjs-instrument-panel-visual-identity.md).
 
-| Token role         | Choice                                                                                              |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| Neutrals           | Cool slate surfaces (`--kern-bg` / `--kern-surface` / `--kern-surface-2`)                           |
-| Accent             | Restrained teal (`--kern-accent`, `--kern-accent-soft`) for active nav, brand mark, and status cues |
-| Focus              | Matching teal outline (`--kern-focus`) — never rely on color alone                                  |
-| Type               | IBM Plex Sans + IBM Plex Mono with `--kern-text-xs`…`--kern-text-xl`                                |
-| Radius / elevation | 6–8px radii; soft `--kern-shadow-1` / `--kern-shadow-2`; controls use `--kern-radius-pill`          |
-| Controls           | Soft glass emboss; checked checkboxes show a white ✓ on teal accent fill                            |
-| Motion             | `--kern-duration` + `--kern-ease`; emphasis uses `--kern-duration-emphasis` + `--kern-ease-out`. Dialogs: independent overlay fade + spring panel scale (`DialogFrame`) |
+| Token role         | Choice                                                                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Neutrals           | Cool slate surfaces (`--kern-bg` / `--kern-surface` / `--kern-surface-2`)                                                                                                         |
+| Accent             | Restrained teal (`--kern-accent`, `--kern-accent-soft`) for active nav, brand mark, and status cues                                                                               |
+| Focus              | Matching teal outline (`--kern-focus`) — never rely on color alone                                                                                                                |
+| Type               | IBM Plex Sans + IBM Plex Mono with `--kern-text-xs`…`--kern-text-xl`; self-hosted complete IBM files in `app/fonts` (Latin, Latin Extended, Cyrillic, Greek for Sans, Vietnamese) |
+| Radius / elevation | 6–8px radii; soft `--kern-shadow-1` / `--kern-shadow-2`; controls use `--kern-radius-pill`                                                                                        |
+| Controls           | Soft glass emboss; checked checkboxes show a white ✓ on teal accent fill                                                                                                          |
+| Motion             | `--kern-duration` + `--kern-ease`; emphasis uses `--kern-duration-emphasis` + `--kern-ease-out`. Dialogs: independent overlay fade + spring panel scale (`DialogFrame`)           |
 
 Semantic tokens live in `styles/tokens.css` and are consumed by `app/globals.css`. Light and dark themes are designed as paired surfaces (not a flat invert). Keep the shell domain-neutral; pack-specific branding stays gated. Apply the emboss recipe on every product surface (shell, chat, settings, Knowledge Hub, Test Design); do not ship native or flat controls that diverge from ADR 0003. Checked checkboxes must show a white check mark on the teal accent face (Settings / Test Design recipe) — not an empty filled square or OS-native glyph. Workspace pages (Knowledge Hub, Chat, Dashboard, Test Design) fill `.kern-main` width; Settings may keep a narrow form column. Product dialogs use `DialogFrame` (independent overlay fade + spring panel scale). Confirms use `ConfirmDialog` — never `window.confirm` / `alert` / `prompt`. Knowledge Hub connectors reuse the Drive card (Account \| Indexed, Last synced, Browse / Sync / Disconnect) and open scope selection in a `kern-picker-dialog` browse overlay — never an inline form on the card. GitHub uses a two-panel **Choose GitHub sources** dialog (repository + optional Project). On Save, dismiss the picker immediately and show the card busy overlay until sync finishes (ADR 0003 §12). Screen-level waits use `Loader` / `LoadingState` (blinking brand mark) — never “Loading …” lead copy or skeleton bars. Visible timestamps use `formatTimestamp` (`09 Sep 2026, 09:35 AM`) — never relative “ago” copy or locale-default `toLocaleString()`.
 
 **Logo and app icons** — all brand files live in `public/brand/` (not under `app/`). Colors follow Instrument panel tokens (`--kern-accent` `#0f766e`, `--kern-accent` dark `#2dd4bf`, `--kern-bg` / `--kern-surface` / `--kern-ink`). Replace files there to rebrand.
 
-| File | Use |
-| --- | --- |
-| `kernector-mark.png` (+ `.webp`) | Raster mark for icons / OG; the shell uses a token-colored SVG |
-| `kernector-thinking.svg` | Standalone thinking mark (chat uses the inline component + “Thinking…” label) |
-| `kernector-tab.png` | Browser tab / shortcut icon (light slate) |
-| `favicon.ico` | `/favicon.ico` (rewritten from this file) |
-| `apple-touch-icon.png` | Home-screen / Apple icon |
-| `opengraph.png` | Open Graph / social image |
+| File                             | Use                                                                           |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `kernector-mark.png` (+ `.webp`) | Raster mark for icons / OG; the shell uses a token-colored SVG                |
+| `kernector-thinking.svg`         | Standalone thinking mark (chat uses the inline component + “Thinking…” label) |
+| `kernector-tab.png`              | Browser tab / shortcut icon (light slate)                                     |
+| `favicon.ico`                    | `/favicon.ico` (rewritten from this file)                                     |
+| `apple-touch-icon.png`           | Home-screen / Apple icon                                                      |
+| `opengraph.png`                  | Open Graph / social image                                                     |
 
 `app/layout.tsx` `metadata.icons` and `openGraph.images` point at these URLs. Do not add `app/favicon.ico` / `app/icon.png` — those Next file conventions split assets and reintroduced the default triangle. Hard-refresh the tab if a cached icon remains.
 

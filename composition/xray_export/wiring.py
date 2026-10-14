@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from domain.ports import XrayIssueLookup, XrayTestImporter
+from domain.ports import XrayIssueLookup, XrayTestImporter, XrayTestUpdater
 from infrastructure.config import Settings
 from infrastructure.connectors.xray.schema import XraySchemaCache
 
@@ -12,8 +12,8 @@ from infrastructure.connectors.xray.schema import XraySchemaCache
 _SCHEMA_CACHE = XraySchemaCache()
 
 
-class XrayClient(XrayTestImporter, XrayIssueLookup, Protocol):
-    """Both deployment adapters create tests and look up Jira issues."""
+class XrayClient(XrayTestImporter, XrayIssueLookup, XrayTestUpdater, Protocol):
+    """Both deployment adapters create, look up and update tests (#398)."""
 
 
 def build_xray_importer(

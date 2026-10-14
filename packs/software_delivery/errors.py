@@ -66,6 +66,7 @@ class TestFileErrorReason(StrEnum):
     FILE_LEVEL_XRAY_KEY = "an Xray test key tag is not allowed at file level"
     DUPLICATE_FILE_PATH = "the same file path was sent more than once"
     DUPLICATE_SCENARIO_SUMMARY = "another scenario without an Xray key has the same name"
+    DUPLICATE_SCENARIO_NAME = "another scenario in this file has the same name"
 
 
 class TestFileValidationError(TrustedToolValidationError):
