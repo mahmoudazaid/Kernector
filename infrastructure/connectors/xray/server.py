@@ -23,6 +23,7 @@ from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailab
 from domain.test_management.xray import (
     IssueLookupResult,
     JiraIssueSummary,
+    StoryNamingContext,
     XrayImportResult,
     XrayRequiredFieldsError,
     XrayTestCreateSchema,
@@ -64,6 +65,7 @@ if TYPE_CHECKING:
     import httpx
 
 _TEST_ISSUE_TYPE = "test"
+_EPIC_LINK_CUSTOM = "com.pyxis.greenhopper.jira:gh-epic-link"
 _HANDLED_SYSTEM_FIELDS = frozenset(
     {"project", "summary", "issuetype", "reporter", "description", "issuelinks"}
 )
@@ -148,6 +150,7 @@ class XrayServerImporter:
         self._project_key = project_key
         self._link_type = link_type.strip()
         self._cache = cache
+        self._epic_link_field: str | None | object = _UNREADABLE
         self._client = httpx.Client(
             base_url=f"{self._base_url}/rest/api/2",
             timeout=timeout,
@@ -283,6 +286,103 @@ class XrayServerImporter:
             if summary.is_test:
                 tests.append(summary)
         return tuple(tests)
+
+    def list_tests(
+        self, project_key: str, *, component: str | None = None
+    ) -> tuple[JiraIssueSummary, ...]:
+        """Every Test in ``project_key`` via Jira search; optional component filter."""
+        mapping, _ = self._cache.get_or_discover(self._schema_key, self._discover)
+        if not project_key.strip():
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        clauses = [f'project = "{project_key.strip()}"', 'issuetype = Test']
+        if component is not None:
+            if not component.strip():
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            clauses.append(f'component = "{component.strip()}"')
+        jql = " AND ".join(clauses)
+        by_key: dict[str, JiraIssueSummary] = {}
+        start_at = 0
+        for _ in range(_MAX_PAGES):
+            payload = self._request(
+                "GET",
+                "/search",
+                params={
+                    "jql": jql,
+                    "startAt": str(start_at),
+                    "maxResults": str(_PAGE_SIZE),
+                    "fields": "summary,issuetype",
+                },
+            )
+            if not isinstance(payload, Mapping):
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            issues = payload.get("issues")
+            total = payload.get("total")
+            if not isinstance(issues, list) or not isinstance(total, int) or isinstance(total, bool):
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            if not issues:
+                if start_at >= total:
+                    return tuple(by_key.values())
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            page_keys: list[str] = []
+            for issue in issues:
+                summary = _issue_summary(issue, mapping.issue_type_id)
+                if summary.key in by_key or summary.key in page_keys:
+                    raise ConnectorUnavailableError(MSG_UNAVAILABLE)
+                page_keys.append(summary.key)
+                by_key[summary.key] = summary
+            start_at += len(issues)
+            if start_at >= total:
+                return tuple(by_key.values())
+        raise ConnectorUnavailableError(MSG_UNAVAILABLE)
+
+    def story_naming_context(self, story_key: str) -> StoryNamingContext:
+        """Story summary plus parent or discovered Epic Link field."""
+        epic_field = self._resolve_epic_link_field()
+        field_ids = ["summary", "issuetype", "parent"]
+        if epic_field:
+            field_ids.append(epic_field)
+        payload = self._request(
+            "GET",
+            f"/issue/{quote(story_key, safe='')}",
+            params={"fields": ",".join(field_ids)},
+            missing_ok=True,
+        )
+        if payload is None:
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        fields = payload.get("fields") if isinstance(payload, Mapping) else None
+        key = payload.get("key") if isinstance(payload, Mapping) else None
+        summary = fields.get("summary") if isinstance(fields, Mapping) else None
+        if key != story_key or not isinstance(summary, str) or not summary:
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        naming = _story_naming(
+            story_key, summary, fields if isinstance(fields, Mapping) else {}, epic_field
+        )
+        if naming.epic_presence != "failed" or epic_field is None or not isinstance(fields, Mapping):
+            return naming
+        raw = fields.get(epic_field)
+        if not isinstance(raw, str) or not raw.strip():
+            return naming
+        epic = self._request(
+            "GET",
+            f"/issue/{quote(raw.strip(), safe='')}",
+            params={"fields": "summary"},
+            missing_ok=True,
+        )
+        if epic is None:
+            return StoryNamingContext(story_key, summary, "failed")
+        epic_fields = epic.get("fields") if isinstance(epic, Mapping) else None
+        epic_key = epic.get("key") if isinstance(epic, Mapping) else None
+        epic_summary = epic_fields.get("summary") if isinstance(epic_fields, Mapping) else None
+        if (
+            isinstance(epic_key, str)
+            and epic_key
+            and isinstance(epic_summary, str)
+            and epic_summary
+        ):
+            return StoryNamingContext(
+                story_key, summary, "present", epic_key=epic_key, epic_summary=epic_summary
+            )
+        return StoryNamingContext(story_key, summary, "failed")
 
     def capabilities(self) -> XrayUpdateCapabilities:
         """Jira fields are writable here; the story link needs a known link type."""
@@ -439,6 +539,27 @@ class XrayServerImporter:
         )
         return _mapping(issue_type_id, fields)
 
+    def _resolve_epic_link_field(self) -> str | None:
+        """Discover the Epic Link custom field id once; ``None`` when the instance has none."""
+        if self._epic_link_field is not _UNREADABLE:
+            return self._epic_link_field if isinstance(self._epic_link_field, str) else None
+        payload = self._request("GET", "/field")
+        if not isinstance(payload, list):
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        field_id: str | None = None
+        for field in payload:
+            if not isinstance(field, Mapping):
+                continue
+            schema = field.get("schema")
+            custom = schema.get("custom") if isinstance(schema, Mapping) else None
+            fid = field.get("id")
+            if custom == _EPIC_LINK_CUSTOM and isinstance(fid, str) and fid:
+                if field_id is not None:
+                    raise ConnectorError(MSG_REQUEST_FAILED)
+                field_id = fid
+        self._epic_link_field = field_id
+        return field_id
+
     def _paged(self, path: str) -> list[Mapping[str, object]]:
         values: list[Mapping[str, object]] = []
         start_at = 0
@@ -504,6 +625,53 @@ def _issue_summary(payload: object, test_type_id: str) -> JiraIssueSummary:
         issue_type_name=str(type_name),
         is_test=type_id == test_type_id,
     )
+
+
+def _story_naming(
+    story_key: str,
+    summary: str,
+    fields: Mapping[str, object],
+    epic_field: str | None,
+) -> StoryNamingContext:
+    parent = fields.get("parent")
+    epic_from_parent = _epic_from_parent(parent)
+    if epic_from_parent is not None:
+        return StoryNamingContext(
+            story_key,
+            summary,
+            "present",
+            epic_key=epic_from_parent[0],
+            epic_summary=epic_from_parent[1],
+        )
+    if parent is not None and not isinstance(parent, Mapping):
+        return StoryNamingContext(story_key, summary, "failed")
+    if epic_field is None:
+        return StoryNamingContext(story_key, summary, "absent")
+    raw = fields.get(epic_field)
+    if raw is None or raw == "":
+        return StoryNamingContext(story_key, summary, "absent")
+    if isinstance(raw, str) and raw.strip():
+        # Epic Link often stores only the epic key; summary requires a follow-up read
+        # the caller performs via present only when both are known — key alone is failed.
+        return StoryNamingContext(story_key, summary, "failed")
+    if isinstance(raw, Mapping):
+        epic = _epic_from_parent(raw)
+        if epic is not None:
+            return StoryNamingContext(
+                story_key, summary, "present", epic_key=epic[0], epic_summary=epic[1]
+            )
+    return StoryNamingContext(story_key, summary, "failed")
+
+
+def _epic_from_parent(parent: object) -> tuple[str, str] | None:
+    if not isinstance(parent, Mapping):
+        return None
+    epic_key = parent.get("key")
+    parent_fields = parent.get("fields") if isinstance(parent.get("fields"), Mapping) else parent
+    epic_summary = parent_fields.get("summary") if isinstance(parent_fields, Mapping) else None
+    if isinstance(epic_key, str) and epic_key and isinstance(epic_summary, str) and epic_summary:
+        return epic_key, epic_summary
+    return None
 
 
 def _mapping(issue_type_id: str, fields: list[Mapping[str, object]]) -> ServerFieldMapping:

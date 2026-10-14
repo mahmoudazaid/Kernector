@@ -14,6 +14,10 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from composition.xray_export.test_file_preview import TestFileInput, build_test_file_tags
+from composition.xray_export.test_file_pull import (
+    PullXrayTestsToFilesArgs,
+    PullXrayTestsToFilesResult,
+)
 from composition.xray_export.test_file_update import (
     UpdateXrayTestsFromFilesArgs,
     UpdateXrayTestsFromFilesResult,
@@ -135,13 +139,17 @@ class XrayFileCreateBinding:
     destination_label: str
     story_issue_types: frozenset[str]
     link_type: str
+    link_direction: str = "outward"
     default_component: str | None = None
+    new_file_name_template: str = "{epic_summary}__{story_summary}"
     args_schema: type | None = field(default=CreateXrayTestsFromFilesArgs)
     output_schema: type | None = field(default=CreateXrayTestsFromFilesResult)
     target_args_schema: type | None = field(default=XrayTargetArgs)
     target_output_schema: type | None = field(default=XrayTargetResult)
     update_args_schema: type | None = field(default=UpdateXrayTestsFromFilesArgs)
     update_output_schema: type | None = field(default=UpdateXrayTestsFromFilesResult)
+    pull_args_schema: type | None = field(default=PullXrayTestsToFilesArgs)
+    pull_output_schema: type | None = field(default=PullXrayTestsToFilesResult)
 
 
 def build_xray_file_create_binding(settings: Settings) -> XrayFileCreateBinding | None:
@@ -162,7 +170,9 @@ def build_xray_file_create_binding(settings: Settings) -> XrayFileCreateBinding 
         destination_label=xray_destination_label(settings, project_key),
         story_issue_types=frozenset(xray.story_issue_types),
         link_type=xray.link_type,
+        link_direction=xray.link_direction,
         default_component=xray.default_component,
+        new_file_name_template=xray.new_file_name_template,
     )
 
 

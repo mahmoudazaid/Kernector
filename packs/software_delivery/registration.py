@@ -47,6 +47,13 @@ from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TestDesignMcpBinding,
 )
+from packs.software_delivery.tools.pull_xray_tests_to_files import (
+    TOOL_NAME as PULL_XRAY_TESTS_TO_FILES_TOOL,
+)
+from packs.software_delivery.tools.pull_xray_tests_to_files import (
+    XrayFilePullBinding,
+    build_pull_from_binding,
+)
 from packs.software_delivery.tools.write_xray_keys_to_files import (
     TOOL_NAME as WRITE_XRAY_KEYS_TO_FILES_TOOL,
 )
@@ -55,8 +62,10 @@ from packs.software_delivery.tools.write_xray_keys_to_files import WriteXrayKeys
 SelectChatIntent = Callable[[str], ChatToolSelection | None]
 
 
-class XrayFileBinding(XrayFileCreateBinding, XrayFileUpdateBinding, Protocol):
-    """One composition binding serves creating (#397) and updating (#398) from files."""
+class XrayFileBinding(
+    XrayFileCreateBinding, XrayFileUpdateBinding, XrayFilePullBinding, Protocol
+):
+    """One composition binding serves create/update/pull from files (#397/#398/#400)."""
 
 
 class SoftwareDeliveryToolWiringError(ValueError):
@@ -123,6 +132,7 @@ def build_tools(
     if xray_file_binding is not None:
         tools.append(build_from_binding(xray_file_binding))
         tools.append(build_update_from_binding(xray_file_binding))
+        tools.append(build_pull_from_binding(xray_file_binding))
         tools.append(_xray_target(xray_file_binding))
     return tuple(tools)
 
@@ -202,6 +212,12 @@ def build_mcp_tools(
             (
                 UPDATE_XRAY_TESTS_FROM_FILES_TOOL,
                 lambda: build_update_from_binding(file_binding),
+            )
+        )
+        tools.append(
+            (
+                PULL_XRAY_TESTS_TO_FILES_TOOL,
+                lambda: build_pull_from_binding(file_binding),
             )
         )
         tools.append((XRAY_TARGET_TOOL, lambda: _xray_target(file_binding)))

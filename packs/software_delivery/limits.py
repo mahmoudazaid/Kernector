@@ -23,3 +23,7 @@ MAX_TEST_FILE_SCENARIOS = 500
 # Xray key write-back (#399): full rewritten content plus diffs in one result;
 # over the cap the call is rejected, never truncated.
 MAX_XRAY_KEY_WRITEBACK_RESULT_BYTES = 2 * MAX_TEST_FILES_TOTAL_BYTES
+
+# Pull Xray tests into files (#400): remote keys considered and full JSON result.
+MAX_PULL_XRAY_TESTS = 200
+MAX_PULL_XRAY_RESULT_BYTES = 2 * MAX_XRAY_KEY_WRITEBACK_RESULT_BYTES

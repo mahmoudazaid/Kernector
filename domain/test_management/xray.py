@@ -109,6 +109,33 @@ class IssueLinkRef:
     issue_key: str
 
 
+EpicPresence = Literal["absent", "present", "failed"]
+
+
+@dataclass(frozen=True, slots=True)
+class StoryNamingContext:
+    """Story summary plus epic metadata for new-file naming (#400).
+
+    ``epic_presence="failed"`` must never be treated as absent: naming must
+    stop rather than invent an epic-free path when the read was incomplete.
+    ``epic_key`` / ``epic_summary`` are set only when ``epic_presence`` is
+    ``"present"``.
+    """
+
+    story_key: str
+    story_summary: str
+    epic_presence: EpicPresence
+    epic_key: str | None = None
+    epic_summary: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.epic_presence == "present":
+            if not self.epic_key or not self.epic_summary:
+                raise ValueError("present epic needs key and summary")
+        elif self.epic_key is not None or self.epic_summary is not None:
+            raise ValueError("epic key/summary only when epic_presence is present")
+
+
 @dataclass(frozen=True, slots=True)
 class XrayTestDetails:
     """Current state of one existing Xray test, read before any update (#398).
