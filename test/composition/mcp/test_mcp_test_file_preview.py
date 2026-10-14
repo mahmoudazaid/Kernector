@@ -60,10 +60,9 @@ def _invoke(arguments: dict[str, object]):  # noqa: ANN202
 def test_build_mcp_tools_contributes_the_tool_only_with_a_binding() -> None:
     assert build_mcp_tools() == ()
 
-    [(tool_id, factory)] = build_mcp_tools(test_file_binding=TestFilePreviewMcpBinding(TAGS))
+    factories = dict(build_mcp_tools(test_file_binding=TestFilePreviewMcpBinding(TAGS)))
 
-    assert tool_id == TOOL_NAME
-    assert type(factory()) is PreviewTestFileScenariosTool
+    assert type(factories[TOOL_NAME]()) is PreviewTestFileScenariosTool
 
 
 def test_listing_is_gated_by_the_allowlist_and_advertises_a_strict_schema() -> None:

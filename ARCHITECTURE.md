@@ -209,6 +209,19 @@ fields with Xray-only credentials. A write that may have happened raises
 `XrayUpdateUncertainError` (`partial` once part of a sequence succeeded); a
 type switch that does not read back raises `XrayUpdateNotConfirmedError`.
 
+Writing keys back into those files (#399) closes the loop without a port:
+`test_files/writeback.py` rewrites the caller's text from the parser's layout
+(`parse_test_file_layout`: tag rows, header and body boundaries, comments) and
+the shared tag classifier, and `test_files/key_ownership.py` checks the final
+mapping across all files. The tool returns full text plus a unified diff; the
+client applies it, so Kernector never writes files or repositories and makes
+no Jira/Xray calls. Results over `MAX_XRAY_KEY_WRITEBACK_RESULT_BYTES` are
+rejected, never truncated. Recorded, not changed: the #397 `created` map omits
+`EXISTS_UNTAGGED` keys (callers build them from `results`), the Robot parser
+ignores inline header cells and comment-only rows, file-scope Xray markers are
+rejected, and chat over HTTP exposes only `result_chars`, so applying the
+rewrite needs an MCP client.
+
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
@@ -906,6 +919,11 @@ the agents; Kernector supplies evidence and allowlisted tools.
   `software_delivery.update_xray_tests_from_files` shares the same binding
   (strict schemas in `composition/xray_export/test_file_update.py`) and the
   same approval rule, `dry_run` included. A dry run reports `WOULD_UPDATE`.
+- Xray key write-back (#399): `software_delivery.write_xray_keys_to_files`
+  is contributed with the preview's `TestFilePreviewMcpBinding` (strict
+  schemas in `composition/xray_export/test_file_writeback.py`) whenever
+  `software-delivery` is enabled. It is pure (no approval) and fails with the
+  same trusted `path:line: reason` messages as the preview.
 - Prompts and instructions: the server sends fixed, tool-neutral
   `instructions` (clients read files themselves and send exact text). A tool
   may carry an optional `mcp_prompt` (`McpToolPrompt`, read via `getattr`);
