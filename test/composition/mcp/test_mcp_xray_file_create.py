@@ -72,10 +72,12 @@ def _binding(xray: _Xray) -> XrayFileCreateBinding:
     return XrayFileCreateBinding(
         importer=xray,
         lookup=xray,
+        updater=xray,  # type: ignore[arg-type]
         tags=TAGS,
         project_key="QA",
         destination_label=LABEL,
         story_issue_types=frozenset({"Story"}),
+        link_type="Test",
     )
 
 
@@ -123,7 +125,7 @@ def test_build_mcp_tools_contributes_the_tools_only_with_a_binding() -> None:
 
     tools = dict(build_mcp_tools(xray_file_binding=_binding(_Xray())))
 
-    assert set(tools) == {TOOL_NAME, TARGET_TOOL}
+    assert set(tools) == {TOOL_NAME, TARGET_TOOL, "software_delivery.update_xray_tests_from_files"}
     assert type(tools[TOOL_NAME]()) is CreateXrayTestsFromFilesTool
     assert type(tools[TARGET_TOOL]()) is XrayTargetTool
 

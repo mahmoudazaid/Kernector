@@ -20,8 +20,16 @@ from domain.test_management.xray import (
     JiraIssueSummary,
     XrayCreateWarning,
     XrayImportResult,
+    JIRA_PATCH_FIELDS,
     XrayTestCreateSchema,
+    XrayTestDetails,
+    XrayTestDetailsResult,
+    XrayTestPatch,
     XrayTestSpec,
+    XrayUpdateCapabilities,
+    XrayUpdateNotConfirmedError,
+    XrayUpdateRejectedError,
+    XrayUpdateUncertainError,
 )
 from infrastructure.connectors.xray.batch import create_each
 from infrastructure.connectors.xray.errors import (
@@ -33,6 +41,13 @@ from infrastructure.connectors.xray.errors import (
     diagnostic,
     map_http_error,
 )
+from infrastructure.connectors.xray.cloud_update import (
+    DETAILS_SELECTION,
+    Mutation,
+    mutations,
+    parse_test,
+)
+from infrastructure.connectors.xray.details import confirms_definition
 from infrastructure.connectors.xray.schema import SchemaKey, XraySchemaCache
 
 if TYPE_CHECKING:
@@ -53,13 +68,16 @@ _SEARCH_SELECTION = (
 )
 _GET_TESTS = "getTests"
 _GET_COVERABLE = "getCoverableIssues"
-_SEARCH_QUERIES = {
-    name: (
+
+
+def _search_query(name: str, selection: str) -> str:
+    return (
         "query($jql: String, $start: Int, $limit: Int!) { "
-        f"{name}(jql: $jql, start: $start, limit: $limit) {_SEARCH_SELECTION} }}"
+        f"{name}(jql: $jql, start: $start, limit: $limit) {selection} }}"
     )
-    for name in (_GET_TESTS, _GET_COVERABLE)
-}
+
+
+_SEARCH_QUERIES = {name: _search_query(name, _SEARCH_SELECTION) for name in (_GET_TESTS, _GET_COVERABLE)}
 _ISSUE_KEY = re.compile(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*")
 _OUTLINE_TYPES = frozenset({"scenario_outline", "scenario outline"})
 _PAGE_LIMIT = 100
@@ -192,6 +210,80 @@ class XrayCloudImporter:
             raise ConnectorError(MSG_REQUEST_FAILED) from None
         return tuple(_issue_summary(item, is_test=True) for item in items)
 
+    def capabilities(self) -> XrayUpdateCapabilities:
+        """Xray-only credentials cannot change Jira fields (summary, components, links)."""
+        return XrayUpdateCapabilities(jira_fields=False, story_link_type=bool(self._link_type))
+
+    def test_details(self, keys: Sequence[str]) -> XrayTestDetailsResult:
+        """Read tests through chunked, paged ``getTests``; any incomplete read raises."""
+        valid = [key for key in dict.fromkeys(keys) if _ISSUE_KEY.fullmatch(key)]
+        if not valid:
+            return XrayTestDetailsResult()
+        types, _ = self._cache.get_or_discover(self._schema_key, self._discover)
+        type_switch = types.manual_id is not None and types.cucumber_id is not None
+        found: dict[str, XrayTestDetails] = {}
+        unreadable: set[str] = set()
+        seen: set[str] = set()
+        for index in range(0, len(valid), _KEY_CHUNK):
+            chunk = valid[index : index + _KEY_CHUNK]
+            try:
+                items = self._search(
+                    _GET_TESTS, f"key in ({', '.join(chunk)})", selection=DETAILS_SELECTION
+                )
+            except _SearchRefusedError:
+                raise ConnectorError(MSG_REQUEST_FAILED) from None
+            for item in items:
+                key, details = parse_test(item, type_switch=type_switch)
+                if key in seen:
+                    raise ConnectorError(MSG_REQUEST_FAILED)
+                seen.add(key)
+                if key not in chunk:
+                    continue
+                if details is None:
+                    unreadable.add(key)
+                else:
+                    found[key] = details
+        return XrayTestDetailsResult(found=found, unreadable=frozenset(unreadable))
+
+    def update_test(self, patch: XrayTestPatch) -> None:
+        """Run the definition mutations in their verified order, then read back type changes."""
+        if JIRA_PATCH_FIELDS & set(patch.changed):
+            raise XrayUpdateRejectedError()
+        manual_id = cucumber_id = None
+        if patch.kind_change is not None:
+            types, _ = self._cache.get_or_discover(self._schema_key, self._discover)
+            manual_id, cucumber_id = types.manual_id, types.cucumber_id
+        plan = mutations(patch, manual_id=manual_id, cucumber_id=cucumber_id)
+        if plan is None:
+            raise XrayUpdateRejectedError()
+        for index, mutation in enumerate(plan):
+            self._mutate(mutation, patch.issue_id, partial=index > 0)
+        if patch.kind_change is not None or patch.scenario_type_change is not None:
+            self._confirm(patch)
+
+    def _mutate(self, mutation: Mutation, issue_id: str, *, partial: bool) -> None:
+        failure: ConnectorError | None = None
+        try:
+            payload = self._graphql_payload(mutation.query, mutation.variables)
+        except ConnectorError as error:
+            failure = _write_failure(error, partial=partial)
+        if failure is not None:
+            raise failure from None
+        data = payload.get("data")
+        result = data.get(mutation.name) if isinstance(data, Mapping) else None
+        if payload.get("errors") and result is None and not partial:
+            raise XrayUpdateRejectedError()
+        if payload.get("errors") or not mutation.succeeded(result, issue_id):
+            raise XrayUpdateUncertainError(partial=partial)
+
+    def _confirm(self, patch: XrayTestPatch) -> None:
+        try:
+            details = self.test_details([patch.key]).found.get(patch.key)
+        except ConnectorError:
+            details = None
+        if details is None or not confirms_definition(patch, details):
+            raise XrayUpdateNotConfirmedError()
+
     def _resolve(self, keys: Sequence[str]) -> dict[str, JiraIssueSummary]:
         jql = f"key in ({', '.join(keys)})"
         wanted = set(keys)
@@ -206,11 +298,12 @@ class XrayCloudImporter:
                 found[summary.key] = summary
         return found
 
-    def _search(self, name: str, jql: str) -> list[object]:
+    def _search(self, name: str, jql: str, *, selection: str | None = None) -> list[object]:
+        query = _SEARCH_QUERIES[name] if selection is None else _search_query(name, selection)
         items: list[object] = []
         for _ in range(_MAX_PAGES):
             variables = {"jql": jql, "start": len(items), "limit": _PAGE_LIMIT}
-            payload = self._graphql_payload(_SEARCH_QUERIES[name], variables)
+            payload = self._graphql_payload(query, variables)
             if payload.get("errors"):
                 raise _SearchRefusedError()
             data = payload.get("data")
@@ -379,8 +472,24 @@ def _issue_summary(item: object, *, is_test: bool) -> JiraIssueSummary:
     return JiraIssueSummary(key, summary, type_id, type_name, is_test)
 
 
+def _write_failure(error: ConnectorError, *, partial: bool) -> ConnectorError:
+    """Nothing is written on a 401 (auth) or another 4xx (rejected); anything else may be."""
+    if partial:
+        return XrayUpdateUncertainError(partial=True)
+    if isinstance(error, _UnauthorizedError):
+        return error
+    status = getattr(error.__cause__, "status", None)
+    if isinstance(status, int) and 400 <= status < 500:
+        return XrayUpdateRejectedError()
+    return XrayUpdateUncertainError(partial=False)
+
+
 def _pick_type(test_types: list[Mapping[str, object]], *, kind: str, preferred: str) -> str | None:
-    matching = [t for t in test_types if t.get("kind") == kind and isinstance(t.get("id"), str)]
+    matching = [
+        t
+        for t in test_types
+        if str(t.get("kind", "")).casefold() == kind.casefold() and isinstance(t.get("id"), str)
+    ]
     for test_type in matching:
         if test_type.get("name") == preferred:
             return str(test_type["id"])

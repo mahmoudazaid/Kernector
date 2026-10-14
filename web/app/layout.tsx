@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { AppShell } from "@/components/shell/AppShell";
 import { Providers } from "@/components/shell/Providers";
 import { loadPublicEnv } from "@/lib/env";
@@ -8,15 +8,38 @@ import "./globals.css";
 
 const publicEnv = loadPublicEnv();
 
-const plexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+// Self-hosted so the build never fetches from Google Fonts. These are IBM's
+// complete (non-subset) files: Latin, Latin Extended, Cyrillic, Greek (Sans
+// only) and Vietnamese.
+const plexSans = localFont({
+  src: [
+    {
+      path: "./fonts/IBMPlexSans-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/IBMPlexSans-Medium.woff2",
+      weight: "500",
+      style: "normal",
+    },
+  ],
   variable: "--font-kern-sans",
 });
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const plexMono = localFont({
+  src: [
+    {
+      path: "./fonts/IBMPlexMono-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/IBMPlexMono-Medium.woff2",
+      weight: "500",
+      style: "normal",
+    },
+  ],
   variable: "--font-kern-mono",
 });
 

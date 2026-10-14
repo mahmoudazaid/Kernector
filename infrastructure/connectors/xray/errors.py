@@ -44,6 +44,10 @@ class XraySchemaError(ConnectorError):
 class XrayHttpDiagnostic(RuntimeError):
     """Body-free record of the raw upstream failure, kept on ``__cause__``."""
 
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
 
 def map_http_error(error: BaseException, httpx_module: ModuleType) -> ConnectorError:
     response = getattr(error, "response", None)
@@ -70,5 +74,5 @@ def map_http_error(error: BaseException, httpx_module: ModuleType) -> ConnectorE
 def diagnostic(error: BaseException, httpx_module: ModuleType) -> XrayHttpDiagnostic:
     response = getattr(error, "response", None)
     if isinstance(error, httpx_module.HTTPStatusError) and response is not None:
-        return XrayHttpDiagnostic(f"HTTP {response.status_code}")
+        return XrayHttpDiagnostic(f"HTTP {response.status_code}", int(response.status_code))
     return XrayHttpDiagnostic(type(error).__name__)

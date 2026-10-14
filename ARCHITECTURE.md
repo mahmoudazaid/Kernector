@@ -199,6 +199,16 @@ and then writes one spec per `import_tests` call, stopping on any outcome that
 may have written a test. Story issue types (`XRAY_STORY_ISSUE_TYPES`) and the
 optional component (`XRAY_DEFAULT_COMPONENT`) come from settings.
 
+Updating tests from those files (#398) adds `XrayTestUpdater`
+(`capabilities`, `test_details`, `update_test`), also implemented by both
+adapters. The pack diffs each matched test into an `XrayTestPatch`, a sparse
+patch whose invariants are enforced in the domain, and adapters serialize only
+its members. Server/DC checks each change against the test's editmeta; Xray
+Cloud reports `jira_fields=False` because its GraphQL API cannot change Jira
+fields with Xray-only credentials. A write that may have happened raises
+`XrayUpdateUncertainError` (`partial` once part of a sequence succeeded); a
+type switch that does not read back raises `XrayUpdateNotConfirmedError`.
+
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
@@ -431,8 +441,8 @@ clear leaves the checkpoint until process restart. There is no workspace-wide
 or global clear and no normal-UI "reset memory" control. Long-term memory is
 deferred to #299. Absent ``conversation_id``, the agent stays stateless.
 
-**HITL tool approval (#214):** allowlisted tools (Drive export and Xray test
-creation, #199 and #397) pause
+**HITL tool approval (#214):** allowlisted tools (Drive export, Xray test
+creation, #199 and #397, and Xray test updates, #398) pause
 via LangGraph ``interrupt()`` immediately before ``Tool.run``. Pending Tool
 arguments stay in process-local checkpoint/ledger state; the browser sends only
 ``approve`` / ``reject``. The same ``InMemorySaver`` process-local limits apply:
@@ -892,6 +902,10 @@ the agents; Kernector supplies evidence and allowlisted tools.
   capped scenario names (`ApprovalHints.item_titles`). The read-only
   `software_delivery.xray_target` is contributed with it and reports the
   configured destination after checking the project.
+- Xray test updates from files (#398):
+  `software_delivery.update_xray_tests_from_files` shares the same binding
+  (strict schemas in `composition/xray_export/test_file_update.py`) and the
+  same approval rule, `dry_run` included. A dry run reports `WOULD_UPDATE`.
 - Prompts and instructions: the server sends fixed, tool-neutral
   `instructions` (clients read files themselves and send exact text). A tool
   may carry an optional `mcp_prompt` (`McpToolPrompt`, read via `getattr`);

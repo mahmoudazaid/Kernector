@@ -23,6 +23,7 @@ from domain.test_management.xray import (
 )
 from domain.tool_approval import ApprovalHints
 from packs.software_delivery.errors import XrayExportValidationError
+from packs.software_delivery.test_files.approval import scenario_titles
 from packs.software_delivery.test_files.matching import (
     ScenarioMatch,
     lookup_keys,
@@ -32,7 +33,6 @@ from packs.software_delivery.test_files.matching import (
 )
 from packs.software_delivery.test_files.models import (
     ParsedTestFile,
-    TestFileScenario,
     TestFileTagConfig,
 )
 from packs.software_delivery.test_files.request import (
@@ -58,8 +58,6 @@ TOOL_DESCRIPTION = (
 
 _ALLOWED_KEYS = frozenset({"files", "dry_run"})
 _STATUSES = ("CREATED", "WOULD_CREATE", "EXISTS_UNTAGGED", "AMBIGUOUS", "NO_STORY", "ERROR")
-_MAX_APPROVAL_TITLES = 10
-_MAX_APPROVAL_TITLE_CHARS = 120
 _APPROVAL_TITLE = "Create Xray tests from files"
 _APPROVAL_SUMMARY = (
     "Create Jira Test issues in Xray for the file scenarios that have no Xray key yet "
@@ -174,7 +172,7 @@ class CreateXrayTestsFromFilesTool:
             summary=_DRY_RUN_SUMMARY if dry_run else _APPROVAL_SUMMARY,
             destination_label=self._destination_label,
             selected_title_count=len(pending),
-            item_titles=_approval_titles(pending),
+            item_titles=scenario_titles(pending),
         )
 
     def run(self, arguments: Mapping[str, object]) -> str:
@@ -293,24 +291,6 @@ class CreateXrayTestsFromFilesTool:
             return None
         entry.status, entry.reason = "ERROR", "outcome_unknown"
         return entry.reason
-
-
-def _approval_titles(
-    pending: Sequence[tuple[ParsedTestFile, TestFileScenario]],
-) -> tuple[str, ...]:
-    titles = [
-        _shorten(f"{parsed.path.rsplit('/', 1)[-1]}:{scenario.line} · {scenario.summary}")
-        for parsed, scenario in pending[:_MAX_APPROVAL_TITLES]
-    ]
-    if len(pending) > _MAX_APPROVAL_TITLES:
-        titles.append(f"+{len(pending) - _MAX_APPROVAL_TITLES} more")
-    return tuple(titles)
-
-
-def _shorten(text: str) -> str:
-    if len(text) <= _MAX_APPROVAL_TITLE_CHARS:
-        return text
-    return text[: _MAX_APPROVAL_TITLE_CHARS - 1] + "…"
 
 
 def _unsupported(schema: XrayTestCreateSchema, spec: XrayTestSpec) -> str | None:
