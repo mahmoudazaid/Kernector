@@ -152,14 +152,6 @@ class HttpJiraClient:
     def get_project(self, key: str) -> JiraProject:
         return parse_project(self._request_json("GET", f"/project/{quote(key, safe='')}"))
 
-    def get_issue(self, key: str, fields: Sequence[str]) -> Mapping[str, object]:
-        """Read one issue, requesting only ``fields`` to keep the payload bounded."""
-        return self._request_json(
-            "GET",
-            f"/issue/{quote(key, safe='')}",
-            params={"fields": ",".join(fields)},
-        )
-
     def _request_json(
         self,
         method: str,
