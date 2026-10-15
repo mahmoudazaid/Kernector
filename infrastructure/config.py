@@ -359,16 +359,11 @@ class GitHubOAuthSettings:
 
 @dataclass(frozen=True, slots=True)
 class JiraSettings:
-    """Jira Cloud connector settings. Credentials live in the OAuth grant file.
-
-    ``acceptance_criteria_field`` is the optional Cloud custom field Test Design
-    reads as acceptance criteria.
-    """
+    """Jira connector sync limits. Credentials live in the OAuth grant file."""
 
     include_comments: bool = False
     page_size: int = 100
     max_issues: int = 5000
-    acceptance_criteria_field: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1093,9 +1088,6 @@ def _load_jira_settings() -> JiraSettings:
         include_comments=_env_bool("JIRA_INCLUDE_COMMENTS", "false"),
         page_size=page_size,
         max_issues=max_issues,
-        acceptance_criteria_field=_optional_jira_dc_custom_field(
-            "JIRA_ACCEPTANCE_CRITERIA_FIELD"
-        ),
     )
 
 

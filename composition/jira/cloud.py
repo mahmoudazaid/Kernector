@@ -431,58 +431,6 @@ def _require_site(connection):
     return connection.site
 
 
-def jira_cloud_ready(settings: Settings) -> bool:
-    """Whether Jira Cloud OAuth is configured (and Data Center mode is off)."""
-    return not _data_center(settings) and _jira_oauth_ready(settings)
-
-
-def saved_jira_cloud_scope(settings: Settings, *, connection_store=None):
-    """Return the saved ``(site, project_keys)``, or ``(None, ())`` without a grant.
-
-    Reads only the local grant file; never refreshes or calls Atlassian.
-    """
-    tokens = connection_store if connection_store is not None else _connection_store(settings)
-    connection = tokens.load()
-    if connection is None:
-        return None, ()
-    return connection.site, connection.project_keys
-
-
-def require_jira_cloud_site(settings: Settings, *, connection_store=None):
-    """Return the selected site of a usable grant without a network call.
-
-    Raises:
-        JiraNotConnectedError: No grant is stored.
-        JiraReauthorizationRequiredError: The grant was rejected or has no token.
-        JiraSiteSelectionRequiredError: No site is selected.
-    """
-    _tokens, connection = _require_grant(settings, connection_store)
-    return _require_site(connection)
-
-
-def call_with_jira_cloud_token(
-    settings: Settings,
-    operation: Callable[[str, object], _T],
-    *,
-    connection_store=None,
-    gateway=None,
-) -> _T:
-    """Run ``operation(access_token, site)`` with a fresh token.
-
-    The token is refreshed before expiry and once after an auth failure; a
-    second auth failure clears the grant and raises
-    ``JiraReauthorizationRequiredError``.
-    """
-    tokens, connection = _require_grant(settings, connection_store)
-    site = _require_site(connection)
-    return _with_access_token(
-        tokens,
-        connection,
-        _gateway(settings, gateway),
-        lambda token: operation(token, site),
-    )
-
-
 def list_jira_projects(
     settings: Settings,
     *,
