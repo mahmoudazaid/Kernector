@@ -53,15 +53,56 @@ uv sync --extra github
 cd web && npm ci
 ```
 
+## Start the servers
+
+Each process runs in its own terminal. Path A needs terminals 1 and 2. Path B
+needs terminal 3 only. All three can run at the same time.
+
+| Terminal | Process | URL | Used by |
+| --- | --- | --- | --- |
+| 1 | FastAPI (API for the web app) | `http://127.0.0.1:8000` | Path A |
+| 2 | Next.js web app | `http://localhost:3000` | Path A |
+| 3 | MCP server | `http://127.0.0.1:8100/mcp` | Path B |
+
+**Terminal 1: API for the web app.** Start it before the web app. Run it from
+the repository root:
+
+```bash
+HTTP_DEV_CORS=true DOMAIN_TOOL_PACKS=software-delivery \
+  uv run uvicorn presentation.http.app:app --reload
+```
+
+**Terminal 2: web app.**
+
+```bash
+cd web
+npm run dev
+```
+
+**Terminal 3: MCP server.** Run it from the repository root:
+
+```bash
+export MCP_AUTH_TOKEN=dev-token
+export MCP_ALLOWED_HOSTS=127.0.0.1:8100
+export MCP_TOOL_ALLOWLIST=software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature
+export DOMAIN_TOOL_PACKS=software-delivery
+export DOCUMENT_CATALOG_WORKSPACE_ID=local
+uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
+```
+
+Health checks:
+
+```bash
+curl -s http://127.0.0.1:8000/health      # API: {"status":"ok"}
+curl -s http://127.0.0.1:8100/healthz     # MCP: {"status":"ok"}
+```
+
+Values set in `.env` also apply, so the inline variables above can be dropped
+once they are in `.env`. Process environment wins over `.env`.
+
 ## Path A: Next.js
 
-1. Start FastAPI first, then Next.js (separate terminals):
-
-   ```bash
-   uv run uvicorn presentation.http.app:app --reload   # http://127.0.0.1:8000
-   cd web && npm run dev                               # http://localhost:3000
-   ```
-
+1. Start terminals 1 and 2 from [Start the servers](#start-the-servers).
 2. Check `GET http://127.0.0.1:8000/health`, and that
    `GET http://127.0.0.1:8000/api/v1/settings` returns `software-delivery` in
    `enabled_packs`.
@@ -92,17 +133,7 @@ Optional exports (Google Drive, Xray) are outside the Capstone path.
 
 ## Path B: MCP (no GitHub connection in Kernector)
 
-1. Start the MCP server:
-
-   ```bash
-   export MCP_AUTH_TOKEN=dev-token
-   export MCP_ALLOWED_HOSTS=127.0.0.1:8100
-   export MCP_TOOL_ALLOWLIST=software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature
-   export DOMAIN_TOOL_PACKS=software-delivery
-   export DOCUMENT_CATALOG_WORKSPACE_ID=local
-   uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
-   ```
-
+1. Start terminal 3 (MCP server) from [Start the servers](#start-the-servers).
 2. Add the `kernector` server to Cursor's `mcp.json` (fragment in the
    [README](../../README.md#run-the-mcp-streamable-http-server)).
 3. Ask the assistant to fetch an Issue with its own tools (`gh`, GitHub MCP)
