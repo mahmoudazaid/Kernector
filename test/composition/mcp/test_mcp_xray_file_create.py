@@ -125,7 +125,12 @@ def test_build_mcp_tools_contributes_the_tools_only_with_a_binding() -> None:
 
     tools = dict(build_mcp_tools(xray_file_binding=_binding(_Xray())))
 
-    assert set(tools) == {TOOL_NAME, TARGET_TOOL, "software_delivery.update_xray_tests_from_files"}
+    assert set(tools) == {
+        TOOL_NAME,
+        TARGET_TOOL,
+        "software_delivery.update_xray_tests_from_files",
+        "software_delivery.pull_xray_tests_to_files",
+    }
     assert type(tools[TOOL_NAME]()) is CreateXrayTestsFromFilesTool
     assert type(tools[TARGET_TOOL]()) is XrayTargetTool
 

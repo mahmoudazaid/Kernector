@@ -447,6 +447,8 @@ class XraySettings:
     manual_tags: tuple[str, ...] = ("manual", "scaffold")
     default_component: str | None = None
     story_issue_types: tuple[str, ...] = ("Story",)
+    link_direction: str = "outward"
+    new_file_name_template: str = "{epic_summary}__{story_summary}"
 
     @property
     def configured(self) -> bool:
@@ -461,7 +463,9 @@ class XraySettings:
             f"test_tag={self.test_tag!r}, story_tag={self.story_tag!r}, "
             f"manual_tags={self.manual_tags!r}, "
             f"default_component={self.default_component!r}, "
-            f"story_issue_types={self.story_issue_types!r})"
+            f"story_issue_types={self.story_issue_types!r}, "
+            f"link_direction={self.link_direction!r}, "
+            f"new_file_name_template={self.new_file_name_template!r})"
         )
 
 
@@ -1184,9 +1188,26 @@ def _load_xray_test_creation() -> dict[str, object]:
                 "XRAY_STORY_ISSUE_TYPES must be a comma-separated list of non-empty, "
                 "distinct issue type names or ids"
             )
+    link_direction = os.getenv("XRAY_LINK_DIRECTION", "outward").strip().casefold()
+    if link_direction not in {"outward", "inward"}:
+        raise ValueError("XRAY_LINK_DIRECTION must be 'outward' or 'inward'")
+    template = os.getenv(
+        "XRAY_NEW_FILE_NAME_TEMPLATE", "{epic_summary}__{story_summary}"
+    ).strip()
+    if not template:
+        raise ValueError("XRAY_NEW_FILE_NAME_TEMPLATE must be a non-empty template")
+    allowed = {"{epic_key}", "{epic_summary}", "{story_key}", "{story_summary}"}
+    placeholders = set(re.findall(r"\{[a-z_]+\}", template))
+    if placeholders - allowed:
+        raise ValueError(
+            "XRAY_NEW_FILE_NAME_TEMPLATE may only use {epic_key}, {epic_summary}, "
+            "{story_key} and {story_summary}"
+        )
     return {
         "default_component": _optional_env("XRAY_DEFAULT_COMPONENT"),
         "story_issue_types": story_issue_types,
+        "link_direction": link_direction,
+        "new_file_name_template": template,
     }
 
 

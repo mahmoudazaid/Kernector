@@ -18,6 +18,7 @@ from domain.errors import ConnectorAuthError, ConnectorError, ConnectorUnavailab
 from domain.test_management.xray import (
     IssueLookupResult,
     JiraIssueSummary,
+    StoryNamingContext,
     XrayCreateWarning,
     XrayImportResult,
     JIRA_PATCH_FIELDS,
@@ -48,6 +49,7 @@ from infrastructure.connectors.xray.cloud_update import (
     parse_test,
 )
 from infrastructure.connectors.xray.details import confirms_definition
+from infrastructure.connectors.xray.jql import jql_string
 from infrastructure.connectors.xray.schema import SchemaKey, XraySchemaCache
 
 if TYPE_CHECKING:
@@ -66,8 +68,12 @@ _CREATE_TEST_MUTATION = (
 _SEARCH_SELECTION = (
     '{ total start limit results { jira(fields: ["key", "summary", "issuetype"]) } }'
 )
+_NAMING_SELECTION = (
+    '{ total start limit results { jira(fields: ["key", "summary", "issuetype", "parent"]) } }'
+)
 _GET_TESTS = "getTests"
 _GET_COVERABLE = "getCoverableIssues"
+_JIRA_PROJECT = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
 def _search_query(name: str, selection: str) -> str:
@@ -210,6 +216,43 @@ class XrayCloudImporter:
             raise ConnectorError(MSG_REQUEST_FAILED) from None
         return tuple(_issue_summary(item, is_test=True) for item in items)
 
+    def list_tests(
+        self, project_key: str, *, component: str | None = None
+    ) -> tuple[JiraIssueSummary, ...]:
+        """Every Test in ``project_key``, optionally filtered by component name."""
+        if not project_key or not _JIRA_PROJECT.fullmatch(project_key):
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        clauses = [f'project = "{project_key}"']
+        if component is not None:
+            if not component.strip():
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            clauses.append(f"component = {jql_string(component.strip())}")
+        try:
+            items = self._search(_GET_TESTS, " AND ".join(clauses))
+        except _SearchRefusedError:
+            raise ConnectorError(MSG_REQUEST_FAILED) from None
+        by_key: dict[str, JiraIssueSummary] = {}
+        for item in items:
+            summary = _issue_summary(item, is_test=True)
+            by_key.setdefault(summary.key, summary)
+        return tuple(by_key.values())
+
+    def story_naming_context(self, story_key: str) -> StoryNamingContext:
+        """Coverable-issue summary plus ``parent`` epic when GraphQL returns it."""
+        if not _ISSUE_KEY.fullmatch(story_key):
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        try:
+            items = self._search(
+                _GET_COVERABLE,
+                f'key = "{story_key}"',
+                selection=_NAMING_SELECTION,
+            )
+        except _SearchRefusedError:
+            raise ConnectorError(MSG_REQUEST_FAILED) from None
+        if len(items) != 1:
+            raise ConnectorError(MSG_REQUEST_FAILED)
+        return _naming_context(items[0], story_key)
+
     def capabilities(self) -> XrayUpdateCapabilities:
         """Xray-only credentials cannot change Jira fields (summary, components, links)."""
         return XrayUpdateCapabilities(jira_fields=False, story_link_type=bool(self._link_type))
@@ -301,8 +344,10 @@ class XrayCloudImporter:
     def _search(self, name: str, jql: str, *, selection: str | None = None) -> list[object]:
         query = _SEARCH_QUERIES[name] if selection is None else _search_query(name, selection)
         items: list[object] = []
+        seen_keys: set[str] = set()
         for _ in range(_MAX_PAGES):
-            variables = {"jql": jql, "start": len(items), "limit": _PAGE_LIMIT}
+            start = len(items)
+            variables = {"jql": jql, "start": start, "limit": _PAGE_LIMIT}
             payload = self._graphql_payload(query, variables)
             if payload.get("errors"):
                 raise _SearchRefusedError()
@@ -314,10 +359,18 @@ class XrayCloudImporter:
                 total, bool
             ):
                 raise ConnectorError(MSG_REQUEST_FAILED)
+            if not results:
+                if start >= total:
+                    return items
+                raise ConnectorError(MSG_REQUEST_FAILED)
+            page_keys = [_result_key(item) for item in results]
+            if any(key in seen_keys for key in page_keys):
+                raise ConnectorUnavailableError(MSG_UNAVAILABLE)
+            seen_keys.update(page_keys)
             items.extend(results)
             if len(items) >= total:
                 return items
-            if not results:
+            if len(results) == 0:
                 raise ConnectorError(MSG_REQUEST_FAILED)
         raise ConnectorUnavailableError(MSG_UNAVAILABLE)
 
@@ -470,6 +523,42 @@ def _issue_summary(item: object, *, is_test: bool) -> JiraIssueSummary:
     ):
         raise ConnectorError(MSG_REQUEST_FAILED)
     return JiraIssueSummary(key, summary, type_id, type_name, is_test)
+
+
+def _result_key(item: object) -> str:
+    jira = item.get("jira") if isinstance(item, Mapping) else None
+    key = jira.get("key") if isinstance(jira, Mapping) else None
+    if not isinstance(key, str) or not _ISSUE_KEY.fullmatch(key):
+        raise ConnectorError(MSG_REQUEST_FAILED)
+    return key
+
+
+def _naming_context(item: object, story_key: str) -> StoryNamingContext:
+    jira = item.get("jira") if isinstance(item, Mapping) else None
+    if not isinstance(jira, Mapping):
+        raise ConnectorError(MSG_REQUEST_FAILED)
+    key = jira.get("key")
+    summary = jira.get("summary")
+    if key != story_key or not isinstance(summary, str) or not summary:
+        raise ConnectorError(MSG_REQUEST_FAILED)
+    parent = jira.get("parent")
+    if parent is None:
+        return StoryNamingContext(story_key, summary, "absent")
+    if not isinstance(parent, Mapping):
+        return StoryNamingContext(story_key, summary, "failed")
+    epic_key = parent.get("key")
+    parent_fields = parent.get("fields") if isinstance(parent.get("fields"), Mapping) else parent
+    epic_summary = parent_fields.get("summary") if isinstance(parent_fields, Mapping) else None
+    if (
+        isinstance(epic_key, str)
+        and _ISSUE_KEY.fullmatch(epic_key)
+        and isinstance(epic_summary, str)
+        and epic_summary
+    ):
+        return StoryNamingContext(
+            story_key, summary, "present", epic_key=epic_key, epic_summary=epic_summary
+        )
+    return StoryNamingContext(story_key, summary, "failed")
 
 
 def _write_failure(error: ConnectorError, *, partial: bool) -> ConnectorError:
