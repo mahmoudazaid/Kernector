@@ -44,6 +44,7 @@ class _SearchJira:
         self.page = page
         self.repeat_page = repeat_page
         self.search_starts: list[int] = []
+        self.jqls: list[str] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -56,6 +57,7 @@ class _SearchJira:
         if path == f"{API}/search":
             start = int(request.url.params["startAt"])
             self.search_starts.append(start)
+            self.jqls.append(request.url.params["jql"])
             if self.repeat_page and start > 0:
                 page = self.issues[: self.page]
             else:
@@ -95,6 +97,17 @@ def test_list_tests_pages_and_includes_component_filter() -> None:
     assert [t.key for t in listed] == [f"QA-{n}" for n in range(1, 5)]
     assert all(isinstance(t, JiraIssueSummary) and t.is_test for t in listed)
     assert jira.search_starts == [0, 2]
+
+
+def test_list_tests_escapes_quotes_in_component() -> None:
+    jira = _SearchJira(issues=[_issue("QA-1", "T")])
+
+    _importer(jira).list_tests("QA", component='Portal" OR project = "OTHER\\')
+
+    assert jira.jqls == [
+        'project = "QA" AND issuetype = Test AND '
+        'component = "Portal\\" OR project = \\"OTHER\\\\"'
+    ]
 
 
 def test_list_tests_rejects_duplicate_keys_across_pages() -> None:

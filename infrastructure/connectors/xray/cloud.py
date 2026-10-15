@@ -49,6 +49,7 @@ from infrastructure.connectors.xray.cloud_update import (
     parse_test,
 )
 from infrastructure.connectors.xray.details import confirms_definition
+from infrastructure.connectors.xray.jql import jql_string
 from infrastructure.connectors.xray.schema import SchemaKey, XraySchemaCache
 
 if TYPE_CHECKING:
@@ -225,7 +226,7 @@ class XrayCloudImporter:
         if component is not None:
             if not component.strip():
                 raise ConnectorError(MSG_REQUEST_FAILED)
-            clauses.append(f'component = "{component.strip()}"')
+            clauses.append(f"component = {jql_string(component.strip())}")
         try:
             items = self._search(_GET_TESTS, " AND ".join(clauses))
         except _SearchRefusedError:

@@ -95,6 +95,56 @@ def test_path_collision_against_inventory() -> None:
     assert result.reason == "path_collision"
 
 
+def test_new_path_reused_by_same_story_but_collides_for_another() -> None:
+    naming = StoryNamingContext("ABC-1", "Login", "absent")
+
+    same = propose_target(
+        story_key="ABC-1",
+        fmt="robot",
+        inventory=[],
+        naming=naming,
+        template="{story_summary}",
+        proposed_paths={"Login.robot": "ABC-1"},
+    )
+    other = propose_target(
+        story_key="ABC-1",
+        fmt="robot",
+        inventory=[],
+        naming=naming,
+        template="{story_summary}",
+        proposed_paths={"Login.robot": "ABC-2"},
+    )
+
+    assert same == TargetHit("new", "Login.robot")
+    assert other == TargetNamingFailed("path_collision")
+
+
+def test_feature_file_not_matched_by_scenario_story_tag_only() -> None:
+    parsed = parse_test_file(
+        "s.feature",
+        "Feature: Login\n\n  @Story:ABC-1 @XRay:QA-1\n  Scenario: Existing\n    Given x\n",
+        TAGS,
+    )
+    naming = StoryNamingContext("ABC-1", "Login", "absent")
+
+    result = propose_target(
+        story_key="ABC-1",
+        fmt="feature",
+        inventory=[parsed],
+        naming=naming,
+        template="{story_key}",
+    )
+
+    assert result == TargetHit("new", "ABC-1.feature")
+
+
+def test_ellipsis_in_story_summary_is_not_traversal() -> None:
+    for summary in ("Retry... then fail", "Upgrade v1..v2 data"):
+        naming = StoryNamingContext("ABC-1", summary, "absent")
+        built = build_new_path(naming, "{story_summary}", ".robot")
+        assert isinstance(built, str) and built.endswith(".robot")
+
+
 def test_validate_relative_path_rejects_traversal() -> None:
     assert isinstance(validate_relative_path("../x.robot"), TargetNamingFailed)
     assert validate_relative_path("dir/suite", extension=".robot") == "dir/suite.robot"

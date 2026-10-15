@@ -308,6 +308,83 @@ def test_new_file_paths_override_suggested_basename() -> None:
     assert payload["files"][0]["path"] == "custom/login_suite.robot"
 
 
+@pytest.mark.parametrize("overrides", [None, {"ABC-1": "tests/login"}])
+def test_several_tests_of_one_story_share_a_new_file(overrides) -> None:
+    keys = ("QA-1", "QA-2", "QA-3")
+    xray = _FakeXray(
+        issues=[_story()],
+        linked={"ABC-1": tuple(_test(k, f"Case {k}") for k in keys)},
+        details=[_manual(k, f"Case {k}") for k in keys],
+        naming={"ABC-1": StoryNamingContext("ABC-1", "Login story", "absent")},
+    )
+    arguments: dict[str, object] = {"story_key": "ABC-1", "files": [], "formats": ["robot", "feature"]}
+    if overrides is not None:
+        arguments["new_file_paths"] = overrides
+
+    payload = _run(xray, **arguments)
+
+    assert {r["status"] for r in payload["results"]} == {"NEW_FILE"}
+    assert len(payload["files"]) == 2
+    for file in payload["files"]:
+        assert all(f"XRay:{k}" in file["content"] for k in keys)
+
+
+def test_new_path_claimed_by_other_story_collides() -> None:
+    xray = _FakeXray(
+        issues=[_story("ABC-1"), _story("ABC-2")],
+        listed=(_test("QA-1", "One"), _test("QA-2", "Two")),
+        details=[
+            _manual("QA-1", "One"),
+            _manual("QA-2", "Two", links=(_link("ABC-2"),)),
+        ],
+        naming={
+            "ABC-1": StoryNamingContext("ABC-1", "Same", "absent"),
+            "ABC-2": StoryNamingContext("ABC-2", "Same", "absent"),
+        },
+    )
+
+    payload = _run(xray, project=True, files=[])
+
+    assert [r["status"] for r in payload["results"]] == ["NEW_FILE", "PATH_COLLISION"]
+
+
+def test_add_to_suite_matched_by_scenario_tag_keeps_story() -> None:
+    from packs.software_delivery.test_files.models import TestFileTagConfig
+    from packs.software_delivery.test_files.parser import parse_test_file
+
+    robot = (
+        "*** Test Cases ***\nScenario: Existing\n"
+        "    [Tags]    Story ABC-1    XRay QA-1\n    Given x\n"
+    )
+    xray = _FakeXray(
+        issues=[_story()],
+        linked={"ABC-1": (_test("QA-2", "New one"),)},
+        details=[_manual("QA-2", "New one")],
+    )
+
+    payload = _run(xray, story_key="ABC-1", files=[{"path": "s.robot", "content": robot}])
+
+    assert payload["results"][0]["status"] == "ADD"
+    reparsed = parse_test_file(
+        "s.robot", payload["files"][0]["content"], TestFileTagConfig("XRay", "Story", ("manual", "scaffold"))
+    )
+    added = next(s for s in reparsed.scenarios if s.summary == "New one")
+    assert (added.xray_key, added.story_key) == ("QA-2", "ABC-1")
+
+
+def test_duplicate_remote_link_is_not_ambiguous() -> None:
+    xray = _FakeXray(
+        issues=[_story()],
+        linked={"ABC-1": (_test("QA-2", "Dup"), _test("QA-2", "Dup"))},
+        details=[_manual("QA-2", "Dup")],
+        naming={"ABC-1": StoryNamingContext("ABC-1", "Login story", "absent")},
+    )
+
+    payload = _run(xray, story_key="ABC-1", files=[], dry_run=True)
+
+    assert [r["status"] for r in payload["results"]] == ["WOULD_NEW_FILE"]
+
+
 def test_new_file_name_template_override() -> None:
     xray = _FakeXray(
         issues=[_story()],

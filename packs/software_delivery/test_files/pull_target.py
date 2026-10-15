@@ -43,12 +43,15 @@ def propose_target(
     template: str,
     proposed_paths: Mapping[str, str] | None = None,
 ) -> TargetHit | TargetAmbiguous | TargetNamingFailed:
-    """Pick an existing suite/feature for ``story_key`` or a new relative path."""
+    """Pick an existing suite/feature for ``story_key`` or a new relative path.
+
+    ``proposed_paths`` maps new paths already planned in this call to their story.
+    """
     extension = ".robot" if fmt == "robot" else ".feature"
     matches = [
         parsed.path
         for parsed in inventory
-        if _format_of(parsed) == fmt and _file_story(parsed) == story_key
+        if _format_of(parsed) == fmt and file_story(parsed) == story_key
     ]
     if len(matches) > 1:
         return TargetAmbiguous(tuple(matches))
@@ -57,11 +60,22 @@ def propose_target(
     built = build_new_path(naming, template, extension)
     if isinstance(built, TargetNamingFailed):
         return built
-    claimed = set(proposed_paths.values()) if proposed_paths else set()
-    inventory_paths = {parsed.path for parsed in inventory}
-    if built in inventory_paths or built in claimed:
+    if new_path_collides(built, story_key, inventory, proposed_paths or {}):
         return TargetNamingFailed("path_collision")
     return TargetHit("new", built)
+
+
+def new_path_collides(
+    path: str,
+    story_key: str,
+    inventory: Sequence[ParsedTestFile],
+    proposed_paths: Mapping[str, str],
+) -> bool:
+    """True when ``path`` is an existing file or a new file claimed by another story."""
+    if any(parsed.path == path for parsed in inventory):
+        return True
+    owner = proposed_paths.get(path)
+    return owner is not None and owner != story_key
 
 
 def build_new_path(
@@ -85,7 +99,7 @@ def build_new_path(
     basename = _sanitize(raw)
     if not basename:
         basename = _sanitize(naming.story_key) or "story"
-    if _UNSAFE.search(basename) or "/" in basename or "\\" in basename or ".." in basename:
+    if _UNSAFE.search(basename) or "/" in basename or "\\" in basename:
         return TargetNamingFailed("path_traversal")
     if basename.endswith(extension):
         return basename
@@ -114,8 +128,9 @@ def validate_relative_path(path: str, *, extension: str | None = None) -> str | 
     return joined
 
 
-def _file_story(parsed: ParsedTestFile) -> str | None:
-    if parsed.story_key:
+def file_story(parsed: ParsedTestFile) -> str | None:
+    """Story a file belongs to; Robot falls back to scenario tags, Gherkin does not."""
+    if parsed.story_key or parsed.format != "robot":
         return parsed.story_key
     for scenario in parsed.scenarios:
         if scenario.story_key:

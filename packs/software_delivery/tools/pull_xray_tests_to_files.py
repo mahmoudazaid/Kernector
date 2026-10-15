@@ -40,6 +40,7 @@ from packs.software_delivery.test_files.from_xray import (
     ScenarioRender,
     new_file_text,
     render_scenario,
+    with_story_tag,
 )
 from packs.software_delivery.test_files.models import ParsedTestFile, TestFileTagConfig
 from packs.software_delivery.test_files.parser import is_supported_test_file, parse_test_file
@@ -57,6 +58,7 @@ from packs.software_delivery.test_files.pull_parent import (
 from packs.software_delivery.test_files.pull_target import (
     TargetAmbiguous,
     TargetNamingFailed,
+    new_path_collides,
     propose_target,
     validate_relative_path,
     validate_template,
@@ -301,8 +303,8 @@ class PullXrayTestsToFilesTool:
                     proposed_paths,
                 )
                 for result in planned:
-                    if result.action == "new" and result.path is not None:
-                        proposed_paths[f"{result.key}:{fmt}"] = result.path
+                    if result.action == "new" and result.path and result.story_key:
+                        proposed_paths.setdefault(result.path, result.story_key)
                 results.extend(planned)
 
         self._mark_remote_ambiguous(results)
@@ -451,6 +453,8 @@ class PullXrayTestsToFilesTool:
             ]
         if target.kind == "existing":
             status = "WOULD_ADD" if dry_run else "ADD"
+            if fmt == "robot" and not _file_level_story(inventory, target.path):
+                rendered = with_story_tag(rendered, story_key, self._tags)
             return [
                 _Result(
                     detail.key,
@@ -468,7 +472,11 @@ class PullXrayTestsToFilesTool:
         override = parsed.new_file_paths.get(story_key)
         if override is not None:
             resolved = _resolve_override_path(
-                override, fmt=fmt, inventory=inventory, proposed_paths=proposed_paths
+                override,
+                fmt=fmt,
+                story_key=story_key,
+                inventory=inventory,
+                proposed_paths=proposed_paths,
             )
             if isinstance(resolved, TargetNamingFailed):
                 status = (
@@ -531,7 +539,6 @@ class PullXrayTestsToFilesTool:
         adds: list[AddEdit] = []
         backfills: list[BackfillEdit] = []
         new_by_path: dict[str, list[_Result]] = {}
-        claimed_new: set[str] = set()
         for result in results:
             if result.action is None or result.path is None or result.render is None:
                 continue
@@ -540,11 +547,13 @@ class PullXrayTestsToFilesTool:
             elif result.action == "add":
                 adds.append(AddEdit(result.path, result.render))
             else:
-                if result.path in inventory_map or result.path in claimed_new:
+                claimed = new_by_path.get(result.path)
+                if result.path in inventory_map or (
+                    claimed and claimed[0].story_key != result.story_key
+                ):
                     result.status = "PATH_COLLISION"
                     result.action = None
                     continue
-                claimed_new.add(result.path)
                 new_by_path.setdefault(result.path, []).append(result)
 
         new_files: dict[str, str] = {}
@@ -594,10 +603,15 @@ class PullXrayTestsToFilesTool:
             )
             if failure is not None:
                 raise PullXrayValidationError(failure)
-            return call_xray(lambda: self._lookup.linked_tests(parsed.story_key or ""))
-        return call_xray(
-            lambda: self._lookup.list_tests(self._project_key, component=parsed.component)
-        )
+            listed = call_xray(lambda: self._lookup.linked_tests(parsed.story_key or ""))
+        else:
+            listed = call_xray(
+                lambda: self._lookup.list_tests(self._project_key, component=parsed.component)
+            )
+        unique: dict[str, JiraIssueSummary] = {}
+        for item in listed:
+            unique.setdefault(item.key, item)
+        return tuple(unique.values())
 
     def _parse_inventory(self, files: list[tuple[str, str]]) -> list[ParsedTestFile]:
         if not files:
@@ -693,6 +707,7 @@ def _resolve_override_path(
     raw: str,
     *,
     fmt: str,
+    story_key: str,
     inventory: Sequence[ParsedTestFile],
     proposed_paths: Mapping[str, str],
 ) -> str | TargetNamingFailed:
@@ -704,11 +719,13 @@ def _resolve_override_path(
     resolved = validate_relative_path(stripped, extension=extension)
     if isinstance(resolved, TargetNamingFailed):
         return resolved
-    inventory_paths = {parsed.path for parsed in inventory}
-    claimed = set(proposed_paths.values())
-    if resolved in inventory_paths or resolved in claimed:
+    if new_path_collides(resolved, story_key, inventory, proposed_paths):
         return TargetNamingFailed("path_collision")
     return resolved
+
+
+def _file_level_story(inventory: Sequence[ParsedTestFile], path: str) -> str | None:
+    return next((parsed.story_key for parsed in inventory if parsed.path == path), None)
 
 
 def _approval_titles(parsed: _ParsedArgs) -> list[str]:

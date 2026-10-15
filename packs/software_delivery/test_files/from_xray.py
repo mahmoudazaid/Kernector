@@ -6,7 +6,7 @@ or doc strings when the target format cannot preserve them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from domain.test_management.xray import XrayTestDetails, XrayTestStep
 from packs.software_delivery.test_files.models import TestFileTagConfig
@@ -76,8 +76,9 @@ def _cucumber(
     gherkin = details.gherkin.strip("\n")
     if not gherkin and details.scenario_type is None:
         return _scaffold(details, fmt, tags, warnings)
+    outline = _is_outline(details.scenario_type, gherkin)
     if fmt == "robot":
-        if details.scenario_type == "scenario_outline" or _looks_like_outline(gherkin):
+        if outline:
             return RenderUnsupported("robot_outline_unsupported", warnings)
         if _has_table(gherkin):
             return RenderUnsupported("table_unsupported", warnings)
@@ -86,9 +87,7 @@ def _cucumber(
         steps = _robot_steps_from_gherkin(gherkin)
         text = _robot_scenario(details.summary, details.key, tags, steps, plain=())
         return ScenarioRender("robot", details.summary, details.key, text, warnings)
-    keyword = "Scenario Outline" if (
-        details.scenario_type == "scenario_outline" or _looks_like_outline(gherkin)
-    ) else "Scenario"
+    keyword = "Scenario Outline" if outline else "Scenario"
     tag = f"@{tags.test_marker}:{details.key}"
     indented = "\n".join(f"  {line}" if line else "" for line in gherkin.splitlines())
     text = f"  {tag}\n  {keyword}: {details.summary}\n{indented}"
@@ -109,7 +108,7 @@ def _manual(
         if isinstance(built, RenderUnsupported):
             return RenderUnsupported(built.reason, warnings)
         converted.extend(built)
-    plain = tuple(tags.manual_tags)
+    plain = (_manual_tag(tags),)
     if fmt == "robot":
         text = _robot_scenario(details.summary, details.key, tags, converted, plain=plain)
         return ScenarioRender("robot", details.summary, details.key, text, warnings)
@@ -124,37 +123,24 @@ def _manual(
 def _manual_step_lines(
     step: XrayTestStep, fmt: PullFormat
 ) -> list[str] | RenderUnsupported:
-    action = step.action.replace("\r\n", "\n")
-    expected = step.expected.replace("\r\n", "\n")
-    data = step.data.replace("\r\n", "\n") if step.data else ""
-    if not action.strip() and expected.strip():
+    action_lines = _text_lines(step.action)
+    if not action_lines:
         return RenderUnsupported("empty_action_step")
-    if not action.strip() and not expected.strip():
-        return RenderUnsupported("empty_action_step")
+    data_lines = _text_lines(step.data or "")
     lines: list[str] = []
-    action_lines = [part for part in action.split("\n")]
     for index, part in enumerate(action_lines):
-        prefix = "Given" if index == 0 else "And"
-        content = part if part.strip() else part
-        if index == 0 and data.strip():
-            content = f"{content}\n{data}" if content.strip() else data
-        if fmt == "robot":
-            for i, chunk in enumerate(content.split("\n")):
-                kw = prefix if i == 0 else "..."
-                lines.append(f"{kw} {chunk}" if chunk.strip() or i == 0 else f"{kw}")
-        else:
-            for i, chunk in enumerate(content.split("\n")):
-                kw = prefix if i == 0 else "And"
-                lines.append(f"{kw} {chunk}".rstrip())
-    if expected.strip():
-        expected_lines = expected.split("\n")
-        for index, part in enumerate(expected_lines):
-            prefix = "Then" if index == 0 else "And"
-            if fmt == "robot":
-                lines.append(f"{prefix} {part}")
-            else:
-                lines.append(f"{prefix} {part}".rstrip())
+        lines.append(f"{'Given' if index == 0 else 'And'} {part}")
+        if index == 0:
+            continuation = "...    " if fmt == "robot" else "And "
+            lines.extend(f"{continuation}{chunk}" for chunk in data_lines)
+    for index, part in enumerate(_text_lines(step.expected)):
+        lines.append(f"{'Then' if index == 0 else 'And'} {part}")
     return lines
+
+
+def _text_lines(text: str) -> list[str]:
+    """Non-blank, trimmed lines of a multi-line Xray step field."""
+    return [line.strip() for line in text.replace("\r\n", "\n").split("\n") if line.strip()]
 
 
 def _scaffold(
@@ -163,7 +149,7 @@ def _scaffold(
     tags: TestFileTagConfig,
     warnings: tuple[str, ...],
 ) -> ScenarioRender:
-    scaffold = next((t for t in tags.manual_tags if t.casefold() == "scaffold"), tags.manual_tags[0])
+    scaffold = _scaffold_tag(tags)
     plain = (scaffold,)
     todo = "Given TODO: flesh out this imported test"
     if fmt == "robot":
@@ -188,13 +174,31 @@ def _robot_scenario(
     return f"Scenario: {summary}\n{tag_line}\n{body}"
 
 
+def with_story_tag(render: ScenarioRender, story_key: str, tags: TestFileTagConfig) -> ScenarioRender:
+    """Robot block carrying its own story tag, for suites without a file-level story."""
+    xray_cell = f"[Tags]    {tags.test_marker}:{render.key}"
+    story_cell = f"{tags.story_marker}:{story_key}"
+    text = render.text.replace(xray_cell, f"{xray_cell}    {story_cell}", 1)
+    return replace(render, text=text)
+
+
+def _scaffold_tag(tags: TestFileTagConfig) -> str:
+    return next((t for t in tags.manual_tags if t.casefold() == "scaffold"), tags.manual_tags[0])
+
+
+def _manual_tag(tags: TestFileTagConfig) -> str:
+    scaffold = _scaffold_tag(tags)
+    return next((t for t in tags.manual_tags if t != scaffold), scaffold)
+
+
 def _robot_steps_from_gherkin(gherkin: str) -> list[str]:
     return [line.strip() for line in gherkin.splitlines() if line.strip()]
 
 
-def _looks_like_outline(gherkin: str) -> bool:
-    lower = gherkin.casefold()
-    return "examples:" in lower or "<" in gherkin and ">" in gherkin
+def _is_outline(scenario_type: str | None, gherkin: str) -> bool:
+    if scenario_type is not None:
+        return scenario_type == "scenario_outline"
+    return any(line.strip().casefold().startswith("examples:") for line in gherkin.splitlines())
 
 
 def _has_table(gherkin: str) -> bool:

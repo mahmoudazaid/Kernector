@@ -91,6 +91,67 @@ def test_cucumber_outline_preserved_on_feature() -> None:
     assert "| ann |" in rendered.text
 
 
+def test_explicit_scenario_type_overrides_outline_heuristic() -> None:
+    gherkin = "Given the cart total is > 10\nThen the discount is < 5"
+    details = _details(kind="cucumber", gherkin=gherkin, scenario_type="scenario")
+
+    robot = render_scenario(details, "robot", TAGS)
+    feature = render_scenario(details, "feature", TAGS)
+
+    assert isinstance(robot, ScenarioRender)
+    assert isinstance(feature, ScenarioRender)
+    assert "Scenario: User logs in" in feature.text
+    assert "Scenario Outline" not in feature.text
+
+
+def test_outline_heuristic_needs_examples_line_when_type_unknown() -> None:
+    angle = _details(kind="cucumber", gherkin="Given a < b > c")
+    examples = _details(
+        kind="cucumber", gherkin="Given user <name>\nExamples:\n  | name |\n  | ann |"
+    )
+
+    plain = render_scenario(angle, "feature", TAGS)
+    outline = render_scenario(examples, "feature", TAGS)
+
+    assert isinstance(plain, ScenarioRender) and "Scenario Outline" not in plain.text
+    assert isinstance(outline, ScenarioRender) and "Scenario Outline:" in outline.text
+
+
+def test_robot_manual_data_is_a_continuation_row() -> None:
+    details = _details(
+        steps=(XrayTestStep(action="Enter credentials", data="user=bob", expected="Logged in"),)
+    )
+
+    rendered = render_scenario(details, "robot", TAGS)
+
+    assert isinstance(rendered, ScenarioRender)
+    assert "    Given Enter credentials\n    ...    user=bob\n    Then Logged in" in rendered.text
+
+
+def test_blank_lines_in_manual_step_are_skipped() -> None:
+    details = _details(steps=(XrayTestStep(action="Open\n\nGo", expected="A\n\nB"),))
+
+    robot = render_scenario(details, "robot", TAGS)
+    feature = render_scenario(details, "feature", TAGS)
+
+    assert isinstance(robot, ScenarioRender) and isinstance(feature, ScenarioRender)
+    for rendered in (robot, feature):
+        steps = [line.strip() for line in rendered.text.splitlines()[2:]]
+        assert steps == ["Given Open", "And Go", "Then A", "And B"]
+
+
+def test_manual_with_steps_is_not_tagged_scaffold() -> None:
+    details = _details(steps=(XrayTestStep(action="Go"),))
+
+    robot = render_scenario(details, "robot", TAGS)
+    feature = render_scenario(details, "feature", TAGS)
+
+    assert isinstance(robot, ScenarioRender) and isinstance(feature, ScenarioRender)
+    assert "[Tags]    XRay:QA-7    manual\n" in robot.text
+    assert "@XRay:QA-7 @manual\n" in feature.text
+    assert "scaffold" not in robot.text + feature.text
+
+
 def test_preconditions_count_adds_warning_only() -> None:
     rendered = render_scenario(
         _details(steps=(XrayTestStep(action="Go"),), preconditions=2),

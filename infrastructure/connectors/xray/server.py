@@ -48,6 +48,7 @@ from infrastructure.connectors.xray.errors import (
     map_http_error,
 )
 from infrastructure.connectors.xray.details import Unreadable, confirms_definition
+from infrastructure.connectors.xray.jql import jql_string
 from infrastructure.connectors.xray.schema import SchemaKey, XraySchemaCache
 from infrastructure.connectors.xray.server_update import (
     CUCUMBER_TYPE_FIELD,
@@ -294,11 +295,11 @@ class XrayServerImporter:
         mapping, _ = self._cache.get_or_discover(self._schema_key, self._discover)
         if not project_key.strip():
             raise ConnectorError(MSG_REQUEST_FAILED)
-        clauses = [f'project = "{project_key.strip()}"', 'issuetype = Test']
+        clauses = [f"project = {jql_string(project_key.strip())}", "issuetype = Test"]
         if component is not None:
             if not component.strip():
                 raise ConnectorError(MSG_REQUEST_FAILED)
-            clauses.append(f'component = "{component.strip()}"')
+            clauses.append(f"component = {jql_string(component.strip())}")
         jql = " AND ".join(clauses)
         by_key: dict[str, JiraIssueSummary] = {}
         start_at = 0

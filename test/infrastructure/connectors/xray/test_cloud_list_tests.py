@@ -96,6 +96,16 @@ def test_list_tests_includes_component_in_jql() -> None:
     assert 'component = "Portal"' in xray.queries[0]["variables"]["jql"]
 
 
+def test_list_tests_escapes_quotes_in_component() -> None:
+    xray = _ListSearch(tests=[_jira("QA-1")])
+
+    _importer(xray).list_tests("QA", component='Portal" OR project = "OTHER\\')
+
+    assert xray.queries[0]["variables"]["jql"] == (
+        'project = "QA" AND component = "Portal\\" OR project = \\"OTHER\\\\"'
+    )
+
+
 def test_list_tests_rejects_non_advancing_duplicate_page() -> None:
     xray = _ListSearch(tests=[_jira(f"QA-{n}") for n in range(1, 5)], page=2)
     xray.repeat_page = True

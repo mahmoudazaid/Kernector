@@ -230,8 +230,8 @@ non-advancing pages. The pack converts `XrayTestDetails` to Robot / Gherkin
 scenario text (`test_files/from_xray.py`), proposes a target suite/feature
 (`pull_target.py`), and returns content plus unified diffs (`pull_apply.py`)
 without writing Jira or disk. Known local XRay keys are skipped globally before
-detail reads. The tool needs no approval; `dry_run` runs the same resolution and
-only omits file content/diffs.
+detail reads. Every call needs human approval; `dry_run` runs the same resolution
+and only omits file content/diffs.
 
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
