@@ -237,7 +237,7 @@ class PullXrayTestsToFilesTool:
         self._project_key = project_key
         self._story_issue_types = story_issue_types
         self._link_type = link_type
-        self._link_direction = link_direction
+        self._link_direction: IssueLinkDirection = link_direction
         self._default_component = default_component
         self._template = new_file_name_template
         self._destination_label = destination_label
