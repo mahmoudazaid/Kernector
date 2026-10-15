@@ -222,6 +222,17 @@ ignores inline header cells and comment-only rows, file-scope Xray markers are
 rejected, and chat over HTTP exposes only `result_chars`, so applying the
 rewrite needs an MCP client.
 
+Pulling Xray tests into files (#400) is the reverse direction: `XrayIssueLookup`
+gains `list_tests` (project-wide, optional component) and
+`story_naming_context` (epic absent / present / failed for new-file naming);
+both Cloud and Server adapters page with key deduplication and fail closed on
+non-advancing pages. The pack converts `XrayTestDetails` to Robot / Gherkin
+scenario text (`test_files/from_xray.py`), proposes a target suite/feature
+(`pull_target.py`), and returns content plus unified diffs (`pull_apply.py`)
+without writing Jira or disk. Known local XRay keys are skipped globally before
+detail reads. Every call needs human approval; `dry_run` runs the same resolution
+and only omits file content/diffs.
+
 Drive/GitHub/Jira failures map to a small domain taxonomy: `ConnectorAuthError` for
 rejected credentials or permissions, `ConnectorUnavailableError` for throttling
 and transport outages, and `ConnectorError` for other adapter failures.
@@ -455,8 +466,8 @@ or global clear and no normal-UI "reset memory" control. Long-term memory is
 deferred to #299. Absent ``conversation_id``, the agent stays stateless.
 
 **HITL tool approval (#214):** allowlisted tools (Drive export, Xray test
-creation, #199 and #397, and Xray test updates, #398) pause
-via LangGraph ``interrupt()`` immediately before ``Tool.run``. Pending Tool
+creation, #199 and #397, Xray test updates, #398, and pull into files, #400)
+pause via LangGraph ``interrupt()`` immediately before ``Tool.run``. Pending Tool
 arguments stay in process-local checkpoint/ledger state; the browser sends only
 ``approve`` / ``reject``. The same ``InMemorySaver`` process-local limits apply:
 a restart drops pending approvals and decision ledgers. Resume uses
@@ -924,6 +935,13 @@ the agents; Kernector supplies evidence and allowlisted tools.
   schemas in `composition/xray_export/test_file_writeback.py`) whenever
   `software-delivery` is enabled. It is pure (no approval) and fails with the
   same trusted `path:line: reason` messages as the preview.
+- Pull Xray tests into files (#400):
+  `software_delivery.pull_xray_tests_to_files` shares the `XrayFileCreateBinding`
+  (strict schemas in `composition/xray_export/test_file_pull.py`) when
+  `XRAY_DEPLOYMENT` is configured. It needs HITL approval; new paths are
+  suggestions (`XRAY_NEW_FILE_NAME_TEMPLATE` / optional `new_file_paths`) and
+  existing story-tagged inventory files win over new files. `dry_run` returns
+  planned statuses without file proposals.
 - Prompts and instructions: the server sends fixed, tool-neutral
   `instructions` (clients read files themselves and send exact text). A tool
   may carry an optional `mcp_prompt` (`McpToolPrompt`, read via `getattr`);

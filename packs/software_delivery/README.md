@@ -8,7 +8,7 @@ this pack only through [`registration.py`](registration.py).
 | Location | Responsibility |
 | --- | --- |
 | `tools/` | Real tool adapters (`tools/<name>.py`), registered from `build_tools` |
-| `test_files/` | Pure Robot Framework / Gherkin parser for the test file preview (#396), and the Xray key write-back rewrite (`writeback.py`, `key_ownership.py`, #399) |
+| `test_files/` | Pure Robot Framework / Gherkin parser for the test file preview (#396), Xray key write-back (`writeback.py`, #399), and pull-from-Jira conversion/targeting/apply (`from_xray.py`, `pull_*.py`, #400) |
 | Pack root | Shared contracts, errors, export limits, chat intent, registration |
 
 The scaffolding risk, test-generation, and Markdown-export tools were retired
@@ -383,6 +383,29 @@ nothing is truncated and there is no partial result.
 
 **Chat limit.** On chat the result only feeds the agent; HTTP exposes
 `result_chars`, not the text. Use MCP to apply the edits from a client.
+
+## Pulling Xray tests into test files (#400)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `software_delivery.pull_xray_tests_to_files` | Mutually exclusive `story_key` or `project=true`; optional `component` (project only: omitted → `XRAY_DEFAULT_COMPONENT`, `null` → no filter); `files[]` (may be empty); `formats` (`robot` and/or `feature`, default `robot`); optional `new_file_name_template` / `new_file_paths` (story→path); `dry_run` | `scope`, `counts`, `results[]` (per test×format status), `files[]` (content+diff when not dry_run) |
+
+Reads Jira/Xray and returns scenario additions, tag back-fills, or new suite/feature
+files for the caller to apply. Never writes Jira or disk. Requires HITL approval;
+approval hints list inventory paths and any `new_file_paths` overrides. Prefer an
+existing story-tagged file in `files` (`ADD` / `BACKFILL_TAG`); only invent a new
+path when none matches. New-file names are suggestions from
+`XRAY_NEW_FILE_NAME_TEMPLATE` (overridable per call) or `new_file_paths`.
+`dry_run` runs the same resolution and only omits `files` content/diffs
+(`WOULD_*` statuses).
+
+Known XRay keys already present anywhere in `files` are skipped globally (all
+requested formats) before detail reads. Parent stories must match
+`XRAY_LINK_TYPE` + `XRAY_LINK_DIRECTION` and `XRAY_STORY_ISSUE_TYPES`. Epic
+metadata from `story_naming_context` treats absent vs failed as distinct.
+
+Registered on chat and MCP with the other Xray file tools when
+`XRAY_DEPLOYMENT` is configured (allowlist on MCP).
 
 ## Chat-time routing (#312)
 

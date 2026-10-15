@@ -31,6 +31,10 @@ class XrayKeyWritebackValidationError(ToolArgumentValidationError):
     """Malformed arguments for writing Xray keys back into test files (#399)."""
 
 
+class PullXrayValidationError(ToolArgumentValidationError):
+    """Malformed arguments for pulling Xray tests into test files (#400)."""
+
+
 class OrchestrationValidationError(DomainValidationError):
     """Invalid Software Delivery chat tool selection."""
 

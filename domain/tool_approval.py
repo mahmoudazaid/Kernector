@@ -14,6 +14,7 @@ _DEFAULT_ALLOWLIST = frozenset(
         "software_delivery.create_xray_tests",
         "software_delivery.create_xray_tests_from_files",
         "software_delivery.update_xray_tests_from_files",
+        "software_delivery.pull_xray_tests_to_files",
     }
 )
 

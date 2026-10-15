@@ -24,6 +24,7 @@ from domain.response_feedback import ResponseFeedback, RunProvenance
 from domain.test_management.xray import (
     IssueLookupResult,
     JiraIssueSummary,
+    StoryNamingContext,
     XrayImportResult,
     XrayTestCreateSchema,
     XrayTestDetailsResult,
@@ -510,6 +511,31 @@ class XrayIssueLookup(Protocol):
             ConnectorAuthError: Credentials or permissions were rejected.
             ConnectorUnavailableError: Jira/Xray is unreachable or the search is incomplete.
             ConnectorError: The answer was malformed.
+        """
+        ...
+
+    def list_tests(
+        self, project_key: str, *, component: str | None = None
+    ) -> tuple[JiraIssueSummary, ...]:
+        """Return every Test in ``project_key``, optionally filtered by component.
+
+        Completes pagination with key deduplication. A non-advancing page or any
+        incomplete read raises rather than returning a partial list.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Jira/Xray is unreachable or the search is incomplete.
+            ConnectorError: The answer was malformed.
+        """
+        ...
+
+    def story_naming_context(self, story_key: str) -> StoryNamingContext:
+        """Story summary plus epic metadata; ``epic_presence=failed`` is not absent.
+
+        Raises:
+            ConnectorAuthError: Credentials or permissions were rejected.
+            ConnectorUnavailableError: Jira/Xray is unreachable or the read is incomplete.
+            ConnectorError: The story payload was malformed (not a soft epic failure).
         """
         ...
 
