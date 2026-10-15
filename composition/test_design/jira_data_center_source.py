@@ -1,4 +1,4 @@
-"""Jira Data Center issues as a Test Design source (the only Jira-aware Test Design code).
+"""Jira Data Center issues as a Test Design source.
 
 Every failure leaving the reader is a freshly built provider-neutral error with
 no cause or context, so Jira diagnostics (response bodies, URLs) never reach
@@ -18,16 +18,17 @@ from application.errors import (
 )
 from composition.jira.data_center import authenticated_call
 from composition.test_design.errors import TestDesignValidationError
-from composition.test_design.sources import AmbiguousSourceLocatorError
-from domain.errors import (
-    ConnectorAuthError,
-    ConnectorError,
-    ConnectorNetworkError,
-    ConnectorNotFoundError,
-    ConnectorRateLimitError,
-    ConnectorTimeoutError,
-    ConnectorUnavailableError,
+from composition.test_design.jira_errors import (
+    INVALID_LOCATOR as _INVALID_LOCATOR,
+    INVALID_REQUEST as _INVALID_REQUEST,
+    NO_EVIDENCE as _NO_EVIDENCE,
+    NOT_CONNECTED as _NOT_CONNECTED,
+    NOT_FOUND as _NOT_FOUND,
+    REJECTED as _REJECTED,
+    neutral_connector_error as _neutral_connector_error,
 )
+from composition.test_design.sources import AmbiguousSourceLocatorError
+from domain.errors import ConnectorError, ConnectorNotFoundError
 from domain.knowledge import SourceDocument, SourceLocator
 from domain.ports import LiveSourceReader
 from infrastructure.config import JiraDataCenterSettings
@@ -45,21 +46,6 @@ from infrastructure.connectors.jira.issue_source_reader import (
     JiraIssueEmptyEvidenceError,
     JiraIssuePayloadError,
 )
-
-_INVALID_LOCATOR = "source_locator.locator must be a Jira issue key or browse URL"
-_INVALID_REQUEST = "The test-design request was invalid."
-_NO_EVIDENCE = "No usable grounded evidence for test coverage planning."
-_NOT_FOUND = "The source item was not found."
-_NOT_CONNECTED = "The source is not connected."
-_REJECTED = "The source authorization was rejected. Connect again."
-_TRANSPORT_ERRORS: tuple[tuple[type[ConnectorError], str], ...] = (
-    (ConnectorRateLimitError, "The source rate limit was exceeded."),
-    (ConnectorTimeoutError, "The source request timed out."),
-    (ConnectorNetworkError, "The source network request failed."),
-    (ConnectorUnavailableError, "The source is temporarily unavailable."),
-)
-_REQUEST_FAILED = "The source request failed."
-
 
 class JiraDataCenterTestDesignSource:
     """``TestDesignSource`` over a single live Jira Data Center issue.
@@ -168,12 +154,3 @@ class _NeutralIssueReader:
             failure = _neutral_connector_error(error)
         # Raised outside the handler so the Jira error is not kept as __context__.
         raise failure from None
-
-
-def _neutral_connector_error(error: ConnectorError) -> Exception:
-    if isinstance(error, ConnectorAuthError):
-        return SourceReauthorizationRequiredError(_REJECTED)
-    for error_type, message in _TRANSPORT_ERRORS:
-        if isinstance(error, error_type):
-            return error_type(message)
-    return ConnectorError(_REQUEST_FAILED)
