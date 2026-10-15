@@ -372,6 +372,27 @@ def test_add_to_suite_matched_by_scenario_tag_keeps_story() -> None:
     assert (added.xray_key, added.story_key) == ("QA-2", "ABC-1")
 
 
+def test_robot_summary_with_double_space_does_not_abort_pull() -> None:
+    robot = (
+        "*** Settings ***\nDefault Tags    Story    ABC-1\n\n"
+        "*** Test Cases ***\nScenario: Other\n    Given x\n"
+    )
+    xray = _FakeXray(
+        issues=[_story()],
+        linked={"ABC-1": (_test("QA-1", "Login  twice"), _test("QA-2", "Logout"))},
+        details=[_manual("QA-1", "Login  twice"), _manual("QA-2", "Logout")],
+    )
+
+    payload = _run(xray, story_key="ABC-1", files=[{"path": "s.robot", "content": robot}])
+
+    statuses = {r["key"]: (r["status"], r["reason"]) for r in payload["results"]}
+    assert statuses == {
+        "QA-1": ("UNSUPPORTED", "robot_summary_separator"),
+        "QA-2": ("ADD", None),
+    }
+    assert "Scenario: Logout" in payload["files"][0]["content"]
+
+
 def test_duplicate_remote_link_is_not_ambiguous() -> None:
     xray = _FakeXray(
         issues=[_story()],

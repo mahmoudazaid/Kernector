@@ -6,12 +6,15 @@ or doc strings when the target format cannot preserve them.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 
 from domain.test_management.xray import XrayTestDetails, XrayTestStep
 from packs.software_delivery.test_files.models import TestFileTagConfig
 
 PullFormat = str  # "robot" | "feature"
+
+_ROBOT_SEPARATOR = re.compile(r"\s{2,}|\t")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +43,8 @@ def render_scenario(
     warnings = (("preconditions_present",) if details.preconditions > 0 else ())
     if details.kind == "other":
         return RenderUnsupported("other_kind", warnings)
+    if fmt == "robot" and _ROBOT_SEPARATOR.search(details.summary):
+        return RenderUnsupported("robot_summary_separator", warnings)
     if details.kind == "cucumber":
         return _cucumber(details, fmt, tags, warnings)
     return _manual(details, fmt, tags, warnings)

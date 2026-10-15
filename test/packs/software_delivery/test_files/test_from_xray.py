@@ -91,6 +91,19 @@ def test_cucumber_outline_preserved_on_feature() -> None:
     assert "| ann |" in rendered.text
 
 
+def test_robot_summary_with_separator_run_is_unsupported() -> None:
+    steps = (XrayTestStep(action="Go"),)
+    for summary in ("Login  twice", "Login\ttwice"):
+        details = _details(steps=steps, summary=summary)
+
+        robot = render_scenario(details, "robot", TAGS)
+        feature = render_scenario(details, "feature", TAGS)
+
+        assert isinstance(robot, RenderUnsupported)
+        assert robot.reason == "robot_summary_separator"
+        assert isinstance(feature, ScenarioRender)
+
+
 def test_explicit_scenario_type_overrides_outline_heuristic() -> None:
     gherkin = "Given the cart total is > 10\nThen the discount is < 5"
     details = _details(kind="cucumber", gherkin=gherkin, scenario_type="scenario")
