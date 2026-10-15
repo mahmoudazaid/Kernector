@@ -1,13 +1,15 @@
-"""Live Jira Data Center issue -> ``SourceDocument`` adapter (REST Get Issue).
+"""Live Jira issue -> ``SourceDocument`` adapter (REST Get Issue).
 
-The rendered document carries only the summary, description and acceptance
-criteria: no instance URL, timestamps or raw payload fields.
+Data Center returns rich text as wiki markup (REST v2); Cloud returns Atlassian
+Document Format (REST v3). The rendered document carries only the summary,
+description and acceptance criteria: no instance URL, timestamps or raw
+payload fields.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Protocol
+from collections.abc import Callable, Mapping, Sequence
+from typing import Literal, Protocol
 
 from domain.errors import ConnectorError
 from domain.knowledge import (
@@ -17,15 +19,26 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
+from infrastructure.connectors.jira.adf import adf_to_markdown
 from infrastructure.connectors.jira.issue_locator import is_jira_issue_key
 from infrastructure.connectors.jira.wiki import wiki_to_markdown
 
 ISSUE_SOURCE_ID_PREFIX = "issue:"
 
+RichTextFormat = Literal["wiki", "adf"]
+
 _BASE_FIELDS = ("summary", "description", "updated")
 _MSG_UNSUPPORTED_PROVIDER = "Live source provider is not supported."
 _MSG_INVALID_PAYLOAD = "Jira issue response did not match the requested locator."
 _MSG_EMPTY_EVIDENCE = "Jira issue has no description or acceptance criteria."
+_RENDERERS: dict[str, Callable[[object], str]] = {
+    "wiki": wiki_to_markdown,
+    "adf": adf_to_markdown,
+}
+_DESCRIPTION_TYPES: dict[str, type | tuple[type, ...]] = {
+    "wiki": str,
+    "adf": Mapping,
+}
 
 
 class JiraIssuePayloadError(ConnectorError):
@@ -36,18 +49,23 @@ class JiraIssueEmptyEvidenceError(ConnectorError):
     """The issue exists but has no description or acceptance criteria text."""
 
 
-class JiraDataCenterIssueClient(Protocol):
+class JiraIssueClient(Protocol):
     """The single Jira call the issue reader needs."""
 
     def get_issue(self, key: str, fields: Sequence[str]) -> Mapping[str, object]: ...
 
 
-class JiraDataCenterIssueSourceReader:
-    """``LiveSourceReader`` for a single Jira Data Center issue."""
+JiraDataCenterIssueClient = JiraIssueClient
+
+
+class JiraIssueSourceReader:
+    """``LiveSourceReader`` for a single Jira issue in ``rich_text`` format."""
+
+    rich_text: RichTextFormat = "wiki"
 
     def __init__(
         self,
-        client: JiraDataCenterIssueClient,
+        client: JiraIssueClient,
         *,
         acceptance_criteria_field: str | None = None,
     ) -> None:
@@ -68,7 +86,20 @@ class JiraDataCenterIssueSourceReader:
             payload,
             expected_key=key,
             acceptance_criteria_field=self._acceptance_criteria_field,
+            rich_text=self.rich_text,
         )
+
+
+class JiraDataCenterIssueSourceReader(JiraIssueSourceReader):
+    """``LiveSourceReader`` for a single Jira Data Center issue (wiki markup)."""
+
+    rich_text: RichTextFormat = "wiki"
+
+
+class JiraCloudIssueSourceReader(JiraIssueSourceReader):
+    """``LiveSourceReader`` for a single Jira Cloud issue (ADF rich text)."""
+
+    rich_text: RichTextFormat = "adf"
 
 
 def issue_payload_to_source_document(
@@ -76,6 +107,7 @@ def issue_payload_to_source_document(
     *,
     expected_key: str,
     acceptance_criteria_field: str | None = None,
+    rich_text: RichTextFormat = "wiki",
 ) -> SourceDocument:
     """Map a REST issue payload to a ``SourceDocument``.
 
@@ -83,6 +115,7 @@ def issue_payload_to_source_document(
         JiraIssuePayloadError: Malformed payload, or key/id not matching.
         JiraIssueEmptyEvidenceError: Description and acceptance criteria are blank.
     """
+    render = _RENDERERS[rich_text]
     if not isinstance(payload, Mapping):
         raise JiraIssuePayloadError(_MSG_INVALID_PAYLOAD)
     key = payload.get("key")
@@ -98,11 +131,13 @@ def issue_payload_to_source_document(
     if not isinstance(summary, str) or not summary.strip():
         raise JiraIssuePayloadError(_MSG_INVALID_PAYLOAD)
     raw_description = fields.get("description")
-    if raw_description is not None and not isinstance(raw_description, str):
+    if raw_description is not None and not isinstance(
+        raw_description, _DESCRIPTION_TYPES[rich_text]
+    ):
         raise JiraIssuePayloadError(_MSG_INVALID_PAYLOAD)
-    description = wiki_to_markdown(raw_description).strip()
+    description = render(raw_description).strip()
     acceptance_criteria = (
-        wiki_to_markdown(fields.get(acceptance_criteria_field)).strip()
+        render(fields.get(acceptance_criteria_field)).strip()
         if acceptance_criteria_field
         else ""
     )
