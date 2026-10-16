@@ -359,11 +359,20 @@ class GitHubOAuthSettings:
 
 @dataclass(frozen=True, slots=True)
 class JiraSettings:
-    """Jira connector sync limits. Credentials live in the OAuth grant file."""
+    """Jira connector sync limits. Credentials live in the OAuth grant file.
+
+    Args:
+        include_comments (bool): Include issue comments in connector sync.
+        page_size (int): Page size for Jira list calls.
+        max_issues (int): Maximum issues read in one sync.
+        acceptance_criteria_field (str | None): Cloud Test Design custom field
+            id (``customfield_<digits>``). Data Center uses its own setting.
+    """
 
     include_comments: bool = False
     page_size: int = 100
     max_issues: int = 5000
+    acceptance_criteria_field: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1088,6 +1097,9 @@ def _load_jira_settings() -> JiraSettings:
         include_comments=_env_bool("JIRA_INCLUDE_COMMENTS", "false"),
         page_size=page_size,
         max_issues=max_issues,
+        acceptance_criteria_field=_optional_jira_custom_field(
+            "JIRA_ACCEPTANCE_CRITERIA_FIELD"
+        ),
     )
 
 
@@ -1157,7 +1169,7 @@ def _load_jira_data_center_settings() -> JiraDataCenterSettings | None:
         token=token,
         allow_http=allow_http,
         state_path=state_path,
-        acceptance_criteria_field=_optional_jira_dc_custom_field(
+        acceptance_criteria_field=_optional_jira_custom_field(
             "JIRA_DC_ACCEPTANCE_CRITERIA_FIELD"
         ),
     )
@@ -1314,7 +1326,7 @@ def _require_xray_cloud_base_url(raw: str) -> str:
 _JIRA_CUSTOM_FIELD = re.compile(r"customfield_\d+")
 
 
-def _optional_jira_dc_custom_field(env_name: str) -> str | None:
+def _optional_jira_custom_field(env_name: str) -> str | None:
     """Accept only ``customfield_<digits>`` so the id is safe in a ``fields`` query."""
     raw = _optional_env(env_name)
     if raw is None:

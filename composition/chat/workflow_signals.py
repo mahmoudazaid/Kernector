@@ -61,10 +61,34 @@ _EXPORT_PARTIAL = re.compile(
     re.IGNORECASE,
 )
 
-TEST_DESIGN_CLARIFY_ANSWER = (
-    "I can start Test Design once you share a GitHub Issue URL or "
-    "owner/repo#N reference, or a Jira issue key such as PROJ-123."
-)
+_GITHUB_LOCATOR_TEXT = "a GitHub Issue URL or owner/repo#N reference"
+_JIRA_LOCATOR_TEXT = "a Jira issue key such as PROJ-123"
+
+
+def build_test_design_clarification(providers: Sequence[str]) -> str:
+    """Return Test Design clarification naming only registered providers.
+
+    Args:
+        providers (Sequence[str]): Provider keys from the source registry.
+
+    Returns:
+        str: Fixed clarification copy. Jira is included only when ``jira`` is
+        registered.
+    """
+    keys = {provider.strip().casefold() for provider in providers if isinstance(provider, str)}
+    parts: list[str] = []
+    if "github" in keys or "jira" not in keys:
+        parts.append(_GITHUB_LOCATOR_TEXT)
+    if "jira" in keys:
+        parts.append(_JIRA_LOCATOR_TEXT)
+    if len(parts) == 1:
+        offered = parts[0]
+    else:
+        offered = ", or ".join(parts)
+    return f"I can start Test Design once you share {offered}."
+
+
+TEST_DESIGN_CLARIFY_ANSWER = build_test_design_clarification(("github", "jira"))
 
 DRIVE_PARTIAL_CLARIFY_ANSWER = (
     "Did you mean export the selected Test Design titles to Google Drive? "
@@ -450,14 +474,29 @@ def build_xray_export_workflow_signal(
     return probe
 
 
-def clarification_answer_for(decision_reason: str, workflow_hint: str | None) -> str:
-    """Map allowlisted reason codes to fixed clarification copy."""
+def clarification_answer_for(
+    decision_reason: str,
+    workflow_hint: str | None,
+    *,
+    test_design_providers: Sequence[str] = ("github",),
+) -> str:
+    """Map allowlisted reason codes to fixed clarification copy.
+
+    Args:
+        decision_reason (str): Router reason code.
+        workflow_hint (str | None): Workflow that needs clarification.
+        test_design_providers (Sequence[str]): Registered Test Design providers.
+            Defaults to GitHub only, so Jira is not advertised unless registered.
+
+    Returns:
+        str: Fixed clarification copy for the reason.
+    """
     if decision_reason == "conflicting_workflows":
         return CONFLICTING_WORKFLOWS_CLARIFY_ANSWER
     if decision_reason == "mixed_cues":
         return MIXED_CUES_CLARIFY_ANSWER
     if workflow_hint == "test_design":
-        return TEST_DESIGN_CLARIFY_ANSWER
+        return build_test_design_clarification(test_design_providers)
     if workflow_hint == "drive_export":
         if decision_reason == "tool_unavailable":
             return DRIVE_UNAVAILABLE_CLARIFY_ANSWER
@@ -479,6 +518,7 @@ __all__ = [
     "DRIVE_UNAVAILABLE_CLARIFY_ANSWER",
     "MIXED_CUES_CLARIFY_ANSWER",
     "TEST_DESIGN_CLARIFY_ANSWER",
+    "build_test_design_clarification",
     "XRAY_MISSING_CASES_CLARIFY_ANSWER",
     "XRAY_UNAVAILABLE_CLARIFY_ANSWER",
     "build_drive_export_workflow_signal",
