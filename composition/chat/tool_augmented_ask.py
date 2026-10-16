@@ -169,6 +169,8 @@ class ToolAugmentedAsk:
             context (get on route; set on clarify; clear on other paths).
         grounded_ask: Optional agentic grounded path (retrieve tool then answer).
             When set, ``GROUNDED_ANSWER`` uses this instead of ``ask``.
+        test_design_providers (Sequence[str]): Registered Test Design providers
+            named in clarification copy. Defaults to GitHub only.
     """
 
     def __init__(
@@ -183,6 +185,7 @@ class ToolAugmentedAsk:
         select: SelectToolIntent | None = None,
         clarification_context_store: ClarificationContextStore | None = None,
         grounded_ask: GroundedAsk | None = None,
+        test_design_providers: Sequence[str] = ("github",),
     ) -> None:
         self._ask = ask
         self._grounded_ask = grounded_ask
@@ -197,6 +200,7 @@ class ToolAugmentedAsk:
         self._pending_run_view: SoftwareDeliveryRunView | None = None
         self._pending_workflow_action: object | None = None
         self._pending_clarification_context: Mapping[str, object] | None = None
+        self._test_design_providers = test_design_providers
 
     def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
         """Return and clear the typed view from the last tools-path execute."""
@@ -308,7 +312,11 @@ class ToolAugmentedAsk:
         decision: RoutingDecision,
         request: AskRequest,
     ) -> AskResponse:
-        answer = clarification_answer_for(decision.reason, decision.workflow_hint)
+        answer = clarification_answer_for(
+            decision.reason,
+            decision.workflow_hint,
+            test_design_providers=self._test_design_providers,
+        )
         self._pending_clarification_context = decision.clarification_context
         self._set_clarification_context(
             request.conversation_id, decision.clarification_context
@@ -409,7 +417,11 @@ class ToolAugmentedAsk:
     ) -> AskResponse:
         if self._build_test_design_handoff is None:
             return AskResponse(
-                answer=clarification_answer_for("tool_unavailable", "test_design"),
+                answer=clarification_answer_for(
+                    "tool_unavailable",
+                    "test_design",
+                    test_design_providers=self._test_design_providers,
+                ),
                 citations=(),
                 generation_hits=(),
                 run=_merge_run(
@@ -425,7 +437,11 @@ class ToolAugmentedAsk:
         handoff = self._build_test_design_handoff(request)
         if handoff is None:
             return AskResponse(
-                answer=clarification_answer_for("tool_unavailable", "test_design"),
+                answer=clarification_answer_for(
+                    "tool_unavailable",
+                    "test_design",
+                    test_design_providers=self._test_design_providers,
+                ),
                 citations=(),
                 generation_hits=(),
                 run=_merge_run(

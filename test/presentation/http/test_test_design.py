@@ -680,6 +680,16 @@ def _jira_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, dc_on: bool
     )
     if dc_on:
         settings = dc_settings(settings, tmp_path)
+    else:
+        settings = replace(
+            settings,
+            jira_oauth=replace(
+                settings.jira_oauth,
+                client_id=None,
+                client_secret=None,
+                redirect_uri=None,
+            ),
+        )
     facade = TestDesignFacade(
         settings=settings,
         store_path=tmp_path / "workspace.sqlite",

@@ -555,13 +555,17 @@ def build_test_design_sources(
     jira_dc_state_store=None,
     jira_dc_client_factory=None,
     jira_dc_settings_provider=None,
+    jira_cloud_connection_store=None,
+    jira_cloud_gateway=None,
+    jira_cloud_client_factory=None,
 ):
     """Register the live sources Test Design may plan from.
 
-    GitHub is always registered; Jira Data Center only when its mode is active
-    (``JIRA_DC_BASE_URL`` or ``JIRA_DC_TOKEN`` set). Credentials are resolved
-    lazily when a reader is requested, so building the registry never requires
-    a grant or a network call.
+    GitHub is always registered. Jira Data Center is registered when its mode
+    is active (``JIRA_DC_BASE_URL`` or ``JIRA_DC_TOKEN`` set). Otherwise Jira
+    Cloud is registered when Cloud OAuth is configured. Credentials are
+    resolved lazily when a reader is requested, so building the registry never
+    requires a grant or a network call.
     """
     from composition.test_design.github_source import build_github_test_design_source
     from composition.test_design.sources import (
@@ -590,7 +594,25 @@ def build_test_design_sources(
                 client_factory=jira_dc_client_factory,
             )
         )
+    elif _jira_cloud_oauth_ready(settings):
+        from composition.test_design.jira_cloud_source import (
+            build_jira_cloud_test_design_source,
+        )
+
+        sources.append(
+            build_jira_cloud_test_design_source(
+                settings,
+                connection_store=jira_cloud_connection_store,
+                gateway=jira_cloud_gateway,
+                client_factory=jira_cloud_client_factory,
+            )
+        )
     return TestDesignSourceRegistry(sources)
+
+
+def _jira_cloud_oauth_ready(settings: Settings) -> bool:
+    oauth = settings.jira_oauth
+    return bool(oauth.client_id and oauth.client_secret and oauth.redirect_uri)
 
 
 def reindex_filter_metadata(settings: Settings) -> int:
@@ -1155,6 +1177,7 @@ def build_tool_augmented_ask(
             build_test_design_handoff=build_handoff,
             clarification_context_store=clarification_context_store,
             grounded_ask=grounded_ask,
+            test_design_providers=test_design_sources.providers,
         )
     )
 

@@ -510,6 +510,71 @@ def test_generate_type_overrides_win_over_test_type(
     assert captured == [(("cand-1", "cucumber"), ("cand-2", "manual"))]
 
 
+def _cloud_sources(tmp_path: Path, *, connected: bool = True, reauth: bool = False):
+    from dataclasses import replace
+
+    from composition import container as composition_container
+    from infrastructure.config import load_settings
+    from test.composition.jira.jira_fakes import ACME, FakeGateway, connection, jira_settings, stores
+    from test.composition.test_design.test_test_design_jira_cloud_source import Script
+
+    settings = replace(jira_settings(load_settings(), tmp_path), jira_data_center=None)
+    _states, tokens = stores(settings)
+    if connected:
+        tokens.save(
+            connection(
+                project_keys=("FD",),
+                site=ACME,
+                reauthorization_required=reauth,
+                access_token=None if reauth else connection().access_token,
+            )
+        )
+    script = Script()
+    registry = composition_container.build_test_design_sources(
+        settings,
+        jira_cloud_connection_store=tokens,
+        jira_cloud_gateway=FakeGateway(),
+        jira_cloud_client_factory=script.factory,
+    )
+    return registry, script
+
+
+def test_cloud_start_lists_jira_and_accepts_key_or_browse_url(tmp_path: Path) -> None:
+    registry, script = _cloud_sources(tmp_path)
+    workflow, facade = _mcp_workflow(
+        tmp_path, providers=registry.providers, sources=registry
+    )
+    schema = start_args_for(registry.providers).model_json_schema()
+
+    assert "jira" in schema["properties"]["provider"]["enum"]
+    for locator in ("FD-2", "https://acme.atlassian.net/browse/FD-2"):
+        started = workflow.start({"provider": "jira", "locator": locator})
+        assert started["ticket_identifier"] == "FD-2"
+        assert facade.get_draft(started["draft_id"]).source_reference.source_type == "jira"
+    assert [key for _token, key in script.calls] == ["FD-2", "FD-2"]
+
+
+@pytest.mark.parametrize(
+    ("connected", "reauth"),
+    [(False, False), (True, True)],
+    ids=["disconnected", "reauthorization-required"],
+)
+def test_cloud_start_without_a_usable_grant_is_source_not_connected(
+    tmp_path: Path, connected: bool, reauth: bool
+) -> None:
+    registry, script = _cloud_sources(tmp_path, connected=connected, reauth=reauth)
+    workflow, _facade = _mcp_workflow(
+        tmp_path, providers=registry.providers, sources=registry
+    )
+
+    with pytest.raises(ToolSourceNotConnectedError) as caught:
+        workflow.start({"provider": "jira", "locator": "FD-2"})
+
+    assert str(caught.value) == ToolSourceNotConnectedError.__doc__
+    assert not isinstance(caught.value, ToolUnavailableError)
+    assert script.calls == []
+
+
 def test_generate_rejects_unselected_candidate_via_existing_contract(
     tmp_path: Path,
 ) -> None:

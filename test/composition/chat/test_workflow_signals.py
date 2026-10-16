@@ -15,6 +15,7 @@ from composition.chat.workflow_signals import (
     DRIVE_PARTIAL_CLARIFY_ANSWER,
     DRIVE_UNAVAILABLE_CLARIFY_ANSWER,
     TEST_DESIGN_CLARIFY_ANSWER,
+    build_test_design_clarification,
     build_drive_export_workflow_signal,
     build_test_design_workflow_signal,
     clarification_answer_for,
@@ -81,8 +82,14 @@ def test_test_design_command_with_ambiguous_source_locators_is_rejected() -> Non
         signal(TurnRoutingRequest(query="design tests for ENG-7 and ENG-8"))
 
 
-def test_test_design_clarification_mentions_jira_keys() -> None:
-    assert "Jira" in TEST_DESIGN_CLARIFY_ANSWER
+def test_test_design_clarification_mentions_jira_keys_only_when_registered() -> None:
+    both = build_test_design_clarification(("github", "jira"))
+    github_only = build_test_design_clarification(("github",))
+
+    assert "Jira" in both
+    assert "PROJ-123" in both
+    assert "Jira" not in github_only
+    assert "owner/repo#N" in github_only
 
 
 def test_test_design_prior_context_plus_locator_is_ready() -> None:
@@ -399,8 +406,13 @@ def test_conflicting_test_design_and_drive_signals_clarify() -> None:
 
 def test_clarification_copy_for_test_design() -> None:
     assert (
-        clarification_answer_for("missing_fields", "test_design")
+        clarification_answer_for(
+            "missing_fields", "test_design", test_design_providers=("github", "jira")
+        )
         == TEST_DESIGN_CLARIFY_ANSWER
+    )
+    assert "Jira" not in clarification_answer_for(
+        "missing_fields", "test_design", test_design_providers=("github",)
     )
     assert (
         clarification_answer_for("incomplete_workflow", "drive_export")

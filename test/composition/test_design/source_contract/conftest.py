@@ -11,11 +11,18 @@ from test.composition.test_design.source_contract.github_harness import (
     GitHubContractHarness,
 )
 from test.composition.test_design.source_contract.harness import SourceContractHarness
+from test.composition.test_design.source_contract.jira_cloud_harness import (
+    JiraCloudContractHarness,
+)
 from test.composition.test_design.source_contract.jira_data_center_harness import (
     JiraDataCenterContractHarness,
 )
 
-CONTRACT_HARNESSES = (GitHubContractHarness, JiraDataCenterContractHarness)
+CONTRACT_HARNESSES = (
+    GitHubContractHarness,
+    JiraDataCenterContractHarness,
+    JiraCloudContractHarness,
+)
 
 
 def _refuse_network(*_args: object, **_kwargs: object) -> None:
@@ -28,7 +35,7 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket, "create_connection", _refuse_network)
 
 
-@pytest.fixture(params=CONTRACT_HARNESSES, ids=lambda cls: cls.provider)
+@pytest.fixture(params=CONTRACT_HARNESSES, ids=lambda cls: cls.__name__)
 def harness(
     request: pytest.FixtureRequest,
     tmp_path: Path,
