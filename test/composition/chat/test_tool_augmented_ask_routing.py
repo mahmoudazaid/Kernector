@@ -70,6 +70,7 @@ def test_clarification_never_calls_grounded_or_general_ask() -> None:
         runner=_ExplodingRunner(),
         signals=(_incomplete_signal(),),
         ask_general=general,
+        test_design_providers=("github", "jira"),
     )
     response = wrapper.execute(AskRequest(query="design test"))
     assert ask.calls == []

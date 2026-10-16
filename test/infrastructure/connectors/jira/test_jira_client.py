@@ -203,6 +203,41 @@ def test_client_repr_never_contains_token() -> None:
     assert SECRET not in repr(client)
 
 
+def test_get_issue_reads_requested_fields() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json={"id": "10001", "key": "FD-2", "fields": {"summary": "Login"}},
+        )
+
+    payload = _client(handler).get_issue("FD-2", ("summary", "description", "updated"))
+
+    [request] = seen
+    assert request.method == "GET"
+    assert str(request.url).split("?", 1)[0] == f"{BASE}/issue/FD-2"
+    assert request.url.params["fields"] == "summary,description,updated"
+    assert request.headers["Authorization"] == f"Bearer {SECRET}"
+    assert payload["key"] == "FD-2"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(401, ConnectorAuthError), (404, ConnectorNotFoundError), (429, JiraRateLimitError)],
+)
+def test_get_issue_maps_http_errors(status: int, expected: type) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, text=f"upstream said {SECRET}")
+
+    with pytest.raises(expected) as caught:
+        _client(handler).get_issue("FD-2", ("summary",))
+
+    assert SECRET not in str(caught.value)
+    assert caught.value.__cause__ is None
+
+
 def test_get_project_reads_one_project_and_maps_missing_to_not_found() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/project/KAN"):

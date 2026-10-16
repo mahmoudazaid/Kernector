@@ -152,6 +152,25 @@ class HttpJiraClient:
     def get_project(self, key: str) -> JiraProject:
         return parse_project(self._request_json("GET", f"/project/{quote(key, safe='')}"))
 
+    def get_issue(self, key: str, fields: Sequence[str]) -> Mapping[str, object]:
+        """Return one Cloud issue payload for the requested field ids.
+
+        Args:
+            key (str): Issue key, for example ``FD-2``.
+            fields (Sequence[str]): Field ids to request.
+
+        Returns:
+            Mapping[str, object]: The REST issue object.
+
+        Raises:
+            ConnectorError: The HTTP call failed or the body was not an object.
+        """
+        return self._request_json(
+            "GET",
+            f"/issue/{quote(key, safe='')}",
+            params={"fields": ",".join(fields)},
+        )
+
     def _request_json(
         self,
         method: str,

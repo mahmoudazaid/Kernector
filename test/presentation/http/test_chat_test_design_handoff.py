@@ -13,9 +13,9 @@ from composition.container import build_test_design_sources
 from composition.test_design.facade import build_test_design_handoff_from_request
 from composition.chat.tool_augmented_ask import ToolAugmentedAsk
 from composition.chat.workflow_signals import (
-    TEST_DESIGN_CLARIFY_ANSWER,
     build_drive_export_workflow_signal,
     build_test_design_workflow_signal,
+    build_test_design_clarification,
 )
 from infrastructure.config import DomainToolSettings
 from presentation.http.app import create_app
@@ -61,11 +61,13 @@ def _routed_factory(
     def factory(runtime=None, *, source_locator=None):  # noqa: ANN001
         del runtime
 
+        sources = build_test_design_sources(settings)
+
         def build_handoff(request: AskRequest):
             return build_test_design_handoff_from_request(
                 settings=settings,
                 request=request,
-                sources=build_test_design_sources(settings),
+                sources=sources,
                 source_locator=source_locator,
             )
 
@@ -75,7 +77,7 @@ def _routed_factory(
             signals=(
                 build_test_design_workflow_signal(
                     enabled=True,
-                    extract_locator=build_test_design_sources(settings).extract_locator,
+                    extract_locator=sources.extract_locator,
                 ),
                 build_drive_export_workflow_signal(
                     export_enabled=export_enabled,
@@ -86,6 +88,7 @@ def _routed_factory(
             pack_id="software-delivery",
             build_test_design_handoff=build_handoff,
             clarification_context_store=clarification_context_store,
+            test_design_providers=sources.providers,
         )
 
     return factory
@@ -175,6 +178,59 @@ def test_test_design_handoff_rejects_mismatched_source_locator() -> None:
     assert response.json()["code"] == "validation_error"
 
 
+def test_design_tests_fd_2_starts_jira_cloud_handoff(tmp_path) -> None:
+    from test.composition.jira.jira_fakes import ACME, connection, jira_settings, stores
+
+    settings = replace(
+        jira_settings(get_settings(), tmp_path),
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+        jira_data_center=None,
+    )
+    _states, tokens = stores(settings)
+    tokens.save(connection(project_keys=("FD",), site=ACME))
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(settings)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "design tests FD-2", "history": []},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["action"]["source_locator"] == {
+        "provider": "jira",
+        "locator": "FD-2",
+    }
+
+
+def test_github_only_clarification_does_not_mention_jira() -> None:
+    settings = replace(
+        get_settings(),
+        domain_tools=DomainToolSettings(enabled_packs=("software-delivery",)),
+        jira_data_center=None,
+        jira_oauth=replace(
+            get_settings().jira_oauth,
+            client_id=None,
+            client_secret=None,
+            redirect_uri=None,
+        ),
+    )
+    app = create_app(cors_origins=())
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_ask_factory] = lambda: _routed_factory(settings)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/chat/ask",
+        json={"query": "design test", "history": []},
+    )
+
+    assert response.status_code == 200
+    assert "Jira" not in response.json()["answer"]
+
+
 def test_issue_304_command_without_issue_clarifies_without_rag() -> None:
     ask = _RecordingAsk()
     base = get_settings()
@@ -196,7 +252,9 @@ def test_issue_304_command_without_issue_clarifies_without_rag() -> None:
     body = response.json()
     assert ask.calls == 0
     assert body["action"] is None
-    assert body["answer"] == TEST_DESIGN_CLARIFY_ANSWER
+    assert body["answer"] == build_test_design_clarification(
+        build_test_design_sources(settings).providers
+    )
     assert body["run"]["intent"] == "clarification"
     assert body["run"]["path"] == "clarification"
 
@@ -469,7 +527,9 @@ def test_follow_up_bare_number_after_clarify_stays_clarification() -> None:
     assert second.status_code == 200
     assert ask.calls == 0
     assert second.json()["run"]["intent"] == "clarification"
-    assert second.json()["answer"] == TEST_DESIGN_CLARIFY_ANSWER
+    assert second.json()["answer"] == build_test_design_clarification(
+        build_test_design_sources(settings).providers
+    )
 
 
 def test_pivot_after_clarify_clears_context_and_uses_rag() -> None:

@@ -1,12 +1,14 @@
-"""Live Jira Data Center issue -> ``SourceDocument`` adapter (REST Get Issue).
+"""Live Jira issue -> ``SourceDocument`` adapter (REST Get Issue).
 
 The rendered document carries only the summary, description and acceptance
-criteria: no instance URL, timestamps or raw payload fields.
+criteria: no instance URL, timestamps or raw payload fields. Data Center text
+is wiki markup. Cloud text is Atlassian Document Format, including a plain
+string.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
 from domain.errors import ConnectorError
@@ -17,6 +19,7 @@ from domain.knowledge import (
     SourceReference,
     SourceType,
 )
+from infrastructure.connectors.jira.adf import adf_to_markdown
 from infrastructure.connectors.jira.issue_locator import is_jira_issue_key
 from infrastructure.connectors.jira.wiki import wiki_to_markdown
 
@@ -71,13 +74,69 @@ class JiraDataCenterIssueSourceReader:
         )
 
 
+class JiraCloudIssueClient(Protocol):
+    """The single Jira Cloud call the issue reader needs."""
+
+    def get_issue(self, key: str, fields: Sequence[str]) -> Mapping[str, object]: ...
+
+
+class JiraCloudIssueSourceReader:
+    """``LiveSourceReader`` for a single Jira Cloud issue.
+
+    Description and acceptance criteria are rendered with ``adf_to_markdown``.
+    The assembled document is not size-capped here; composition applies the
+    coverage-planning budget so this module does not import the pack.
+    """
+
+    def __init__(
+        self,
+        client: JiraCloudIssueClient,
+        *,
+        acceptance_criteria_field: str | None = None,
+    ) -> None:
+        self._client = client
+        self._acceptance_criteria_field = acceptance_criteria_field
+
+    def fetch(self, locator: SourceLocator) -> SourceDocument:
+        if locator.provider.strip().casefold() != "jira":
+            raise ConnectorError(_MSG_UNSUPPORTED_PROVIDER)
+        key = locator.locator
+        if not is_jira_issue_key(key):
+            raise JiraIssuePayloadError(_MSG_INVALID_PAYLOAD)
+        fields = _BASE_FIELDS + (
+            (self._acceptance_criteria_field,) if self._acceptance_criteria_field else ()
+        )
+        payload = self._client.get_issue(key, fields)
+        return issue_payload_to_source_document(
+            payload,
+            expected_key=key,
+            acceptance_criteria_field=self._acceptance_criteria_field,
+            render_text=adf_to_markdown,
+        )
+
+
 def issue_payload_to_source_document(
     payload: Mapping[str, object],
     *,
     expected_key: str,
     acceptance_criteria_field: str | None = None,
+    render_text: Callable[[object], str] = wiki_to_markdown,
 ) -> SourceDocument:
     """Map a REST issue payload to a ``SourceDocument``.
+
+    The default renderer is Data Center wiki markup, which rejects a non-string
+    description. ``adf_to_markdown`` accepts an ADF object or a plain string.
+
+    Args:
+        payload (Mapping[str, object]): REST issue body.
+        expected_key (str): Canonical issue key the caller requested.
+        acceptance_criteria_field (str | None): Optional custom field id.
+        render_text (Callable[[object], str]): Description and acceptance-criteria
+            renderer. Defaults to wiki markup.
+
+    Returns:
+        SourceDocument: Summary, rendered description, and rendered acceptance
+        criteria only.
 
     Raises:
         JiraIssuePayloadError: Malformed payload, or key/id not matching.
@@ -98,11 +157,15 @@ def issue_payload_to_source_document(
     if not isinstance(summary, str) or not summary.strip():
         raise JiraIssuePayloadError(_MSG_INVALID_PAYLOAD)
     raw_description = fields.get("description")
-    if raw_description is not None and not isinstance(raw_description, str):
+    if (
+        render_text is wiki_to_markdown
+        and raw_description is not None
+        and not isinstance(raw_description, str)
+    ):
         raise JiraIssuePayloadError(_MSG_INVALID_PAYLOAD)
-    description = wiki_to_markdown(raw_description).strip()
+    description = render_text(raw_description).strip()
     acceptance_criteria = (
-        wiki_to_markdown(fields.get(acceptance_criteria_field)).strip()
+        render_text(fields.get(acceptance_criteria_field)).strip()
         if acceptance_criteria_field
         else ""
     )
