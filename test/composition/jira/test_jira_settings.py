@@ -218,6 +218,32 @@ def test_in_repo_data_center_state_path_must_stay_gitignored(
         load_settings()
 
 
+def test_cloud_acceptance_criteria_field_defaults_to_none(
+    clean_jira_env: pytest.MonkeyPatch,
+) -> None:
+    clean_jira_env.delenv("JIRA_ACCEPTANCE_CRITERIA_FIELD", raising=False)
+
+    assert load_settings().jira.acceptance_criteria_field is None
+
+
+def test_cloud_acceptance_criteria_field_is_kept(
+    clean_jira_env: pytest.MonkeyPatch,
+) -> None:
+    clean_jira_env.setenv("JIRA_ACCEPTANCE_CRITERIA_FIELD", " customfield_10200 ")
+
+    assert load_settings().jira.acceptance_criteria_field == "customfield_10200"
+
+
+@pytest.mark.parametrize("value", ["acceptance", "customfield_", "summary"])
+def test_invalid_cloud_acceptance_criteria_field_is_rejected(
+    clean_jira_env: pytest.MonkeyPatch, value: str
+) -> None:
+    clean_jira_env.setenv("JIRA_ACCEPTANCE_CRITERIA_FIELD", value)
+
+    with pytest.raises(ValueError, match="JIRA_ACCEPTANCE_CRITERIA_FIELD"):
+        load_settings()
+
+
 def test_acceptance_criteria_field_defaults_to_none(
     clean_jira_env: pytest.MonkeyPatch,
 ) -> None:

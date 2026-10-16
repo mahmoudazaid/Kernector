@@ -356,6 +356,17 @@ def test_missing_acceptance_criteria_field_is_omitted(env: Env) -> None:
     assert "Acceptance criteria" not in env.fetch().content
 
 
+def test_long_wiki_description_is_not_truncated(env: Env) -> None:
+    body = "w" * 12_000
+    env.client.fields["description"] = body
+    env.client.fields[AC_FIELD] = None
+
+    document = env.fetch()
+
+    assert body in document.content
+    assert "[Evidence truncated" not in document.content
+
+
 def test_summary_alone_is_insufficient_evidence(env: Env) -> None:
     env.client.fields["description"] = "   "
     env.client.fields[AC_FIELD] = None

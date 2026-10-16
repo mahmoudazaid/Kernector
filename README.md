@@ -560,6 +560,33 @@ non-text values are ignored. An issue with neither description nor acceptance
 criteria has insufficient evidence. Changes to the issue's `updated` time
 alone do not invalidate a confirmed draft; changes to the evidence text do.
 
+#### Jira Cloud issues as a Test Design source (#423)
+
+With Data Center mode off and Jira Cloud OAuth configured
+(`JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`, and
+`JIRA_OAUTH_REDIRECT_URI`), Test Design uses provider `jira` for the connected
+Cloud site. If either `JIRA_DC_BASE_URL` or `JIRA_DC_TOKEN` is set, Data Center
+keeps that provider and Cloud is not registered.
+
+In chat, a bare key such as `FD-2` is recognized only when its project is in
+the saved Hub selection. A browse URL on the saved site
+(`https://<site>.atlassian.net/browse/FD-2`) is recognized even when that
+project is not selected. URLs on other hosts are ignored.
+
+HTTP (`POST /api/v1/test-design/drafts`) and MCP (`test_design_start`) accept
+any syntactically valid issue key, plus a browse URL on the saved site. Those
+direct locators do not check project selection. A missing grant returns
+*source not connected*. A grant that needs reauthorization returns
+*reauthorization required*.
+
+Evidence is the summary, the description (Atlassian Document Format or a plain
+string), and an optional acceptance-criteria field. Set
+`JIRA_ACCEPTANCE_CRITERIA_FIELD` to `customfield_<digits>`. The assembled
+Markdown is capped at 10,000 characters; longer evidence ends with the
+coverage-planning truncation marker. The issue `updated` time is stored as the
+revision and does not by itself mark evidence changed. Responses and logs omit
+tokens, cloud ids, and raw Jira payloads.
+
 ## Incremental sync and re-embedding
 
 Connector sync fingerprints each READY document so unchanged text is not
