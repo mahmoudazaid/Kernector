@@ -1,0 +1,578 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Kernector runtime",
+    "locale": "en",
+    "output": ".archify/kernector-runtime-2026-10-16-1436/kernector-runtime.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/mahmoudazaid/Kernector.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "0e80e710ec235dd2e317df1205984c6923239953"
+    }
+  },
+  "components": [
+    {
+      "id": "qa",
+      "type": "external",
+      "label": "QA engineer",
+      "sublabel": "chat",
+      "pos": [
+        40,
+        180
+      ],
+      "size": [
+        128,
+        62
+      ]
+    },
+    {
+      "id": "nextjs",
+      "type": "frontend",
+      "label": "Next.js",
+      "sublabel": "web/ chat",
+      "pos": [
+        230,
+        180
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "web/lib/api/chat.ts",
+          "line": 28,
+          "end_line": 42,
+          "label": "POST /api/v1/chat/ask"
+        }
+      ]
+    },
+    {
+      "id": "assistant",
+      "type": "external",
+      "label": "Assistant",
+      "sublabel": "MCP client",
+      "pos": [
+        40,
+        340
+      ],
+      "size": [
+        140,
+        62
+      ]
+    },
+    {
+      "id": "fastapi",
+      "type": "backend",
+      "label": "FastAPI",
+      "sublabel": "presentation/http",
+      "pos": [
+        450,
+        180
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "presentation/http/app.py",
+          "line": 78,
+          "end_line": 94,
+          "label": "HTTP adapter"
+        },
+        {
+          "path": "presentation/http/routes/test_design.py",
+          "line": 126,
+          "end_line": 139,
+          "label": "confirm coverage"
+        },
+        {
+          "path": "presentation/http/routes/test_design.py",
+          "line": 142,
+          "end_line": 165,
+          "label": "generate cases"
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "security",
+      "label": "MCP",
+      "sublabel": "Bearer /mcp",
+      "pos": [
+        450,
+        340
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "presentation/mcp/app.py",
+          "line": 212,
+          "end_line": 238,
+          "label": "Bearer required"
+        }
+      ]
+    },
+    {
+      "id": "composition",
+      "type": "backend",
+      "label": "Composition",
+      "sublabel": "wiring root",
+      "pos": [
+        680,
+        180
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "composition/container.py",
+          "line": 262,
+          "end_line": 276,
+          "label": "Chroma and BM25"
+        },
+        {
+          "path": "composition/container.py",
+          "line": 524,
+          "end_line": 546,
+          "label": "test-design facade"
+        },
+        {
+          "path": "composition/test_design/facade.py",
+          "line": 746,
+          "end_line": 751,
+          "label": "stop if changed"
+        }
+      ]
+    },
+    {
+      "id": "pack",
+      "type": "backend",
+      "label": "Test Design",
+      "sublabel": "software pack",
+      "pos": [
+        910,
+        180
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "packs/software_delivery/registration.py",
+          "line": 75,
+          "end_line": 93,
+          "label": "pack tools"
+        }
+      ]
+    },
+    {
+      "id": "application",
+      "type": "backend",
+      "label": "Application",
+      "sublabel": "use cases",
+      "pos": [
+        680,
+        340
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "application/ask_knowledge.py",
+          "line": 43,
+          "end_line": 67,
+          "label": "grounded ask"
+        }
+      ]
+    },
+    {
+      "id": "connectors",
+      "type": "backend",
+      "label": "Connectors",
+      "sublabel": "live issues",
+      "pos": [
+        910,
+        340
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "composition/test_design/github_source.py",
+          "line": 1,
+          "end_line": 16,
+          "label": "GitHub issue"
+        },
+        {
+          "path": "composition/test_design/jira_cloud_source.py",
+          "line": 1,
+          "end_line": 8,
+          "label": "Jira Cloud"
+        },
+        {
+          "path": "composition/jira/data_center.py",
+          "line": 1,
+          "end_line": 5,
+          "label": "PAT stays in settings"
+        }
+      ]
+    },
+    {
+      "id": "chroma",
+      "type": "database",
+      "label": "Chroma",
+      "sublabel": "vectors",
+      "pos": [
+        450,
+        500
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "infrastructure/vectorstore/chroma.py",
+          "line": 1,
+          "end_line": 1,
+          "label": "vector store"
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Domain",
+      "sublabel": "ports only",
+      "pos": [
+        680,
+        500
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "domain/ports.py",
+          "line": 1,
+          "end_line": 40,
+          "label": "port protocols"
+        }
+      ]
+    },
+    {
+      "id": "bm25",
+      "type": "database",
+      "label": "BM25",
+      "sublabel": "if hybrid",
+      "pos": [
+        910,
+        500
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "infrastructure/lexical/bm25.py",
+          "line": 1,
+          "end_line": 1,
+          "label": "lexical index"
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub",
+      "sublabel": "Issues",
+      "pos": [
+        450,
+        660
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "composition/test_design/github_source.py",
+          "line": 35,
+          "end_line": 40,
+          "label": "issue source"
+        }
+      ]
+    },
+    {
+      "id": "jiraCloud",
+      "type": "external",
+      "label": "Jira Cloud",
+      "sublabel": "OAuth",
+      "pos": [
+        680,
+        660
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "composition/test_design/jira_cloud_source.py",
+          "line": 68,
+          "end_line": 72,
+          "label": "cloud source"
+        }
+      ]
+    },
+    {
+      "id": "jiraDc",
+      "type": "external",
+      "label": "Jira DC",
+      "sublabel": "server PAT",
+      "pos": [
+        910,
+        660
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "composition/test_design/jira_data_center_source.py",
+          "line": 64,
+          "end_line": 70,
+          "label": "DC source"
+        }
+      ]
+    },
+    {
+      "id": "drive",
+      "type": "external",
+      "label": "Google Drive",
+      "sublabel": "export",
+      "pos": [
+        1088,
+        340
+      ],
+      "size": [
+        112,
+        62
+      ],
+      "sources": [
+        {
+          "path": "composition/google_drive/sync.py",
+          "line": 222,
+          "end_line": 229,
+          "label": "Drive sync"
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "LLM provider",
+      "sublabel": "OpenRouter",
+      "pos": [
+        680,
+        36
+      ],
+      "size": [
+        146,
+        62
+      ],
+      "sources": [
+        {
+          "path": "infrastructure/llm/openrouter.py",
+          "line": 34,
+          "end_line": 52,
+          "label": "ChatModel"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Server process; tokens stay here",
+      "wraps": [
+        "fastapi",
+        "mcp",
+        "composition",
+        "pack",
+        "application",
+        "connectors",
+        "chroma",
+        "domain",
+        "bm25"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "qa-to-nextjs",
+      "from": "qa",
+      "to": "nextjs",
+      "label": "issue",
+      "variant": "emphasis"
+    },
+    {
+      "id": "nextjs-to-fastapi",
+      "from": "nextjs",
+      "to": "fastapi",
+      "label": "HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cases-if-unchanged",
+      "from": "fastapi",
+      "to": "nextjs",
+      "label": "if unchanged",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "fastapi-to-composition",
+      "from": "fastapi",
+      "to": "composition",
+      "label": "calls",
+      "variant": "emphasis"
+    },
+    {
+      "id": "composition-to-pack",
+      "from": "composition",
+      "to": "pack",
+      "label": "activates",
+      "variant": "emphasis"
+    },
+    {
+      "id": "assistant-to-mcp",
+      "from": "assistant",
+      "to": "mcp",
+      "label": "Bearer",
+      "variant": "security"
+    },
+    {
+      "id": "mcp-to-composition",
+      "from": "mcp",
+      "to": "composition",
+      "label": "tools",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "composition-to-application",
+      "from": "composition",
+      "to": "application",
+      "label": "wires"
+    },
+    {
+      "id": "application-to-domain",
+      "from": "application",
+      "to": "domain",
+      "label": "ports"
+    },
+    {
+      "id": "pack-to-connectors",
+      "from": "pack",
+      "to": "connectors",
+      "label": "reads"
+    },
+    {
+      "id": "chroma-implements",
+      "from": "chroma",
+      "to": "domain",
+      "label": "port"
+    },
+    {
+      "id": "bm25-implements",
+      "from": "bm25",
+      "to": "domain",
+      "label": "port"
+    },
+    {
+      "id": "connectors-to-github",
+      "from": "connectors",
+      "to": "github",
+      "label": "Issues"
+    },
+    {
+      "id": "connectors-to-jira-cloud",
+      "from": "connectors",
+      "to": "jiraCloud",
+      "label": "issue"
+    },
+    {
+      "id": "connectors-to-jira-dc",
+      "from": "connectors",
+      "to": "jiraDc",
+      "label": "issue"
+    },
+    {
+      "id": "connectors-to-drive",
+      "from": "connectors",
+      "to": "drive",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "composition-to-llm",
+      "from": "composition",
+      "to": "llm",
+      "label": "generate",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Test Design path",
+      "items": [
+        "QA sends a GitHub Issue URL or a Jira key",
+        "Kernector reads the issue live, then the engineer confirms coverage",
+        "Generate writes manual or Cucumber cases for the kept candidates",
+        "A changed issue fingerprint stops the write",
+        "Cases can be exported or created as Xray tests"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Inward dependencies",
+      "items": [
+        "Application speaks to the outside only through domain ports",
+        "Composition is the only layer that activates a pack",
+        "The software-delivery pack is on only when DOMAIN_TOOL_PACKS allows it",
+        "Chroma stores embeddings; BM25 is added when hybrid search is on"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Credentials",
+      "items": [
+        "MCP requires a bearer token; /healthz stays public",
+        "Jira Data Center PAT stays in settings and is not returned",
+        "Next.js talks to FastAPI over HTTP and does not hold tracker tokens"
+      ]
+    }
+  ]
+}

@@ -16,6 +16,8 @@ Dependency arrows point inward toward `domain`. Presentation never owns business
 
 ![Kernector architecture](docs/images/kernector-architecture.png)
 
+Interactive diagram: [Kernector runtime](.archify/kernector-runtime-2026-10-16-1436/kernector-runtime.html).
+
 `domain/` holds entities, validation, and port protocols and imports only the standard library. `application/` implements use cases such as ingest, rewrite-and-retrieve, grounded ask, and tool invocation, speaking to the outside world only through those ports. `infrastructure/` supplies concrete adapters — Chroma vector storage, in-memory BM25, PDF/text loaders, catalog JSON, and LLM provider clients. `packs/` are optional executable modules. Today `packs/software_delivery/` is
 enabled via `DOMAIN_TOOL_PACKS`; chat `build_tools()` stays Drive-only when
 wired (#285 scaffolding retirement). The shared Streamable HTTP MCP adapter
