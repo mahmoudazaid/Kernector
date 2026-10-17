@@ -86,6 +86,22 @@ Details: [ARCHITECTURE.md](../../ARCHITECTURE.md),
 - **Nothing is published without the user.** Drive and Xray exports are
   separate, user-approved actions outside the Capstone path.
 
+### Bias
+
+Generated cases follow the issue the engineer selected. They do not fill gaps
+from the model's general knowledge of similar products.
+
+- **A person chooses coverage first.** The model suggests candidates. The
+  engineer keeps, drops, or adds them, and picks manual or Cucumber, before
+  any detailed case is written.
+- **Generation uses the issue text.** Cases are produced from that evidence,
+  wrapped as untrusted input. They are not retrieved from a stale index of
+  other documents.
+- **Thin issues are not completed by invention.** An issue with no description
+  and no acceptance criteria is insufficient evidence. A case marked
+  `insufficient_evidence` has empty preconditions, steps, and Gherkin. The
+  generator is instructed not to invent behavior the issue does not state.
+
 ## 6. Evaluation results
 
 **TBD. Blocked on [#341](https://github.com/mahmoudazaid/Kernector/issues/341)**
