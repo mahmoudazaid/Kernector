@@ -5,7 +5,7 @@
 **Prior sprint:** [`sprint-3-135-review.md`](sprint-3-135-review.md)  
 **Review date:** 2026-10-16  
 **Chosen path:** Alternative idea, closest to **Case 2 (AI agent for task automation)**, scoped as Issue → Test Design ([#342](https://github.com/mahmoudazaid/Kernector/issues/342)). Case 1 (RAG assistant) and Case 3 (document search) are already in the product and support that path. Cases 4–7 are out of scope.  
-**Verdict:** **Product path is built. Shared review criteria are not fully ready.** Functionality, UI, the README problem paragraph, the showcase link, LangChain/LangGraph, Chroma, and LLM APIs are in place. Evaluation numbers ([#341](https://github.com/mahmoudazaid/Kernector/issues/341)), five-user feedback ([#343](https://github.com/mahmoudazaid/Kernector/issues/343)), a named ethics write-up (privacy is documented; bias mitigation is not), and a delivered presentation are still open.
+**Verdict:** **Product path is built. Shared review criteria are not fully ready.** Functionality, UI, the README problem paragraph, the showcase link, LangChain/LangGraph, Chroma, and LLM APIs are in place. Evaluation numbers ([#341](https://github.com/mahmoudazaid/Kernector/issues/341)), five-user feedback ([#343](https://github.com/mahmoudazaid/Kernector/issues/343)), and a delivered presentation are still open.
 
 ---
 
@@ -13,12 +13,12 @@
 
 | Area | Count |
 |------|-------|
-| Shared criteria Ready | 3 / 5 |
-| Shared criteria Partial | 2 / 5 |
+| Shared criteria Ready | 4 / 5 |
+| Shared criteria Partial | 1 / 5 |
 | Shared criteria Not done | 0 / 5 |
-| Case 2 steps Done | 4 / 6 |
-| Case 2 steps Partial | 2 / 6 |
-| Case 1 (supporting) | 3 Done / 3 Partial |
+| Case 2 steps Done | 5 / 6 |
+| Case 2 steps Partial | 1 / 6 |
+| Case 1 (supporting) | 4 Done / 2 Partial |
 | Case 3 (supporting) | 4 Done / 0 Partial |
 | Cases 4–7 | Not the chosen path |
 | Capstone package | [`docs/capstone/`](capstone/README.md) ([#342](https://github.com/mahmoudazaid/Kernector/issues/342)) |
@@ -45,7 +45,7 @@ These apply to every case in [`AE.CAP_afa.md`](../AE.CAP_afa.md).
 |---|---|---|---|---|---|
 | Outcome quality: working project, usable UI, README states goal, problem, and how it works | Outcome | Done | Next.js UI is live (`web/app/chat`, `/test-design`, `/documents`). Root [`README.md`](../README.md) opens with the goal, the QA problem, and how Issue → Test Design works | — | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
 | Learning application: LangChain, ChromaDB, or LLM APIs, plus prompt and design practice | Learning | Done | LangGraph agent (`infrastructure/agents/langgraph_tool_agent.py`), Chroma (`infrastructure/vectorstore/chroma.py`, `CHROMA_PERSIST_PATH`), OpenRouter/Ollama (`infrastructure/config.py`). Prompts by role ([ADR 0009](adr/0009-prompt-storage-by-role.md)); untrusted-evidence wrapping (`application/untrusted_text.py`); grounded ask | — | Sprint 2/3 carryover; [#43](https://github.com/mahmoudazaid/Kernector/issues/43), [#216](https://github.com/mahmoudazaid/Kernector/issues/216) |
-| Ethical considerations: privacy and bias called out in the project write-up | Ethics | Partial | Privacy is implemented and written in [`case-study.md`](capstone/case-study.md) §5: server-side OAuth, untrusted evidence, `untrusted_model_output`, metadata-only logs, workspace isolation (`application/input_safety.py`) | A write-up of bias mitigation: human selection before cases are written, generation from the issue text only, and refusal when the issue lacks evidence | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
+| Ethical considerations: privacy and bias called out in the project write-up | Ethics | Done | [`case-study.md`](capstone/case-study.md) §5: server-side OAuth, untrusted evidence, metadata-only logs, and the bias subsection (human selection, issue-text generation, empty cases when evidence is insufficient) | — | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
 | Presentation: purpose, implementation, impact, using SCR or SMART; six talk points | Presentation | Partial | [`presentation.md`](capstone/presentation.md) covers the six brief points with timing. The case study follows Situation / Complication / Resolution | Deliver the 10 + 5 talk and record it in the [evidence tracker](capstone/README.md#evidence-tracker). Name SCR or SMART in the write-up. Fill slide 7 after [#341](https://github.com/mahmoudazaid/Kernector/issues/341) and [#343](https://github.com/mahmoudazaid/Kernector/issues/343) | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
 | Showcase upload and link near the top of `README.md` | Showcase | Done | Published 2026-10-16, status Live. Linked under the title in [`README.md`](../README.md): [Kernector: reviewed test cases from user story](https://showcase.turingcollege.com/project/4c183de0-867c-470c-9bd2-ded181fc15a7) | — | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
 
@@ -64,7 +64,7 @@ Kernector’s workflow is test design from a live GitHub Issue or Jira issue, wi
 | 3. Agent execution: multi-step reasoning, memory, or code execution | Done | The brief asks for one of the three. Multi-step Test Design (suggest → human select → generate) and the opt-in LangGraph loop meet it. Short-term thread memory is also in place (`InMemorySaver`) | — | [#43](https://github.com/mahmoudazaid/Kernector/issues/43), [#213](https://github.com/mahmoudazaid/Kernector/issues/213) |
 | 4. Interactive prototype (Streamlit or another UI) | Done | Next.js chat, Test Design screens, Knowledge Hub. Case 2 allows another interface. Second front door: MCP | — | [#126](https://github.com/mahmoudazaid/Kernector/issues/126), [#338](https://github.com/mahmoudazaid/Kernector/issues/338) |
 | 5. Evaluation: accuracy and responsiveness via user testing | Partial | RAG offline harness + LLM-as-Judge (`presentation/cli/evaluate.py`, [`data/eval/README.md`](../data/eval/README.md)) score grounded ask only | Test Design coverage baseline ([#341](https://github.com/mahmoudazaid/Kernector/issues/341)) written into case study §6, and a five-QA-user study ([#343](https://github.com/mahmoudazaid/Kernector/issues/343)) written into §7 | [#341](https://github.com/mahmoudazaid/Kernector/issues/341), [#343](https://github.com/mahmoudazaid/Kernector/issues/343) |
-| 6. Documentation: functionality and ethical considerations | Partial | Functionality is in [`case-study.md`](capstone/case-study.md), [`demo.md`](capstone/demo.md), and [`ARCHITECTURE.md`](../ARCHITECTURE.md). Privacy is in case study §5 | The bias-mitigation section called out under Ethics above | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
+| 6. Documentation: functionality and ethical considerations | Done | Functionality is in [`case-study.md`](capstone/case-study.md), [`demo.md`](capstone/demo.md), and [`ARCHITECTURE.md`](../ARCHITECTURE.md). Privacy and bias are in case study §5 | — | [#342](https://github.com/mahmoudazaid/Kernector/issues/342) |
 
 **Case 2 outcome the brief asks for:** a practical agent that automates a task and can be demoed. The Issue → Test Design path meets that, once a verified demo note is filled in [`demo.md`](capstone/demo.md) (date, commit, Issue used).
 
@@ -79,7 +79,7 @@ Kernector’s workflow is test design from a live GitHub Issue or Jira issue, wi
 | 3. LangChain RAG chain | Done | Grounded ask plus agentic retrieve (`RetrieveKnowledgeTool`, `AskKnowledgeWithAgent`) | — |
 | 4. Streamlit UI | Partial | Interactive UI is Next.js | A Streamlit UI, only if Case 1 is the graded case. The chosen path uses Next.js, which Case 2 allows |
 | 5. Testing and optimisation | Partial | Offline + judge harness for grounded ask | Test Design coverage evaluation ([#341](https://github.com/mahmoudazaid/Kernector/issues/341)) |
-| 6. Ethical assessment (privacy and bias) | Partial | Privacy controls exist and are described in case study §5 | The same bias-mitigation write-up as the shared Ethics row |
+| 6. Ethical assessment (privacy and bias) | Done | Privacy and bias are in case study §5 | — |
 
 Claim Case 1 only as supporting evidence. The graded story in `docs/capstone/` is the agent workflow.
 
@@ -126,11 +126,10 @@ Case 3’s outcome is met by Knowledge Hub + cited chat. It is not the capstone 
 
 ## Gaps before a review booking
 
-1. **Ethics.** Add a short section (case study or README) that states privacy controls already built and how bias is handled (human selection before cases are written, evidence-only generation, refusal when the Issue lacks evidence). The brief scores demonstrated awareness, including bias.
-2. **Evaluation.** Land [#341](https://github.com/mahmoudazaid/Kernector/issues/341) and fill case study §6. Until then, the talk should state that no coverage-quality numbers are claimed.
-3. **User testing.** Land [#343](https://github.com/mahmoudazaid/Kernector/issues/343) (five QA users) and fill case study §7. Case 2 step 5 asks for user testing.
-4. **Demo evidence.** Run [`demo.md`](capstone/demo.md) Path A and fill the verification note (date, commit, Issue, draft id).
-5. **Presentation.** Deliver the 10 + 5 talk and record the link in the [evidence tracker](capstone/README.md#evidence-tracker). Name SCR on the case-study structure, or add a SMART line for the capstone outcome.
+1. **Evaluation.** Land [#341](https://github.com/mahmoudazaid/Kernector/issues/341) and fill case study §6. Until then, the talk should state that no coverage-quality numbers are claimed.
+2. **User testing.** Land [#343](https://github.com/mahmoudazaid/Kernector/issues/343) (five QA users) and fill case study §7. Case 2 step 5 asks for user testing.
+3. **Demo evidence.** Run [`demo.md`](capstone/demo.md) Path A and fill the verification note (date, commit, Issue, draft id).
+4. **Presentation.** Deliver the 10 + 5 talk and record the link in the [evidence tracker](capstone/README.md#evidence-tracker). Name SCR on the case-study structure, or add a SMART line for the capstone outcome.
 
 ---
 
@@ -141,6 +140,6 @@ Case 3’s outcome is met by Knowledge Hub + cited chat. It is not the capstone 
 3. Path A: `/chat` with one Issue URL → **Start Test Design** → drop/add a candidate → manual vs Cucumber → generated cases → edit shows **Saved** ([`demo.md`](capstone/demo.md)).
 4. Show fail-closed behavior when the Issue fingerprint changes, or describe it if a live edit is too slow.
 5. Show cited RAG chat as the learning-application baseline (Chroma + grounded ask), and say Test Design reads the live Issue rather than the index.
-6. Walk privacy: tokens stay on the server; evidence is untrusted; logs are metadata only.
+6. Walk privacy and bias from case study §5: tokens stay on the server, evidence is untrusted, logs are metadata only, and thin issues do not get invented steps.
 7. Evaluation: show the [#341](https://github.com/mahmoudazaid/Kernector/issues/341) report if it has landed; otherwise show the plan and the existing RAG judge harness, and do not invent coverage scores.
 8. Showcase page, linked from the top of `README.md`: [Kernector: reviewed test cases from user story](https://showcase.turingcollege.com/project/4c183de0-867c-470c-9bd2-ded181fc15a7).
