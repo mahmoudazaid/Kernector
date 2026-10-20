@@ -12,6 +12,7 @@ from domain.test_management.xray import (
     JiraIssueSummary,
     XrayTestDetails,
 )
+from packs.software_delivery.test_files.models import ParsedTestFile, TestFileScenario
 
 ParentStatus = Literal[
     "ok",
@@ -116,7 +117,7 @@ def _is_story(issue: JiraIssueSummary, story_issue_types: frozenset[str]) -> boo
     )
 
 
-def known_xray_keys(parsed_files: Sequence) -> frozenset[str]:
+def known_xray_keys(parsed_files: Sequence[ParsedTestFile]) -> frozenset[str]:
     keys: set[str] = set()
     for parsed in parsed_files:
         for scenario in parsed.scenarios:
@@ -126,15 +127,15 @@ def known_xray_keys(parsed_files: Sequence) -> frozenset[str]:
 
 
 def inventory_matches(
-    parsed_files: Sequence,
+    parsed_files: Sequence[ParsedTestFile],
     *,
     story_key: str,
     fmt: str,
     summary: str,
-) -> list[tuple[str, object]]:
+) -> list[tuple[str, TestFileScenario]]:
     """Local scenarios matching story+format+summary across the inventory."""
     wanted = "robot" if fmt == "robot" else "gherkin"
-    hits: list[tuple[str, object]] = []
+    hits: list[tuple[str, TestFileScenario]] = []
     for parsed in parsed_files:
         if parsed.format != wanted:
             continue
