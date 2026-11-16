@@ -323,6 +323,8 @@ class RunMeta:
         routing_confidence (float | None): Fixed heuristic routing score
             (not a calibrated probability).
         ambiguous (bool | None): Whether routing treated the turn as ambiguous.
+        provider (str | None): Effective LLM provider for the turn
+            (``openrouter`` / ``ollama``), when stamped by composition.
     """
 
     model: str | None = None
@@ -344,6 +346,7 @@ class RunMeta:
     intent: str | None = None
     routing_confidence: float | None = None
     ambiguous: bool | None = None
+    provider: str | None = None
 
     def __post_init__(self) -> None:
         if self.model is not None:
@@ -411,6 +414,12 @@ class RunMeta:
             raise ApplicationValidationError(
                 f"ambiguous must be a bool, got {type(self.ambiguous).__name__}"
             )
+        if self.provider is not None:
+            _require_text(self.provider, "provider")
+            if self.provider not in ("openrouter", "ollama"):
+                raise ApplicationValidationError(
+                    "provider must be one of ['ollama', 'openrouter']"
+                )
         if self.response_style is not None:
             _require_text(self.response_style, "response_style")
             try:

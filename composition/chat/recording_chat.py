@@ -91,6 +91,7 @@ def _merge_run_meta(left: RunMeta, right: RunMeta) -> RunMeta:
         source_type=right.source_type or left.source_type,
         tools=tuple(left.tools) + tuple(right.tools),
         error_type=right.error_type or left.error_type,
+        provider=right.provider or left.provider,
     )
 
 

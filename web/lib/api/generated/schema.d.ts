@@ -2276,6 +2276,8 @@ export interface components {
       citation_count?: number | null;
       /** Completion Tokens */
       completion_tokens?: number | null;
+      /** Cost */
+      cost?: number | null;
       /** Hit Count */
       hit_count?: number | null;
       /** Intent */
@@ -2303,6 +2305,8 @@ export interface components {
       prompt_tokens?: number | null;
       /** Prompt Version */
       prompt_version?: string | null;
+      /** Provider */
+      provider?: ("openrouter" | "ollama") | null;
       /** Query Rewritten */
       query_rewritten?: boolean | null;
       /** Request Id */

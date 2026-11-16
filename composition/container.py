@@ -999,6 +999,8 @@ def build_tool_augmented_ask(
     if clarification_context_store is None:
         clarification_context_store = InMemoryClarificationContextStore()
 
+    effective_provider = provider or settings.provider
+
     if chat_model is None:
         chat_model = build_chat_model(
             settings, provider=provider, model=model, base_url=base_url
@@ -1023,7 +1025,8 @@ def build_tool_augmented_ask(
                 signals=(),
                 ask_general=ask_general,
                 clarification_context_store=clarification_context_store,
-            )
+            ),
+            provider=effective_provider,
         )
 
     # Pack path uses grounded ask and a second retrieve; share one store so
@@ -1178,7 +1181,8 @@ def build_tool_augmented_ask(
             clarification_context_store=clarification_context_store,
             grounded_ask=grounded_ask,
             test_design_providers=test_design_sources.providers,
-        )
+        ),
+        provider=effective_provider,
     )
 
 

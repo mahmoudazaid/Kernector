@@ -2891,6 +2891,17 @@
             ],
             "title": "Completion Tokens"
           },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
           "hit_count": {
             "anyOf": [
               {
@@ -3006,6 +3017,18 @@
               }
             ],
             "title": "Prompt Version"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": ["openrouter", "ollama"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           },
           "query_rewritten": {
             "anyOf": [
