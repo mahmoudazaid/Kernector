@@ -73,4 +73,15 @@ describe("runDetailLines cost (#49)", () => {
       runDetailLines({ provider: "ollama", cost: 0 }),
     ).toContain("Cost: 0");
   });
+
+  it("shows N/A for a multi-call merge shape with tokens but unknown cost", () => {
+    // Mirrors RecordingChatModel accumulate when any call cost is None.
+    expect(
+      runDetailLines({
+        provider: "openrouter",
+        total_tokens: 15,
+        cost: null,
+      }),
+    ).toContain("Cost: N/A");
+  });
 });

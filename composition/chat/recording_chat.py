@@ -117,6 +117,11 @@ def _merge_usage(left: Usage | None, right: Usage | None) -> Usage | None:
 
 
 def _sum_optional_float(left: float | None, right: float | None) -> float | None:
-    if left is None and right is None:
+    """Sum costs only when every contributor reported a known value.
+
+    ``None`` means unknown — never coerce it to ``0.0`` (would invent a partial
+    dollar amount across multi-call agent turns). Explicit ``0.0`` is known.
+    """
+    if left is None or right is None:
         return None
-    return (left or 0.0) + (right or 0.0)
+    return left + right
