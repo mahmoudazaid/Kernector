@@ -18,10 +18,13 @@ class CorrelatedAsk:
     when no domain pack is enabled — so ask / retrieve / tool logs share one
     ``request_id``. Reuses an already-bound outer id and restores it via
     ContextVar token reset. On success, stamps that id onto ``AskResponse.run``.
+    When ``provider`` is set, stamps the effective LLM provider onto the run
+    so stored transcripts keep accurate cost-fallback captions (#49).
     """
 
-    def __init__(self, ask: GroundedAsk) -> None:
+    def __init__(self, ask: GroundedAsk, *, provider: str | None = None) -> None:
         self._ask = ask
+        self._provider = provider
 
     def consume_tool_run_view(self) -> SoftwareDeliveryRunView | None:
         """Forward the typed tool-run view side path when the inner ask exposes it."""
@@ -54,8 +57,13 @@ class CorrelatedAsk:
         try:
             response = self._ask.execute(request, settings)
             run = response.run if response.run is not None else RunMeta()
+            updates: dict[str, object] = {}
             if run.request_id != request_id:
-                run = replace(run, request_id=request_id)
+                updates["request_id"] = request_id
+            if self._provider is not None and run.provider != self._provider:
+                updates["provider"] = self._provider
+            if updates:
+                run = replace(run, **updates)
             if run is response.run:
                 return response
             return AskResponse(

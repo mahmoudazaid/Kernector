@@ -11,6 +11,7 @@ export const RUN_STRING_FIELDS = [
   "model",
   "pack",
   "response_style",
+  "provider",
 ] as const;
 
 export const RUN_NUMBER_FIELDS = [
@@ -18,6 +19,7 @@ export const RUN_NUMBER_FIELDS = [
   "total_tokens",
   "prompt_tokens",
   "completion_tokens",
+  "cost",
   "hit_count",
   "citation_count",
 ] as const;
@@ -54,10 +56,35 @@ export function runDetailLines(run: RunMeta | null | undefined): string[] {
   if (run.model) {
     lines.push(`Model: ${run.model}`);
   }
-  if (run.total_tokens != null) {
+  const tokenParts: string[] = [];
+  if (run.prompt_tokens != null) {
+    tokenParts.push(`${run.prompt_tokens} in`);
+  }
+  if (run.completion_tokens != null) {
+    tokenParts.push(`${run.completion_tokens} out`);
+  }
+  const hasTokens =
+    run.prompt_tokens != null ||
+    run.completion_tokens != null ||
+    run.total_tokens != null;
+  if (tokenParts.length > 0) {
+    const breakdown = tokenParts.join(" / ");
+    if (run.total_tokens != null) {
+      lines.push(`Tokens: ${breakdown} (${run.total_tokens} total)`);
+    } else {
+      lines.push(`Tokens: ${breakdown}`);
+    }
+  } else if (run.total_tokens != null) {
     lines.push(`Tokens: ${run.total_tokens}`);
-  } else if (run.prompt_tokens != null && run.completion_tokens != null) {
-    lines.push(`Tokens: ${run.prompt_tokens} in / ${run.completion_tokens} out`);
+  }
+  if (run.cost != null) {
+    lines.push(`Cost: ${run.cost}`);
+  } else if (hasTokens || run.provider) {
+    lines.push(
+      run.provider === "ollama"
+        ? "Cost: local (no API cost)"
+        : "Cost: N/A",
+    );
   }
   if (run.pack) {
     lines.push(`Pack: ${run.pack}`);

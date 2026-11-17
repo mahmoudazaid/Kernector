@@ -505,6 +505,8 @@ class RunMetaResponse(BaseModel):
     total_tokens: int | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    cost: float | None = None
+    provider: Literal["openrouter", "ollama"] | None = None
     pack: str | None = None
     query_rewritten: bool | None = None
     hit_count: int | None = None
@@ -957,6 +959,12 @@ def run_meta_response(run: RunMeta | None) -> RunMetaResponse | None:
         total_tokens=None if usage is None else usage.total_tokens,
         prompt_tokens=None if usage is None else usage.prompt_tokens,
         completion_tokens=None if usage is None else usage.completion_tokens,
+        cost=None if usage is None else usage.cost,
+        provider=(
+            run.provider
+            if run.provider in ("openrouter", "ollama")
+            else None
+        ),
         pack=run.pack,
         query_rewritten=run.query_rewritten,
         hit_count=run.hit_count,

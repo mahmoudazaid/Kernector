@@ -305,6 +305,29 @@ describe("sanitizeStoredChatMessage", () => {
     });
   });
 
+  it("strips poisoned cost and provider without leaking into detail lines", () => {
+    const sanitized = sanitizeStoredChatMessage({
+      id: "a-1",
+      role: "assistant",
+      content: "answer",
+      run: {
+        request_id: "r1",
+        cost: { evil: 1 },
+        provider: { evil: 2 },
+        total_tokens: 9,
+      },
+    });
+
+    expect(sanitized?.run).toEqual({
+      request_id: "r1",
+      total_tokens: 9,
+    });
+    const lines = runDetailLines(sanitized?.run as never);
+    expect(lines.join("|")).not.toContain("[object Object]");
+    expect(lines).toContain("Tokens: 9");
+    expect(lines).toContain("Cost: N/A");
+  });
+
   it("never renders an object into a run detail line", () => {
     const run = Object.fromEntries(
       RUN_RENDERED_FIELDS.map((key) => [key, { evil: 1 }]),

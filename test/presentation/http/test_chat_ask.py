@@ -147,6 +147,8 @@ def test_chat_ask_returns_answer_citations_and_run() -> None:
         "total_tokens": 900,
         "prompt_tokens": 700,
         "completion_tokens": 200,
+        "cost": None,
+        "provider": None,
         "pack": "software-delivery",
         "query_rewritten": True,
         "hit_count": 4,
@@ -471,6 +473,60 @@ def test_run_meta_projects_prompt_key_and_null_prompt_version() -> None:
     run = response.json()["run"]
     assert run["prompt_key"] == "software-delivery.grounded"
     assert run["prompt_version"] is None
+
+
+def test_run_meta_projects_usage_cost_when_present() -> None:
+    ask = _StubAsk(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(
+                request_id="req-cost",
+                outcome="success",
+                usage=Usage(prompt_tokens=10, completion_tokens=4, cost=0.0012),
+            ),
+        )
+    )
+    client = _client_with_ask(ask)
+    response = client.post("/api/v1/chat/ask", json={"query": "hi"})
+    assert response.status_code == 200
+    run = response.json()["run"]
+    assert run["cost"] == 0.0012
+    assert run["prompt_tokens"] == 10
+    assert run["completion_tokens"] == 4
+
+
+def test_run_meta_projects_null_cost_when_usage_missing() -> None:
+    ask = _StubAsk(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(request_id="req-no-usage", outcome="success"),
+        )
+    )
+    client = _client_with_ask(ask)
+    response = client.post("/api/v1/chat/ask", json={"query": "hi"})
+    assert response.status_code == 200
+    run = response.json()["run"]
+    assert run["cost"] is None
+    assert run["total_tokens"] is None
+    assert run["prompt_tokens"] is None
+    assert run["completion_tokens"] is None
+
+
+def test_run_meta_projects_provider_when_present() -> None:
+    ask = _StubAsk(
+        AskResponse(
+            answer="ok",
+            run=RunMeta(
+                request_id="req-provider",
+                outcome="success",
+                provider="ollama",
+            ),
+        )
+    )
+    client = _client_with_ask(ask)
+    response = client.post("/api/v1/chat/ask", json={"query": "hi"})
+    assert response.status_code == 200
+    assert response.json()["run"]["provider"] == "ollama"
 
 
 def test_chat_ask_forwards_conversation_id() -> None:

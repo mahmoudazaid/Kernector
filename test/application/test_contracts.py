@@ -193,6 +193,7 @@ def test_run_meta_defaults_are_empty() -> None:
     assert meta.source_type is None
     assert meta.tools == ()
     assert meta.error_type is None
+    assert meta.provider is None
 
 
 def test_run_meta_from_result_drops_answer_content() -> None:

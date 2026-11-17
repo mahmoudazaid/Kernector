@@ -91,6 +91,7 @@ def _merge_run_meta(left: RunMeta, right: RunMeta) -> RunMeta:
         source_type=right.source_type or left.source_type,
         tools=tuple(left.tools) + tuple(right.tools),
         error_type=right.error_type or left.error_type,
+        provider=right.provider or left.provider,
     )
 
 
@@ -101,10 +102,28 @@ def _sum_optional_int(left: int | None, right: int | None) -> int | None:
 
 
 def _merge_usage(left: Usage | None, right: Usage | None) -> Usage | None:
+    """Merge token counts; treat a missing ``Usage`` as unknown cost.
+
+    A model call with ``usage=None`` did not report cost, so the accumulated
+    total must stay ``cost=None`` even if another call reported a known value.
+    Available token fields from either side are still preserved / summed.
+    """
+    if left is None and right is None:
+        return None
     if left is None:
-        return right
+        return Usage(
+            prompt_tokens=right.prompt_tokens,
+            completion_tokens=right.completion_tokens,
+            total_tokens=right.total_tokens,
+            cost=None,
+        )
     if right is None:
-        return left
+        return Usage(
+            prompt_tokens=left.prompt_tokens,
+            completion_tokens=left.completion_tokens,
+            total_tokens=left.total_tokens,
+            cost=None,
+        )
     return Usage(
         prompt_tokens=_sum_optional_int(left.prompt_tokens, right.prompt_tokens),
         completion_tokens=_sum_optional_int(
@@ -116,6 +135,11 @@ def _merge_usage(left: Usage | None, right: Usage | None) -> Usage | None:
 
 
 def _sum_optional_float(left: float | None, right: float | None) -> float | None:
-    if left is None and right is None:
+    """Sum costs only when every contributor reported a known value.
+
+    ``None`` means unknown — never coerce it to ``0.0`` (would invent a partial
+    dollar amount across multi-call agent turns). Explicit ``0.0`` is known.
+    """
+    if left is None or right is None:
         return None
-    return (left or 0.0) + (right or 0.0)
+    return left + right

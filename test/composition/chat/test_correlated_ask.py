@@ -100,6 +100,18 @@ def test_correlated_ask_stamps_request_id_when_inner_run_is_missing() -> None:
     assert len(response.run.request_id or "") == 32
 
 
+def test_correlated_ask_stamps_effective_provider_on_run() -> None:
+    inner = _AskCapturingRequestId(
+        AskResponse(answer="ok", run=RunMeta(outcome="success"))
+    )
+    ask = CorrelatedAsk(inner, provider="ollama")
+
+    response = ask.execute(AskRequest(query="hi", prompt_key=None))
+
+    assert response.run is not None
+    assert response.run.provider == "ollama"
+
+
 def test_correlated_ask_preserves_inner_run_fields_when_stamping() -> None:
     from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 
