@@ -80,12 +80,41 @@ def test_distinct_items_have_distinct_references(harness: SourceContractHarness)
 
 
 def test_disconnected_source_never_calls_upstream(harness: SourceContractHarness) -> None:
+    if harness.supports_anonymous_public_read:
+        pytest.skip("provider retries anonymously when disconnected")
     harness.disconnect()
 
     with pytest.raises(SourceNotConnectedError):
         harness.source().reader()
 
     assert harness.upstream_calls == 0
+
+
+def test_disconnected_anonymous_public_read_succeeds(
+    harness: SourceContractHarness,
+) -> None:
+    if not harness.supports_anonymous_public_read:
+        pytest.skip("provider has no anonymous public read")
+    harness.disconnect()
+
+    document = _fetch(harness)
+
+    assert document.content.strip()
+    assert harness.upstream_calls >= 1
+
+
+def test_disconnected_unreadable_is_not_connected(
+    harness: SourceContractHarness,
+) -> None:
+    if not harness.supports_anonymous_public_read:
+        pytest.skip("provider has no anonymous public read")
+    harness.disconnect()
+    harness.fail_not_found()
+
+    with pytest.raises(SourceNotConnectedError):
+        _fetch(harness)
+
+    assert harness.upstream_calls >= 1
 
 
 @pytest.mark.parametrize("body", ["", "   \n\t"])
@@ -123,6 +152,12 @@ def test_after_rejection_the_source_stays_reauth_without_calling_upstream(
     with pytest.raises(SourceReauthorizationRequiredError):
         _fetch(harness)
     calls = harness.upstream_calls
+
+    if harness.supports_anonymous_public_read:
+        with pytest.raises(SourceReauthorizationRequiredError):
+            _fetch(harness)
+        assert harness.upstream_calls > calls
+        return
 
     with pytest.raises(SourceReauthorizationRequiredError):
         harness.source().reader()

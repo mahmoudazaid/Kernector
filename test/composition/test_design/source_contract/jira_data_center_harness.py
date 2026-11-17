@@ -39,6 +39,7 @@ class JiraDataCenterContractHarness:
 
     provider = "jira"
     source_type = "jira"
+    supports_anonymous_public_read = False
     raw_locators = (
         "ENG-7",
         " eng-7 ",

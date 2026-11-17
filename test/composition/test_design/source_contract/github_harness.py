@@ -48,6 +48,7 @@ class GitHubContractHarness:
 
     provider = "github"
     source_type = "github"
+    supports_anonymous_public_read = True
     raw_locators = (
         "acme/app#7",
         " acme/app#7 ",
