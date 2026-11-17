@@ -479,12 +479,18 @@ contributes these tools only when composition supplies a workspace-bound
 | `software_delivery.test_design_get` | `draft_id` | read draft |
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
 | `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), optional `test_type` (`manual` or `cucumber`, applied to every generated case), `type_overrides[{candidate_id, test_type}]` (per-candidate exceptions), `overwrite_edited` | #300 generate |
-| `software_delivery.test_design_export_feature` | `draft_id` | render the selected, available Cucumber cases as one `.feature` file (`filename`, `content`, `scenario_count`); no model call |
+| `software_delivery.test_design_export` | `draft_id`, required `format` (`gherkin` or `markdown`) | render the selected, available cases as one file: `gherkin` returns a `.feature` file of BDD cases, `markdown` returns an `.md` file of manual cases (`format`, `filename`, `suggested_path`, `content`, `case_count`); no model call |
 
 - MCP clients see each tool id with dots replaced by underscores (for example
   `software_delivery_test_design_start`), because clients such as Cursor
   rewrite dotted names. `MCP_TOOL_ALLOWLIST` still takes the dotted ids, and
   calls accept either form.
+- The export tool needs `format` passed explicitly: `markdown` for manual
+  tests, `gherkin` for BDD scenarios. Kernector does not write files; the
+  client saves `content` inside the user's project workspace (never a temp or
+  scratchpad directory), following the repository's existing test folder and
+  naming. `suggested_path` is only a fallback hint, and the client asks the
+  user for a path when the destination cannot be inferred.
 - The tool descriptions tell the client agent to show the suggested titles and
   let the user choose which to keep, then ask whether one test type applies
   to all of them or the type is chosen per test, before generating. The
@@ -557,7 +563,7 @@ when the client already has the Issue through its own tools (Jira, GitHub or
 GitLab MCP servers, `gh`, GraphQL) and Kernector has no connection to that
 tracker.
 
-- Every draft result, and the `export_feature` result, carries
+- Every draft result, and the `export` result, carries
   `evidence_origin`: `live` or `client_supplied`. `client_supplied` means
   Kernector did not verify the content against a live source.
 - Client-supplied content is rendered once into one canonical evidence text

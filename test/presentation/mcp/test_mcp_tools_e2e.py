@@ -116,7 +116,7 @@ _TEST_DESIGN_TOOLS = frozenset(
         "software_delivery.test_design_get",
         "software_delivery.test_design_confirm",
         "software_delivery.test_design_generate",
-        "software_delivery.test_design_export_feature",
+        "software_delivery.test_design_export",
     }
 )
 
@@ -244,11 +244,13 @@ async def test_test_design_workflow_e2e_via_protocol_client(
 
         exported = await _call(
             client,
-            "software_delivery_test_design_export_feature",
-            {"draft_id": draft_id},
+            "software_delivery_test_design_export",
+            {"draft_id": draft_id, "format": "gherkin"},
         )
         assert exported["filename"] == "login.feature"
-        assert exported["scenario_count"] == 1
+        assert exported["suggested_path"] == "tests/login.feature"
+        assert exported["format"] == "gherkin"
+        assert exported["case_count"] == 1
         assert exported["content"].startswith(
             "Feature: Login\n\n  Background:\n    Given the login page is open\n"
         )
@@ -357,10 +359,11 @@ async def test_test_design_from_client_content_e2e_via_protocol_client(
 
         exported = await _call(
             client,
-            "software_delivery_test_design_export_feature",
-            {"draft_id": draft_id},
+            "software_delivery_test_design_export",
+            {"draft_id": draft_id, "format": "gherkin"},
         )
-        assert exported["scenario_count"] == 1
+        assert exported["case_count"] == 1
+        assert exported["format"] == "gherkin"
         _assert_client_supplied_without_evidence(exported)
 
 

@@ -1013,7 +1013,7 @@ the agents; Kernector supplies evidence and allowlisted tools.
 
 ```bash
 MCP_AUTH_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \
-  MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature \
+  MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export \
   DOMAIN_TOOL_PACKS=software-delivery \
   DOCUMENT_CATALOG_WORKSPACE_ID=… \
   uv run uvicorn presentation.mcp.app:app --port 8100
