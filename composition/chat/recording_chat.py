@@ -108,9 +108,9 @@ def _merge_usage(left: Usage | None, right: Usage | None) -> Usage | None:
     total must stay ``cost=None`` even if another call reported a known value.
     Available token fields from either side are still preserved / summed.
     """
-    if left is None and right is None:
-        return None
     if left is None:
+        if right is None:
+            return None
         return Usage(
             prompt_tokens=right.prompt_tokens,
             completion_tokens=right.completion_tokens,
