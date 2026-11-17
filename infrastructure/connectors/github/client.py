@@ -115,7 +115,7 @@ class HttpGitHubClient:
 
     def __init__(
         self,
-        token: str,
+        token: str | None,
         *,
         base_url: str = "https://api.github.com",
         timeout: float = 30.0,
@@ -127,16 +127,19 @@ class HttpGitHubClient:
         except ImportError as error:  # pragma: no cover - exercised without extra.
             raise GitHubConfigError(_MSG_CONFIG) from error
         self._httpx = httpx
+        headers: dict[str, str] = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "kernector-github-connector",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        usable = token.strip() if isinstance(token, str) else ""
+        if usable:
+            headers["Authorization"] = f"Bearer {usable}"
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout,
             transport=transport,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "User-Agent": "kernector-github-connector",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers=headers,
         )
         self._page_size = page_size
 
@@ -436,7 +439,11 @@ def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorErr
     timeout_error = getattr(httpx_module, "TimeoutException", ())
     if isinstance(error, http_status_error):
         status = int(error.response.status_code)
-        if status in {401, 403}:
+        if status == 401:
+            return ConnectorAuthError(_MSG_AUTH)
+        if status == 403:
+            if _is_github_rate_limit_response(error.response):
+                return ConnectorRateLimitError(_MSG_RATE_LIMIT)
             return ConnectorAuthError(_MSG_AUTH)
         if status == 404:
             return ConnectorNotFoundError(_MSG_NOT_FOUND)
@@ -454,6 +461,31 @@ def _map_httpx_error(error: BaseException, httpx_module: object) -> ConnectorErr
     if isinstance(error, ConnectorError):
         return error
     return ConnectorError(_MSG_REQUEST_FAILED)
+
+
+def _is_github_rate_limit_response(response: object) -> bool:
+    """Classify GitHub primary/secondary rate-limit 403s from headers/body."""
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        remaining = headers.get("x-ratelimit-remaining")
+        if remaining is not None and str(remaining).strip() == "0":
+            return True
+        retry_after = headers.get("retry-after")
+        if isinstance(retry_after, str) and retry_after.strip():
+            return True
+    message = _github_error_message(response).casefold()
+    return "secondary rate limit" in message or "rate limit" in message
+
+
+def _github_error_message(response: object) -> str:
+    try:
+        payload = response.json()  # type: ignore[attr-defined]
+    except Exception:
+        return ""
+    if not isinstance(payload, Mapping):
+        return ""
+    message = payload.get("message")
+    return message.strip() if isinstance(message, str) else ""
 
 
 _PROJECT_V2_ORG_LOOKUP_QUERY = """

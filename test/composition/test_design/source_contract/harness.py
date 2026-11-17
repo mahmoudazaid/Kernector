@@ -19,6 +19,7 @@ class SourceContractHarness(Protocol):
     raw_locators: tuple[str, ...]
     canonical_locator: str
     invalid_locators: tuple[str, ...]
+    supports_anonymous_public_read: bool
 
     @property
     def upstream_calls(self) -> int: ...

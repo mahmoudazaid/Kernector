@@ -107,6 +107,8 @@ _SCENARIOS: dict[str, tuple[Callable[[SourceContractHarness], None], type[Except
 def test_create_surfaces_only_neutral_source_errors(
     tmp_path: Path, harness: SourceContractHarness, scenario: str
 ) -> None:
+    if scenario == "disconnected" and harness.supports_anonymous_public_read:
+        pytest.skip("anonymous public read succeeds when disconnected")
     arrange, expected = _SCENARIOS[scenario]
     facade, decoy = _facade(tmp_path, harness)
     arrange(harness)
@@ -123,10 +125,31 @@ def test_create_while_disconnected_never_calls_upstream(
     facade, _decoy = _facade(tmp_path, harness)
     harness.disconnect()
 
+    if harness.supports_anonymous_public_read:
+        draft = _create(facade, harness, harness.canonical_locator)
+        assert draft.ticket_identifier == harness.canonical_locator
+        assert harness.upstream_calls >= 1
+        return
+
     with pytest.raises(SourceNotConnectedError):
         _create(facade, harness, harness.canonical_locator)
 
     assert harness.upstream_calls == 0
+
+
+def test_create_disconnected_unreadable_is_not_connected(
+    tmp_path: Path, harness: SourceContractHarness
+) -> None:
+    if not harness.supports_anonymous_public_read:
+        pytest.skip("provider has no anonymous public read")
+    facade, _decoy = _facade(tmp_path, harness)
+    harness.disconnect()
+    harness.fail_not_found()
+
+    with pytest.raises(SourceNotConnectedError):
+        _create(facade, harness, harness.canonical_locator)
+
+    assert harness.upstream_calls >= 1
 
 
 def test_identity_change_before_confirm_is_evidence_changed(

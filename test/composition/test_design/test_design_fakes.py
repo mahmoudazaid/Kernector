@@ -210,16 +210,22 @@ def github_sources(
     reader_factory: Callable[[str], object] | None = None,
     oauth_preflight: Callable[[], str] | None = None,
 ) -> TestDesignSourceRegistry:
-    """Registry with the real GitHub source over offline preflight/reader doubles."""
+    """Registry with the real GitHub source over offline reader doubles."""
+    from application.errors import GitHubNotConnectedError
+    from composition.test_design.github_source import _TranslatingIssueReader
+
     active_reader = reader or RecordingIssueReader()
-    return TestDesignSourceRegistry(
-        (
-            GitHubTestDesignSource(
-                preflight=oauth_preflight or (lambda: "token"),
-                reader_factory=reader_factory or (lambda _token: active_reader),  # type: ignore[arg-type,return-value]
-            ),
-        )
-    )
+    preflight = oauth_preflight or (lambda: "token")
+    factory = reader_factory or (lambda _token: active_reader)
+
+    def open_reader() -> LiveSourceReader:
+        access_token = preflight()
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise GitHubNotConnectedError("GitHub is not connected")
+        inner = factory(access_token.strip())
+        return _TranslatingIssueReader(inner)  # type: ignore[arg-type]
+
+    return TestDesignSourceRegistry((GitHubTestDesignSource(open_reader=open_reader),))
 
 
 def build_fake_facade(

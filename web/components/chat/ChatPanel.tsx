@@ -286,7 +286,10 @@ function MessageRow({
 }) {
   const router = useRouter();
   const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
+  const [startError, setStartError] = useState<{
+    message: string;
+    kind?: "github_connect" | "github_reconnect";
+  } | null>(null);
   const startingRef = useRef(false);
 
   if (message.displayOnly) {
@@ -340,13 +343,32 @@ function MessageRow({
       if (isAbortError(caught)) {
         // Create often finishes server-side after the browser gives up; tell
         // the user a draft may already exist instead of a bare cancel line.
-        setStartError(
-          "Test Design took too long to respond. Wait a few seconds, then try again — a draft may already have been created.",
-        );
+        setStartError({
+          message:
+            "Test Design took too long to respond. Wait a few seconds, then try again — a draft may already have been created.",
+        });
+      } else if (
+        caught instanceof ApiError &&
+        caught.code === "github_not_connected"
+      ) {
+        setStartError({
+          message: "Connect GitHub in Documents, then try again.",
+          kind: "github_connect",
+        });
+      } else if (
+        caught instanceof ApiError &&
+        caught.code === "github_reauthorization_required"
+      ) {
+        setStartError({
+          message: "Reconnect GitHub in Documents, then try again.",
+          kind: "github_reconnect",
+        });
       } else if (caught instanceof ApiError) {
-        setStartError(caught.detail || "Could not start Test Design. Try again.");
+        setStartError({
+          message: caught.detail || "Could not start Test Design. Try again.",
+        });
       } else {
-        setStartError("Could not start Test Design. Try again.");
+        setStartError({ message: "Could not start Test Design. Try again." });
       }
     }
   }
@@ -410,7 +432,21 @@ function MessageRow({
           >
             {starting ? "Starting…" : message.action.label}
           </Button>
-          {startError ? <p role="alert">{startError}</p> : null}
+          {startError ? (
+            <p role="alert">
+              {startError.kind === "github_connect" ||
+              startError.kind === "github_reconnect" ? (
+                <>
+                  {startError.kind === "github_connect"
+                    ? "Connect GitHub in "
+                    : "Reconnect GitHub in "}
+                  <a href="/documents">Documents</a>, then try again.
+                </>
+              ) : (
+                startError.message
+              )}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {message.action?.kind === "open_workflow" && message.action.draft_id ? (

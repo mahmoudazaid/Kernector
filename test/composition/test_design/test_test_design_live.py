@@ -95,18 +95,16 @@ def _doc() -> SourceDocument:
     )
 
 
-def test_missing_connection_never_fetches(tmp_path: Path) -> None:
-    reader = _RecordingReader(document=_doc())
+def test_missing_connection_unreadable_issue_is_not_connected(
+    tmp_path: Path,
+) -> None:
+    """Offline facade double: disconnected path surfaces not-connected (#302)."""
+    reader = _RecordingReader(error=GitHubNotConnectedError("GitHub is not connected"))
     facade = TestDesignFacade(
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        sources=github_sources(
-            reader=reader,
-            oauth_preflight=lambda: (_ for _ in ()).throw(
-                GitHubNotConnectedError("GitHub is not connected")
-            ),
-        ),
+        sources=github_sources(reader=reader),
     )
     with pytest.raises(GitHubNotConnectedError):
         facade.create_draft(
@@ -117,21 +115,21 @@ def test_missing_connection_never_fetches(tmp_path: Path) -> None:
                 ),
             )
         )
-    assert reader.calls == []
+    assert reader.calls
 
 
-def test_reauthorization_required_never_fetches(tmp_path: Path) -> None:
-    reader = _RecordingReader(document=_doc())
+def test_reauthorization_required_unreadable_issue_surfaces_reauth(
+    tmp_path: Path,
+) -> None:
+    """Offline facade double: reauth path surfaces reauthorization (#302)."""
+    reader = _RecordingReader(
+        error=GitHubReauthorizationRequiredError("GitHub authorization was revoked")
+    )
     facade = TestDesignFacade(
         settings=_settings(),
         store_path=tmp_path / "ws.sqlite",
         workspace_id="default",
-        sources=github_sources(
-            reader=reader,
-            oauth_preflight=lambda: (_ for _ in ()).throw(
-                GitHubReauthorizationRequiredError("revoked")
-            ),
-        ),
+        sources=github_sources(reader=reader),
     )
     with pytest.raises(GitHubReauthorizationRequiredError):
         facade.create_draft(
@@ -142,7 +140,7 @@ def test_reauthorization_required_never_fetches(tmp_path: Path) -> None:
                 ),
             )
         )
-    assert reader.calls == []
+    assert reader.calls
 
 
 def test_blank_body_does_not_persist_draft(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

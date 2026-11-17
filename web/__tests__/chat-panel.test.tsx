@@ -1371,6 +1371,103 @@ describe("ChatPanel", () => {
     ).toBeEnabled();
   });
 
+  async function startTestDesignRejecting(error: ApiError) {
+    const user = userEvent.setup();
+    const ask = vi.fn().mockResolvedValue({
+      ...SUCCESS,
+      action: {
+        kind: "start_workflow",
+        workflow_id: "software-delivery.test-design",
+        label: "Start Test Design",
+        source_locator: {
+          provider: "github",
+          locator: "mahmoudazaid/Kernector#293",
+        },
+      },
+    });
+    vi.mocked(createTestDesignDraft).mockRejectedValue(error);
+    const created = createConversation({
+      title: "start-error",
+      messages: [],
+      draft: "",
+    });
+    render(
+      <ChatPanel
+        apiBaseUrl="http://127.0.0.1:8000"
+        conversationId={created.id}
+        variant="conversation"
+        ask={ask}
+        loadSettings={async () => ({
+          ...catalogWithLimit(10_000),
+          enabled_packs: ["software-delivery"],
+        })}
+      />,
+    );
+    await user.type(
+      screen.getByLabelText(/message/i),
+      "Design tests for mahmoudazaid/Kernector#293",
+    );
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /start test design/i }),
+    );
+    return user;
+  }
+
+  it("prompts to connect GitHub with Documents link when not connected", async () => {
+    await startTestDesignRejecting(
+      new ApiError({
+        status: 409,
+        title: "GitHub not connected",
+        detail: "GitHub is not connected.",
+        code: "github_not_connected",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Connect GitHub in Documents, then try again/i,
+    );
+    const link = screen.getByRole("link", { name: /Documents/i });
+    expect(link).toHaveAttribute("href", "/documents");
+    expect(screen.getByRole("alert").textContent).not.toMatch(/private/i);
+    expect(screen.getByRole("alert").textContent).not.toMatch(/not found/i);
+  });
+
+  it("prompts to reconnect GitHub with Documents link when reauth required", async () => {
+    await startTestDesignRejecting(
+      new ApiError({
+        status: 409,
+        title: "GitHub reauthorization required",
+        detail: "GitHub authorization was revoked. Connect again.",
+        code: "github_reauthorization_required",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Reconnect GitHub in Documents, then try again/i,
+    );
+    expect(screen.getByRole("link", { name: /Documents/i })).toHaveAttribute(
+      "href",
+      "/documents",
+    );
+  });
+
+  it("keeps generic Start Test Design errors for unrelated failures", async () => {
+    await startTestDesignRejecting(
+      new ApiError({
+        status: 422,
+        title: "Validation error",
+        detail: "The test-design request was invalid.",
+        code: "validation_error",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /The test-design request was invalid/i,
+    );
+    expect(screen.queryByRole("link", { name: /Documents/i })).not.toBeInTheDocument();
+  });
+
   it("shows Open Test Design outside the bubble when coverage is confirmed", async () => {
     const created = createConversation({
       title: "hitl-dest",
