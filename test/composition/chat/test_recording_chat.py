@@ -128,7 +128,8 @@ def test_accumulate_keeps_cost_unknown_when_zero_meets_unknown() -> None:
     assert meta.usage == Usage(total_tokens=5, cost=None)
 
 
-def test_accumulate_preserves_known_cost_when_other_call_has_no_usage() -> None:
+def test_accumulate_treats_missing_usage_as_unknown_cost_known_then_missing() -> None:
+    """usage=None on a later call must not leave a falsely complete cost total."""
     recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
     recording.record(
         RunMeta(model="agent", usage=Usage(total_tokens=4, cost=0.002))
@@ -137,7 +138,44 @@ def test_accumulate_preserves_known_cost_when_other_call_has_no_usage() -> None:
     meta = recording.consume()
     assert meta is not None
     assert meta.latency_ms == 3
-    assert meta.usage == Usage(total_tokens=4, cost=0.002)
+    assert meta.usage == Usage(total_tokens=4, cost=None)
+
+
+def test_accumulate_treats_missing_usage_as_unknown_cost_missing_then_known() -> None:
+    recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
+    recording.record(RunMeta(model="agent", latency_ms=2))
+    recording.record(
+        RunMeta(model="agent", usage=Usage(total_tokens=7, cost=0.004))
+    )
+    meta = recording.consume()
+    assert meta is not None
+    assert meta.latency_ms == 2
+    assert meta.usage == Usage(total_tokens=7, cost=None)
+
+
+def test_accumulate_treats_zero_cost_plus_missing_usage_as_unknown() -> None:
+    recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
+    recording.record(
+        RunMeta(model="agent", usage=Usage(total_tokens=2, cost=0.0))
+    )
+    recording.record(RunMeta(model="agent", latency_ms=1))
+    meta = recording.consume()
+    assert meta is not None
+    assert meta.usage == Usage(total_tokens=2, cost=None)
+
+
+def test_accumulate_later_known_cost_cannot_restore_total_after_missing_usage() -> None:
+    recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
+    recording.record(
+        RunMeta(model="agent", usage=Usage(total_tokens=4, cost=0.002))
+    )
+    recording.record(RunMeta(model="agent", latency_ms=3))
+    recording.record(
+        RunMeta(model="agent", usage=Usage(total_tokens=5, cost=0.01))
+    )
+    meta = recording.consume()
+    assert meta is not None
+    assert meta.usage == Usage(total_tokens=9, cost=None)
 
 
 def test_accumulate_sums_fully_known_costs() -> None:
@@ -191,6 +229,27 @@ def test_accumulate_unknown_cost_projects_null_cost_for_ui_fallback() -> None:
     assert projected is not None
     assert projected.cost is None
     assert projected.total_tokens == 15
+    assert projected.provider == "openrouter"
+
+
+def test_accumulate_missing_usage_projects_null_cost_for_ui_fallback() -> None:
+    from presentation.http.schemas import run_meta_response
+
+    recording = RecordingChatModel(_Inner(), accumulate=True)  # type: ignore[arg-type]
+    recording.record(
+        RunMeta(
+            model="agent",
+            provider="openrouter",
+            usage=Usage(total_tokens=4, cost=0.002),
+        )
+    )
+    recording.record(RunMeta(model="agent", provider="openrouter", latency_ms=3))
+    meta = recording.consume()
+    assert meta is not None
+    projected = run_meta_response(meta)
+    assert projected is not None
+    assert projected.cost is None
+    assert projected.total_tokens == 4
     assert projected.provider == "openrouter"
 
 

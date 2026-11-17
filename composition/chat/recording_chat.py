@@ -102,10 +102,28 @@ def _sum_optional_int(left: int | None, right: int | None) -> int | None:
 
 
 def _merge_usage(left: Usage | None, right: Usage | None) -> Usage | None:
+    """Merge token counts; treat a missing ``Usage`` as unknown cost.
+
+    A model call with ``usage=None`` did not report cost, so the accumulated
+    total must stay ``cost=None`` even if another call reported a known value.
+    Available token fields from either side are still preserved / summed.
+    """
+    if left is None and right is None:
+        return None
     if left is None:
-        return right
+        return Usage(
+            prompt_tokens=right.prompt_tokens,
+            completion_tokens=right.completion_tokens,
+            total_tokens=right.total_tokens,
+            cost=None,
+        )
     if right is None:
-        return left
+        return Usage(
+            prompt_tokens=left.prompt_tokens,
+            completion_tokens=left.completion_tokens,
+            total_tokens=left.total_tokens,
+            cost=None,
+        )
     return Usage(
         prompt_tokens=_sum_optional_int(left.prompt_tokens, right.prompt_tokens),
         completion_tokens=_sum_optional_int(

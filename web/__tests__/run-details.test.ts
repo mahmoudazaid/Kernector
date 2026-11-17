@@ -84,4 +84,15 @@ describe("runDetailLines cost (#49)", () => {
       }),
     ).toContain("Cost: N/A");
   });
+
+  it("shows N/A when tokens survive a merge with missing usage", () => {
+    // Mirrors accumulate known Usage then a call with usage=None.
+    expect(
+      runDetailLines({
+        provider: "openrouter",
+        total_tokens: 4,
+        cost: null,
+      }),
+    ).toContain("Cost: N/A");
+  });
 });
