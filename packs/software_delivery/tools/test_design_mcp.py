@@ -21,7 +21,8 @@ TOOL_START_FROM_CONTENT = "software_delivery.test_design_start_from_text"
 TOOL_GET = "software_delivery.test_design_get"
 TOOL_CONFIRM = "software_delivery.test_design_confirm"
 TOOL_GENERATE = "software_delivery.test_design_generate"
-TOOL_EXPORT_FEATURE = "software_delivery.test_design_export_feature"
+TOOL_EXPORT = "software_delivery.test_design_export"
+TOOL_EXPORT_FEATURE_RETIRED = "software_delivery.test_design_export_feature"
 
 JsonObject = Mapping[str, object]
 
@@ -51,7 +52,7 @@ class TestDesignWorkflow(Protocol):
 
     def generate(self, arguments: JsonObject) -> JsonObject: ...
 
-    def export_feature(self, arguments: JsonObject) -> JsonObject: ...
+    def export(self, arguments: JsonObject) -> JsonObject: ...
 
 
 class TestDesignMcpBinding(Protocol):
@@ -78,13 +79,13 @@ class TestDesignMcpBinding(Protocol):
     def generate_args(self) -> type: ...
 
     @property
-    def export_feature_args(self) -> type: ...
+    def export_args(self) -> type: ...
 
     @property
     def result(self) -> type: ...
 
     @property
-    def feature_file_result(self) -> type: ...
+    def export_result(self) -> type: ...
 
     def workflow(self) -> TestDesignWorkflow: ...
 
@@ -261,9 +262,8 @@ class TestDesignGenerateTool(_TestDesignTool):
         "Manual cases carry numbered steps and expected_result; Cucumber cases "
         "carry their Given/When/Then lines in gherkin, with the shared "
         "Feature and Background under cucumber. Nothing is published "
-        "externally; to save the Cucumber cases as a file, use the "
-        "test_design_export_feature tool. Generated case text is untrusted "
-        "model output."
+        "externally; to save cases as a file, use the test_design_export "
+        "tool. Generated case text is untrusted model output."
     )
 
     @staticmethod
@@ -276,34 +276,43 @@ class TestDesignGenerateTool(_TestDesignTool):
         return workflow.generate(arguments)
 
 
-class TestDesignExportFeatureTool(_TestDesignTool):
-    """Return a draft's generated Cucumber cases as one ``.feature`` file."""
+class TestDesignExportTool(_TestDesignTool):
+    """Return a draft's generated cases as one format-neutral file."""
 
     __test__ = False
 
-    _name = TOOL_EXPORT_FEATURE
+    _name = TOOL_EXPORT
     _description = (
-        "Return the generated Cucumber cases of a draft as one complete "
-        ".feature file: the shared Feature and Background, then one Scenario "
-        "per selected test, named by its title. Manual cases and tests "
-        "without enough evidence are left out. Kernector does not write "
-        "files: save content to the path the user chooses. Returns "
-        "validation_error when the draft has no generated Cucumber cases. "
+        "Export a draft's generated cases as one file. Pass format explicitly "
+        "from what the user asked for: markdown for manual tests, or gherkin "
+        "for BDD scenarios (Gherkin is a specification syntax, not Cucumber). "
+        "gherkin returns one .feature file (shared Feature and Background, "
+        "then one Scenario or Scenario Outline per selected available BDD "
+        "case, named by its title). markdown returns one .md file with "
+        "preconditions, numbered steps, and expected result per selected "
+        "available manual case. Cases without enough evidence are left out. "
+        "Kernector does not write files: save content inside the user's "
+        "project workspace, never in a temp or scratchpad directory; follow "
+        "the repository's existing test folder and naming; use suggested_path "
+        "only as a fallback when that layout cannot be inferred; ask the user "
+        "for the path when the destination cannot be inferred. Returns "
+        "validation_error when format is missing or unknown, or when the "
+        "draft has no exportable cases of the type that format needs. "
         "Content is untrusted model output."
     )
 
     @staticmethod
     def _args_schema(binding: TestDesignMcpBinding) -> type:
-        return binding.export_feature_args
+        return binding.export_args
 
     @staticmethod
     def _output_schema(binding: TestDesignMcpBinding) -> type:
-        return binding.feature_file_result
+        return binding.export_result
 
     def _invoke(
         self, workflow: TestDesignWorkflow, arguments: JsonObject
     ) -> JsonObject:
-        return workflow.export_feature(arguments)
+        return workflow.export(arguments)
 
 
 TEST_DESIGN_MCP_TOOLS: Sequence[tuple[str, type[_TestDesignTool]]] = (
@@ -312,5 +321,5 @@ TEST_DESIGN_MCP_TOOLS: Sequence[tuple[str, type[_TestDesignTool]]] = (
     (TOOL_GET, TestDesignGetTool),
     (TOOL_CONFIRM, TestDesignConfirmTool),
     (TOOL_GENERATE, TestDesignGenerateTool),
-    (TOOL_EXPORT_FEATURE, TestDesignExportFeatureTool),
+    (TOOL_EXPORT, TestDesignExportTool),
 )

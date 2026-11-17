@@ -335,12 +335,18 @@ class TestDesignGenerateArgs(_StrictArgs):
     overwrite_edited: bool = Field(default=False, strict=True)
 
 
-class TestDesignExportFeatureArgs(_StrictArgs):
-    """Arguments for ``software_delivery_test_design_export_feature``."""
+class TestDesignExportArgs(_StrictArgs):
+    """Arguments for ``software_delivery_test_design_export``."""
 
     __test__ = False
 
     draft_id: Id
+    format: Literal["gherkin", "markdown"] = Field(
+        description=(
+            "Export format the user asked for: gherkin for BDD scenarios, "
+            "markdown for manual tests. Required; no default."
+        )
+    )
 
 
 class EvidenceReferenceOut(BaseModel):
@@ -418,8 +424,8 @@ class TestDesignDraftResult(BaseModel):
     evidence_origin: EvidenceOrigin = Field(description=_EVIDENCE_ORIGIN_DESCRIPTION)
 
 
-class TestDesignFeatureFileResult(BaseModel):
-    """Generated Cucumber cases of a draft as one ``.feature`` file."""
+class TestDesignExportResult(BaseModel):
+    """Draft cases exported as one format-neutral file."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -427,11 +433,18 @@ class TestDesignFeatureFileResult(BaseModel):
 
     draft_id: str
     version: int
+    format: Literal["gherkin", "markdown"]
     filename: str = Field(
-        description="Suggested file name; the user chooses the folder."
+        description="Suggested file name; basename of suggested_path."
     )
-    content: str = Field(description="Complete Gherkin .feature file text.")
-    scenario_count: int
+    suggested_path: str = Field(
+        description=(
+            "Relative POSIX path hint (tests/<slug>.feature or .md); "
+            "use only as a fallback when the repo layout cannot be inferred."
+        )
+    )
+    content: str = Field(description="Complete export file text.")
+    case_count: int
     untrusted_model_output: bool = Field(
         default=True, description=_UNTRUSTED_DESCRIPTION
     )
@@ -446,40 +459,91 @@ def _slug(text: str) -> str:
     return _FILENAME_UNSAFE.sub("_", text.lower()).strip("_")[:_MAX_FILENAME_STEM].rstrip("_")
 
 
-def project_feature_file(draft: TestCoverageDraftView) -> TestDesignFeatureFileResult:
-    """Render the draft's selected, available Cucumber cases as a Feature file.
+def _export_stem(primary: str, ticket: str) -> str:
+    return _slug(primary) or _slug(ticket) or "test_design"
+
+
+def project_export(
+    draft: TestCoverageDraftView, *, format: Literal["gherkin", "markdown"]
+) -> TestDesignExportResult:
+    """Render selected available draft cases for the requested format.
 
     Raises:
-        TestDesignValidationError: The draft has no such Cucumber cases.
+        TestDesignValidationError: No exportable cases of the needed type.
     """
     from composition.software_delivery.export import (
         draft_export_case_arguments,
+        render_export_markdown,
         render_feature_file,
+    )
+    from packs.software_delivery.tools.export_test_cases_google_drive import (
+        ExportCase,
+        ExportContent,
     )
 
     cases = cast(
         "list[dict[str, object]]",
         draft_export_case_arguments(draft).get("cases", []),
     )
-    scenarios = [
-        (str(case["title"]), str(case["gherkin"]))
-        for case in cases
-        if case["test_type"] == "cucumber"
-    ]
-    if not scenarios:
-        raise TestDesignValidationError("draft has no generated Cucumber cases")
-    feature = draft.cucumber_feature.strip() or draft.ticket_identifier
-    return TestDesignFeatureFileResult(
+    if format == "gherkin":
+        scenarios = [
+            (str(case["title"]), str(case["gherkin"]))
+            for case in cases
+            if case["test_type"] == "cucumber"
+        ]
+        if not scenarios:
+            raise TestDesignValidationError("draft has no generated BDD cases")
+        feature = draft.cucumber_feature.strip() or draft.ticket_identifier
+        stem = _export_stem(feature, draft.ticket_identifier)
+        filename = f"{stem}.feature"
+        return TestDesignExportResult(
+            draft_id=draft.draft_id,
+            version=draft.version,
+            format="gherkin",
+            filename=filename,
+            suggested_path=f"tests/{filename}",
+            content=render_feature_file(
+                feature=feature,
+                background=draft.cucumber_background,
+                scenarios=scenarios,
+            )
+            + "\n",
+            case_count=len(scenarios),
+            evidence_origin=draft.evidence_origin,
+        )
+
+    manual = [case for case in cases if case["test_type"] == "manual"]
+    if not manual:
+        raise TestDesignValidationError("draft has no generated manual cases")
+    stem = _export_stem(draft.ticket_identifier, draft.ticket_identifier)
+    filename = f"{stem}.md"
+    export_cases = tuple(
+        ExportCase(
+            title=str(case["title"]),
+            test_type="manual",
+            preconditions=tuple(cast("list[str]", case.get("preconditions", []))),
+            steps=tuple(cast("list[str]", case.get("steps", []))),
+            expected_result=tuple(
+                cast("list[str]", case.get("expected_result", []))
+            ),
+        )
+        for case in manual
+    )
+    content = render_export_markdown(
+        ExportContent(
+            document_title=draft.ticket_identifier.strip() or stem,
+            titles=tuple(case.title for case in export_cases),
+            cases=export_cases,
+        )
+    )
+    return TestDesignExportResult(
         draft_id=draft.draft_id,
         version=draft.version,
-        filename=f"{_slug(feature) or _slug(draft.ticket_identifier) or 'test_design'}.feature",
-        content=render_feature_file(
-            feature=feature,
-            background=draft.cucumber_background,
-            scenarios=scenarios,
-        )
-        + "\n",
-        scenario_count=len(scenarios),
+        format="markdown",
+        filename=filename,
+        suggested_path=f"tests/{filename}",
+        content=content if content.endswith("\n") else content + "\n",
+        case_count=len(export_cases),
         evidence_origin=draft.evidence_origin,
     )
 
@@ -769,11 +833,11 @@ class McpTestDesignWorkflow:
             )
         )
 
-    def export_feature(self, arguments: Mapping[str, object]) -> dict[str, object]:
-        args = _parse(TestDesignExportFeatureArgs, arguments)
+    def export(self, arguments: Mapping[str, object]) -> dict[str, object]:
+        args = _parse(TestDesignExportArgs, arguments)
         draft = self._operations.get(draft_id=args.draft_id)
         with _translated_errors():
-            result = project_feature_file(draft)
+            result = project_export(draft, format=args.format)
         return result.model_dump(mode="json")
 
 
@@ -784,9 +848,9 @@ class McpTestDesignBinding:
     get_args: type = TestDesignGetArgs
     confirm_args: type = TestDesignConfirmArgs
     generate_args: type = TestDesignGenerateArgs
-    export_feature_args: type = TestDesignExportFeatureArgs
+    export_args: type = TestDesignExportArgs
     result: type = TestDesignDraftResult
-    feature_file_result: type = TestDesignFeatureFileResult
+    export_result: type = TestDesignExportResult
 
     def __init__(
         self,

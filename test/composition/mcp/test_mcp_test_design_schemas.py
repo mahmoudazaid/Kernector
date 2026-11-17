@@ -12,8 +12,8 @@ from composition.mcp.test_design import (
     McpTestDesignWorkflow,
     TestDesignConfirmArgs,
     TestDesignDraftResult,
-    TestDesignExportFeatureArgs,
-    TestDesignFeatureFileResult,
+    TestDesignExportArgs,
+    TestDesignExportResult,
     TestDesignGenerateArgs,
     TestDesignGetArgs,
     TestDesignStartFromContentArgs,
@@ -420,7 +420,7 @@ def test_schemas_never_expose_workspace_or_conversation_id() -> None:
         binding.get_args,
         binding.confirm_args,
         binding.generate_args,
-        binding.export_feature_args,
+        binding.export_args,
     ):
         schema = model.model_json_schema()
         encoded = json.dumps(schema)
@@ -461,9 +461,9 @@ def test_binding_exposes_composition_schemas() -> None:
     assert binding.get_args is TestDesignGetArgs
     assert binding.confirm_args is TestDesignConfirmArgs
     assert binding.generate_args is TestDesignGenerateArgs
-    assert binding.export_feature_args is TestDesignExportFeatureArgs
+    assert binding.export_args is TestDesignExportArgs
     assert binding.result is TestDesignDraftResult
-    assert binding.feature_file_result is TestDesignFeatureFileResult
+    assert binding.export_result is TestDesignExportResult
 
 
 def test_confirm_forwards_selection_and_version() -> None:
@@ -587,67 +587,277 @@ def _feature_draft() -> TestCoverageDraftView:
     )
 
 
-def test_export_feature_renders_selected_cucumber_cases_as_one_file() -> None:
+_GHERKIN_CONTENT = (
+    "Feature: Network health banner\n"
+    "\n"
+    "  Background:\n"
+    "    Given the dashboard is open\n"
+    "\n"
+    "  Scenario: Banner shows Good\n"
+    "    Given all sites are Good\n"
+    "    Then the banner shows \"Good\"\n"
+    "\n"
+    "  Scenario: Banner shows Poor\n"
+    "    Given one site is Poor\n"
+    "    Then the banner shows \"Poor\"\n"
+)
+
+
+def test_export_gherkin_renders_selected_bdd_cases_as_one_file() -> None:
     workflow, operations = _workflow(_feature_draft())
 
-    payload = workflow.export_feature({"draft_id": "draft-1"})
+    payload = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
 
     assert operations.calls == [("get", {"draft_id": "draft-1"})]
     assert payload == {
         "draft_id": "draft-1",
         "version": 4,
+        "format": "gherkin",
         "filename": "network_health_banner.feature",
-        "content": (
-            "Feature: Network health banner\n"
-            "\n"
-            "  Background:\n"
-            "    Given the dashboard is open\n"
-            "\n"
-            "  Scenario: Banner shows Good\n"
-            "    Given all sites are Good\n"
-            "    Then the banner shows \"Good\"\n"
-            "\n"
-            "  Scenario: Banner shows Poor\n"
-            "    Given one site is Poor\n"
-            "    Then the banner shows \"Poor\"\n"
-        ),
-        "scenario_count": 2,
+        "suggested_path": "tests/network_health_banner.feature",
+        "content": _GHERKIN_CONTENT,
+        "case_count": 2,
         "untrusted_model_output": True,
         "evidence_origin": "live",
     }
 
 
-def test_export_feature_labels_client_supplied_drafts() -> None:
-    workflow, _operations = _workflow(
-        replace(_feature_draft(), evidence_origin="client_supplied")
-    )
+def test_export_gherkin_preserves_candidate_order_and_skips_non_exportable() -> None:
+    workflow, _operations = _workflow(_feature_draft())
 
-    payload = workflow.export_feature({"draft_id": "draft-1"})
+    payload = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
 
-    assert payload["evidence_origin"] == "client_supplied"
+    assert payload["case_count"] == 2
+    assert "Scenario: Banner shows Good" in str(payload["content"])
+    assert "Scenario: Banner shows Poor" in str(payload["content"])
+    assert str(payload["content"]).index("Banner shows Good") < str(
+        payload["content"]
+    ).index("Banner shows Poor")
+    assert "Manual check" not in str(payload["content"])
+    assert "Given nothing" not in str(payload["content"])
 
 
-def test_export_feature_falls_back_to_ticket_for_feature_and_filename() -> None:
+def test_export_gherkin_preserves_provenance_for_both_evidence_origins() -> None:
+    for origin in ("live", "client_supplied"):
+        workflow, _operations = _workflow(
+            replace(_feature_draft(), evidence_origin=origin)
+        )
+
+        payload = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
+
+        assert payload["draft_id"] == "draft-1"
+        assert payload["version"] == 4
+        assert payload["evidence_origin"] == origin
+        assert payload["untrusted_model_output"] is True
+
+
+def test_export_gherkin_falls_back_to_ticket_for_feature_and_filename() -> None:
     draft = replace(_feature_draft(), cucumber_feature="", ticket_identifier="OIE-721")
     workflow, _operations = _workflow(draft)
 
-    payload = workflow.export_feature({"draft_id": "draft-1"})
+    payload = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
 
     assert payload["filename"] == "oie_721.feature"
+    assert payload["suggested_path"] == "tests/oie_721.feature"
     assert str(payload["content"]).startswith("Feature: OIE-721\n")
 
 
-def test_export_feature_without_cucumber_cases_is_a_validation_error() -> None:
+def test_export_gherkin_without_bdd_cases_is_a_validation_error() -> None:
     workflow, _operations = _workflow(_draft())
 
     with pytest.raises(ToolArgumentValidationError):
-        workflow.export_feature({"draft_id": "draft-1"})
+        workflow.export({"draft_id": "draft-1", "format": "gherkin"})
 
 
-def test_export_feature_rejects_extra_arguments() -> None:
+def test_export_rejects_extra_arguments() -> None:
     workflow, operations = _workflow(_feature_draft())
 
     with pytest.raises(ToolArgumentValidationError):
-        workflow.export_feature({"draft_id": "draft-1", "workspace_id": "x"})
+        workflow.export(
+            {"draft_id": "draft-1", "format": "gherkin", "workspace_id": "x"}
+        )
 
     assert operations.calls == []
+
+
+def _manual_mixed_draft() -> TestCoverageDraftView:
+    return _draft(
+        status="case_editing",
+        version=5,
+        ticket_identifier="OIE-900",
+        candidates=(
+            _candidate("cand-1", "First manual"),
+            _candidate("cand-2", "BDD scenario"),
+            _candidate("cand-3", "Unclear behaviour"),
+            _candidate("cand-4", "Not selected", selected=False),
+            _candidate("cand-5", "Second manual"),
+        ),
+        selected_candidate_ids=("cand-1", "cand-2", "cand-3", "cand-5"),
+        generated_cases=(
+            _case(
+                "cand-1",
+                "manual",
+                preconditions="Logged in",
+                steps=("Open page", "Click export"),
+                expected_result="File downloads",
+            ),
+            _case(
+                "cand-2",
+                "cucumber",
+                gherkin="Given the app is open\nThen I see the banner",
+            ),
+            _case("cand-3", "manual", availability="insufficient_evidence"),
+            _case(
+                "cand-4",
+                "manual",
+                steps=("Hidden step",),
+                expected_result="Should not export",
+            ),
+            _case(
+                "cand-5",
+                "manual",
+                steps=("Confirm dialog",),
+                expected_result="Export succeeds",
+            ),
+        ),
+        cucumber_feature="Export flow",
+        cucumber_background="",
+    )
+
+
+def test_export_markdown_renders_manual_cases_as_one_file() -> None:
+    workflow, operations = _workflow(_manual_mixed_draft())
+
+    payload = workflow.export({"draft_id": "draft-1", "format": "markdown"})
+
+    assert operations.calls == [("get", {"draft_id": "draft-1"})]
+    assert payload["format"] == "markdown"
+    assert payload["filename"] == "oie_900.md"
+    assert payload["suggested_path"] == "tests/oie_900.md"
+    assert payload["case_count"] == 2
+    content = str(payload["content"])
+    assert content == (
+        "# OIE\\-900\n\n## Manual\n\n### First manual\n\n#### Preconditions\n\n1. Logged in\n\n#### Steps\n\n1. Open page\n2. Click export\n\n#### Expected result\n\n1. File downloads\n\n### Second manual\n\n#### Steps\n\n1. Confirm dialog\n\n#### Expected result\n\n1. Export succeeds\n"
+    )
+
+
+def test_export_markdown_preserves_candidate_order_and_skips_non_exportable() -> None:
+    workflow, _operations = _workflow(_manual_mixed_draft())
+
+    payload = workflow.export({"draft_id": "draft-1", "format": "markdown"})
+
+    content = str(payload["content"])
+    assert payload["case_count"] == 2
+    assert content.index("First manual") < content.index("Second manual")
+    assert "BDD scenario" not in content
+    assert "Hidden step" not in content
+    assert "Should not export" not in content
+    assert "Given the app is open" not in content
+
+
+def test_export_markdown_preserves_provenance_for_both_evidence_origins() -> None:
+    for origin in ("live", "client_supplied"):
+        workflow, _operations = _workflow(
+            replace(_manual_mixed_draft(), evidence_origin=origin)
+        )
+
+        payload = workflow.export({"draft_id": "draft-1", "format": "markdown"})
+
+        assert payload["draft_id"] == "draft-1"
+        assert payload["version"] == 5
+        assert payload["evidence_origin"] == origin
+        assert payload["untrusted_model_output"] is True
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"draft_id": "draft-1"},
+        {"draft_id": "draft-1", "format": "robot"},
+        {"draft_id": "draft-1", "format": "csv"},
+        {"draft_id": "draft-1", "format": ""},
+    ],
+)
+def test_export_rejects_missing_or_unknown_format(
+    arguments: dict[str, object],
+) -> None:
+    workflow, operations = _workflow(_feature_draft())
+
+    with pytest.raises(ToolArgumentValidationError):
+        workflow.export(arguments)
+
+    assert operations.calls == []
+
+
+def _assert_safe_path(payload: dict[str, object], *, extension: str) -> None:
+    filename = str(payload["filename"])
+    suggested = str(payload["suggested_path"])
+    assert filename.endswith(extension)
+    assert suggested == f"tests/{filename}"
+    assert not suggested.startswith("/")
+    assert ".." not in suggested
+    assert "\\" not in suggested
+    assert "~" not in suggested
+    assert ":" not in suggested.split("/")[0]
+
+
+def test_export_path_uses_slug_fallbacks_and_stays_relative() -> None:
+    unsafe = replace(
+        _feature_draft(),
+        cucumber_feature="../../Evil Feature!!",
+        ticket_identifier="ACME/App#42",
+    )
+    workflow, _operations = _workflow(unsafe)
+    gherkin = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
+    assert gherkin["filename"] == "evil_feature.feature"
+    _assert_safe_path(gherkin, extension=".feature")
+
+    empty_feature = replace(unsafe, cucumber_feature="")
+    workflow, _operations = _workflow(empty_feature)
+    gherkin_ticket = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
+    assert gherkin_ticket["filename"] == "acme_app_42.feature"
+    _assert_safe_path(gherkin_ticket, extension=".feature")
+
+    long_title = "A" * 200
+    workflow, _operations = _workflow(
+        replace(_manual_mixed_draft(), ticket_identifier=long_title)
+    )
+    markdown = workflow.export({"draft_id": "draft-1", "format": "markdown"})
+    stem = str(markdown["filename"]).removesuffix(".md")
+    assert len(stem) <= 80
+    assert markdown["filename"] == f"{stem}.md"
+    _assert_safe_path(markdown, extension=".md")
+
+    workflow, _operations = _workflow(
+        replace(_manual_mixed_draft(), ticket_identifier="", cucumber_feature="")
+    )
+    markdown_fallback = workflow.export({"draft_id": "draft-1", "format": "markdown"})
+    assert markdown_fallback["filename"] == "test_design.md"
+    _assert_safe_path(markdown_fallback, extension=".md")
+
+
+def test_export_markdown_without_manual_cases_is_a_validation_error() -> None:
+    draft = replace(
+        _feature_draft(),
+        candidates=(
+            _candidate("cand-1", "Banner shows Good"),
+            _candidate("cand-5", "Banner shows Poor"),
+        ),
+        selected_candidate_ids=("cand-1", "cand-5"),
+        generated_cases=(
+            _case(
+                "cand-1",
+                "cucumber",
+                gherkin="Given all sites are Good\nThen the banner shows \"Good\"",
+            ),
+            _case(
+                "cand-5",
+                "cucumber",
+                gherkin="Given one site is Poor\nThen the banner shows \"Poor\"",
+            ),
+        ),
+    )
+    workflow, _operations = _workflow(draft)
+
+    with pytest.raises(ToolArgumentValidationError):
+        workflow.export({"draft_id": "draft-1", "format": "markdown"})

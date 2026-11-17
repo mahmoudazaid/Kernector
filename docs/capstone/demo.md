@@ -84,7 +84,7 @@ npm run dev
 ```bash
 export MCP_AUTH_TOKEN=dev-token
 export MCP_ALLOWED_HOSTS=127.0.0.1:8100
-export MCP_TOOL_ALLOWLIST=software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export_feature
+export MCP_TOOL_ALLOWLIST=software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export
 export DOMAIN_TOOL_PACKS=software-delivery
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
 uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
@@ -139,7 +139,7 @@ Optional exports (Google Drive, Xray) are outside the Capstone path.
 3. Ask the assistant to fetch an Issue with its own tools (`gh`, GitHub MCP)
    and design tests for it. The assistant calls
    `test_design_start_from_text` → `test_design_confirm` →
-   `test_design_generate`, and optionally `test_design_export_feature` for a
+   `test_design_generate`, and optionally `test_design_export` for a
    `.feature` file.
 4. Results report `evidence_origin: client_supplied`: Kernector did not verify
    the text against a live source.

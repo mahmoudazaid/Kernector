@@ -566,9 +566,11 @@ def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
     ]
 
 
+_RETIRED_EXPORT_FEATURE = "software_delivery.test_design_export_feature"
+
 _TEST_DESIGN_TOOLS = (
     "software_delivery.test_design_confirm",
-    "software_delivery.test_design_export_feature",
+    "software_delivery.test_design_export",
     "software_delivery.test_design_generate",
     "software_delivery.test_design_get",
     "software_delivery.test_design_start",
@@ -606,6 +608,21 @@ def test_wired_test_design_tools_are_listed_when_enabled_and_allowlisted(
     names = [item.name for item in registry.list_effective(caller)]
 
     assert names == [mcp_tool_name(tool_id) for tool_id in _TEST_DESIGN_TOOLS]
+    assert mcp_tool_name(_RETIRED_EXPORT_FEATURE) not in names
+
+
+def test_retired_export_feature_allowlist_exposes_neither_old_nor_new_export(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-a")
+    caller = McpCallerContext("ws-a", "default", frozenset({_RETIRED_EXPORT_FEATURE}))
+
+    assert registry.list_effective(caller) == ()
+    for tool_id in (_RETIRED_EXPORT_FEATURE, "software_delivery.test_design_export"):
+        result = registry.invoke_authorized(
+            caller, tool_id, {"draft_id": "d", "format": "gherkin"}
+        )
+        assert result.code == TOOL_UNAVAILABLE_CODE
 
 
 def test_wired_test_design_tools_absent_when_pack_disabled(

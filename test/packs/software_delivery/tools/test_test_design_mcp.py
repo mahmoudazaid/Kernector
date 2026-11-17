@@ -9,13 +9,14 @@ import pytest
 from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TOOL_CONFIRM,
-    TOOL_EXPORT_FEATURE,
+    TOOL_EXPORT,
+    TOOL_EXPORT_FEATURE_RETIRED,
     TOOL_GENERATE,
     TOOL_GET,
     TOOL_START,
     TOOL_START_FROM_CONTENT,
     TestDesignConfirmTool,
-    TestDesignExportFeatureTool,
+    TestDesignExportTool,
     TestDesignGenerateTool,
     TestDesignGetTool,
     TestDesignStartFromContentTool,
@@ -40,13 +41,13 @@ class _ConfirmArgs: ...
 class _GenerateArgs: ...
 
 
-class _ExportFeatureArgs: ...
+class _ExportArgs: ...
 
 
 class _Result: ...
 
 
-class _FeatureFileResult: ...
+class _ExportResult: ...
 
 
 class _FakeWorkflow:
@@ -75,8 +76,8 @@ class _FakeWorkflow:
     def generate(self, arguments):
         return self._record("generate", arguments)
 
-    def export_feature(self, arguments):
-        return self._record("export_feature", arguments)
+    def export(self, arguments):
+        return self._record("export", arguments)
 
 
 class _FakeBinding:
@@ -86,9 +87,9 @@ class _FakeBinding:
     get_args = _GetArgs
     confirm_args = _ConfirmArgs
     generate_args = _GenerateArgs
-    export_feature_args = _ExportFeatureArgs
+    export_args = _ExportArgs
     result = _Result
-    feature_file_result = _FeatureFileResult
+    export_result = _ExportResult
 
     def __init__(self, factory=None) -> None:
         self.workflow_instance = _FakeWorkflow()
@@ -104,7 +105,10 @@ def test_tool_ids_are_stable() -> None:
     assert TOOL_GET == "software_delivery.test_design_get"
     assert TOOL_CONFIRM == "software_delivery.test_design_confirm"
     assert TOOL_GENERATE == "software_delivery.test_design_generate"
-    assert TOOL_EXPORT_FEATURE == "software_delivery.test_design_export_feature"
+    assert TOOL_EXPORT == "software_delivery.test_design_export"
+    assert (
+        TOOL_EXPORT_FEATURE_RETIRED == "software_delivery.test_design_export_feature"
+    )
     binding = _FakeBinding()
     assert [(tool_id, cls(binding).name) for tool_id, cls in TEST_DESIGN_MCP_TOOLS] == [
         (TOOL_START, TOOL_START),
@@ -112,7 +116,7 @@ def test_tool_ids_are_stable() -> None:
         (TOOL_GET, TOOL_GET),
         (TOOL_CONFIRM, TOOL_CONFIRM),
         (TOOL_GENERATE, TOOL_GENERATE),
-        (TOOL_EXPORT_FEATURE, TOOL_EXPORT_FEATURE),
+        (TOOL_EXPORT, TOOL_EXPORT),
     ]
 
 
@@ -137,10 +141,10 @@ def test_client_tool_names_fit_cursor_limit(tool_id: str) -> None:
         (TestDesignConfirmTool, "confirm", _ConfirmArgs, _Result),
         (TestDesignGenerateTool, "generate", _GenerateArgs, _Result),
         (
-            TestDesignExportFeatureTool,
-            "export_feature",
-            _ExportFeatureArgs,
-            _FeatureFileResult,
+            TestDesignExportTool,
+            "export",
+            _ExportArgs,
+            _ExportResult,
         ),
     ],
 )
@@ -172,6 +176,28 @@ def test_start_description_names_the_binding_providers_and_the_deprecated_alias(
     assert "(github, jira)" in description
     assert "provider and locator" in description
     assert "issue_locator is deprecated and accepts GitHub Issues only" in description
+
+
+def test_generate_description_points_at_the_export_tool() -> None:
+    description = TestDesignGenerateTool(_FakeBinding()).description
+
+    assert "test_design_export" in description
+    assert "test_design_export_feature" not in description
+
+
+def test_export_description_carries_complete_client_guidance() -> None:
+    description = TestDesignExportTool(_FakeBinding()).description
+
+    assert "Pass format explicitly" in description
+    assert "markdown for manual tests" in description
+    assert "gherkin for BDD scenarios" in description
+    assert "not Cucumber" in description
+    assert "project workspace" in description
+    assert "never in a temp or scratchpad directory" in description
+    assert "existing test folder" in description
+    assert "suggested_path only as a fallback" in description
+    assert "ask the user" in description
+    assert "destination cannot be inferred" in description
 
 
 def test_start_failures_hint_at_start_from_text() -> None:

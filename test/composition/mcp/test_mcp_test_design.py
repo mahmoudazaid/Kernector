@@ -391,10 +391,11 @@ def test_supplied_evidence_never_appears_in_mcp_outputs(tmp_path: Path) -> None:
             ],
         }
     )
-    exported = workflow.export_feature({"draft_id": draft_id})
+    exported = workflow.export({"draft_id": draft_id, "format": "gherkin"})
 
     assert generated["generated_cases"]
-    assert exported["scenario_count"] == 1
+    assert exported["case_count"] == 1
+    assert exported["format"] == "gherkin"
     for result in (started, fetched, confirmed, generated, exported):
         encoded = json.dumps(result)
         for sentinel in _SENTINELS:
