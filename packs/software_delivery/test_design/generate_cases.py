@@ -509,18 +509,18 @@ def _parse_manual_case_fields(
             return tuple(actions), _join_stripped_lines(
                 raw_expected, "expected_result"
             )
-        actions = tuple(
+        step_actions = tuple(
             _strip_list_prefix(step)
             for step in _as_str_list(raw_steps, "steps")
             if _strip_list_prefix(step)
         )
-        return actions, _join_stripped_lines(raw_expected, "expected_result")
-    actions = tuple(
+        return step_actions, _join_stripped_lines(raw_expected, "expected_result")
+    step_actions = tuple(
         _strip_list_prefix(step)
         for step in _as_str_list(raw_steps, "steps")
         if _strip_list_prefix(step)
     )
-    return actions, _join_stripped_lines(raw_expected, "expected_result")
+    return step_actions, _join_stripped_lines(raw_expected, "expected_result")
 
 
 _PLACEHOLDER = re.compile(r"<([^<>\s][^<>]*)>")
