@@ -47,6 +47,10 @@ from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TestDesignMcpBinding,
 )
+from packs.software_delivery.tools.project_profile_mcp import (
+    PROJECT_PROFILE_MCP_TOOLS,
+    ProjectProfileMcpBinding,
+)
 from packs.software_delivery.tools.pull_xray_tests_to_files import (
     TOOL_NAME as PULL_XRAY_TESTS_TO_FILES_TOOL,
 )
@@ -141,6 +145,7 @@ def build_mcp_tools(
     *,
     chat_model_factory: Callable[[], ChatModel] | None = None,
     test_design_binding: TestDesignMcpBinding | None = None,
+    project_profile_binding: ProjectProfileMcpBinding | None = None,
     xray_binding: XrayMcpBinding | None = None,
     test_file_binding: TestFilePreviewMcpBinding | None = None,
     xray_file_binding: XrayFileBinding | None = None,
@@ -148,7 +153,8 @@ def build_mcp_tools(
     """Return MCP tool factories for this pack (excludes Drive export).
 
     Test Design tools (#338) are contributed only when composition supplies a
-    workspace-bound ``test_design_binding``. Xray test creation (#199) is
+    workspace-bound ``test_design_binding``. Project profile (#387) is
+    contributed with a ``project_profile_binding``. Xray test creation (#199) is
     contributed only with an ``xray_binding``; the registry gates it behind
     human approval (ADR 0010). The read-only test file preview (#396) and
     Xray key write-back (#399) are contributed with a ``test_file_binding``
@@ -164,6 +170,12 @@ def build_mcp_tools(
         tools.extend(
             (tool_id, lambda tool_cls=tool_cls: tool_cls(binding))
             for tool_id, tool_cls in TEST_DESIGN_MCP_TOOLS
+        )
+    if project_profile_binding is not None:
+        profile_binding = project_profile_binding
+        tools.extend(
+            (tool_id, lambda tool_cls=tool_cls: tool_cls(profile_binding))
+            for tool_id, tool_cls in PROJECT_PROFILE_MCP_TOOLS
         )
     if xray_binding is not None:
         xray = xray_binding

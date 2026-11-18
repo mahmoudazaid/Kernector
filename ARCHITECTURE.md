@@ -881,7 +881,9 @@ Issue [#320](https://github.com/mahmoudazaid/Kernector/issues/320): one shared
 Kernector MCP server exposes `core.search_knowledge` (bounded untrusted
 evidence + citations; no LLM ask) and the read-only `core.project_list`
 (projects and their confirmed associations, #372). Pack tools are contributed via
-`build_mcp_tools()`; Test Design (#338) is the first. Coding assistants remain
+`build_mcp_tools()`; Test Design (#338) and the read-only project technology
+profile (#387 Phase A, `software_delivery.project_profile`) are included when
+the Software Delivery pack is enabled. Coding assistants remain
 the agents; Kernector supplies evidence and allowlisted tools.
 
 - Transport: low-level `mcp.server.Server` Streamable HTTP at `/mcp`, plus
@@ -909,6 +911,16 @@ the agents; Kernector supplies evidence and allowlisted tools.
   pack tool class as chat, contributed with a workspace-bound
   `XrayMcpBinding` (`composition/xray_export/mcp.py` owns the pydantic
   schemas) only when `XRAY_DEPLOYMENT` is configured.
+- Project technology profile (#387 Phase A):
+  `software_delivery.project_profile` is a read-only, role-neutral MCP tool
+  over client-supplied evidence (`evidence` groups with optional component
+  labels; `project_id` rejected until Phase B). Pack logic lives in
+  `packs/software_delivery/project_profile/` (detectors, intake, aggregation,
+  fingerprint); composition owns schemas and the workspace-bound binding
+  (`composition/mcp/project_profile.py`). MVP detectors cover Python
+  manifests, Node/`package.json`, Robot Framework, and delivery (GitHub
+  Actions job names + Dockerfile) via stdlib only — no model calls and no
+  YAML libraries. Access is allowlist-only; no human approval (ADR 0010).
 - Test file preview (#396): `software_delivery.preview_test_file_scenarios`
   is contributed whenever `software-delivery` is enabled, with composition
   (`composition/xray_export/test_file_preview.py`) owning the strict schemas

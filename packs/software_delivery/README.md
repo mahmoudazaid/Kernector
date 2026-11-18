@@ -463,6 +463,31 @@ Start handoff only after a ready `tool_workflow` decision (intent + one Issue).
 
 Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
 
+## Project technology profile (#387 Phase A)
+
+[`project_profile/`](project_profile/) profiles client-supplied project evidence
+into languages, frameworks, test frameworks, delivery, conventions, and
+reusable components. Access is **role-neutral**: any allowlisted MCP caller
+may use the same tool; there is no role parameter.
+
+| Tool id | Arguments | Notes |
+| --- | --- | --- |
+| `software_delivery.project_profile` | `evidence` (groups of `{component?, files:[{path,content}]}`), optional `facets[]` | Read-only. `project_id` is rejected in Phase A. |
+
+MVP detectors (documented support only): Python (`pyproject.toml` /
+`requirements.txt`), Node (`package.json` → TypeScript / Next.js / React /
+Playwright), Robot Framework (+ keyword extraction), and delivery (GitHub
+Actions job names + Dockerfile env **names**). Reusable extraction is one plugin per framework under
+[`project_profile/extractors/`](project_profile/extractors/) (Robot keywords,
+Next/React paths, Playwright specs). Add a new framework by adding an
+extractor and registering it in `default_extractors()` — no shared
+framework switch. No model calls, no project code execution, no YAML
+libraries. Evidence is untrusted; secret-bearing and excluded files are
+dropped with sanitized diagnostics.
+
+Composition wiring: [`composition/mcp/project_profile.py`](../../composition/mcp/project_profile.py).
+Allowlist `software_delivery.project_profile` in `MCP_TOOL_ALLOWLIST`.
+
 ## Test Design over MCP (#338)
 
 [`tools/test_design_mcp.py`](tools/test_design_mcp.py) exposes the same
