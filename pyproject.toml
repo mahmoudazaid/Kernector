@@ -49,3 +49,5 @@ venv = ".venv"
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
+# Evidence trees under test/fixtures (e.g. mixed/tests/test_sample.py) are not tests.
+norecursedirs = ["fixtures", ".*", "build", "dist", "node_modules", "venv", ".venv"]
