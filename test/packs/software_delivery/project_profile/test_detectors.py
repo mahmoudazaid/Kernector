@@ -149,6 +149,30 @@ def test_unrecognized_variant() -> None:
     assert not any(f.facet == "test_frameworks" for f in component.facts)
 
 
+def test_resource_layout_only_when_under_resources() -> None:
+    from packs.software_delivery.project_profile.intake import ingest_profile_evidence
+
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "robot/keywords/common.resource",
+                        "content": "*** Keywords ***\nNoop\n    No Operation\n",
+                    }
+                ]
+            }
+        ]
+    )
+    profile = aggregate_profile(evidence, default_detector_registry())
+    assert not any(c.name == "resource_layout" for c in profile.conventions)
+    assert any(
+        f.framework_id == "robot_framework"
+        for f in profile.facts
+        if f.facet == "test_frameworks"
+    )
+
+
 def test_gherkin_never_reported_as_cucumber() -> None:
     from packs.software_delivery.project_profile.intake import ingest_profile_evidence
     from packs.software_delivery.project_profile.registry import aggregate_profile as agg

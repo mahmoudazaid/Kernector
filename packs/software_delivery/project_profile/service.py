@@ -10,6 +10,7 @@ from packs.software_delivery.project_profile.intake import (
     ProfileEvidence,
     ingest_profile_evidence,
 )
+from packs.software_delivery.project_profile.limits import MAX_PROFILE_DIAGNOSTICS
 from packs.software_delivery.project_profile.models import (
     FACETS,
     ComponentProfile,
@@ -67,9 +68,8 @@ def _selected_facets(facets: Sequence[str] | None) -> frozenset[str]:
             ProjectProfileValidationError,
         )
 
-        raise ProjectProfileValidationError(
-            f"unknown facets: {sorted(unknown)}"
-        )
+        names = ", ".join(sorted(map(str, unknown)))
+        raise ProjectProfileValidationError(f"unknown facets: {names}")
     return selected or FACETS
 
 
@@ -80,12 +80,17 @@ def _merge_reusable(
     extract_diags: tuple[str, ...],
     selected: frozenset[str],
 ) -> TechnologyProfile:
-    diagnostics = list(profile.diagnostics) + list(extract_diags)
+    diagnostics = (
+        list(profile.diagnostics) + list(extract_diags)
+    )[:MAX_PROFILE_DIAGNOSTICS]
     by_component: dict[str, list] = {c.label: [] for c in evidence.components}
     for item in reusable:
         owner = None
         for component in evidence.components:
-            if any(f.path == item.path for f in component.files):
+            if any(
+                f.path == item.path and f.content_hash == item.content_hash
+                for f in component.files
+            ):
                 owner = component.label
                 break
             # catalogue items may not be in evidence; attach to first / implicit
@@ -94,11 +99,15 @@ def _merge_reusable(
             continue
         by_component.setdefault(owner, []).append(item)
 
-    # Catalogue sources that didn't match a path still appear at project level.
+    # Catalogue sources that didn't match evidence still appear at project level.
     unmatched = [
         item
         for item in reusable
-        if not any(f.path == item.path for c in evidence.components for f in c.files)
+        if not any(
+            f.path == item.path and f.content_hash == item.content_hash
+            for c in evidence.components
+            for f in c.files
+        )
     ]
 
     components: list[ComponentProfile] = []

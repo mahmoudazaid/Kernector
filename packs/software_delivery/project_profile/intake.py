@@ -106,9 +106,15 @@ def ingest_profile_evidence(groups: object) -> ProfileEvidence:
     diagnostics: list[str] = []
     total_bytes = 0
     total_files = 0
+    seen_labels: set[str] = set()
 
     for group in groups:
         component, group_diags, group_bytes, group_files = _ingest_group(group)
+        if component.label in seen_labels:
+            raise ProjectProfileValidationError(
+                "duplicate component label is not allowed"
+            )
+        seen_labels.add(component.label)
         total_files += group_files
         if total_files > MAX_PROFILE_FILES:
             raise ProjectProfileValidationError(
@@ -135,8 +141,9 @@ def _ingest_group(
         raise ProjectProfileValidationError("each evidence group must be an object")
     unexpected = set(group) - {"component", "files"}
     if unexpected:
+        fields = ", ".join(sorted(map(str, unexpected)))
         raise ProjectProfileValidationError(
-            f"evidence group has unsupported fields: {sorted(unexpected)}"
+            f"evidence group has unsupported fields: {fields}"
         )
     label = group.get("component", IMPLICIT_COMPONENT)
     if label is None:

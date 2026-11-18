@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Part A0 fixture secret file (values must never appear in profile output)
+!test/fixtures/project_intelligence/**/.env
 
 # Virtual environments
 .venv/

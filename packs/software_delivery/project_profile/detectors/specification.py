@@ -10,7 +10,14 @@ from packs.software_delivery.project_profile.intake import EvidenceFile
 from packs.software_delivery.project_profile.models import ProfileFact
 from packs.software_delivery.project_profile.registry import DetectorEmission
 
-_UNKNOWN_TEST_SUFFIXES = (".xyz", ".weird")
+# Path segments that indicate test-shaped evidence without naming a framework.
+_TEST_DIR_SEGMENTS = frozenset(
+    {"tests", "test", "__tests__", "e2e", "spec", "cypress"}
+)
+_TEST_NAME_MARKERS = (".test.", ".spec.", ".cy.")
+# Extensions / basenames other MVP detectors already claim for test_frameworks.
+_KNOWN_TEST_SUFFIXES = (".robot", ".resource")
+_KNOWN_TEST_BASENAMES = frozenset({"package.json", "requirements.txt", "pyproject.toml"})
 
 
 class SpecificationSyntaxDetector:
@@ -26,65 +33,46 @@ class SpecificationSyntaxDetector:
         self, component_label: str, files: tuple[EvidenceFile, ...]
     ) -> list[DetectorEmission]:
         emissions: list[DetectorEmission] = []
-        saw_known_test = False
-        saw_unknown = False
+        saw_test_like = False
         for file in files:
             lower_name = file.path.rsplit("/", 1)[-1].lower()
-            if file.path.endswith(".feature") or "Feature:" in file.content:
-                if file.path.endswith(".feature"):
-                    emissions.append(
-                        DetectorEmission(
-                            fact=ProfileFact(
-                                facet="specification_syntaxes",
-                                value="gherkin",
-                                confidence="high",
-                                evidence_refs=(ref_for(component_label, file),),
-                            )
-                        )
-                    )
-            if file.path.endswith((".robot", ".resource")) or lower_name in {
-                "package.json",
-                "requirements.txt",
-                "pyproject.toml",
-            }:
-                # Presence of ordinary manifests/tests is handled by other detectors.
-                if file.path.endswith((".robot", ".resource")):
-                    saw_known_test = True
-                if lower_name in {"package.json", "requirements.txt"}:
-                    text = file.content.lower()
-                    if any(
-                        token in text
-                        for token in (
-                            "robotframework",
-                            "playwright",
-                            "pytest-bdd",
-                            "pytest_bdd",
-                            "cucumber",
-                            "jest",
-                        )
-                    ):
-                        saw_known_test = True
-            if lower_name.endswith(_UNKNOWN_TEST_SUFFIXES) or lower_name.endswith(
-                ".weird"
-            ):
-                saw_unknown = True
-            if "totally-unknown-framework" in file.content.lower():
-                saw_unknown = True
-
-        if saw_unknown and not saw_known_test and not any(
-            e.fact and e.fact.facet == "specification_syntaxes" for e in emissions
-        ):
-            # Only mark unrecognized when no other detector is likely to claim a framework.
-            has_test_claim = any(
-                f.path.endswith((".robot", ".resource"))
-                or f.path.rsplit("/", 1)[-1] in {"package.json", "requirements.txt"}
-                for f in files
-            )
-            if not has_test_claim or saw_unknown:
+            if file.path.endswith(".feature"):
                 emissions.append(
                     DetectorEmission(
-                        unrecognized_facet="test_frameworks",
-                        diagnostic="unrecognized test framework evidence present",
+                        fact=ProfileFact(
+                            facet="specification_syntaxes",
+                            value="gherkin",
+                            confidence="high",
+                            evidence_refs=(ref_for(component_label, file),),
+                        )
                     )
                 )
+            if _looks_like_test_evidence(file.path) and not _known_test_claim(
+                file.path, lower_name
+            ):
+                saw_test_like = True
+
+        if saw_test_like:
+            emissions.append(
+                DetectorEmission(
+                    unrecognized_facet="test_frameworks",
+                    diagnostic="unrecognized test framework evidence present",
+                )
+            )
         return emissions
+
+
+def _looks_like_test_evidence(path: str) -> bool:
+    parts = path.split("/")
+    if any(part in _TEST_DIR_SEGMENTS for part in parts[:-1]):
+        return True
+    name = parts[-1].lower()
+    if any(marker in name for marker in _TEST_NAME_MARKERS):
+        return True
+    return name.endswith("test.java") or name.endswith("tests.java")
+
+
+def _known_test_claim(path: str, lower_name: str) -> bool:
+    if path.endswith(_KNOWN_TEST_SUFFIXES):
+        return True
+    return lower_name in _KNOWN_TEST_BASENAMES

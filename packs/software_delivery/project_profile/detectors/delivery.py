@@ -81,21 +81,24 @@ class DeliveryDetector:
                             _fact(
                                 component_label,
                                 file,
-                                f"github_actions_jobs:{','.join(jobs)}",
+                                _jobs_fact_value(jobs),
                                 "medium",
                             )
                         )
                     env_names.update(_workflow_env_names(file.content))
         if env_names:
             emissions.append(
-                DetectorEmission(
-                    diagnostic=(
-                        "delivery env names: "
-                        + ", ".join(sorted(env_names))
-                    )
-                )
+                DetectorEmission(diagnostic=_env_names_diagnostic(env_names))
             )
         return emissions
+
+
+def _jobs_fact_value(jobs: list[str]) -> str:
+    return "github_actions_jobs:" + ",".join(jobs)
+
+
+def _env_names_diagnostic(env_names: set[str]) -> str:
+    return "delivery env names: " + ", ".join(sorted(env_names))
 
 
 def _fact(

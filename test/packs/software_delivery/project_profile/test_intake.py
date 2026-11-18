@@ -67,6 +67,26 @@ def test_rejects_duplicate_path_within_component() -> None:
         )
 
 
+def test_rejects_duplicate_component_labels() -> None:
+    with pytest.raises(ProjectProfileValidationError, match="duplicate component label"):
+        ingest_profile_evidence(
+            [
+                {"files": [{"path": "components/A.tsx", "content": "x\n"}]},
+                {"files": [{"path": "components/B.tsx", "content": "y\n"}]},
+            ]
+        )
+
+
+def test_rejects_unsupported_fields_without_list_repr() -> None:
+    with pytest.raises(
+        ProjectProfileValidationError, match="unsupported fields: extra"
+    ) as caught:
+        ingest_profile_evidence(
+            [{"files": [{"path": "a.txt", "content": "x\n"}], "extra": 1}]
+        )
+    assert "[" not in str(caught.value)
+
+
 def test_same_path_allowed_across_components() -> None:
     evidence = ingest_profile_evidence(
         [

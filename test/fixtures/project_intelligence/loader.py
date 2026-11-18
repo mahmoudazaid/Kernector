@@ -23,7 +23,8 @@ REQUIRED_PATHS: tuple[str, ...] = (
     "acme/oie-web/lib/api/orders.ts",
     "profile_variants/mixed/requirements.txt",
     "profile_variants/thin/README.md",
-    "profile_variants/unrecognized/manifest.weird",
+    "profile_variants/unrecognized/tests/manifest.weird",
+    "profile_variants/unrecognized/tests/WeirdTest.xyz",
     "gold/profile_oie.yaml",
 )
 

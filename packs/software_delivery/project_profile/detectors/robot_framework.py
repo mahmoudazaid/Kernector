@@ -61,13 +61,18 @@ class RobotFrameworkDetector:
                     )
                 )
             )
-        if resource_files:
+        resources_layout = [
+            file for file in resource_files if file.path.startswith("resources/")
+        ]
+        if resources_layout:
             emissions.append(
                 DetectorEmission(
                     convention=Convention(
                         name="resource_layout",
                         value="resources/",
-                        evidence_refs=(ref_for(component_label, resource_files[0]),),
+                        evidence_refs=(
+                            ref_for(component_label, resources_layout[0]),
+                        ),
                     )
                 )
             )
