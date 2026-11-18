@@ -18,6 +18,10 @@ _TEST_NAME_MARKERS = (".test.", ".spec.", ".cy.")
 # Extensions / basenames other MVP detectors already claim for test_frameworks.
 _KNOWN_TEST_SUFFIXES = (".robot", ".resource")
 _KNOWN_TEST_BASENAMES = frozenset({"package.json", "requirements.txt", "pyproject.toml"})
+# Paths NodePackageDetector already recommends / can claim via package.json.
+# Without a detecting fact these should stay insufficient_context, not unrecognized.
+_NODE_OWNED_NAME_MARKERS = (".spec.", ".test.")
+_NODE_OWNED_DIR_SEGMENTS = frozenset({"e2e"})
 
 
 class SpecificationSyntaxDetector:
@@ -33,7 +37,7 @@ class SpecificationSyntaxDetector:
         self, component_label: str, files: tuple[EvidenceFile, ...]
     ) -> list[DetectorEmission]:
         emissions: list[DetectorEmission] = []
-        saw_test_like = False
+        saw_unrecognized = False
         for file in files:
             lower_name = file.path.rsplit("/", 1)[-1].lower()
             if file.path.endswith(".feature"):
@@ -47,12 +51,14 @@ class SpecificationSyntaxDetector:
                         )
                     )
                 )
-            if _looks_like_test_evidence(file.path) and not _known_test_claim(
-                file.path, lower_name
+            if (
+                _looks_like_test_evidence(file.path)
+                and not _known_test_claim(file.path, lower_name)
+                and not _node_owned_test_path(file.path)
             ):
-                saw_test_like = True
+                saw_unrecognized = True
 
-        if saw_test_like:
+        if saw_unrecognized:
             emissions.append(
                 DetectorEmission(
                     unrecognized_facet="test_frameworks",
@@ -76,3 +82,11 @@ def _known_test_claim(path: str, lower_name: str) -> bool:
     if path.endswith(_KNOWN_TEST_SUFFIXES):
         return True
     return lower_name in _KNOWN_TEST_BASENAMES
+
+
+def _node_owned_test_path(path: str) -> bool:
+    parts = path.split("/")
+    if any(part in _NODE_OWNED_DIR_SEGMENTS for part in parts[:-1]):
+        return True
+    name = parts[-1].lower()
+    return any(marker in name for marker in _NODE_OWNED_NAME_MARKERS)

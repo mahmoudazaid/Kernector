@@ -2,42 +2,68 @@
 
 from __future__ import annotations
 
+from test.packs.software_delivery.project_profile.conftest import load_component_files
+
 from packs.software_delivery.project_profile.limits import MAX_PROFILE_DIAGNOSTICS
 from packs.software_delivery.project_profile.service import profile_project
 
 
-def test_shared_relative_paths_attribute_by_content_hash() -> None:
+def test_shared_relative_paths_attribute_by_owner_label() -> None:
+    same = "export const A=1\n"
     profile = profile_project(
         [
             {
                 "component": "web",
-                "files": [
-                    {
-                        "path": "components/Button.tsx",
-                        "content": "export const A=1\n",
-                    }
-                ],
+                "files": [{"path": "components/Button.tsx", "content": same}],
             },
             {
                 "component": "admin",
-                "files": [
-                    {
-                        "path": "components/Button.tsx",
-                        "content": "export const B=2\n",
-                    }
-                ],
+                "files": [{"path": "components/Button.tsx", "content": same}],
             },
         ]
     )
     by_label = {component.label: component for component in profile.components}
-    web_paths = [item.path for item in by_label["web"].reusable_components]
-    admin_paths = [item.path for item in by_label["admin"].reusable_components]
-    assert web_paths == ["components/Button.tsx"]
-    assert admin_paths == ["components/Button.tsx"]
-    assert (
-        by_label["web"].reusable_components[0].content_hash
-        != by_label["admin"].reusable_components[0].content_hash
+    assert len(by_label["web"].reusable_components) == 1
+    assert len(by_label["admin"].reusable_components) == 1
+    assert by_label["web"].reusable_components[0].path == "components/Button.tsx"
+    assert by_label["admin"].reusable_components[0].path == "components/Button.tsx"
+    assert by_label["web"].facet_status["reusable_components"] == "detected"
+    assert by_label["admin"].facet_status["reusable_components"] == "detected"
+
+
+def test_detected_playwright_does_not_emit_unrecognized_diagnostic() -> None:
+    profile = profile_project(
+        [{"component": "oie-e2e", "files": load_component_files("acme/oie-e2e")}]
     )
+    component = profile.components[0]
+    assert component.facet_status["test_frameworks"] == "detected"
+    assert any(
+        fact.framework_id == "playwright"
+        for fact in component.facts
+        if fact.facet == "test_frameworks"
+    )
+    assert not any("unrecognized" in diagnostic for diagnostic in profile.diagnostics)
+    assert not any("unrecognized" in diagnostic for diagnostic in component.diagnostics)
+
+
+def test_node_spec_without_manifest_is_insufficient_context() -> None:
+    profile = profile_project(
+        [
+            {
+                "component": "oie-e2e",
+                "files": [
+                    {
+                        "path": "e2e/cancel-order.spec.ts",
+                        "content": "test('cancel', async ({ page }) => {})\n",
+                    }
+                ],
+            }
+        ]
+    )
+    component = profile.components[0]
+    assert component.facet_status["test_frameworks"] == "insufficient_context"
+    assert any("package.json" in diagnostic for diagnostic in profile.diagnostics)
+    assert not any("unrecognized" in diagnostic for diagnostic in profile.diagnostics)
 
 
 def test_diagnostics_capped_after_extractor_merge() -> None:

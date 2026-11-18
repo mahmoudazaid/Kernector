@@ -7,6 +7,7 @@ Playwright, and future frameworks stay independently extendable.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from packs.software_delivery.project_profile.intake import (
@@ -48,20 +49,40 @@ class ComponentExtractor(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class OwnedReusableComponent:
+    """Reusable item tagged with the evidence component it was extracted from.
+
+    ``component_label`` is ``None`` for catalogue ``sources`` items that are not
+    tied to a single evidence group.
+    """
+
+    component_label: str | None
+    item: ReusableComponent
+
+
 def collect_reusable_components(
     evidence: ProfileEvidence,
     *,
     extractors: Sequence[ComponentExtractor] = (),
     sources: Sequence[ReusableComponentSource] = (),
     return_diagnostics: bool = False,
+    return_owners: bool = False,
 ):
-    """Collect reusable components from extractors and catalogue sources."""
-    collected: list[ReusableComponent] = []
+    """Collect reusable components from extractors and catalogue sources.
+
+    When ``return_owners`` is true, each extractor item is tagged with the
+    evidence component label it came from. Catalogue ``sources`` items are
+    tagged with ``component_label=None``.
+    """
+    collected: list[OwnedReusableComponent] = []
     diagnostics: list[str] = []
     for component in evidence.components:
         for extractor in extractors:
             items, diags = extractor.extract(component.label, component.files)
-            collected.extend(items)
+            collected.extend(
+                OwnedReusableComponent(component.label, item) for item in items
+            )
             diagnostics.extend(diags)
             if len(collected) >= MAX_REUSABLE_COMPONENTS:
                 diagnostics.append("reusable component extraction limit reached")
@@ -69,22 +90,36 @@ def collect_reusable_components(
                 break
     for source in sources:
         for item in source.list_components(evidence):
-            collected.append(item)
+            collected.append(OwnedReusableComponent(None, item))
             if len(collected) >= MAX_REUSABLE_COMPONENTS:
                 diagnostics.append("reusable component extraction limit reached")
                 collected = collected[:MAX_REUSABLE_COMPONENTS]
                 break
     ordered = tuple(
-        sorted(collected, key=lambda item: (item.kind, item.path, item.signature))
+        sorted(
+            collected,
+            key=lambda owned: (
+                owned.item.kind,
+                owned.item.path,
+                owned.item.signature,
+                owned.component_label or "",
+            ),
+        )
     )
+    if return_owners:
+        if return_diagnostics:
+            return ordered, tuple(diagnostics)
+        return ordered
+    flat = tuple(owned.item for owned in ordered)
     if return_diagnostics:
-        return ordered, tuple(diagnostics)
-    return ordered
+        return flat, tuple(diagnostics)
+    return flat
 
 
 __all__ = [
     "ComponentExtractor",
     "FrontendPathExtractor",
+    "OwnedReusableComponent",
     "PlaywrightSpecExtractor",
     "ReusableComponentSource",
     "RobotKeywordExtractor",

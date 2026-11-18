@@ -23,6 +23,7 @@ from packs.software_delivery.project_profile.registry import (
 from packs.software_delivery.project_profile.extractors import default_extractors
 from packs.software_delivery.project_profile.reusable import (
     ComponentExtractor,
+    OwnedReusableComponent,
     ReusableComponentSource,
     collect_reusable_components,
 )
@@ -52,6 +53,7 @@ def profile_project(
         extractors=active_extractors,
         sources=sources,
         return_diagnostics=True,
+        return_owners=True,
     )
     if "reusable_components" not in selected:
         reusable = ()
@@ -76,7 +78,7 @@ def _selected_facets(facets: Sequence[str] | None) -> frozenset[str]:
 def _merge_reusable(
     profile: TechnologyProfile,
     evidence: ProfileEvidence,
-    reusable: tuple,
+    reusable: tuple[OwnedReusableComponent, ...],
     extract_diags: tuple[str, ...],
     selected: frozenset[str],
 ) -> TechnologyProfile:
@@ -84,31 +86,12 @@ def _merge_reusable(
         list(profile.diagnostics) + list(extract_diags)
     )[:MAX_PROFILE_DIAGNOSTICS]
     by_component: dict[str, list] = {c.label: [] for c in evidence.components}
-    for item in reusable:
-        owner = None
-        for component in evidence.components:
-            if any(
-                f.path == item.path and f.content_hash == item.content_hash
-                for f in component.files
-            ):
-                owner = component.label
-                break
-            # catalogue items may not be in evidence; attach to first / implicit
-        if owner is None:
-            # Preserve catalogue items at project level only
+    unmatched = []
+    for owned in reusable:
+        if owned.component_label is None:
+            unmatched.append(owned.item)
             continue
-        by_component.setdefault(owner, []).append(item)
-
-    # Catalogue sources that didn't match evidence still appear at project level.
-    unmatched = [
-        item
-        for item in reusable
-        if not any(
-            f.path == item.path and f.content_hash == item.content_hash
-            for c in evidence.components
-            for f in c.files
-        )
-    ]
+        by_component.setdefault(owned.component_label, []).append(owned.item)
 
     components: list[ComponentProfile] = []
     for component in profile.components:

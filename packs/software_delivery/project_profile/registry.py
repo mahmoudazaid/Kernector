@@ -195,13 +195,18 @@ def _aggregate_component(
     reusable: list[ReusableComponent] = []
     unrecognized: set[str] = set()
     component_diags: list[str] = []
+    pending_unrecognized_diags: list[tuple[str, str]] = []
 
     for detector in registry.detectors:
         for emission in detector.detect(component.label, component.files):
-            if emission.diagnostic:
-                component_diags.append(emission.diagnostic)
             if emission.unrecognized_facet and emission.unrecognized_facet in selected:
                 unrecognized.add(emission.unrecognized_facet)
+                if emission.diagnostic:
+                    pending_unrecognized_diags.append(
+                        (emission.unrecognized_facet, emission.diagnostic)
+                    )
+            elif emission.diagnostic:
+                component_diags.append(emission.diagnostic)
             if emission.fact is not None and emission.fact.facet in selected:
                 kept = _filter_fact(
                     emission.fact, index, diagnostics, component_label=component.label
@@ -219,6 +224,13 @@ def _aggregate_component(
                     conventions.append(kept_c)
             if emission.reusable_component is not None and "reusable_components" in selected:
                 reusable.append(emission.reusable_component)
+
+    # Facts from any detector supersede unrecognized claims for the same facet.
+    unrecognized -= set(facts_by_facet)
+    if conventions:
+        unrecognized.discard("conventions")
+    if reusable:
+        unrecognized.discard("reusable_components")
 
     facet_status: dict[str, FacetStatus] = {}
     facts: list[ProfileFact] = []
@@ -271,6 +283,9 @@ def _aggregate_component(
             facet_status[facet] = "detected"
         facts.extend(sorted(emitted, key=lambda item: (item.value, item.framework_id or "")))
 
+    for facet, diagnostic in pending_unrecognized_diags:
+        if facet_status.get(facet) == "unrecognized":
+            component_diags.append(diagnostic)
     diagnostics.extend(component_diags)
     return ComponentProfile(
         label=component.label,
