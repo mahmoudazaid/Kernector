@@ -122,6 +122,12 @@ uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
   and generate reuse it without re-fetching, and changing it needs a new start.
   Allowlist it separately. See
   [live vs client-supplied evidence](packs/software_delivery/README.md#live-vs-client-supplied-evidence-355).
+- Project technology profile (#387 Phase A): allowlist
+  `software_delivery.project_profile` for a read-only, role-neutral profile
+  of client-supplied manifests, tests, CI, and frontend paths (MVP detectors:
+  Python, Node/Next/React/Playwright, Robot Framework, GitHub Actions/Docker).
+  Pass `evidence` groups; `project_id` is not accepted yet. See the
+  [pack README](packs/software_delivery/README.md#project-technology-profile-387-phase-a).
 - Drive export and retired scaffolding tools (#285) are not on MCP; further
   live pack tools land in follow-ups (#326/#327)
 

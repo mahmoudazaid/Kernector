@@ -1,0 +1,128 @@
+# Expected technology profile for Part A0 client-supplied evidence (#387 / #371).
+# Component labels are client-declared. Line ranges are 1-based inclusive.
+evidence_origin: client_supplied
+untrusted_evidence: true
+approved_conventions: []
+conflicts: []
+components:
+  - label: oie-orders
+    facet_status:
+      languages: detected
+      build_and_dependencies: detected
+      delivery: detected
+    facts:
+      - facet: languages
+        value: Python
+        language: Python
+        confidence: high
+        evidence_paths:
+          - pyproject.toml
+      - facet: delivery
+        value: github_actions
+        confidence: high
+        evidence_paths:
+          - .github/workflows/ci.yml
+      - facet: delivery
+        value: docker
+        confidence: high
+        evidence_paths:
+          - Dockerfile
+    dropped_secrets:
+      - .env
+  - label: oie-tests
+    facet_status:
+      test_frameworks: detected
+      conventions: detected
+      reusable_components: detected
+    facts:
+      - facet: test_frameworks
+        value: robot_framework
+        framework_id: robot_framework
+        confidence: high
+        evidence_paths:
+          - requirements.txt
+          - tests/orders/cancel_order.robot
+    reusable_components:
+      - kind: keyword
+        signature: Create Unpaid Order
+        path: resources/orders.resource
+        line_range: [2, 4]
+      - kind: keyword
+        signature: Create Paid Order
+        path: resources/orders.resource
+        line_range: [6, 8]
+      - kind: keyword
+        signature: Cancel Order
+        path: resources/orders.resource
+        line_range: [10, 12]
+  - label: oie-e2e
+    facet_status:
+      test_frameworks: detected
+      languages: detected
+    facts:
+      - facet: test_frameworks
+        value: playwright
+        framework_id: playwright
+        confidence: high
+        evidence_paths:
+          - package.json
+  - label: oie-web
+    facet_status:
+      languages: detected
+      application_frameworks: detected
+      reusable_components: detected
+    facts:
+      - facet: languages
+        value: TypeScript
+        language: TypeScript
+        confidence: high
+        evidence_paths:
+          - package.json
+      - facet: application_frameworks
+        value: next
+        framework_id: next
+        confidence: high
+        evidence_paths:
+          - package.json
+      - facet: application_frameworks
+        value: react
+        framework_id: react
+        confidence: high
+        evidence_paths:
+          - package.json
+    reusable_components:
+      - kind: route
+        path: app/orders/[id]/page.tsx
+      - kind: ui_component
+        path: components/CancelOrderButton.tsx
+      - kind: api_client
+        path: lib/api/orders.ts
+project_rollup:
+  test_frameworks_ambiguous: false
+variants:
+  mixed:
+    facet_status:
+      test_frameworks: ambiguous
+    frameworks:
+      - robot_framework
+      - pytest_bdd
+  thin:
+    facet_status:
+      languages: insufficient_context
+      test_frameworks: insufficient_context
+      delivery: insufficient_context
+  unrecognized:
+    facet_status:
+      test_frameworks: unrecognized
+schema_fields:
+  - profile_fingerprint
+  - evidence_origin
+  - facet_status
+  - facts
+  - conventions
+  - reusable_components
+  - approved_conventions
+  - conflicts
+  - diagnostics
+  - context_status
+  - untrusted_evidence
