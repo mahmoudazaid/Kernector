@@ -93,6 +93,24 @@ describe("shell navigation", () => {
     );
   });
 
+  it("highlights only MCP Access on /settings/mcp, not Settings", () => {
+    usePathname.mockReturnValue("/settings/mcp");
+
+    render(
+      <AppShell>
+        <div>content</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "MCP Access" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "Settings" })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
   it("does not show pack-specific story or interview labels by default", () => {
     render(
       <AppShell>

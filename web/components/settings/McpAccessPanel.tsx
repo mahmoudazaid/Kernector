@@ -857,7 +857,7 @@ export function McpAccessPanel({
         <Button onClick={openCreate}>Generate new token</Button>
       </div>
       <p className="kern-settings-lead">
-        Project-scoped tokens for Cursor or Claude Code. Secrets are never shown
+        Project-scoped tokens. Secrets are never shown
         again after creation — delete and create a new token if needed.
       </p>
 
