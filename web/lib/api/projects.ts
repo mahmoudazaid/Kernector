@@ -11,7 +11,7 @@ export type ListProjectsOptions = {
 };
 
 /**
- * List workspace projects via the Next BFF ``GET /api/projects``.
+ * List workspace projects via the Next BFF ``GET /api/v1/projects``.
  */
 export async function listProjects(
   options: ListProjectsOptions = {},
@@ -19,7 +19,7 @@ export async function listProjects(
   const request = options.request ?? apiRequest;
   return request<ProjectResponse[]>({
     baseUrl: options.baseUrl ?? "",
-    path: "/api/projects",
+    path: "/api/v1/projects",
     method: "GET",
     signal: options.signal,
   } satisfies ApiRequestOptions);

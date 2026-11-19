@@ -116,7 +116,7 @@ create/rotate.
   Clients that require OAuth discovery are unsupported in Phase 1.
 - **Interim Admin gate:** `ADMIN_API_TOKEN` protects `/api/v1/admin/mcp/*`.
   Fail closed when unset. Never put it in `NEXT_PUBLIC_*` or browser storage;
-  the Next.js BFF under `/api/admin/mcp/*` injects it server-side. Use HTTPS
+  the Next.js BFF under `/api/v1/admin/mcp/*` injects it server-side. Use HTTPS
   for any remote deployment. UI hiding is not a security boundary (#36/#182
   remain open for multi-user Admin RBAC).
 - **Isolation:** `core.search_knowledge` stays unavailable on MCP until

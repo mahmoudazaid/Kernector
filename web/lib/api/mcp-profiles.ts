@@ -37,7 +37,7 @@ export async function getMcpServerInfo(
   const { baseUrl, request, signal } = opts(options);
   return request<McpServerInfoResponse>({
     baseUrl,
-    path: "/api/admin/mcp/server",
+    path: "/api/v1/admin/mcp/server",
     method: "GET",
     signal,
   } satisfies ApiRequestOptions);
@@ -49,7 +49,7 @@ export async function listMcpTools(
   const { baseUrl, request, signal } = opts(options);
   return request<McpToolCatalogResponse>({
     baseUrl,
-    path: "/api/admin/mcp/tools",
+    path: "/api/v1/admin/mcp/tools",
     method: "GET",
     signal,
   } satisfies ApiRequestOptions);
@@ -61,7 +61,7 @@ export async function listMcpProfiles(
   const { baseUrl, request, signal } = opts(options);
   return request<McpAccessProfileResponse[]>({
     baseUrl,
-    path: "/api/admin/mcp/profiles",
+    path: "/api/v1/admin/mcp/profiles",
     method: "GET",
     signal,
   } satisfies ApiRequestOptions);
@@ -79,7 +79,7 @@ export async function createMcpProfile(
   const { baseUrl, request, signal } = opts(options);
   return request<McpAccessProfileCreatedResponse>({
     baseUrl,
-    path: "/api/admin/mcp/profiles",
+    path: "/api/v1/admin/mcp/profiles",
     method: "POST",
     body,
     signal,
@@ -94,7 +94,7 @@ export async function updateMcpAllowlist(
   const { baseUrl, request, signal } = opts(options);
   return request<McpAccessProfileResponse>({
     baseUrl,
-    path: `/api/admin/mcp/profiles/${encodeURIComponent(profileId)}/allowlist`,
+    path: `/api/v1/admin/mcp/profiles/${encodeURIComponent(profileId)}/allowlist`,
     method: "PUT",
     body: { allowlist },
     signal,
@@ -108,7 +108,7 @@ export async function rotateMcpProfile(
   const { baseUrl, request, signal } = opts(options);
   return request<McpAccessProfileCreatedResponse>({
     baseUrl,
-    path: `/api/admin/mcp/profiles/${encodeURIComponent(profileId)}/rotate`,
+    path: `/api/v1/admin/mcp/profiles/${encodeURIComponent(profileId)}/rotate`,
     method: "POST",
     signal,
   } satisfies ApiRequestOptions);
@@ -121,7 +121,7 @@ export async function revokeMcpProfile(
   const { baseUrl, request, signal } = opts(options);
   return request<McpAccessProfileResponse>({
     baseUrl,
-    path: `/api/admin/mcp/profiles/${encodeURIComponent(profileId)}/revoke`,
+    path: `/api/v1/admin/mcp/profiles/${encodeURIComponent(profileId)}/revoke`,
     method: "POST",
     signal,
   } satisfies ApiRequestOptions);
