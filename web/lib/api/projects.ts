@@ -4,21 +4,22 @@ import type { components } from "@/lib/api/generated/schema";
 export type ProjectResponse = components["schemas"]["ProjectResponse"];
 
 export type ListProjectsOptions = {
-  baseUrl: string;
+  /** Same-origin BFF base (empty string) or absolute origin for tests. */
+  baseUrl?: string;
   signal?: AbortSignal;
   request?: typeof apiRequest;
 };
 
 /**
- * List workspace projects via ``GET /api/v1/projects``.
+ * List workspace projects via the Next BFF ``GET /api/projects``.
  */
 export async function listProjects(
-  options: ListProjectsOptions,
+  options: ListProjectsOptions = {},
 ): Promise<ProjectResponse[]> {
   const request = options.request ?? apiRequest;
   return request<ProjectResponse[]>({
-    baseUrl: options.baseUrl,
-    path: "/api/v1/projects",
+    baseUrl: options.baseUrl ?? "",
+    path: "/api/projects",
     method: "GET",
     signal: options.signal,
   } satisfies ApiRequestOptions);

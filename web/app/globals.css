@@ -1085,6 +1085,25 @@ a {
   white-space: pre;
 }
 
+.kern-mcp-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kern-space-2);
+}
+
+.kern-mcp-token-row .kern-settings-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-family: var(--kern-font-mono);
+  font-size: var(--kern-text-sm);
+}
+
+.kern-mcp-token-row .kern-btn,
+.kern-mcp-token-row .kern-btn-secondary {
+  flex: 0 0 auto;
+}
+
 .kern-documents {
   display: flex;
   flex-direction: column;

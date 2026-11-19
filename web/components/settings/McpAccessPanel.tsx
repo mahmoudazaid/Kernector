@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { LoadingState } from "@/components/states/LoadingState";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import { formatTimestamp } from "@/lib/format/timestamp";
 import {
-  claudeCodeMcpConfig,
   createMcpProfile,
-  cursorMcpConfig,
   getMcpServerInfo,
   listMcpProfiles,
   listMcpTools,
+  mcpClientConfig,
   revokeMcpProfile,
   updateMcpAllowlist,
   type McpAccessProfileResponse,
@@ -26,7 +31,6 @@ import {
 
 export type McpAccessPanelProps = {
   mcpPublicEndpoint: string;
-  apiBaseUrl: string;
   loadServer?: typeof getMcpServerInfo;
   loadTools?: typeof listMcpTools;
   loadProfiles?: typeof listMcpProfiles;
@@ -57,9 +61,63 @@ function projectLabel(project: ProjectResponse): string {
   return `${project.name} (${project.slug})`;
 }
 
+function McpTokenCallout({
+  token,
+  endpoint,
+}: {
+  token: string;
+  endpoint: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const config = mcpClientConfig(endpoint, token);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  function onCopy() {
+    void navigator.clipboard.writeText(token).then(
+      () => setCopied(true),
+      () => setCopied(false),
+    );
+  }
+
+  return (
+    <div
+      className="kern-settings-callout kern-settings-callout--ok"
+      role="status"
+      aria-live="polite"
+    >
+      <h2>One-time access token</h2>
+      <p className="kern-settings-hint">
+        Copy now — it will not be shown again. Paste the client config into
+        mcp.json for Cursor or Claude Code.
+      </p>
+      <div className="kern-mcp-token-row">
+        <input
+          className="kern-settings-input"
+          type="text"
+          readOnly
+          value={token}
+          aria-label="One-time access token"
+          onFocus={(event) => event.currentTarget.select()}
+        />
+        <Button variant="secondary" onClick={onCopy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <div className="kern-settings-field">
+        <p className="kern-settings-help">Client config</p>
+        <pre className="kern-mcp-snippet">{config}</pre>
+      </div>
+    </div>
+  );
+}
+
 export function McpAccessPanel({
   mcpPublicEndpoint,
-  apiBaseUrl,
   loadServer = getMcpServerInfo,
   loadTools = listMcpTools,
   loadProfiles = listMcpProfiles,
@@ -116,7 +174,7 @@ export function McpAccessPanel({
             loadServer(),
             loadTools(),
             loadProfiles(),
-            loadProjects({ baseUrl: apiBaseUrl }),
+            loadProjects(),
           ]);
         if (cancelled) return;
         setProfiles(profileList);
@@ -147,14 +205,7 @@ export function McpAccessPanel({
     return () => {
       cancelled = true;
     };
-  }, [
-    apiBaseUrl,
-    loadServer,
-    loadTools,
-    loadProfiles,
-    loadProjects,
-    reloadNonce,
-  ]);
+  }, [loadServer, loadTools, loadProfiles, loadProjects, reloadNonce]);
 
   const selected = profiles.find((item) => item.profile_id === selectedId) ?? null;
   const allowlistable =
@@ -390,28 +441,7 @@ export function McpAccessPanel({
       </fieldset>
 
       {pendingToken ? (
-        <div
-          className="kern-settings-callout kern-settings-callout--ok"
-          role="status"
-          aria-live="polite"
-        >
-          <h2>One-time access token</h2>
-          <p>Copy now — it will not be shown again.</p>
-          <p>
-            <code>{pendingToken}</code>
-          </p>
-          <div className="kern-settings-field">
-            <p className="kern-settings-help">Cursor</p>
-            <pre className="kern-mcp-snippet">{cursorMcpConfig(endpoint, pendingToken)}</pre>
-          </div>
-          <div className="kern-settings-field">
-            <p className="kern-settings-help">Claude Code</p>
-            <pre className="kern-mcp-snippet">{claudeCodeMcpConfig(endpoint, pendingToken)}</pre>
-          </div>
-          <Button variant="secondary" onClick={() => setPendingToken(null)}>
-            Dismiss token
-          </Button>
-        </div>
+        <McpTokenCallout token={pendingToken} endpoint={endpoint} />
       ) : null}
 
       <fieldset className="kern-settings-fieldset">

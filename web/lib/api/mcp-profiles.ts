@@ -122,24 +122,10 @@ export async function revokeMcpProfile(
   } satisfies ApiRequestOptions);
 }
 
-export function cursorMcpConfig(endpoint: string, token: string): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        kernector: {
-          url: endpoint,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      },
-    },
-    null,
-    2,
-  );
-}
-
-export function claudeCodeMcpConfig(endpoint: string, token: string): string {
+/**
+ * Single mcp.json snippet for Cursor and Claude Code (Streamable HTTP + bearer).
+ */
+export function mcpClientConfig(endpoint: string, token: string): string {
   return JSON.stringify(
     {
       mcpServers: {
@@ -156,3 +142,9 @@ export function claudeCodeMcpConfig(endpoint: string, token: string): string {
     2,
   );
 }
+
+/** @deprecated Use {@link mcpClientConfig}. */
+export const cursorMcpConfig = mcpClientConfig;
+
+/** @deprecated Use {@link mcpClientConfig}. */
+export const claudeCodeMcpConfig = mcpClientConfig;

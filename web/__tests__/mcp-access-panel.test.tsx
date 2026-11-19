@@ -2,14 +2,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { McpAccessPanel } from "@/components/settings/McpAccessPanel";
-import {
-  claudeCodeMcpConfig,
-  cursorMcpConfig,
-} from "@/lib/api/mcp-profiles";
+import { mcpClientConfig } from "@/lib/api/mcp-profiles";
 
 describe("McpAccessPanel", () => {
-  it("shows server status, one-time token, client configs, and confirm revoke", async () => {
+  it("shows server status, one-time token, client config, and confirm revoke", async () => {
     const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     const loadServer = vi.fn().mockResolvedValue({
       endpoint: "/mcp",
       transport: "streamable-http",
@@ -78,7 +80,6 @@ describe("McpAccessPanel", () => {
     render(
       <McpAccessPanel
         mcpPublicEndpoint="http://127.0.0.1:8100/mcp"
-        apiBaseUrl="http://127.0.0.1:8000"
         loadServer={loadServer}
         loadTools={loadTools}
         loadProfiles={loadProfiles}
@@ -101,23 +102,32 @@ describe("McpAccessPanel", () => {
     await user.click(screen.getByRole("button", { name: /create profile/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("once-only-token")).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/one-time access token/i),
+      ).toHaveValue("once-only-token");
     });
     expect(createProfile).toHaveBeenCalledWith({
       project_id: "prj_a",
       name: "cursor",
     });
-    const cursorSnippet = cursorMcpConfig(
-      "http://127.0.0.1:8100/mcp",
-      "once-only-token",
-    );
-    const claudeSnippet = claudeCodeMcpConfig(
+    const snippet = mcpClientConfig(
       "http://127.0.0.1:8100/mcp",
       "once-only-token",
     );
     const tokenStatus = screen.getByRole("status");
-    expect(tokenStatus.textContent).toContain(cursorSnippet);
-    expect(tokenStatus.textContent).toContain(claudeSnippet);
+    expect(tokenStatus.textContent).toContain(snippet);
+    expect(screen.queryByText("Cursor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /dismiss token/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Client config")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^copy$/i }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("once-only-token");
+      expect(screen.getByRole("button", { name: /^copied$/i })).toBeInTheDocument();
+    });
 
     await user.click(screen.getByRole("button", { name: /revoke profile/i }));
     expect(
@@ -144,7 +154,6 @@ describe("McpAccessPanel", () => {
     render(
       <McpAccessPanel
         mcpPublicEndpoint="http://127.0.0.1:8100/mcp"
-        apiBaseUrl="http://127.0.0.1:8000"
         loadServer={loadServer}
         loadTools={loadTools}
         loadProfiles={loadProfiles}
