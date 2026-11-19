@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from composition import Settings, load_runtime_settings
 from application.submit_response_feedback import FeedbackNotFoundError
+from domain.mcp_access.errors import McpAccessProfileError
 from presentation.http.errors import (
     Problem,
     ProblemError,
@@ -211,6 +212,25 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
         # Expected when hydrating thumbs for a response with no rating yet —
         # do not log as unhandled (avoids ServerErrorMiddleware / uvicorn ERROR).
         problem = problem_from_exception(exc, instance=str(request.url.path))
+        return _problem_response(problem)
+
+    @app.exception_handler(McpAccessProfileError)
+    async def mcp_access_profile_error_handler(
+        request: Request, exc: McpAccessProfileError
+    ) -> JSONResponse:
+        # Expected Admin create/get/allowlist failures (unknown project, missing
+        # profile, isolation-unsafe tools) — map to Problem Details without
+        # uvicorn "Exception in ASGI application" / unhandled ERROR spam.
+        problem = problem_from_exception(exc, instance=str(request.url.path))
+        if problem.status >= 500:
+            _LOG.exception("MCP access failure on %s", request.url.path)
+        else:
+            _LOG.info(
+                "MCP access %s on %s: %s",
+                problem.code,
+                request.url.path,
+                problem.detail,
+            )
         return _problem_response(problem)
 
     @app.exception_handler(ValueError)

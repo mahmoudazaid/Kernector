@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { LoadingState } from "@/components/states/LoadingState";
+import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { SoftSelect } from "@/components/ui/SoftSelect";
+import { formatTimestamp } from "@/lib/format/timestamp";
 import {
   claudeCodeMcpConfig,
   createMcpProfile,
@@ -15,68 +19,161 @@ import {
   type McpServerInfoResponse,
   type McpToolCatalogResponse,
 } from "@/lib/api/mcp-profiles";
+import {
+  listProjects,
+  type ProjectResponse,
+} from "@/lib/api/projects";
 
 export type McpAccessPanelProps = {
   mcpPublicEndpoint: string;
+  apiBaseUrl: string;
   loadServer?: typeof getMcpServerInfo;
   loadTools?: typeof listMcpTools;
   loadProfiles?: typeof listMcpProfiles;
+  loadProjects?: typeof listProjects;
   createProfile?: typeof createMcpProfile;
   saveAllowlist?: typeof updateMcpAllowlist;
   revokeProfile?: typeof revokeMcpProfile;
 };
 
+type LoadView =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | {
+      kind: "ready";
+      server: McpServerInfoResponse;
+      tools: McpToolCatalogResponse;
+    };
+
+function statusPillClass(status: string): string {
+  if (status === "active") return "kern-source-status";
+  if (status === "disabled" || status === "expired") {
+    return "kern-source-status is-setup";
+  }
+  return "kern-source-status is-muted";
+}
+
+function projectLabel(project: ProjectResponse): string {
+  return `${project.name} (${project.slug})`;
+}
+
 export function McpAccessPanel({
   mcpPublicEndpoint,
+  apiBaseUrl,
   loadServer = getMcpServerInfo,
   loadTools = listMcpTools,
   loadProfiles = listMcpProfiles,
+  loadProjects = listProjects,
   createProfile = createMcpProfile,
   saveAllowlist = updateMcpAllowlist,
   revokeProfile = revokeMcpProfile,
 }: McpAccessPanelProps) {
-  const [server, setServer] = useState<McpServerInfoResponse | null>(null);
-  const [tools, setTools] = useState<McpToolCatalogResponse | null>(null);
+  const [loadView, setLoadView] = useState<LoadView>({ kind: "loading" });
   const [profiles, setProfiles] = useState<McpAccessProfileResponse[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState("");
   const [name, setName] = useState("");
   const [revokeTarget, setRevokeTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const projectOptions = useMemo(
+    () => projects.map((project) => projectLabel(project)),
+    [projects],
+  );
+  const projectIdByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const project of projects) {
+      map.set(projectLabel(project), project.project_id);
+    }
+    return map;
+  }, [projects]);
+  const projectLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const project of projects) {
+      map.set(project.project_id, projectLabel(project));
+    }
+    return map;
+  }, [projects]);
+  const selectedProjectLabel =
+    (projectId && projectLabelById.get(projectId)) || projectOptions[0] || "";
+
+  const reload = useCallback(() => {
+    setLoadView({ kind: "loading" });
+    setActionError(null);
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     startTransition(async () => {
       try {
-        const [serverInfo, toolCatalog, profileList] = await Promise.all([
-          loadServer(),
-          loadTools(),
-          loadProfiles(),
-        ]);
+        const [serverInfo, toolCatalog, profileList, projectList] =
+          await Promise.all([
+            loadServer(),
+            loadTools(),
+            loadProfiles(),
+            loadProjects({ baseUrl: apiBaseUrl }),
+          ]);
         if (cancelled) return;
-        setServer(serverInfo);
-        setTools(toolCatalog);
         setProfiles(profileList);
-        setSelectedId(profileList[0]?.profile_id ?? null);
-        setError(null);
+        setProjects(projectList);
+        setSelectedId((current) => current ?? profileList[0]?.profile_id ?? null);
+        setProjectId((current) => {
+          if (current && projectList.some((item) => item.project_id === current)) {
+            return current;
+          }
+          return projectList[0]?.project_id ?? "";
+        });
+        setLoadView({
+          kind: "ready",
+          server: serverInfo,
+          tools: toolCatalog,
+        });
+        setActionError(null);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load MCP admin");
+          setLoadView({
+            kind: "error",
+            message:
+              err instanceof Error ? err.message : "Failed to load MCP admin",
+          });
         }
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [loadServer, loadTools, loadProfiles]);
+  }, [
+    apiBaseUrl,
+    loadServer,
+    loadTools,
+    loadProfiles,
+    loadProjects,
+    reloadNonce,
+  ]);
 
   const selected = profiles.find((item) => item.profile_id === selectedId) ?? null;
   const allowlistable =
-    tools?.tools.filter((tool) => tool.allowlistable) ?? [];
+    loadView.kind === "ready"
+      ? loadView.tools.tools.filter((tool) => tool.allowlistable)
+      : [];
+  const unavailable =
+    loadView.kind === "ready"
+      ? loadView.tools.tools.filter((tool) => !tool.allowlistable)
+      : [];
+  const endpoint =
+    mcpPublicEndpoint ||
+    (loadView.kind === "ready" ? loadView.server.endpoint : "/mcp");
 
   function onCreate() {
+    if (!projectId.trim()) {
+      setActionError("Select a project before creating a profile.");
+      return;
+    }
     startTransition(async () => {
       try {
         const created = await createProfile({
@@ -87,9 +184,9 @@ export function McpAccessPanel({
         setProfiles((prev) => [created.profile, ...prev]);
         setSelectedId(created.profile.profile_id);
         setName("");
-        setError(null);
+        setActionError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Create failed");
+        setActionError(err instanceof Error ? err.message : "Create failed");
       }
     });
   }
@@ -107,9 +204,11 @@ export function McpAccessPanel({
             item.profile_id === updated.profile_id ? updated : item,
           ),
         );
-        setError(null);
+        setActionError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Allowlist update failed");
+        setActionError(
+          err instanceof Error ? err.message : "Allowlist update failed",
+        );
       }
     });
   }
@@ -127,145 +226,285 @@ export function McpAccessPanel({
           ),
         );
         setPendingToken(null);
-        setError(null);
+        setActionError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Revoke failed");
+        setActionError(err instanceof Error ? err.message : "Revoke failed");
       }
     });
   }
 
+  if (loadView.kind === "loading") {
+    return (
+      <div className="kern-settings" aria-busy="true">
+        <h1 id="mcp-access-heading">MCP access profiles</h1>
+        <div className="kern-content-state">
+          <LoadingState label="Loading MCP access" />
+        </div>
+      </div>
+    );
+  }
+
+  if (loadView.kind === "error") {
+    return (
+      <div className="kern-settings" role="alert">
+        <h1 id="mcp-access-heading">MCP access profiles</h1>
+        <p className="kern-settings-lead">{loadView.message}</p>
+        <Button variant="secondary" disabled={isPending} onClick={reload}>
+          {isPending ? "Checking…" : "Retry"}
+        </Button>
+      </div>
+    );
+  }
+
+  const { server, tools } = loadView;
+
   return (
-    <section className="kern-settings-panel" aria-labelledby="mcp-access-heading">
+    <section className="kern-settings" aria-labelledby="mcp-access-heading">
       <h1 id="mcp-access-heading">MCP access profiles</h1>
-      <p>
+      <p className="kern-settings-lead">
         Manage Kernector&apos;s hosted MCP server profiles. There is no remote
         MCP URL field — clients connect to this deployment only.
       </p>
 
-      {error ? (
-        <p role="alert" className="kern-callout kern-callout-error">
-          {error}
+      {actionError ? (
+        <div
+          className="kern-settings-callout kern-settings-callout--error"
+          role="alert"
+        >
+          <p>{actionError}</p>
+        </div>
+      ) : null}
+
+      <fieldset className="kern-settings-fieldset" aria-label="MCP server status">
+        <legend>Server</legend>
+        <div className="kern-settings-stack">
+          <div className="kern-settings-field">
+            <p className="kern-settings-help">Endpoint</p>
+            <p className="kern-settings-hint">
+              <code>{endpoint}</code>
+            </p>
+          </div>
+          <div className="kern-source-metrics">
+            <div>
+              <span className="kern-metric-label">Transport</span>
+              <span className="kern-metric-value">{server.transport}</span>
+            </div>
+            <div>
+              <span className="kern-metric-label">Auth</span>
+              <span className="kern-metric-value">{server.auth_mode}</span>
+            </div>
+          </div>
+          <div className="kern-sync-heading">
+            <h3>Status</h3>
+            <span className={statusPillClass(server.status)}>{server.status}</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset className="kern-settings-fieldset" aria-label="MCP tool catalog">
+        <legend>Tools</legend>
+        <p className="kern-settings-hint">
+          Allowlistable tools can be enabled per profile. Isolation-blocked tools
+          stay unavailable.
         </p>
-      ) : null}
+        <ul className="kern-mcp-tool-list">
+          {tools.tools.map((tool) => (
+            <li key={tool.tool_id}>
+              <div className="kern-sync-heading">
+                <h3>
+                  <code>{tool.tool_id}</code>
+                </h3>
+                <span
+                  className={
+                    tool.allowlistable
+                      ? "kern-source-status"
+                      : "kern-source-status is-muted"
+                  }
+                >
+                  {tool.allowlistable ? "allowlistable" : "unavailable"}
+                </span>
+              </div>
+              <p className="kern-settings-hint">
+                {tool.kind}
+                {tool.side_effecting ? " · side-effecting" : ""}
+                {!tool.allowlistable && tool.unavailable_reason
+                  ? ` — ${tool.unavailable_reason}`
+                  : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </fieldset>
 
-      {server ? (
-        <div aria-label="MCP server status">
-          <p>
-            Endpoint: <code>{mcpPublicEndpoint || server.endpoint}</code>
-          </p>
-          <p>
-            Transport: {server.transport}; auth: {server.auth_mode}; status:{" "}
-            {server.status}
-          </p>
+      <fieldset className="kern-settings-fieldset">
+        <legend>Create profile</legend>
+        <div className="kern-settings-stack">
+          {projects.length === 0 ? (
+            <div
+              className="kern-settings-callout kern-settings-callout--warn"
+              role="status"
+            >
+              <p>
+                No projects in this workspace yet. Create a project first, then
+                refresh this page to issue an MCP profile.
+              </p>
+              <Button variant="secondary" disabled={isPending} onClick={reload}>
+                {isPending ? "Checking…" : "Refresh projects"}
+              </Button>
+            </div>
+          ) : (
+            <SoftSelect
+              id="mcp-project"
+              label="Project"
+              value={selectedProjectLabel}
+              options={projectOptions}
+              onChange={(label) => {
+                setProjectId(projectIdByLabel.get(label) ?? "");
+                setActionError(null);
+              }}
+            />
+          )}
+          <div className="kern-settings-field">
+            <label htmlFor="mcp-profile-name">Profile name</label>
+            <input
+              id="mcp-profile-name"
+              className="kern-settings-input"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              autoComplete="off"
+              disabled={projects.length === 0}
+            />
+            <p className="kern-settings-hint">
+              A label for this client (for example <code>cursor</code>).
+            </p>
+          </div>
+          <Button
+            onClick={onCreate}
+            disabled={
+              isPending || projects.length === 0 || !projectId || !name.trim()
+            }
+          >
+            Create profile
+          </Button>
         </div>
-      ) : (
-        <p aria-busy={isPending}>Loading server…</p>
-      )}
-
-      {tools ? (
-        <div aria-label="MCP tool catalog">
-          <h2>Tools</h2>
-          <ul>
-            {tools.tools.map((tool) => (
-              <li key={tool.tool_id}>
-                {tool.tool_id} — {tool.kind}
-                {tool.side_effecting ? "; side-effecting" : ""}
-                {tool.allowlistable
-                  ? "; allowlistable"
-                  : `; unavailable — ${tool.unavailable_reason}`}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <h2>Create profile</h2>
-      <label htmlFor="mcp-project-id">
-        Project id
-        <input
-          id="mcp-project-id"
-          value={projectId}
-          onChange={(event) => setProjectId(event.target.value)}
-          autoComplete="off"
-        />
-      </label>
-      <label htmlFor="mcp-profile-name">
-        Profile name
-        <input
-          id="mcp-profile-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          autoComplete="off"
-        />
-      </label>
-      <button type="button" onClick={onCreate} disabled={isPending || !projectId || !name}>
-        Create profile
-      </button>
+      </fieldset>
 
       {pendingToken ? (
-        <div role="status" aria-live="polite">
+        <div
+          className="kern-settings-callout kern-settings-callout--ok"
+          role="status"
+          aria-live="polite"
+        >
           <h2>One-time access token</h2>
           <p>Copy now — it will not be shown again.</p>
-          <pre>{pendingToken}</pre>
-          <h3>Cursor</h3>
-          <pre>{cursorMcpConfig(mcpPublicEndpoint || "/mcp", pendingToken)}</pre>
-          <h3>Claude Code</h3>
-          <pre>
-            {claudeCodeMcpConfig(mcpPublicEndpoint || "/mcp", pendingToken)}
-          </pre>
-          <button type="button" onClick={() => setPendingToken(null)}>
+          <p>
+            <code>{pendingToken}</code>
+          </p>
+          <div className="kern-settings-field">
+            <p className="kern-settings-help">Cursor</p>
+            <pre className="kern-mcp-snippet">{cursorMcpConfig(endpoint, pendingToken)}</pre>
+          </div>
+          <div className="kern-settings-field">
+            <p className="kern-settings-help">Claude Code</p>
+            <pre className="kern-mcp-snippet">{claudeCodeMcpConfig(endpoint, pendingToken)}</pre>
+          </div>
+          <Button variant="secondary" onClick={() => setPendingToken(null)}>
             Dismiss token
-          </button>
+          </Button>
         </div>
       ) : null}
 
-      <h2>Profiles</h2>
-      <ul>
-        {profiles.map((profile) => (
-          <li key={profile.profile_id}>
-            <button type="button" onClick={() => setSelectedId(profile.profile_id)}>
-              {profile.name} ({profile.status}) — {profile.project_id}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <fieldset className="kern-settings-fieldset">
+        <legend>Profiles</legend>
+        {profiles.length === 0 ? (
+          <p className="kern-settings-hint">No profiles yet.</p>
+        ) : (
+          <div
+            className="kern-settings-radios"
+            role="radiogroup"
+            aria-label="Profiles"
+          >
+            {profiles.map((profile) => (
+              <label key={profile.profile_id} className="kern-settings-radio">
+                <input
+                  type="radio"
+                  name="mcp-profile"
+                  value={profile.profile_id}
+                  checked={selectedId === profile.profile_id}
+                  onChange={() => setSelectedId(profile.profile_id)}
+                />
+                <span>
+                  {profile.name} ({profile.status}) — {profile.project_id}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </fieldset>
 
       {selected ? (
-        <div>
-          <h2>Allowlist — {selected.name}</h2>
-          <ul>
+        <fieldset className="kern-settings-fieldset">
+          <legend>Allowlist — {selected.name}</legend>
+          <div className="kern-source-metrics">
+            <div>
+              <span className="kern-metric-label">Project</span>
+              <span className="kern-metric-value">{selected.project_id}</span>
+            </div>
+            <div>
+              <span className="kern-metric-label">Status</span>
+              <span className={statusPillClass(selected.status)}>
+                {selected.status}
+              </span>
+            </div>
+          </div>
+          <div className="kern-sync-section">
+            <div className="kern-sync-heading">
+              <h3>Created</h3>
+              <time className="kern-sync-time" dateTime={selected.created_at}>
+                {formatTimestamp(selected.created_at)}
+              </time>
+            </div>
+            <div className="kern-sync-heading">
+              <h3>Updated</h3>
+              <time className="kern-sync-time" dateTime={selected.updated_at}>
+                {formatTimestamp(selected.updated_at)}
+              </time>
+            </div>
+          </div>
+
+          <div className="kern-settings-stack">
             {allowlistable.map((tool) => (
-              <li key={tool.tool_id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selected.allowlist.includes(tool.tool_id)}
-                    disabled={selected.status !== "active"}
-                    onChange={(event) =>
-                      onToggleTool(tool.tool_id, event.target.checked)
-                    }
-                  />
+              <label key={tool.tool_id} className="kern-settings-radio">
+                <input
+                  type="checkbox"
+                  checked={selected.allowlist.includes(tool.tool_id)}
+                  disabled={selected.status !== "active" || isPending}
+                  onChange={(event) =>
+                    onToggleTool(tool.tool_id, event.target.checked)
+                  }
+                />
+                <span>
                   {tool.tool_id}
                   {tool.side_effecting ? " (side-effecting, HITL required)" : ""}
-                </label>
-              </li>
+                </span>
+              </label>
             ))}
-          </ul>
-          {tools?.tools
-            .filter((tool) => !tool.allowlistable)
-            .map((tool) => (
-              <p key={tool.tool_id}>
-                {tool.tool_id}: unavailable — {tool.unavailable_reason}
-              </p>
-            ))}
-          <button
-            type="button"
-            disabled={selected.status === "revoked"}
+          </div>
+
+          {unavailable.map((tool) => (
+            <p key={tool.tool_id} className="kern-settings-hint">
+              <code>{tool.tool_id}</code>: unavailable — {tool.unavailable_reason}
+            </p>
+          ))}
+
+          <Button
+            variant="danger"
+            disabled={selected.status === "revoked" || isPending}
             onClick={() => setRevokeTarget(selected.profile_id)}
           >
             Revoke profile
-          </button>
-        </div>
+          </Button>
+        </fieldset>
       ) : null}
 
       <ConfirmDialog

@@ -111,3 +111,34 @@ def test_create_list_get_rotate_allowlist_revoke_profile() -> None:
     )
     assert revoked.status_code == 200
     assert revoked.json()["status"] == "revoked"
+
+
+def test_create_profile_unknown_project_returns_problem_404() -> None:
+    client = _client()
+    response = client.post(
+        "/api/v1/admin/mcp/profiles",
+        headers=_ADMIN,
+        json={"project_id": "oie", "name": "cursor"},
+    )
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith(_PROBLEM)
+    body = response.json()
+    assert body["code"] == "project_not_found"
+    assert "workspace" in body["detail"].lower()
+
+
+def test_list_tools_does_not_require_chroma(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admin catalog must not open PersistentClient (avoids Chroma KeyError)."""
+    import composition.container as container
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("retrieve/chroma must stay lazy for /admin/mcp/tools")
+
+    monkeypatch.setattr(container, "build_retrieve_knowledge", _boom)
+
+    client = _client()
+    response = client.get("/api/v1/admin/mcp/tools", headers=_ADMIN)
+    assert response.status_code == 200, response.text
+    assert "core.search_knowledge" in response.text

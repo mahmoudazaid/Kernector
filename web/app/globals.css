@@ -1054,6 +1054,37 @@ a {
   border-color: color-mix(in srgb, var(--kern-success, #2f6f4e) 45%, var(--kern-line));
 }
 
+.kern-settings-callout--ok h2 {
+  margin: 0 0 var(--kern-space-2);
+  font-size: var(--kern-text-md);
+  font-weight: 500;
+}
+
+.kern-mcp-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--kern-space-3);
+}
+
+.kern-mcp-snippet {
+  margin: 0;
+  padding: var(--kern-space-3);
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--kern-line) 80%, transparent);
+  border-radius: 16px;
+  background:
+    var(--kern-control-sheen),
+    var(--kern-surface);
+  box-shadow: var(--kern-control-emboss);
+  color: var(--kern-ink);
+  font-family: var(--kern-font-mono);
+  font-size: var(--kern-text-xs);
+  line-height: 1.45;
+  white-space: pre;
+}
+
 .kern-documents {
   display: flex;
   flex-direction: column;
