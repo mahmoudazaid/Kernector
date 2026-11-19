@@ -29,6 +29,7 @@ class CreateAccessProfileRequest:
     project_id: str
     name: str
     expires_at: str | None = None
+    description: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,11 @@ class CreateAccessProfile:
             raise ProjectNotInWorkspaceError(request.project_id)
         plaintext = self._new_token()
         now = self._clock()
+        description = (
+            request.description.strip()
+            if isinstance(request.description, str)
+            else ""
+        )
         profile = McpAccessProfile(
             profile_id=self._new_id(),
             workspace_id=_workspace_id(self._store),
@@ -74,6 +80,7 @@ class CreateAccessProfile:
             token_hash=hash_access_token(plaintext),
             created_at=now,
             updated_at=now,
+            description=description,
         )
         self._store.add(profile)
         return CreatedAccessProfile(profile=profile, plaintext_token=plaintext)

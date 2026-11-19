@@ -36,6 +36,7 @@ def _profile_response(profile: McpAccessProfile) -> McpAccessProfileResponse:
         expires_at=profile.expires_at,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
+        description=profile.description,
         disabled_at=profile.disabled_at,
         revoked_at=profile.revoked_at,
     )
@@ -109,6 +110,7 @@ def create_profile(
             project_id=body.project_id,
             name=body.name,
             expires_at=body.expires_at,
+            description=body.description,
         )
     )
     return McpAccessProfileCreatedResponse(

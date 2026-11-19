@@ -68,7 +68,12 @@ export async function listMcpProfiles(
 }
 
 export async function createMcpProfile(
-  body: { project_id: string; name: string; expires_at?: string | null },
+  body: {
+    project_id: string;
+    name: string;
+    expires_at?: string | null;
+    description?: string;
+  },
   options: McpAdminApiOptions = {},
 ): Promise<McpAccessProfileCreatedResponse> {
   const { baseUrl, request, signal } = opts(options);

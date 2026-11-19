@@ -46,6 +46,8 @@ def _is_expired(expires_at: str | None, *, now: datetime | None = None) -> bool:
 
 def _from_row(row: sqlite3.Row) -> McpAccessProfile:
     allowlist_raw = json.loads(row["allowlist"])
+    keys = row.keys()
+    description = row["description"] if "description" in keys else ""
     return McpAccessProfile(
         profile_id=row["profile_id"],
         workspace_id=row["workspace_id"],
@@ -57,6 +59,7 @@ def _from_row(row: sqlite3.Row) -> McpAccessProfile:
         token_hash=row["token_hash"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        description=description or "",
         disabled_at=row["disabled_at"],
         revoked_at=row["revoked_at"],
     )
@@ -88,8 +91,8 @@ class SqlMcpAccessProfileStore:
                     "INSERT INTO mcp_access_profiles ("
                     "workspace_id, profile_id, project_id, name, token_hash, "
                     "allowlist, status, expires_at, disabled_at, revoked_at, "
-                    "created_at, updated_at"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, updated_at, description"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         self._workspace_id,
                         profile.profile_id,
@@ -103,6 +106,7 @@ class SqlMcpAccessProfileStore:
                         profile.revoked_at,
                         profile.created_at,
                         profile.updated_at,
+                        profile.description,
                     ),
                 )
             except sqlite3.IntegrityError as error:
@@ -135,7 +139,7 @@ class SqlMcpAccessProfileStore:
             cursor = connection.execute(
                 "UPDATE mcp_access_profiles SET project_id = ?, name = ?, "
                 "token_hash = ?, allowlist = ?, status = ?, expires_at = ?, "
-                "disabled_at = ?, revoked_at = ?, updated_at = ? "
+                "disabled_at = ?, revoked_at = ?, updated_at = ?, description = ? "
                 "WHERE workspace_id = ? AND profile_id = ?",
                 (
                     profile.project_id,
@@ -147,6 +151,7 @@ class SqlMcpAccessProfileStore:
                     profile.disabled_at,
                     profile.revoked_at,
                     profile.updated_at,
+                    profile.description,
                     self._workspace_id,
                     profile.profile_id,
                 ),

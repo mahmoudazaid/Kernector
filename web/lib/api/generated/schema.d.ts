@@ -1384,6 +1384,11 @@ export interface components {
     };
     /** CreateMcpAccessProfileBody */
     CreateMcpAccessProfileBody: {
+      /**
+       * Description
+       * @default ""
+       */
+      description?: string;
       /** Expires At */
       expires_at?: string | null;
       /** Name */
@@ -2125,6 +2130,11 @@ export interface components {
       allowlist: string[];
       /** Created At */
       created_at: string;
+      /**
+       * Description
+       * @default ""
+       */
+      description?: string;
       /** Disabled At */
       disabled_at?: string | null;
       /** Expires At */

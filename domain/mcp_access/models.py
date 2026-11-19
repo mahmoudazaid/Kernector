@@ -32,5 +32,6 @@ class McpAccessProfile:
     token_hash: str
     created_at: str
     updated_at: str
+    description: str = ""
     disabled_at: str | None = None
     revoked_at: str | None = None

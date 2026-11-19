@@ -77,6 +77,7 @@ class McpAccessProfileResponse(BaseModel):
     expires_at: str | None = None
     created_at: str
     updated_at: str
+    description: str = ""
     disabled_at: str | None = None
     revoked_at: str | None = None
 
@@ -90,6 +91,7 @@ class CreateMcpAccessProfileBody(BaseModel):
     project_id: str
     name: str
     expires_at: str | None = None
+    description: str = ""
 
 
 class UpdateMcpAllowlistBody(BaseModel):
