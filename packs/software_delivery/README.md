@@ -78,7 +78,8 @@ agent with fixed `{draft_id}` arguments. The approval card shows the project key
 and test count, and the receipt lists the created keys.
 
 **MCP.** The same tool class is contributed through `build_mcp_tools` when
-Xray is configured and it is allowlisted in `MCP_TOOL_ALLOWLIST`. Every call
+Xray is configured and it is on the calling profile's allowlist (Admin UI
+`/settings/mcp` or `PUT /api/v1/admin/mcp/profiles/{id}/allowlist`). Every call
 goes through the generic MCP approval gate
 ([ADR 0010](../../docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)).
 Clients without elicitation get `approval_required`, and nothing is created.
@@ -103,7 +104,7 @@ A read-only, pure parser ([`test_files/`](test_files/)). The caller sends each
 file's workspace-relative path and full text. Kernector never reads the disk,
 never scans a workspace, and makes no Jira or Xray calls; creating tests from
 the result is #397 (below). The tool is registered whenever the pack is enabled, on
-chat (`InvokeTool`) and on MCP (allowlist it in `MCP_TOOL_ALLOWLIST`), and
+chat (`InvokeTool`) and on MCP (grant it on the profile allowlist), and
 needs no approval. Its description tells client agents when to pick it (for
 example "what will go to Xray from this feature?") and to read the open or
 mentioned file themselves, so users need not name the tool or the path. MCP
@@ -340,7 +341,7 @@ the test by key. The tool is pure: it returns the full new text and a unified
 diff (`a/<path>` / `b/<path>`, with `\ No newline at end of file` where it
 applies) for the caller to apply; it never reads or writes files or
 repositories and never calls Jira/Xray. It is registered on chat and MCP
-whenever the pack is enabled (on MCP, allowlist it in `MCP_TOOL_ALLOWLIST`),
+whenever the pack is enabled (on MCP, grant it on the profile allowlist),
 needs no approval, and writes the marker from
 `XRAY_TEST_TAG`: `@<marker>:<KEY>` in Gherkin and `<marker> <KEY>` in Robot.
 
@@ -486,7 +487,8 @@ libraries. Evidence is untrusted; secret-bearing and excluded files are
 dropped with sanitized diagnostics.
 
 Composition wiring: [`composition/mcp/project_profile.py`](../../composition/mcp/project_profile.py).
-Allowlist `software_delivery.project_profile` in `MCP_TOOL_ALLOWLIST`.
+Grant `software_delivery.project_profile` on the profile allowlist (Admin UI
+`/settings/mcp` or `PUT /api/v1/admin/mcp/profiles/{id}/allowlist`).
 
 ## Test Design over MCP (#338)
 
@@ -508,7 +510,7 @@ contributes these tools only when composition supplies a workspace-bound
 
 - MCP clients see each tool id with dots replaced by underscores (for example
   `software_delivery_test_design_start`), because clients such as Cursor
-  rewrite dotted names. `MCP_TOOL_ALLOWLIST` still takes the dotted ids, and
+  rewrite dotted names. Profile allowlists still use the dotted ids, and
   calls accept either form.
 - The export tool needs `format` passed explicitly: `markdown` for manual
   tests, `gherkin` for BDD scenarios. Kernector does not write files; the
@@ -609,7 +611,7 @@ tracker.
   `body` descriptions, and exceeding it returns a specific message telling the
   client to shorten the body and keep the acceptance criteria. Supplied content
   is never truncated, so acceptance criteria always reach the model in full.
-- The tool needs its own `MCP_TOOL_ALLOWLIST` entry; allowlisting
+- The tool needs its own profile-allowlist entry; granting
   `test_design_start` does not enable it.
 
 #### Choosing the start tool (#361)

@@ -339,6 +339,82 @@ describe("McpAccessPanel", () => {
     expect(body.expires_at).toBe(expected);
   });
 
+  it("keeps the one-time token when allowlist save fails", async () => {
+    const user = userEvent.setup();
+    const loadTools = vi.fn().mockResolvedValue({
+      tools: [
+        {
+          tool_id: "core.project_list",
+          name: "core_project_list",
+          kind: "core",
+          pack_id: null,
+          allowlistable: true,
+          side_effecting: false,
+          unavailable_reason: null,
+        },
+      ],
+    });
+    const loadProfiles = vi.fn().mockResolvedValue([]);
+    const loadProjects = vi.fn().mockResolvedValue([
+      {
+        project_id: "prj_a",
+        name: "Alpha",
+        slug: "alpha",
+        version: 1,
+      },
+    ]);
+    const createProfile = vi.fn().mockResolvedValue({
+      plaintext_token: "kept-token",
+      profile: {
+        profile_id: "mcp_keep",
+        project_id: "prj_a",
+        name: "cursor",
+        description: "",
+        allowlist: [],
+        status: "active",
+        expires_at: null,
+        created_at: "t0",
+        updated_at: "t0",
+        disabled_at: null,
+        revoked_at: null,
+      },
+    });
+    const saveAllowlist = vi
+      .fn()
+      .mockRejectedValue(new Error("isolation blocked"));
+
+    render(
+      <McpAccessPanel
+        mcpPublicEndpoint="http://127.0.0.1:8100/mcp"
+        loadTools={loadTools}
+        loadProfiles={loadProfiles}
+        loadProjects={loadProjects}
+        createProfile={createProfile}
+        saveAllowlist={saveAllowlist}
+      />,
+    );
+
+    await openCreate(user);
+    await user.click(screen.getByRole("combobox", { name: /expiration/i }));
+    await user.click(screen.getByRole("option", { name: /no expiration/i }));
+    await user.click(screen.getByRole("button", { name: /\+ add tools/i }));
+    await user.click(screen.getByRole("checkbox", { name: /core\.project_list/i }));
+    await user.type(screen.getByLabelText(/token name/i), "cursor");
+    await user.click(screen.getByRole("button", { name: /^generate token$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/one-time access token/i)).toHaveValue(
+        "kept-token",
+      );
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /token created, but tools could not be granted/i,
+    );
+    expect(
+      screen.getByRole("button", { name: /^delete cursor$/i }),
+    ).toBeInTheDocument();
+  });
+
   it("blocks create when the workspace has no projects", async () => {
     const user = userEvent.setup();
     const loadTools = vi.fn().mockResolvedValue({ tools: [] });

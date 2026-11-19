@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from domain.mcp_access.errors import (
     AccessProfileNotFoundError,
+    InvalidAccessProfileExpirationError,
     IsolationUnsafeToolError,
     ProjectNotInWorkspaceError,
 )
@@ -22,6 +23,33 @@ from domain.mcp_access.tokens import generate_access_token, hash_access_token
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _parse_clock(value: str) -> datetime:
+    clock = datetime.fromisoformat(value)
+    if clock.tzinfo is None:
+        return clock.replace(tzinfo=UTC)
+    return clock
+
+
+def _normalize_expires_at(expires_at: str | None, *, now: str) -> str | None:
+    """Parse and normalize ``expires_at``; reject unparseable or past values."""
+    if expires_at is None:
+        return None
+    if not isinstance(expires_at, str):
+        raise InvalidAccessProfileExpirationError(str(expires_at))
+    raw = expires_at.strip()
+    if not raw:
+        return None
+    try:
+        deadline = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise InvalidAccessProfileExpirationError(raw) from exc
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    if deadline <= _parse_clock(now):
+        raise InvalidAccessProfileExpirationError(raw)
+    return deadline.isoformat()
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +97,7 @@ class CreateAccessProfile:
             if isinstance(request.description, str)
             else ""
         )
+        expires_at = _normalize_expires_at(request.expires_at, now=now)
         profile = McpAccessProfile(
             profile_id=self._new_id(),
             workspace_id=_workspace_id(self._store),
@@ -76,7 +105,7 @@ class CreateAccessProfile:
             name=name,
             allowlist=frozenset(),
             status=McpAccessProfileStatus.ACTIVE,
-            expires_at=request.expires_at,
+            expires_at=expires_at,
             token_hash=hash_access_token(plaintext),
             created_at=now,
             updated_at=now,
@@ -189,10 +218,11 @@ class SetAccessProfileExpiration:
 
     def execute(self, profile_id: str, *, expires_at: str | None) -> McpAccessProfile:
         profile = GetAccessProfile(store=self._store).execute(profile_id)
+        now = self._clock()
         updated = replace(
             profile,
-            expires_at=expires_at,
-            updated_at=self._clock(),
+            expires_at=_normalize_expires_at(expires_at, now=now),
+            updated_at=now,
         )
         self._store.update(updated)
         return updated

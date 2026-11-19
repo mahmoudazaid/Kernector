@@ -405,7 +405,7 @@ function McpTokenCallout({
   );
 }
 
-function expirySummary(expiresAt: string | null): string {
+function expirySummary(expiresAt: string | null | undefined): string {
   if (!expiresAt) return "This token has no expiration date.";
   return `Expires ${formatTimestamp(expiresAt)}`;
 }
@@ -581,22 +581,41 @@ export function McpAccessPanel({
           expires_at: expiresAtFromChoice(expiryChoice, customExpiryYmd),
           description: tokenDescription,
         });
-        let profile = created.profile;
-        if (toolsToGrant.length > 0) {
-          profile = await saveAllowlist(
-            created.profile.profile_id,
-            toolsToGrant.toSorted(),
-          );
-        }
+        // Persist the one-time token immediately — allowlist may still fail.
         setPendingToken(created.plaintext_token);
         setPendingTokenName(tokenName);
         setPendingTokenDescription(
-          profile.description?.trim() || tokenDescription,
+          created.profile.description?.trim() || tokenDescription,
         );
-        setProfiles((prev) => [profile, ...prev]);
+        setProfiles((prev) => [created.profile, ...prev]);
         resetCreateForm();
-        setActionError(null);
         setScreen("list");
+
+        if (toolsToGrant.length === 0) {
+          setActionError(null);
+          return;
+        }
+        try {
+          const profile = await saveAllowlist(
+            created.profile.profile_id,
+            toolsToGrant.toSorted(),
+          );
+          setProfiles((prev) =>
+            prev.map((item) =>
+              item.profile_id === profile.profile_id ? profile : item,
+            ),
+          );
+          setPendingTokenDescription(
+            profile.description?.trim() || tokenDescription,
+          );
+          setActionError(null);
+        } catch (err) {
+          setActionError(
+            err instanceof Error
+              ? `Token created, but tools could not be granted: ${err.message}`
+              : "Token created, but tools could not be granted",
+          );
+        }
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Create failed");
       }

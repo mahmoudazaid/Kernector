@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,12 @@ from application.mcp_access.profiles import (
     CreateAccessProfileRequest,
     GetAccessProfile,
     ListAccessProfiles,
+    SetAccessProfileExpiration,
 )
-from domain.mcp_access.errors import ProjectNotInWorkspaceError
+from domain.mcp_access.errors import (
+    InvalidAccessProfileExpirationError,
+    ProjectNotInWorkspaceError,
+)
 from domain.mcp_access.models import McpAccessProfileStatus
 from domain.project.models import Project
 from domain.mcp_access.tokens import hash_access_token
@@ -107,4 +112,54 @@ def test_create_rejects_project_from_other_workspace(catalog_path: Path) -> None
     with pytest.raises(ProjectNotInWorkspaceError):
         create.execute(
             CreateAccessProfileRequest(project_id="prj_other", name="bad")
+        )
+
+
+def test_create_normalizes_future_expires_at(
+    profile_store: SqlMcpAccessProfileStore,
+) -> None:
+    future = (datetime.now(UTC) + timedelta(days=7)).replace(microsecond=0)
+    created = CreateAccessProfile(store=profile_store).execute(
+        CreateAccessProfileRequest(
+            project_id="prj_alpha",
+            name="expiring",
+            expires_at=future.isoformat().replace("+00:00", "Z"),
+        )
+    )
+    assert created.profile.expires_at == future.isoformat()
+    assert profile_store.authenticate(created.plaintext_token) is not None
+
+
+@pytest.mark.parametrize(
+    "expires_at",
+    [
+        "next week",
+        "12/01/2026",
+        (datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
+    ],
+)
+def test_create_rejects_invalid_or_past_expires_at(
+    profile_store: SqlMcpAccessProfileStore,
+    expires_at: str,
+) -> None:
+    with pytest.raises(InvalidAccessProfileExpirationError):
+        CreateAccessProfile(store=profile_store).execute(
+            CreateAccessProfileRequest(
+                project_id="prj_alpha",
+                name="bad-expiry",
+                expires_at=expires_at,
+            )
+        )
+    assert ListAccessProfiles(store=profile_store).execute() == ()
+
+
+def test_set_expiration_rejects_unparseable(
+    profile_store: SqlMcpAccessProfileStore,
+) -> None:
+    created = CreateAccessProfile(store=profile_store).execute(
+        CreateAccessProfileRequest(project_id="prj_alpha", name="cursor")
+    )
+    with pytest.raises(InvalidAccessProfileExpirationError):
+        SetAccessProfileExpiration(store=profile_store).execute(
+            created.profile.profile_id, expires_at="not-a-date"
         )

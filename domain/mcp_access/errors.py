@@ -31,3 +31,13 @@ class IsolationUnsafeToolError(McpAccessProfileError):
         super().__init__(
             "one or more tools cannot guarantee project isolation"
         )
+
+
+class InvalidAccessProfileExpirationError(McpAccessProfileError):
+    """``expires_at`` is not a parseable future ISO-8601 timestamp."""
+
+    def __init__(self, expires_at: str) -> None:
+        self.expires_at = expires_at
+        super().__init__(
+            "expires_at must be a future ISO-8601 timestamp"
+        )

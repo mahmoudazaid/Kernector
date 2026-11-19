@@ -704,7 +704,8 @@ curl -s http://127.0.0.1:8000/api/v1/projects/<project_id>
   authoritative link evidence.
 
 MCP clients can list projects with the read-only `core.project_list` tool when
-it is in `MCP_TOOL_ALLOWLIST`.
+it is on the calling profile's allowlist (Admin UI `/settings/mcp` or
+`PUT /api/v1/admin/mcp/profiles/{id}/allowlist`).
 
 ## Logging and monitoring
 

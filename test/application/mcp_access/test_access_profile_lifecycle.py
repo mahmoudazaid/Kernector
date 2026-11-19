@@ -14,7 +14,6 @@ from application.mcp_access.profiles import (
     DisableAccessProfile,
     RevokeAccessProfile,
     RotateAccessProfileToken,
-    SetAccessProfileExpiration,
 )
 from domain.mcp_access.models import McpAccessProfileStatus
 from domain.project.models import Project
@@ -75,11 +74,12 @@ def test_disable_and_revoke_reject_authentication(
 def test_expired_profile_cannot_authenticate(
     profile_store: SqlMcpAccessProfileStore,
 ) -> None:
+    from dataclasses import replace
+
     created = _create(profile_store)
     past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
-    SetAccessProfileExpiration(store=profile_store).execute(
-        created.profile.profile_id, expires_at=past
-    )
+    # Bypass use-case validation (rejects past timestamps) to simulate expiry.
+    profile_store.update(replace(created.profile, expires_at=past))
     assert profile_store.authenticate(created.plaintext_token) is None
 
 

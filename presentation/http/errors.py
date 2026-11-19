@@ -85,6 +85,7 @@ from domain.errors import (
 )
 from domain.mcp_access.errors import (
     AccessProfileNotFoundError,
+    InvalidAccessProfileExpirationError,
     IsolationUnsafeToolError,
     ProjectNotInWorkspaceError,
 )
@@ -176,6 +177,12 @@ _PROJECT_PROBLEMS: dict[type[Exception], tuple[str, str, int, str]] = {
         "Tool cannot guarantee isolation",
         422,
         "One or more tools cannot guarantee project isolation and cannot be allowlisted.",
+    ),
+    InvalidAccessProfileExpirationError: (
+        "mcp_access_profile_invalid_expiration",
+        "Invalid MCP access profile expiration",
+        422,
+        "expires_at must be a future ISO-8601 timestamp.",
     ),
 }
 _TEST_DESIGN_EVIDENCE_CHANGED_DETAIL = (

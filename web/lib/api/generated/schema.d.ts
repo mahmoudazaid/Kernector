@@ -1386,9 +1386,9 @@ export interface components {
     CreateMcpAccessProfileBody: {
       /**
        * Description
-       * @default ""
+       * @default
        */
-      description?: string;
+      description: string;
       /** Expires At */
       expires_at?: string | null;
       /** Name */
@@ -2132,9 +2132,9 @@ export interface components {
       created_at: string;
       /**
        * Description
-       * @default ""
+       * @default
        */
-      description?: string;
+      description: string;
       /** Disabled At */
       disabled_at?: string | null;
       /** Expires At */
