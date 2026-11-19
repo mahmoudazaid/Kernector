@@ -15,7 +15,11 @@ MODERN = "2026-07-28"
 
 
 def _server():
-    caller = McpCallerContext(workspace_id="ws-test", profile_id="default", allowlist=frozenset())
+    caller = McpCallerContext(
+        workspace_id="ws-test",
+        profile_id="default",
+        project_id="prj_test",
+        allowlist=frozenset())
     return build_mcp_server(
         registry=McpToolRegistry(contributions=(), enabled_packs=()),
         resolver=FixedCallerContextResolver(caller),

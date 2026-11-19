@@ -20,11 +20,20 @@ SUPPORTED_MCP_TOOL_PACKS: Mapping[str, str] = {
     "software-delivery": "packs.software_delivery.registration:build_mcp_tools",
 }
 
+RetrieveProvider = RetrieveKnowledge | Callable[[], RetrieveKnowledge]
+
+
+def _resolve_retrieve(retrieve: RetrieveProvider) -> RetrieveKnowledge:
+    """Accept a retrieve use-case or a lazy factory (catalog / admin paths)."""
+    if isinstance(retrieve, RetrieveKnowledge):
+        return retrieve
+    return retrieve()
+
 
 def build_mcp_tool_registry(
     settings: Settings,
     *,
-    retrieve: RetrieveKnowledge,
+    retrieve: RetrieveProvider,
     chat_model_factory: Callable[[], ChatModel] | None = None,
 ) -> McpToolRegistry:
     """Build the MCP registry with core search + pack MCP factories.
@@ -33,12 +42,15 @@ def build_mcp_tool_registry(
     Software Delivery receives a workspace-bound Test Design binding (#338). ``chat_model_factory`` is forwarded for future LLM-backed pack MCP
     tools. Pack modules are imported only when that pack id is in
     ``settings.domain_tools.enabled_packs``.
+
+    ``retrieve`` may be a lazy ``Callable`` so catalog-only callers (Admin tool
+    list) never open Chroma until ``core.search_knowledge`` is actually invoked.
     """
     contributions: list[McpToolContribution] = [
         McpToolContribution(
             tool_id=SEARCH_KNOWLEDGE_TOOL,
             pack_id=None,
-            factory=lambda: SearchKnowledgeTool(retrieve),
+            factory=lambda: SearchKnowledgeTool(_resolve_retrieve(retrieve)),
         ),
         McpToolContribution(
             tool_id=PROJECT_LIST_TOOL,

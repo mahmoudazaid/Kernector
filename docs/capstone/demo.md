@@ -82,12 +82,13 @@ npm run dev
 **Terminal 3: MCP server.** Run it from the repository root:
 
 ```bash
-export MCP_AUTH_TOKEN=dev-token
+export ADMIN_API_TOKEN=admin-dev-token
 export MCP_ALLOWED_HOSTS=127.0.0.1:8100
-export MCP_TOOL_ALLOWLIST=software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export
 export DOMAIN_TOOL_PACKS=software-delivery
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
 uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
+# Create a profile + allowlist via /settings/mcp (or Admin MCP API), then use
+# the one-time profile bearer in Cursor / Claude Code — not MCP_AUTH_TOKEN.
 ```
 
 Health checks:

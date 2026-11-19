@@ -86,7 +86,7 @@ def _registry(tool: _FakeTool, policy: ToolApprovalPolicy = POLICY) -> McpToolRe
 
 
 def _caller(*tool_ids: str) -> McpCallerContext:
-    return McpCallerContext("ws", "default", frozenset(tool_ids))
+    return McpCallerContext("ws", "default", "prj_test", frozenset(tool_ids))
 
 
 def test_side_effect_tool_without_a_gate_fails_closed() -> None:

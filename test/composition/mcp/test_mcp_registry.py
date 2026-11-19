@@ -62,9 +62,10 @@ def test_list_effective_respects_allowlist() -> None:
         ),
         enabled_packs=("software-delivery",),
     )
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({TOOL_NAME}))
     names = [item.name for item in registry.list_effective(caller)]
-    assert names == [mcp_tool_name(TOOL_NAME)]
+    # core.search_knowledge is isolation-blocked until #257 (#324).
+    assert names == []
 
 
 def test_advertised_names_have_no_dots() -> None:
@@ -75,24 +76,28 @@ def test_advertised_names_have_no_dots() -> None:
 
 
 def test_invoke_accepts_advertised_name_and_dotted_id() -> None:
-    retrieve = _StubRetrieve()
+    from composition.mcp.project_list import TOOL_NAME as PROJECT_LIST
+    from composition.mcp.project_list import ProjectListTool
+
+    class _EmptyList:
+        def execute(self):
+            return ()
+
     registry = McpToolRegistry(
         contributions=(
             McpToolContribution(
-                tool_id=TOOL_NAME,
+                tool_id=PROJECT_LIST,
                 pack_id=None,
-                factory=lambda: SearchKnowledgeTool(retrieve),
+                factory=lambda: ProjectListTool(_EmptyList()),
             ),
         ),
         enabled_packs=(),
     )
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({PROJECT_LIST}))
 
-    for name in (mcp_tool_name(TOOL_NAME), TOOL_NAME):
-        result = registry.invoke_authorized(caller, name, {"query": "x"})
+    for name in (mcp_tool_name(PROJECT_LIST), PROJECT_LIST):
+        result = registry.invoke_authorized(caller, name, {})
         assert result.is_error is False
-
-    assert len(retrieve.calls) == 2
 
 
 def test_advertised_name_still_requires_allowlist() -> None:
@@ -106,7 +111,7 @@ def test_advertised_name_still_requires_allowlist() -> None:
         ),
         enabled_packs=(),
     )
-    caller = McpCallerContext("ws", "default", frozenset())
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset())
     result = registry.invoke_authorized(caller, mcp_tool_name(TOOL_NAME), {"query": "x"})
     assert result.code == TOOL_UNAVAILABLE_CODE
 
@@ -136,7 +141,7 @@ def test_invoke_non_allowlisted_is_tool_unavailable() -> None:
         ),
         enabled_packs=(),
     )
-    caller = McpCallerContext("ws", "default", frozenset())
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset())
     result = registry.invoke_authorized(caller, TOOL_NAME, {"query": "x"})
     assert result.is_error
     assert result.code == TOOL_UNAVAILABLE_CODE
@@ -157,10 +162,11 @@ def test_stale_pack_tool_allowlist_is_unavailable_when_not_contributed() -> None
     caller = McpCallerContext(
         "ws",
         "default",
+        "prj_test",
         frozenset({"software_delivery.retired_tool", TOOL_NAME}),
     )
     names = [item.name for item in registry.list_effective(caller)]
-    assert names == [mcp_tool_name(TOOL_NAME)]
+    assert names == []
     result = registry.invoke_authorized(
         caller, "software_delivery.retired_tool", {}
     )
@@ -170,7 +176,7 @@ def test_stale_pack_tool_allowlist_is_unavailable_when_not_contributed() -> None
 
 def test_unknown_and_drive_share_identical_unavailable() -> None:
     registry = McpToolRegistry(contributions=(), enabled_packs=())
-    caller = McpCallerContext("ws", "default", frozenset({"x"}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({"x"}))
     a = registry.invoke_authorized(caller, "no.such.tool", {})
     b = registry.invoke_authorized(
         caller, "software_delivery.export_test_cases_google_drive", {}
@@ -229,7 +235,7 @@ def test_neutral_tool_errors_translate_to_allowlisted_safe_codes(
     import domain.errors as domain_errors
 
     tool = _RaisingTool(getattr(domain_errors, error_cls)(_SECRET))
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
 
     result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
 
@@ -246,7 +252,7 @@ def test_source_not_connected_carries_the_legacy_github_alias() -> None:
     from domain.errors import ToolSourceNotConnectedError
 
     tool = _RaisingTool(ToolSourceNotConnectedError(_SECRET))
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
 
     result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
 
@@ -300,7 +306,7 @@ def _source_not_connected() -> Exception:
 
 def test_failure_hint_is_added_when_the_fallback_tool_is_effective() -> None:
     tool = _HintedTool(_source_not_connected())
-    caller = McpCallerContext("ws", "default", frozenset({tool.name, _FALLBACK}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name, _FALLBACK}))
 
     result = _hinted_registry(tool).invoke_authorized(caller, tool.name, {})
 
@@ -341,7 +347,7 @@ def test_failure_hint_is_withheld_unless_the_fallback_tool_is_effective(
     allowlist: frozenset[str], registry_kwargs: dict
 ) -> None:
     tool = _HintedTool(_source_not_connected())
-    caller = McpCallerContext("ws", "default", allowlist)
+    caller = McpCallerContext("ws", "default", "prj_test", allowlist)
 
     result = _hinted_registry(tool, **registry_kwargs).invoke_authorized(
         caller, tool.name, {}
@@ -361,7 +367,7 @@ def test_failure_hint_is_only_added_for_the_hinted_code() -> None:
     from domain.errors import ToolTargetNotFoundError
 
     tool = _HintedTool(ToolTargetNotFoundError(_SECRET))
-    caller = McpCallerContext("ws", "default", frozenset({tool.name, _FALLBACK}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name, _FALLBACK}))
 
     result = _hinted_registry(tool).invoke_authorized(caller, tool.name, {})
 
@@ -371,7 +377,7 @@ def test_failure_hint_is_only_added_for_the_hinted_code() -> None:
 def test_safe_code_messages_are_fixed_per_code() -> None:
     from domain.errors import ToolTargetNotFoundError
 
-    caller = McpCallerContext("ws", "default", frozenset({"fake.raising"}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({"fake.raising"}))
     a = _registry_for(_RaisingTool(ToolTargetNotFoundError("a"))).invoke_authorized(
         caller, "fake.raising", {}
     )
@@ -385,7 +391,7 @@ def test_argument_validation_stays_validation_error() -> None:
     from domain.errors import ToolArgumentValidationError
 
     tool = _RaisingTool(ToolArgumentValidationError(_SECRET))
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
 
     result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
 
@@ -415,7 +421,7 @@ def test_safe_schema_validation_message_is_returned() -> None:
     from composition.mcp.tool_registry import SAFE_VALIDATION_ERROR_TYPE
 
     tool = _SchemaTool(_schema_rejecting_with(SAFE_VALIDATION_ERROR_TYPE))
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
 
     result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
 
@@ -426,7 +432,7 @@ def test_safe_schema_validation_message_is_returned() -> None:
 
 def test_other_schema_validation_messages_stay_generic() -> None:
     tool = _SchemaTool(_schema_rejecting_with("value_error"))
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
 
     result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
 
@@ -443,7 +449,7 @@ def test_other_schema_validation_messages_stay_generic() -> None:
 )
 def test_unexpected_or_generic_failures_become_internal_error(error: Exception) -> None:
     tool = _RaisingTool(error)
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
 
     result = _registry_for(tool).invoke_authorized(caller, tool.name, {})
 
@@ -455,8 +461,8 @@ def test_unavailable_capability_is_identical_to_deny() -> None:
     from domain.errors import ToolUnavailableError
 
     tool = _RaisingTool(ToolUnavailableError(_SECRET))
-    allowed = McpCallerContext("ws", "default", frozenset({tool.name}))
-    denied = McpCallerContext("ws", "default", frozenset())
+    allowed = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
+    denied = McpCallerContext("ws", "default", "prj_test", frozenset())
     registry = _registry_for(tool)
 
     raised = registry.invoke_authorized(allowed, tool.name, {})
@@ -469,7 +475,7 @@ def test_unavailable_capability_is_identical_to_deny() -> None:
 
 def test_gate_enabled_allowlisted_authorized_is_listed_and_invocable() -> None:
     tool = _RaisingTool()
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
     registry = _registry_for(tool)
 
     assert [d.name for d in registry.list_effective(caller)] == [
@@ -482,7 +488,7 @@ def test_gate_enabled_allowlisted_authorized_is_listed_and_invocable() -> None:
 
 def test_gate_pack_not_enabled_is_unlisted_and_unavailable() -> None:
     tool = _RaisingTool()
-    caller = McpCallerContext("ws", "default", frozenset({tool.name}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({tool.name}))
     registry = _registry_for(tool, enabled_packs=())
 
     assert registry.list_effective(caller) == ()
@@ -493,7 +499,7 @@ def test_gate_pack_not_enabled_is_unlisted_and_unavailable() -> None:
 
 def test_gate_not_allowlisted_is_unlisted_and_unavailable() -> None:
     tool = _RaisingTool()
-    caller = McpCallerContext("ws", "default", frozenset({"other.tool"}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({"other.tool"}))
     registry = _registry_for(tool)
 
     assert registry.list_effective(caller) == ()
@@ -538,9 +544,11 @@ def test_build_mcp_registry_without_packs_exposes_only_core() -> None:
         domain_tools=DomainToolSettings(enabled_packs=()),
     )
     registry = build_mcp_tool_registry(settings, retrieve=_StubRetrieve())
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext(
+        "ws", "default", "prj_test", frozenset({TOOL_NAME, "core.project_list"})
+    )
     assert [item.name for item in registry.list_effective(caller)] == [
-        mcp_tool_name(TOOL_NAME)
+        "core_project_list"
     ]
 
 
@@ -559,10 +567,11 @@ def test_build_mcp_registry_with_pack_enabled_keeps_empty_seam() -> None:
     caller = McpCallerContext(
         "ws",
         "default",
-        frozenset({TOOL_NAME, "software_delivery.retired_tool"}),
+        "prj_test",
+        frozenset({TOOL_NAME, "software_delivery.retired_tool", "core.project_list"}),
     )
     assert [item.name for item in registry.list_effective(caller)] == [
-        mcp_tool_name(TOOL_NAME)
+        "core_project_list"
     ]
 
 
@@ -603,7 +612,7 @@ def test_wired_test_design_tools_are_listed_when_enabled_and_allowlisted(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-a")
-    caller = McpCallerContext("ws-a", "default", frozenset(_TEST_DESIGN_TOOLS))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset(_TEST_DESIGN_TOOLS))
 
     names = [item.name for item in registry.list_effective(caller)]
 
@@ -615,7 +624,7 @@ def test_retired_export_feature_allowlist_exposes_neither_old_nor_new_export(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-a")
-    caller = McpCallerContext("ws-a", "default", frozenset({_RETIRED_EXPORT_FEATURE}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({_RETIRED_EXPORT_FEATURE}))
 
     assert registry.list_effective(caller) == ()
     for tool_id in (_RETIRED_EXPORT_FEATURE, "software_delivery.test_design_export"):
@@ -631,7 +640,7 @@ def test_wired_test_design_tools_absent_when_pack_disabled(
     registry = _test_design_registry(
         tmp_path, monkeypatch, workspace_id="ws-a", pack_on=False
     )
-    caller = McpCallerContext("ws-a", "default", frozenset(_TEST_DESIGN_TOOLS))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset(_TEST_DESIGN_TOOLS))
 
     assert registry.list_effective(caller) == ()
     result = registry.invoke_authorized(
@@ -646,7 +655,7 @@ def test_cross_workspace_draft_is_identical_to_unknown_draft(
     from test.composition.test_design.test_design_fakes import ISSUE_LOCATOR
 
     registry_a = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-a")
-    caller_a = McpCallerContext("ws-a", "default", frozenset(_TEST_DESIGN_TOOLS))
+    caller_a = McpCallerContext("ws-a", "default", "prj_test", frozenset(_TEST_DESIGN_TOOLS))
     started = registry_a.invoke_authorized(
         caller_a, "software_delivery.test_design_start", {"issue_locator": ISSUE_LOCATOR}
     )
@@ -658,7 +667,7 @@ def test_cross_workspace_draft_is_identical_to_unknown_draft(
     assert own.is_error is False
 
     registry_b = _test_design_registry(tmp_path, monkeypatch, workspace_id="ws-b")
-    caller_b = McpCallerContext("ws-b", "default", frozenset(_TEST_DESIGN_TOOLS))
+    caller_b = McpCallerContext("ws-b", "default", "prj_test", frozenset(_TEST_DESIGN_TOOLS))
     cross = registry_b.invoke_authorized(
         caller_b, "software_delivery.test_design_get", {"draft_id": draft_id}
     )
@@ -828,7 +837,7 @@ def test_mcp_wiring_loads_pack_via_allowlist_not_hardcoded_import(
         settings, retrieve=_StubRetrieve()
     )
     caller = McpCallerContext(
-        "ws", "default", frozenset({TOOL_NAME, "fake.pack_tool"})
+        "ws", "default", "prj_test", frozenset({TOOL_NAME, "fake.pack_tool"})
     )
     names = [item.name for item in registry.list_effective(caller)]
-    assert names == [mcp_tool_name(TOOL_NAME), "fake_pack_tool"]
+    assert names == ["fake_pack_tool"]

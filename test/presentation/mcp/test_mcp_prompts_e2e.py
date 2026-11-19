@@ -26,7 +26,7 @@ def _server(*allowed: str):  # noqa: ANN202
         ),
         enabled_packs=("software-delivery",),
     )
-    caller = McpCallerContext("ws", "default", frozenset(allowed))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset(allowed))
     return build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
 
 

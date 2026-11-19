@@ -21,10 +21,16 @@ const PATH_LITERAL = /\bpath:\s*(["'`])([^"'`]+)\1/g;
 
 describe("http boundary", () => {
   it("keeps a single fetch seam in lib/api/client.ts", () => {
+    const serverLib = join(WEB_ROOT, "lib", "server");
     const hits: string[] = [];
     for (const root of SCAN_DIRS) {
       for (const file of walk(root)) {
         if (file === CLIENT_SEAM) {
+          continue;
+        }
+        // Next BFF route helpers may call upstream fetch; keep them out of the
+        // browser/client transport seam.
+        if (file === serverLib || file.startsWith(`${serverLib}/`)) {
           continue;
         }
         const text = readFileSync(file, "utf8");

@@ -280,6 +280,11 @@ class McpToolRegistry:
         )
         self._approval_policy = approval_policy or ToolApprovalPolicy()
 
+    @property
+    def contributed_tool_pack(self) -> Mapping[str, str | None]:
+        """Return contributed tool_id → pack_id (core tools map to ``None``)."""
+        return dict(self._policy.tool_pack)
+
     def list_effective(self, caller: McpCallerContext) -> tuple[McpToolDescriptor, ...]:
         """Return descriptors for tools effective for *caller*."""
         descriptors: list[McpToolDescriptor] = []
@@ -355,6 +360,8 @@ class McpToolRegistry:
         Tools the approval policy lists run only after *approve* returns True;
         a missing or failing gate fails closed (ADR 0010).
         """
+        from composition.mcp.access import bind_caller
+
         tool_id = self._id_by_name.get(tool_id, tool_id)
         if not self._policy.is_effective(caller, tool_id):
             return _tool_unavailable()
@@ -365,6 +372,13 @@ class McpToolRegistry:
             logger.exception("mcp_tool_factory_failed tool=%s", tool_id)
             return _generic_error()
         args = dict(arguments or {})
+        presented_project = args.get("project_id")
+        if (
+            isinstance(presented_project, str)
+            and presented_project
+            and presented_project != caller.project_id
+        ):
+            return _tool_unavailable()
         args_schema = getattr(tool, "args_schema", None)
         if args_schema is not None:
             try:
@@ -376,7 +390,8 @@ class McpToolRegistry:
             if denied is not None:
                 return denied
         try:
-            result = tool.run(args)
+            with bind_caller(caller):
+                result = tool.run(args)
         except Exception as error:
             return self._failure(caller, tool_id, tool, error)
         if not isinstance(result, str):

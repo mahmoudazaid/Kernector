@@ -15,7 +15,7 @@ cd web
 npm ci
 ```
 
-Copy `.env.example` to `.env.local` if you need to override public vars. Only `NEXT_PUBLIC_*` values are allowed for browser-exposed config; secrets must never appear here.
+Copy `.env.example` to `.env.local` if you need to override public vars. Only `NEXT_PUBLIC_*` values are browser-exposed; server-only secrets (for example `ADMIN_API_TOKEN` for the MCP Access BFF) must never use that prefix. `next.config` also loads the repo-root `.env` so local dual-stack can share `ADMIN_API_TOKEN` with FastAPI.
 
 `NEXT_PUBLIC_API_BASE_URL` defaults to `http://127.0.0.1:8000` (browser-visible). Trailing slashes are stripped.
 

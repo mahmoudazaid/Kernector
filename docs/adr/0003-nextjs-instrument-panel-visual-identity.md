@@ -70,7 +70,7 @@ inventing a local look.
    - Shell: sidebar nav pills, brand mark, theme / menu triggers
    - Buttons: `.kern-btn`, secondary / ghost / danger variants
    - Chat: bubbles, composer, **circular** send control
-   - Settings: fieldsets, radios, range thumbs, SoftSelect
+   - Settings: fieldsets, radios, range thumbs, SoftSelect, SoftDatePicker
    - Knowledge Hub: fieldsets, file inputs (`::file-selector-button`),
      row actions, confirm dialogs, **connector cards and browse pickers**
      (decision 12)
@@ -88,6 +88,10 @@ inventing a local look.
    for product UI. File inputs, checkboxes, radios, and range thumbs need the
    emboss recipe (or SoftSelect for listboxes). Custom listboxes use
    `web/components/ui/SoftSelect.tsx` rather than a second select pattern.
+   Calendar / expiry day pickers use
+   `web/components/ui/SoftDatePicker.tsx` — never a bare native
+   `<input type="date">` as the primary control (OS calendar chrome breaks
+   Instrument alignment and emboss).
 
    **Checkboxes (required checked mark)** — Every product checkbox uses the
    Instrument emboss face (`appearance: none`, soft-glass fill, inset
@@ -243,7 +247,8 @@ inventing a local look.
   flat relative to Settings / Chat / Knowledge Hub under the same theme, if
   checkboxes omit a visible check mark when selected, if workspace pages leave
   unused side gutters from an artificial content `max-width`, if confirms use
-  browser system dialogs, or if a new connector ships a divergent card metrics
+  browser system dialogs, if calendars use native OS date chrome instead of
+  SoftDatePicker, or if a new connector ships a divergent card metrics
   layout or an inline / non-`DialogFrame` browse picker.
 - Changing the identity (palette, emboss model, type, main-pane fill,
   dialog recipe, or connector card / picker recipe) requires updating this

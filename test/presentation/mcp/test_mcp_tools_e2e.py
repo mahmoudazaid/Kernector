@@ -53,25 +53,21 @@ def _registry_core_only() -> McpToolRegistry:
 
 @pytest.mark.anyio
 async def test_search_knowledge_e2e_via_protocol_client() -> None:
+    """Search is contributed but isolation-blocked on MCP until #257 (#324)."""
     registry = _registry_core_only()
-    caller = McpCallerContext("ws", "default", frozenset({SEARCH_TOOL}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({SEARCH_TOOL}))
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
     async with Client(server, raise_exceptions=True) as client:
         listed = await client.list_tools()
-        names = [tool.name for tool in listed.tools]
-        assert names == ["core_search_knowledge"]
-        tool = listed.tools[0]
-        assert "evidence" in (tool.description or "").lower()
-        assert tool.input_schema is not None
-        result = await client.call_tool(
-            tool.name, {"query": "restart service", "retrieval_limit": 3}
+        assert [tool.name for tool in listed.tools] == []
+        denied = await client.call_tool(
+            "core_search_knowledge", {"query": "restart service", "retrieval_limit": 3}
         )
-        assert result.is_error is False
-        payload = json.loads(result.content[0].text)
-        assert payload["evidence"][0]["content"] == "bounded evidence text"
-        assert payload["citations"][0]["source"]["source_id"] == "doc-1"
+        assert denied.is_error is True
+        payload = json.loads(denied.content[0].text)
+        assert payload["code"] == "tool_unavailable"
 
 
 @pytest.mark.anyio
@@ -80,6 +76,7 @@ async def test_identical_tool_unavailable_matrix() -> None:
     caller = McpCallerContext(
         "ws",
         "default",
+        "prj_test",
         frozenset(
             {
                 SEARCH_TOOL,
@@ -93,13 +90,14 @@ async def test_identical_tool_unavailable_matrix() -> None:
     )
     async with Client(server, raise_exceptions=True) as client:
         listed = await client.list_tools()
-        assert [t.name for t in listed.tools] == [mcp_tool_name(SEARCH_TOOL)]
+        assert [t.name for t in listed.tools] == []
         results = []
         for name in (
             "nope.tool",
             "software_delivery.retired_tool",
             "software_delivery_retired_tool",
             "software_delivery.export_test_cases_google_drive",
+            mcp_tool_name(SEARCH_TOOL),
         ):
             result = await client.call_tool(name, {})
             assert result.is_error is True
@@ -161,7 +159,7 @@ async def test_test_design_workflow_e2e_via_protocol_client(
     from test.composition.test_design.test_design_fakes import ISSUE_LOCATOR
 
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -294,7 +292,7 @@ async def test_test_design_from_client_content_e2e_via_protocol_client(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -392,7 +390,7 @@ async def test_invalid_client_content_is_a_validation_error(
     monkeypatch.setattr(
         mcp_test_design.McpTestDesignOperations, "start_from_content", _spy
     )
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -426,7 +424,7 @@ async def test_client_content_at_the_published_limit_is_accepted(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -445,7 +443,7 @@ async def test_client_content_over_the_combined_limit_says_what_to_shorten(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -474,6 +472,7 @@ async def test_start_from_content_requires_its_own_allowlist_entry(
     live_only = McpCallerContext(
         "ws-a",
         "default",
+        "prj_test",
         _TEST_DESIGN_TOOLS - {"software_delivery.test_design_start_from_text"},
     )
     server = build_mcp_server(
@@ -555,7 +554,7 @@ def _jira_server(tmp_path, monkeypatch, client, *, allowlist=_TEST_DESIGN_TOOLS,
         monkeypatch,
         sources=_github_and_kernector_jira(tmp_path, client, **kw),
     )
-    caller = McpCallerContext("ws-a", "default", allowlist)
+    caller = McpCallerContext("ws-a", "default", "prj_test", allowlist)
     return build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
 
 
@@ -661,7 +660,7 @@ async def test_start_advertises_only_github_when_only_github_is_registered(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
 
     tool = await _start_tool(
         build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
@@ -750,7 +749,7 @@ async def test_scenario_2_tracker_kernector_has_no_source_for_hints(
     tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str
 ) -> None:
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -868,7 +867,7 @@ async def test_unregistered_provider_is_a_validation_error_without_workflow_call
         lambda _self, **kwargs: calls.append(kwargs),
     )
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     server = build_mcp_server(
         registry=registry, resolver=FixedCallerContextResolver(caller)
     )
@@ -951,7 +950,7 @@ async def _deny_payload(server) -> tuple[list[str], str]:
 @pytest.mark.anyio
 async def test_test_design_gate_pack_disabled(tmp_path, monkeypatch) -> None:
     registry = _wired_registry(tmp_path, monkeypatch, pack_on=False)
-    caller = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
+    caller = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
     names, text = await _deny_payload(
         build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
     )
@@ -962,11 +961,12 @@ async def test_test_design_gate_pack_disabled(tmp_path, monkeypatch) -> None:
 @pytest.mark.anyio
 async def test_test_design_gate_not_allowlisted(tmp_path, monkeypatch) -> None:
     registry = _wired_registry(tmp_path, monkeypatch)
-    caller = McpCallerContext("ws-a", "default", frozenset({SEARCH_TOOL}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({SEARCH_TOOL}))
     names, text = await _deny_payload(
         build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
     )
-    assert names == [mcp_tool_name(SEARCH_TOOL)]
+    # Search allowlist alone does not expose isolation-blocked tools (#324).
+    assert names == []
     assert json.loads(text)["code"] == TOOL_UNAVAILABLE_CODE
 
 
@@ -984,8 +984,8 @@ async def test_test_design_gate_unauthorized_caller(tmp_path, monkeypatch) -> No
 async def test_test_design_denials_are_byte_identical(tmp_path, monkeypatch) -> None:
     enabled = _wired_registry(tmp_path, monkeypatch)
     disabled = _wired_registry(tmp_path, monkeypatch, pack_on=False)
-    allowed = McpCallerContext("ws-a", "default", _TEST_DESIGN_TOOLS)
-    not_allowed = McpCallerContext("ws-a", "default", frozenset())
+    allowed = McpCallerContext("ws-a", "default", "prj_test", _TEST_DESIGN_TOOLS)
+    not_allowed = McpCallerContext("ws-a", "default", "prj_test", frozenset())
 
     _, disabled_text = await _deny_payload(
         build_mcp_server(registry=disabled, resolver=FixedCallerContextResolver(allowed))

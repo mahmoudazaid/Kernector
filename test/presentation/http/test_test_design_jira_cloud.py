@@ -236,7 +236,7 @@ def _mcp_invoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registry: TestD
     tools = build_mcp_tool_registry(
         settings, retrieve=cast(RetrieveKnowledge, _StubRetrieve())
     )
-    caller = McpCallerContext("ws-a", "default", frozenset({START_TOOL}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({START_TOOL}))
     return tools.invoke_authorized(
         caller, START_TOOL, {"provider": "jira", "locator": "FD-2"}
     )

@@ -14,6 +14,11 @@ from presentation.mcp.app import BearerAuthMiddleware
 
 TOKEN = "test-token"
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "MCP-Protocol-Version": "2026-07-28"}
+_CALLER = McpCallerContext("ws", "default", "prj_test", frozenset())
+
+
+def _authenticate(presented: str) -> McpCallerContext | None:
+    return _CALLER if presented == TOKEN else None
 
 
 async def _echo(request: Request) -> JSONResponse:
@@ -24,11 +29,7 @@ async def _echo(request: Request) -> JSONResponse:
 
 def _client() -> TestClient:
     inner = Starlette(routes=[Route("/mcp", _echo, methods=["POST"])])
-    app = BearerAuthMiddleware(
-        inner,
-        auth_token=TOKEN,
-        caller_factory=lambda: McpCallerContext("ws", "default", frozenset()),
-    )
+    app = BearerAuthMiddleware(inner, authenticate=_authenticate)
     return TestClient(app)
 
 
@@ -78,11 +79,7 @@ def test_untrusted_method_values_are_never_logged_verbatim(
         return JSONResponse({}, status_code=404)
 
     inner = Starlette(routes=[Route("/mcp", _not_found, methods=["POST"])])
-    app = BearerAuthMiddleware(
-        inner,
-        auth_token=TOKEN,
-        caller_factory=lambda: McpCallerContext("ws", "default", frozenset()),
-    )
+    app = BearerAuthMiddleware(inner, authenticate=_authenticate)
 
     TestClient(app).post(
         "/mcp", content=body, headers={**HEADERS, "Content-Type": "application/json"}

@@ -830,3 +830,14 @@ def get_project_use_cases():
 
 
 ProjectUseCasesDep = Annotated[object, Depends(get_project_use_cases)]
+
+
+@lru_cache(maxsize=1)
+def get_mcp_access_use_cases():
+    """Process-cached MCP access-profile use cases (#324)."""
+    from composition.mcp_access.container import build_mcp_access_use_cases
+
+    return build_mcp_access_use_cases(get_settings())
+
+
+McpAccessUseCasesDep = Annotated[object, Depends(get_mcp_access_use_cases)]

@@ -25,6 +25,8 @@ export type SoftSelectProps = {
   menuPlacement?: "bottom" | "top";
   /** Escape clipping parents by positioning against the viewport. */
   menuStrategy?: "absolute" | "fixed";
+  /** Omit the visible label; ``label`` still names the combobox. */
+  hideLabel?: boolean;
 };
 
 function indexOfOption(options: string[], value: string): number {
@@ -40,6 +42,7 @@ export function SoftSelect({
   onChange,
   menuPlacement = "bottom",
   menuStrategy = "absolute",
+  hideLabel = false,
 }: SoftSelectProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() =>
@@ -327,31 +330,40 @@ export function SoftSelect({
     </ul>
   ) : null;
 
+  const select = (
+    <div className="kern-select" ref={rootRef} onBlur={onBlur}>
+      <button
+        id={id}
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        className="kern-select-trigger"
+        aria-label={hideLabel ? label : undefined}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <span className="kern-select-value">{value}</span>
+        <span className="kern-select-chevron" aria-hidden="true" />
+      </button>
+      {useFixed
+        ? portalReady && menu
+          ? createPortal(menu, document.body)
+          : null
+        : menu}
+    </div>
+  );
+
+  if (hideLabel) {
+    return select;
+  }
+
   return (
     <div className="kern-settings-field">
       <label htmlFor={id}>{label}</label>
-      <div className="kern-select" ref={rootRef} onBlur={onBlur}>
-        <button
-          id={id}
-          ref={triggerRef}
-          type="button"
-          role="combobox"
-          className="kern-select-trigger"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-controls={listId}
-          onClick={() => setOpen((current) => !current)}
-          onKeyDown={onTriggerKeyDown}
-        >
-          <span className="kern-select-value">{value}</span>
-          <span className="kern-select-chevron" aria-hidden="true" />
-        </button>
-        {useFixed
-          ? portalReady && menu
-            ? createPortal(menu, document.body)
-            : null
-          : menu}
-      </div>
+      {select}
     </div>
   );
 }

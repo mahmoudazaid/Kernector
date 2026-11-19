@@ -50,7 +50,7 @@ def _registry() -> McpToolRegistry:
 
 
 def _caller(*tool_ids: str) -> McpCallerContext:
-    return McpCallerContext("ws", "default", frozenset(tool_ids))
+    return McpCallerContext("ws", "default", "prj_test", frozenset(tool_ids))
 
 
 def _invoke(arguments: dict[str, object]):  # noqa: ANN202
