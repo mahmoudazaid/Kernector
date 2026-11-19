@@ -3,12 +3,40 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Protocol
+
+from composition.mcp.isolation import is_isolation_safe
 
 
 class MissingCallerContextError(Exception):
     """No authenticated MCP caller context is available (fail closed)."""
+
+
+_CURRENT_CALLER: ContextVar[McpCallerContext | None] = ContextVar(
+    "mcp_caller_context", default=None
+)
+
+
+def current_caller() -> McpCallerContext | None:
+    """Return the caller bound for the in-flight MCP tool invocation, if any."""
+    return _CURRENT_CALLER.get()
+
+
+def bind_caller(caller: McpCallerContext):
+    """Bind *caller* for the current tool invocation (context manager)."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _bind():
+        token = _CURRENT_CALLER.set(caller)
+        try:
+            yield
+        finally:
+            _CURRENT_CALLER.reset(token)
+
+    return _bind()
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,12 +45,14 @@ class McpCallerContext:
 
     Attributes:
         workspace_id: Server-bound workspace (never from client args).
-        profile_id: Access-profile id (single-profile MVP).
+        profile_id: Access-profile id.
+        project_id: Trusted project binding (never from client args).
         allowlist: Tool ids the profile may use.
     """
 
     workspace_id: str
     profile_id: str
+    project_id: str
     allowlist: frozenset[str]
 
 
@@ -83,10 +113,12 @@ class McpAccessPolicy:
     tool_pack: Mapping[str, str | None]
 
     def is_effective(self, caller: McpCallerContext, tool_id: str) -> bool:
-        """Return True when *tool_id* is contributed, pack-enabled, and allowlisted."""
+        """Return True when *tool_id* is contributed, pack-enabled, allowlisted, and isolation-safe."""
         if tool_id not in self.tool_pack:
             return False
         if tool_id not in caller.allowlist:
+            return False
+        if not is_isolation_safe(tool_id):
             return False
         pack_id = self.tool_pack[tool_id]
         if pack_id is None:

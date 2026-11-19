@@ -12,6 +12,7 @@ from presentation.http.deps import (
     get_vector_store,
     get_clear_response_feedback,
     get_get_response_feedback,
+    get_mcp_access_use_cases,
     get_project_use_cases,
     get_submit_response_feedback,
 )
@@ -29,6 +30,7 @@ def _clear_http_process_caches() -> None:
     get_clear_response_feedback.cache_clear()
     get_get_response_feedback.cache_clear()
     get_project_use_cases.cache_clear()
+    get_mcp_access_use_cases.cache_clear()
     yield
     get_settings.cache_clear()
     get_vector_store.cache_clear()
@@ -39,3 +41,4 @@ def _clear_http_process_caches() -> None:
     get_clear_response_feedback.cache_clear()
     get_get_response_feedback.cache_clear()
     get_project_use_cases.cache_clear()
+    get_mcp_access_use_cases.cache_clear()

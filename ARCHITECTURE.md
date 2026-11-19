@@ -888,10 +888,18 @@ the agents; Kernector supplies evidence and allowlisted tools.
 
 - Transport: low-level `mcp.server.Server` Streamable HTTP at `/mcp`, plus
   public `/healthz`.
-- Auth: required shared bearer `MCP_AUTH_TOKEN` (constant-time compare; trusted
-  MVP, **not** OAuth). Profile allowlist `MCP_TOOL_ALLOWLIST` is tool
-  authorization. `MCP_ALLOWED_HOSTS` is required; missing Origin is allowed,
-  present Origin must match `MCP_ALLOWED_ORIGINS`.
+- Auth (#324): per-profile bearer tokens (SHA-256 hashed at rest) resolved into
+  `McpCallerContext(workspace_id, profile_id, project_id, allowlist)`. The
+  legacy shared `MCP_AUTH_TOKEN` / env `MCP_TOOL_ALLOWLIST` path is **removed**.
+  This is **not** full MCP OAuth 2.1. `MCP_ALLOWED_HOSTS` is required; missing
+  Origin is allowed, present Origin must match `MCP_ALLOWED_ORIGINS`.
+- Admin management (#324): `ADMIN_API_TOKEN` protects `/api/v1/admin/mcp/*`
+  (fail closed when unset). The web Admin UI at `/settings/mcp` proxies through
+  Next.js BFF routes so the browser never holds the admin credential. HTTPS is
+  required for remote deployments. Multi-user Admin RBAC remains #36/#182.
+- Isolation (#324): tools that cannot enforce project scope (notably
+  `core.search_knowledge` until #257) are not allowlistable and are rejected on
+  invoke. `core.project_list` filters to the caller’s trusted `project_id`.
 - Chat `build_tools()` registers Drive export and Xray test creation (from
   drafts and from files) when their collaborators are wired, and the
   read-only test file preview whenever the pack is enabled; MCP `build_mcp_tools()` is the pack seam.
@@ -960,7 +968,8 @@ the agents; Kernector supplies evidence and allowlisted tools.
   `prompts/list` and `prompts/get` expose it only while that tool is
   effective for the caller, and reject unknown prompts and non-printable or
   over-long arguments with fixed messages. `presentation/mcp` stays pack-unaware.
-- Effective tools = contributed ∩ enabled packs ∩ `MCP_TOOL_ALLOWLIST`, with an
+- Effective tools = contributed ∩ enabled packs ∩ profile allowlist ∩
+  isolation-safe tools (#324), with an
   authenticated caller. Denied tools are absent from `tools/list`, and
   invoking them returns one identical `tool_unavailable` payload.
 - Test Design (#338): `software_delivery.test_design_{start,get,confirm,generate}`
@@ -1020,15 +1029,16 @@ the agents; Kernector supplies evidence and allowlisted tools.
   runs one offline suite per registered harness. A new provider needs only
   a `SourceContractHarness` added to `CONTRACT_HARNESSES`.
 - Retired scaffolding tools (#285) are **not** revived for MCP.
-- Out of scope here: consuming remote MCP (#184), Admin UI profiles (#324),
-  live provider tools (#326/#327), stdio, MCP resources, `kernector_ask`, OAuth.
+- Out of scope here: consuming remote MCP (#184), full MCP OAuth, multi-user
+  RBAC (#36/#182), solving #257 retrieval isolation, live provider tools
+  (#326/#327), stdio, `kernector_ask`.
 
 ```bash
-MCP_AUTH_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \
-  MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export \
+ADMIN_API_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \
   DOMAIN_TOOL_PACKS=software-delivery \
   DOCUMENT_CATALOG_WORKSPACE_ID=… \
   uv run uvicorn presentation.mcp.app:app --port 8100
+# Create profiles + allowlists via Admin UI or /api/v1/admin/mcp/profiles
 ```
 
 Run only the architecture boundary tests:

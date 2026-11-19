@@ -69,6 +69,10 @@ describe("shell navigation", () => {
       "href",
       "/settings",
     );
+    expect(screen.getByRole("link", { name: "MCP Access" })).toHaveAttribute(
+      "href",
+      "/settings/mcp",
+    );
   });
 
   it("marks the active route with aria-current", () => {

@@ -87,6 +87,23 @@ _PROJECT_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
 }
 
 
+_ADMIN_MCP_ERROR_STATUSES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("/api/v1/admin/mcp/server", "get"): ("401", "500"),
+    ("/api/v1/admin/mcp/tools", "get"): ("401", "500"),
+    ("/api/v1/admin/mcp/profiles", "get"): ("401", "500"),
+    ("/api/v1/admin/mcp/profiles", "post"): ("401", "404", "422", "500"),
+    ("/api/v1/admin/mcp/profiles/{profile_id}", "get"): ("401", "404", "500"),
+    ("/api/v1/admin/mcp/profiles/{profile_id}/allowlist", "put"): (
+        "401",
+        "404",
+        "422",
+        "500",
+    ),
+    ("/api/v1/admin/mcp/profiles/{profile_id}/rotate", "post"): ("401", "404", "500"),
+    ("/api/v1/admin/mcp/profiles/{profile_id}/revoke", "post"): ("401", "404", "500"),
+}
+
+
 def test_openapi_project_routes_declare_problem_errors() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
 
@@ -97,6 +114,22 @@ def test_openapi_project_routes_declare_problem_errors() -> None:
             assert list(content) == [_PROBLEM], f"{path} {method} {status}"
     project = schema["components"]["schemas"]["ProjectResponse"]["properties"]
     assert "workspace_id" not in project
+
+
+def test_openapi_admin_mcp_routes_declare_problem_errors() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    for (path, method), statuses in _ADMIN_MCP_ERROR_STATUSES.items():
+        responses = schema["paths"][path][method]["responses"]
+        for status in statuses:
+            content = responses[status]["content"]
+            assert list(content) == [_PROBLEM], f"{path} {method} {status}"
+    created = schema["components"]["schemas"]["McpAccessProfileCreatedResponse"][
+        "properties"
+    ]
+    assert "plaintext_token" in created
+    profile = schema["components"]["schemas"]["McpAccessProfileResponse"]["properties"]
+    assert "plaintext_token" not in profile
 
 
 def test_openapi_jira_routes_declare_problem_errors() -> None:

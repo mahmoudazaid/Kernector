@@ -88,51 +88,53 @@ retired.
 ### Run the MCP Streamable HTTP server
 
 Coding assistants (Cursor, Claude Code, etc.) remain the agents. Kernector’s
-MCP adapter supplies **bounded, citable evidence** (`core.search_knowledge`) and
-**allowlisted** pack tools — not a second chat LLM answer.
+MCP adapter supplies **allowlisted, project-bound tools** — not a second chat
+LLM answer. Access uses **per-profile bearer tokens** (#324), not a shared
+`MCP_AUTH_TOKEN` (removed; do not set it — it no longer authenticates).
 
 ```bash
-export MCP_AUTH_TOKEN=dev-token
+export ADMIN_API_TOKEN=admin-dev-token   # management API + Admin UI BFF only
 export MCP_ALLOWED_HOSTS=127.0.0.1:8100
 export MCP_ALLOWED_ORIGINS=  # optional; missing Origin allowed for non-browser clients
-export MCP_TOOL_ALLOWLIST=core.search_knowledge,software_delivery.test_design_start,software_delivery.test_design_start_from_text,software_delivery.test_design_get,software_delivery.test_design_confirm,software_delivery.test_design_generate,software_delivery.test_design_export
 export DOMAIN_TOOL_PACKS=software-delivery   # required for Test Design tools
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
+# DOCUMENT_CATALOG_SQL_PATH defaults to data/catalog/catalog.sqlite
 uv run uvicorn presentation.mcp.app:app --host 127.0.0.1 --port 8100
 ```
 
-- Endpoint: `http://127.0.0.1:8100/mcp` (Bearer required)
-- Health: `GET http://127.0.0.1:8100/healthz` (public)
-- Auth is a **trusted shared bearer MVP**, not OAuth
-- Test Design tools (#338) run start → confirm → generate for a live GitHub
-  Issue or Jira Data Center issue (#353) using the workspace's connection.
-  `test_design_start` takes `provider` (`github`, or `jira` when Jira Data
-  Center is configured; only registered providers are listed) and `locator`
-  (#356). `issue_locator` still works for one release as a deprecated,
-  GitHub-only alias. They appear in `tools/list`
-  only when the pack is enabled and the ids are allowlisted. See the
-  [pack README](packs/software_delivery/README.md#test-design-over-mcp-338)
-  for arguments, error codes, and the `untrusted_model_output` marker.
-- When Kernector has no connection to the tracker but the client already
-  fetched the issue (its own Jira/GitHub/GitLab MCP server, `gh`, GraphQL),
-  `test_design_start_from_text` (#355) starts Test Design from the supplied
-  `ticket_identifier`, `title`, `body`, and optional `acceptance_criteria` and
-  `source_url`. Drafts report `evidence_origin: client_supplied` (live drafts
-  report `live`): the content is not verified against a live source, confirm
-  and generate reuse it without re-fetching, and changing it needs a new start.
-  Allowlist it separately. See
-  [live vs client-supplied evidence](packs/software_delivery/README.md#live-vs-client-supplied-evidence-355).
-- Project technology profile (#387 Phase A): allowlist
-  `software_delivery.project_profile` for a read-only, role-neutral profile
-  of client-supplied manifests, tests, CI, and frontend paths (MVP detectors:
-  Python, Node/Next/React/Playwright, Robot Framework, GitHub Actions/Docker).
-  Pass `evidence` groups; `project_id` is not accepted yet. See the
-  [pack README](packs/software_delivery/README.md#project-technology-profile-387-phase-a).
-- Drive export and retired scaffolding tools (#285) are not on MCP; further
-  live pack tools land in follow-ups (#326/#327)
+Create a profile (and copy the one-time token) via Admin UI
+[`/settings/mcp`](web/app/settings/mcp/page.tsx) or
+`POST /api/v1/admin/mcp/profiles` with `Authorization: Bearer ${ADMIN_API_TOKEN}`.
+Profiles bind a trusted `workspace_id` + `project_id` and a **default-deny**
+allowlist. Only hashed tokens are stored; plaintext appears once on
+create/rotate.
 
-**Cursor** (`mcp.json` fragment — expand the token from the environment; never
-hardcode a real secret):
+- Endpoint: `http://127.0.0.1:8100/mcp` (profile Bearer required)
+- Health: `GET http://127.0.0.1:8100/healthz` (public)
+- Auth is **profile-scoped bearer** (hashed at rest), **not** full
+  [MCP Authorization / OAuth 2.1](https://modelcontextprotocol.io/specification/latest/basic/authorization).
+  Clients that require OAuth discovery are unsupported in Phase 1.
+- **Interim Admin gate:** `ADMIN_API_TOKEN` protects `/api/v1/admin/mcp/*`.
+  Fail closed when unset. Never put it in `NEXT_PUBLIC_*` or browser storage;
+  the Next.js BFF under `/api/admin/mcp/*` injects it server-side. Use HTTPS
+  for any remote deployment. UI hiding is not a security boundary (#36/#182
+  remain open for multi-user Admin RBAC).
+- **Isolation:** `core.search_knowledge` stays unavailable on MCP until
+  project-scoped retrieval (#257). `core.project_list` returns only the
+  profile’s bound project. Allowlisting never bypasses HITL for side-effect
+  tools ([ADR 0010](docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)).
+- Test Design tools (#338) appear only when the pack is enabled **and** the
+  profile allowlists their ids. See the
+  [pack README](packs/software_delivery/README.md#test-design-over-mcp-338).
+- Project technology profile (#387 Phase A): allowlist
+  `software_delivery.project_profile` when needed. See the
+  [pack README](packs/software_delivery/README.md#project-technology-profile-387-phase-a).
+
+**Migration from `MCP_AUTH_TOKEN`:** create an access profile for each client,
+allowlist only the tools it needs, and replace the shared secret in Cursor /
+Claude Code with the profile token. Revoke or rotate via Admin UI.
+
+**Cursor** (`mcp.json` — paste the one-time profile token; never commit it):
 
 ```json
 {
@@ -140,18 +142,35 @@ hardcode a real secret):
     "kernector": {
       "url": "http://127.0.0.1:8100/mcp",
       "headers": {
-        "Authorization": "Bearer ${env:MCP_AUTH_TOKEN}"
+        "Authorization": "Bearer <profile-token>"
       }
     }
   }
 }
 ```
 
-**Claude Code** (similar Streamable HTTP remote server with env-expanded
-`Authorization: Bearer ${MCP_AUTH_TOKEN}`).
+**Claude Code** (Streamable HTTP remote server; same bearer header shape):
 
-Out of scope: remote MCP consume (#184), Admin UI allowlists (#324), live
-Jira/Xray/Drive MCP tools (#326/#327), stdio, MCP resources, `kernector_ask`.
+```json
+{
+  "mcpServers": {
+    "kernector": {
+      "type": "http",
+      "url": "http://127.0.0.1:8100/mcp",
+      "headers": {
+        "Authorization": "Bearer <profile-token>"
+      }
+    }
+  }
+}
+```
+
+Verified for Phase 1: Cursor and Claude Code accept Streamable HTTP + bearer
+headers as above. Full MCP OAuth client flows are out of scope.
+
+Out of scope: remote MCP consume (#184), full MCP OAuth, multi-user RBAC
+(#36/#182), solving #257 index isolation, live provider tools (#326/#327),
+stdio, `kernector_ask`.
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
 unless you intentionally set an explicit `HTTP_CORS_ORIGINS` allowlist. Never

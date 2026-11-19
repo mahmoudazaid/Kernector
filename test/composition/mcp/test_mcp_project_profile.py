@@ -84,7 +84,7 @@ def test_workflow_rejects_project_id_argument() -> None:
 
 def test_allowlist_deny_cannot_list_or_call() -> None:
     registry = _registry()
-    denied = McpCallerContext("ws-a", "default", frozenset())
+    denied = McpCallerContext("ws-a", "default", "prj_test", frozenset())
     assert all(
         item.name != mcp_tool_name(TOOL_PROJECT_PROFILE)
         for item in registry.list_effective(denied)
@@ -96,8 +96,8 @@ def test_allowlist_deny_cannot_list_or_call() -> None:
 def test_different_profile_ids_same_allowlist_identical_results() -> None:
     registry = _registry()
     args = _evidence_args()
-    a = McpCallerContext("ws-a", "profile-a", frozenset({TOOL_PROJECT_PROFILE}))
-    b = McpCallerContext("ws-a", "profile-b", frozenset({TOOL_PROJECT_PROFILE}))
+    a = McpCallerContext("ws-a", "profile-a", "prj_test", frozenset({TOOL_PROJECT_PROFILE}))
+    b = McpCallerContext("ws-a", "profile-b", "prj_test", frozenset({TOOL_PROJECT_PROFILE}))
     result_a = registry.invoke_authorized(a, TOOL_PROJECT_PROFILE, args)
     result_b = registry.invoke_authorized(b, TOOL_PROJECT_PROFILE, args)
     assert result_a.is_error is False
@@ -136,7 +136,7 @@ def test_cross_workspace_bindings_are_isolated() -> None:
 
 def test_secret_values_absent_from_mcp_result() -> None:
     registry = _registry()
-    caller = McpCallerContext("ws-a", "default", frozenset({TOOL_PROJECT_PROFILE}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({TOOL_PROJECT_PROFILE}))
     result = registry.invoke_authorized(caller, TOOL_PROJECT_PROFILE, _evidence_args())
     assert result.is_error is False
     secret = secret_env_value()
@@ -151,7 +151,7 @@ def test_secret_values_absent_from_mcp_result() -> None:
 
 def test_per_component_robot_and_playwright_detected() -> None:
     registry = _registry()
-    caller = McpCallerContext("ws-a", "default", frozenset({TOOL_PROJECT_PROFILE}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({TOOL_PROJECT_PROFILE}))
     result = registry.invoke_authorized(caller, TOOL_PROJECT_PROFILE, _evidence_args())
     data = json.loads(result.text)
     by_label = {c["label"]: c for c in data["components"]}
@@ -162,7 +162,7 @@ def test_per_component_robot_and_playwright_detected() -> None:
 
 def test_facet_filter_limits_returned_facets() -> None:
     registry = _registry()
-    caller = McpCallerContext("ws-a", "default", frozenset({TOOL_PROJECT_PROFILE}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({TOOL_PROJECT_PROFILE}))
     args = _evidence_args()
     args["facets"] = ["delivery"]
     result = registry.invoke_authorized(caller, TOOL_PROJECT_PROFILE, args)
@@ -173,7 +173,7 @@ def test_facet_filter_limits_returned_facets() -> None:
 
 def test_fingerprint_stable_across_identical_calls() -> None:
     registry = _registry()
-    caller = McpCallerContext("ws-a", "default", frozenset({TOOL_PROJECT_PROFILE}))
+    caller = McpCallerContext("ws-a", "default", "prj_test", frozenset({TOOL_PROJECT_PROFILE}))
     args = _evidence_args()
     first = json.loads(
         registry.invoke_authorized(caller, TOOL_PROJECT_PROFILE, args).text

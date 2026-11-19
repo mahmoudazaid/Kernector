@@ -64,7 +64,7 @@ def _server(*tools: _FakeTool):
         enabled_packs=("fake-pack",),
         approval_policy=ToolApprovalPolicy(require_approval=frozenset({SIDE_EFFECT})),
     )
-    caller = McpCallerContext("ws", "default", frozenset(tool.name for tool in tools))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset(tool.name for tool in tools))
     return build_mcp_server(registry=registry, resolver=FixedCallerContextResolver(caller))
 
 

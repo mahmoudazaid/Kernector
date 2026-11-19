@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import logging
 import re
@@ -210,7 +209,7 @@ def _elicitation_gate(
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Require ``Authorization: Bearer`` for ``/mcp``; leave ``/healthz`` public.
+    """Require a profile bearer for ``/mcp``; leave ``/healthz`` public.
 
     Authenticated ``GET /mcp`` gets 405: the server offers no standalone SSE
     stream, which the MCP Streamable HTTP spec allows.
@@ -220,13 +219,11 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         self,
         app: ASGIApp,
         *,
-        auth_token: str,
-        caller_factory: Callable[[], McpCallerContext],
+        authenticate: Callable[[str], McpCallerContext | None],
         mcp_path: str = "/mcp",
     ) -> None:
         super().__init__(app)
-        self._auth_token = auth_token
-        self._caller_factory = caller_factory
+        self._authenticate = authenticate
         self._mcp_path = mcp_path.rstrip("/") or "/mcp"
 
     async def dispatch(
@@ -240,17 +237,18 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             if header is None or not header.lower().startswith("bearer "):
                 return _UNAUTHORIZED
             presented = header[7:].strip()
-            # Compare as bytes: str compare_digest raises TypeError on non-ASCII
-            # (latin-1-decoded header bytes >= 0x80), which would escape as 500.
-            if not hmac.compare_digest(
-                presented.encode("utf-8"), self._auth_token.encode("utf-8")
-            ):
+            try:
+                caller = self._authenticate(presented)
+            except Exception:
+                logger.exception("mcp_profile_auth_failed")
+                return _UNAUTHORIZED
+            if caller is None:
                 return _UNAUTHORIZED
             if request.method == "GET":
                 # No server-initiated messages; an idle SSE stream would block
                 # graceful shutdown until a forced second Ctrl+C.
                 return _NO_STANDALONE_STREAM
-            request.state.mcp_caller = self._caller_factory()
+            request.state.mcp_caller = caller
             if request.method == "POST":
                 body = await request.body()
                 response = await call_next(request)
@@ -460,13 +458,25 @@ def create_mcp_app(
     if registry is None:
         registry = build_mcp_registry_for_runtime(runtime)
 
-    allowlist = frozenset(mcp_cfg.tool_allowlist)
+    catalog_path = runtime.document_catalog.sql_path
+    if catalog_path is None:
+        raise ValueError(
+            "DOCUMENT_CATALOG_SQL_PATH is required for MCP profile authentication"
+        )
 
-    def _caller() -> McpCallerContext:
+    def _authenticate(presented: str) -> McpCallerContext | None:
+        from composition.mcp_access.container import authenticate_mcp_profile_token
+
+        profile = authenticate_mcp_profile_token(catalog_path, presented)
+        if profile is None:
+            return None
+        if profile.workspace_id != bound_workspace:
+            return None
         return McpCallerContext(
-            workspace_id=bound_workspace,
-            profile_id=mcp_cfg.access_profile,
-            allowlist=allowlist,
+            workspace_id=profile.workspace_id,
+            profile_id=profile.profile_id,
+            project_id=profile.project_id,
+            allowlist=profile.allowlist,
         )
 
     active_resolver = resolver or RequestScopedCallerContextResolver()
@@ -482,11 +492,7 @@ def create_mcp_app(
         transport_security=transport_security,
         custom_starlette_routes=[Route("/healthz", endpoint=_healthz)],
     )
-    return BearerAuthMiddleware(
-        app,
-        auth_token=mcp_cfg.auth_token,
-        caller_factory=_caller,
-    )
+    return BearerAuthMiddleware(app, authenticate=_authenticate)
 
 
 # ASGI entry for uvicorn presentation.mcp.app:app — built lazily on first import

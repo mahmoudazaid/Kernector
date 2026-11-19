@@ -43,6 +43,59 @@ class HealthResponse(BaseModel):
     status: str = Field(examples=["ok"])
 
 
+class McpServerInfoResponse(BaseModel):
+    """Hosted Kernector MCP server metadata for Admin UI (#324)."""
+
+    endpoint: str
+    transport: str
+    auth_mode: str
+    status: str
+
+
+class McpToolCatalogItemResponse(BaseModel):
+    """One discoverable MCP tool with Admin UI classification (#324)."""
+
+    tool_id: str
+    name: str
+    kind: str
+    pack_id: str | None = None
+    allowlistable: bool
+    side_effecting: bool
+    unavailable_reason: str | None = None
+
+
+class McpToolCatalogResponse(BaseModel):
+    tools: list[McpToolCatalogItemResponse]
+
+
+class McpAccessProfileResponse(BaseModel):
+    profile_id: str
+    project_id: str
+    name: str
+    allowlist: list[str]
+    status: str
+    expires_at: str | None = None
+    created_at: str
+    updated_at: str
+    disabled_at: str | None = None
+    revoked_at: str | None = None
+
+
+class McpAccessProfileCreatedResponse(BaseModel):
+    profile: McpAccessProfileResponse
+    plaintext_token: str
+
+
+class CreateMcpAccessProfileBody(BaseModel):
+    project_id: str
+    name: str
+    expires_at: str | None = None
+
+
+class UpdateMcpAllowlistBody(BaseModel):
+    allowlist: list[str]
+
+
 class OpenRouterSettingsResponse(BaseModel):
     """OpenRouter models and default from runtime config."""
 

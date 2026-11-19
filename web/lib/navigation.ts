@@ -10,6 +10,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Knowledge Hub", href: "/documents" },
   { label: "Chat", href: "/chat" },
   { label: "Settings", href: "/settings" },
+  { label: "MCP Access", href: "/settings/mcp" },
 ] as const;
 
 export function isActivePath(pathname: string, href: string): boolean {

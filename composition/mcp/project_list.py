@@ -69,6 +69,16 @@ class ProjectListTool:
             ProjectListArgs.model_validate(dict(arguments))
         except Exception as exc:
             raise ToolArgumentValidationError("Invalid project_list arguments") from exc
+        from composition.mcp.access import current_caller
+
+        caller = current_caller()
+        overviews = self._list_projects.execute()
+        if caller is not None:
+            overviews = tuple(
+                item
+                for item in overviews
+                if item.project.project_id == caller.project_id
+            )
         result = ProjectListResult(
             projects=[
                 ProjectOut(
@@ -85,7 +95,7 @@ class ProjectListTool:
                         for association in overview.confirmed_associations
                     ],
                 )
-                for overview in self._list_projects.execute()
+                for overview in overviews
             ]
         )
         return json.dumps(result.model_dump(mode="json"), separators=(",", ":"))

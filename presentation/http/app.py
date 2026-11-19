@@ -23,6 +23,7 @@ from presentation.http.errors import (
     problem_from_validation_errors,
     register_problem_schemas,
 )
+from presentation.http.routes import admin_mcp as admin_mcp_routes
 from presentation.http.routes import chat as chat_routes
 from presentation.http.routes import documents as documents_routes
 from presentation.http.routes import feedback as feedback_routes
@@ -183,6 +184,16 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
                 instance=str(request.url.path),
             )
             return _problem_response(problem, headers=exc.headers)
+        if exc.status_code == 401:
+            problem = Problem(
+                type="https://kernector.dev/problems/unauthorized",
+                title="Unauthorized",
+                status=401,
+                detail="Authentication is required.",
+                code="unauthorized",
+                instance=str(request.url.path),
+            )
+            return _problem_response(problem, headers=exc.headers)
         problem = Problem(
             type=f"https://kernector.dev/problems/http_{exc.status_code}",
             title="HTTP error",
@@ -240,6 +251,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     app.include_router(jira_routes.router)
     app.include_router(test_design_routes.router)
     app.include_router(projects_routes.router)
+    app.include_router(admin_mcp_routes.router)
 
     def custom_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:

@@ -100,7 +100,7 @@ def test_invoke_pull_returns_proposals() -> None:
         for tool_id, factory in build_mcp_tools(xray_file_binding=_binding())
     )
     registry = McpToolRegistry(contributions=contributions, enabled_packs=("software-delivery",))
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({TOOL_NAME}))
 
     [descriptor] = registry.list_effective(caller)
     assert descriptor.name == mcp_tool_name(TOOL_NAME)

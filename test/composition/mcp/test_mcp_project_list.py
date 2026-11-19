@@ -52,7 +52,7 @@ def _store() -> InMemoryProjectStore:
 
 
 def test_tool_is_denied_unless_allowlisted() -> None:
-    caller = McpCallerContext("ws", "default", frozenset())
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset())
 
     result = _registry(_store()).invoke_authorized(caller, TOOL_NAME, {})
 
@@ -62,7 +62,7 @@ def test_tool_is_denied_unless_allowlisted() -> None:
 
 
 def test_tool_returns_projects_with_confirmed_associations_only() -> None:
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_oie", frozenset({TOOL_NAME}))
 
     result = _registry(_store()).invoke_authorized(caller, mcp_tool_name(TOOL_NAME), {})
 
@@ -88,7 +88,7 @@ def test_tool_returns_projects_with_confirmed_associations_only() -> None:
 
 
 def test_tool_rejects_unexpected_arguments() -> None:
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({TOOL_NAME}))
 
     result = _registry(_store()).invoke_authorized(caller, TOOL_NAME, {"x": 1})
 
@@ -104,7 +104,7 @@ def test_wiring_contributes_core_project_list() -> None:
             raise AssertionError("not called")
 
     registry = build_mcp_tool_registry(load_settings(), retrieve=_Retrieve())  # type: ignore[arg-type]
-    caller = McpCallerContext("ws", "default", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_test", frozenset({TOOL_NAME}))
 
     assert [item.name for item in registry.list_effective(caller)] == [
         mcp_tool_name(TOOL_NAME)

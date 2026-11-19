@@ -123,7 +123,7 @@ def _registry(xray: _Xray) -> McpToolRegistry:
 
 
 def _caller(*tool_ids: str) -> McpCallerContext:
-    return McpCallerContext("ws", "default", frozenset(tool_ids))
+    return McpCallerContext("ws", "default", "prj_test", frozenset(tool_ids))
 
 
 def test_build_mcp_tools_contributes_the_update_tool_with_a_binding() -> None:

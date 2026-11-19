@@ -125,19 +125,13 @@ class DomainToolSettings:
 
 @dataclass(frozen=True, slots=True)
 class McpSettings:
-    """Trusted-MVP MCP Streamable HTTP settings (not OAuth).
+    """MCP Streamable HTTP transport settings (profile-bearer auth #324).
 
     Args:
-        auth_token: Required shared bearer for ``/mcp``.
-        access_profile: Single-profile MVP id.
-        tool_allowlist: Tool ids for the profile.
         allowed_hosts: Required Host allowlist for transport security.
         allowed_origins: Exact Origin allowlist (missing Origin still allowed).
     """
 
-    auth_token: str
-    access_profile: str
-    tool_allowlist: tuple[str, ...]
     allowed_hosts: tuple[str, ...]
     allowed_origins: tuple[str, ...]
 
@@ -804,19 +798,27 @@ def _env_truthy(name: str, default: str = "") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def require_mcp_settings_from_env() -> McpSettings:
-    """Parse and validate MCP settings; fail closed on missing/invalid hosts/token.
+def require_admin_api_token_from_env() -> str:
+    """Return the interim Admin API bearer; fail closed when unset.
 
-    Called only when building the MCP app — not from :func:`load_settings`.
+    Protects ``/api/v1/admin/*`` management endpoints (#324). Distinct from
+    MCP access-profile tokens. Never log or persist this value.
     """
     load_dotenv(override=False)
-    token = (os.getenv("MCP_AUTH_TOKEN") or "").strip()
+    token = (os.getenv("ADMIN_API_TOKEN") or "").strip()
     if not token:
-        raise ValueError("MCP_AUTH_TOKEN is required and must be non-blank")
-    profile = (os.getenv("MCP_ACCESS_PROFILE") or "default").strip()
-    if not profile:
-        raise ValueError("MCP_ACCESS_PROFILE must be non-blank when set")
-    allowlist = _csv(os.getenv("MCP_TOOL_ALLOWLIST", ""))
+        raise ValueError("ADMIN_API_TOKEN is required and must be non-blank")
+    return token
+
+
+def require_mcp_settings_from_env() -> McpSettings:
+    """Parse and validate MCP transport settings; fail closed on invalid hosts.
+
+    Caller authentication uses per-profile bearer tokens (#324), not a shared
+    ``MCP_AUTH_TOKEN``. Called only when building the MCP app — not from
+    :func:`load_settings`.
+    """
+    load_dotenv(override=False)
     hosts = _csv(os.getenv("MCP_ALLOWED_HOSTS", ""))
     if not hosts:
         raise ValueError(
@@ -848,9 +850,6 @@ def require_mcp_settings_from_env() -> McpSettings:
             )
         seen_origins.add(origin)
     return McpSettings(
-        auth_token=token,
-        access_profile=profile,
-        tool_allowlist=allowlist,
         allowed_hosts=hosts,
         allowed_origins=origins,
     )

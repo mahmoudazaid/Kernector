@@ -83,6 +83,11 @@ from domain.errors import (
     ToolFailureError,
     VectorStoreError,
 )
+from domain.mcp_access.errors import (
+    AccessProfileNotFoundError,
+    IsolationUnsafeToolError,
+    ProjectNotInWorkspaceError,
+)
 from domain.project.errors import (
     AssociationExistsError,
     AssociationNotFoundError,
@@ -153,6 +158,24 @@ _PROJECT_PROBLEMS: dict[type[Exception], tuple[str, str, int, str]] = {
         "Project slug taken",
         409,
         "Another project in this workspace already uses this slug.",
+    ),
+    ProjectNotInWorkspaceError: (
+        "project_not_found",
+        "Project not found",
+        404,
+        "The project was not found in this workspace.",
+    ),
+    AccessProfileNotFoundError: (
+        "mcp_access_profile_not_found",
+        "MCP access profile not found",
+        404,
+        "The MCP access profile was not found in this workspace.",
+    ),
+    IsolationUnsafeToolError: (
+        "mcp_tool_isolation_unsafe",
+        "Tool cannot guarantee isolation",
+        422,
+        "One or more tools cannot guarantee project isolation and cannot be allowlisted.",
     ),
 }
 _TEST_DESIGN_EVIDENCE_CHANGED_DETAIL = (
@@ -229,6 +252,7 @@ class Problem(BaseModel):
 _PROBLEM_MEDIA_TYPE = "application/problem+json"
 
 _PROBLEM_STATUS_DESCRIPTIONS: dict[int, str] = {
+    401: "Unauthorized",
     404: "Not found",
     405: "Method not allowed",
     409: "Conflict",
