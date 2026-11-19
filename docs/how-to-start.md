@@ -10,9 +10,13 @@ Required for the Next.js shell against local FastAPI:
 # in repo-root .env
 HTTP_DEV_CORS=true
 HTTP_CORS_ORIGINS=http://localhost:3000
-ADMIN_API_TOKEN=admin-dev-token   # MCP Admin UI / BFF
+ADMIN_API_TOKEN=admin-dev-token   # MCP Admin UI / BFF (loaded into Next via next.config)
 MCP_ALLOWED_HOSTS=127.0.0.1:8100  # MCP transport only
 ```
+
+`ADMIN_API_TOKEN` must match between FastAPI and the Next BFF. The web
+`next.config` loads the repo-root `.env` so you do not need to duplicate it
+into `web/.env.local` (you still can override there if you prefer).
 
 Profile tokens and tool allowlists are **not** env vars — create them in
 Admin UI [`/settings/mcp`](../web/app/settings/mcp/page.tsx).

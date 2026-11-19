@@ -1,4 +1,50 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { NextConfig } from "next";
+
+/**
+ * Next only auto-loads `web/.env*`. The Admin MCP BFF needs
+ * ``ADMIN_API_TOKEN`` from the repo-root `.env` used by FastAPI. Copy that
+ * one key into ``process.env`` when unset (``web/.env.local`` still wins if
+ * Next loads it afterward with a value).
+ */
+function loadRepoRootAdminApiToken(): void {
+  if ((process.env.ADMIN_API_TOKEN ?? "").trim()) {
+    return;
+  }
+  const candidates = [
+    path.join(process.cwd(), "..", ".env"),
+    path.join(process.cwd(), ".env"),
+  ];
+  for (const file of candidates) {
+    if (!fs.existsSync(file)) {
+      continue;
+    }
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+      const match = /^ADMIN_API_TOKEN\s*=\s*(.*)$/.exec(trimmed);
+      if (!match) {
+        continue;
+      }
+      let value = match[1].trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (value.trim()) {
+        process.env.ADMIN_API_TOKEN = value.trim();
+        return;
+      }
+    }
+  }
+}
+
+loadRepoRootAdminApiToken();
 
 const NOSNIFF_REFERRER = [
   {

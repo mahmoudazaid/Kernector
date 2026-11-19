@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { adminMcpBffError } from "@/lib/server/admin-mcp-bff";
 import { proxyAdminMcp } from "@/lib/server/admin-mcp-proxy";
 
 export async function GET(): Promise<Response> {
@@ -12,16 +13,7 @@ export async function GET(): Promise<Response> {
           upstream.headers.get("Content-Type") ?? "application/json",
       },
     });
-  } catch {
-    return NextResponse.json(
-      {
-        type: "https://kernector.dev/problems/unauthorized",
-        title: "Unauthorized",
-        status: 401,
-        detail: "Authentication is required.",
-        code: "unauthorized",
-      },
-      { status: 401, headers: { "Content-Type": "application/problem+json" } },
-    );
+  } catch (error) {
+    return adminMcpBffError(error);
   }
 }
