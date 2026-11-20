@@ -208,8 +208,12 @@ def _elicitation_gate(
     return _ElicitationGate(ctx, params, arguments)
 
 
+# Public paths that never require a profile bearer (discovery / probes).
+_PUBLIC_PATHS = frozenset({"/", "/healthz", "/json/version"})
+
+
 class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Require a profile bearer for ``/mcp``; leave ``/healthz`` public.
+    """Require a profile bearer for ``/mcp``; leave discovery routes public.
 
     Authenticated ``GET /mcp`` gets 405: the server offers no standalone SSE
     stream, which the MCP Streamable HTTP spec allows.
@@ -230,7 +234,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         path = request.url.path.rstrip("/") or "/"
-        if path == "/healthz":
+        if path in _PUBLIC_PATHS:
             return await call_next(request)
         if path == self._mcp_path or path.startswith(f"{self._mcp_path}/"):
             header = request.headers.get("authorization")
@@ -291,6 +295,36 @@ def _jsonrpc_method(body: bytes) -> str:
 
 async def _healthz(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
+
+
+async def _root(_request: Request) -> JSONResponse:
+    """Public discovery so ``GET /`` is not a confusing 404."""
+    return JSONResponse(
+        {
+            "service": "kernector-mcp",
+            "status": "ok",
+            "mcp": "/mcp",
+            "healthz": "/healthz",
+            "auth": "profile-bearer",
+        }
+    )
+
+
+async def _not_chrome_devtools(_request: Request) -> JSONResponse:
+    """Answer Chrome DevTools probes on this port without a 404 access log.
+
+    Cursor (and similar) probe listening ports with ``GET /json/version``.
+    This is Kernector MCP, not CDP — omit ``webSocketDebuggerUrl`` so probes
+    fail closed without treating the process as Chrome.
+    """
+    return JSONResponse(
+        {
+            "error": "not_chrome_devtools",
+            "message": "This is Kernector MCP, not a Chrome DevTools endpoint.",
+            "mcp": "/mcp",
+            "healthz": "/healthz",
+        }
+    )
 
 
 async def _answer_modern_ping(
@@ -490,7 +524,11 @@ def create_mcp_app(
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         transport_security=transport_security,
-        custom_starlette_routes=[Route("/healthz", endpoint=_healthz)],
+        custom_starlette_routes=[
+            Route("/", endpoint=_root),
+            Route("/healthz", endpoint=_healthz),
+            Route("/json/version", endpoint=_not_chrome_devtools),
+        ],
     )
     return BearerAuthMiddleware(app, authenticate=_authenticate)
 

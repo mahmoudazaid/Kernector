@@ -131,6 +131,42 @@ def test_healthz_is_public(mcp_env: None) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_public_discovery_routes_are_not_404(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """GET / and CDP probes must not 404 on the hosted MCP port."""
+    from composition.mcp.settings import load_mcp_settings
+
+    catalog = tmp_path / "catalog.sqlite"
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "testserver")
+    monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "")
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-test")
+    monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", str(catalog))
+    with SqlProjectStore(catalog, "ws-test").transaction() as tx:
+        tx.projects.add(Project("prj_test", "Test", "test", 1))
+    app = create_mcp_app(
+        mcp_settings=load_mcp_settings(),
+        registry=McpToolRegistry(contributions=(), enabled_packs=()),
+        workspace_id="ws-test",
+    )
+    with TestClient(app) as client:
+        root = client.get("/")
+        assert root.status_code == 200
+        assert root.json()["mcp"] == "/mcp"
+        assert root.json()["healthz"] == "/healthz"
+
+        cdp = client.get("/json/version")
+        assert cdp.status_code == 200
+        body = cdp.json()
+        assert body["error"] == "not_chrome_devtools"
+        assert "webSocketDebuggerUrl" not in body
+
+        health = client.get("/healthz")
+        assert health.status_code == 200
+        assert health.json() == {"status": "ok"}
+
+
 def test_mcp_requires_bearer(mcp_env: None) -> None:
     registry = McpToolRegistry(contributions=(), enabled_packs=())
     server = build_mcp_server(
