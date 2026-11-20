@@ -88,11 +88,17 @@ def test_frontend_path_extractor_accepts_ts_js_jsx_and_playwright_specs() -> Non
                 "files": [
                     {
                         "path": "e2e/cancel-order.spec.ts",
-                        "content": "test('cancel', async () => {})\n",
+                        "content": (
+                            'import { test } from "@playwright/test";\n'
+                            "test('cancel', async () => {})\n"
+                        ),
                     },
                     {
                         "path": "tests/checkout.test.js",
-                        "content": "test('checkout', async () => {})\n",
+                        "content": (
+                            "const { test } = require('@playwright/test');\n"
+                            "test('checkout', async () => {})\n"
+                        ),
                     },
                 ],
             },
@@ -108,8 +114,8 @@ def test_frontend_path_extractor_accepts_ts_js_jsx_and_playwright_specs() -> Non
     assert "app/orders/page.ts" in by_kind["route"]
     assert "components/CancelButton.jsx" in by_kind["ui_component"]
     assert "lib/api/orders.js" in by_kind["api_client"]
-    assert "e2e/cancel-order.spec.ts" in by_kind["page_object"]
-    assert "tests/checkout.test.js" in by_kind["page_object"]
+    assert "e2e/cancel-order.spec.ts" in by_kind["test_spec"]
+    assert "tests/checkout.test.js" in by_kind["test_spec"]
 
 
 def test_default_extractors_keep_frameworks_separate() -> None:
@@ -118,6 +124,9 @@ def test_default_extractors_keep_frameworks_separate() -> None:
         "RobotKeywordExtractor",
         "FrontendPathExtractor",
         "PlaywrightSpecExtractor",
+        "PytestFixtureExtractor",
+        "CypressSupportExtractor",
+        "SeleniumPageExtractor",
     ]
 
 

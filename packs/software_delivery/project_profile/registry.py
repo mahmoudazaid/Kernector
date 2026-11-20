@@ -30,13 +30,19 @@ _COMPETING_FACETS = frozenset({"test_frameworks", "specification_syntaxes"})
 
 @dataclass(frozen=True, slots=True)
 class DetectorEmission:
-    """One detector output item for a component."""
+    """One detector output item for a component.
+
+    ``role`` and ``suite_ownership_key`` are pack-internal annotations used by
+    aggregation. They are not part of the public ProfileFact / MCP contract.
+    """
 
     fact: ProfileFact | None = None
     convention: Convention | None = None
     reusable_component: ReusableComponent | None = None
     unrecognized_facet: str | None = None
     diagnostic: str | None = None
+    role: str | None = None
+    suite_ownership_key: str | None = None
 
 
 class TechnologyDetector(Protocol):
@@ -181,6 +187,15 @@ def _merge_rollup(left: FacetStatus, right: FacetStatus) -> FacetStatus:
     return left if priority[left] >= priority[right] else right
 
 
+@dataclass(frozen=True, slots=True)
+class _AnnotatedFact:
+    """Fact plus pack-internal emission annotations for aggregation."""
+
+    fact: ProfileFact
+    role: str | None
+    suite_ownership_key: str | None
+
+
 def _aggregate_component(
     component: EvidenceComponent,
     registry: TechnologyDetectorRegistry,
@@ -190,7 +205,7 @@ def _aggregate_component(
     declared_facets: frozenset[str],
     diagnostics: list[str],
 ) -> ComponentProfile:
-    facts_by_facet: dict[str, list[ProfileFact]] = {}
+    facts_by_facet: dict[str, list[_AnnotatedFact]] = {}
     conventions: list[Convention] = []
     reusable: list[ReusableComponent] = []
     unrecognized: set[str] = set()
@@ -212,7 +227,11 @@ def _aggregate_component(
                     emission.fact, index, diagnostics, component_label=component.label
                 )
                 if kept is not None:
-                    facts_by_facet.setdefault(kept.facet, []).append(kept)
+                    facts_by_facet.setdefault(kept.facet, []).append(
+                        _AnnotatedFact(
+                            kept, emission.role, emission.suite_ownership_key
+                        )
+                    )
             if emission.convention is not None:
                 kept_c = _filter_convention(
                     emission.convention,
@@ -273,15 +292,15 @@ def _aggregate_component(
             continue
 
         if facet in _COMPETING_FACETS:
-            identities = {
-                (fact.framework_id or fact.value) for fact in emitted
-            }
-            facet_status[facet] = (
-                "ambiguous" if len(identities) > 1 else "detected"
-            )
+            facet_status[facet] = _competing_facet_status(emitted)
         else:
             facet_status[facet] = "detected"
-        facts.extend(sorted(emitted, key=lambda item: (item.value, item.framework_id or "")))
+        facts.extend(
+            sorted(
+                (item.fact for item in emitted),
+                key=lambda item: (item.value, item.framework_id or ""),
+            )
+        )
 
     for facet, diagnostic in pending_unrecognized_diags:
         if facet_status.get(facet) == "unrecognized":
@@ -297,6 +316,37 @@ def _aggregate_component(
         ),
         diagnostics=tuple(component_diags),
     )
+
+
+def _competing_facet_status(emitted: Sequence[_AnnotatedFact]) -> FacetStatus:
+    """Resolve competing-facet status using pack-internal role annotations.
+
+    Different roles coexist as ``detected``. Same role with multiple identities
+    is ``detected`` only when each identity has a distinct non-empty
+    ``suite_ownership_key``; otherwise ``ambiguous``. Missing roles compete
+    together so legacy multi-identity emissions stay ambiguous.
+    """
+    by_role: dict[str, list[_AnnotatedFact]] = {}
+    for item in emitted:
+        role_key = item.role if item.role else ""
+        by_role.setdefault(role_key, []).append(item)
+
+    for items in by_role.values():
+        identity_keys: dict[str, set[str | None]] = {}
+        for item in items:
+            identity = item.fact.framework_id or item.fact.value
+            identity_keys.setdefault(identity, set()).add(item.suite_ownership_key)
+        if len(identity_keys) <= 1:
+            continue
+        ownership_values: list[str] = []
+        for keys in identity_keys.values():
+            concrete = {key for key in keys if key}
+            if len(concrete) != 1:
+                return "ambiguous"
+            ownership_values.append(next(iter(concrete)))
+        if len(set(ownership_values)) != len(ownership_values):
+            return "ambiguous"
+    return "detected"
 
 
 def _evidence_index(

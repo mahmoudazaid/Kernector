@@ -126,9 +126,9 @@ create/rotate.
 - Test Design tools (#338) appear only when the pack is enabled **and** the
   profile allowlists their ids. See the
   [pack README](packs/software_delivery/README.md#test-design-over-mcp-338).
-- Project technology profile (#387 Phase A): allowlist
+- Project technology profile (#387 / #429): allowlist
   `software_delivery.project_profile` when needed. See the
-  [pack README](packs/software_delivery/README.md#project-technology-profile-387-phase-a).
+  [pack README](packs/software_delivery/README.md#project-technology-profile-387--429).
 
 **Migration from `MCP_AUTH_TOKEN`:** create an access profile for each client,
 allowlist only the tools it needs, and replace the shared secret in Cursor /

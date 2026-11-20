@@ -86,7 +86,8 @@ class PythonManifestDetector:
                         framework_id="robot_framework",
                         confidence="high",
                         evidence_refs=(ref_for(component, file),),
-                    )
+                    ),
+                    role="framework",
                 )
             )
         if "pytest-bdd" in lower or "pytest_bdd" in lower:
@@ -98,7 +99,8 @@ class PythonManifestDetector:
                         framework_id="pytest_bdd",
                         confidence="high",
                         evidence_refs=(ref_for(component, file),),
-                    )
+                    ),
+                    role="framework",
                 )
             )
         return emissions

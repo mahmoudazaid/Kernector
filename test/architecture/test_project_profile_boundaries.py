@@ -32,8 +32,14 @@ FRAMEWORK_NAME_LITERALS = frozenset(
     {
         "robot_framework",
         "playwright",
+        "pytest",
         "pytest_bdd",
         "cucumber",
+        "cypress",
+        "selenium",
+        "junit",
+        "testng",
+        "appium",
         "next",
         "react",
         "typescript",
@@ -97,6 +103,9 @@ def test_framework_name_branches_only_inside_detectors() -> None:
                         and comparator.value.casefold() in FRAMEWORK_NAME_LITERALS
                     ):
                         branched.add(comparator.value.casefold())
+        # Framework Compare branches are allowed in detectors/ and extractors/.
+        if "extractors" in path.parts:
+            continue
         if branched and path.name not in {"reusable.py", "service.py"}:
             offenders[path.relative_to(REPO_ROOT).as_posix()] = branched
     assert offenders == {}
