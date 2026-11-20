@@ -231,6 +231,34 @@ def test_insufficient_context_when_no_emissions_for_declared_facet() -> None:
     assert any("pyproject.toml" in d or "package.json" in d for d in profile.diagnostics)
 
 
+def test_insufficient_context_diagnostics_are_deduplicated_across_components() -> None:
+    evidence = ingest_profile_evidence(
+        [
+            {"component": "a", "files": [{"path": "a/README.md", "content": "a\n"}]},
+            {"component": "b", "files": [{"path": "b/README.md", "content": "b\n"}]},
+        ]
+    )
+
+    class Empty(TechnologyDetector):
+        detector_id = "empty"
+        version = "1"
+        facets = frozenset({"languages"})
+        evidence_recommendations = {
+            "languages": ("pyproject.toml",),
+        }
+
+        def detect(self, component_label: str, files: tuple) -> list[DetectorEmission]:
+            return []
+
+    profile = aggregate_profile(evidence, TechnologyDetectorRegistry((Empty(),)))
+    hint = "insufficient_context for languages: provide pyproject.toml"
+    assert profile.diagnostics.count(hint) == 1
+    assert all(
+        component.facet_status["languages"] == "insufficient_context"
+        for component in profile.components
+    )
+
+
 def test_unrecognized_when_evidence_present_but_no_match() -> None:
     content = "framework: totally-unknown\n"
     evidence = ingest_profile_evidence(

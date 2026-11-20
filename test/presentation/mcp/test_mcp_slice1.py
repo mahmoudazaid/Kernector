@@ -257,8 +257,6 @@ def test_authenticated_http_lists_project_list_via_request_scoped_caller(
     tmp_path: Path,
 ) -> None:
     """Pin middleware → request.state.mcp_caller → RequestScopedCallerContextResolver."""
-    import json
-    import re
     from dataclasses import replace
 
     from application.project.projects import ListProjects
@@ -340,9 +338,8 @@ def test_authenticated_http_lists_project_list_via_request_scoped_caller(
             headers=session_headers,
         )
         assert listed.status_code == 200
-        match = re.search(r"data:\s*(\{.*\})", listed.text)
-        assert match is not None
-        payload = json.loads(match.group(1))
+        assert "application/json" in (listed.headers.get("content-type") or "")
+        payload = listed.json()
         names = [tool["name"] for tool in payload["result"]["tools"]]
         assert names == ["core_project_list"]
 
@@ -396,3 +393,49 @@ def test_unauthenticated_get_mcp_is_still_401(
         response = client.get("/mcp", headers={"Accept": "text/event-stream"})
     assert response.status_code == 401
     assert response.headers.get("www-authenticate") == "Bearer"
+
+
+def test_well_known_under_mcp_does_not_require_bearer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """OAuth discovery under /mcp must 404 without WWW-Authenticate, not 401."""
+    app, _token = _stream_test_app(monkeypatch, tmp_path)
+    with TestClient(app) as client:
+        response = client.get("/mcp/.well-known/openid-configuration")
+    assert response.status_code == 404
+    assert response.headers.get("www-authenticate") is None
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["null", "vscode-webview://cursor", "http://127.0.0.1:8100"],
+)
+def test_empty_origins_allow_cursor_local_origins(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    origin: str,
+) -> None:
+    """Empty MCP_ALLOWED_ORIGINS must not 403 Cursor's local Origin headers."""
+    app, token = _stream_test_app(monkeypatch, tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "cursor", "version": "0"},
+                },
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "Origin": origin,
+            },
+        )
+    assert response.status_code == 200, response.text

@@ -165,6 +165,8 @@ describe("McpAccessPanel", () => {
       "http://127.0.0.1:8100/mcp",
       "once-only-token",
     );
+    expect(config).toContain("http://127.0.0.1:8100/mcp");
+    expect(config).toContain("Bearer once-only-token");
     await user.click(
       screen.getByRole("button", { name: /^copy client config$/i }),
     );

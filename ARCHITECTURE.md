@@ -1035,7 +1035,7 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Retired scaffolding tools (#285) are **not** revived for MCP.
 - Out of scope here: consuming remote MCP (#184), full MCP OAuth, multi-user
   RBAC (#36/#182), solving #257 retrieval isolation, live provider tools
-  (#326/#327), stdio, `kernector_ask`.
+  (#326/#327), `kernector_ask`.
 
 ```bash
 ADMIN_API_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \

@@ -75,7 +75,29 @@ class PythonManifestDetector:
     def _requirements(
         self, component: str, file: EvidenceFile
     ) -> list[DetectorEmission]:
-        emissions: list[DetectorEmission] = []
+        ref = ref_for(component, file)
+        emissions: list[DetectorEmission] = [
+            DetectorEmission(
+                fact=ProfileFact(
+                    facet="languages",
+                    value="Python",
+                    language="Python",
+                    confidence="high",
+                    evidence_refs=(ref,),
+                )
+            )
+        ]
+        if _requirement_package_lines(file.content):
+            emissions.append(
+                DetectorEmission(
+                    fact=ProfileFact(
+                        facet="build_and_dependencies",
+                        value="requirements_dependencies",
+                        confidence="high",
+                        evidence_refs=(ref,),
+                    )
+                )
+            )
         lower = file.content.lower()
         if "robotframework" in lower:
             emissions.append(
@@ -85,7 +107,7 @@ class PythonManifestDetector:
                         value="robot_framework",
                         framework_id="robot_framework",
                         confidence="high",
-                        evidence_refs=(ref_for(component, file),),
+                        evidence_refs=(ref,),
                     ),
                     role="framework",
                 )
@@ -98,9 +120,18 @@ class PythonManifestDetector:
                         value="pytest_bdd",
                         framework_id="pytest_bdd",
                         confidence="high",
-                        evidence_refs=(ref_for(component, file),),
+                        evidence_refs=(ref,),
                     ),
                     role="framework",
                 )
             )
         return emissions
+
+
+def _requirement_package_lines(content: str) -> bool:
+    """True when requirements.txt has at least one non-comment package line."""
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return True
+    return False

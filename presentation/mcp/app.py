@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import anyio.from_thread
@@ -16,11 +16,10 @@ from mcp_types.version import is_version_at_least
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.lowlevel.server import Server
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.routing import Route
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from composition.mcp.access import (
     CallerContextResolver,
@@ -48,10 +47,11 @@ SERVER_INSTRUCTIONS = (
     "prompts this server lists to start its guided workflows."
 )
 
+# No WWW-Authenticate: Cursor treats that challenge as OAuth and aborts
+# createClient with ``Canceled`` instead of retrying static Bearer.
 _UNAUTHORIZED = JSONResponse(
     {"detail": "Unauthorized"},
     status_code=401,
-    headers={"WWW-Authenticate": "Bearer"},
 )
 _NO_STANDALONE_STREAM = JSONResponse(
     {"detail": "Method Not Allowed"},
@@ -211,10 +211,50 @@ def _elicitation_gate(
 # Public paths that never require a profile bearer (discovery / probes).
 _PUBLIC_PATHS = frozenset({"/", "/healthz", "/json/version"})
 
+# When MCP_ALLOWED_ORIGINS is empty, the MCP SDK still rejects *present*
+# Origins that are not in the allowlist. Cursor sends ``Origin: null`` or
+# ``vscode-webview://cursor`` on initialize — those must be allowed for local
+# Streamable HTTP or the client aborts with ``Canceled``.
+_DEFAULT_LOCAL_ORIGINS: tuple[str, ...] = (
+    "null",
+    "vscode-webview://cursor",
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    "http://[::1]:*",
+)
 
-class BearerAuthMiddleware(BaseHTTPMiddleware):
+
+def _effective_allowed_origins(configured: tuple[str, ...]) -> list[str]:
+    """Return Origin allowlist for transport security.
+
+    Empty env means local Cursor-safe defaults (not “reject every Origin”).
+    Explicit ``MCP_ALLOWED_ORIGINS`` still wins for locked-down deployments.
+    """
+    if configured:
+        return list(configured)
+    return list(_DEFAULT_LOCAL_ORIGINS)
+
+
+def _is_well_known(path: str) -> bool:
+    """OAuth discovery probes must 404 without a bearer challenge."""
+    return "/.well-known/" in path or path.startswith("/.well-known/")
+
+
+def _scope_headers(scope: Scope) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for raw_key, raw_val in scope.get("headers") or []:
+        try:
+            out[raw_key.decode("latin-1").lower()] = raw_val.decode("latin-1")
+        except Exception:
+            continue
+    return out
+
+
+class BearerAuthMiddleware:
     """Require a profile bearer for ``/mcp``; leave discovery routes public.
 
+    Pure ASGI (not ``BaseHTTPMiddleware``) so Streamable HTTP responses are not
+    buffered — Cursor's client cancels when the initialize stream is held.
     Authenticated ``GET /mcp`` gets 405: the server offers no standalone SSE
     stream, which the MCP Streamable HTTP spec allows.
     """
@@ -226,46 +266,93 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         authenticate: Callable[[str], McpCallerContext | None],
         mcp_path: str = "/mcp",
     ) -> None:
-        super().__init__(app)
+        self.app = app
         self._authenticate = authenticate
         self._mcp_path = mcp_path.rstrip("/") or "/mcp"
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        path = request.url.path.rstrip("/") or "/"
-        if path in _PUBLIC_PATHS:
-            return await call_next(request)
-        if path == self._mcp_path or path.startswith(f"{self._mcp_path}/"):
-            header = request.headers.get("authorization")
-            if header is None or not header.lower().startswith("bearer "):
-                return _UNAUTHORIZED
-            presented = header[7:].strip()
-            try:
-                caller = self._authenticate(presented)
-            except Exception:
-                logger.exception("mcp_profile_auth_failed")
-                return _UNAUTHORIZED
-            if caller is None:
-                return _UNAUTHORIZED
-            if request.method == "GET":
-                # No server-initiated messages; an idle SSE stream would block
-                # graceful shutdown until a forced second Ctrl+C.
-                return _NO_STANDALONE_STREAM
-            request.state.mcp_caller = caller
-            if request.method == "POST":
-                body = await request.body()
-                response = await call_next(request)
-                if response.status_code >= 400:
-                    logger.warning(
-                        "mcp_http_error status=%s method=%s protocol=%s session=%s",
-                        response.status_code,
-                        _jsonrpc_method(body),
-                        _log_token(request.headers.get("mcp-protocol-version")),
-                        "yes" if request.headers.get("mcp-session-id") else "no",
-                    )
-                return response
-        return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = (scope.get("path") or "/").rstrip("/") or "/"
+        headers = _scope_headers(scope)
+        method = scope.get("method") or "GET"
+
+        if path in _PUBLIC_PATHS or _is_well_known(path):
+            await self.app(scope, receive, send)
+            return
+        if path != self._mcp_path and not path.startswith(f"{self._mcp_path}/"):
+            await self.app(scope, receive, send)
+            return
+
+        header = headers.get("authorization")
+        if header is None or not header.lower().startswith("bearer "):
+            await _UNAUTHORIZED(scope, receive, send)
+            return
+        presented = header[7:].strip()
+        try:
+            caller = self._authenticate(presented)
+        except Exception:
+            logger.exception("mcp_profile_auth_failed")
+            await _UNAUTHORIZED(scope, receive, send)
+            return
+        if caller is None:
+            await _UNAUTHORIZED(scope, receive, send)
+            return
+        if method == "GET":
+            # No server-initiated messages; an idle SSE stream would block
+            # graceful shutdown until a forced second Ctrl+C.
+            await _NO_STANDALONE_STREAM(scope, receive, send)
+            return
+
+        state = scope.setdefault("state", {})
+        if not isinstance(state, dict):
+            state = {}
+            scope["state"] = state
+        state["mcp_caller"] = caller
+
+        if method != "POST":
+            await self.app(scope, receive, send)
+            return
+
+        # Eagerly buffer the body so error logs work even when the downstream
+        # handler never reads the request (and so we can replay it once).
+        body_chunks: list[bytes] = []
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                continue
+            body_chunks.append(message.get("body", b"") or b"")
+            if not message.get("more_body", False):
+                break
+        body = b"".join(body_chunks)
+        replayed = False
+        rpc_method = _jsonrpc_method(body)
+
+        async def receive_replay() -> dict[str, Any]:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        status_box: dict[str, int] = {"code": 0}
+
+        async def send_wrapped(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                status_box["code"] = int(message.get("status") or 0)
+            await send(message)
+
+        await self.app(scope, receive_replay, send_wrapped)
+        if status_box["code"] >= 400:
+            logger.warning(
+                "mcp_http_error status=%s method=%s protocol=%s session=%s",
+                status_box["code"],
+                rpc_method,
+                _log_token(headers.get("mcp-protocol-version")),
+                "yes" if headers.get("mcp-session-id") else "no",
+            )
 
 
 _LOGGABLE_TOKEN = re.compile(r"[A-Za-z0-9_./-]{1,64}")
@@ -519,10 +606,13 @@ def create_mcp_app(
     transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=list(mcp_cfg.allowed_hosts),
-        allowed_origins=list(mcp_cfg.allowed_origins),
+        allowed_origins=_effective_allowed_origins(mcp_cfg.allowed_origins),
     )
+    # json_response=True: Cursor's Streamable HTTP client fails to parse
+    # text/event-stream initialize/tools/list and ends at Canceled / 0 tools.
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
+        json_response=True,
         transport_security=transport_security,
         custom_starlette_routes=[
             Route("/", endpoint=_root),

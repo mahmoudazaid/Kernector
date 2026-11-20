@@ -86,8 +86,18 @@ def test_duplicate_evidence_dedupes_deterministically() -> None:
         if f.framework_id == "pytest"
     ]
     assert len(pytest_facts) == 1
-    assert [f.value for f in profile.components[0].facts] == sorted(
-        f.value for f in profile.components[0].facts
+    # Aggregator emits facts in sorted facet order, then by value within facet.
+    assert [(f.facet, f.value) for f in profile.components[0].facts] == sorted(
+        (f.facet, f.value) for f in profile.components[0].facts
+    )
+    assert any(
+        f.facet == "languages" and f.value == "Python"
+        for f in profile.components[0].facts
+    )
+    assert any(
+        f.facet == "build_and_dependencies"
+        and f.value == "requirements_dependencies"
+        for f in profile.components[0].facts
     )
 
 

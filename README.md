@@ -134,7 +134,11 @@ create/rotate.
 allowlist only the tools it needs, and replace the shared secret in Cursor /
 Claude Code with the profile token. Revoke or rotate via Admin UI.
 
-**Cursor** (`mcp.json` — paste the one-time profile token; never commit it):
+**Cursor** (`mcp.json` — paste the one-time profile token; never commit it).
+Use `url` + `headers` only (no `"type": "http"`). Register kernector in
+**either** user or project mcp.json, not both (dual entries race and
+cancel). After editing project mcp.json, re-enable/approve kernector in
+Settings → MCP:
 
 ```json
 {
@@ -149,7 +153,7 @@ Claude Code with the profile token. Revoke or rotate via Admin UI.
 }
 ```
 
-**Claude Code** (Streamable HTTP remote server; same bearer header shape):
+**Claude Code** (same bearer; optional `"type": "http"`):
 
 ```json
 {
@@ -165,12 +169,15 @@ Claude Code with the profile token. Revoke or rotate via Admin UI.
 }
 ```
 
-Verified for Phase 1: Cursor and Claude Code accept Streamable HTTP + bearer
-headers as above. Full MCP OAuth client flows are out of scope.
+Leave `MCP_ALLOWED_ORIGINS` empty for local Cursor (defaults allow
+`Origin: null` / `vscode-webview://cursor` / localhost). A non-empty list is
+exact-match only; an unmatched Origin returns 403. Unauthorized responses
+omit `WWW-Authenticate` so Cursor does not enter an OAuth cancel path.
+Full MCP OAuth client flows are out of scope.
 
 Out of scope: remote MCP consume (#184), full MCP OAuth, multi-user RBAC
 (#36/#182), solving #257 index isolation, live provider tools (#326/#327),
-stdio, `kernector_ask`.
+`kernector_ask`.
 
 **Dev vs production CORS:** leave `HTTP_DEV_CORS` unset/false in production
 unless you intentionally set an explicit `HTTP_CORS_ORIGINS` allowlist. Never

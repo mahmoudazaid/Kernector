@@ -90,6 +90,16 @@ def recommendations_for_facet(
     return tuple(sorted(found))
 
 
+def _append_insufficient_hints(
+    diagnostics: list[str], facet: str, recommendations: tuple[str, ...]
+) -> None:
+    """Append missing-evidence hints once (deduped across components)."""
+    for recommendation in recommendations:
+        message = f"insufficient_context for {facet}: provide {recommendation}"
+        if message not in diagnostics:
+            diagnostics.append(message)
+
+
 def aggregate_profile(
     evidence: ProfileEvidence,
     registry: TechnologyDetectorRegistry,
@@ -264,9 +274,8 @@ def _aggregate_component(
                 facet_status[facet] = "unrecognized"
             else:
                 facet_status[facet] = "insufficient_context"
-                diagnostics.extend(
-                    f"insufficient_context for {facet}: provide {rec}"
-                    for rec in recommendations_for_facet(registry, facet)
+                _append_insufficient_hints(
+                    diagnostics, facet, recommendations_for_facet(registry, facet)
                 )
             continue
         if facet == "reusable_components":
@@ -276,9 +285,8 @@ def _aggregate_component(
                 facet_status[facet] = "unrecognized"
             else:
                 facet_status[facet] = "insufficient_context"
-                diagnostics.extend(
-                    f"insufficient_context for {facet}: provide {rec}"
-                    for rec in recommendations_for_facet(registry, facet)
+                _append_insufficient_hints(
+                    diagnostics, facet, recommendations_for_facet(registry, facet)
                 )
             continue
 
@@ -288,10 +296,9 @@ def _aggregate_component(
                 facet_status[facet] = "unrecognized"
             else:
                 facet_status[facet] = "insufficient_context"
-                for rec in recommendations_for_facet(registry, facet):
-                    diagnostics.append(
-                        f"insufficient_context for {facet}: provide {rec}"
-                    )
+                _append_insufficient_hints(
+                    diagnostics, facet, recommendations_for_facet(registry, facet)
+                )
             continue
 
         if facet in _COMPETING_FACETS:

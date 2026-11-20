@@ -128,14 +128,15 @@ export async function revokeMcpProfile(
 }
 
 /**
- * Single mcp.json snippet for Cursor and Claude Code (Streamable HTTP + bearer).
+ * Cursor/Claude mcp.json snippet: Streamable HTTP + bearer.
+ * Omit `type`. Do not register the same server in both user and project
+ * mcp.json — dual createClient races cancel each other in Cursor.
  */
 export function mcpClientConfig(endpoint: string, token: string): string {
   return JSON.stringify(
     {
       mcpServers: {
         kernector: {
-          type: "http",
           url: endpoint,
           headers: {
             Authorization: `Bearer ${token}`,

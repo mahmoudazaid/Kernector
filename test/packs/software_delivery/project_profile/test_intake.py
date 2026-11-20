@@ -148,6 +148,70 @@ def test_drops_secret_bearing_content_without_echoing_value() -> None:
     assert token not in "\n".join(evidence.diagnostics)
 
 
+def test_keeps_redacted_robot_password_placeholder_and_bearer_prose() -> None:
+    """Robot ``password=${var}`` and README ``Bearer auth`` prose are not secrets."""
+    robot = (
+        "*** Keywords ***\n"
+        "User logs in using API as\n"
+        "    [Arguments]    ${role}\n"
+        "    ${payload}=    Create Dictionary    "
+        "email=${username}    password=${password}\n"
+        "    ${response}=    POST On Session    api    /login    json=${payload}\n"
+    )
+    readme = (
+        "# Setup\n\n"
+        "```bash\n"
+        "# Jira / X-Ray sync — Bearer auth (recommended; same as Cursor MCP)\n"
+        "export JIRA_URL=https://example.example/jira\n"
+        "```\n"
+    )
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "resources/keywords/api/auth_api.resource",
+                        "content": robot,
+                    },
+                    {"path": "README.md", "content": readme},
+                ]
+            }
+        ]
+    )
+    paths = {file.path for file in evidence.components[0].files}
+    assert paths == {
+        "resources/keywords/api/auth_api.resource",
+        "README.md",
+    }
+    assert not any("secret-bearing" in diagnostic for diagnostic in evidence.diagnostics)
+
+
+def test_still_drops_real_bearer_token_and_password_assignment() -> None:
+    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9fixture"
+    password = "hunter2-not-a-placeholder"
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "notes.md",
+                        "content": f"Authorization: Bearer {token}\n",
+                    },
+                    {
+                        "path": "local.env.txt",
+                        "content": f"PASSWORD={password}\n",
+                    },
+                ]
+            }
+        ]
+    )
+    assert evidence.components[0].files == ()
+    joined = "\n".join(evidence.diagnostics)
+    assert "secret-bearing" in joined
+    assert token not in joined
+    assert password not in joined
+
+
 def test_rejects_too_many_files() -> None:
     files = [
         {"path": f"f{i}.txt", "content": "x\n"} for i in range(MAX_PROFILE_FILES + 1)

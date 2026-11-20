@@ -356,7 +356,9 @@ function McpTokenCallout({
       <h2>Make sure to copy your token now</h2>
       <p className="kern-settings-hint">
         You will not be able to see <strong>{tokenName}</strong> again. Paste
-        the client config into mcp.json for Cursor or Claude Code.
+        the client config into mcp.json (one place only — user or project,
+        not both). After changing project mcp.json, re-enable/approve
+        kernector in Cursor Settings → MCP.
       </p>
       {description ? (
         <p className="kern-settings-hint">{description}</p>

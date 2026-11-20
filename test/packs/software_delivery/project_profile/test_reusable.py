@@ -48,6 +48,47 @@ def test_robot_keywords_extracted_with_line_ranges() -> None:
     assert by_sig["Cancel Order"].content_hash
 
 
+def test_robot_auth_api_password_placeholder_still_extracts_keywords() -> None:
+    """Redacted Robot auth keyword files must stay extractable after intake."""
+    content = (
+        "*** Settings ***\n"
+        "Library    Collections\n"
+        "\n"
+        "*** Keywords ***\n"
+        "User logs in using API as\n"
+        "    [Arguments]    ${role}\n"
+        "    ${payload}=    Create Dictionary    "
+        "email=${username}    password=${password}\n"
+        "    ${response}=    POST On Session    api    /login    json=${payload}\n"
+        "\n"
+        "User logs out using API\n"
+        "    DELETE On Session    api    /logout\n"
+    )
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "resources/keywords/api/auth_api.resource",
+                        "content": content,
+                    }
+                ]
+            }
+        ]
+    )
+    assert len(evidence.components[0].files) == 1
+    components = collect_reusable_components(
+        evidence, extractors=(RobotKeywordExtractor(),)
+    )
+    by_sig = {item.signature: item for item in components}
+    assert set(by_sig) == {"User logs in using API as", "User logs out using API"}
+    assert by_sig["User logs in using API as"].path == (
+        "resources/keywords/api/auth_api.resource"
+    )
+    assert by_sig["User logs in using API as"].line_range == LineRange(5, 8)
+    assert by_sig["User logs out using API"].line_range == LineRange(10, 11)
+
+
 def test_frontend_path_extractor_emits_route_ui_and_api_client() -> None:
     evidence = evidence_for_components({"oie-web": "acme/oie-web"})
     components = collect_reusable_components(
