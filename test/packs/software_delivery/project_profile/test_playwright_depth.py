@@ -88,8 +88,15 @@ def test_path_only_spec_without_content_signals_yields_diagnostic() -> None:
                 "files": [
                     {
                         "path": "e2e/empty.spec.ts",
-                        "content": "// placeholder\n",
-                    }
+                        "content": "// placeholder — path alone must not diagnose\n",
+                    },
+                    {
+                        "path": "e2e/stub.spec.ts",
+                        "content": (
+                            "import { test } from '@playwright/test';\n"
+                            "// import present but no runnable body\n"
+                        ),
+                    },
                 ],
             }
         ]
@@ -98,7 +105,10 @@ def test_path_only_spec_without_content_signals_yields_diagnostic() -> None:
         evidence, extractors=(PlaywrightSpecExtractor(),), return_diagnostics=True
     )
     assert components == ()
-    assert any("insufficient" in d.lower() or "no static" in d.lower() for d in diagnostics)
+    assert any(
+        "insufficient" in d.lower() and "stub.spec.ts" in d for d in diagnostics
+    )
+    assert not any("empty.spec.ts" in d for d in diagnostics)
 
 
 def test_page_object_helper_fixture_hook_require_content_evidence() -> None:
