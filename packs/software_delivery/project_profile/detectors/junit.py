@@ -23,6 +23,14 @@ _JUNIT_ARTIFACTS = frozenset(
         "junit-platform-suite",
     }
 )
+# Content must show JUnit usage; path alone (e.g. TestNG under src/test/java/)
+# must not claim suite ownership.
+_JUNIT_USAGE = re.compile(
+    r"\borg\.junit\b|@org\.junit\b|"
+    r"import\s+org\.junit(?:\.\w+)*\s*;|"
+    r"import\s+static\s+org\.junit(?:\.\w+)*\.",
+    re.IGNORECASE,
+)
 
 
 class JUnitDetector:
@@ -38,13 +46,16 @@ class JUnitDetector:
         self, component_label: str, files: tuple[EvidenceFile, ...]
     ) -> list[DetectorEmission]:
         emissions: list[DetectorEmission] = []
-        # Ownership must be JUnit-specific (java/kotlin), not any src/test/ path
-        # (e.g. TestNG suite XML under src/test/resources/).
+        # Ownership only from files that both live under a Java/Kotlin test root
+        # and show JUnit usage — path alone is shared with TestNG.
         junit_sources = [
             f
             for f in files
-            if f.path.startswith("src/test/java/")
-            or f.path.startswith("src/test/kotlin/")
+            if (
+                f.path.startswith("src/test/java/")
+                or f.path.startswith("src/test/kotlin/")
+            )
+            and _JUNIT_USAGE.search(f.content)
         ]
         if any(f.path.startswith("src/test/java/") for f in junit_sources):
             ownership = "src/test/java/"

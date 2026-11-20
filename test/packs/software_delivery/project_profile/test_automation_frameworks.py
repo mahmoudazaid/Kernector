@@ -289,6 +289,61 @@ def test_junit_testng_nested_ownership_is_ambiguous() -> None:
     )
 
 
+def test_junit_testng_java_path_without_junit_usage_is_ambiguous() -> None:
+    """TestNG tests under src/test/java/ must not give JUnit separable ownership."""
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "component": "java",
+                "files": [
+                    {
+                        "path": "pom.xml",
+                        "content": (
+                            "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+                            "<dependencies>"
+                            "<dependency>"
+                            "<groupId>junit</groupId>"
+                            "<artifactId>junit</artifactId>"
+                            "<version>4.13.2</version>"
+                            "</dependency>"
+                            "<dependency>"
+                            "<groupId>org.testng</groupId>"
+                            "<artifactId>testng</artifactId>"
+                            "<version>7.8.0</version>"
+                            "</dependency>"
+                            "</dependencies>"
+                            "</project>\n"
+                        ),
+                    },
+                    {
+                        "path": "src/test/java/LoginTest.java",
+                        "content": (
+                            "import org.testng.annotations.Test;\n"
+                            "class LoginTest {}\n"
+                        ),
+                    },
+                    {
+                        "path": "src/test/resources/testng.xml",
+                        "content": (
+                            "<!DOCTYPE suite SYSTEM "
+                            '"https://testng.org/testng-1.0.dtd">'
+                            "<suite name=\"All\"><test name=\"t\"/></suite>\n"
+                        ),
+                    },
+                ],
+            }
+        ]
+    )
+    profile = aggregate_profile(evidence, default_detector_registry())
+    component = profile.components[0]
+    assert _ids(component) == {"junit", "testng"}
+    assert component.facet_status["test_frameworks"] == "ambiguous"
+    assert not any(
+        c.name == "test_root" and c.value == "src/test/java/"
+        for c in component.conventions
+    )
+
+
 def test_junit_testng_with_independent_ownership_detected() -> None:
     evidence = ingest_profile_evidence(
         [
