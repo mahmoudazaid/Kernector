@@ -40,7 +40,11 @@ class PlaywrightSpecExtractor:
                 continue
             kind, signature = _classify(file)
             if kind is None:
-                if _looks_like_spec_path(file.path):
+                # Only diagnose candidate paths that already import Playwright;
+                # plain Jest *.test.js / Next.js pages/ must not pollute diags.
+                if _looks_like_spec_path(file.path) and _PLAYWRIGHT_IMPORT.search(
+                    file.content
+                ):
                     diagnostics.append(
                         f"insufficient static evidence for playwright reusable "
                         f"component at {file.path}"

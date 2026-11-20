@@ -127,6 +127,12 @@ def test_malformed_and_pathological_inputs() -> None:
     )
     profile = aggregate_profile(evidence, default_detector_registry())
     assert any("malformed" in d for d in profile.diagnostics)
+    pkg_diags = [
+        d for d in profile.diagnostics if "malformed package.json" in d
+    ]
+    pom_diags = [d for d in profile.diagnostics if "malformed pom.xml" in d]
+    assert len(pkg_diags) == 1
+    assert len(pom_diags) == 1
     assert any("pathological line length" in d for d in profile.diagnostics)
     # Oversized requirements line is dropped by intake — no invented pytest fact.
     assert not any(

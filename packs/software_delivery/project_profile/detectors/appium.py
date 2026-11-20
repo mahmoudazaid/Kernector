@@ -6,6 +6,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
+from itertools import chain
 from typing import ClassVar
 
 from packs.software_delivery.project_profile.detectors._refs import ref_for
@@ -15,7 +16,7 @@ from packs.software_delivery.project_profile.registry import DetectorEmission
 
 _NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 _PY_EXACT = re.compile(
-    r"""^Appium-Python-Client\s*(==|===)\s*(?P<version>[0-9][^;\s]*)""",
+    r"""^Appium-Python-Client\s*(==|===)\s*(?P<version>\d+(?:\.\d+)*(?:[a-zA-Z0-9._+-]+)?)\s*(?:;.*)?$""",
     re.IGNORECASE,
 )
 
@@ -111,8 +112,9 @@ class AppiumDetector:
                     diagnostic=f"malformed pom.xml could not be parsed: {file.path}"
                 )
             ]
-        for dep in list(root.findall(".//m:dependency", _NS)) + list(
-            root.findall(".//dependency")
+        for dep in chain(
+            root.findall(".//m:dependency", _NS),
+            root.findall(".//dependency"),
         ):
             group = _text(dep, "groupId")
             artifact = _text(dep, "artifactId")

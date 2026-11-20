@@ -14,7 +14,7 @@ from packs.software_delivery.project_profile.models import Convention, ProfileFa
 from packs.software_delivery.project_profile.registry import DetectorEmission
 
 _PY_EXACT = re.compile(
-    r"""^selenium\s*(==|===)\s*(?P<version>[0-9][^;\s]*)""",
+    r"""^selenium\s*(==|===)\s*(?P<version>\d+(?:\.\d+)*(?:[a-zA-Z0-9._+-]+)?)\s*(?:;.*)?$""",
     re.IGNORECASE,
 )
 _EXACT_NPM = re.compile(r"^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$")

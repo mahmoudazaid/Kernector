@@ -96,7 +96,14 @@ def test_selenium_direct_python_and_page_object() -> None:
                     },
                     {
                         "path": "pages/empty_page.py",
-                        "content": "# placeholder\n",
+                        "content": "# placeholder — no selenium; must not diagnose\n",
+                    },
+                    {
+                        "path": "pages/stub_page.py",
+                        "content": (
+                            "from selenium import webdriver\n"
+                            "# import present but no find_element / page class\n"
+                        ),
                     },
                 ],
             }
@@ -113,7 +120,10 @@ def test_selenium_direct_python_and_page_object() -> None:
         evidence, extractors=(SeleniumPageExtractor(),), return_diagnostics=True
     )
     assert any(c.kind == "page_object" and c.signature == "LoginPage" for c in components)
-    assert any("insufficient" in d.lower() for d in diagnostics)
+    assert any(
+        "insufficient" in d.lower() and "stub_page.py" in d for d in diagnostics
+    )
+    assert not any("empty_page.py" in d for d in diagnostics)
 
 
 def test_selenium_plus_pytest_coexist() -> None:
@@ -228,6 +238,55 @@ def test_junit_testng_deps_only_ambiguous() -> None:
     component = profile.components[0]
     assert _ids(component) == {"junit", "testng"}
     assert component.facet_status["test_frameworks"] == "ambiguous"
+
+
+def test_junit_testng_nested_ownership_is_ambiguous() -> None:
+    """TestNG suite under src/test/ must not make JUnit look separable."""
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "component": "java",
+                "files": [
+                    {
+                        "path": "pom.xml",
+                        "content": (
+                            "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+                            "<dependencies>"
+                            "<dependency>"
+                            "<groupId>org.junit.jupiter</groupId>"
+                            "<artifactId>junit-jupiter</artifactId>"
+                            "<version>5.10.0</version>"
+                            "</dependency>"
+                            "<dependency>"
+                            "<groupId>org.testng</groupId>"
+                            "<artifactId>testng</artifactId>"
+                            "<version>7.8.0</version>"
+                            "</dependency>"
+                            "</dependencies>"
+                            "</project>\n"
+                        ),
+                    },
+                    {
+                        "path": "src/test/resources/testng.xml",
+                        "content": (
+                            "<!DOCTYPE suite SYSTEM "
+                            '"https://testng.org/testng-1.0.dtd">'
+                            "<suite name=\"All\"><test name=\"t\"/></suite>\n"
+                        ),
+                    },
+                ],
+            }
+        ]
+    )
+    profile = aggregate_profile(evidence, default_detector_registry())
+    component = profile.components[0]
+    assert _ids(component) == {"junit", "testng"}
+    assert component.facet_status["test_frameworks"] == "ambiguous"
+    # No JUnit-specific sources → JUnit must not emit a test_root convention.
+    assert not any(
+        c.name == "test_root" and c.value in {"src/test/", "src/test/java/", "src/test/kotlin/"}
+        for c in component.conventions
+    )
 
 
 def test_junit_testng_with_independent_ownership_detected() -> None:

@@ -221,7 +221,10 @@ def _aggregate_component(
                         (emission.unrecognized_facet, emission.diagnostic)
                     )
             elif emission.diagnostic:
-                component_diags.append(emission.diagnostic)
+                # Multiple detectors may report the same malformed manifest;
+                # keep a single copy so the diagnostic budget stays useful.
+                if emission.diagnostic not in component_diags:
+                    component_diags.append(emission.diagnostic)
             if emission.fact is not None and emission.fact.facet in selected:
                 kept = _filter_fact(
                     emission.fact, index, diagnostics, component_label=component.label
@@ -323,8 +326,9 @@ def _competing_facet_status(emitted: Sequence[_AnnotatedFact]) -> FacetStatus:
 
     Different roles coexist as ``detected``. Same role with multiple identities
     is ``detected`` only when each identity has a distinct non-empty
-    ``suite_ownership_key``; otherwise ``ambiguous``. Missing roles compete
-    together so legacy multi-identity emissions stay ambiguous.
+    ``suite_ownership_key`` that does not path-prefix another; otherwise
+    ``ambiguous``. Missing roles compete together so legacy multi-identity
+    emissions stay ambiguous.
     """
     by_role: dict[str, list[_AnnotatedFact]] = {}
     for item in emitted:
@@ -344,9 +348,19 @@ def _competing_facet_status(emitted: Sequence[_AnnotatedFact]) -> FacetStatus:
             if len(concrete) != 1:
                 return "ambiguous"
             ownership_values.append(next(iter(concrete)))
-        if len(set(ownership_values)) != len(ownership_values):
+        if _ownership_keys_overlap(ownership_values):
             return "ambiguous"
     return "detected"
+
+
+def _ownership_keys_overlap(keys: Sequence[str]) -> bool:
+    """True when any two ownership keys are equal or one path-prefixes the other."""
+    norms = [key if key.endswith("/") else f"{key}/" for key in keys]
+    for index, left in enumerate(norms):
+        for right in norms[index + 1 :]:
+            if left == right or left.startswith(right) or right.startswith(left):
+                return True
+    return False
 
 
 def _evidence_index(

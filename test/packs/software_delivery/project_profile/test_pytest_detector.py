@@ -47,6 +47,24 @@ def test_pytest_range_omits_version() -> None:
     assert not any(c.name == "framework_version" for c in component.conventions)
 
 
+def test_pytest_wildcard_and_compound_pins_omit_version() -> None:
+    for pin in ("pytest==8.*\n", "pytest==8.0.0,<9\n"):
+        evidence = ingest_profile_evidence(
+            [
+                {
+                    "component": "tests",
+                    "files": [{"path": "requirements.txt", "content": pin}],
+                }
+            ]
+        )
+        profile = aggregate_profile(evidence, default_detector_registry())
+        component = profile.components[0]
+        assert any(f.framework_id == "pytest" for f in component.facts)
+        assert not any(
+            c.name == "framework_version" for c in component.conventions
+        ), pin
+
+
 def test_pytest_ini_and_tool_pytest_config() -> None:
     evidence = ingest_profile_evidence(
         [

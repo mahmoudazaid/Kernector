@@ -130,6 +130,41 @@ def test_default_extractors_keep_frameworks_separate() -> None:
     ]
 
 
+def test_unrelated_pages_and_jest_do_not_emit_framework_diagnostics() -> None:
+    from packs.software_delivery.project_profile.extractors.selenium_pages import (
+        SeleniumPageExtractor,
+    )
+
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "component": "web",
+                "files": [
+                    {
+                        "path": "pages/index.js",
+                        "content": "export default function Home() { return null }\n",
+                    },
+                    {
+                        "path": "pages/about.js",
+                        "content": "export default function About() { return null }\n",
+                    },
+                    {
+                        "path": "src/utils/sum.test.js",
+                        "content": "test('adds', () => { expect(1+1).toBe(2) })\n",
+                    },
+                ],
+            }
+        ]
+    )
+    _, diagnostics = collect_reusable_components(
+        evidence,
+        extractors=(PlaywrightSpecExtractor(), SeleniumPageExtractor()),
+        return_diagnostics=True,
+    )
+    assert not any("selenium" in d for d in diagnostics)
+    assert not any("playwright" in d for d in diagnostics)
+
+
 def test_insufficient_recommendations_cover_js_ts_and_playwright() -> None:
     from packs.software_delivery.project_profile.detectors import (
         default_detector_registry,

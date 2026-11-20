@@ -6,6 +6,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
+from itertools import chain
 from typing import ClassVar
 
 from packs.software_delivery.project_profile.detectors._refs import ref_for
@@ -105,8 +106,9 @@ class CucumberDetector:
                     diagnostic=f"malformed pom.xml could not be parsed: {file.path}"
                 )
             ]
-        for dep in list(root.findall(".//m:dependency", _NS)) + list(
-            root.findall(".//dependency")
+        for dep in chain(
+            root.findall(".//m:dependency", _NS),
+            root.findall(".//dependency"),
         ):
             group = _text(dep, "groupId")
             artifact = _text(dep, "artifactId") or ""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
+from itertools import chain
 from typing import ClassVar
 
 from packs.software_delivery.project_profile.detectors._refs import ref_for
@@ -37,23 +38,35 @@ class JUnitDetector:
         self, component_label: str, files: tuple[EvidenceFile, ...]
     ) -> list[DetectorEmission]:
         emissions: list[DetectorEmission] = []
-        test_sources = [f for f in files if f.path.startswith("src/test/")]
-        ownership = "src/test/" if test_sources else None
+        # Ownership must be JUnit-specific (java/kotlin), not any src/test/ path
+        # (e.g. TestNG suite XML under src/test/resources/).
+        junit_sources = [
+            f
+            for f in files
+            if f.path.startswith("src/test/java/")
+            or f.path.startswith("src/test/kotlin/")
+        ]
+        if any(f.path.startswith("src/test/java/") for f in junit_sources):
+            ownership = "src/test/java/"
+        elif any(f.path.startswith("src/test/kotlin/") for f in junit_sources):
+            ownership = "src/test/kotlin/"
+        else:
+            ownership = None
         for file in files:
             name = file.path.rsplit("/", 1)[-1]
             if name == "pom.xml":
                 emissions.extend(self._pom(component_label, file, ownership))
             elif name in {"build.gradle", "build.gradle.kts"}:
                 emissions.extend(self._gradle(component_label, file, ownership))
-        if test_sources and any(
+        if ownership and junit_sources and any(
             e.fact and e.fact.framework_id == "junit" for e in emissions
         ):
             emissions.append(
                 DetectorEmission(
                     convention=Convention(
                         name="test_root",
-                        value="src/test/",
-                        evidence_refs=(ref_for(component_label, test_sources[0]),),
+                        value=ownership,
+                        evidence_refs=(ref_for(component_label, junit_sources[0]),),
                     )
                 )
             )
@@ -73,8 +86,9 @@ class JUnitDetector:
                     diagnostic=f"malformed pom.xml could not be parsed: {file.path}"
                 )
             ]
-        for dep in list(root.findall(".//m:dependency", _NS)) + list(
-            root.findall(".//dependency")
+        for dep in chain(
+            root.findall(".//m:dependency", _NS),
+            root.findall(".//dependency"),
         ):
             artifact = _text(dep, "artifactId")
             group = _text(dep, "groupId")

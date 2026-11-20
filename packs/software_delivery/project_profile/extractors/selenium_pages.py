@@ -42,13 +42,16 @@ class SeleniumPageExtractor:
             )
             if not candidate:
                 continue
-            if not _SELENIUM_IMPORT.search(file.content) or not _FIND.search(
-                file.content
-            ):
-                diagnostics.append(
-                    f"insufficient static evidence for selenium reusable "
-                    f"component at {file.path}"
-                )
+            has_import = _SELENIUM_IMPORT.search(file.content) is not None
+            has_find = _FIND.search(file.content) is not None
+            # Only diagnose when the file shows Selenium usage; avoid flagging
+            # unrelated pages/ trees (e.g. Next.js) that merely match the path.
+            if not has_import or not has_find:
+                if has_import:
+                    diagnostics.append(
+                        f"insufficient static evidence for selenium reusable "
+                        f"component at {file.path}"
+                    )
                 continue
             lines = file.content.splitlines()
             end = len(lines) if lines else 1

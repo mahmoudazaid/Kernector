@@ -14,7 +14,7 @@ from packs.software_delivery.project_profile.models import Convention, ProfileFa
 from packs.software_delivery.project_profile.registry import DetectorEmission
 
 _EXACT_PIN = re.compile(
-    r"""^pytest\s*(==|===)\s*(?P<version>[0-9][^;\s]*)""",
+    r"""^pytest\s*(==|===)\s*(?P<version>\d+(?:\.\d+)*(?:[a-zA-Z0-9._+-]+)?)\s*(?:;.*)?$""",
     re.IGNORECASE,
 )
 
