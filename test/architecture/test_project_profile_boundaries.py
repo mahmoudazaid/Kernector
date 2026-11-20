@@ -130,19 +130,35 @@ def test_core_layers_do_not_import_project_profile() -> None:
 
 
 def test_adding_detector_needs_no_schema_change() -> None:
-    from packs.software_delivery.project_profile.intake import ingest_profile_evidence
-    from packs.software_delivery.project_profile.models import ProfileFact, LineRange, EvidenceRef
+    from collections.abc import Mapping
+    from typing import ClassVar
+
+    from packs.software_delivery.project_profile.intake import (
+        EvidenceFile,
+        ingest_profile_evidence,
+    )
+    from packs.software_delivery.project_profile.models import (
+        EvidenceRef,
+        LineRange,
+        ProfileFact,
+    )
     from packs.software_delivery.project_profile.registry import (
         DetectorEmission,
         TechnologyDetectorRegistry,
         aggregate_profile,
     )
-    class ExtraDetector:
-        detector_id = "extra_fake"
-        version = "1"
-        facets = frozenset({"languages"})
 
-        def detect(self, component_label: str, files: tuple):
+    class ExtraDetector:
+        detector_id: str = "extra_fake"
+        version: str = "1"
+        facets: frozenset[str] = frozenset({"languages"})
+        evidence_recommendations: ClassVar[Mapping[str, tuple[str, ...]]] = {
+            "languages": ("notes.txt",),
+        }
+
+        def detect(
+            self, component_label: str, files: tuple[EvidenceFile, ...]
+        ) -> list[DetectorEmission]:
             if not files:
                 return []
             file = files[0]
