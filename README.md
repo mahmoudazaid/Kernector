@@ -94,7 +94,7 @@ LLM answer. Access uses **per-profile bearer tokens** (#324), not a shared
 
 ```bash
 export ADMIN_API_TOKEN=admin-dev-token   # management API + Admin UI BFF only
-export MCP_ALLOWED_HOSTS=127.0.0.1:8100
+export MCP_ALLOWED_HOSTS=127.0.0.1:8100,localhost:8100
 export MCP_ALLOWED_ORIGINS=  # optional; missing Origin allowed for non-browser clients
 export DOMAIN_TOOL_PACKS=software-delivery   # required for Test Design tools
 export DOCUMENT_CATALOG_WORKSPACE_ID=local
