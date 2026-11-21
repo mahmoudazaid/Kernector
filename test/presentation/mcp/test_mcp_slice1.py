@@ -192,7 +192,8 @@ def test_mcp_requires_bearer(mcp_env: None) -> None:
     client = TestClient(app)
     response = client.post("/mcp", json={})
     assert response.status_code == 401
-    assert response.headers.get("www-authenticate") == "Bearer"
+    # Intentionally omit WWW-Authenticate so Cursor does not enter OAuth cancel.
+    assert response.headers.get("www-authenticate") is None
 
 
 @pytest.mark.anyio
@@ -249,7 +250,68 @@ async def test_mcp_non_ascii_bearer_returns_401_not_500(mcp_env: None) -> None:
     start = next(m for m in messages if m["type"] == "http.response.start")
     assert start["status"] == 401
     header_map = {k.lower(): v for k, v in start["headers"]}
-    assert header_map[b"www-authenticate"] == b"Bearer"
+    assert b"www-authenticate" not in header_map
+
+
+@pytest.mark.anyio
+async def test_client_disconnect_mid_body_does_not_busy_loop(mcp_env: None) -> None:
+    """Aborted POST body must return; spinning on http.disconnect freezes the server."""
+    from composition.mcp.settings import load_mcp_settings
+    from mcp.server.transport_security import TransportSecuritySettings
+    from starlette.routing import Route
+    from presentation.mcp.app import _healthz
+
+    registry = McpToolRegistry(contributions=(), enabled_packs=())
+    mcp_cfg = load_mcp_settings()
+    server = build_mcp_server(
+        registry=registry,
+        resolver=RequestScopedCallerContextResolver(),
+    )
+    raw = server.streamable_http_app(
+        streamable_http_path="/mcp",
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=list(mcp_cfg.allowed_hosts),
+            allowed_origins=list(mcp_cfg.allowed_origins),
+        ),
+        custom_starlette_routes=[Route("/healthz", endpoint=_healthz)],
+    )
+    app = BearerAuthMiddleware(raw, authenticate=_fixed_auth())
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/mcp",
+        "raw_path": b"/mcp",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"authorization", b"Bearer test-token-secret"),
+            (b"host", b"localhost:8000"),
+            (b"content-length", b"1000"),
+        ],
+        "client": ("127.0.0.1", 123),
+        "server": ("localhost", 8000),
+        "state": {},
+    }
+    messages: list[dict] = []
+    receive_calls = 0
+
+    async def receive() -> dict:
+        nonlocal receive_calls
+        receive_calls += 1
+        if receive_calls == 1:
+            return {"type": "http.request", "body": b"partial", "more_body": True}
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        messages.append(message)
+
+    await app(scope, receive, send)
+    assert receive_calls == 2
+    assert messages == []
 
 
 def test_authenticated_http_lists_project_list_via_request_scoped_caller(
@@ -392,7 +454,7 @@ def test_unauthenticated_get_mcp_is_still_401(
     with TestClient(app) as client:
         response = client.get("/mcp", headers={"Accept": "text/event-stream"})
     assert response.status_code == 401
-    assert response.headers.get("www-authenticate") == "Bearer"
+    assert response.headers.get("www-authenticate") is None
 
 
 def test_well_known_under_mcp_does_not_require_bearer(

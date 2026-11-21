@@ -128,9 +128,10 @@ export async function revokeMcpProfile(
 }
 
 /**
- * Cursor/Claude mcp.json snippet: Streamable HTTP + bearer.
- * Omit `type`. Do not register the same server in both user and project
- * mcp.json — dual createClient races cancel each other in Cursor.
+ * Cursor mcp.json snippet: Streamable HTTP + bearer.
+ * Omit `type` — Cursor treats entries without type as HTTP when `url` is set.
+ * Do not register the same server in both user and project mcp.json —
+ * dual createClient races cancel each other in Cursor.
  */
 export function mcpClientConfig(endpoint: string, token: string): string {
   return JSON.stringify(
@@ -149,8 +150,27 @@ export function mcpClientConfig(endpoint: string, token: string): string {
   );
 }
 
-/** @deprecated Use {@link mcpClientConfig}. */
-export const cursorMcpConfig = mcpClientConfig;
+/**
+ * Claude Code `.mcp.json` snippet. Requires `"type": "http"` when `url` is set;
+ * without it Claude Code skips the server as misconfigured.
+ */
+export function claudeCodeMcpConfig(endpoint: string, token: string): string {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        kernector: {
+          type: "http",
+          url: endpoint,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
 
 /** @deprecated Use {@link mcpClientConfig}. */
-export const claudeCodeMcpConfig = mcpClientConfig;
+export const cursorMcpConfig = mcpClientConfig;

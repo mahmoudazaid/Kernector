@@ -166,7 +166,10 @@ class _ElicitationGate:
         self.pending: PendingToolApproval | None = None
 
     def __call__(self, pending: PendingToolApproval) -> bool:
-        if not self._input_required:
+        # Mid-call elicitation needs a request back-channel (SSE POST response).
+        # JSON-response mode sets can_send_request=False — fall through to
+        # InputRequiredResult instead of raising NoBackChannelError.
+        if not self._input_required and self._ctx.session.can_send_request:
             return anyio.from_thread.run(self._ask, pending)
         if self._answer is not None and self._request_state == self._binding:
             return _approved(self._answer)
@@ -318,9 +321,13 @@ class BearerAuthMiddleware:
 
         # Eagerly buffer the body so error logs work even when the downstream
         # handler never reads the request (and so we can replay it once).
+        # http.disconnect must exit: uvicorn returns it immediately with no
+        # await, so ``continue`` busy-loops and starves the event loop.
         body_chunks: list[bytes] = []
         while True:
             message = await receive()
+            if message["type"] == "http.disconnect":
+                return
             if message["type"] != "http.request":
                 continue
             body_chunks.append(message.get("body", b"") or b"")
@@ -609,7 +616,8 @@ def create_mcp_app(
         allowed_origins=_effective_allowed_origins(mcp_cfg.allowed_origins),
     )
     # json_response=True: Cursor's Streamable HTTP client fails to parse
-    # text/event-stream initialize/tools/list and ends at Canceled / 0 tools.
+    # text/event-stream initialize/tools/list. Mid-call elicitation is
+    # unavailable in this mode; _ElicitationGate falls back to InputRequiredResult.
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         json_response=True,

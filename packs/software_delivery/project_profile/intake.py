@@ -47,7 +47,9 @@ _EXCLUDED_SEGMENTS = frozenset(
 # placeholders such as ``password=${password}`` and prose ``Bearer auth``.
 _SECRET_CONTENT = re.compile(
     r"(?i)("
-    r"(?<![${\w])(?:API[_-]?KEY|SECRET[_-]?[A-Z0-9_]*|PASSWORD)\s*=\s*"
+    # Lookbehind skips ${…} / $VAR templates only — not word chars, so
+    # prefixed names like DB_PASSWORD= and AWS_SECRET_ACCESS_KEY= still match.
+    r"(?<![${])(?:API[_-]?KEY|SECRET[_-]?[A-Z0-9_]*|PASSWORD)\s*=\s*"
     r"(?!\$\{|\$[A-Za-z_]|{{)\S+"
     r"|Bearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2}"
     r"|-----BEGIN (?:RSA )?PRIVATE KEY-----"

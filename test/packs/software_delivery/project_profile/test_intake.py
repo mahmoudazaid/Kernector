@@ -212,6 +212,35 @@ def test_still_drops_real_bearer_token_and_password_assignment() -> None:
     assert password not in joined
 
 
+def test_drops_prefixed_secret_variable_assignments() -> None:
+    """Prefixed names like DB_PASSWORD= must still fail closed."""
+    db_password = "fixture-db-password-value"
+    aws_secret = "fixture-aws-secret-access-key-value"
+    api_key = "fixture-stripe-api-key-value"
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "secrets.env.txt",
+                        "content": (
+                            f"DB_PASSWORD={db_password}\n"
+                            f"AWS_SECRET_ACCESS_KEY={aws_secret}\n"
+                            f"STRIPE_API_KEY={api_key}\n"
+                        ),
+                    }
+                ]
+            }
+        ]
+    )
+    assert evidence.components[0].files == ()
+    assert any("secret-bearing" in d for d in evidence.diagnostics)
+    joined = "\n".join(evidence.diagnostics)
+    assert db_password not in joined
+    assert aws_secret not in joined
+    assert api_key not in joined
+
+
 def test_rejects_too_many_files() -> None:
     files = [
         {"path": f"f{i}.txt", "content": "x\n"} for i in range(MAX_PROFILE_FILES + 1)
