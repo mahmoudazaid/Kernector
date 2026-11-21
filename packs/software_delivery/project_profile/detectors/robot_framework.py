@@ -39,7 +39,8 @@ class RobotFrameworkDetector:
                     framework_id="robot_framework",
                     confidence="high",
                     evidence_refs=(ref_for(component_label, evidence_file),),
-                )
+                ),
+                role="framework",
             )
         )
         test_roots = sorted(

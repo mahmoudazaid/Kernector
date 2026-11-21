@@ -919,16 +919,20 @@ the agents; Kernector supplies evidence and allowlisted tools.
   pack tool class as chat, contributed with a workspace-bound
   `XrayMcpBinding` (`composition/xray_export/mcp.py` owns the pydantic
   schemas) only when `XRAY_DEPLOYMENT` is configured.
-- Project technology profile (#387 Phase A):
+- Project technology profile (#387 / #429):
   `software_delivery.project_profile` is a read-only, role-neutral MCP tool
   over client-supplied evidence (`evidence` groups with optional component
   labels; `project_id` rejected until Phase B). Pack logic lives in
   `packs/software_delivery/project_profile/` (detectors, intake, aggregation,
-  fingerprint); composition owns schemas and the workspace-bound binding
-  (`composition/mcp/project_profile.py`). MVP detectors cover Python
-  manifests, Node/`package.json`, Robot Framework, and delivery (GitHub
-  Actions job names + Dockerfile) via stdlib only — no model calls and no
-  YAML libraries. Access is allowlist-only; no human approval (ADR 0010).
+  fingerprint, extractors, optional `#298` step-source adapter); composition
+  owns schemas and the workspace-bound binding
+  (`composition/mcp/project_profile.py`). Detectors cover Python/Node
+  manifests, Playwright, Pytest, Cypress, Selenium, JUnit, TestNG, Appium,
+  Cucumber (framework only), Robot Framework, Gherkin specification syntax,
+  and delivery via stdlib only — no model calls, no YAML libraries, no MCP
+  schema change when adding detectors. Framework-neutral aggregation uses
+  pack-internal emission roles (`library` / `framework` / `runner`) and
+  suite-ownership keys. Access is allowlist-only; no human approval (ADR 0010).
 - Test file preview (#396): `software_delivery.preview_test_file_scenarios`
   is contributed whenever `software-delivery` is enabled, with composition
   (`composition/xray_export/test_file_preview.py`) owning the strict schemas
@@ -1031,7 +1035,7 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Retired scaffolding tools (#285) are **not** revived for MCP.
 - Out of scope here: consuming remote MCP (#184), full MCP OAuth, multi-user
   RBAC (#36/#182), solving #257 retrieval isolation, live provider tools
-  (#326/#327), stdio, `kernector_ask`.
+  (#326/#327), `kernector_ask`.
 
 ```bash
 ADMIN_API_TOKEN=… MCP_ALLOWED_HOSTS=127.0.0.1:8100 \

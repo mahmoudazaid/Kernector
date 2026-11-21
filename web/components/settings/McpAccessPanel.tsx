@@ -16,6 +16,7 @@ import { SoftDatePicker } from "@/components/ui/SoftDatePicker";
 import { SoftSelect } from "@/components/ui/SoftSelect";
 import { formatTimestamp } from "@/lib/format/timestamp";
 import {
+  claudeCodeMcpConfig,
   createMcpProfile,
   listMcpProfiles,
   listMcpTools,
@@ -344,8 +345,10 @@ function McpTokenCallout({
   onDismiss: () => void;
 }) {
   const tokenCopy = useCopiedFlag();
-  const configCopy = useCopiedFlag();
-  const config = mcpClientConfig(endpoint, token);
+  const cursorConfigCopy = useCopiedFlag();
+  const claudeConfigCopy = useCopiedFlag();
+  const cursorConfig = mcpClientConfig(endpoint, token);
+  const claudeConfig = claudeCodeMcpConfig(endpoint, token);
 
   return (
     <div
@@ -356,7 +359,9 @@ function McpTokenCallout({
       <h2>Make sure to copy your token now</h2>
       <p className="kern-settings-hint">
         You will not be able to see <strong>{tokenName}</strong> again. Paste
-        the client config into mcp.json for Cursor or Claude Code.
+        the matching client config into mcp.json (one place only — user or
+        project, not both). After changing project mcp.json, re-enable/approve
+        kernector in Cursor Settings → MCP.
       </p>
       {description ? (
         <p className="kern-settings-hint">{description}</p>
@@ -383,16 +388,36 @@ function McpTokenCallout({
         </div>
       </div>
       <div className="kern-settings-field">
-        <p className="kern-settings-help">Client config</p>
+        <p className="kern-settings-help">Cursor mcp.json</p>
         <div className="kern-mcp-snippet-wrap">
-          <pre className="kern-mcp-snippet">{config}</pre>
+          <pre className="kern-mcp-snippet">{cursorConfig}</pre>
           <button
             type="button"
             className="kern-mcp-copy-btn kern-mcp-snippet-copy"
             aria-label={
-              configCopy.copied ? "Client config copied" : "Copy client config"
+              cursorConfigCopy.copied
+                ? "Cursor config copied"
+                : "Copy Cursor config"
             }
-            onClick={() => configCopy.copy(config)}
+            onClick={() => cursorConfigCopy.copy(cursorConfig)}
+          >
+            <CopyIcon />
+          </button>
+        </div>
+      </div>
+      <div className="kern-settings-field">
+        <p className="kern-settings-help">Claude Code .mcp.json</p>
+        <div className="kern-mcp-snippet-wrap">
+          <pre className="kern-mcp-snippet">{claudeConfig}</pre>
+          <button
+            type="button"
+            className="kern-mcp-copy-btn kern-mcp-snippet-copy"
+            aria-label={
+              claudeConfigCopy.copied
+                ? "Claude Code config copied"
+                : "Copy Claude Code config"
+            }
+            onClick={() => claudeConfigCopy.copy(claudeConfig)}
           >
             <CopyIcon />
           </button>

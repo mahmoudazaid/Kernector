@@ -43,12 +43,15 @@ _EXCLUDED_SEGMENTS = frozenset(
         "venv",
     }
 )
+# Fail-closed secret scan: keep real assignments/tokens, skip Robot/docs
+# placeholders such as ``password=${password}`` and prose ``Bearer auth``.
 _SECRET_CONTENT = re.compile(
     r"(?i)("
-    r"API[_-]?KEY\s*=\s*\S+"
-    r"|SECRET[_-]?[A-Z0-9_]*\s*=\s*\S+"
-    r"|PASSWORD\s*=\s*\S+"
-    r"|Bearer\s+[A-Za-z0-9\-._~+/]+=*"
+    # Lookbehind skips ${…} / $VAR templates only — not word chars, so
+    # prefixed names like DB_PASSWORD= and AWS_SECRET_ACCESS_KEY= still match.
+    r"(?<![${])(?:API[_-]?KEY|SECRET[_-]?[A-Z0-9_]*|PASSWORD)\s*=\s*"
+    r"(?!\$\{|\$[A-Za-z_]|{{)\S+"
+    r"|Bearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2}"
     r"|-----BEGIN (?:RSA )?PRIVATE KEY-----"
     r")"
 )

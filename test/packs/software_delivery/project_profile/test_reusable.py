@@ -48,6 +48,47 @@ def test_robot_keywords_extracted_with_line_ranges() -> None:
     assert by_sig["Cancel Order"].content_hash
 
 
+def test_robot_auth_api_password_placeholder_still_extracts_keywords() -> None:
+    """Redacted Robot auth keyword files must stay extractable after intake."""
+    content = (
+        "*** Settings ***\n"
+        "Library    Collections\n"
+        "\n"
+        "*** Keywords ***\n"
+        "User logs in using API as\n"
+        "    [Arguments]    ${role}\n"
+        "    ${payload}=    Create Dictionary    "
+        "email=${username}    password=${password}\n"
+        "    ${response}=    POST On Session    api    /login    json=${payload}\n"
+        "\n"
+        "User logs out using API\n"
+        "    DELETE On Session    api    /logout\n"
+    )
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "resources/keywords/api/auth_api.resource",
+                        "content": content,
+                    }
+                ]
+            }
+        ]
+    )
+    assert len(evidence.components[0].files) == 1
+    components = collect_reusable_components(
+        evidence, extractors=(RobotKeywordExtractor(),)
+    )
+    by_sig = {item.signature: item for item in components}
+    assert set(by_sig) == {"User logs in using API as", "User logs out using API"}
+    assert by_sig["User logs in using API as"].path == (
+        "resources/keywords/api/auth_api.resource"
+    )
+    assert by_sig["User logs in using API as"].line_range == LineRange(5, 8)
+    assert by_sig["User logs out using API"].line_range == LineRange(10, 11)
+
+
 def test_frontend_path_extractor_emits_route_ui_and_api_client() -> None:
     evidence = evidence_for_components({"oie-web": "acme/oie-web"})
     components = collect_reusable_components(
@@ -88,11 +129,17 @@ def test_frontend_path_extractor_accepts_ts_js_jsx_and_playwright_specs() -> Non
                 "files": [
                     {
                         "path": "e2e/cancel-order.spec.ts",
-                        "content": "test('cancel', async () => {})\n",
+                        "content": (
+                            'import { test } from "@playwright/test";\n'
+                            "test('cancel', async () => {})\n"
+                        ),
                     },
                     {
                         "path": "tests/checkout.test.js",
-                        "content": "test('checkout', async () => {})\n",
+                        "content": (
+                            "const { test } = require('@playwright/test');\n"
+                            "test('checkout', async () => {})\n"
+                        ),
                     },
                 ],
             },
@@ -108,8 +155,8 @@ def test_frontend_path_extractor_accepts_ts_js_jsx_and_playwright_specs() -> Non
     assert "app/orders/page.ts" in by_kind["route"]
     assert "components/CancelButton.jsx" in by_kind["ui_component"]
     assert "lib/api/orders.js" in by_kind["api_client"]
-    assert "e2e/cancel-order.spec.ts" in by_kind["page_object"]
-    assert "tests/checkout.test.js" in by_kind["page_object"]
+    assert "e2e/cancel-order.spec.ts" in by_kind["test_spec"]
+    assert "tests/checkout.test.js" in by_kind["test_spec"]
 
 
 def test_default_extractors_keep_frameworks_separate() -> None:
@@ -118,7 +165,45 @@ def test_default_extractors_keep_frameworks_separate() -> None:
         "RobotKeywordExtractor",
         "FrontendPathExtractor",
         "PlaywrightSpecExtractor",
+        "PytestFixtureExtractor",
+        "CypressSupportExtractor",
+        "SeleniumPageExtractor",
     ]
+
+
+def test_unrelated_pages_and_jest_do_not_emit_framework_diagnostics() -> None:
+    from packs.software_delivery.project_profile.extractors.selenium_pages import (
+        SeleniumPageExtractor,
+    )
+
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "component": "web",
+                "files": [
+                    {
+                        "path": "pages/index.js",
+                        "content": "export default function Home() { return null }\n",
+                    },
+                    {
+                        "path": "pages/about.js",
+                        "content": "export default function About() { return null }\n",
+                    },
+                    {
+                        "path": "src/utils/sum.test.js",
+                        "content": "test('adds', () => { expect(1+1).toBe(2) })\n",
+                    },
+                ],
+            }
+        ]
+    )
+    _, diagnostics = collect_reusable_components(
+        evidence,
+        extractors=(PlaywrightSpecExtractor(), SeleniumPageExtractor()),
+        return_diagnostics=True,
+    )
+    assert not any("selenium" in d for d in diagnostics)
+    assert not any("playwright" in d for d in diagnostics)
 
 
 def test_insufficient_recommendations_cover_js_ts_and_playwright() -> None:

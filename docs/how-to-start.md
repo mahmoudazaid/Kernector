@@ -11,7 +11,7 @@ Required for the Next.js shell against local FastAPI:
 HTTP_DEV_CORS=true
 HTTP_CORS_ORIGINS=http://localhost:3000
 ADMIN_API_TOKEN=admin-dev-token   # MCP Admin UI / BFF (loaded into Next via next.config)
-MCP_ALLOWED_HOSTS=127.0.0.1:8100  # MCP transport only
+MCP_ALLOWED_HOSTS=127.0.0.1:8100,localhost:8100  # MCP transport only
 ```
 
 `ADMIN_API_TOKEN` must match between FastAPI and the Next BFF. The web

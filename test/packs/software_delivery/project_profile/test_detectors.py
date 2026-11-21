@@ -206,3 +206,49 @@ def test_malformed_pyproject_does_not_invent_facts() -> None:
     profile = aggregate_profile(evidence, default_detector_registry())
     assert not any(f.facet == "languages" and f.value == "Python" for f in profile.facts)
     assert any("malformed" in d.lower() or "parse" in d.lower() for d in profile.diagnostics)
+
+
+def test_requirements_txt_detects_python_language_and_dependencies() -> None:
+    from packs.software_delivery.project_profile.intake import ingest_profile_evidence
+
+    evidence = ingest_profile_evidence(
+        [
+            {
+                "files": [
+                    {
+                        "path": "requirements.txt",
+                        "content": (
+                            "robotframework>=6.0\n"
+                            "robotframework-seleniumlibrary>=6.0\n"
+                            "pyyaml>=6.0\n"
+                        ),
+                    }
+                ]
+            }
+        ]
+    )
+    profile = aggregate_profile(evidence, default_detector_registry())
+    component = profile.components[0]
+    assert component.facet_status["languages"] == "detected"
+    assert component.facet_status["build_and_dependencies"] == "detected"
+    assert any(
+        fact.facet == "languages" and fact.value == "Python" for fact in component.facts
+    )
+    assert any(
+        fact.facet == "build_and_dependencies" and fact.value == "requirements_dependencies"
+        for fact in component.facts
+    )
+    assert any(
+        fact.framework_id == "robot_framework"
+        for fact in component.facts
+        if fact.facet == "test_frameworks"
+    )
+    assert not any(
+        "insufficient_context for languages: provide requirements.txt" in diagnostic
+        for diagnostic in profile.diagnostics
+    )
+    assert not any(
+        "insufficient_context for build_and_dependencies: provide requirements.txt"
+        in diagnostic
+        for diagnostic in profile.diagnostics
+    )

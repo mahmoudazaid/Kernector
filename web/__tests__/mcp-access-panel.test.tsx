@@ -2,7 +2,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { McpAccessPanel } from "@/components/settings/McpAccessPanel";
-import { mcpClientConfig } from "@/lib/api/mcp-profiles";
+import {
+  claudeCodeMcpConfig,
+  mcpClientConfig,
+} from "@/lib/api/mcp-profiles";
 
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => {
@@ -152,6 +155,9 @@ describe("McpAccessPanel", () => {
     expect(callout.textContent).toContain(
       mcpClientConfig("http://127.0.0.1:8100/mcp", "once-only-token"),
     );
+    expect(callout.textContent).toContain(
+      claudeCodeMcpConfig("http://127.0.0.1:8100/mcp", "once-only-token"),
+    );
     expect(within(callout).getByText("CI agent")).toBeInTheDocument();
     expect(screen.queryByText(/^active$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/tools:/i)).not.toBeInTheDocument();
@@ -161,15 +167,29 @@ describe("McpAccessPanel", () => {
       expect(writeText).toHaveBeenCalledWith("once-only-token");
     });
 
-    const config = mcpClientConfig(
+    const cursorConfig = mcpClientConfig(
       "http://127.0.0.1:8100/mcp",
       "once-only-token",
     );
+    const claudeConfig = claudeCodeMcpConfig(
+      "http://127.0.0.1:8100/mcp",
+      "once-only-token",
+    );
+    expect(cursorConfig).toContain("http://127.0.0.1:8100/mcp");
+    expect(cursorConfig).toContain("Bearer once-only-token");
+    expect(cursorConfig).not.toContain('"type"');
+    expect(claudeConfig).toContain('"type": "http"');
     await user.click(
-      screen.getByRole("button", { name: /^copy client config$/i }),
+      screen.getByRole("button", { name: /^copy cursor config$/i }),
     );
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(config);
+      expect(writeText).toHaveBeenCalledWith(cursorConfig);
+    });
+    await user.click(
+      screen.getByRole("button", { name: /^copy claude code config$/i }),
+    );
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(claudeConfig);
     });
 
     await user.click(screen.getByRole("button", { name: /^done$/i }));

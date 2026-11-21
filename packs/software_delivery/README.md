@@ -464,7 +464,7 @@ Start handoff only after a ready `tool_workflow` decision (intent + one Issue).
 
 Enable with `DOMAIN_TOOL_PACKS=software-delivery`.
 
-## Project technology profile (#387 Phase A)
+## Project technology profile (#387 / #429)
 
 [`project_profile/`](project_profile/) profiles client-supplied project evidence
 into languages, frameworks, test frameworks, delivery, conventions, and
@@ -475,16 +475,32 @@ may use the same tool; there is no role parameter.
 | --- | --- | --- |
 | `software_delivery.project_profile` | `evidence` (groups of `{component?, files:[{path,content}]}`), optional `facets[]` | Read-only. `project_id` is rejected in Phase A. |
 
-MVP detectors (documented support only): Python (`pyproject.toml` /
-`requirements.txt`), Node (`package.json` → TypeScript / Next.js / React /
-Playwright), Robot Framework (+ keyword extraction), and delivery (GitHub
-Actions job names + Dockerfile env **names**). Reusable extraction is one plugin per framework under
+Supported automation / stack detectors (#387 + #429): Python manifests
+(`pyproject.toml` / `requirements.txt`), Node (`package.json` → TypeScript /
+Next.js / React), Playwright (deps + config depth), Pytest (runner; distinct
+from `pytest_bdd`), Cypress, Selenium (direct bindings only), JUnit, TestNG,
+Appium, Cucumber (framework/glue — not step extraction), Robot Framework,
+Gherkin as `specification_syntaxes` (never reported as Cucumber), and delivery
+(GitHub Actions job names + Dockerfile env **names**).
+
+Reusable extraction is one plugin per framework under
 [`project_profile/extractors/`](project_profile/extractors/) (Robot keywords,
-Next/React paths, Playwright specs). Add a new framework by adding an
-extractor and registering it in `default_extractors()` — no shared
-framework switch. No model calls, no project code execution, no YAML
-libraries. Evidence is untrusted; secret-bearing and excluded files are
-dropped with sanitized diagnostics.
+Next/React paths, Playwright/Cypress/Selenium/Pytest content-backed kinds).
+Cucumber `step_definition` components come only from a `#298`
+`ReusableComponentSource` adapter
+([`project_profile/adapters/`](project_profile/adapters/)); profiling does not
+re-parse step definitions. Add a new framework by adding a detector/extractor
+and registering it — no shared framework switch and no MCP schema change.
+
+**Detection limitations:** versions only when exactly pinned (ranges,
+`${properties}`, inherited BOM, and transitive-only deps omit version / do not
+invent direct usage); reusable kinds require static content evidence (path or
+directory presence alone is insufficient); Appium never invents
+platform/device facts; same-role runners without separable suite ownership
+(e.g. JUnit+TestNG deps only) are `ambiguous`; compatible different roles
+(e.g. Selenium+Pytest, Cucumber+JUnit) stay `detected`. No model calls, no
+project code execution, no YAML libraries. Evidence is untrusted;
+secret-bearing and excluded files are dropped with sanitized diagnostics.
 
 Composition wiring: [`composition/mcp/project_profile.py`](../../composition/mcp/project_profile.py).
 Grant `software_delivery.project_profile` on the profile allowlist (Admin UI
