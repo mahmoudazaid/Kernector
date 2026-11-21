@@ -1660,11 +1660,8 @@ export interface components {
       include_prefixes: string[];
       /** Owner */
       owner: string;
-      /**
-       * Ref
-       * @default HEAD
-       */
-      ref: string;
+      /** Ref */
+      ref?: string | null;
       /** Repo */
       repo: string;
     };

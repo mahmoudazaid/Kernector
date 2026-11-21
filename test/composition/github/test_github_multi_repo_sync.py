@@ -340,6 +340,7 @@ def test_partial_failure_keeps_successful_peer_docs(
     assert "acme/web:README.md" in ids
     assert "acme/orders:README.md" in ids
     assert result.ingested_count == 1
+    assert result.failed_count == 1
 
     # Retry after orders recovers.
     def build_ok(_settings, *, token: str):
@@ -357,3 +358,75 @@ def test_partial_failure_keeps_successful_peer_docs(
     assert catalog.get(SourceReference("acme/web:README.md", SourceType.GITHUB))
     assert catalog.get(SourceReference("acme/orders:README.md", SourceType.GITHUB))
     assert retry.skipped_count >= 1
+
+
+def test_hub_selection_inherits_workspace_github_ref(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    _grant(tokens)
+    put_github_selection(
+        settings,
+        repositories=(GitHubRepoTarget(owner="acme", repo="web"),),
+        connection_store=tokens,
+        client_factory=lambda _t: _AcceptClient(),
+    )
+    settings = replace(
+        settings,
+        github=replace(settings.github, ref="develop"),
+    )
+    catalog = InMemoryDocumentCatalog()
+    store = InMemoryVectorStore()
+    monkeypatch.setattr(
+        composition_container,
+        "build_ingest_knowledge",
+        lambda _settings, *, vector_store=None: _Ingest(),
+    )
+    seen_refs: list[str] = []
+
+    def build(sync_settings, *, token: str):
+        seen_refs.append(sync_settings.github.ref)
+        return _RepoConnector((_doc("acme/web:README.md"),))
+
+    monkeypatch.setattr(github_sync, "build_github_oauth_connector", build)
+
+    sync_github_oauth(
+        settings,
+        catalog=catalog,
+        vector_store=store,
+        connection_store=tokens,
+    )
+    assert seen_refs == ["develop"]
+
+
+def test_all_repo_failures_reraise(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from composition.errors import ConnectorSyncError
+
+    tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
+    _grant(tokens)
+    put_github_selection(
+        settings,
+        repositories=(GitHubRepoTarget(owner="acme", repo="web"),),
+        connection_store=tokens,
+        client_factory=lambda _t: _AcceptClient(),
+    )
+    monkeypatch.setattr(
+        composition_container,
+        "build_ingest_knowledge",
+        lambda _settings, *, vector_store=None: _Ingest(),
+    )
+
+    def build(_settings, *, token: str):
+        raise ConnectorError("listing failed")
+
+    monkeypatch.setattr(github_sync, "build_github_oauth_connector", build)
+
+    with pytest.raises(ConnectorSyncError):
+        sync_github_oauth(
+            settings,
+            catalog=InMemoryDocumentCatalog(),
+            vector_store=InMemoryVectorStore(),
+            connection_store=tokens,
+        )

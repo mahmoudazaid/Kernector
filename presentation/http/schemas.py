@@ -249,7 +249,8 @@ class GitHubRepoTargetSchema(BaseModel):
 
     owner: str
     repo: str
-    ref: str = "HEAD"
+    # None / omitted = inherit workspace GITHUB_REF.
+    ref: str | None = None
     include_prefixes: list[str] = []
     exclude_prefixes: list[str] = []
     extensions: list[str] | None = None

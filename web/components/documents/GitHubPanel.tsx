@@ -17,6 +17,7 @@ import {
   type DisconnectGitHubOptions,
   type GetGitHubSelectionOptions,
   type GetGitHubStatusOptions,
+  type GitHubRepoTargetPayload,
   type GitHubSelectionResponse,
   type GitHubStatusResponse,
   type ListGitHubProjectsOptions,
@@ -92,7 +93,7 @@ type SelectionDraft = {
   repo: string | null;
   project_owner: string | null;
   project_number: number | null;
-  repositories: { owner: string; repo: string }[];
+  repositories: GitHubRepoTargetPayload[];
 };
 
 function normalizeSelectionDraft(next: {
@@ -100,7 +101,7 @@ function normalizeSelectionDraft(next: {
   repo: string | null;
   project_owner?: string | null;
   project_number?: number | null;
-  repositories?: { owner: string; repo: string }[];
+  repositories?: GitHubRepoTargetPayload[];
 }): SelectionDraft {
   const repositories =
     next.repositories ??
@@ -446,7 +447,7 @@ export function GitHubPanel({
     repo: string | null;
     project_owner?: string | null;
     project_number?: number | null;
-    repositories: { owner: string; repo: string }[];
+    repositories: GitHubRepoTargetPayload[];
   }) {
     const draft = normalizeSelectionDraft(next);
     const dropped = droppedGithubSources(selection, draft);

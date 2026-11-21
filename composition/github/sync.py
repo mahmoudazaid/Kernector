@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 
-from application.contracts import ConnectorSyncOutcome, ConnectorSyncResponse
+from application.contracts import (
+    ConnectorSyncOutcome,
+    ConnectorSyncResponse,
+    ConnectorSyncStatus,
+)
 from application.errors import (
     ConfigurationError,
     GitHubSelectionRequiredError,
@@ -393,6 +397,8 @@ def _run_github_oauth_sync(
     )
     outcomes: list[ConnectorSyncOutcome] = []
     auth_failure: ConnectorSyncError | None = None
+    last_non_auth_failure: ConnectorSyncError | None = None
+    repo_failures = 0
     for target in repositories:
         try:
             result = _sync_one_repo_target(
@@ -409,10 +415,21 @@ def _run_github_oauth_sync(
             if isinstance(error.__cause__, ConnectorAuthError):
                 auth_failure = error
                 break
-            # Non-auth failure: keep prior good docs for this identity; continue.
-            continue
+            # Keep prior good docs for this identity; record the failure.
+            last_non_auth_failure = error
+            repo_failures += 1
+            cause = error.__cause__
+            outcomes.append(
+                ConnectorSyncOutcome(
+                    source_id=f"{target.owner}/{target.repo}",
+                    status=ConnectorSyncStatus.FAILED,
+                    chunk_count=0,
+                    error_type=type(cause).__name__ if cause is not None else type(error).__name__,
+                )
+            )
     if auth_failure is not None:
         raise auth_failure
+    project_synced = False
     if project_owner and project_number is not None:
         result = _sync_project_issues(
             settings,
@@ -425,10 +442,18 @@ def _run_github_oauth_sync(
             vector_store_factory=vector_store_factory,
         )
         outcomes.extend(result.outcomes)
+        project_synced = True
     if not repositories and not (project_owner and project_number is not None):
         raise GitHubSelectionRequiredError(
             "Select a GitHub repository or project before syncing."
         )
+    if (
+        repositories
+        and repo_failures == len(repositories)
+        and not project_synced
+        and last_non_auth_failure is not None
+    ):
+        raise last_non_auth_failure
     return ConnectorSyncResponse(outcomes=tuple(outcomes))
 
 
@@ -455,7 +480,11 @@ def _sync_one_repo_target(
             token=access_token,
             owner=target.owner,
             repo=target.repo,
-            ref=target.ref or settings.github.ref,
+            ref=(
+                target.ref
+                if target.ref is not None
+                else settings.github.ref
+            ),
             include_paths=tuple(include),
             exclude_paths=tuple(exclude),
             extensions=tuple(extensions),

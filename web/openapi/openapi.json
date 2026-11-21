@@ -1194,9 +1194,15 @@
             "type": "string"
           },
           "ref": {
-            "default": "HEAD",
-            "title": "Ref",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref"
           },
           "repo": {
             "title": "Repo",

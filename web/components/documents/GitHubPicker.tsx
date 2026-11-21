@@ -22,10 +22,8 @@ function initialRepositories(
   selection: GitHubSelectionResponse,
 ): GitHubRepoTargetPayload[] {
   if (selection.repositories && selection.repositories.length > 0) {
-    return selection.repositories.map((repo) => ({
-      owner: repo.owner,
-      repo: repo.repo,
-    }));
+    // Keep full target payloads so Save does not wipe ref/prefixes/rules.
+    return selection.repositories.map((repo) => ({ ...repo }));
   }
   if (selection.owner && selection.repo) {
     return [{ owner: selection.owner, repo: selection.repo }];
@@ -54,7 +52,7 @@ export type GitHubPickerProps = {
     repo: string | null;
     project_owner?: string | null;
     project_number?: number | null;
-    repositories: { owner: string; repo: string }[];
+    repositories: GitHubRepoTargetPayload[];
   }) => void;
   onCancel: () => void;
   notice?: string | null;

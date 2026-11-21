@@ -36,13 +36,15 @@ def target_from_payload(raw: Mapping[str, object]) -> GitHubRepoTarget:
     repo = raw.get("repo")
     if not isinstance(owner, str) or not isinstance(repo, str):
         raise InputRejectedError("Each repository target needs an owner and name.")
-    ref = raw.get("ref", "HEAD")
-    if not isinstance(ref, str) or not ref.strip():
-        ref = "HEAD"
+    raw_ref = raw.get("ref")
+    if isinstance(raw_ref, str) and raw_ref.strip():
+        ref: str | None = raw_ref.strip()
+    else:
+        ref = None
     return GitHubRepoTarget(
         owner=owner,
         repo=repo,
-        ref=ref.strip(),
+        ref=ref,
         include_prefixes=_tuple_of_str(raw.get("include_prefixes")),
         exclude_prefixes=_tuple_of_str(raw.get("exclude_prefixes")),
         extensions=_optional_str_tuple(raw.get("extensions"), present="extensions" in raw),
@@ -108,9 +110,12 @@ def normalize_and_validate_targets(
 def _normalize_target(target: GitHubRepoTarget) -> GitHubRepoTarget:
     owner = _require_owner_repo_component(target.owner, "owner")
     repo = _require_owner_repo_component(target.repo, "repo")
-    ref = target.ref.strip() if isinstance(target.ref, str) else "HEAD"
-    if not ref:
-        ref = "HEAD"
+    if target.ref is None:
+        ref: str | None = None
+    elif isinstance(target.ref, str) and target.ref.strip():
+        ref = target.ref.strip()
+    else:
+        ref = None
     return GitHubRepoTarget(
         owner=owner,
         repo=repo,

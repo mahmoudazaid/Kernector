@@ -560,7 +560,7 @@ def get_github_selection_write(
                 GitHubRepoTarget(
                     owner=item.owner,
                     repo=item.repo,
-                    ref=getattr(item, "ref", "HEAD") or "HEAD",
+                    ref=getattr(item, "ref", None),
                     include_prefixes=tuple(
                         getattr(item, "include_prefixes", ()) or ()
                     ),

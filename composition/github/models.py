@@ -21,7 +21,8 @@ class GitHubRepoIdentity:
 class GitHubRepoSyncConfig:
     """Per-identity sync configuration (ref, prefixes, file rules)."""
 
-    ref: str = "HEAD"
+    # None = inherit workspace GITHUB_REF / settings.github.ref.
+    ref: str | None = None
     include_prefixes: tuple[str, ...] = ()
     exclude_prefixes: tuple[str, ...] = ()
     # None = inherit workspace defaults; () = explicit empty allow-list.
@@ -35,7 +36,8 @@ class GitHubRepoTarget:
 
     owner: str
     repo: str
-    ref: str = "HEAD"
+    # None = inherit workspace GITHUB_REF / settings.github.ref.
+    ref: str | None = None
     include_prefixes: tuple[str, ...] = ()
     exclude_prefixes: tuple[str, ...] = ()
     extensions: tuple[str, ...] | None = None
