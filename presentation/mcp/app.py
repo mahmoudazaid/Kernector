@@ -167,10 +167,13 @@ class _ElicitationGate:
 
     def __call__(self, pending: PendingToolApproval) -> bool:
         # Mid-call elicitation needs a request back-channel (SSE POST response).
-        # JSON-response mode sets can_send_request=False — fall through to
-        # InputRequiredResult instead of raising NoBackChannelError.
-        if not self._input_required and self._ctx.session.can_send_request:
-            return anyio.from_thread.run(self._ask, pending)
+        # json_response=True sets can_send_request=False. Handshake clients
+        # cannot parse InputRequiredResult, so fail closed with
+        # approval_required (do not set pending / raise _ApprovalInputRequired).
+        if not self._input_required:
+            if self._ctx.session.can_send_request:
+                return anyio.from_thread.run(self._ask, pending)
+            raise ApprovalDeferredError
         if self._answer is not None and self._request_state == self._binding:
             return _approved(self._answer)
         self.pending = pending
@@ -617,7 +620,8 @@ def create_mcp_app(
     )
     # json_response=True: Cursor's Streamable HTTP client fails to parse
     # text/event-stream initialize/tools/list. Mid-call elicitation is
-    # unavailable in this mode; _ElicitationGate falls back to InputRequiredResult.
+    # unavailable; handshake sessions get approval_required, modern ones
+    # use InputRequiredResult (_ElicitationGate).
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         json_response=True,
