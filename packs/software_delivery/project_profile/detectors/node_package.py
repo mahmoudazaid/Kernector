@@ -117,7 +117,8 @@ class NodePackageDetector:
                             framework_id="playwright",
                             confidence="high",
                             evidence_refs=(ref,),
-                        )
+                        ),
+                        role="framework",
                     )
                 )
             if deps:
