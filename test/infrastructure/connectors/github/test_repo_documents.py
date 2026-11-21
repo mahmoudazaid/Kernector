@@ -186,3 +186,164 @@ def test_propagates_truncated_tree_as_unavailable() -> None:
 
     with pytest.raises(ConnectorUnavailableError):
         adapter.list_documents()
+
+
+def _blob(path: str, sha: str = "b1", size: int = 10) -> dict[str, object]:
+    return {"type": "blob", "path": path, "sha": sha, "size": size}
+
+
+def test_filename_globs_allow_extensionless_basenames() -> None:
+    client = FakeGitHubClient(
+        tree=[
+            _blob("Dockerfile"),
+            _blob("Jenkinsfile"),
+            _blob("notes.md"),
+            _blob("src/app.py"),
+        ]
+    )
+    adapter = GitHubRepoDocuments(
+        client,
+        GitHubRepoConfig(
+            owner="acme",
+            repo="ops",
+            text_extensions=frozenset(),
+            filename_globs=("Dockerfile", "Jenkinsfile"),
+        ),
+    )
+
+    assert [doc.extra["path"] for doc in adapter.list_documents()] == [
+        "Dockerfile",
+        "Jenkinsfile",
+    ]
+
+
+def test_secret_denylist_wins_even_when_rules_list_secrets() -> None:
+    client = FakeGitHubClient(
+        tree=[
+            _blob(".env"),
+            _blob(".env.local"),
+            _blob("id_rsa"),
+            _blob("cert.pem"),
+            _blob("app.key"),
+            _blob("Dockerfile"),
+        ]
+    )
+    adapter = GitHubRepoDocuments(
+        client,
+        GitHubRepoConfig(
+            owner="acme",
+            repo="ops",
+            text_extensions=frozenset({".env", ".pem", ".key"}),
+            filename_globs=("Dockerfile", ".env", "id_rsa", "*.pem", "*.key"),
+        ),
+    )
+
+    assert [doc.extra["path"] for doc in adapter.list_documents()] == ["Dockerfile"]
+
+
+def test_sibling_targets_isolate_extension_rules() -> None:
+    tree = [
+        _blob("ui/App.tsx"),
+        _blob("tests/login.robot"),
+        _blob("readme.md"),
+    ]
+    frontend = GitHubRepoDocuments(
+        FakeGitHubClient(tree=tree),
+        GitHubRepoConfig(
+            owner="acme",
+            repo="web",
+            text_extensions=frozenset({".tsx", ".md"}),
+        ),
+    )
+    tests = GitHubRepoDocuments(
+        FakeGitHubClient(tree=tree),
+        GitHubRepoConfig(
+            owner="acme",
+            repo="tests",
+            text_extensions=frozenset({".robot"}),
+        ),
+    )
+
+    assert [doc.extra["path"] for doc in frontend.list_documents()] == [
+        "ui/App.tsx",
+        "readme.md",
+    ]
+    assert [doc.extra["path"] for doc in tests.list_documents()] == [
+        "tests/login.robot",
+    ]
+
+
+def test_binary_generated_and_skip_segments_still_win() -> None:
+    client = FakeGitHubClient(
+        tree=[
+            _blob("app.min.js"),
+            _blob("logo.png"),
+            _blob("node_modules/pkg/index.md"),
+            _blob("ok.md"),
+        ]
+    )
+    adapter = GitHubRepoDocuments(
+        client,
+        GitHubRepoConfig(
+            owner="acme",
+            repo="web",
+            text_extensions=frozenset({".md", ".js", ".png"}),
+            filename_globs=("logo.png",),
+        ),
+    )
+
+    assert [doc.extra["path"] for doc in adapter.list_documents()] == ["ok.md"]
+
+
+def test_traversal_path_segments_rejected() -> None:
+    client = FakeGitHubClient(
+        tree=[
+            _blob("../secret.md"),
+            _blob("docs/../secret.md"),
+            _blob("docs/ok.md"),
+        ]
+    )
+    adapter = GitHubRepoDocuments(
+        client,
+        GitHubRepoConfig(
+            owner="acme",
+            repo="docs",
+            text_extensions=frozenset({".md"}),
+        ),
+    )
+
+    assert [doc.extra["path"] for doc in adapter.list_documents()] == ["docs/ok.md"]
+
+
+def test_explicit_empty_extensions_with_globs_only() -> None:
+    client = FakeGitHubClient(
+        tree=[_blob("Dockerfile"), _blob("readme.md"), _blob("app.py")]
+    )
+    adapter = GitHubRepoDocuments(
+        client,
+        GitHubRepoConfig(
+            owner="acme",
+            repo="ops",
+            text_extensions=frozenset(),
+            filename_globs=("Dockerfile",),
+        ),
+    )
+
+    assert [doc.extra["path"] for doc in adapter.list_documents()] == ["Dockerfile"]
+
+
+def test_explicit_both_empty_rules_match_nothing() -> None:
+    client = FakeGitHubClient(
+        tree=[_blob("Dockerfile"), _blob("readme.md")]
+    )
+    adapter = GitHubRepoDocuments(
+        client,
+        GitHubRepoConfig(
+            owner="acme",
+            repo="ops",
+            text_extensions=frozenset(),
+            filename_globs=(),
+        ),
+    )
+
+    assert adapter.list_documents() == ()

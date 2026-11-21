@@ -1,6 +1,59 @@
 """GitHub connector DTOs returned to presentation."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoIdentity:
+    """Stable repository identity for selection and purge."""
+
+    owner: str
+    repo: str
+
+    def key(self) -> str:
+        """Case-insensitive ``owner/repo`` key for deduplication."""
+        return f"{self.owner.lower()}/{self.repo.lower()}"
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoSyncConfig:
+    """Per-identity sync configuration (ref, prefixes, file rules)."""
+
+    ref: str = "HEAD"
+    include_prefixes: tuple[str, ...] = ()
+    exclude_prefixes: tuple[str, ...] = ()
+    # None = inherit workspace defaults; () = explicit empty allow-list.
+    extensions: tuple[str, ...] | None = None
+    filename_globs: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRepoTarget:
+    """One selected repository: identity plus sync configuration."""
+
+    owner: str
+    repo: str
+    ref: str = "HEAD"
+    include_prefixes: tuple[str, ...] = ()
+    exclude_prefixes: tuple[str, ...] = ()
+    extensions: tuple[str, ...] | None = None
+    filename_globs: tuple[str, ...] | None = None
+
+    @property
+    def identity(self) -> GitHubRepoIdentity:
+        return GitHubRepoIdentity(owner=self.owner, repo=self.repo)
+
+    @property
+    def sync_config(self) -> GitHubRepoSyncConfig:
+        return GitHubRepoSyncConfig(
+            ref=self.ref,
+            include_prefixes=self.include_prefixes,
+            exclude_prefixes=self.exclude_prefixes,
+            extensions=self.extensions,
+            filename_globs=self.filename_globs,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,10 +127,11 @@ class GitHubProjectPage:
 
 @dataclass(frozen=True, slots=True)
 class GitHubSelection:
-    """Saved Hub sync targets: optional repository and/or ProjectV2."""
+    """Saved Hub sync targets: ordered repositories and/or ProjectV2."""
 
     owner: str | None = None
     repo: str | None = None
     project_owner: str | None = None
     project_number: int | None = None
     connector_id: str | None = None
+    repositories: tuple[GitHubRepoTarget, ...] = field(default_factory=tuple)

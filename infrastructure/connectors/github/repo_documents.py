@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 
 from domain.errors import ConnectorError
@@ -73,6 +74,14 @@ _SKIP_SEGMENTS = frozenset(
     }
 )
 _GENERATED_SUFFIXES = (".min.css", ".min.js", ".map")
+_SECRET_BASENAME_GLOBS = (
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "id_rsa",
+    "id_rsa.*",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +94,7 @@ class GitHubRepoConfig:
     include_prefixes: Sequence[str] = ()
     exclude_prefixes: Sequence[str] = ()
     text_extensions: frozenset[str] = field(default_factory=lambda: _DEFAULT_TEXT_EXTENSIONS)
+    filename_globs: tuple[str, ...] = ()
     max_size_bytes: int = 1_000_000
     connector_id: str | None = None
 
@@ -213,6 +223,12 @@ def _connector_extra(connector_id: str | None) -> dict[str, str]:
 
 
 def _path_allowed(path: str, config: GitHubRepoConfig) -> bool:
+    parts = tuple(Path(path).parts)
+    if any(part == ".." for part in parts):
+        return False
+    basename = Path(path).name
+    if _is_secret_basename(basename):
+        return False
     if any(path.startswith(prefix) for prefix in config.exclude_prefixes):
         return False
     if config.include_prefixes and not any(
@@ -221,12 +237,24 @@ def _path_allowed(path: str, config: GitHubRepoConfig) -> bool:
         return False
     lowered = path.lower()
     suffix = Path(path).suffix.lower()
-    if suffix in _BINARY_EXTENSIONS or suffix not in config.text_extensions:
+    if suffix in _BINARY_EXTENSIONS:
         return False
     if lowered.endswith(_GENERATED_SUFFIXES):
         return False
-    parts = tuple(part.lower() for part in Path(path).parts)
-    return not any(part in _SKIP_SEGMENTS for part in parts)
+    if any(part.lower() in _SKIP_SEGMENTS for part in parts):
+        return False
+    extension_ok = suffix in config.text_extensions if suffix else False
+    glob_ok = any(
+        fnmatch(basename, pattern) for pattern in config.filename_globs
+    )
+    return extension_ok or glob_ok
+
+
+def _is_secret_basename(basename: str) -> bool:
+    return any(
+        fnmatch(basename, pattern) or fnmatch(basename.lower(), pattern.lower())
+        for pattern in _SECRET_BASENAME_GLOBS
+    )
 
 
 def _provenance_url(owner: str, repo: str, commit_sha: str, path: str) -> str:

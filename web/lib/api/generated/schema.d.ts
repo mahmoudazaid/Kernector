@@ -1640,6 +1640,35 @@ export interface components {
       page: number;
     };
     /**
+     * GitHubRepoTargetSchema
+     * @description One selected repository identity plus optional sync configuration.
+     */
+    GitHubRepoTargetSchema: {
+      /**
+       * Exclude Prefixes
+       * @default []
+       */
+      exclude_prefixes: string[];
+      /** Extensions */
+      extensions?: string[] | null;
+      /** Filename Globs */
+      filename_globs?: string[] | null;
+      /**
+       * Include Prefixes
+       * @default []
+       */
+      include_prefixes: string[];
+      /** Owner */
+      owner: string;
+      /**
+       * Ref
+       * @default HEAD
+       */
+      ref: string;
+      /** Repo */
+      repo: string;
+    };
+    /**
      * GitHubSelectionRequest
      * @description Replace the saved GitHub sync selection.
      */
@@ -1652,6 +1681,8 @@ export interface components {
       project_owner?: string | null;
       /** Repo */
       repo?: string | null;
+      /** Repositories */
+      repositories?: components["schemas"]["GitHubRepoTargetSchema"][] | null;
     };
     /**
      * GitHubSelectionResponse
@@ -1668,6 +1699,11 @@ export interface components {
       project_owner?: string | null;
       /** Repo */
       repo?: string | null;
+      /**
+       * Repositories
+       * @default []
+       */
+      repositories: components["schemas"]["GitHubRepoTargetSchema"][];
     };
     /**
      * GitHubStatusResponse

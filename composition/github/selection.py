@@ -4,7 +4,7 @@ from collections.abc import (
     Callable,
     Mapping,
     Sequence,
-)
+)  # Sequence used by repositories param
 from dataclasses import replace
 
 from application.errors import (
@@ -24,7 +24,13 @@ from composition.github.models import (
     GitHubProjectPage,
     GitHubRepoItem,
     GitHubRepoPage,
+    GitHubRepoTarget,
     GitHubSelection,
+)
+from composition.github.targets import (
+    normalize_and_validate_targets,
+    repositories_from_connection,
+    target_to_payload,
 )
 from domain.errors import (
     ConnectorAuthError,
@@ -157,16 +163,23 @@ def get_github_selection(
     *,
     connection_store=None,
 ) -> GitHubSelection:
-    """Return the saved repository and optional ProjectV2 selection."""
+    """Return the saved repository targets and optional ProjectV2 selection."""
     _tokens_store, connection = require_github_grant(
         settings, connection_store=connection_store
     )
-    return GitHubSelection(
+    repositories = repositories_from_connection(
         owner=connection.owner,
         repo=connection.repo,
+        repositories=connection.repositories,
+    )
+    primary = repositories[0] if repositories else None
+    return GitHubSelection(
+        owner=primary.owner if primary else None,
+        repo=primary.repo if primary else None,
         project_owner=connection.project_owner,
         project_number=connection.project_number,
         connector_id=connection.connector_id,
+        repositories=repositories,
     )
 
 
@@ -177,6 +190,7 @@ def put_github_selection(
     repo: str | None = None,
     project_owner: str | None = None,
     project_number: int | None = None,
+    repositories: Sequence[GitHubRepoTarget] | None = None,
     connection_store=None,
     client_factory=None,
     catalog: DocumentCatalog | None = None,
@@ -186,9 +200,10 @@ def put_github_selection(
 ) -> GitHubSelection:
     """Validate access and atomically replace the saved GitHub selection.
 
-    When a previously selected repository and/or project is cleared or replaced,
-    synced GitHub catalog rows for the dropped scope(s) are removed from the
-    catalog and vector store.
+    When a previously selected repository identity and/or project is cleared or
+    replaced, synced GitHub catalog rows for the dropped scope(s) are removed.
+    Sync-config-only changes for an existing identity do not purge that
+    identity's documents at put time (reconcile happens on sync).
     """
     owner_clean = (
         owner.strip() if isinstance(owner, str) and owner.strip() else None
@@ -196,10 +211,19 @@ def put_github_selection(
     repo_clean = (
         repo.strip() if isinstance(repo, str) and repo.strip() else None
     )
-    if (owner_clean is None) != (repo_clean is None):
+    if repositories is None and (owner_clean is None) != (repo_clean is None):
         raise InputRejectedError(
             "Repository owner and name must be set together."
         )
+    targets = normalize_and_validate_targets(
+        repositories,
+        owner=owner_clean,
+        repo=repo_clean,
+        max_repositories=settings.github.max_repositories,
+    )
+    primary = targets[0] if targets else None
+    owner_clean = primary.owner if primary else None
+    repo_clean = primary.repo if primary else None
     project_owner_clean = (
         project_owner.strip() if isinstance(project_owner, str) else None
     ) or None
@@ -216,19 +240,22 @@ def put_github_selection(
     tokens_store, connection = require_github_grant(
         settings, connection_store=connection_store
     )
-    previous_owner = connection.owner
-    previous_repo = connection.repo
+    previous_targets = repositories_from_connection(
+        owner=connection.owner,
+        repo=connection.repo,
+        repositories=connection.repositories,
+    )
     previous_project_owner = connection.project_owner
     previous_project_number = connection.project_number
-    if owner_clean is not None or project_owner_clean is not None:
+    if targets or project_owner_clean is not None:
         client = github_picker_client(
             settings,
             access_token=connection.access_token,
             client_factory=client_factory,
         )
         try:
-            if owner_clean is not None and repo_clean is not None:
-                client.get_repository(owner_clean, repo_clean)
+            for target in targets:
+                client.get_repository(target.owner, target.repo)
             if project_owner_clean is not None and project_number is not None:
                 client.resolve_project_v2_id(
                     project_owner_clean, project_number
@@ -239,6 +266,8 @@ def put_github_selection(
             raise InputRejectedError(
                 "The selected GitHub repository or project is inaccessible."
             ) from error
+
+    repo_payloads = tuple(target_to_payload(target) for target in targets)
 
     def _apply(current):
         from infrastructure.connectors.github.oauth import with_connector_id
@@ -255,6 +284,7 @@ def put_github_selection(
             repo=repo_clean,
             project_owner=project_owner_clean,
             project_number=project_number,
+            repositories=repo_payloads,
         )
         return with_connector_id(updated, preferred=settings.github.connector_id)
 
@@ -263,12 +293,10 @@ def put_github_selection(
     assert saved is not None
     purge_github_dropped_selection_docs(
         settings,
-        previous_owner=previous_owner,
-        previous_repo=previous_repo,
+        previous_repositories=previous_targets,
+        new_repositories=targets,
         previous_project_owner=previous_project_owner,
         previous_project_number=previous_project_number,
-        new_owner=owner_clean,
-        new_repo=repo_clean,
         new_project_owner=project_owner_clean,
         new_project_number=project_number,
         connector_id=saved.connector_id,
@@ -283,4 +311,5 @@ def put_github_selection(
         project_owner=project_owner_clean,
         project_number=project_number,
         connector_id=saved.connector_id,
+        repositories=targets,
     )

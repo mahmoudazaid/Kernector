@@ -116,10 +116,12 @@ class SyncConnectorDocuments:
         processing_profile: ProcessingProfile,
         reconcile_missing: bool = False,
         reconcile_source_types: frozenset[str] = frozenset(),
-        reconcile_source_id_prefixes: frozenset[str] = frozenset(),
+        reconcile_source_id_prefixes: frozenset[str] | None = None,
         reconcile_connector_ids: frozenset[str] = frozenset(),
         vector_store_factory: Callable[[], VectorStore] | None = None,
     ) -> None:
+        if reconcile_source_id_prefixes is None:
+            reconcile_source_id_prefixes = frozenset()
         if reconcile_missing and vector_store_factory is None:
             raise ApplicationValidationError(
                 "vector_store_factory is required when reconcile_missing is True"

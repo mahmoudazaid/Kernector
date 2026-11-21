@@ -255,12 +255,23 @@ export type GitHubProjectPageResponse = {
   next_cursor: string | null;
 };
 
+export type GitHubRepoTargetPayload = {
+  owner: string;
+  repo: string;
+  ref?: string;
+  include_prefixes?: string[];
+  exclude_prefixes?: string[];
+  extensions?: string[] | null;
+  filename_globs?: string[] | null;
+};
+
 export type GitHubSelectionResponse = {
   owner: string | null;
   repo: string | null;
   project_owner: string | null;
   project_number: number | null;
   connector_id?: string | null;
+  repositories?: GitHubRepoTargetPayload[];
 };
 
 export const GITHUB_OAUTH_START_PATH =
@@ -293,6 +304,7 @@ export type PutGitHubSelectionOptions = GetGitHubStatusOptions & {
     repo?: string | null;
     project_owner?: string | null;
     project_number?: number | null;
+    repositories?: GitHubRepoTargetPayload[];
   };
 };
 

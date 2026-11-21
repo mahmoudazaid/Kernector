@@ -173,7 +173,9 @@ class GitHubSettings:
     include_paths: tuple[str, ...] = ()
     exclude_paths: tuple[str, ...] = ()
     extensions: tuple[str, ...] = (".md", ".py", ".txt")
+    filename_globs: tuple[str, ...] = ()
     max_file_bytes: int = 512 * 1024
+    max_repositories: int = 16
     project_owner: str | None = None
     project_number: int | None = None
     page_size: int = 100
@@ -925,6 +927,11 @@ def _load_github_settings() -> GitHubSettings:
                 f"GITHUB_PROJECT_NUMBER must be > 0, got {project_number}"
             )
     ref = _optional_env("GITHUB_REF", "HEAD") or "HEAD"
+    max_repositories = _env_int("GITHUB_MAX_REPOSITORIES", "16")
+    if max_repositories <= 0:
+        raise ValueError(
+            f"GITHUB_MAX_REPOSITORIES must be > 0, got {max_repositories}"
+        )
     return GitHubSettings(
         token=_optional_env("GITHUB_TOKEN"),
         owner=_optional_env("GITHUB_OWNER"),
@@ -934,6 +941,7 @@ def _load_github_settings() -> GitHubSettings:
         exclude_paths=_csv(os.getenv("GITHUB_EXCLUDE_PATHS", "")),
         extensions=_csv(os.getenv("GITHUB_EXTENSIONS", ".md,.py,.txt")),
         max_file_bytes=max_file_bytes,
+        max_repositories=max_repositories,
         project_owner=_optional_env("GITHUB_PROJECT_OWNER"),
         project_number=project_number,
         page_size=page_size,

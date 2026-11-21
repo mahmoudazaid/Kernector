@@ -1142,6 +1142,71 @@
         "title": "GitHubRepoPageResponse",
         "type": "object"
       },
+      "GitHubRepoTargetSchema": {
+        "description": "One selected repository identity plus optional sync configuration.",
+        "properties": {
+          "exclude_prefixes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclude Prefixes",
+            "type": "array"
+          },
+          "extensions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extensions"
+          },
+          "filename_globs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename Globs"
+          },
+          "include_prefixes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Include Prefixes",
+            "type": "array"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "ref": {
+            "default": "HEAD",
+            "title": "Ref",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": ["owner", "repo"],
+        "title": "GitHubRepoTargetSchema",
+        "type": "object"
+      },
       "GitHubSelectionRequest": {
         "description": "Replace the saved GitHub sync selection.",
         "properties": {
@@ -1188,6 +1253,20 @@
               }
             ],
             "title": "Repo"
+          },
+          "repositories": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GitHubRepoTargetSchema"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repositories"
           }
         },
         "title": "GitHubSelectionRequest",
@@ -1250,6 +1329,14 @@
               }
             ],
             "title": "Repo"
+          },
+          "repositories": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GitHubRepoTargetSchema"
+            },
+            "title": "Repositories",
+            "type": "array"
           }
         },
         "title": "GitHubSelectionResponse",
