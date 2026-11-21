@@ -43,6 +43,7 @@ from composition.github.models import (
     GitHubProjectPage,
     GitHubRepoItem,
     GitHubRepoPage,
+    GitHubRepoTarget,
     GitHubSelection,
     GitHubStatus,
 )
@@ -160,6 +161,7 @@ __all__ = [
     "GitHubProjectPage",
     "GitHubRepoItem",
     "GitHubRepoPage",
+    "GitHubRepoTarget",
     "GitHubSelection",
     "GitHubStatus",
     "DocumentContentError",

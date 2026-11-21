@@ -13,7 +13,23 @@ import {
   type GitHubSelectionResponse,
   type ListGitHubProjectsOptions,
   type ListGitHubReposOptions,
+  type GitHubRepoTargetPayload,
 } from "@/lib/api/connectors";
+
+const GITHUB_MAX_REPOSITORIES = 16;
+
+function initialRepositories(
+  selection: GitHubSelectionResponse,
+): GitHubRepoTargetPayload[] {
+  if (selection.repositories && selection.repositories.length > 0) {
+    // Keep full target payloads so Save does not wipe ref/prefixes/rules.
+    return selection.repositories.map((repo) => ({ ...repo }));
+  }
+  if (selection.owner && selection.repo) {
+    return [{ owner: selection.owner, repo: selection.repo }];
+  }
+  return [];
+}
 
 export type GitHubPickerProps = {
   open: boolean;
@@ -36,6 +52,7 @@ export type GitHubPickerProps = {
     repo: string | null;
     project_owner?: string | null;
     project_number?: number | null;
+    repositories: GitHubRepoTargetPayload[];
   }) => void;
   onCancel: () => void;
   notice?: string | null;
@@ -134,11 +151,8 @@ export function GitHubPicker({
   const [view, setView] = useState<BrowseView>({ kind: "loading" });
   const [repoSearch, setRepoSearch] = useState("");
   const [projectSearch, setProjectSearch] = useState("");
-  const [selectedOwner, setSelectedOwner] = useState<string | null>(
-    initialSelection.owner,
-  );
-  const [selectedRepo, setSelectedRepo] = useState<string | null>(
-    initialSelection.repo,
+  const [selectedRepos, setSelectedRepos] = useState<GitHubRepoTargetPayload[]>(
+    () => initialRepositories(initialSelection),
   );
   const [selectedProjectOwner, setSelectedProjectOwner] = useState<
     string | null
@@ -146,6 +160,7 @@ export function GitHubPicker({
   const [selectedProjectNumber, setSelectedProjectNumber] = useState<
     number | null
   >(initialSelection.project_number);
+  const [boundNotice, setBoundNotice] = useState<string | null>(null);
   const [projects, setProjects] = useState<GitHubProjectItemResponse[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -153,7 +168,7 @@ export function GitHubPicker({
   const projectListOwner =
     accountLogin?.trim() ||
     initialSelection.project_owner?.trim() ||
-    selectedOwner?.trim() ||
+    selectedRepos[0]?.owner?.trim() ||
     null;
 
   useEffect(() => {
@@ -162,10 +177,10 @@ export function GitHubPicker({
     }
     setRepoSearch("");
     setProjectSearch("");
-    setSelectedOwner(initialSelection.owner);
-    setSelectedRepo(initialSelection.repo);
+    setSelectedRepos(initialRepositories(initialSelection));
     setSelectedProjectOwner(initialSelection.project_owner);
     setSelectedProjectNumber(initialSelection.project_number);
+    setBoundNotice(null);
   }, [open, initialSelection]);
 
   useEffect(() => {
@@ -294,16 +309,47 @@ export function GitHubPicker({
 
   const listLoading = view.kind === "loading" || selectionLoading;
   const canConfirm = !busy;
-  const selectedKey =
-    selectedOwner && selectedRepo ? `${selectedOwner}/${selectedRepo}` : null;
+  const selectedKeys = new Set(
+    selectedRepos.map((repo) => `${repo.owner}/${repo.repo}`),
+  );
   const hasProject =
     selectedProjectOwner != null && selectedProjectNumber != null;
-  const selectedCount = (selectedKey ? 1 : 0) + (hasProject ? 1 : 0);
+  const selectedCount = selectedRepos.length + (hasProject ? 1 : 0);
+  const initialRepos = initialRepositories(initialSelection);
   const selectionUnchanged =
-    selectedOwner === initialSelection.owner &&
-    selectedRepo === initialSelection.repo &&
+    selectedRepos.length === initialRepos.length &&
+    selectedRepos.every(
+      (repo, index) =>
+        repo.owner === initialRepos[index]?.owner &&
+        repo.repo === initialRepos[index]?.repo,
+    ) &&
     selectedProjectOwner === initialSelection.project_owner &&
     selectedProjectNumber === initialSelection.project_number;
+
+  function toggleRepository(repo: GitHubRepoItemResponse) {
+    const key = repo.full_name;
+    const existingIndex = selectedRepos.findIndex(
+      (item) => `${item.owner}/${item.repo}` === key,
+    );
+    if (existingIndex >= 0) {
+      setSelectedRepos((current) =>
+        current.filter((_, index) => index !== existingIndex),
+      );
+      setBoundNotice(null);
+      return;
+    }
+    if (selectedRepos.length >= GITHUB_MAX_REPOSITORIES) {
+      setBoundNotice(
+        `At most ${GITHUB_MAX_REPOSITORIES} repositories can be selected.`,
+      );
+      return;
+    }
+    setBoundNotice(null);
+    setSelectedRepos((current) => [
+      ...current,
+      { owner: repo.owner, repo: repo.name },
+    ]);
+  }
 
   return (
     <DialogFrame
@@ -321,8 +367,8 @@ export function GitHubPicker({
               Choose GitHub sources
             </h2>
             <p id={descriptionId} className="kern-dialog-body">
-              Optionally pick one repository and/or one Project for Issues —
-              they are independent.
+              Optionally pick up to {GITHUB_MAX_REPOSITORIES} repositories
+              and/or one Project for Issues — they are independent.
             </p>
           </div>
           <Button
@@ -336,12 +382,12 @@ export function GitHubPicker({
         </div>
       </div>
 
-      {notice ? (
+      {notice || boundNotice ? (
         <div
           className="kern-settings-callout kern-settings-callout--error"
           role="alert"
         >
-          <p>{notice}</p>
+          <p>{notice || boundNotice}</p>
         </div>
       ) : null}
 
@@ -353,7 +399,7 @@ export function GitHubPicker({
           <div className="kern-github-source-panel-head">
             <h3 id="github-repo-panel-title" className="kern-picker-crumbs">
               <strong>Repository code</strong>
-              <span>Optional · zero or one</span>
+              <span>Optional · up to {GITHUB_MAX_REPOSITORIES}</span>
             </h3>
             <div className="kern-picker-search">
               <label htmlFor={repoSearchId} className="visually-hidden">
@@ -375,7 +421,7 @@ export function GitHubPicker({
             className={
               listLoading ? "kern-picker-list is-loading" : "kern-picker-list"
             }
-            role="radiogroup"
+            role="group"
             aria-label="Repository code"
           >
             {listLoading ? (
@@ -402,7 +448,7 @@ export function GitHubPicker({
             ) : null}
             {view.kind === "ready" && !selectionLoading
               ? filteredRepos.map((repo) => {
-                  const checked = selectedKey === repo.full_name;
+                  const checked = selectedKeys.has(repo.full_name);
                   return (
                     <div
                       className={
@@ -414,20 +460,15 @@ export function GitHubPicker({
                     >
                       <label className="kern-drive-item-select">
                         <input
-                          type="radio"
+                          type="checkbox"
                           name="github-repo"
                           checked={checked}
                           disabled={busy}
                           onChange={() => {
-                            setSelectedOwner(repo.owner);
-                            setSelectedRepo(repo.name);
-                          }}
-                          onClick={() => {
-                            if (!checked || busy) {
+                            if (busy) {
                               return;
                             }
-                            setSelectedOwner(null);
-                            setSelectedRepo(null);
+                            toggleRepository(repo);
                           }}
                         />
                         <span className="kern-drive-item-icon">
@@ -582,11 +623,13 @@ export function GitHubPicker({
           <Button
             disabled={!canConfirm || selectionLoading || selectionUnchanged}
             onClick={() => {
+              const primary = selectedRepos[0] ?? null;
               onConfirm({
-                owner: selectedOwner,
-                repo: selectedRepo,
+                owner: primary?.owner ?? null,
+                repo: primary?.repo ?? null,
                 project_owner: selectedProjectOwner,
                 project_number: selectedProjectNumber,
+                repositories: selectedRepos,
               });
             }}
           >

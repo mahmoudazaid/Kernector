@@ -45,6 +45,7 @@ class GitHubKnowledgeConnector:
                         include_prefixes=tuple(getattr(settings, "include_paths", ())),
                         exclude_prefixes=tuple(getattr(settings, "exclude_paths", ())),
                         text_extensions=frozenset(getattr(settings, "extensions", ())),
+                        filename_globs=tuple(getattr(settings, "filename_globs", ())),
                         max_size_bytes=int(getattr(settings, "max_file_bytes", 1_000_000)),
                         connector_id=_setting_text(settings, "connector_id"),
                     ),

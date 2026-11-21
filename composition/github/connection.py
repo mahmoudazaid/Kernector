@@ -533,27 +533,44 @@ def purge_github_connector_docs(
 def purge_github_dropped_selection_docs(
     settings: Settings,
     *,
-    previous_owner: str | None,
-    previous_repo: str | None,
     previous_project_owner: str | None,
     previous_project_number: int | None,
-    new_owner: str | None,
-    new_repo: str | None,
     new_project_owner: str | None,
     new_project_number: int | None,
     connector_id: str | None,
+    previous_repositories=(),
+    new_repositories=(),
+    previous_owner: str | None = None,
+    previous_repo: str | None = None,
+    new_owner: str | None = None,
+    new_repo: str | None = None,
     catalog: DocumentCatalog | None = None,
     catalog_factory: Callable[[], DocumentCatalog] | None = None,
     vector_store: VectorStore | None = None,
     vector_store_factory: Callable[[], VectorStore] | None = None,
 ) -> None:
-    """Delete catalog+vector rows for repo/project scopes dropped by selection."""
+    """Delete catalog+vector rows for repo/project scopes dropped by selection.
+
+    Ownership-aware: only identities absent from the new selection are purged.
+    Config-only changes for a still-selected identity do not purge that prefix.
+    """
+    previous_idents = _identity_entries(
+        previous_repositories,
+        owner=previous_owner,
+        repo=previous_repo,
+    )
+    new_keys = {
+        key
+        for key, _owner, _repo in _identity_entries(
+            new_repositories,
+            owner=new_owner,
+            repo=new_repo,
+        )
+    }
     prefixes: list[str] = []
-    if previous_owner and previous_repo:
-        old_repo = (previous_owner, previous_repo)
-        new_repo_pair = (new_owner, new_repo) if new_owner and new_repo else None
-        if old_repo != new_repo_pair:
-            prefixes.append(f"{previous_owner}/{previous_repo}:")
+    for key, owner_value, repo_value in previous_idents:
+        if key not in new_keys:
+            prefixes.append(f"{owner_value}/{repo_value}:")
     if previous_project_owner and previous_project_number is not None:
         old_project = (previous_project_owner, previous_project_number)
         new_project = (
@@ -575,6 +592,29 @@ def purge_github_dropped_selection_docs(
         vector_store_factory=vector_store_factory,
         source_id_prefixes=tuple(prefixes),
     )
+
+
+def _identity_entries(
+    repositories,
+    *,
+    owner: str | None,
+    repo: str | None,
+) -> list[tuple[str, str, str]]:
+    """Return ``(casefold_key, owner, repo)`` rows for selection identities."""
+    entries: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for target in repositories or ():
+        owner_value = getattr(target, "owner", None)
+        repo_value = getattr(target, "repo", None)
+        if owner_value and repo_value:
+            key = f"{owner_value.lower()}/{repo_value.lower()}"
+            if key not in seen:
+                seen.add(key)
+                entries.append((key, owner_value, repo_value))
+    if not entries and owner and repo:
+        key = f"{owner.lower()}/{repo.lower()}"
+        entries.append((key, owner, repo))
+    return entries
 
 
 def github_picker_client(

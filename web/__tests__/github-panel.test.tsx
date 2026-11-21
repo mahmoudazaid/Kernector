@@ -100,7 +100,7 @@ describe("GitHubPanel", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("radio", { name: /acme\/docs/i }),
+      await screen.findByRole("checkbox", { name: /acme\/docs/i }),
     ).toBeInTheDocument();
   });
 
@@ -192,7 +192,7 @@ describe("GitHubPanel", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose github sources/i,
     });
-    await user.click(await within(dialog).findByRole("radio", { name: /acme\/docs/i }));
+    await user.click(await within(dialog).findByRole("checkbox", { name: /acme\/docs/i }));
     await user.click(
       within(dialog).getByRole("button", { name: /^save$/i }),
     );
@@ -282,7 +282,7 @@ describe("GitHubPanel", () => {
       name: /choose github sources/i,
     });
     await user.click(
-      await within(picker).findByRole("radio", { name: /acme\/docs/i }),
+      await within(picker).findByRole("checkbox", { name: /acme\/docs/i }),
     );
     await user.click(within(picker).getByRole("button", { name: /^save$/i }));
 
@@ -306,6 +306,7 @@ describe("GitHubPanel", () => {
             repo: null,
             project_owner: "acme",
             project_number: 16,
+            repositories: [],
           },
         }),
       ),
@@ -352,8 +353,12 @@ describe("GitHubPanel", () => {
     const picker = await screen.findByRole("dialog", {
       name: /choose github sources/i,
     });
+    // Replace docs with handbook (checkbox multi-select: uncheck then check).
     await user.click(
-      await within(picker).findByRole("radio", { name: /acme\/handbook/i }),
+      await within(picker).findByRole("checkbox", { name: /acme\/docs/i }),
+    );
+    await user.click(
+      await within(picker).findByRole("checkbox", { name: /acme\/handbook/i }),
     );
     await user.click(within(picker).getByRole("button", { name: /^save$/i }));
 
@@ -415,7 +420,7 @@ describe("GitHubPanel", () => {
       name: /choose github sources/i,
     });
     await user.click(
-      await within(picker).findByRole("radio", { name: /acme\/docs/i }),
+      await within(picker).findByRole("checkbox", { name: /acme\/docs/i }),
     );
     await user.click(within(picker).getByRole("button", { name: /^save$/i }));
 

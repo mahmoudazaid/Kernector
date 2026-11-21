@@ -42,6 +42,7 @@ const emptySelection = {
   repo: null,
   project_owner: null,
   project_number: null,
+  repositories: [],
 };
 
 describe("GitHubPicker", () => {
@@ -63,21 +64,21 @@ describe("GitHubPicker", () => {
       name: /choose github sources/i,
     });
     expect(
-      within(dialog).getByRole("radiogroup", { name: /repository code/i }),
+      within(dialog).getByRole("group", { name: /repository code/i }),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByRole("radiogroup", { name: /project issues/i }),
     ).toBeInTheDocument();
     expect(within(dialog).queryByRole("tab")).not.toBeInTheDocument();
     expect(
-      await within(dialog).findByRole("radio", { name: /acme\/docs/i }),
+      await within(dialog).findByRole("checkbox", { name: /acme\/docs/i }),
     ).toBeInTheDocument();
     expect(
       await within(dialog).findByRole("radio", { name: /#19 ai course lessons/i }),
     ).toBeInTheDocument();
   });
 
-  it("allows project-only selection and reports source counts in the footer", async () => {
+  it("allows multi-repo and project selection with ordered repositories", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(
@@ -99,9 +100,7 @@ describe("GitHubPicker", () => {
     const save = within(dialog).getByRole("button", { name: /^save$/i });
     expect(save).toBeDisabled();
     expect(within(dialog).getByText(/0 sources selected/i)).toBeInTheDocument();
-    expect(
-      within(dialog).getAllByText(/optional · zero or one/i),
-    ).toHaveLength(2);
+    expect(within(dialog).getByText(/optional · up to 16/i)).toBeInTheDocument();
 
     await user.click(
       await within(dialog).findByRole("radio", {
@@ -112,9 +111,12 @@ describe("GitHubPicker", () => {
     expect(save).toBeEnabled();
 
     await user.click(
-      await within(dialog).findByRole("radio", { name: /acme\/docs/i }),
+      await within(dialog).findByRole("checkbox", { name: /acme\/docs/i }),
     );
-    expect(within(dialog).getByText(/2 sources selected/i)).toBeInTheDocument();
+    await user.click(
+      await within(dialog).findByRole("checkbox", { name: /acme\/api/i }),
+    );
+    expect(within(dialog).getByText(/3 sources selected/i)).toBeInTheDocument();
 
     await user.click(save);
     expect(onConfirm).toHaveBeenCalledWith({
@@ -122,6 +124,10 @@ describe("GitHubPicker", () => {
       repo: "docs",
       project_owner: "octocat",
       project_number: 19,
+      repositories: [
+        { owner: "acme", repo: "docs" },
+        { owner: "acme", repo: "api" },
+      ],
     });
   });
 
@@ -138,6 +144,7 @@ describe("GitHubPicker", () => {
           repo: "api",
           project_owner: "octocat",
           project_number: 18,
+          repositories: [{ owner: "acme", repo: "api" }],
         }}
         listRepos={async () => repos}
         listProjects={async () => projects}
@@ -150,14 +157,14 @@ describe("GitHubPicker", () => {
       name: /choose github sources/i,
     });
     expect(
-      await within(dialog).findByRole("radio", { name: /acme\/api/i }),
+      await within(dialog).findByRole("checkbox", { name: /acme\/api/i }),
     ).toBeChecked();
 
     await user.click(
-      within(dialog).getByRole("radio", { name: /acme\/api/i }),
+      within(dialog).getByRole("checkbox", { name: /acme\/api/i }),
     );
     expect(
-      within(dialog).getByRole("radio", { name: /acme\/api/i }),
+      within(dialog).getByRole("checkbox", { name: /acme\/api/i }),
     ).not.toBeChecked();
     expect(within(dialog).getByText(/1 source selected/i)).toBeInTheDocument();
 
@@ -169,6 +176,7 @@ describe("GitHubPicker", () => {
       repo: null,
       project_owner: "octocat",
       project_number: 18,
+      repositories: [],
     });
   });
 
@@ -185,6 +193,7 @@ describe("GitHubPicker", () => {
           repo: "api",
           project_owner: "octocat",
           project_number: 18,
+          repositories: [{ owner: "acme", repo: "api" }],
         }}
         listRepos={async () => repos}
         listProjects={async () => projects}
@@ -197,15 +206,12 @@ describe("GitHubPicker", () => {
       name: /choose github sources/i,
     });
     expect(
-      await within(dialog).findByRole("radio", { name: /acme\/api/i }),
+      await within(dialog).findByRole("checkbox", { name: /acme\/api/i }),
     ).toBeChecked();
     expect(
       await within(dialog).findByRole("radio", { name: /#18 ai course/i }),
     ).toBeChecked();
     expect(within(dialog).getByText(/2 sources selected/i)).toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("button", { name: /clear project/i }),
-    ).not.toBeInTheDocument();
 
     await user.click(
       within(dialog).getByRole("radio", { name: /#18 ai course/i }),
@@ -214,9 +220,6 @@ describe("GitHubPicker", () => {
       within(dialog).getByRole("radio", { name: /#18 ai course/i }),
     ).not.toBeChecked();
     expect(within(dialog).getByText(/1 source selected/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("dialog", { name: /choose github sources/i }),
-    ).toBeInTheDocument();
 
     await user.click(
       within(dialog).getByRole("button", { name: /^save$/i }),
@@ -226,6 +229,7 @@ describe("GitHubPicker", () => {
       repo: "api",
       project_owner: null,
       project_number: null,
+      repositories: [{ owner: "acme", repo: "api" }],
     });
   });
 
@@ -247,17 +251,17 @@ describe("GitHubPicker", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /choose github sources/i,
     });
-    await within(dialog).findByRole("radio", { name: /acme\/docs/i });
+    await within(dialog).findByRole("checkbox", { name: /acme\/docs/i });
 
     await user.type(
       within(dialog).getByRole("searchbox", { name: /search repositories/i }),
       "api",
     );
     expect(
-      within(dialog).queryByRole("radio", { name: /acme\/docs/i }),
+      within(dialog).queryByRole("checkbox", { name: /acme\/docs/i }),
     ).not.toBeInTheDocument();
     expect(
-      within(dialog).getByRole("radio", { name: /acme\/api/i }),
+      within(dialog).getByRole("checkbox", { name: /acme\/api/i }),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByRole("radio", { name: /#18 ai course/i }),

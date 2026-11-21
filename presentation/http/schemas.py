@@ -244,6 +244,19 @@ class GitHubProjectPageResponse(BaseModel):
     next_cursor: str | None = None
 
 
+class GitHubRepoTargetSchema(BaseModel):
+    """One selected repository identity plus optional sync configuration."""
+
+    owner: str
+    repo: str
+    # None / omitted = inherit workspace GITHUB_REF.
+    ref: str | None = None
+    include_prefixes: list[str] = []
+    exclude_prefixes: list[str] = []
+    extensions: list[str] | None = None
+    filename_globs: list[str] | None = None
+
+
 class GitHubSelectionResponse(BaseModel):
     """Saved Hub sync targets (no tokens)."""
 
@@ -252,6 +265,7 @@ class GitHubSelectionResponse(BaseModel):
     project_owner: str | None = None
     project_number: int | None = None
     connector_id: str | None = None
+    repositories: list[GitHubRepoTargetSchema] = []
 
 
 class GitHubSelectionRequest(BaseModel):
@@ -261,6 +275,7 @@ class GitHubSelectionRequest(BaseModel):
     repo: str | None = None
     project_owner: str | None = None
     project_number: int | None = None
+    repositories: list[GitHubRepoTargetSchema] | None = None
 
 
 class JiraSiteResponse(BaseModel):

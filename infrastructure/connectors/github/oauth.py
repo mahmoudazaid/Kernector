@@ -18,7 +18,7 @@ import secrets
 import tempfile
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
@@ -97,6 +97,9 @@ class GitHubOAuthConnection:
     last_sync_failed: int | None
     reauthorization_required: bool
     connector_id: str | None = None
+    # Opaque per-repo selection rows (owner/repo/ref/prefixes/rules). Composition
+    # owns the schema; infrastructure only persists JSON.
+    repositories: tuple[Mapping[str, object], ...] = ()
 
     def __repr__(self) -> str:
         return (
@@ -106,6 +109,7 @@ class GitHubOAuthConnection:
             f"repo={self.repo!r}, project_owner={self.project_owner!r}, "
             f"project_number={self.project_number!r}, "
             f"connector_id={self.connector_id!r}, "
+            f"repositories={len(self.repositories)}, "
             f"last_synced_at={self.last_synced_at!r}, "
             f"reauthorization_required={self.reauthorization_required})"
         )
@@ -232,6 +236,7 @@ class GitHubOAuthConnectionStore:
             last_sync_failed=_optional_int(raw.get("last_sync_failed")),
             reauthorization_required=bool(raw.get("reauthorization_required")),
             connector_id=_optional_str(raw.get("connector_id")),
+            repositories=_parse_repositories(raw.get("repositories")),
         )
 
 
@@ -403,6 +408,16 @@ def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _parse_repositories(value: object) -> tuple[Mapping[str, object], ...]:
+    if not isinstance(value, list):
+        return ()
+    rows: list[Mapping[str, object]] = []
+    for item in value:
+        if isinstance(item, dict):
+            rows.append(dict(item))
+    return tuple(rows)
+
+
 def _connection_payload(connection: GitHubOAuthConnection) -> dict[str, object]:
     return {
         "access_token": connection.access_token,
@@ -420,6 +435,7 @@ def _connection_payload(connection: GitHubOAuthConnection) -> dict[str, object]:
         "last_sync_failed": connection.last_sync_failed,
         "reauthorization_required": connection.reauthorization_required,
         "connector_id": connection.connector_id,
+        "repositories": [dict(row) for row in connection.repositories],
     }
 
 

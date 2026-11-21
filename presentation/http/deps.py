@@ -550,13 +550,43 @@ def get_github_selection_write(
         repo: str | None = None,
         project_owner: str | None = None,
         project_number: int | None = None,
+        repositories=None,
     ) -> GitHubSelection:
+        from composition.github.models import GitHubRepoTarget
+
+        targets = None
+        if repositories is not None:
+            targets = tuple(
+                GitHubRepoTarget(
+                    owner=item.owner,
+                    repo=item.repo,
+                    ref=getattr(item, "ref", None),
+                    include_prefixes=tuple(
+                        getattr(item, "include_prefixes", ()) or ()
+                    ),
+                    exclude_prefixes=tuple(
+                        getattr(item, "exclude_prefixes", ()) or ()
+                    ),
+                    extensions=(
+                        None
+                        if getattr(item, "extensions", None) is None
+                        else tuple(item.extensions)
+                    ),
+                    filename_globs=(
+                        None
+                        if getattr(item, "filename_globs", None) is None
+                        else tuple(item.filename_globs)
+                    ),
+                )
+                for item in repositories
+            )
         return put_github_selection(
             settings,
             owner=owner,
             repo=repo,
             project_owner=project_owner,
             project_number=project_number,
+            repositories=targets,
         )
 
     return save

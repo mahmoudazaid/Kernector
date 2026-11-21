@@ -67,12 +67,34 @@ def _status_response(status: GitHubStatus) -> GitHubStatusResponse:
 
 
 def _selection_response(selection) -> GitHubSelectionResponse:
+    from presentation.http.schemas import GitHubRepoTargetSchema
+
     return GitHubSelectionResponse(
         owner=selection.owner,
         repo=selection.repo,
         project_owner=selection.project_owner,
         project_number=selection.project_number,
         connector_id=selection.connector_id,
+        repositories=[
+            GitHubRepoTargetSchema(
+                owner=target.owner,
+                repo=target.repo,
+                ref=target.ref,
+                include_prefixes=list(target.include_prefixes),
+                exclude_prefixes=list(target.exclude_prefixes),
+                extensions=(
+                    None
+                    if target.extensions is None
+                    else list(target.extensions)
+                ),
+                filename_globs=(
+                    None
+                    if target.filename_globs is None
+                    else list(target.filename_globs)
+                ),
+            )
+            for target in selection.repositories
+        ],
     )
 
 
@@ -201,6 +223,7 @@ def github_connector_put_selection(
             repo=body.repo,
             project_owner=body.project_owner,
             project_number=body.project_number,
+            repositories=body.repositories,
         )
     )
 

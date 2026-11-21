@@ -17,6 +17,7 @@ import {
   type DisconnectGitHubOptions,
   type GetGitHubSelectionOptions,
   type GetGitHubStatusOptions,
+  type GitHubRepoTargetPayload,
   type GitHubSelectionResponse,
   type GitHubStatusResponse,
   type ListGitHubProjectsOptions,
@@ -72,6 +73,7 @@ const EMPTY_SELECTION: GitHubSelectionResponse = {
   repo: null,
   project_owner: null,
   project_number: null,
+  repositories: [],
 };
 
 const ABORT_COPY =
@@ -91,6 +93,7 @@ type SelectionDraft = {
   repo: string | null;
   project_owner: string | null;
   project_number: number | null;
+  repositories: GitHubRepoTargetPayload[];
 };
 
 function normalizeSelectionDraft(next: {
@@ -98,27 +101,44 @@ function normalizeSelectionDraft(next: {
   repo: string | null;
   project_owner?: string | null;
   project_number?: number | null;
+  repositories?: GitHubRepoTargetPayload[];
 }): SelectionDraft {
+  const repositories =
+    next.repositories ??
+    (next.owner && next.repo
+      ? [{ owner: next.owner, repo: next.repo }]
+      : []);
+  const primary = repositories[0] ?? null;
   return {
-    owner: next.owner,
-    repo: next.repo,
+    owner: primary?.owner ?? null,
+    repo: primary?.repo ?? null,
     project_owner: next.project_owner ?? null,
     project_number: next.project_number ?? null,
+    repositories,
   };
+}
+
+function previousRepoKeys(previous: GitHubSelectionResponse): string[] {
+  if (previous.repositories && previous.repositories.length > 0) {
+    return previous.repositories.map((repo) => `${repo.owner}/${repo.repo}`);
+  }
+  if (previous.owner && previous.repo) {
+    return [`${previous.owner}/${previous.repo}`];
+  }
+  return [];
 }
 
 function droppedGithubSources(
   previous: GitHubSelectionResponse,
   next: SelectionDraft,
 ): { repo: string | null; project: string | null } {
-  let repo: string | null = null;
-  if (previous.owner && previous.repo) {
-    const same =
-      next.owner === previous.owner && next.repo === previous.repo;
-    if (!same) {
-      repo = `${previous.owner}/${previous.repo}`;
-    }
-  }
+  const nextKeys = new Set(
+    next.repositories.map((repo) => `${repo.owner}/${repo.repo}`),
+  );
+  const droppedRepos = previousRepoKeys(previous).filter(
+    (key) => !nextKeys.has(key),
+  );
+  const repo = droppedRepos.length > 0 ? droppedRepos.join(", ") : null;
   let project: string | null = null;
   if (previous.project_owner && previous.project_number != null) {
     const same =
@@ -390,10 +410,17 @@ export function GitHubPanel({
     try {
       const saved = await saveSelection({
         baseUrl: apiBaseUrl,
-        selection: next,
+        selection: {
+          owner: next.owner,
+          repo: next.repo,
+          project_owner: next.project_owner,
+          project_number: next.project_number,
+          repositories: next.repositories,
+        },
       });
       setSelection(saved);
       const hasScope =
+        Boolean(saved.repositories && saved.repositories.length > 0) ||
         Boolean(saved.owner && saved.repo) ||
         Boolean(saved.project_owner && saved.project_number != null);
       if (hasScope) {
@@ -420,6 +447,7 @@ export function GitHubPanel({
     repo: string | null;
     project_owner?: string | null;
     project_number?: number | null;
+    repositories: GitHubRepoTargetPayload[];
   }) {
     const draft = normalizeSelectionDraft(next);
     const dropped = droppedGithubSources(selection, draft);

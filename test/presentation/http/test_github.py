@@ -180,3 +180,65 @@ def test_repos_maps_github_connector_error_to_502() -> None:
     assert body["detail"] == "The GitHub request failed."
     assert "/secret/token" not in body["detail"]
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_put_selection_accepts_repositories_payload() -> None:
+    from composition.github.models import GitHubRepoTarget, GitHubSelection
+    from presentation.http.deps import get_github_selection_write
+
+    captured: dict[str, object] = {}
+
+    def _save(**kwargs):
+        captured.update(kwargs)
+        repos = kwargs.get("repositories") or ()
+        primary = repos[0] if repos else None
+        return GitHubSelection(
+            owner=primary.owner if primary else kwargs.get("owner"),
+            repo=primary.repo if primary else kwargs.get("repo"),
+            project_owner=kwargs.get("project_owner"),
+            project_number=kwargs.get("project_number"),
+            connector_id="c1",
+            repositories=tuple(repos),
+        )
+
+    app = create_app()
+    app.dependency_overrides[get_github_selection_write] = lambda: _save
+    client = TestClient(app)
+    response = client.put(
+        "/api/v1/connectors/github/selection",
+        json={
+            "repositories": [
+                {"owner": "acme", "repo": "web"},
+                {"owner": "acme", "repo": "orders"},
+            ]
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["owner"] == "acme"
+    assert body["repo"] == "web"
+    assert [row["repo"] for row in body["repositories"]] == ["web", "orders"]
+
+
+def test_put_selection_bound_overflow_returns_problem_details() -> None:
+    from application.errors import InputRejectedError
+    from presentation.http.deps import get_github_selection_write
+
+    def _save(**_kwargs):
+        raise InputRejectedError("At most 16 repositories can be selected.")
+
+    app = create_app()
+    app.dependency_overrides[get_github_selection_write] = lambda: _save
+    client = TestClient(app)
+    response = client.put(
+        "/api/v1/connectors/github/selection",
+        json={
+            "repositories": [
+                {"owner": "acme", "repo": f"r{i}"} for i in range(17)
+            ]
+        },
+    )
+    assert response.status_code in {400, 422}
+    body = response.json()
+    detail = body.get("detail") or body.get("title") or str(body)
+    assert "16" in str(detail)
