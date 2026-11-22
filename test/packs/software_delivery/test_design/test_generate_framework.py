@@ -475,6 +475,36 @@ def test_keyword_only_robot_resource_is_imported() -> None:
     assert result.tests[0].step_outcomes[0].outcome == "reused"
 
 
+def test_long_title_filename_stays_within_id_limit() -> None:
+    from packs.software_delivery.test_design.limits import MAX_ID_CHARS, MAX_TITLE_CHARS
+
+    long_title = (
+        "Verify that a customer with an unpaid order can cancel it from the "
+        "order details page and receives a cancellation confirmation email"
+    )
+    assert len(long_title) <= MAX_TITLE_CHARS
+    draft = _draft(
+        candidates=(
+            TestCandidate(
+                candidate_id="cand-1",
+                title=long_title,
+                category="positive",
+                rationale="AC",
+                evidence_references=(_ref(),),
+                selected=True,
+                origin="suggested",
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    assert result.status == "ok"
+    assert len(result.files) == 1
+    assert len(result.files[0].filename) <= MAX_ID_CHARS
+    assert result.files[0].filename.endswith(".robot")
+
+
 def test_colliding_titles_get_unique_filenames() -> None:
     draft = _draft(
         candidates=(

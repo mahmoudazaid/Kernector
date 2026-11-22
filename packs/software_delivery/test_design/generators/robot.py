@@ -16,7 +16,11 @@ from packs.software_delivery.test_design.framework_contracts import (
     FrameworkTestTrace,
     StepOutcome,
 )
+from packs.software_delivery.test_design.limits import MAX_ID_CHARS
 from packs.software_delivery.test_design.models import GeneratedTestCase, TestCoverageDraft
+
+_ROBOT_SUFFIX = ".robot"
+_MAX_STEM_CHARS = MAX_ID_CHARS - len(_ROBOT_SUFFIX)
 
 _GHERKIN_STEP = re.compile(
     r"^\s*(Given|When|Then|And|But)\s+(.+?)\s*$", re.IGNORECASE | re.MULTILINE
@@ -203,14 +207,19 @@ def _slug(title: str) -> str:
 
 
 def _unique_stem(title: str, candidate_id: str, used: set[str]) -> str:
-    base = _slug(title) or _slug(candidate_id) or "case"
+    """Return a filesystem stem that fits ``MAX_ID_CHARS`` with ``.robot``."""
+    base = (_slug(title) or _slug(candidate_id) or "case")[:_MAX_STEM_CHARS]
     stem = base
     if stem in used:
-        suffix = _slug(candidate_id) or candidate_id
-        stem = f"{base}_{suffix}"
+        suffix = (_slug(candidate_id) or candidate_id)[: max(_MAX_STEM_CHARS // 2, 1)]
+        room = max(_MAX_STEM_CHARS - len(suffix) - 1, 1)
+        stem = f"{base[:room]}_{suffix}"[:_MAX_STEM_CHARS]
     # Extremely defensive: keep appending if still colliding.
+    n = 0
     while stem in used:
-        stem = f"{stem}_x"
+        n += 1
+        tag = f"_{n}"
+        stem = f"{base[: max(_MAX_STEM_CHARS - len(tag), 1)]}{tag}"[:_MAX_STEM_CHARS]
     used.add(stem)
     return stem
 

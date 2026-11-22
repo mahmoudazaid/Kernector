@@ -8,8 +8,11 @@ from packs.software_delivery.project_profile.intake import EvidenceFile
 from packs.software_delivery.project_profile.models import LineRange, ReusableComponent
 
 _KEYWORD_HEADER = re.compile(r"^\*\*\*\s*Keywords\s*\*\*\*\s*$", re.IGNORECASE)
+# Robot accepts singular/plural, variable asterisk counts, and trailing column
+# headers (data-driven ``*** Test Cases ***    COL1    COL2``).
 _SUITE_SECTION_HEADER = re.compile(
-    r"^\*\*\*\s*(Test\s+Cases|Tasks)\s*\*\*\*\s*$", re.IGNORECASE
+    r"^\*+\s*(Test\s+Cases?|Tasks?)\b",
+    re.IGNORECASE,
 )
 _SECTION = re.compile(r"^\*\*\*")
 _DYNAMIC_NAME = re.compile(r"\$\{|@\{|&\{")
@@ -19,8 +22,8 @@ class RobotKeywordExtractor:
     """Extract ``keyword`` components from importable Robot resource files.
 
     ``.resource`` files and keyword-only ``.robot`` files are reusable. Suite
-    ``.robot`` files with ``*** Test Cases ***`` or ``*** Tasks ***`` are
-    skipped: Robot cannot import them as ``Resource``.
+    ``.robot`` files with a Test Case(s)/Task(s) section are skipped: Robot
+    cannot import them as ``Resource``.
     """
 
     framework_id = "robot_framework"

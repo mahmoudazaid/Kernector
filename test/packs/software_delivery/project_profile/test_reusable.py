@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from test.packs.software_delivery.project_profile.conftest import (
     a0_evidence,
     evidence_for_components,
@@ -60,6 +62,36 @@ def test_robot_tasks_suite_keywords_are_not_extracted() -> None:
     )
     evidence = ingest_profile_evidence(
         [{"files": [{"path": "tasks/login.robot", "content": content}]}]
+    )
+    components, diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert components == ()
+    assert any("Test Cases or Tasks" in item for item in diagnostics)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "*** Test Cases ***    USERNAME    PASSWORD",
+        "*** Test Case ***",
+        "*** Task ***",
+        "* Test Cases",
+        "* Tasks ***",
+    ],
+)
+def test_robot_suite_header_variants_are_not_extracted(header: str) -> None:
+    content = (
+        f"{header}\n"
+        "Login\n"
+        "    Log In As Admin\n"
+        "\n"
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "tests/login_data_driven.robot", "content": content}]}]
     )
     components, diagnostics = RobotKeywordExtractor().extract(
         "", evidence.components[0].files
