@@ -9,6 +9,7 @@ from typing import Literal, TypeVar
 
 from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.test_design.framework_contracts import FrameworkSelection
 from packs.software_delivery.test_design.limits import (
     MAX_AUTOMATION_RATIONALE_CHARS,
     MAX_CANDIDATES,
@@ -35,6 +36,7 @@ CoverageCategory = Literal[
 ]
 DraftStatus = Literal["coverage_review", "ready", "case_editing"]
 CandidateOrigin = Literal["suggested", "manual"]
+# ``cucumber`` = BDD scenario in Gherkin syntax (#368). Not a Cucumber runtime.
 TestCaseType = Literal["manual", "cucumber"]
 AutomationFit = Literal["applicable", "not_applicable", "unclear"]
 CaseAvailability = Literal["available", "insufficient_evidence"]
@@ -643,6 +645,7 @@ class TestCoverageDraft:
     cucumber_background: str = ""
     evidence_origin: EvidenceOrigin = "live"
     client_evidence_text: str = ""
+    framework_selection: FrameworkSelection | None = None
 
     def __post_init__(self) -> None:
         _require_bounded_text(self.draft_id, "draft_id", MAX_ID_CHARS)
@@ -765,6 +768,13 @@ class TestCoverageDraft:
         elif self.client_evidence_text != "":
             raise TestDesignValidationError(
                 "client_evidence_text must be empty for live drafts"
+            )
+
+        selection = self.framework_selection
+        if selection is not None and not isinstance(selection, FrameworkSelection):
+            raise TestDesignValidationError(
+                "framework_selection must be FrameworkSelection or None, "
+                f"got {type(selection).__name__}"
             )
 
     @property

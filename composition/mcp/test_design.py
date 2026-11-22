@@ -37,6 +37,8 @@ from composition.test_design.facade import (
     CreateTestDesignDraftFromContentRequest,
     CreateTestDesignDraftRequest,
     EvidenceOrigin,
+    FrameworkConfirmView,
+    FrameworkGenerateView,
     GenerateTestDesignCasesRequest,
     PatchTestDesignDraftRequest,
     TestCaseType,
@@ -347,6 +349,113 @@ class TestDesignExportArgs(_StrictArgs):
             "markdown for manual tests. Required; no default."
         )
     )
+
+
+class ProfileEvidenceFileArgs(_StrictArgs):
+    path: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)
+    ]
+    content: str
+
+
+class ProfileEvidenceGroupArgs(_StrictArgs):
+    files: list[ProfileEvidenceFileArgs] = Field(min_length=1)
+    component: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=128)] | None
+    ) = None
+
+
+class TestDesignConfirmProfileArgs(_StrictArgs):
+    """Confirm framework selection from recomputed #387 profile evidence (#368)."""
+
+    __test__ = False
+
+    draft_id: Id
+    expected_version: int = Field(ge=1, strict=True)
+    framework_id: Id = Field(
+        description=(
+            "Framework id from the recomputed profile's test_frameworks facts. "
+            "When the facet is ambiguous, show the options to the user and wait; "
+            "never choose for them."
+        )
+    )
+    profile_fingerprint: Id = Field(
+        description="Fingerprint from software_delivery.project_profile for the same evidence."
+    )
+    evidence: list[ProfileEvidenceGroupArgs] = Field(
+        min_length=1,
+        description=(
+            "Same client-supplied project-profile evidence passed to "
+            "software_delivery.project_profile. Not draft issue text."
+        ),
+    )
+    component_id: Id | None = Field(
+        default=None,
+        description="Required when the profile has multiple automation components.",
+    )
+
+
+class TestDesignGenerateFrameworkArgs(_StrictArgs):
+    """Generate framework-specific tests from a confirmed selection (#368)."""
+
+    __test__ = False
+
+    draft_id: Id
+    expected_version: int = Field(ge=1, strict=True)
+
+
+class FrameworkFileOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    suggested_path: str
+    content: str
+
+
+class FrameworkStepOutcomeOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step: str
+    outcome: str
+    component_id: str | None = None
+
+
+class FrameworkTestOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    step_outcomes: list[FrameworkStepOutcomeOut]
+
+
+class TestDesignConfirmProfileResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    __test__ = False
+
+    status: str
+    detail: str = ""
+    framework_options: list[str] = Field(default_factory=list)
+    component_options: list[str] = Field(default_factory=list)
+    draft_id: str | None = None
+    version: int | None = None
+    framework_id: str | None = None
+    component_id: str | None = None
+    profile_fingerprint: str | None = None
+
+
+class TestDesignGenerateFrameworkResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    __test__ = False
+
+    status: str
+    framework_id: str
+    files: list[FrameworkFileOut]
+    implementation_required: list[str]
+    skipped: list[str]
+    untrusted_model_output: bool
+    evidence_origin: str
+    tests: list[FrameworkTestOut] = Field(default_factory=list)
 
 
 class EvidenceReferenceOut(BaseModel):
@@ -750,6 +859,34 @@ class McpTestDesignOperations:
                 ),
             )
 
+    def confirm_profile(
+        self,
+        *,
+        draft_id: str,
+        expected_version: int,
+        framework_id: str,
+        profile_fingerprint: str,
+        evidence: list[dict[str, object]],
+        component_id: str | None,
+    ) -> FrameworkConfirmView:
+        with _translated_errors():
+            return self._facade.confirm_framework_profile(
+                draft_id,
+                expected_version=expected_version,
+                framework_id=framework_id,
+                profile_fingerprint=profile_fingerprint,
+                evidence=evidence,
+                component_id=component_id,
+            )
+
+    def generate_framework_tests(
+        self, *, draft_id: str, expected_version: int
+    ) -> FrameworkGenerateView:
+        with _translated_errors():
+            return self._facade.generate_framework_tests(
+                draft_id, expected_version=expected_version
+            )
+
 
 _ArgsT = TypeVar("_ArgsT", bound=BaseModel)
 
@@ -840,6 +977,90 @@ class McpTestDesignWorkflow:
             result = project_export(draft, format=args.format)
         return result.model_dump(mode="json")
 
+    def confirm_profile(self, arguments: Mapping[str, object]) -> dict[str, object]:
+        args = _parse(TestDesignConfirmProfileArgs, arguments)
+        evidence = [
+            {
+                "files": [
+                    {"path": file.path, "content": file.content} for file in group.files
+                ],
+                **({"component": group.component} if group.component else {}),
+            }
+            for group in args.evidence
+        ]
+        view = self._operations.confirm_profile(
+            draft_id=args.draft_id,
+            expected_version=args.expected_version,
+            framework_id=args.framework_id,
+            profile_fingerprint=args.profile_fingerprint,
+            evidence=evidence,
+            component_id=args.component_id,
+        )
+        return _confirm_profile_result(view).model_dump(mode="json")
+
+    def generate_framework_tests(
+        self, arguments: Mapping[str, object]
+    ) -> dict[str, object]:
+        args = _parse(TestDesignGenerateFrameworkArgs, arguments)
+        view = self._operations.generate_framework_tests(
+            draft_id=args.draft_id,
+            expected_version=args.expected_version,
+        )
+        return _generate_framework_result(view).model_dump(mode="json")
+
+
+def _confirm_profile_result(view: FrameworkConfirmView) -> TestDesignConfirmProfileResult:
+    selection = view.framework_selection
+    draft = view.draft
+    return TestDesignConfirmProfileResult(
+        status=view.status,
+        detail=view.detail,
+        framework_options=list(view.framework_options),
+        component_options=list(view.component_options),
+        draft_id=draft.draft_id if draft is not None else None,
+        version=draft.version if draft is not None else None,
+        framework_id=selection.framework_id if selection is not None else None,
+        component_id=selection.component_id if selection is not None else None,
+        profile_fingerprint=(
+            selection.profile_fingerprint if selection is not None else None
+        ),
+    )
+
+
+def _generate_framework_result(
+    view: FrameworkGenerateView,
+) -> TestDesignGenerateFrameworkResult:
+    return TestDesignGenerateFrameworkResult(
+        status=view.status,
+        framework_id=view.framework_id,
+        files=[
+            FrameworkFileOut(
+                filename=item.filename,
+                suggested_path=item.suggested_path,
+                content=item.content,
+            )
+            for item in view.files
+        ],
+        implementation_required=list(view.implementation_required),
+        skipped=list(view.skipped),
+        untrusted_model_output=view.untrusted_model_output,
+        evidence_origin=view.evidence_origin,
+        tests=[
+            FrameworkTestOut(
+                candidate_id=item.candidate_id,
+                step_outcomes=[
+                    FrameworkStepOutcomeOut(
+                        step=step.step,
+                        outcome=step.outcome,
+                        component_id=step.component_id,
+                    )
+                    for step in item.step_outcomes
+                ],
+            )
+            for item in view.tests
+        ],
+    )
+
 
 class McpTestDesignBinding:
     """Implements the pack ``TestDesignMcpBinding`` port for one workspace."""
@@ -849,8 +1070,12 @@ class McpTestDesignBinding:
     confirm_args: type = TestDesignConfirmArgs
     generate_args: type = TestDesignGenerateArgs
     export_args: type = TestDesignExportArgs
+    confirm_profile_args: type = TestDesignConfirmProfileArgs
+    generate_framework_args: type = TestDesignGenerateFrameworkArgs
     result: type = TestDesignDraftResult
     export_result: type = TestDesignExportResult
+    confirm_profile_result: type = TestDesignConfirmProfileResult
+    generate_framework_result: type = TestDesignGenerateFrameworkResult
 
     def __init__(
         self,

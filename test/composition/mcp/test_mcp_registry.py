@@ -579,8 +579,10 @@ _RETIRED_EXPORT_FEATURE = "software_delivery.test_design_export_feature"
 
 _TEST_DESIGN_TOOLS = (
     "software_delivery.test_design_confirm",
+    "software_delivery.test_design_confirm_profile",
     "software_delivery.test_design_export",
     "software_delivery.test_design_generate",
+    "software_delivery.test_design_generate_framework_tests",
     "software_delivery.test_design_get",
     "software_delivery.test_design_start",
     "software_delivery.test_design_start_from_text",

@@ -1,6 +1,11 @@
 """Software Delivery test-design workflow (pack-local, not an agent Tool)."""
 
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.test_design.framework_contracts import (
+    FrameworkArtifactResult,
+    FrameworkSelection,
+    MVP_FRAMEWORK_ID,
+)
 from packs.software_delivery.test_design.models import (
     CANDIDATE_ORIGINS,
     COVERAGE_CATEGORIES,
@@ -17,7 +22,10 @@ __all__ = [
     "CANDIDATE_ORIGINS",
     "COVERAGE_CATEGORIES",
     "DRAFT_STATUSES",
+    "FrameworkArtifactResult",
+    "FrameworkSelection",
     "GeneratedTestCase",
+    "MVP_FRAMEWORK_ID",
     "TestCandidate",
     "TestCoverageDraft",
     "TestDesignValidationError",

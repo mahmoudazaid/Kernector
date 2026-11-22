@@ -8,6 +8,13 @@ from typing import Any
 
 from domain.knowledge import SourceReference
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.project_profile.models import (
+    Convention,
+    EvidenceRef,
+    LineRange,
+    ReusableComponent,
+)
+from packs.software_delivery.test_design.framework_contracts import FrameworkSelection
 from packs.software_delivery.test_design.models import (
     COVERAGE_CATEGORIES_DISPLAY,
     DRAFT_STATUSES,
@@ -18,8 +25,11 @@ from packs.software_delivery.test_design.models import (
     coerce_coverage_category,
 )
 
-DRAFT_SCHEMA_VERSION = 6
-SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
+DRAFT_SCHEMA_VERSION = 7
+SUPPORTED_DRAFT_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7})
+# Schema 6 introduced evidence_origin / client_evidence_text; keep reading them
+# after the v7 bump (which adds optional framework_selection).
+_SCHEMAS_WITH_CLIENT_EVIDENCE = frozenset({6, 7})
 
 
 def _normalize_stored_category(raw: str) -> str:
@@ -62,6 +72,11 @@ def encode_draft_payload(draft: TestCoverageDraft) -> str:
         "cucumber_background": draft.cucumber_background,
         "evidence_origin": draft.evidence_origin,
         "client_evidence_text": draft.client_evidence_text,
+        "framework_selection": (
+            _encode_framework_selection(draft.framework_selection)
+            if draft.framework_selection is not None
+            else None
+        ),
     }
     return json.dumps(body, separators=(",", ":"), sort_keys=True)
 
@@ -74,12 +89,14 @@ def decode_draft_payload(
 ) -> TestCoverageDraft:
     """Decode an opaque payload into a typed draft.
 
-    Accepts schema versions 1–6. Versions before 5 have no ``source_provider``
+    Accepts schema versions 1–7. Versions before 5 have no ``source_provider``
     and derive it from ``source_reference.source_type``. Versions before 6
-    have no ``evidence_origin`` and decode as ``live``. Legacy ``scenarios`` and ``coverage_gaps``
-    keys are ignored. ``scenario_editing`` status maps to ``ready``. Version 3
-    ``ManualStep`` objects migrate into ``steps`` string lists +
-    ``expected_result``.
+    have no ``evidence_origin`` and decode as ``live``. Versions 6 and 7
+    retain ``evidence_origin`` / ``client_evidence_text``. Version 7 adds
+    optional ``framework_selection``; older drafts decode it as ``None``.
+    Legacy ``scenarios`` and ``coverage_gaps`` keys are ignored.
+    ``scenario_editing`` status maps to ``ready``. Version 3 ``ManualStep``
+    objects migrate into ``steps`` string lists + ``expected_result``.
 
     Raises:
         TestDesignValidationError: Payload JSON or draft shape is invalid.
@@ -128,13 +145,18 @@ def decode_draft_payload(
             cucumber_background=_optional_str(raw, "cucumber_background"),
             evidence_origin=(
                 raw.get("evidence_origin")
-                if schema_version == DRAFT_SCHEMA_VERSION
+                if schema_version in _SCHEMAS_WITH_CLIENT_EVIDENCE
                 else "live"
             ),
             client_evidence_text=(
                 _optional_str(raw, "client_evidence_text")
-                if schema_version == DRAFT_SCHEMA_VERSION
+                if schema_version in _SCHEMAS_WITH_CLIENT_EVIDENCE
                 else ""
+            ),
+            framework_selection=(
+                _decode_framework_selection(raw.get("framework_selection"))
+                if schema_version >= 7
+                else None
             ),
         )
     except TestDesignValidationError:
@@ -154,6 +176,133 @@ def _decode_source_provider(
     if schema_version in {1, 2, 3, 4} and "source_provider" not in raw:
         return source_reference.source_type
     return _require_str(raw, "source_provider")
+
+
+def _encode_framework_selection(selection: FrameworkSelection) -> dict[str, Any]:
+    return {
+        "component_id": selection.component_id,
+        "framework_id": selection.framework_id,
+        "profile_fingerprint": selection.profile_fingerprint,
+        "evidence_origin": selection.evidence_origin,
+        "conventions": [_encode_convention(item) for item in selection.conventions],
+        "reusable_components": [
+            _encode_reusable(item) for item in selection.reusable_components
+        ],
+        "confirmed_at_version": selection.confirmed_at_version,
+    }
+
+
+def _decode_framework_selection(raw: object) -> FrameworkSelection | None:
+    if raw is None:
+        return None
+    data = _require_mapping(raw, "framework_selection")
+    return FrameworkSelection(
+        component_id=_require_str(data, "component_id"),
+        framework_id=_require_str(data, "framework_id"),
+        profile_fingerprint=_require_str(data, "profile_fingerprint"),
+        evidence_origin=_require_str(data, "evidence_origin"),  # type: ignore[arg-type]
+        conventions=tuple(
+            _decode_convention(item)
+            for item in _require_sequence_list(
+                data.get("conventions", []), "conventions"
+            )
+        ),
+        reusable_components=tuple(
+            _decode_reusable(item)
+            for item in _require_sequence_list(
+                data.get("reusable_components", []), "reusable_components"
+            )
+        ),
+        confirmed_at_version=_require_positive_int(data, "confirmed_at_version"),
+    )
+
+
+def _encode_convention(convention: Convention) -> dict[str, Any]:
+    return {
+        "name": convention.name,
+        "value": convention.value,
+        "evidence_refs": [_encode_evidence_ref(ref) for ref in convention.evidence_refs],
+    }
+
+
+def _decode_convention(raw: object) -> Convention:
+    data = _require_mapping(raw, "conventions item")
+    return Convention(
+        name=_require_str(data, "name"),
+        value=_require_str(data, "value"),
+        evidence_refs=tuple(
+            _decode_evidence_ref(item)
+            for item in _require_sequence_list(
+                data.get("evidence_refs", []), "evidence_refs"
+            )
+        ),
+    )
+
+
+def _encode_reusable(component: ReusableComponent) -> dict[str, Any]:
+    return {
+        "component_id": component.component_id,
+        "kind": component.kind,
+        "framework_id": component.framework_id,
+        "signature": component.signature,
+        "path": component.path,
+        "content_hash": component.content_hash,
+        "line_range": {
+            "start": component.line_range.start,
+            "end": component.line_range.end,
+        },
+        "documentation": component.documentation,
+    }
+
+
+def _decode_reusable(raw: object) -> ReusableComponent:
+    data = _require_mapping(raw, "reusable_components item")
+    line_raw = _require_mapping(data.get("line_range"), "line_range")
+    return ReusableComponent(
+        component_id=_require_str(data, "component_id"),
+        kind=_require_str(data, "kind"),
+        framework_id=_require_str(data, "framework_id"),
+        signature=_require_str(data, "signature"),
+        path=_require_str(data, "path"),
+        content_hash=_require_str(data, "content_hash"),
+        line_range=LineRange(
+            start=_require_positive_int(line_raw, "start"),
+            end=_require_positive_int(line_raw, "end"),
+        ),
+        documentation=_optional_str(data, "documentation"),
+    )
+
+
+def _encode_evidence_ref(ref: EvidenceRef) -> dict[str, Any]:
+    return {
+        "component": ref.component,
+        "path": ref.path,
+        "content_hash": ref.content_hash,
+        "line_range": {"start": ref.line_range.start, "end": ref.line_range.end},
+    }
+
+
+def _decode_evidence_ref(raw: object) -> EvidenceRef:
+    data = _require_mapping(raw, "evidence_refs item")
+    line_raw = _require_mapping(data.get("line_range"), "line_range")
+    return EvidenceRef(
+        component=_require_str(data, "component"),
+        path=_require_str(data, "path"),
+        content_hash=_require_str(data, "content_hash"),
+        line_range=LineRange(
+            start=_require_positive_int(line_raw, "start"),
+            end=_require_positive_int(line_raw, "end"),
+        ),
+    )
+
+
+def _require_positive_int(raw: Mapping[str, Any], field_name: str) -> int:
+    value = raw.get(field_name)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise TestDesignValidationError(
+            f"{field_name} must be a positive integer, got {type(value).__name__}"
+        )
+    return value
 
 
 def _encode_candidate(candidate: TestCandidate) -> dict[str, Any]:

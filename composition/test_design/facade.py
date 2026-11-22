@@ -210,6 +210,55 @@ class ChatWorkflowActionView:
 
 
 @dataclass(frozen=True, slots=True)
+class FrameworkSelectionView:
+    component_id: str
+    framework_id: str
+    profile_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrameworkConfirmView:
+    status: str
+    draft: TestCoverageDraftView | None = None
+    framework_options: tuple[str, ...] = ()
+    component_options: tuple[str, ...] = ()
+    detail: str = ""
+    framework_selection: FrameworkSelectionView | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FrameworkFileView:
+    filename: str
+    suggested_path: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrameworkStepOutcomeView:
+    step: str
+    outcome: str
+    component_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FrameworkTestView:
+    candidate_id: str
+    step_outcomes: tuple[FrameworkStepOutcomeView, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FrameworkGenerateView:
+    status: str
+    framework_id: str
+    files: tuple[FrameworkFileView, ...]
+    implementation_required: tuple[str, ...]
+    skipped: tuple[str, ...]
+    untrusted_model_output: bool
+    evidence_origin: str
+    tests: tuple[FrameworkTestView, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class TestDesignChatHandoffView:
     """Fixed server-authored ask response that bypasses RAG."""
 
@@ -633,6 +682,7 @@ class TestDesignFacade:
                 cucumber_background=next_cucumber_background,
                 evidence_origin=current.evidence_origin,
                 client_evidence_text=current.client_evidence_text,
+                framework_selection=getattr(current, "framework_selection", None),
             )
         except Exception as error:
             from packs.software_delivery.test_design.errors import (
@@ -701,6 +751,7 @@ class TestDesignFacade:
             cucumber_background=current.cucumber_background if kept_cases else "",
             evidence_origin=current.evidence_origin,
             client_evidence_text=current.client_evidence_text,
+            framework_selection=getattr(current, "framework_selection", None),
         )
         try:
             saved = repo.update(updated, expected_version=expected_version)
@@ -788,6 +839,137 @@ class TestDesignFacade:
         return _draft_view(
             outcome.draft,
             skipped_edited_candidate_ids=outcome.skipped_edited_candidate_ids,
+        )
+
+    def confirm_framework_profile(
+        self,
+        draft_id: str,
+        *,
+        expected_version: int,
+        framework_id: str,
+        profile_fingerprint: str,
+        evidence: object,
+        component_id: str | None = None,
+    ) -> FrameworkConfirmView:
+        """Recompute #387 profile from client evidence, then CAS-confirm selection.
+
+        Never trusts a client-supplied TechnologyProfile object. Draft issue
+        ``client_evidence_text`` is not used as project-profile evidence.
+        """
+        self._require_enabled()
+        from packs.software_delivery.project_profile.service import profile_project
+        from packs.software_delivery.test_design.confirm_framework import (
+            ConfirmFrameworkRequest,
+            ConfirmFrameworkSelection,
+        )
+
+        try:
+            profile = profile_project(evidence)
+        except Exception as error:
+            from packs.software_delivery.project_profile.errors import (
+                ProjectProfileValidationError,
+            )
+
+            if isinstance(error, ProjectProfileValidationError):
+                raise TestDesignValidationError(str(error)) from error
+            raise
+
+        repo = self._repository()
+        try:
+            outcome = ConfirmFrameworkSelection(repository=repo).execute(
+                ConfirmFrameworkRequest(
+                    draft_id=draft_id,
+                    expected_version=expected_version,
+                    framework_id=framework_id,
+                    component_id=component_id,
+                    profile=profile,
+                    profile_fingerprint=profile_fingerprint,
+                )
+            )
+        except VersionedStoreVersionConflictError as error:
+            raise TestDesignVersionConflictError("version conflict") from error
+        except VersionedStoreNotFoundError as error:
+            raise TestDesignNotFoundError("draft not found") from error
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+        return FrameworkConfirmView(
+            status=outcome.status,
+            draft=_draft_view(outcome.draft) if outcome.draft is not None else None,
+            framework_options=outcome.framework_options,
+            component_options=outcome.component_options,
+            detail=outcome.detail,
+            framework_selection=(
+                FrameworkSelectionView(
+                    component_id=outcome.draft.framework_selection.component_id,
+                    framework_id=outcome.draft.framework_selection.framework_id,
+                    profile_fingerprint=(
+                        outcome.draft.framework_selection.profile_fingerprint
+                    ),
+                )
+                if outcome.draft is not None and outcome.draft.framework_selection
+                else None
+            ),
+        )
+
+    def generate_framework_tests(
+        self, draft_id: str, *, expected_version: int
+    ) -> FrameworkGenerateView:
+        """Generate framework artifacts from the draft's confirmed selection."""
+        self._require_enabled()
+        from packs.software_delivery.test_design.framework_export import (
+            package_framework_files,
+        )
+        from packs.software_delivery.test_design.generate_framework import (
+            GenerateFrameworkTests,
+            GenerateFrameworkTestsRequest,
+        )
+
+        repo = self._repository()
+        try:
+            result = GenerateFrameworkTests(repository=repo).execute(
+                GenerateFrameworkTestsRequest(
+                    draft_id=draft_id,
+                    expected_version=expected_version,
+                )
+            )
+        except VersionedStoreVersionConflictError as error:
+            raise TestDesignVersionConflictError("version conflict") from error
+        except VersionedStoreNotFoundError as error:
+            raise TestDesignNotFoundError("draft not found") from error
+        except Exception as error:
+            _raise_composition_validation_if_pack_error(error)
+            raise
+        packaged = package_framework_files(result)
+        return FrameworkGenerateView(
+            status=result.status,
+            framework_id=result.framework_id,
+            files=tuple(
+                FrameworkFileView(
+                    filename=item.filename,
+                    suggested_path=item.suggested_path,
+                    content=item.content,
+                )
+                for item in packaged
+            ),
+            implementation_required=result.implementation_required,
+            skipped=result.skipped,
+            untrusted_model_output=result.untrusted_model_output,
+            evidence_origin=result.evidence_origin,
+            tests=tuple(
+                FrameworkTestView(
+                    candidate_id=item.candidate_id,
+                    step_outcomes=tuple(
+                        FrameworkStepOutcomeView(
+                            step=step.step,
+                            outcome=step.outcome,
+                            component_id=step.component_id,
+                        )
+                        for step in item.step_outcomes
+                    ),
+                )
+                for item in result.tests
+            ),
         )
 
     def _resolve_locator(
