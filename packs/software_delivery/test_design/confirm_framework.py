@@ -12,11 +12,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from packs.software_delivery.project_profile.models import (
+    IMPLICIT_COMPONENT,
     ComponentProfile,
     TechnologyProfile,
 )
 from packs.software_delivery.test_design.errors import TestDesignValidationError
 from packs.software_delivery.test_design.framework_contracts import (
+    IMPLICIT_COMPONENT_ID,
     FrameworkResultStatus,
     FrameworkSelection,
 )
@@ -114,25 +116,25 @@ class ConfirmFrameworkSelection:
             return ConfirmFrameworkResult(
                 status="profile_required",
                 detail="test_frameworks facet has insufficient context",
-                component_options=tuple(c.label for c in automation),
+                component_options=_component_options(automation),
             )
 
         if not framework_id:
             return ConfirmFrameworkResult(
                 status="framework_choice_required",
                 framework_options=frameworks,
-                component_options=(component.label,),
+                component_options=(_client_component_id(component.label),),
                 detail="choose a framework_id explicitly",
             )
 
         if framework_id not in frameworks:
             raise TestDesignValidationError(
                 f"framework_id {framework_id} is not in the profile for "
-                f"component {component.label}"
+                f"component {_client_component_id(component.label)}"
             )
 
         selection = FrameworkSelection(
-            component_id=component.label,
+            component_id=_client_component_id(component.label),
             framework_id=framework_id,
             profile_fingerprint=request.profile.profile_fingerprint,
             evidence_origin="client_supplied",
@@ -198,17 +200,33 @@ def _framework_ids(component: ComponentProfile) -> tuple[str, ...]:
     return tuple(ids)
 
 
+def _client_component_id(label: str) -> str:
+    """Map a profile component label to a client-selectable id."""
+    return IMPLICIT_COMPONENT_ID if label == IMPLICIT_COMPONENT else label
+
+
+def _profile_component_label(component_id: str) -> str:
+    """Map a client component_id back to the profile label."""
+    if component_id == IMPLICIT_COMPONENT_ID:
+        return IMPLICIT_COMPONENT
+    return component_id
+
+
+def _component_options(automation: Sequence[ComponentProfile]) -> tuple[str, ...]:
+    return tuple(_client_component_id(c.label) for c in automation)
+
+
 def _resolve_component(
     automation: Sequence[ComponentProfile],
     component_id: str | None,
     framework_id: str,
 ) -> ComponentProfile | ConfirmFrameworkResult:
     if len(automation) > 1:
-        label = component_id.strip() if isinstance(component_id, str) else ""
-        if not label:
+        raw = component_id.strip() if isinstance(component_id, str) else ""
+        if not raw:
             return ConfirmFrameworkResult(
                 status="framework_choice_required",
-                component_options=tuple(c.label for c in automation),
+                component_options=_component_options(automation),
                 framework_options=tuple(
                     sorted(
                         {
@@ -220,22 +238,20 @@ def _resolve_component(
                 ),
                 detail="component_id is required when multiple automation components exist",
             )
+        label = _profile_component_label(raw)
         for component in automation:
             if component.label == label:
                 return component
         raise TestDesignValidationError(
-            f"component_id {label} is not an automation component in the profile"
+            f"component_id {raw} is not an automation component in the profile"
         )
 
     only = automation[0]
-    if (
-        isinstance(component_id, str)
-        and component_id.strip()
-        and component_id.strip() != only.label
-        and only.label != ""
-    ):
-        raise TestDesignValidationError(
-            f"component_id {component_id.strip()} is not an automation "
-            f"component in the profile"
-        )
+    if isinstance(component_id, str) and component_id.strip():
+        requested = _profile_component_label(component_id.strip())
+        if requested != only.label and only.label != IMPLICIT_COMPONENT:
+            raise TestDesignValidationError(
+                f"component_id {component_id.strip()} is not an automation "
+                f"component in the profile"
+            )
     return only

@@ -38,13 +38,13 @@ class RobotFrameworkGenerator:
         keywords = {
             item.signature.casefold(): item for item in selection.reusable_components
         }
-        # Only ``.resource`` files are importable as Resource; suite ``.robot``
-        # files with Test Cases cannot be imported by another suite.
+        # Extractor only stores importable paths (``.resource`` and keyword-only
+        # ``.robot`` files). Import every such path so reused keywords resolve.
         resource_paths = sorted(
             {
                 item.path
                 for item in selection.reusable_components
-                if item.path.endswith(".resource")
+                if item.path.endswith(".resource") or item.path.endswith(".robot")
             }
         )
         folder = _test_folder(selection)
@@ -52,12 +52,13 @@ class RobotFrameworkGenerator:
         traces: list[FrameworkTestTrace] = []
         implementation_required: list[str] = []
         skipped: list[str] = []
+        used_stems: set[str] = set()
 
         for case in cases:
             if case.availability != "available":
                 skipped.append(case.candidate_id)
                 continue
-            steps = _case_steps(case)
+            steps = _case_steps(case, draft.cucumber_background)
             if not steps:
                 skipped.append(case.candidate_id)
                 continue
@@ -96,6 +97,10 @@ class RobotFrameworkGenerator:
                             component_id=match.component_id,
                         )
                     )
+                    # Keep the step in the suite so the assertion/action is not
+                    # silently dropped; Robot still fails until the conflict is
+                    # resolved (same as implementation_required).
+                    robot_steps.append(match.signature)
                     continue
                 outcomes.append(
                     StepOutcome(
@@ -109,8 +114,6 @@ class RobotFrameworkGenerator:
                 robot_steps.append(match.signature)
 
             if not robot_steps:
-                # All steps were ambiguous (or otherwise omitted) — skip the case
-                # rather than writing an empty/stub suite that would pass.
                 skipped.append(case.candidate_id)
                 traces.append(
                     FrameworkTestTrace(
@@ -123,7 +126,7 @@ class RobotFrameworkGenerator:
 
             title = _case_title(draft, case.candidate_id)
             body = _render_suite(title, robot_steps, resource_paths, folder)
-            stem = _slug(title) or case.candidate_id
+            stem = _unique_stem(title, case.candidate_id, used_stems)
             filename = f"{stem}.robot"
             suggested = f"{folder.rstrip('/')}/{filename}"
             files.append(
@@ -172,9 +175,18 @@ def _test_folder(selection: FrameworkSelection) -> str:
     return "tests"
 
 
-def _case_steps(case: GeneratedTestCase) -> list[str]:
-    if case.test_type == "cucumber" and case.gherkin.strip():
-        return [match.group(2).strip() for match in _GHERKIN_STEP.finditer(case.gherkin)]
+def _case_steps(case: GeneratedTestCase, cucumber_background: str = "") -> list[str]:
+    if case.test_type == "cucumber" and (
+        case.gherkin.strip() or cucumber_background.strip()
+    ):
+        steps = [
+            match.group(2).strip()
+            for match in _GHERKIN_STEP.finditer(cucumber_background)
+        ]
+        steps.extend(
+            match.group(2).strip() for match in _GHERKIN_STEP.finditer(case.gherkin)
+        )
+        return [step for step in steps if step]
     return [step.strip() for step in case.steps if step.strip()]
 
 
@@ -188,6 +200,19 @@ def _case_title(draft: TestCoverageDraft, candidate_id: str) -> str:
 def _slug(title: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9]+", "_", title.strip()).strip("_")
     return cleaned.lower()
+
+
+def _unique_stem(title: str, candidate_id: str, used: set[str]) -> str:
+    base = _slug(title) or _slug(candidate_id) or "case"
+    stem = base
+    if stem in used:
+        suffix = _slug(candidate_id) or candidate_id
+        stem = f"{base}_{suffix}"
+    # Extremely defensive: keep appending if still colliding.
+    while stem in used:
+        stem = f"{stem}_x"
+    used.add(stem)
+    return stem
 
 
 def _render_suite(

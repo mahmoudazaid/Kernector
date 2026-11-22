@@ -58,6 +58,10 @@ FRAMEWORK_EVIDENCE_ORIGINS_DISPLAY = str(sorted(FRAMEWORK_EVIDENCE_ORIGINS))
 
 MVP_FRAMEWORK_ID = "robot_framework"
 
+# Client-facing id for project_profile's unlabeled IMPLICIT_COMPONENT ("").
+# MCP ``Id`` requires min_length=1, so clients select this instead of "".
+IMPLICIT_COMPONENT_ID = "__implicit__"
+
 
 def _require_bounded_text(value: object, field_name: str, max_chars: int) -> str:
     if not isinstance(value, str):

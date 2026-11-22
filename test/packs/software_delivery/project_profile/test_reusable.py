@@ -45,7 +45,43 @@ def test_robot_suite_keywords_are_not_extracted_as_reusable() -> None:
         "", evidence.components[0].files
     )
     assert components == ()
-    assert any("Test Cases" in item for item in diagnostics)
+    assert any("Test Cases or Tasks" in item for item in diagnostics)
+
+
+def test_robot_tasks_suite_keywords_are_not_extracted() -> None:
+    content = (
+        "*** Tasks ***\n"
+        "Nightly Login\n"
+        "    Log In As Admin\n"
+        "\n"
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "tasks/login.robot", "content": content}]}]
+    )
+    components, diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert components == ()
+    assert any("Test Cases or Tasks" in item for item in diagnostics)
+
+
+def test_robot_keyword_only_robot_file_is_extracted() -> None:
+    content = (
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "resources/common.robot", "content": content}]}]
+    )
+    components, _diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert [item.signature for item in components] == ["Log In As Admin"]
+    assert components[0].path == "resources/common.robot"
 
 
 def test_robot_keywords_extracted_with_line_ranges() -> None:

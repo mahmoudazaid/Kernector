@@ -8,7 +8,9 @@ from packs.software_delivery.project_profile.intake import EvidenceFile
 from packs.software_delivery.project_profile.models import LineRange, ReusableComponent
 
 _KEYWORD_HEADER = re.compile(r"^\*\*\*\s*Keywords\s*\*\*\*\s*$", re.IGNORECASE)
-_TEST_CASES_HEADER = re.compile(r"^\*\*\*\s*Test\s+Cases\s*\*\*\*\s*$", re.IGNORECASE)
+_SUITE_SECTION_HEADER = re.compile(
+    r"^\*\*\*\s*(Test\s+Cases|Tasks)\s*\*\*\*\s*$", re.IGNORECASE
+)
 _SECTION = re.compile(r"^\*\*\*")
 _DYNAMIC_NAME = re.compile(r"\$\{|@\{|&\{")
 
@@ -16,9 +18,9 @@ _DYNAMIC_NAME = re.compile(r"\$\{|@\{|&\{")
 class RobotKeywordExtractor:
     """Extract ``keyword`` components from importable Robot resource files.
 
-    Suite ``.robot`` files that contain a ``*** Test Cases ***`` section are
-    skipped: Robot cannot import them as ``Resource``, so their local keywords
-    are not reusable across suites.
+    ``.resource`` files and keyword-only ``.robot`` files are reusable. Suite
+    ``.robot`` files with ``*** Test Cases ***`` or ``*** Tasks ***`` are
+    skipped: Robot cannot import them as ``Resource``.
     """
 
     framework_id = "robot_framework"
@@ -36,9 +38,10 @@ class RobotKeywordExtractor:
                 continue
             if not file.path.endswith(".robot"):
                 continue
-            if _has_test_cases_section(file.content):
+            if _has_suite_section(file.content):
                 diagnostics.append(
-                    f"suite keywords not reusable (has Test Cases): {file.path}"
+                    "suite keywords not reusable "
+                    f"(has Test Cases or Tasks): {file.path}"
                 )
                 continue
             items, diags = _extract_robot_keywords(file)
@@ -47,9 +50,8 @@ class RobotKeywordExtractor:
         return tuple(found), tuple(diagnostics)
 
 
-def _has_test_cases_section(content: str) -> bool:
-    return any(_TEST_CASES_HEADER.match(line.strip()) for line in content.splitlines())
-
+def _has_suite_section(content: str) -> bool:
+    return any(_SUITE_SECTION_HEADER.match(line.strip()) for line in content.splitlines())
 
 def _extract_robot_keywords(
     file: EvidenceFile,

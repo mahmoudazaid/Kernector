@@ -182,7 +182,7 @@ def test_confirm_unlabeled_evidence_succeeds_without_component_id() -> None:
     )
     assert confirmed.status == "ok"
     assert confirmed.framework_selection is not None
-    assert confirmed.framework_selection.component_id == ""
+    assert confirmed.framework_selection.component_id == "__implicit__"
 
 
 def test_composition_confirm_recomputes_profile_and_rejects_forged_fingerprint() -> None:

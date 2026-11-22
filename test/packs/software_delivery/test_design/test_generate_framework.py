@@ -227,10 +227,11 @@ def test_all_unknown_steps_emit_names_not_no_operation() -> None:
     _assert_robot_parses(content)
 
 
-def test_resource_imports_exclude_suite_robot_files() -> None:
+def test_resource_imports_include_selection_robot_and_resource_paths() -> None:
+    """Generator imports every path the extractor marked reusable."""
     selection = _selection(
         reusable_components=(
-            _keyword("Log In As Admin", path="tests/login.robot"),
+            _keyword("Log In As Admin", path="resources/common.robot"),
             _keyword("Cancel Order", path="resources/orders.resource"),
         )
     )
@@ -256,7 +257,7 @@ def test_resource_imports_exclude_suite_robot_files() -> None:
     )
     content = result.files[0].content
     assert "Resource    ../resources/orders.resource" in content
-    assert "login.robot" not in content
+    assert "Resource    ../resources/common.robot" in content
 
 
 def test_generate_without_selection_returns_profile_required() -> None:
@@ -365,7 +366,172 @@ def test_contradicting_keyword_docs_are_ambiguous_not_silent_reuse() -> None:
         GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
     )
     assert result.tests[0].step_outcomes[0].outcome == "ambiguous"
-    assert "Cancel Order" not in result.files[0].content if result.files else True
+    # Ambiguous steps stay in the suite so they are not silently dropped.
+    assert result.files
+    assert "Cancel Order" in result.files[0].content
+
+
+def test_ambiguous_step_in_mixed_case_is_not_dropped() -> None:
+    selection = _selection(
+        reusable_components=(
+            _keyword("Create Unpaid Order", documentation="Create an unpaid order"),
+            _keyword("Cancel Order", documentation="Cancel the current order."),
+            _keyword(
+                "Order Should Be Cancelled",
+                documentation="Must not be used for paid orders.",
+            ),
+        )
+    )
+    draft = _draft(
+        framework_selection=selection,
+        generated_cases=(
+            GeneratedTestCase(
+                candidate_id="cand-1",
+                test_type="manual",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=(
+                    "Create Unpaid Order",
+                    "Cancel Order",
+                    "Order Should Be Cancelled",
+                ),
+                expected_result="Order is cancelled",
+                gherkin="",
+                user_edited=False,
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    outcomes = {s.step: s.outcome for s in result.tests[0].step_outcomes}
+    assert outcomes["Order Should Be Cancelled"] == "ambiguous"
+    assert "Order Should Be Cancelled" in result.files[0].content
+    assert result.skipped == ()
+    assert result.implementation_required == ()
+
+
+def test_cucumber_background_steps_are_prepended() -> None:
+    draft = _draft(
+        cucumber_background="Background:\n  Given Create Unpaid Order\n",
+        generated_cases=(
+            GeneratedTestCase(
+                candidate_id="cand-1",
+                test_type="cucumber",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=(),
+                expected_result="",
+                gherkin=("Scenario: Cancel unpaid order\n" "  When Cancel Order\n"),
+                user_edited=False,
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    content = result.files[0].content
+    assert "Create Unpaid Order" in content
+    assert "Cancel Order" in content
+    create_at = content.index("Create Unpaid Order")
+    cancel_at = content.index("Cancel Order")
+    assert create_at < cancel_at
+    steps = [s.step for s in result.tests[0].step_outcomes]
+    assert steps == ["Create Unpaid Order", "Cancel Order"]
+
+
+def test_keyword_only_robot_resource_is_imported() -> None:
+    selection = _selection(
+        reusable_components=(
+            _keyword("Log In As Admin", path="resources/common.robot"),
+        )
+    )
+    draft = _draft(
+        framework_selection=selection,
+        generated_cases=(
+            GeneratedTestCase(
+                candidate_id="cand-1",
+                test_type="manual",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=("Log In As Admin",),
+                expected_result="logged in",
+                gherkin="",
+                user_edited=False,
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    content = result.files[0].content
+    assert "Resource    ../resources/common.robot" in content
+    assert result.tests[0].step_outcomes[0].outcome == "reused"
+
+
+def test_colliding_titles_get_unique_filenames() -> None:
+    draft = _draft(
+        candidates=(
+            TestCandidate(
+                candidate_id="cand-1",
+                title="Cancel Unpaid Order",
+                category="positive",
+                rationale="AC",
+                evidence_references=(_ref(),),
+                selected=True,
+                origin="suggested",
+            ),
+            TestCandidate(
+                candidate_id="cand-2",
+                title="Cancel unpaid order!",
+                category="positive",
+                rationale="AC",
+                evidence_references=(_ref(),),
+                selected=True,
+                origin="suggested",
+            ),
+        ),
+        generated_cases=(
+            GeneratedTestCase(
+                candidate_id="cand-1",
+                test_type="manual",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=("Cancel Order",),
+                expected_result="cancelled",
+                gherkin="",
+                user_edited=False,
+            ),
+            GeneratedTestCase(
+                candidate_id="cand-2",
+                test_type="manual",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=("Cancel Order",),
+                expected_result="cancelled",
+                gherkin="",
+                user_edited=False,
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    names = [item.filename for item in result.files]
+    paths = [item.suggested_path for item in result.files]
+    assert len(names) == 2
+    assert len(set(names)) == 2
+    assert len(set(paths)) == 2
 
 
 def test_confirm_then_generate_against_fixture_profile() -> None:

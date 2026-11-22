@@ -18,6 +18,7 @@ from packs.software_delivery.test_design.confirm_framework import (
     ConfirmFrameworkSelection,
 )
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.test_design.framework_contracts import IMPLICIT_COMPONENT_ID
 from packs.software_delivery.test_design.models import TestCandidate, TestCoverageDraft
 
 
@@ -193,8 +194,49 @@ def test_confirm_accepts_unlabeled_implicit_component() -> None:
     assert result.draft is not None
     selection = result.draft.framework_selection
     assert selection is not None
-    assert selection.component_id == ""
+    assert selection.component_id == IMPLICIT_COMPONENT_ID
     assert selection.framework_id == "robot_framework"
+
+
+def test_confirm_selects_implicit_component_among_labeled_ones() -> None:
+    from test.packs.software_delivery.project_profile.conftest import load_component_files
+
+    profile = profile_project(
+        [
+            {"files": load_component_files("acme/oie-tests")},
+            {"component": "oie-e2e", "files": load_component_files("acme/oie-e2e")},
+        ]
+    )
+    repo = _MemoryRepo(_draft())
+    missing = ConfirmFrameworkSelection(repository=repo).execute(
+        ConfirmFrameworkRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            framework_id="robot_framework",
+            component_id=None,
+            profile=profile,
+            profile_fingerprint=profile.profile_fingerprint,
+        )
+    )
+    assert missing.status == "framework_choice_required"
+    assert IMPLICIT_COMPONENT_ID in missing.component_options
+    assert "" not in missing.component_options
+
+    result = ConfirmFrameworkSelection(repository=repo).execute(
+        ConfirmFrameworkRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            framework_id="robot_framework",
+            component_id=IMPLICIT_COMPONENT_ID,
+            profile=profile,
+            profile_fingerprint=profile.profile_fingerprint,
+        )
+    )
+    assert result.status == "ok"
+    assert result.draft is not None
+    assert result.draft.framework_selection is not None
+    assert result.draft.framework_selection.component_id == IMPLICIT_COMPONENT_ID
+    assert result.draft.framework_selection.framework_id == "robot_framework"
 
 
 def test_ambiguous_without_framework_id_requires_choice() -> None:
