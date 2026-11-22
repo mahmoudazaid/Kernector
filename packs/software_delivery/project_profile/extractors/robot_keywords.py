@@ -8,12 +8,18 @@ from packs.software_delivery.project_profile.intake import EvidenceFile
 from packs.software_delivery.project_profile.models import LineRange, ReusableComponent
 
 _KEYWORD_HEADER = re.compile(r"^\*\*\*\s*Keywords\s*\*\*\*\s*$", re.IGNORECASE)
+_TEST_CASES_HEADER = re.compile(r"^\*\*\*\s*Test\s+Cases\s*\*\*\*\s*$", re.IGNORECASE)
 _SECTION = re.compile(r"^\*\*\*")
 _DYNAMIC_NAME = re.compile(r"\$\{|@\{|&\{")
 
 
 class RobotKeywordExtractor:
-    """Extract ``keyword`` components from ``.robot`` / ``.resource`` files."""
+    """Extract ``keyword`` components from importable Robot resource files.
+
+    Suite ``.robot`` files that contain a ``*** Test Cases ***`` section are
+    skipped: Robot cannot import them as ``Resource``, so their local keywords
+    are not reusable across suites.
+    """
 
     framework_id = "robot_framework"
 
@@ -23,12 +29,26 @@ class RobotKeywordExtractor:
         found: list[ReusableComponent] = []
         diagnostics: list[str] = []
         for file in files:
-            if not file.path.endswith(".resource") and not file.path.endswith(".robot"):
+            if file.path.endswith(".resource"):
+                items, diags = _extract_robot_keywords(file)
+                found.extend(items)
+                diagnostics.extend(diags)
+                continue
+            if not file.path.endswith(".robot"):
+                continue
+            if _has_test_cases_section(file.content):
+                diagnostics.append(
+                    f"suite keywords not reusable (has Test Cases): {file.path}"
+                )
                 continue
             items, diags = _extract_robot_keywords(file)
             found.extend(items)
             diagnostics.extend(diags)
         return tuple(found), tuple(diagnostics)
+
+
+def _has_test_cases_section(content: str) -> bool:
+    return any(_TEST_CASES_HEADER.match(line.strip()) for line in content.splitlines())
 
 
 def _extract_robot_keywords(

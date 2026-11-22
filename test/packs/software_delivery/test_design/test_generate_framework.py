@@ -173,10 +173,12 @@ def test_generate_reuses_keywords_and_lists_missing_as_implementation_required()
     content = result.files[0].content
     assert "Create Unpaid Order" in content
     assert "Cancel Order" in content
-    assert "Order Should Be Cancelled" not in content
+    # Missing keywords are written as-is (Robot fails until implemented) — no stubs.
+    assert "Order Should Be Cancelled" in content
     assert "Order Should Be Cancelled" in result.implementation_required
     assert "TODO" not in content
     assert "Pass Execution" not in content
+    assert "No Operation" not in content
     _assert_robot_parses(content, path=result.files[0].filename)
 
     outcomes = {
@@ -185,6 +187,76 @@ def test_generate_reuses_keywords_and_lists_missing_as_implementation_required()
     assert outcomes["Create Unpaid Order"] == "reused"
     assert outcomes["Cancel Order"] == "reused"
     assert outcomes["Order Should Be Cancelled"] == "implementation_required"
+
+
+def test_all_unknown_steps_emit_names_not_no_operation() -> None:
+    draft = _draft(
+        framework_selection=_selection(reusable_components=()),
+        generated_cases=(
+            GeneratedTestCase(
+                candidate_id="cand-1",
+                test_type="cucumber",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=(),
+                expected_result="",
+                gherkin=(
+                    "Scenario: Unknown\n"
+                    "  Given Totally Unknown Step\n"
+                    "  Then Another Unknown Step\n"
+                ),
+                user_edited=False,
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    assert result.status == "ok"
+    assert len(result.files) == 1
+    content = result.files[0].content
+    assert "Totally Unknown Step" in content
+    assert "Another Unknown Step" in content
+    assert "No Operation" not in content
+    assert set(result.implementation_required) == {
+        "Totally Unknown Step",
+        "Another Unknown Step",
+    }
+    _assert_robot_parses(content)
+
+
+def test_resource_imports_exclude_suite_robot_files() -> None:
+    selection = _selection(
+        reusable_components=(
+            _keyword("Log In As Admin", path="tests/login.robot"),
+            _keyword("Cancel Order", path="resources/orders.resource"),
+        )
+    )
+    draft = _draft(
+        framework_selection=selection,
+        generated_cases=(
+            GeneratedTestCase(
+                candidate_id="cand-1",
+                test_type="manual",
+                automation_fit="applicable",
+                automation_rationale="",
+                availability="available",
+                preconditions="",
+                steps=("Log In As Admin", "Cancel Order"),
+                expected_result="done",
+                gherkin="",
+                user_edited=False,
+            ),
+        ),
+    )
+    result = GenerateFrameworkTests(repository=_MemoryRepo(draft)).execute(
+        GenerateFrameworkTestsRequest(draft_id="draft-1", expected_version=3)
+    )
+    content = result.files[0].content
+    assert "Resource    ../resources/orders.resource" in content
+    assert "login.robot" not in content
 
 
 def test_generate_without_selection_returns_profile_required() -> None:

@@ -38,11 +38,13 @@ class RobotFrameworkGenerator:
         keywords = {
             item.signature.casefold(): item for item in selection.reusable_components
         }
+        # Only ``.resource`` files are importable as Resource; suite ``.robot``
+        # files with Test Cases cannot be imported by another suite.
         resource_paths = sorted(
             {
                 item.path
                 for item in selection.reusable_components
-                if item.path.endswith(".resource") or item.path.endswith(".robot")
+                if item.path.endswith(".resource")
             }
         )
         folder = _test_folder(selection)
@@ -80,6 +82,9 @@ class RobotFrameworkGenerator:
                         )
                     )
                     implementation_required.append(step)
+                    # Emit the missing name as-is so Robot fails until implemented;
+                    # never invent No Operation / Pass Execution stubs.
+                    robot_steps.append(step)
                     continue
                 if _contradicts(match.documentation, step, case):
                     outcomes.append(
@@ -103,9 +108,9 @@ class RobotFrameworkGenerator:
                 )
                 robot_steps.append(match.signature)
 
-            if not robot_steps and not any(
-                o.outcome == "implementation_required" for o in outcomes
-            ):
+            if not robot_steps:
+                # All steps were ambiguous (or otherwise omitted) — skip the case
+                # rather than writing an empty/stub suite that would pass.
                 skipped.append(case.candidate_id)
                 traces.append(
                     FrameworkTestTrace(
@@ -198,11 +203,8 @@ def _render_suite(
     lines.append("")
     lines.append("*** Test Cases ***")
     lines.append(title)
-    if steps:
-        for step in steps:
-            lines.append(f"    {step}")
-    else:
-        lines.append("    No Operation")
+    for step in steps:
+        lines.append(f"    {step}")
     lines.append("")
     return "\n".join(lines)
 

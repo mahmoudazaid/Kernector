@@ -28,6 +28,26 @@ from packs.software_delivery.project_profile.reusable import (
 )
 
 
+def test_robot_suite_keywords_are_not_extracted_as_reusable() -> None:
+    content = (
+        "*** Test Cases ***\n"
+        "Login\n"
+        "    Log In As Admin\n"
+        "\n"
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "tests/login.robot", "content": content}]}]
+    )
+    components, diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert components == ()
+    assert any("Test Cases" in item for item in diagnostics)
+
+
 def test_robot_keywords_extracted_with_line_ranges() -> None:
     evidence = evidence_for_components({"oie-tests": "acme/oie-tests"})
     components = collect_reusable_components(

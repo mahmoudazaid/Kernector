@@ -1410,6 +1410,11 @@ def _raise_composition_validation_if_pack_error(error: BaseException) -> None:
     )
 
     if isinstance(error, PackTestDesignValidationError):
+        message = str(error)
+        if message == "draft not found":
+            raise TestDesignNotFoundError("draft not found") from error
+        if message == "version conflict":
+            raise TestDesignVersionConflictError("version conflict") from error
         raise TestDesignValidationError(_TEST_DESIGN_VALIDATION_DETAIL) from error
 
 

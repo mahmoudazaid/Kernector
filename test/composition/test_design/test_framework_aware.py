@@ -6,7 +6,11 @@ from dataclasses import replace
 
 import pytest
 
-from composition.test_design.errors import TestDesignValidationError
+from composition.test_design.errors import (
+    TestDesignNotFoundError,
+    TestDesignValidationError,
+    TestDesignVersionConflictError,
+)
 from composition.test_design.facade import (
     FrameworkConfirmView,
     FrameworkGenerateView,
@@ -110,6 +114,75 @@ def _evidence() -> list[dict[str, object]]:
     return [
         {"component": "oie-tests", "files": load_component_files("acme/oie-tests")},
     ]
+
+
+def test_confirm_stale_version_is_version_conflict_not_validation() -> None:
+    facade = _facade(_MemoryRepo(_draft()))
+    profile = profile_project(_evidence())
+    with pytest.raises(TestDesignVersionConflictError):
+        facade.confirm_framework_profile(
+            "draft-1",
+            expected_version=1,
+            framework_id="robot_framework",
+            profile_fingerprint=profile.profile_fingerprint,
+            evidence=_evidence(),
+            component_id="oie-tests",
+        )
+
+
+def test_confirm_unknown_draft_is_not_found_not_validation() -> None:
+    facade = _facade(_MemoryRepo(_draft()))
+    profile = profile_project(_evidence())
+    with pytest.raises(TestDesignNotFoundError):
+        facade.confirm_framework_profile(
+            "missing",
+            expected_version=2,
+            framework_id="robot_framework",
+            profile_fingerprint=profile.profile_fingerprint,
+            evidence=_evidence(),
+            component_id="oie-tests",
+        )
+
+
+def test_generate_stale_version_is_version_conflict_not_validation() -> None:
+    evidence = _evidence()
+    profile = profile_project(evidence)
+    repo = _MemoryRepo(_draft())
+    facade = _facade(repo)
+    confirmed = facade.confirm_framework_profile(
+        "draft-1",
+        expected_version=2,
+        framework_id="robot_framework",
+        profile_fingerprint=profile.profile_fingerprint,
+        evidence=evidence,
+        component_id="oie-tests",
+    )
+    assert confirmed.draft is not None
+    with pytest.raises(TestDesignVersionConflictError):
+        facade.generate_framework_tests("draft-1", expected_version=1)
+
+
+def test_generate_unknown_draft_is_not_found_not_validation() -> None:
+    facade = _facade(_MemoryRepo(_draft()))
+    with pytest.raises(TestDesignNotFoundError):
+        facade.generate_framework_tests("nope", expected_version=2)
+
+
+def test_confirm_unlabeled_evidence_succeeds_without_component_id() -> None:
+    evidence = [{"files": load_component_files("acme/oie-tests")}]
+    profile = profile_project(evidence)
+    facade = _facade(_MemoryRepo(_draft()))
+    confirmed = facade.confirm_framework_profile(
+        "draft-1",
+        expected_version=2,
+        framework_id="robot_framework",
+        profile_fingerprint=profile.profile_fingerprint,
+        evidence=evidence,
+        component_id=None,
+    )
+    assert confirmed.status == "ok"
+    assert confirmed.framework_selection is not None
+    assert confirmed.framework_selection.component_id == ""
 
 
 def test_composition_confirm_recomputes_profile_and_rejects_forged_fingerprint() -> None:

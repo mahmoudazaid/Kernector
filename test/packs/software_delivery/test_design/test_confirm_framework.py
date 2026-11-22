@@ -170,6 +170,33 @@ def test_confirm_rejects_client_built_non_profile_object() -> None:
         )
 
 
+def test_confirm_accepts_unlabeled_implicit_component() -> None:
+    """Default project_profile evidence has IMPLICIT_COMPONENT label \"\"."""
+    from test.packs.software_delivery.project_profile.conftest import load_component_files
+
+    profile = profile_project(
+        [{"files": load_component_files("acme/oie-tests")}]
+    )
+    assert profile.components[0].label == ""
+    repo = _MemoryRepo(_draft())
+    result = ConfirmFrameworkSelection(repository=repo).execute(
+        ConfirmFrameworkRequest(
+            draft_id="draft-1",
+            expected_version=2,
+            framework_id="robot_framework",
+            component_id=None,
+            profile=profile,
+            profile_fingerprint=profile.profile_fingerprint,
+        )
+    )
+    assert result.status == "ok"
+    assert result.draft is not None
+    selection = result.draft.framework_selection
+    assert selection is not None
+    assert selection.component_id == ""
+    assert selection.framework_id == "robot_framework"
+
+
 def test_ambiguous_without_framework_id_requires_choice() -> None:
     component = ComponentProfile(
         label="suite",

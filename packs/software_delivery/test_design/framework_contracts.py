@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from packs.software_delivery.project_profile.models import (
+    IMPLICIT_COMPONENT,
     Convention,
     ReusableComponent,
 )
@@ -90,11 +91,18 @@ class FrameworkSelection:
     confirmed_at_version: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "component_id",
-            _require_bounded_text(self.component_id, "component_id", MAX_ID_CHARS),
-        )
+        # Empty string is project_profile's IMPLICIT_COMPONENT (unlabeled evidence).
+        if self.component_id != IMPLICIT_COMPONENT:
+            object.__setattr__(
+                self,
+                "component_id",
+                _require_bounded_text(self.component_id, "component_id", MAX_ID_CHARS),
+            )
+        elif not isinstance(self.component_id, str):
+            raise TestDesignValidationError(
+                "component_id must be a non-empty string, got "
+                f"{type(self.component_id).__name__}"
+            )
         object.__setattr__(
             self,
             "framework_id",
