@@ -987,7 +987,7 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Framework-aware generation (#368): after #300 cases exist, clients call
   `software_delivery.test_design_confirm_profile` with the same client-supplied
   project-profile evidence used for `software_delivery.project_profile`, then
-  `software_delivery.test_design_generate_framework_tests`. Composition
+  `software_delivery.test_design_generate_fw`. Composition
   recomputes the #387 profile and compares `profile_fingerprint` before
   storing a bounded `FrameworkSelection` on the draft (schema v7). MVP
   generation supports `robot_framework` only; other confirmed frameworks

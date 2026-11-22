@@ -127,8 +127,8 @@ class ConfirmFrameworkSelection:
 
         if framework_id not in frameworks:
             raise TestDesignValidationError(
-                f"framework_id {framework_id!r} is not in the profile for "
-                f"component {component.label!r}"
+                f"framework_id {framework_id} is not in the profile for "
+                f"component {component.label}"
             )
 
         selection = FrameworkSelection(
@@ -224,7 +224,7 @@ def _resolve_component(
             if component.label == label:
                 return component
         raise TestDesignValidationError(
-            f"component_id {label!r} is not an automation component in the profile"
+            f"component_id {label} is not an automation component in the profile"
         )
 
     only = automation[0]
@@ -235,7 +235,7 @@ def _resolve_component(
         and only.label != ""
     ):
         raise TestDesignValidationError(
-            f"component_id {component_id.strip()!r} is not an automation "
+            f"component_id {component_id.strip()} is not an automation "
             f"component in the profile"
         )
     return only

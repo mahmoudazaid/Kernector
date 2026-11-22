@@ -23,7 +23,7 @@ TOOL_CONFIRM = "software_delivery.test_design_confirm"
 TOOL_GENERATE = "software_delivery.test_design_generate"
 TOOL_EXPORT = "software_delivery.test_design_export"
 TOOL_CONFIRM_PROFILE = "software_delivery.test_design_confirm_profile"
-TOOL_GENERATE_FRAMEWORK = "software_delivery.test_design_generate_framework_tests"
+TOOL_GENERATE_FRAMEWORK = "software_delivery.test_design_generate_fw"
 TOOL_EXPORT_FEATURE_RETIRED = "software_delivery.test_design_export_feature"
 
 JsonObject = Mapping[str, object]

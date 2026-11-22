@@ -9,9 +9,11 @@ import pytest
 from packs.software_delivery.tools.test_design_mcp import (
     TEST_DESIGN_MCP_TOOLS,
     TOOL_CONFIRM,
+    TOOL_CONFIRM_PROFILE,
     TOOL_EXPORT,
     TOOL_EXPORT_FEATURE_RETIRED,
     TOOL_GENERATE,
+    TOOL_GENERATE_FRAMEWORK,
     TOOL_GET,
     TOOL_START,
     TOOL_START_FROM_CONTENT,
@@ -44,10 +46,22 @@ class _GenerateArgs: ...
 class _ExportArgs: ...
 
 
+class _ConfirmProfileArgs: ...
+
+
+class _GenerateFrameworkArgs: ...
+
+
 class _Result: ...
 
 
 class _ExportResult: ...
+
+
+class _ConfirmProfileResult: ...
+
+
+class _GenerateFrameworkResult: ...
 
 
 class _FakeWorkflow:
@@ -79,6 +93,12 @@ class _FakeWorkflow:
     def export(self, arguments):
         return self._record("export", arguments)
 
+    def confirm_profile(self, arguments):
+        return self._record("confirm_profile", arguments)
+
+    def generate_framework_tests(self, arguments):
+        return self._record("generate_framework_tests", arguments)
+
 
 class _FakeBinding:
     start_providers = ("github", "jira")
@@ -88,8 +108,12 @@ class _FakeBinding:
     confirm_args = _ConfirmArgs
     generate_args = _GenerateArgs
     export_args = _ExportArgs
+    confirm_profile_args = _ConfirmProfileArgs
+    generate_framework_args = _GenerateFrameworkArgs
     result = _Result
     export_result = _ExportResult
+    confirm_profile_result = _ConfirmProfileResult
+    generate_framework_result = _GenerateFrameworkResult
 
     def __init__(self, factory=None) -> None:
         self.workflow_instance = _FakeWorkflow()
@@ -106,6 +130,8 @@ def test_tool_ids_are_stable() -> None:
     assert TOOL_CONFIRM == "software_delivery.test_design_confirm"
     assert TOOL_GENERATE == "software_delivery.test_design_generate"
     assert TOOL_EXPORT == "software_delivery.test_design_export"
+    assert TOOL_CONFIRM_PROFILE == "software_delivery.test_design_confirm_profile"
+    assert TOOL_GENERATE_FRAMEWORK == "software_delivery.test_design_generate_fw"
     assert (
         TOOL_EXPORT_FEATURE_RETIRED == "software_delivery.test_design_export_feature"
     )
@@ -117,6 +143,8 @@ def test_tool_ids_are_stable() -> None:
         (TOOL_CONFIRM, TOOL_CONFIRM),
         (TOOL_GENERATE, TOOL_GENERATE),
         (TOOL_EXPORT, TOOL_EXPORT),
+        (TOOL_CONFIRM_PROFILE, TOOL_CONFIRM_PROFILE),
+        (TOOL_GENERATE_FRAMEWORK, TOOL_GENERATE_FRAMEWORK),
     ]
 
 

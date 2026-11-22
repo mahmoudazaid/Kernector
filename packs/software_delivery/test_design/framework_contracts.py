@@ -42,6 +42,7 @@ FrameworkEvidenceOrigin = Literal["client_supplied"]
 STEP_REUSE_OUTCOMES: frozenset[str] = frozenset(
     {"reused", "ambiguous", "implementation_required", "unsupported"}
 )
+STEP_REUSE_OUTCOMES_DISPLAY = str(sorted(STEP_REUSE_OUTCOMES))
 FRAMEWORK_RESULT_STATUSES: frozenset[str] = frozenset(
     {
         "ok",
@@ -50,7 +51,9 @@ FRAMEWORK_RESULT_STATUSES: frozenset[str] = frozenset(
         "unsupported_framework",
     }
 )
+FRAMEWORK_RESULT_STATUSES_DISPLAY = str(sorted(FRAMEWORK_RESULT_STATUSES))
 FRAMEWORK_EVIDENCE_ORIGINS: frozenset[str] = frozenset({"client_supplied"})
+FRAMEWORK_EVIDENCE_ORIGINS_DISPLAY = str(sorted(FRAMEWORK_EVIDENCE_ORIGINS))
 
 MVP_FRAMEWORK_ID = "robot_framework"
 
@@ -109,7 +112,7 @@ class FrameworkSelection:
         if self.evidence_origin not in FRAMEWORK_EVIDENCE_ORIGINS:
             raise TestDesignValidationError(
                 "evidence_origin must be one of "
-                f"{sorted(FRAMEWORK_EVIDENCE_ORIGINS)}"
+                f"{FRAMEWORK_EVIDENCE_ORIGINS_DISPLAY}"
             )
         if not isinstance(self.confirmed_at_version, int) or self.confirmed_at_version < 1:
             raise TestDesignValidationError(
@@ -186,7 +189,7 @@ class StepOutcome:
         )
         if self.outcome not in STEP_REUSE_OUTCOMES:
             raise TestDesignValidationError(
-                f"outcome must be one of {sorted(STEP_REUSE_OUTCOMES)}"
+                f"outcome must be one of {STEP_REUSE_OUTCOMES_DISPLAY}"
             )
         object.__setattr__(self, "behaviour_refs", tuple(self.behaviour_refs))
         object.__setattr__(self, "convention_refs", tuple(self.convention_refs))
@@ -226,7 +229,7 @@ class FrameworkArtifactResult:
     def __post_init__(self) -> None:
         if self.status not in FRAMEWORK_RESULT_STATUSES:
             raise TestDesignValidationError(
-                f"status must be one of {sorted(FRAMEWORK_RESULT_STATUSES)}"
+                f"status must be one of {FRAMEWORK_RESULT_STATUSES_DISPLAY}"
             )
         object.__setattr__(
             self,
@@ -252,5 +255,5 @@ class FrameworkArtifactResult:
         if self.evidence_origin not in FRAMEWORK_EVIDENCE_ORIGINS:
             raise TestDesignValidationError(
                 "evidence_origin must be one of "
-                f"{sorted(FRAMEWORK_EVIDENCE_ORIGINS)}"
+                f"{FRAMEWORK_EVIDENCE_ORIGINS_DISPLAY}"
             )
