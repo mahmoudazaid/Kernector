@@ -29,6 +29,8 @@ class ArtifactSyncHook(Protocol):
 
     def on_removed(self, reference: SourceReference) -> None: ...
 
+    def has_descriptor(self, reference: SourceReference) -> bool: ...
+
 
 class SyncArtifactDescriptors:
     """Upsert or remove descriptors after a source becomes ready or is deleted."""
@@ -50,6 +52,10 @@ class SyncArtifactDescriptors:
         self._facts_for = facts_for
         self._component_ids_for = component_ids_for
 
+    def has_descriptor(self, reference: SourceReference) -> bool:
+        """Return whether ``reference`` already has a stored descriptor."""
+        return self._index.get(reference) is not None
+
     def on_ready(self, source: SourceDocument, *, revision: str) -> None:
         """Describe ``source`` and upsert, or remove when extraction returns None."""
         descriptor = self._extractor.describe(source)
@@ -68,7 +74,7 @@ class SyncArtifactDescriptors:
         self._upsert_with_retry(descriptor)
 
     def on_skipped(self, reference: SourceReference) -> None:
-        """Unchanged sources must not rewrite their descriptor."""
+        """Unchanged sources must not rewrite their descriptor when one exists."""
         del reference
 
     def on_removed(self, reference: SourceReference) -> None:

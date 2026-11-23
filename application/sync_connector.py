@@ -243,12 +243,38 @@ class SyncConnectorDocuments:
                 source_type=document.reference.source_type,
             )
         if self._artifact_sync is not None:
-            self._artifact_sync.on_skipped(document.reference)
+            backfill = self._backfill_missing_descriptor(document, previous)
+            if isinstance(backfill, ConnectorSyncOutcome):
+                return backfill
+            if not backfill:
+                self._artifact_sync.on_skipped(document.reference)
         return ConnectorSyncOutcome(
             source_id=document.source_id,
             status=ConnectorSyncStatus.SKIPPED,
             chunk_count=previous.chunk_count,
         )
+
+    def _backfill_missing_descriptor(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument,
+    ) -> ConnectorSyncOutcome | bool:
+        """Fetch and describe when a READY skip has no artifact descriptor yet.
+
+        Returns ``True`` when a descriptor was written, ``False`` when none was
+        needed / could be written without failing the sync, or a failed outcome.
+        """
+        assert self._artifact_sync is not None
+        if self._artifact_sync.has_descriptor(document.reference):
+            return False
+        fetched = self._fetch(document, previous)
+        if isinstance(fetched, ConnectorSyncOutcome):
+            return fetched
+        try:
+            self._artifact_sync.on_ready(fetched, revision=document.revision)
+        except Exception as error:
+            return _failed_outcome(document, error)
+        return True
 
     def _try_provider_hash(
         self, document: ConnectorDocument, previous: CatalogDocument

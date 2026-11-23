@@ -109,9 +109,11 @@ def test_lookup_returns_descriptor_and_current_catalog_document() -> None:
 
 def test_pay_key_excluded_for_proj_project() -> None:
     pay = _story(key="PAY-123", source_id="cloud/PAY:PAY-123")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(pay.reference))
     lookup = LookupArtifacts(
         _Index(pay),
-        InMemoryDocumentCatalog(),
+        catalog,
         project_ids_for=lambda _ref: ("prj_pay",),
     )
 
@@ -120,9 +122,11 @@ def test_pay_key_excluded_for_proj_project() -> None:
 
 def test_workspace_lookup_reports_multi_project_ids() -> None:
     story = _story()
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(story.reference))
     lookup = LookupArtifacts(
         _Index(story),
-        InMemoryDocumentCatalog(),
+        catalog,
         project_ids_for=lambda _ref: ("prj_a", "prj_b"),
     )
 
@@ -133,9 +137,11 @@ def test_workspace_lookup_reports_multi_project_ids() -> None:
 
 def test_unassociated_source_has_empty_project_ids() -> None:
     story = _story()
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(story.reference))
     lookup = LookupArtifacts(
         _Index(story),
-        InMemoryDocumentCatalog(),
+        catalog,
         project_ids_for=lambda _ref: (),
     )
 
@@ -144,13 +150,26 @@ def test_unassociated_source_has_empty_project_ids() -> None:
     assert matches[0].project_ids == ()
 
 
-def test_suggested_and_rejected_do_not_appear_in_project_ids() -> None:
-    """project_ids_for is ResolveProjectsForSource: confirmed only."""
+def test_orphan_descriptor_without_catalog_row_is_dropped() -> None:
     story = _story()
-    # Simulate resolver that already excludes suggested/rejected.
     lookup = LookupArtifacts(
         _Index(story),
         InMemoryDocumentCatalog(),
+        project_ids_for=lambda _ref: ("prj_proj",),
+    )
+
+    assert lookup.execute(("PROJ-123",)) == ()
+
+
+def test_suggested_and_rejected_do_not_appear_in_project_ids() -> None:
+    """project_ids_for is ResolveProjectsForSource: confirmed only."""
+    story = _story()
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(story.reference))
+    # Simulate resolver that already excludes suggested/rejected.
+    lookup = LookupArtifacts(
+        _Index(story),
+        catalog,
         project_ids_for=lambda _ref: (),
     )
 
@@ -177,9 +196,11 @@ def test_part_key_and_operation_id_resolve_same_part() -> None:
         parts=(part,),
         title="openapi.yaml",
     )
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(spec.reference))
     lookup = LookupArtifacts(
         _Index(spec),
-        InMemoryDocumentCatalog(),
+        catalog,
         project_ids_for=lambda _ref: ("prj_proj",),
     )
 

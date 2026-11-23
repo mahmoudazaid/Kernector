@@ -100,10 +100,15 @@ class LookupArtifacts:
                 for assignment in descriptor.contexts
             ):
                 continue
+            document = self._catalog.get(descriptor.reference)
+            if document is None:
+                # Catalog purge without descriptor cleanup leaves orphans;
+                # never surface exact hits for deleted sources.
+                continue
             matches.append(
                 ArtifactLookupMatch(
                     descriptor=descriptor,
-                    document=self._catalog.get(descriptor.reference),
+                    document=document,
                     matched_key=matched,
                     part=_matching_part(descriptor, matched),
                     project_ids=project_ids,

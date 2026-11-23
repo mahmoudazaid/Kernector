@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from application.artifact.lookup import LookupArtifacts
 from application.contracts import RetrieveRequest
 from application.retrieve_knowledge import RetrieveKnowledge
 from domain.artifact.kinds import ArtifactKind
 from domain.artifact.models import ArtifactDescriptor
 from domain.knowledge import (
+    CatalogDocument,
+    CatalogStatus,
     DocumentChunk,
     EmbeddedChunk,
     SourceMetadata,
@@ -16,6 +20,8 @@ from domain.knowledge import (
 )
 from test.document_doubles import InMemoryDocumentCatalog
 from test.doubles import InMemoryVectorStore, StubEmbeddingModel, vector_for
+
+_NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def _chunk(source_id: str, content: str, source_type: str = "jira") -> DocumentChunk:
@@ -26,6 +32,21 @@ def _chunk(source_id: str, content: str, source_type: str = "jira") -> DocumentC
         ),
         index=0,
         content=content,
+    )
+
+
+def _catalog_row(reference: SourceReference) -> CatalogDocument:
+    return CatalogDocument(
+        reference=reference,
+        file_name="issue.md",
+        title="story",
+        content_format="markdown",
+        status=CatalogStatus.READY,
+        created_at=_NOW,
+        updated_at=_NOW,
+        chunk_count=1,
+        error=None,
+        revision="r1",
     )
 
 
@@ -78,9 +99,11 @@ def test_exact_hit_absent_from_hybrid_top_k_still_returned_first() -> None:
     decoy = _chunk("cloud/PAY:PAY-77", "Cancel payment unpaid order rules")
     store.upsert([EmbeddedChunk(chunk=decoy, vector=vector_for(decoy.content))])
     # Exact story has no vector chunks — synthetic exact hit still wins.
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(proj.reference))
     lookup = LookupArtifacts(
         _Index(proj),
-        InMemoryDocumentCatalog(),
+        catalog,
         project_ids_for=lambda ref: (
             ("prj_proj",) if "PROJ" in ref.source_id else ("prj_pay",)
         ),
@@ -118,9 +141,11 @@ def test_out_of_scope_decoy_excluded_even_if_hybrid_ranks_it() -> None:
     store = InMemoryVectorStore()
     decoy = _chunk("cloud/PAY:PAY-77", "cancel order rules")
     store.upsert([EmbeddedChunk(chunk=decoy, vector=vector_for(decoy.content))])
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_catalog_row(pay.reference))
     lookup = LookupArtifacts(
         _Index(pay),
-        InMemoryDocumentCatalog(),
+        catalog,
         project_ids_for=lambda _ref: ("prj_pay",),
     )
     retrieve = RetrieveKnowledge(

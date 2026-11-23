@@ -900,9 +900,14 @@ def _purge_jira_docs(
     store = _container.lazy_vector_store(
         settings, vector_store=vector_store, vector_store_factory=vector_store_factory
     )()
+    from composition.artifact.container import remove_artifact_descriptors
+
     try:
         for row in targets:
             store.delete_source(row.reference)
             working.delete(row.reference)
+        remove_artifact_descriptors(
+            settings, tuple(row.reference for row in targets)
+        )
     except (CatalogError, VectorStoreError) as error:
         raise DocumentOperationError(str(error)) from error

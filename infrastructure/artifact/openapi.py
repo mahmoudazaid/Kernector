@@ -12,10 +12,30 @@ from domain.artifact.models import ArtifactPart
 from domain.knowledge import SourceDocument
 
 _DEFAULT_MAX_BYTES = 1_048_576
+_MAX_SUMMARY_LENGTH = 512
 _SUPPORTED_OPENAPI = frozenset({"3.0.0", "3.0.1", "3.0.2", "3.0.3", "3.1.0"})
 _HTTP_METHODS = frozenset(
     {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 )
+
+
+def _safe_summary(raw: object) -> str | None:
+    """Collapse free-form OpenAPI summaries into ArtifactPart-safe text.
+
+    OpenAPI allows multi-line YAML literals and arbitrary length; descriptor
+    contracts reject control characters and text over 512 characters. Invalid
+    summaries are dropped so the operation part still indexes.
+    """
+    if not isinstance(raw, str):
+        return None
+    cleaned = " ".join(raw.split())
+    if not cleaned:
+        return None
+    if len(cleaned) > _MAX_SUMMARY_LENGTH:
+        cleaned = cleaned[:_MAX_SUMMARY_LENGTH].rstrip()
+    if not cleaned or any(ord(char) < 32 or ord(char) == 127 for char in cleaned):
+        return None
+    return cleaned
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,12 +111,7 @@ def extract_openapi_parts(
                 if isinstance(operation_id, str) and operation_id.strip()
                 else None
             )
-            summary_raw = operation.get("summary")
-            summary = (
-                summary_raw.strip()
-                if isinstance(summary_raw, str) and summary_raw.strip()
-                else None
-            )
+            summary = _safe_summary(operation.get("summary"))
             responses = operation.get("responses")
             codes: list[str] = []
             if isinstance(responses, Mapping):

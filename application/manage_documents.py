@@ -238,12 +238,59 @@ class ManageUploadedDocuments:
         self._artifact_sync = artifact_sync
 
     def list(self) -> Sequence[CatalogDocument]:
-        """Return catalog rows shown in the shared documents hub."""
-        return tuple(
+        """Return catalog rows shown in the shared documents hub.
+
+        READY hub rows that predate the artifact index get a one-shot
+        descriptor backfill from catalog metadata (no blob re-read).
+        """
+        rows = tuple(
             row
             for row in self._catalog.all()
             if row.reference.source_type in self._HUB_SOURCE_TYPES
         )
+        self._backfill_missing_upload_descriptors(rows)
+        return rows
+
+    def _backfill_missing_upload_descriptors(
+        self, rows: Sequence[CatalogDocument]
+    ) -> None:
+        if self._artifact_sync is None:
+            return
+        for row in rows:
+            if row.status is not CatalogStatus.READY:
+                continue
+            if self._artifact_sync.has_descriptor(row.reference):
+                continue
+            fingerprint = row.content_fingerprint
+            if not fingerprint:
+                continue
+            extra_key = (
+                "drive_revision"
+                if row.reference.source_type == SourceType.GOOGLE_DRIVE
+                else "content_fingerprint"
+            )
+            source = SourceDocument(
+                SourceMetadata(
+                    reference=row.reference,
+                    title=row.title,
+                    content_format=row.content_format,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                    extra={extra_key: fingerprint},
+                ),
+                "",
+            )
+            try:
+                self._artifact_sync.on_ready(source, revision=fingerprint)
+            except Exception:
+                log_operation(
+                    logger,
+                    operation="artifact_backfill",
+                    outcome="error",
+                    level=logging.ERROR,
+                    source_id=row.reference.source_id,
+                    source_type=row.reference.source_type,
+                )
 
     def _unknown(
         self, reference: SourceReference, *, operation: str

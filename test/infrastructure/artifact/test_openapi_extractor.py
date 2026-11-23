@@ -67,6 +67,31 @@ def test_valid_spec_yields_operation_parts_and_keys() -> None:
     }
 
 
+def test_multiline_summary_is_normalized_not_rejected() -> None:
+    spec = """
+openapi: 3.0.3
+info:
+  title: Orders
+  version: 1.0.0
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: |
+        List orders.
+        Supports cursor pagination.
+      responses:
+        "200":
+          description: ok
+"""
+    result = extract_openapi_parts(_document(spec))
+
+    assert result.diagnostic is None
+    assert len(result.parts) == 1
+    assert result.parts[0].summary == "List orders. Supports cursor pagination."
+    assert "listOrders" in result.external_keys
+
+
 def test_operation_id_and_method_path_are_same_operation() -> None:
     result = extract_openapi_parts(_document(VALID_SPEC))
     by_id = {key: result.parts[0] for key in result.external_keys}
