@@ -984,12 +984,23 @@ the agents; Kernector supplies evidence and allowlisted tools.
   `DOCUMENT_CATALOG_WORKSPACE_ID` and the workspace GitHub grant, and
   `composition/mcp/wiring.py` passes the binding only when `software-delivery`
   is enabled. `presentation/mcp` stays Test-Design unaware.
+- Framework-aware generation (#368): after #300 cases exist, clients call
+  `software_delivery.test_design_confirm_profile` with the same client-supplied
+  project-profile evidence used for `software_delivery.project_profile`, then
+  `software_delivery.test_design_generate_fw`. Composition
+  recomputes the #387 profile and compares `profile_fingerprint` before
+  storing a bounded `FrameworkSelection` on the draft (schema v7). MVP
+  generation supports `robot_framework` only; other confirmed frameworks
+  return typed `unsupported_framework`. `test_type=cucumber` remains Gherkin
+  BDD meaning, not a Cucumber runtime. Draft `client_evidence_text` is issue
+  evidence only and is never treated as project-profile evidence.
 - Client-supplied evidence (#355): `software_delivery.test_design_start_from_text`
   (separately allowlisted) calls `TestDesignFacade.create_draft_from_content`,
   which never touches the source registry. The pack renders the supplied
   fields once into one canonical text (`test_design/client_evidence.py`),
   budgets it, and persists it on the draft as `client_evidence_text` with
-  `evidence_origin: client_supplied` (draft schema v6; v1–v5 decode as `live`).
+  `evidence_origin: client_supplied` (draft schema v6+; v1–v5 decode as `live`;
+  v6 and v7 retain client evidence fields).
   Confirm and generate read evidence through `_evidence_for(draft)`: stored
   text for client-supplied drafts, a live re-fetch otherwise, both hashed by
   the shared `evidence_fingerprint`. `client_evidence_text` is internal and is

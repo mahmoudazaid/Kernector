@@ -176,6 +176,7 @@ class GenerateTestCases:
                     cucumber_background=current.cucumber_background,
                     evidence_origin=current.evidence_origin,
                     client_evidence_text=current.client_evidence_text,
+                    framework_selection=current.framework_selection,
                 )
                 saved = self._repository.update(
                     updated, expected_version=request.expected_version
@@ -284,6 +285,7 @@ class GenerateTestCases:
             cucumber_background=cucumber_background if has_cucumber else "",
             evidence_origin=current.evidence_origin,
             client_evidence_text=current.client_evidence_text,
+            framework_selection=current.framework_selection,
         )
         saved = self._repository.update(
             updated, expected_version=request.expected_version

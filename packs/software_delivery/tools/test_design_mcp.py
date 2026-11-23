@@ -22,6 +22,8 @@ TOOL_GET = "software_delivery.test_design_get"
 TOOL_CONFIRM = "software_delivery.test_design_confirm"
 TOOL_GENERATE = "software_delivery.test_design_generate"
 TOOL_EXPORT = "software_delivery.test_design_export"
+TOOL_CONFIRM_PROFILE = "software_delivery.test_design_confirm_profile"
+TOOL_GENERATE_FRAMEWORK = "software_delivery.test_design_generate_fw"
 TOOL_EXPORT_FEATURE_RETIRED = "software_delivery.test_design_export_feature"
 
 JsonObject = Mapping[str, object]
@@ -54,6 +56,10 @@ class TestDesignWorkflow(Protocol):
 
     def export(self, arguments: JsonObject) -> JsonObject: ...
 
+    def confirm_profile(self, arguments: JsonObject) -> JsonObject: ...
+
+    def generate_framework_tests(self, arguments: JsonObject) -> JsonObject: ...
+
 
 class TestDesignMcpBinding(Protocol):
     """Composition-owned schemas plus a per-invocation workflow factory."""
@@ -82,10 +88,22 @@ class TestDesignMcpBinding(Protocol):
     def export_args(self) -> type: ...
 
     @property
+    def confirm_profile_args(self) -> type: ...
+
+    @property
+    def generate_framework_args(self) -> type: ...
+
+    @property
     def result(self) -> type: ...
 
     @property
     def export_result(self) -> type: ...
+
+    @property
+    def confirm_profile_result(self) -> type: ...
+
+    @property
+    def generate_framework_result(self) -> type: ...
 
     def workflow(self) -> TestDesignWorkflow: ...
 
@@ -315,6 +333,68 @@ class TestDesignExportTool(_TestDesignTool):
         return workflow.export(arguments)
 
 
+class TestDesignConfirmProfileTool(_TestDesignTool):
+    """Confirm a framework selection from recomputed project-profile evidence."""
+
+    __test__ = False
+
+    _name = TOOL_CONFIRM_PROFILE
+    _description = (
+        "Confirm the target automation framework on a Test Design draft after "
+        "software_delivery.project_profile. Pass the same client-supplied "
+        "project-profile evidence, the profile_fingerprint from that call, and "
+        "the framework_id (and component_id when several automation components "
+        "exist). When test_frameworks is ambiguous, show the options to the "
+        "user and wait — never choose for them. Kernector recomputes the "
+        "profile and rejects a forged fingerprint; do not pass a profile "
+        "object. test_type cucumber still means Gherkin BDD scenarios, not a "
+        "Cucumber runtime. MVP generation supports robot_framework only."
+    )
+
+    @staticmethod
+    def _args_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.confirm_profile_args
+
+    @staticmethod
+    def _output_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.confirm_profile_result
+
+    def _invoke(
+        self, workflow: TestDesignWorkflow, arguments: JsonObject
+    ) -> JsonObject:
+        return workflow.confirm_profile(arguments)
+
+
+class TestDesignGenerateFrameworkTool(_TestDesignTool):
+    """Generate framework-specific tests from a confirmed selection."""
+
+    __test__ = False
+
+    _name = TOOL_GENERATE_FRAMEWORK
+    _description = (
+        "Generate framework-compatible tests from the draft's confirmed "
+        "framework selection and available generated cases. Reuses keywords "
+        "from the confirmed snapshot when they match; missing steps are listed "
+        "as implementation_required with no stubs. Unsupported confirmed "
+        "frameworks return unsupported_framework. Kernector does not write "
+        "files: save each files[].content inside the user's project using "
+        "suggested_path only as a fallback. MVP supports robot_framework only."
+    )
+
+    @staticmethod
+    def _args_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.generate_framework_args
+
+    @staticmethod
+    def _output_schema(binding: TestDesignMcpBinding) -> type:
+        return binding.generate_framework_result
+
+    def _invoke(
+        self, workflow: TestDesignWorkflow, arguments: JsonObject
+    ) -> JsonObject:
+        return workflow.generate_framework_tests(arguments)
+
+
 TEST_DESIGN_MCP_TOOLS: Sequence[tuple[str, type[_TestDesignTool]]] = (
     (TOOL_START, TestDesignStartTool),
     (TOOL_START_FROM_CONTENT, TestDesignStartFromContentTool),
@@ -322,4 +402,6 @@ TEST_DESIGN_MCP_TOOLS: Sequence[tuple[str, type[_TestDesignTool]]] = (
     (TOOL_CONFIRM, TestDesignConfirmTool),
     (TOOL_GENERATE, TestDesignGenerateTool),
     (TOOL_EXPORT, TestDesignExportTool),
+    (TOOL_CONFIRM_PROFILE, TestDesignConfirmProfileTool),
+    (TOOL_GENERATE_FRAMEWORK, TestDesignGenerateFrameworkTool),
 )

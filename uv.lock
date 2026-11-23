@@ -1033,6 +1033,7 @@ dev = [
     { name = "jsonschema" },
     { name = "kernector", extra = ["github", "google-drive"] },
     { name = "pytest" },
+    { name = "robotframework" },
 ]
 
 [package.metadata]
@@ -1065,6 +1066,7 @@ dev = [
     { name = "kernector", extras = ["github"] },
     { name = "kernector", extras = ["google-drive"] },
     { name = "pytest", specifier = ">=9.1.1" },
+    { name = "robotframework", specifier = ">=7.0.0" },
 ]
 
 [[package]]
@@ -2341,6 +2343,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
+]
+
+[[package]]
+name = "robotframework"
+version = "7.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/82/c7e3f8acb173c63e17cbdffdadf95a55520c0139cc548ce9ac963424361b/robotframework-7.5.1.tar.gz", hash = "sha256:00f63dc7b0477a137f8a9c1f2e14db8084a4d187a76f3fec6c2567875c32b932", size = 686670, upload-time = "2026-11-02T21:35:34.339Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/a3/6d528a8ac42a03ba4b9f6642b80ea37de2d18086d458c044bb6a6a8df5b9/robotframework-7.5.1-py3-none-any.whl", hash = "sha256:a46196098d92a30cb8b68c426d8d9a35b048d7936fc2cd9959b8c5c6f57524c8", size = 844474, upload-time = "2026-11-02T21:35:32.447Z" },
 ]
 
 [[package]]

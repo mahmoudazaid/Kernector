@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from test.packs.software_delivery.project_profile.conftest import (
     a0_evidence,
     evidence_for_components,
@@ -26,6 +28,92 @@ from packs.software_delivery.project_profile.reusable import (
     ReusableComponentSource,
     collect_reusable_components,
 )
+
+
+def test_robot_suite_keywords_are_not_extracted_as_reusable() -> None:
+    content = (
+        "*** Test Cases ***\n"
+        "Login\n"
+        "    Log In As Admin\n"
+        "\n"
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "tests/login.robot", "content": content}]}]
+    )
+    components, diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert components == ()
+    assert any("Test Cases or Tasks" in item for item in diagnostics)
+
+
+def test_robot_tasks_suite_keywords_are_not_extracted() -> None:
+    content = (
+        "*** Tasks ***\n"
+        "Nightly Login\n"
+        "    Log In As Admin\n"
+        "\n"
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "tasks/login.robot", "content": content}]}]
+    )
+    components, diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert components == ()
+    assert any("Test Cases or Tasks" in item for item in diagnostics)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "*** Test Cases ***    USERNAME    PASSWORD",
+        "*** Test Case ***",
+        "*** Task ***",
+        "* Test Cases",
+        "* Tasks ***",
+    ],
+)
+def test_robot_suite_header_variants_are_not_extracted(header: str) -> None:
+    content = (
+        f"{header}\n"
+        "Login\n"
+        "    Log In As Admin\n"
+        "\n"
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "tests/login_data_driven.robot", "content": content}]}]
+    )
+    components, diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert components == ()
+    assert any("Test Cases or Tasks" in item for item in diagnostics)
+
+
+def test_robot_keyword_only_robot_file_is_extracted() -> None:
+    content = (
+        "*** Keywords ***\n"
+        "Log In As Admin\n"
+        "    No Operation\n"
+    )
+    evidence = ingest_profile_evidence(
+        [{"files": [{"path": "resources/common.robot", "content": content}]}]
+    )
+    components, _diagnostics = RobotKeywordExtractor().extract(
+        "", evidence.components[0].files
+    )
+    assert [item.signature for item in components] == ["Log In As Admin"]
+    assert components[0].path == "resources/common.robot"
 
 
 def test_robot_keywords_extracted_with_line_ranges() -> None:

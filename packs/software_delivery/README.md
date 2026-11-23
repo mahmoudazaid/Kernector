@@ -523,13 +523,22 @@ contributes these tools only when composition supplies a workspace-bound
 | `software_delivery.test_design_confirm` | `draft_id`, `expected_version`, `candidate_ids` (1 to 40) | patch selection, then confirm |
 | `software_delivery.test_design_generate` | `draft_id`, `expected_version`, optional `candidate_ids` (at most 20), optional `test_type` (`manual` or `cucumber`, applied to every generated case), `type_overrides[{candidate_id, test_type}]` (per-candidate exceptions), `overwrite_edited` | #300 generate |
 | `software_delivery.test_design_export` | `draft_id`, required `format` (`gherkin` or `markdown`) | render the selected, available cases as one file: `gherkin` returns a `.feature` file of BDD cases, `markdown` returns an `.md` file of manual cases (`format`, `filename`, `suggested_path`, `content`, `case_count`); no model call |
+| `software_delivery.test_design_confirm_profile` | `draft_id`, `expected_version`, `framework_id`, `profile_fingerprint`, `evidence[]` (same client-supplied project-profile evidence as `software_delivery.project_profile`), optional `component_id` | #368 confirm framework selection; composition recomputes the profile and rejects a forged fingerprint; ambiguous frameworks require an explicit user choice |
+| `software_delivery.test_design_generate_fw` | `draft_id`, `expected_version` | #368 generate framework files from the confirmed selection; MVP supports `robot_framework` only; other confirmed frameworks return `unsupported_framework`; missing keywords are `implementation_required` (no stubs) |
 
 - MCP clients see each tool id with dots replaced by underscores (for example
   `software_delivery_test_design_start`), because clients such as Cursor
   rewrite dotted names. Profile allowlists still use the dotted ids, and
   calls accept either form.
 - The export tool needs `format` passed explicitly: `markdown` for manual
-  tests, `gherkin` for BDD scenarios. Kernector does not write files; the
+  tests, `gherkin` for BDD scenarios. `test_type=cucumber` means a Gherkin BDD
+  scenario, not a Cucumber runtime. Framework-aware generation (#368) is a
+  separate stage: call `project_profile` with project evidence, then
+  `test_design_confirm_profile` with the same evidence and fingerprint, then
+  `test_design_generate_fw`. Only `robot_framework` is supported
+  in the MVP; other frameworks return `unsupported_framework`. Robot Framework
+  is a **dev/test-only** dependency for syntax checks of generated suites, not
+  a runtime dependency. Kernector does not write files; the
   client saves `content` inside the user's project workspace (never a temp or
   scratchpad directory), following the repository's existing test folder and
   naming. `suggested_path` is only a fallback hint, and the client asks the

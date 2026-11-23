@@ -115,6 +115,8 @@ _TEST_DESIGN_TOOLS = frozenset(
         "software_delivery.test_design_confirm",
         "software_delivery.test_design_generate",
         "software_delivery.test_design_export",
+        "software_delivery.test_design_confirm_profile",
+        "software_delivery.test_design_generate_fw",
     }
 )
 

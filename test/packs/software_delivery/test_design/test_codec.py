@@ -7,12 +7,19 @@ import json
 import pytest
 
 from domain.knowledge import SourceReference
+from packs.software_delivery.project_profile.models import (
+    Convention,
+    EvidenceRef,
+    LineRange,
+    ReusableComponent,
+)
 from packs.software_delivery.test_design.codec import (
     DRAFT_SCHEMA_VERSION,
     decode_draft_payload,
     encode_draft_payload,
 )
 from packs.software_delivery.test_design.errors import TestDesignValidationError
+from packs.software_delivery.test_design.framework_contracts import FrameworkSelection
 from packs.software_delivery.test_design.models import (
     TestCandidate,
     TestCoverageDraft,
@@ -393,7 +400,7 @@ def test_decode_v1_defaults_new_fields() -> None:
     assert restored.evidence_fingerprint is None
     assert restored.candidates[0].test_type is None
     assert restored.evidence_origin == "live"
-    assert DRAFT_SCHEMA_VERSION == 6
+    assert DRAFT_SCHEMA_VERSION == 7
 
 
 def test_client_supplied_draft_round_trips_its_evidence() -> None:
@@ -411,8 +418,35 @@ def test_client_supplied_draft_round_trips_its_evidence() -> None:
     assert restored.evidence_origin == "client_supplied"
     assert restored.client_evidence_text == "# Login\n\nTicket: KERN-293"
     parsed = json.loads(payload)
-    assert parsed["schema_version"] == 6
+    assert parsed["schema_version"] == 7
     assert parsed["evidence_origin"] == "client_supplied"
+
+
+def test_schema_6_payload_retains_client_evidence_fields() -> None:
+    """v6→v7 must keep reading evidence_origin and client_evidence_text."""
+    payload = json.dumps(
+        {
+            "schema_version": 6,
+            "workspace_id": "ws-1",
+            "conversation_id": "conv-1",
+            "source_reference": {
+                "source_type": "client_supplied",
+                "source_id": "client:KERN-293",
+            },
+            "ticket_identifier": "KERN-293",
+            "source_provider": "client",
+            "status": "coverage_review",
+            "candidates": [],
+            "evidence_origin": "client_supplied",
+            "client_evidence_text": "# Login\n\nTicket: KERN-293",
+        }
+    )
+
+    restored = decode_draft_payload(payload, draft_id="draft-1", version=1)
+
+    assert restored.evidence_origin == "client_supplied"
+    assert restored.client_evidence_text == "# Login\n\nTicket: KERN-293"
+    assert restored.framework_selection is None
 
 
 def test_schema_5_payload_decodes_as_live() -> None:
@@ -448,3 +482,47 @@ def test_live_draft_rejects_client_evidence_text() -> None:
 def test_draft_rejects_unknown_evidence_origin() -> None:
     with pytest.raises(TestDesignValidationError, match="evidence_origin"):
         _draft(evidence_origin="scraped")
+
+
+def test_framework_selection_round_trips_on_schema_7() -> None:
+    selection = FrameworkSelection(
+        component_id="acme/oie-tests",
+        framework_id="robot_framework",
+        profile_fingerprint="fp-abc",
+        evidence_origin="client_supplied",
+        conventions=(
+            Convention(
+                name="test_folder",
+                value="tests/",
+                evidence_refs=(
+                    EvidenceRef(
+                        component="acme/oie-tests",
+                        path="tests/orders/cancel_order.robot",
+                        content_hash="h1",
+                        line_range=LineRange(1, 1),
+                    ),
+                ),
+            ),
+        ),
+        reusable_components=(
+            ReusableComponent(
+                component_id="kw:Cancel Order",
+                kind="keyword",
+                framework_id="robot_framework",
+                signature="Cancel Order",
+                path="resources/orders.resource",
+                content_hash="h2",
+                line_range=LineRange(5, 12),
+                documentation="Cancels",
+            ),
+        ),
+        confirmed_at_version=2,
+    )
+    draft = _draft(status="case_editing", framework_selection=selection)
+
+    restored = decode_draft_payload(
+        encode_draft_payload(draft), draft_id=draft.draft_id, version=2
+    )
+
+    assert restored.framework_selection == selection
+    assert json.loads(encode_draft_payload(draft))["schema_version"] == 7
