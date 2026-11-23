@@ -149,7 +149,7 @@ def test_target_tool_runs_without_approval_and_names_the_destination() -> None:
 
 def test_target_tool_rejects_arguments() -> None:
     result = _registry(_Xray()).invoke_authorized(
-        _caller(TARGET_TOOL), TARGET_TOOL, {"project_key": "OIE"}
+        _caller(TARGET_TOOL), TARGET_TOOL, {"project_key": "PROJ"}
     )
 
     assert result.code == VALIDATION_ERROR_CODE

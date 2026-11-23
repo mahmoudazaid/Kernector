@@ -1,5 +1,5 @@
 {
-  "name": "oie-e2e",
+  "name": "proj-e2e",
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.48.0"

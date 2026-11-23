@@ -652,14 +652,14 @@ def test_export_gherkin_preserves_provenance_for_both_evidence_origins() -> None
 
 
 def test_export_gherkin_falls_back_to_ticket_for_feature_and_filename() -> None:
-    draft = replace(_feature_draft(), cucumber_feature="", ticket_identifier="OIE-721")
+    draft = replace(_feature_draft(), cucumber_feature="", ticket_identifier="PROJ-721")
     workflow, _operations = _workflow(draft)
 
     payload = workflow.export({"draft_id": "draft-1", "format": "gherkin"})
 
-    assert payload["filename"] == "oie_721.feature"
-    assert payload["suggested_path"] == "tests/oie_721.feature"
-    assert str(payload["content"]).startswith("Feature: OIE-721\n")
+    assert payload["filename"] == "proj_721.feature"
+    assert payload["suggested_path"] == "tests/proj_721.feature"
+    assert str(payload["content"]).startswith("Feature: PROJ-721\n")
 
 
 def test_export_gherkin_without_bdd_cases_is_a_validation_error() -> None:
@@ -684,7 +684,7 @@ def _manual_mixed_draft() -> TestCoverageDraftView:
     return _draft(
         status="case_editing",
         version=5,
-        ticket_identifier="OIE-900",
+        ticket_identifier="PROJ-900",
         candidates=(
             _candidate("cand-1", "First manual"),
             _candidate("cand-2", "BDD scenario"),
@@ -732,12 +732,12 @@ def test_export_markdown_renders_manual_cases_as_one_file() -> None:
 
     assert operations.calls == [("get", {"draft_id": "draft-1"})]
     assert payload["format"] == "markdown"
-    assert payload["filename"] == "oie_900.md"
-    assert payload["suggested_path"] == "tests/oie_900.md"
+    assert payload["filename"] == "proj_900.md"
+    assert payload["suggested_path"] == "tests/proj_900.md"
     assert payload["case_count"] == 2
     content = str(payload["content"])
     assert content == (
-        "# OIE\\-900\n\n## Manual\n\n### First manual\n\n#### Preconditions\n\n1. Logged in\n\n#### Steps\n\n1. Open page\n2. Click export\n\n#### Expected result\n\n1. File downloads\n\n### Second manual\n\n#### Steps\n\n1. Confirm dialog\n\n#### Expected result\n\n1. Export succeeds\n"
+        "# PROJ\\-900\n\n## Manual\n\n### First manual\n\n#### Preconditions\n\n1. Logged in\n\n#### Steps\n\n1. Open page\n2. Click export\n\n#### Expected result\n\n1. File downloads\n\n### Second manual\n\n#### Steps\n\n1. Confirm dialog\n\n#### Expected result\n\n1. Export succeeds\n"
     )
 
 

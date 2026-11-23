@@ -25,7 +25,7 @@ from packs.software_delivery.test_design.models import TestCaseType
 
 def _ref() -> EvidenceRef:
     return EvidenceRef(
-        component="acme/oie-tests",
+        component="acme/proj-tests",
         path="resources/orders.resource",
         content_hash="abc",
         line_range=LineRange(1, 2),
@@ -62,7 +62,7 @@ def test_test_type_cucumber_remains_gherkin_bdd_not_runtime() -> None:
 
 def test_framework_selection_stores_bounded_snapshot() -> None:
     selection = FrameworkSelection(
-        component_id="acme/oie-tests",
+        component_id="acme/proj-tests",
         framework_id="robot_framework",
         profile_fingerprint="fp-1",
         evidence_origin="client_supplied",
@@ -77,7 +77,7 @@ def test_framework_selection_stores_bounded_snapshot() -> None:
 def test_framework_selection_rejects_empty_framework_id() -> None:
     with pytest.raises(TestDesignValidationError, match="framework_id"):
         FrameworkSelection(
-            component_id="acme/oie-tests",
+            component_id="acme/proj-tests",
             framework_id="  ",
             profile_fingerprint="fp-1",
             evidence_origin="client_supplied",

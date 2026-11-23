@@ -32,12 +32,12 @@ class _Vocabulary:
     contexts: tuple[str, ...] = ("documentation",)
 
 
-OIE_JIRA = SourceScope("jira-1", "project_key", "OIE")
+PROJ_JIRA = SourceScope("jira-1", "project_key", "PROJ")
 PAY_JIRA = SourceScope("jira-1", "project_key", "PAY")
-OIE_DOCS = SourceScope("gh-1", "repo", "acme/oie-docs")
-OIE_WEB = SourceScope("gh-1", "repo", "acme/oie-web")
+PROJ_DOCS = SourceScope("gh-1", "repo", "acme/proj-docs")
+PROJ_WEB = SourceScope("gh-1", "repo", "acme/proj-web")
 PAY_WEB = SourceScope("gh-1", "repo", "acme/pay-web")
-REMOTE_LINK = SourceReference("cloud-abc/OIE:OIE-123", "jira")
+REMOTE_LINK = SourceReference("cloud-abc/PROJ:PROJ-123", "jira")
 
 
 @dataclass
@@ -49,8 +49,8 @@ class FixtureEvidence:
 
 
 def _evidence(
-    source: SourceScope = OIE_JIRA,
-    target: SourceScope = OIE_DOCS,
+    source: SourceScope = PROJ_JIRA,
+    target: SourceScope = PROJ_DOCS,
     reference: SourceReference = REMOTE_LINK,
 ) -> AssociationEvidence:
     return AssociationEvidence(source, target, reference, "field=remotelinks")
@@ -60,10 +60,10 @@ def _evidence(
 def store() -> InMemoryProjectStore:
     store = InMemoryProjectStore()
     with store.transaction() as tx:
-        tx.projects.add(Project("prj_oie", "OIE", "oie", 1))
+        tx.projects.add(Project("prj_proj", "PROJ", "proj", 1))
         tx.projects.add(Project("prj_pay", "PAY", "pay", 1))
-        tx.associations.add(confirmed("prj_oie", OIE_JIRA, ("business",)))
-        tx.associations.add(confirmed("prj_oie", OIE_WEB, ("frontend",)))
+        tx.associations.add(confirmed("prj_proj", PROJ_JIRA, ("business",)))
+        tx.associations.add(confirmed("prj_proj", PROJ_WEB, ("frontend",)))
         tx.associations.add(confirmed("prj_pay", PAY_JIRA, ("business",)))
     return store
 
@@ -77,17 +77,17 @@ def _suggest(
 def test_authoritative_evidence_produces_a_cited_suggestion(
     store: InMemoryProjectStore,
 ) -> None:
-    second = SourceReference("cloud-abc/OIE:OIE-140", "jira")
+    second = SourceReference("cloud-abc/PROJ:PROJ-140", "jira")
 
     suggestions = _suggest(store, _evidence(), _evidence(reference=second))
 
     assert len(suggestions) == 1
     suggestion = suggestions[0]
-    assert (suggestion.project_id, suggestion.scope) == ("prj_oie", OIE_DOCS)
+    assert (suggestion.project_id, suggestion.scope) == ("prj_proj", PROJ_DOCS)
     assert suggestion.state is AssociationState.SUGGESTED
     assert suggestion.evidence == (REMOTE_LINK, second)
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", OIE_DOCS) == suggestion
+        assert tx.associations.get("prj_proj", PROJ_DOCS) == suggestion
 
 
 def test_new_repository_without_evidence_gets_no_suggestion(
@@ -107,7 +107,7 @@ def test_name_similarity_alone_never_suggests(store: InMemoryProjectStore) -> No
 
     assert [(s.project_id, s.scope) for s in suggestions] == [("prj_pay", PAY_WEB)]
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", PAY_WEB) is None
+        assert tx.associations.get("prj_proj", PAY_WEB) is None
 
 
 def test_evidence_from_an_unconfirmed_source_scope_is_ignored(
@@ -125,14 +125,14 @@ def test_suggestion_never_overrides_an_operator_decision(
     store: InMemoryProjectStore, state: AssociationState
 ) -> None:
     decided = SourceAssociation(
-        "prj_oie", OIE_DOCS, ("documentation",), state, (), "operator", 4
+        "prj_proj", PROJ_DOCS, ("documentation",), state, (), "operator", 4
     )
     with store.transaction() as tx:
         tx.associations.add(decided)
 
     assert _suggest(store, _evidence()) == ()
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", OIE_DOCS) == decided
+        assert tx.associations.get("prj_proj", PROJ_DOCS) == decided
 
 
 def test_repeated_run_does_not_duplicate_a_suggestion(
@@ -147,24 +147,24 @@ def test_confirming_a_suggestion_for_a_shared_scope_needs_acknowledgement(
     store: InMemoryProjectStore,
 ) -> None:
     with store.transaction() as tx:
-        tx.associations.add(confirmed("prj_pay", OIE_DOCS, ("documentation",)))
+        tx.associations.add(confirmed("prj_pay", PROJ_DOCS, ("documentation",)))
     (suggestion,) = _suggest(store, _evidence())
     confirm = ConfirmAssociation(store=store, vocabulary=_Vocabulary())
 
     with pytest.raises(SharedScopeConfirmationRequiredError) as raised:
         confirm.execute(
             ConfirmAssociationRequest(
-                "prj_oie", OIE_DOCS, expected_version=suggestion.version
+                "prj_proj", PROJ_DOCS, expected_version=suggestion.version
             )
         )
 
     assert raised.value.project_ids == ("prj_pay",)
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", OIE_DOCS) == suggestion
+        assert tx.associations.get("prj_proj", PROJ_DOCS) == suggestion
     result = confirm.execute(
         ConfirmAssociationRequest(
-            "prj_oie",
-            OIE_DOCS,
+            "prj_proj",
+            PROJ_DOCS,
             expected_version=suggestion.version,
             roles=("documentation",),
             acknowledged_shared_with=frozenset({"prj_pay"}),

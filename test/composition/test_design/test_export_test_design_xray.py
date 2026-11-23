@@ -47,14 +47,14 @@ class _FakeImporter:
         error: Exception | None = None,
     ) -> None:
         self.result = result or XrayImportResult(
-            created_keys=("OIE-801", "OIE-802"), failed_count=0
+            created_keys=("PROJ-801", "PROJ-802"), failed_count=0
         )
         self.error = error
         self.calls: list[tuple[XrayTestSpec, ...]] = []
 
     def schema(self) -> XrayTestCreateSchema:
         return XrayTestCreateSchema(
-            project_key="OIE",
+            project_key="PROJ",
             supports_manual=True,
             supports_cucumber=True,
             supports_issue_link=True,
@@ -72,7 +72,7 @@ def _facade(
 ) -> TestDesignFacade:
     settings = replace(
         settings_with_pack(workspace_id="default"),
-        xray=XraySettings(deployment="server", project_key="OIE", link_type="Tests")
+        xray=XraySettings(deployment="server", project_key="PROJ", link_type="Tests")
         if configured
         else XraySettings(),
         jira_data_center=JiraDataCenterSettings(
@@ -90,13 +90,13 @@ def _facade(
 
 
 def _seed(facade: TestDesignFacade, *, with_cases: bool = True) -> int:
-    reference = SourceReference("OIE-721", "jira")
+    reference = SourceReference("PROJ-721", "jira")
     draft = TestCoverageDraft(
         draft_id=DRAFT_ID,
         workspace_id="default",
         conversation_id="conv-1",
         source_reference=reference,
-        ticket_identifier="OIE-721",
+        ticket_identifier="PROJ-721",
         source_provider="jira",
         status="case_editing" if with_cases else "coverage_review",
         candidates=(
@@ -143,13 +143,13 @@ def test_export_creates_tests_links_the_source_issue_and_returns_a_receipt(
 
     receipt = facade.export_to_xray(DRAFT_ID, expected_version=version)
 
-    assert receipt.project_key == "OIE"
-    assert receipt.created_keys == ("OIE-801", "OIE-802")
+    assert receipt.project_key == "PROJ"
+    assert receipt.created_keys == ("PROJ-801", "PROJ-802")
     assert receipt.failed_count == 0
     assert receipt.browse_base_url == "https://jira.example.com/jira/browse/"
     (specs,) = importer.calls
     assert [(s.title, s.link_issue_key) for s in specs] == [
-        ("Health banner shows status", "OIE-721")
+        ("Health banner shows status", "PROJ-721")
     ]
 
 
@@ -175,12 +175,12 @@ def test_status_reports_availability_and_previously_created_tests(
 
     assert (before.available, before.project_key, before.created_keys) == (
         True,
-        "OIE",
+        "PROJ",
         (),
     )
     assert before.last_created_at is None
-    assert before.link_issue_key == "OIE-721"
-    assert after.created_keys == ("OIE-801", "OIE-802")
+    assert before.link_issue_key == "PROJ-721"
+    assert after.created_keys == ("PROJ-801", "PROJ-802")
     assert after.last_created_at is not None
 
 
@@ -190,13 +190,13 @@ def test_repeated_exports_accumulate_created_keys(tmp_path: Path) -> None:
     version = _seed(facade)
 
     facade.export_to_xray(DRAFT_ID, expected_version=version)
-    importer.result = XrayImportResult(created_keys=("OIE-900",), failed_count=1)
+    importer.result = XrayImportResult(created_keys=("PROJ-900",), failed_count=1)
     facade.export_to_xray(DRAFT_ID, expected_version=version)
 
     assert facade.xray_export_status(DRAFT_ID).created_keys == (
-        "OIE-801",
-        "OIE-802",
-        "OIE-900",
+        "PROJ-801",
+        "PROJ-802",
+        "PROJ-900",
     )
 
 
@@ -273,8 +273,8 @@ def test_http_export_and_status(tmp_path: Path) -> None:
 
     assert created.status_code == 200
     assert created.json() == {
-        "project_key": "OIE",
-        "created_keys": ["OIE-801", "OIE-802"],
+        "project_key": "PROJ",
+        "created_keys": ["PROJ-801", "PROJ-802"],
         "created_count": 2,
         "failed_count": 0,
         "browse_base_url": "https://jira.example.com/jira/browse/",
@@ -282,10 +282,10 @@ def test_http_export_and_status(tmp_path: Path) -> None:
     assert status.status_code == 200
     body = status.json()
     assert body["available"] is True
-    assert body["project_key"] == "OIE"
-    assert body["created_keys"] == ["OIE-801", "OIE-802"]
+    assert body["project_key"] == "PROJ"
+    assert body["created_keys"] == ["PROJ-801", "PROJ-802"]
     assert isinstance(body["last_created_at"], str)
-    assert body["link_issue_key"] == "OIE-721"
+    assert body["link_issue_key"] == "PROJ-721"
 
 
 def test_http_required_fields_failure_is_a_502_naming_the_fields(

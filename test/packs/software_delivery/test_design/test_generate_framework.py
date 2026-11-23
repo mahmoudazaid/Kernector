@@ -79,7 +79,7 @@ def _keyword(
 
 def _selection(**overrides: object) -> FrameworkSelection:
     base: dict[str, object] = {
-        "component_id": "oie-tests",
+        "component_id": "proj-tests",
         "framework_id": "robot_framework",
         "profile_fingerprint": "fp",
         "evidence_origin": "client_supplied",
@@ -89,7 +89,7 @@ def _selection(**overrides: object) -> FrameworkSelection:
                 value="tests/",
                 evidence_refs=(
                     EvidenceRef(
-                        component="oie-tests",
+                        component="proj-tests",
                         path="tests/orders/cancel_order.robot",
                         content_hash="h",
                         line_range=LineRange(1, 1),
@@ -568,7 +568,7 @@ def test_confirm_then_generate_against_fixture_profile() -> None:
     from test.packs.software_delivery.project_profile.conftest import load_component_files
 
     profile = profile_project(
-        [{"component": "oie-tests", "files": load_component_files("acme/oie-tests")}]
+        [{"component": "proj-tests", "files": load_component_files("acme/proj-tests")}]
     )
     draft = _draft(framework_selection=None, version=2, status="ready", generated_cases=())
     # Attach cucumber case after confirm path for generation.
@@ -578,7 +578,7 @@ def test_confirm_then_generate_against_fixture_profile() -> None:
             draft_id="draft-1",
             expected_version=2,
             framework_id="robot_framework",
-            component_id="oie-tests",
+            component_id="proj-tests",
             profile=profile,
             profile_fingerprint=profile.profile_fingerprint,
         )

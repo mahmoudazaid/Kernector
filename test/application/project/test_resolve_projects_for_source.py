@@ -20,27 +20,27 @@ from test.application.project.project_fakes import (
 )
 from test.document_doubles import InMemoryDocumentCatalog
 
-OIE_JIRA = SourceScope("jira-1", "project_key", "OIE")
+PROJ_JIRA = SourceScope("jira-1", "project_key", "PROJ")
 PAY_JIRA = SourceScope("jira-1", "project_key", "PAY")
-ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
-TESTS = SourceScope("gh-1", "repo", "acme/oie-tests")
+ORDERS = SourceScope("gh-1", "repo", "acme/proj-orders")
+TESTS = SourceScope("gh-1", "repo", "acme/proj-tests")
 LIB = SourceScope("gh-1", "repo", "acme/shared-lib")
 
 DOCUMENTS = {
-    "oie_story": ("cloud-abc/OIE:OIE-123", "jira", "jira-1"),
+    "proj_story": ("cloud-abc/PROJ:PROJ-123", "jira", "jira-1"),
     "pay_story": ("cloud-abc/PAY:PAY-7", "jira", "jira-1"),
-    "orders_file": ("acme/oie-orders:orders/cancel.py", "github", "gh-1"),
-    "tests_file": ("acme/oie-tests:tests/test_cancel.py", "github", "gh-1"),
+    "orders_file": ("acme/proj-orders:orders/cancel.py", "github", "gh-1"),
+    "tests_file": ("acme/proj-tests:tests/test_cancel.py", "github", "gh-1"),
     "lib_file": ("acme/shared-lib:src/money.py", "github", "gh-1"),
-    "colon_path": ("acme/oie-orders:orders/cancel:v2.py", "github", "gh-1"),
+    "colon_path": ("acme/proj-orders:orders/cancel:v2.py", "github", "gh-1"),
     "github_issue": ("issue:I_kwDOABC123", "github", "gh-1"),
-    "dc_instance_with_slash": ("srv/eu-1/OIE:OIE-9", "jira", "jira-1"),
-    "jira_bad_key": ("cloud-abc/oie:oie-1", "jira", "jira-1"),
-    "jira_key_mismatch": ("cloud-abc/OIE:PAY-1", "jira", "jira-1"),
-    "jira_no_instance": ("OIE:OIE-1", "jira", "jira-1"),
+    "dc_instance_with_slash": ("srv/eu-1/PROJ:PROJ-9", "jira", "jira-1"),
+    "jira_bad_key": ("cloud-abc/proj:proj-1", "jira", "jira-1"),
+    "jira_key_mismatch": ("cloud-abc/PROJ:PAY-1", "jira", "jira-1"),
+    "jira_no_instance": ("PROJ:PROJ-1", "jira", "jira-1"),
     "jira_on_demand": ("issue:10001", "jira", "jira-1"),
     "drive_file": ("1AbCdEfG", "google_drive", "drive-1"),
-    "no_connector": ("acme/oie-orders:orders/refund.py", "github", None),
+    "no_connector": ("acme/proj-orders:orders/refund.py", "github", None),
     "upload": ("upload-1", "upload", None),
 }
 
@@ -55,10 +55,10 @@ def store() -> InMemoryProjectStore:
     store = InMemoryProjectStore()
     with store.transaction() as tx:
         for association in (
-            confirmed("prj_oie", OIE_JIRA, ("business",)),
-            confirmed("prj_oie", ORDERS, ("backend", "api_contract")),
-            confirmed("prj_oie", TESTS, ("testing",)),
-            confirmed("prj_oie", LIB),
+            confirmed("prj_proj", PROJ_JIRA, ("business",)),
+            confirmed("prj_proj", ORDERS, ("backend", "api_contract")),
+            confirmed("prj_proj", TESTS, ("testing",)),
+            confirmed("prj_proj", LIB),
             confirmed("prj_pay", PAY_JIRA, ("business",)),
             confirmed("prj_pay", LIB),
         ):
@@ -84,11 +84,11 @@ def resolve(store: InMemoryProjectStore) -> ResolveProjectsForSource:
 @pytest.mark.parametrize(
     "name,projects",
     [
-        ("oie_story", ("prj_oie",)),
-        ("orders_file", ("prj_oie",)),
-        ("tests_file", ("prj_oie",)),
+        ("proj_story", ("prj_proj",)),
+        ("orders_file", ("prj_proj",)),
+        ("tests_file", ("prj_proj",)),
         ("pay_story", ("prj_pay",)),
-        ("lib_file", ("prj_oie", "prj_pay")),
+        ("lib_file", ("prj_proj", "prj_pay")),
     ],
 )
 def test_documents_resolve_to_their_projects(
@@ -101,7 +101,7 @@ def test_removed_association_is_excluded_immediately(
     store: InMemoryProjectStore, resolve: ResolveProjectsForSource
 ) -> None:
     with store.transaction() as tx:
-        tx.associations.delete("prj_oie", ORDERS, expected_version=1)
+        tx.associations.delete("prj_proj", ORDERS, expected_version=1)
 
     assert resolve.execute(_ref("orders_file")) == ()
 
@@ -115,8 +115,8 @@ def test_unknown_document_resolves_to_nothing(
 @pytest.mark.parametrize(
     "name,projects",
     [
-        ("colon_path", ("prj_oie",)),
-        ("dc_instance_with_slash", ("prj_oie",)),
+        ("colon_path", ("prj_proj",)),
+        ("dc_instance_with_slash", ("prj_proj",)),
         ("github_issue", ()),
         ("jira_bad_key", ()),
         ("jira_key_mismatch", ()),
@@ -136,12 +136,12 @@ def test_supported_identity_formats(
 def test_resolvers_expose_scope_and_path() -> None:
     github = GitHubSourceScopeResolver()
     jira = JiraSourceScopeResolver()
-    orders = catalog_document("acme/oie-orders:orders/cancel:v2.py", "github", "gh-1")
-    story = catalog_document("cloud-abc/OIE:OIE-123", "jira", "jira-1")
+    orders = catalog_document("acme/proj-orders:orders/cancel:v2.py", "github", "gh-1")
+    story = catalog_document("cloud-abc/PROJ:PROJ-123", "jira", "jira-1")
 
     assert github.scopes_for(orders) == (ORDERS,)
     assert github.path_for(orders) == "orders/cancel:v2.py"
-    assert jira.scopes_for(story) == (OIE_JIRA,)
+    assert jira.scopes_for(story) == (PROJ_JIRA,)
     assert jira.path_for(story) is None
     assert github.scope_kinds == frozenset({"repo"})
     assert jira.scope_kinds == frozenset({"project_key"})

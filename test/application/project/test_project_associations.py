@@ -28,7 +28,7 @@ from domain.project.models import AssociationState, SourceAssociation, SourceSco
 from test.application.project.project_fakes import InMemoryProjectStore
 
 LIB = SourceScope("gh-1", "repo", "acme/shared-lib")
-ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
+ORDERS = SourceScope("gh-1", "repo", "acme/proj-orders")
 
 
 @pytest.fixture
@@ -63,21 +63,21 @@ def _associate(
 
 def test_create_project_generates_an_opaque_id(store: InMemoryProjectStore) -> None:
     project = CreateProject(store=store).execute(
-        CreateProjectRequest("Order Intake", "oie")
+        CreateProjectRequest("Order Intake", "proj")
     )
 
     assert project.project_id.startswith("prj_")
-    assert project.project_id != "oie"
+    assert project.project_id != "proj"
     assert project.version == 1
     with store.read() as tx:
         assert tx.projects.get(project.project_id) == project
 
 
 def test_slug_collision_is_reported(store: InMemoryProjectStore) -> None:
-    _create(store, "oie")
+    _create(store, "proj")
 
     with pytest.raises(ProjectSlugTakenError):
-        _create(store, "oie")
+        _create(store, "proj")
 
 
 def test_associate_requires_an_existing_project(store: InMemoryProjectStore) -> None:
@@ -86,9 +86,9 @@ def test_associate_requires_an_existing_project(store: InMemoryProjectStore) -> 
 
 
 def test_explicit_association_is_confirmed(store: InMemoryProjectStore) -> None:
-    oie = _create(store, "oie")
+    proj = _create(store, "proj")
 
-    association = _associate(store, oie)
+    association = _associate(store, proj)
 
     assert association.state is AssociationState.CONFIRMED
     assert association.version == 1
@@ -97,65 +97,65 @@ def test_explicit_association_is_confirmed(store: InMemoryProjectStore) -> None:
 def test_associating_the_same_scope_twice_is_rejected(
     store: InMemoryProjectStore,
 ) -> None:
-    oie = _create(store, "oie")
-    _associate(store, oie)
+    proj = _create(store, "proj")
+    _associate(store, proj)
 
     with pytest.raises(AssociationExistsError):
-        _associate(store, oie)
+        _associate(store, proj)
 
 
 def test_shared_scope_needs_named_acknowledgement(store: InMemoryProjectStore) -> None:
-    oie, pay = _create(store, "oie"), _create(store, "pay")
-    _associate(store, oie)
+    proj, pay = _create(store, "proj"), _create(store, "pay")
+    _associate(store, proj)
 
     with pytest.raises(SharedScopeConfirmationRequiredError) as raised:
         _associate(store, pay)
 
-    assert raised.value.project_ids == (oie,)
+    assert raised.value.project_ids == (proj,)
     with store.read() as tx:
         assert tx.associations.get(pay, LIB) is None
-    assert _associate(store, pay, acknowledged=frozenset({oie})).project_id == pay
+    assert _associate(store, pay, acknowledged=frozenset({proj})).project_id == pay
 
 
 def test_stale_acknowledgement_does_not_cover_a_new_project(
     store: InMemoryProjectStore,
 ) -> None:
-    oie, pay, ops = _create(store, "oie"), _create(store, "pay"), _create(store, "ops")
-    _associate(store, oie)
-    _associate(store, pay, acknowledged=frozenset({oie}))
+    proj, pay, ops = _create(store, "proj"), _create(store, "pay"), _create(store, "ops")
+    _associate(store, proj)
+    _associate(store, pay, acknowledged=frozenset({proj}))
 
     with pytest.raises(SharedScopeConfirmationRequiredError) as raised:
-        _associate(store, ops, acknowledged=frozenset({oie}))
+        _associate(store, ops, acknowledged=frozenset({proj}))
 
-    assert raised.value.project_ids == tuple(sorted((oie, pay)))
+    assert raised.value.project_ids == tuple(sorted((proj, pay)))
 
 
 def test_suggested_association_elsewhere_is_not_a_conflict(
     store: InMemoryProjectStore,
 ) -> None:
-    oie, pay = _create(store, "oie"), _create(store, "pay")
+    proj, pay = _create(store, "proj"), _create(store, "pay")
     with store.transaction() as tx:
         tx.associations.add(
-            SourceAssociation(oie, LIB, (), AssociationState.SUGGESTED, (), "pack", 1)
+            SourceAssociation(proj, LIB, (), AssociationState.SUGGESTED, (), "pack", 1)
         )
 
     assert _associate(store, pay).state is AssociationState.CONFIRMED
 
 
 def test_confirm_needs_the_current_version(store: InMemoryProjectStore) -> None:
-    oie = _create(store, "oie")
+    proj = _create(store, "proj")
     with store.transaction() as tx:
         tx.associations.add(
             SourceAssociation(
-                oie, ORDERS, (), AssociationState.SUGGESTED, (), "pack", 1
+                proj, ORDERS, (), AssociationState.SUGGESTED, (), "pack", 1
             )
         )
     confirm = ConfirmAssociation(store=store)
 
     with pytest.raises(ProjectRecordVersionConflictError):
-        confirm.execute(ConfirmAssociationRequest(oie, ORDERS, expected_version=3))
+        confirm.execute(ConfirmAssociationRequest(proj, ORDERS, expected_version=3))
     confirmed = confirm.execute(
-        ConfirmAssociationRequest(oie, ORDERS, expected_version=1)
+        ConfirmAssociationRequest(proj, ORDERS, expected_version=1)
     )
 
     assert confirmed.state is AssociationState.CONFIRMED
@@ -163,16 +163,16 @@ def test_confirm_needs_the_current_version(store: InMemoryProjectStore) -> None:
 
 
 def test_remove_needs_the_current_version(store: InMemoryProjectStore) -> None:
-    oie = _create(store, "oie")
-    _associate(store, oie)
+    proj = _create(store, "proj")
+    _associate(store, proj)
     remove = RemoveAssociation(store=store)
 
     with pytest.raises(ProjectRecordVersionConflictError):
-        remove.execute(RemoveAssociationRequest(oie, LIB, expected_version=2))
-    remove.execute(RemoveAssociationRequest(oie, LIB, expected_version=1))
+        remove.execute(RemoveAssociationRequest(proj, LIB, expected_version=2))
+    remove.execute(RemoveAssociationRequest(proj, LIB, expected_version=1))
 
     with store.read() as tx:
-        assert tx.associations.get(oie, LIB) is None
+        assert tx.associations.get(proj, LIB) is None
 
 
 @dataclass(frozen=True)
@@ -191,41 +191,41 @@ CONNECTORS = _Connectors(
 @pytest.mark.parametrize(
     "scope",
     [
-        SourceScope("no-such-connector", "repo", "acme/oie-orders"),
-        SourceScope("gh-1", "repository", "acme/oie-orders"),
-        SourceScope("jira-1", "repo", "acme/oie-orders"),
+        SourceScope("no-such-connector", "repo", "acme/proj-orders"),
+        SourceScope("gh-1", "repository", "acme/proj-orders"),
+        SourceScope("jira-1", "repo", "acme/proj-orders"),
     ],
     ids=["unknown-connector", "undeclared-kind", "kind-of-another-connector"],
 )
 def test_associate_rejects_a_scope_its_connector_does_not_accept(
     store: InMemoryProjectStore, scope: SourceScope
 ) -> None:
-    oie = _create(store, "oie")
+    proj = _create(store, "proj")
     associate = AssociateSource(store=store, connectors=CONNECTORS)
 
     with pytest.raises(ProjectInputError):
-        associate.execute(AssociateSourceRequest(oie, scope, (), "operator"))
+        associate.execute(AssociateSourceRequest(proj, scope, (), "operator"))
 
     with store.read() as tx:
-        assert tx.associations.get(oie, scope) is None
-    stored = associate.execute(AssociateSourceRequest(oie, ORDERS, (), "operator"))
+        assert tx.associations.get(proj, scope) is None
+    stored = associate.execute(AssociateSourceRequest(proj, ORDERS, (), "operator"))
     assert stored.state is AssociationState.CONFIRMED
 
 
 def test_confirm_rejects_a_scope_its_connector_does_not_accept(
     store: InMemoryProjectStore,
 ) -> None:
-    oie = _create(store, "oie")
-    unknown = SourceScope("no-such-connector", "repo", "acme/oie-orders")
+    proj = _create(store, "proj")
+    unknown = SourceScope("no-such-connector", "repo", "acme/proj-orders")
     suggested = SourceAssociation(
-        oie, unknown, (), AssociationState.SUGGESTED, (), "pack", 1
+        proj, unknown, (), AssociationState.SUGGESTED, (), "pack", 1
     )
     with store.transaction() as tx:
         tx.associations.add(suggested)
     confirm = ConfirmAssociation(store=store, connectors=CONNECTORS)
 
     with pytest.raises(ProjectInputError):
-        confirm.execute(ConfirmAssociationRequest(oie, unknown, expected_version=1))
+        confirm.execute(ConfirmAssociationRequest(proj, unknown, expected_version=1))
 
     with store.read() as tx:
-        assert tx.associations.get(oie, unknown) == suggested
+        assert tx.associations.get(proj, unknown) == suggested

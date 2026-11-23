@@ -118,7 +118,7 @@ def test_create_profile_unknown_project_returns_problem_404() -> None:
     response = client.post(
         "/api/v1/admin/mcp/profiles",
         headers=_ADMIN,
-        json={"project_id": "oie", "name": "cursor"},
+        json={"project_id": "proj", "name": "cursor"},
     )
     assert response.status_code == 404
     assert response.headers["content-type"].startswith(_PROBLEM)

@@ -31,20 +31,20 @@ def _evidence_args() -> dict[str, object]:
     return {
         "evidence": [
             {
-                "component": "oie-orders",
-                "files": load_component_files("acme/oie-orders"),
+                "component": "proj-orders",
+                "files": load_component_files("acme/proj-orders"),
             },
             {
-                "component": "oie-tests",
-                "files": load_component_files("acme/oie-tests"),
+                "component": "proj-tests",
+                "files": load_component_files("acme/proj-tests"),
             },
             {
-                "component": "oie-e2e",
-                "files": load_component_files("acme/oie-e2e"),
+                "component": "proj-e2e",
+                "files": load_component_files("acme/proj-e2e"),
             },
             {
-                "component": "oie-web",
-                "files": load_component_files("acme/oie-web"),
+                "component": "proj-web",
+                "files": load_component_files("acme/proj-web"),
             },
         ]
     }
@@ -63,7 +63,7 @@ def _registry(workspace_id: str = "ws-a"):
 def test_project_id_rejected_by_schema() -> None:
     with pytest.raises(Exception):
         ProjectProfileArgs.model_validate(
-            {"project_id": "oie", "evidence": [{"files": [{"path": "a", "content": "x"}]}]}
+            {"project_id": "proj", "evidence": [{"files": [{"path": "a", "content": "x"}]}]}
         )
 
 
@@ -74,7 +74,7 @@ def test_workflow_rejects_project_id_argument() -> None:
     with pytest.raises(ToolArgumentValidationError, match="project_id"):
         binding.workflow().profile(
             {
-                "project_id": "oie",
+                "project_id": "proj",
                 "evidence": [
                     {"files": [{"path": "README.md", "content": "hi\n"}]}
                 ],
@@ -123,8 +123,8 @@ def test_cross_workspace_bindings_are_isolated() -> None:
     payload = {
         "evidence": [
             {
-                "component": "oie-tests",
-                "files": load_component_files("acme/oie-tests"),
+                "component": "proj-tests",
+                "files": load_component_files("acme/proj-tests"),
             }
         ]
     }
@@ -155,8 +155,8 @@ def test_per_component_robot_and_playwright_detected() -> None:
     result = registry.invoke_authorized(caller, TOOL_PROJECT_PROFILE, _evidence_args())
     data = json.loads(result.text)
     by_label = {c["label"]: c for c in data["components"]}
-    assert by_label["oie-tests"]["facet_status"]["test_frameworks"] == "detected"
-    assert by_label["oie-e2e"]["facet_status"]["test_frameworks"] == "detected"
+    assert by_label["proj-tests"]["facet_status"]["test_frameworks"] == "detected"
+    assert by_label["proj-e2e"]["facet_status"]["test_frameworks"] == "detected"
     assert data["facet_status"].get("test_frameworks") != "ambiguous"
 
 

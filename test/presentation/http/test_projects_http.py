@@ -63,7 +63,7 @@ def _assert_problem(response, status: int, code: str) -> dict:
 def test_create_list_and_get_project() -> None:
     client = _client()
 
-    created = _create(client, "oie")
+    created = _create(client, "proj")
 
     assert created["project_id"].startswith("prj_")
     assert created["version"] == 1
@@ -71,7 +71,7 @@ def test_create_list_and_get_project() -> None:
     listed = client.get("/api/v1/projects").json()
     assert [p["project_id"] for p in listed] == [created["project_id"]]
     detail = client.get(f"/api/v1/projects/{created['project_id']}").json()
-    assert detail["slug"] == "oie"
+    assert detail["slug"] == "proj"
     assert detail["associations"] == []
     assert detail["components"] == []
     assert detail["context_coverage"] == []
@@ -82,7 +82,7 @@ def test_detail_reports_context_coverage_with_pack_vocabulary(
 ) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
 
     unknown = _associate(client, project_id, roles=["database"])
     _assert_problem(unknown, 422, "project_invalid_input")
@@ -119,7 +119,7 @@ def test_confirmed_associations_need_roles_with_pack_vocabulary(
 ) -> None:
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
 
     _assert_problem(_associate(client, project_id), 422, "project_invalid_input")
     _seed_suggestion(project_id)
@@ -144,9 +144,9 @@ def test_unknown_project_is_404() -> None:
 
 def test_duplicate_slug_is_409() -> None:
     client = _client()
-    _create(client, "oie")
+    _create(client, "proj")
 
-    response = client.post("/api/v1/projects", json={"name": "Again", "slug": "oie"})
+    response = client.post("/api/v1/projects", json={"name": "Again", "slug": "proj"})
 
     _assert_problem(response, 409, "project_slug_taken")
 
@@ -161,7 +161,7 @@ def test_invalid_slug_is_422() -> None:
 
 def test_associate_source_is_confirmed() -> None:
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
 
     response = _associate(client, project_id)
 
@@ -184,7 +184,7 @@ def test_associate_scope_its_connector_does_not_accept_is_422(
     scope: dict[str, str],
 ) -> None:
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
 
     response = _associate(client, project_id, **scope)
 
@@ -200,23 +200,23 @@ def test_associate_unknown_project_is_404() -> None:
 
 def test_shared_scope_requires_acknowledgement() -> None:
     client = _client()
-    oie = _create(client, "oie")["project_id"]
+    proj = _create(client, "proj")["project_id"]
     pay = _create(client, "pay")["project_id"]
-    _associate(client, oie)
+    _associate(client, proj)
 
     body = _assert_problem(
         _associate(client, pay), 409, "shared_scope_confirmation_required"
     )
 
-    assert [e["detail"] for e in body["errors"]] == [oie]
+    assert [e["detail"] for e in body["errors"]] == [proj]
     assert body["errors"][0]["pointer"] == "/acknowledged_shared_with"
-    acknowledged = _associate(client, pay, acknowledged_shared_with=[oie])
+    acknowledged = _associate(client, pay, acknowledged_shared_with=[proj])
     assert acknowledged.status_code == 201
 
 
 def test_confirm_suggestion_with_cas() -> None:
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
     with build_project_store(load_settings()).transaction() as tx:
         tx.associations.add(
             SourceAssociation(
@@ -244,7 +244,7 @@ def test_confirm_suggestion_with_cas() -> None:
 
 def test_confirm_unknown_association_is_404() -> None:
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
 
     response = client.post(
         f"/api/v1/projects/{project_id}/sources/confirm",
@@ -256,7 +256,7 @@ def test_confirm_unknown_association_is_404() -> None:
 
 def test_remove_association_with_cas() -> None:
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
     _associate(client, project_id)
     url = f"/api/v1/projects/{project_id}/sources"
 
@@ -272,7 +272,7 @@ def test_remove_association_with_cas() -> None:
 
 def test_replayed_delete_after_recreate_is_a_version_conflict() -> None:
     client = _client()
-    project_id = _create(client, "oie")["project_id"]
+    project_id = _create(client, "proj")["project_id"]
     url = f"/api/v1/projects/{project_id}/sources"
     assert _associate(client, project_id).json()["version"] == 1
     stale_delete = {**LIB, "expected_version": 1}

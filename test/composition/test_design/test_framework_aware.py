@@ -112,7 +112,7 @@ def _draft() -> TestCoverageDraft:
 
 def _evidence() -> list[dict[str, object]]:
     return [
-        {"component": "oie-tests", "files": load_component_files("acme/oie-tests")},
+        {"component": "proj-tests", "files": load_component_files("acme/proj-tests")},
     ]
 
 
@@ -126,7 +126,7 @@ def test_confirm_stale_version_is_version_conflict_not_validation() -> None:
             framework_id="robot_framework",
             profile_fingerprint=profile.profile_fingerprint,
             evidence=_evidence(),
-            component_id="oie-tests",
+            component_id="proj-tests",
         )
 
 
@@ -140,7 +140,7 @@ def test_confirm_unknown_draft_is_not_found_not_validation() -> None:
             framework_id="robot_framework",
             profile_fingerprint=profile.profile_fingerprint,
             evidence=_evidence(),
-            component_id="oie-tests",
+            component_id="proj-tests",
         )
 
 
@@ -155,7 +155,7 @@ def test_generate_stale_version_is_version_conflict_not_validation() -> None:
         framework_id="robot_framework",
         profile_fingerprint=profile.profile_fingerprint,
         evidence=evidence,
-        component_id="oie-tests",
+        component_id="proj-tests",
     )
     assert confirmed.draft is not None
     with pytest.raises(TestDesignVersionConflictError):
@@ -169,7 +169,7 @@ def test_generate_unknown_draft_is_not_found_not_validation() -> None:
 
 
 def test_confirm_unlabeled_evidence_succeeds_without_component_id() -> None:
-    evidence = [{"files": load_component_files("acme/oie-tests")}]
+    evidence = [{"files": load_component_files("acme/proj-tests")}]
     profile = profile_project(evidence)
     facade = _facade(_MemoryRepo(_draft()))
     confirmed = facade.confirm_framework_profile(
@@ -194,7 +194,7 @@ def test_composition_confirm_recomputes_profile_and_rejects_forged_fingerprint()
             framework_id="robot_framework",
             profile_fingerprint="forged",
             evidence=_evidence(),
-            component_id="oie-tests",
+            component_id="proj-tests",
         )
 
 
@@ -210,7 +210,7 @@ def test_composition_profile_confirm_then_generate_robot() -> None:
         framework_id="robot_framework",
         profile_fingerprint=profile.profile_fingerprint,
         evidence=evidence,
-        component_id="oie-tests",
+        component_id="proj-tests",
     )
     assert isinstance(confirmed, FrameworkConfirmView)
     assert confirmed.status == "ok"

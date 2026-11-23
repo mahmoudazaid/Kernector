@@ -48,12 +48,12 @@ from test.application.project.project_fakes import (
 from test.document_doubles import InMemoryDocumentCatalog
 
 KINDS = frozenset({"repo"})
-WEB = SourceScope("gh-1", "repo", "acme/oie-web")
-ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
-TESTS = SourceScope("gh-1", "repo", "acme/oie-tests")
-E2E = SourceScope("gh-1", "repo", "acme/oie-e2e")
+WEB = SourceScope("gh-1", "repo", "acme/proj-web")
+ORDERS = SourceScope("gh-1", "repo", "acme/proj-orders")
+TESTS = SourceScope("gh-1", "repo", "acme/proj-tests")
+E2E = SourceScope("gh-1", "repo", "acme/proj-e2e")
 MONO = SourceScope("gh-1", "repo", "acme/mono")
-JIRA_OIE = SourceScope("jira-1", "project_key", "OIE")
+JIRA_PROJ = SourceScope("jira-1", "project_key", "PROJ")
 RESOLVERS = {"github": GitHubSourceScopeResolver(), "jira": JiraSourceScopeResolver()}
 
 
@@ -61,7 +61,7 @@ RESOLVERS = {"github": GitHubSourceScopeResolver(), "jira": JiraSourceScopeResol
 def store() -> InMemoryProjectStore:
     store = InMemoryProjectStore()
     with store.transaction() as tx:
-        tx.projects.add(Project("prj_oie", "Order Intake", "oie", 1))
+        tx.projects.add(Project("prj_proj", "Order Intake", "proj", 1))
         tx.projects.add(Project("prj_pay", "Payments", "pay", 1))
     return store
 
@@ -69,7 +69,7 @@ def store() -> InMemoryProjectStore:
 def _associate(
     store: InMemoryProjectStore,
     scope: SourceScope,
-    project_id: str = "prj_oie",
+    project_id: str = "prj_proj",
     acknowledged: frozenset[str] = frozenset(),
 ) -> SourceAssociation:
     return AssociateSource(store=store, component_forming_kinds=KINDS).execute(
@@ -81,18 +81,18 @@ def _suggest(store: InMemoryProjectStore, scope: SourceScope) -> None:
     with store.transaction() as tx:
         tx.associations.add(
             SourceAssociation(
-                "prj_oie", scope, (), AssociationState.SUGGESTED, (), "evidence", 1
+                "prj_proj", scope, (), AssociationState.SUGGESTED, (), "evidence", 1
             )
         )
 
 
 def _confirm(store: InMemoryProjectStore, scope: SourceScope, version: int = 1):
     return ConfirmAssociation(store=store, component_forming_kinds=KINDS).execute(
-        ConfirmAssociationRequest("prj_oie", scope, version)
+        ConfirmAssociationRequest("prj_proj", scope, version)
     )
 
 
-def _components(store: InMemoryProjectStore, project_id: str = "prj_oie"):
+def _components(store: InMemoryProjectStore, project_id: str = "prj_proj"):
     with store.read() as tx:
         return tx.components.for_project(project_id)
 
@@ -124,7 +124,7 @@ def test_confirming_repositories_creates_default_components(
     _suggest(store, TESTS)
     _confirm(store, TESTS)
     _associate(store, E2E)
-    _associate(store, JIRA_OIE)
+    _associate(store, JIRA_PROJ)
 
     components = _components(store)
 
@@ -145,7 +145,7 @@ def test_failed_default_component_rolls_back_the_confirmation(
         _confirm(store, TESTS)
 
     with store.read() as tx:
-        association = tx.associations.get("prj_oie", TESTS)
+        association = tx.associations.get("prj_proj", TESTS)
     assert association.state is AssociationState.SUGGESTED
     assert association.version == 1
     assert _components(store) == ()
@@ -160,7 +160,7 @@ def test_remove_deletes_members_and_empty_components(
     orders = _component_for(store, ORDERS)
     AssignComponent(store=store).execute(
         AssignComponentRequest(
-            "prj_oie",
+            "prj_proj",
             orders.component_id,
             orders.version,
             ComponentMember(TESTS, ""),
@@ -170,13 +170,13 @@ def test_remove_deletes_members_and_empty_components(
     )
 
     RemoveAssociation(store=store).execute(
-        RemoveAssociationRequest("prj_oie", TESTS, expected_version=1)
+        RemoveAssociationRequest("prj_proj", TESTS, expected_version=1)
     )
 
     (remaining,) = _components(store)
     assert remaining.members == (ComponentMember(ORDERS, ""),)
-    resolutions = _resolve(store, "acme/oie-tests:t/test_a.py")
-    assert resolutions["acme/oie-tests:t/test_a.py"] == ()
+    resolutions = _resolve(store, "acme/proj-tests:t/test_a.py")
+    assert resolutions["acme/proj-tests:t/test_a.py"] == ()
 
 
 def test_failure_mid_remove_leaves_everything_unchanged(
@@ -188,11 +188,11 @@ def test_failure_mid_remove_leaves_everything_unchanged(
 
     with pytest.raises(InjectedFailure):
         RemoveAssociation(store=store).execute(
-            RemoveAssociationRequest("prj_oie", ORDERS, expected_version=1)
+            RemoveAssociationRequest("prj_proj", ORDERS, expected_version=1)
         )
 
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", ORDERS) is not None
+        assert tx.associations.get("prj_proj", ORDERS) is not None
     assert _components(store) == before
 
 
@@ -200,7 +200,7 @@ def _split(store: InMemoryProjectStore, prefix: str, name: str) -> ProjectCompon
     base = _component_for(store, MONO)
     return SplitComponent(store=store).execute(
         SplitComponentRequest(
-            "prj_oie", base.component_id, base.version, MONO, prefix, name
+            "prj_proj", base.component_id, base.version, MONO, prefix, name
         )
     )
 
@@ -245,7 +245,7 @@ def test_unassigned_without_a_matching_member(store: InMemoryProjectStore) -> No
     root = _component_for(store, MONO)
     _split(store, "web", "web")
     with store.transaction() as tx:
-        tx.components.delete("prj_oie", root.component_id, expected_version=2)
+        tx.components.delete("prj_proj", root.component_id, expected_version=2)
 
     (resolution,) = _resolve(store, "acme/mono:docs/a.md")["acme/mono:docs/a.md"]
 
@@ -256,11 +256,11 @@ def test_shared_scope_resolves_one_component_per_project(
     store: InMemoryProjectStore,
 ) -> None:
     _associate(store, MONO)
-    _associate(store, MONO, "prj_pay", frozenset({"prj_oie"}))
+    _associate(store, MONO, "prj_pay", frozenset({"prj_proj"}))
 
     resolved = _resolve(store, "acme/mono:a.py")["acme/mono:a.py"]
 
-    assert [r.project_id for r in resolved] == ["prj_oie", "prj_pay"]
+    assert [r.project_id for r in resolved] == ["prj_proj", "prj_pay"]
     assert all(r.status is ComponentResolutionStatus.RESOLVED for r in resolved)
 
 
@@ -271,7 +271,7 @@ def test_split_rules(store: InMemoryProjectStore) -> None:
 
     with pytest.raises(ProjectRecordVersionConflictError):
         SplitComponent(store=store).execute(
-            SplitComponentRequest("prj_oie", base.component_id, 99, MONO, "api", "api")
+            SplitComponentRequest("prj_proj", base.component_id, 99, MONO, "api", "api")
         )
     with pytest.raises(AssociationExistsError):
         _split(store, "web", "again")
@@ -301,17 +301,17 @@ def test_merge_needs_every_version(store: InMemoryProjectStore) -> None:
     with pytest.raises(ProjectRecordVersionConflictError):
         merge.execute(
             MergeComponentsRequest(
-                "prj_oie",
+                "prj_proj",
                 ((web.component_id, web.version), (orders.component_id, 7)),
-                "oie",
+                "proj",
             )
         )
     assert len(_components(store)) == 2
     merged = merge.execute(
         MergeComponentsRequest(
-            "prj_oie",
+            "prj_proj",
             ((web.component_id, web.version), (orders.component_id, orders.version)),
-            "oie",
+            "proj",
         )
     )
 
@@ -332,13 +332,13 @@ def test_assign_needs_versions_and_the_source_component(
     with pytest.raises(AssociationExistsError):
         assign.execute(
             AssignComponentRequest(
-                "prj_oie", orders.component_id, orders.version, member
+                "prj_proj", orders.component_id, orders.version, member
             )
         )
     with pytest.raises(ProjectRecordVersionConflictError):
         assign.execute(
             AssignComponentRequest(
-                "prj_oie",
+                "prj_proj",
                 orders.component_id,
                 orders.version,
                 member,
@@ -349,7 +349,7 @@ def test_assign_needs_versions_and_the_source_component(
     with pytest.raises(ProjectInputError):
         assign.execute(
             AssignComponentRequest(
-                "prj_oie",
+                "prj_proj",
                 orders.component_id,
                 orders.version,
                 ComponentMember(SourceScope("gh-1", "repo", "acme/unknown"), ""),
@@ -365,7 +365,7 @@ def test_operator_assignment_is_preserved_on_confirm(
     _suggest(store, E2E)
     AssignComponent(store=store).execute(
         AssignComponentRequest(
-            "prj_oie", tests.component_id, tests.version, ComponentMember(E2E, "")
+            "prj_proj", tests.component_id, tests.version, ComponentMember(E2E, "")
         )
     )
 
@@ -373,8 +373,8 @@ def test_operator_assignment_is_preserved_on_confirm(
 
     (component,) = _components(store)
     assert component.members == (ComponentMember(TESTS, ""), ComponentMember(E2E, ""))
-    (resolution,) = _resolve(store, "acme/oie-e2e:e2e/cancel.spec.ts")[
-        "acme/oie-e2e:e2e/cancel.spec.ts"
+    (resolution,) = _resolve(store, "acme/proj-e2e:e2e/cancel.spec.ts")[
+        "acme/proj-e2e:e2e/cancel.spec.ts"
     ]
     assert resolution.component_ids == (component.component_id,)
 
@@ -385,8 +385,8 @@ def test_unconfirmed_member_never_resolves(store: InMemoryProjectStore) -> None:
     _suggest(store, E2E)
     AssignComponent(store=store).execute(
         AssignComponentRequest(
-            "prj_oie", tests.component_id, tests.version, ComponentMember(E2E, "")
+            "prj_proj", tests.component_id, tests.version, ComponentMember(E2E, "")
         )
     )
 
-    assert _resolve(store, "acme/oie-e2e:a.ts")["acme/oie-e2e:a.ts"] == ()
+    assert _resolve(store, "acme/proj-e2e:a.ts")["acme/proj-e2e:a.ts"] == ()

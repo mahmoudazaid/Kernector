@@ -169,7 +169,7 @@ def test_page_object_helper_fixture_hook_require_content_evidence() -> None:
 
 def test_a0_e2e_still_detects_playwright_via_default_registry() -> None:
     profile = aggregate_profile(a0_evidence(), default_detector_registry())
-    e2e = next(c for c in profile.components if c.label == "oie-e2e")
+    e2e = next(c for c in profile.components if c.label == "proj-e2e")
     assert e2e.facet_status["test_frameworks"] == "detected"
     assert any(f.framework_id == "playwright" for f in e2e.facts)
 
@@ -179,7 +179,7 @@ def test_a0_cancel_spec_extracted_as_test_spec() -> None:
         evidence_for_components,
     )
 
-    evidence = evidence_for_components({"oie-e2e": "acme/oie-e2e"})
+    evidence = evidence_for_components({"proj-e2e": "acme/proj-e2e"})
     components = collect_reusable_components(
         evidence, extractors=(PlaywrightSpecExtractor(),)
     )

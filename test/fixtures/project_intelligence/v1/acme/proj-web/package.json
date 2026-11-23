@@ -1,5 +1,5 @@
 {
-  "name": "oie-web",
+  "name": "proj-web",
   "private": true,
   "dependencies": {
     "next": "^14.2.0",

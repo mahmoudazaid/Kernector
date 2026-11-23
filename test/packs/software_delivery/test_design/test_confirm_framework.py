@@ -69,19 +69,19 @@ def _draft(**overrides: object) -> TestCoverageDraft:
     return TestCoverageDraft(**base)  # type: ignore[arg-type]
 
 
-def _profile_oie_tests() -> TechnologyProfile:
+def _profile_proj_tests() -> TechnologyProfile:
     from test.packs.software_delivery.project_profile.conftest import load_component_files
 
     return profile_project(
         [
-            {"component": "oie-tests", "files": load_component_files("acme/oie-tests")},
-            {"component": "oie-e2e", "files": load_component_files("acme/oie-e2e")},
+            {"component": "proj-tests", "files": load_component_files("acme/proj-tests")},
+            {"component": "proj-e2e", "files": load_component_files("acme/proj-e2e")},
         ]
     )
 
 
 def test_confirm_stores_bounded_selection_for_robot_component() -> None:
-    profile = _profile_oie_tests()
+    profile = _profile_proj_tests()
     draft = _draft()
     repo = _MemoryRepo(draft)
     result = ConfirmFrameworkSelection(repository=repo).execute(
@@ -89,7 +89,7 @@ def test_confirm_stores_bounded_selection_for_robot_component() -> None:
             draft_id="draft-1",
             expected_version=2,
             framework_id="robot_framework",
-            component_id="oie-tests",
+            component_id="proj-tests",
             profile=profile,
             profile_fingerprint=profile.profile_fingerprint,
         )
@@ -100,14 +100,14 @@ def test_confirm_stores_bounded_selection_for_robot_component() -> None:
     selection = result.draft.framework_selection
     assert selection is not None
     assert selection.framework_id == "robot_framework"
-    assert selection.component_id == "oie-tests"
+    assert selection.component_id == "proj-tests"
     assert selection.profile_fingerprint == profile.profile_fingerprint
     assert all(c.framework_id == "robot_framework" for c in selection.reusable_components)
     assert any(c.signature == "Cancel Order" for c in selection.reusable_components)
 
 
 def test_confirm_rejects_mismatched_fingerprint() -> None:
-    profile = _profile_oie_tests()
+    profile = _profile_proj_tests()
     repo = _MemoryRepo(_draft())
     with pytest.raises(TestDesignValidationError, match="profile_fingerprint"):
         ConfirmFrameworkSelection(repository=repo).execute(
@@ -115,7 +115,7 @@ def test_confirm_rejects_mismatched_fingerprint() -> None:
                 draft_id="draft-1",
                 expected_version=2,
                 framework_id="robot_framework",
-                component_id="oie-tests",
+                component_id="proj-tests",
                 profile=profile,
                 profile_fingerprint="forged",
             )
@@ -123,7 +123,7 @@ def test_confirm_rejects_mismatched_fingerprint() -> None:
 
 
 def test_confirm_rejects_unknown_framework_id() -> None:
-    profile = _profile_oie_tests()
+    profile = _profile_proj_tests()
     repo = _MemoryRepo(_draft())
     with pytest.raises(TestDesignValidationError, match="framework_id"):
         ConfirmFrameworkSelection(repository=repo).execute(
@@ -131,7 +131,7 @@ def test_confirm_rejects_unknown_framework_id() -> None:
                 draft_id="draft-1",
                 expected_version=2,
                 framework_id="karate",
-                component_id="oie-tests",
+                component_id="proj-tests",
                 profile=profile,
                 profile_fingerprint=profile.profile_fingerprint,
             )
@@ -139,7 +139,7 @@ def test_confirm_rejects_unknown_framework_id() -> None:
 
 
 def test_multi_component_requires_component_id() -> None:
-    profile = _profile_oie_tests()
+    profile = _profile_proj_tests()
     repo = _MemoryRepo(_draft())
     result = ConfirmFrameworkSelection(repository=repo).execute(
         ConfirmFrameworkRequest(
@@ -152,8 +152,8 @@ def test_multi_component_requires_component_id() -> None:
         )
     )
     assert result.status == "framework_choice_required"
-    assert "oie-tests" in result.component_options
-    assert "oie-e2e" in result.component_options
+    assert "proj-tests" in result.component_options
+    assert "proj-e2e" in result.component_options
     assert repo.get("draft-1").framework_selection is None
 
 
@@ -176,7 +176,7 @@ def test_confirm_accepts_unlabeled_implicit_component() -> None:
     from test.packs.software_delivery.project_profile.conftest import load_component_files
 
     profile = profile_project(
-        [{"files": load_component_files("acme/oie-tests")}]
+        [{"files": load_component_files("acme/proj-tests")}]
     )
     assert profile.components[0].label == ""
     repo = _MemoryRepo(_draft())
@@ -203,8 +203,8 @@ def test_confirm_selects_implicit_component_among_labeled_ones() -> None:
 
     profile = profile_project(
         [
-            {"files": load_component_files("acme/oie-tests")},
-            {"component": "oie-e2e", "files": load_component_files("acme/oie-e2e")},
+            {"files": load_component_files("acme/proj-tests")},
+            {"component": "proj-e2e", "files": load_component_files("acme/proj-e2e")},
         ]
     )
     repo = _MemoryRepo(_draft())

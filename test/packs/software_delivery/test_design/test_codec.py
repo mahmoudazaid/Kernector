@@ -486,7 +486,7 @@ def test_draft_rejects_unknown_evidence_origin() -> None:
 
 def test_framework_selection_round_trips_on_schema_7() -> None:
     selection = FrameworkSelection(
-        component_id="acme/oie-tests",
+        component_id="acme/proj-tests",
         framework_id="robot_framework",
         profile_fingerprint="fp-abc",
         evidence_origin="client_supplied",
@@ -496,7 +496,7 @@ def test_framework_selection_round_trips_on_schema_7() -> None:
                 value="tests/",
                 evidence_refs=(
                     EvidenceRef(
-                        component="acme/oie-tests",
+                        component="acme/proj-tests",
                         path="tests/orders/cancel_order.robot",
                         content_hash="h1",
                         line_range=LineRange(1, 1),

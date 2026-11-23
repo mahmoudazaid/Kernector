@@ -117,7 +117,7 @@ def test_robot_keyword_only_robot_file_is_extracted() -> None:
 
 
 def test_robot_keywords_extracted_with_line_ranges() -> None:
-    evidence = evidence_for_components({"oie-tests": "acme/oie-tests"})
+    evidence = evidence_for_components({"proj-tests": "acme/proj-tests"})
     components = collect_reusable_components(
         evidence, extractors=(RobotKeywordExtractor(),)
     )
@@ -178,7 +178,7 @@ def test_robot_auth_api_password_placeholder_still_extracts_keywords() -> None:
 
 
 def test_frontend_path_extractor_emits_route_ui_and_api_client() -> None:
-    evidence = evidence_for_components({"oie-web": "acme/oie-web"})
+    evidence = evidence_for_components({"proj-web": "acme/proj-web"})
     components = collect_reusable_components(
         evidence, extractors=(FrontendPathExtractor(),)
     )
@@ -199,7 +199,7 @@ def test_frontend_path_extractor_accepts_ts_js_jsx_and_playwright_specs() -> Non
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-web",
+                "component": "proj-web",
                 "files": [
                     {"path": "app/orders/page.ts", "content": "export default {}\n"},
                     {
@@ -213,7 +213,7 @@ def test_frontend_path_extractor_accepts_ts_js_jsx_and_playwright_specs() -> Non
                 ],
             },
             {
-                "component": "oie-e2e",
+                "component": "proj-e2e",
                 "files": [
                     {
                         "path": "e2e/cancel-order.spec.ts",
@@ -342,7 +342,7 @@ def test_unsupported_robot_forms_produce_diagnostics() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-tests",
+                "component": "proj-tests",
                 "files": [
                     {
                         "path": "resources/bad.resource",

@@ -39,11 +39,11 @@ function xrayStatus(
 ): TestDesignXrayStatusResponse {
   return {
     available: true,
-    project_key: "OIE",
+    project_key: "PROJ",
     created_keys: [],
     last_created_at: null,
     browse_base_url: "https://jira.example.com/browse/",
-    link_issue_key: "OIE-721",
+    link_issue_key: "PROJ-721",
     ...overrides,
   };
 }
@@ -283,8 +283,8 @@ describe("TestDesignWorkspace", () => {
       const user = userEvent.setup();
       vi.mocked(getTestDesignXrayStatus).mockResolvedValue(xrayStatus());
       vi.mocked(exportTestDesignXray).mockResolvedValue({
-        project_key: "OIE",
-        created_keys: ["OIE-801"],
+        project_key: "PROJ",
+        created_keys: ["PROJ-801"],
         created_count: 1,
         failed_count: 0,
         browse_base_url: "https://jira.example.com/browse/",
@@ -293,8 +293,8 @@ describe("TestDesignWorkspace", () => {
 
       await user.click(await screen.findByRole("button", { name: /create in xray/i }));
       const dialog = await screen.findByRole("dialog", { name: /create xray tests/i });
-      expect(dialog).toHaveTextContent(/1 test in OIE/i);
-      expect(dialog).toHaveTextContent(/OIE-721/);
+      expect(dialog).toHaveTextContent(/1 test in PROJ/i);
+      expect(dialog).toHaveTextContent(/PROJ-721/);
       expect(dialog).not.toHaveTextContent(/already created/i);
       await user.click(within(dialog).getByRole("button", { name: /^create$/i }));
 
@@ -304,15 +304,15 @@ describe("TestDesignWorkspace", () => {
           body: { expected_version: 3, link_source_issue: true },
         }),
       );
-      const link = await screen.findByRole("link", { name: "OIE-801" });
-      expect(link).toHaveAttribute("href", "https://jira.example.com/browse/OIE-801");
+      const link = await screen.findByRole("link", { name: "PROJ-801" });
+      expect(link).toHaveAttribute("href", "https://jira.example.com/browse/PROJ-801");
     });
 
     it("warns before creating the same tests again", async () => {
       const user = userEvent.setup();
       vi.mocked(getTestDesignXrayStatus).mockResolvedValue(
         xrayStatus({
-          created_keys: ["OIE-801", "OIE-802"],
+          created_keys: ["PROJ-801", "PROJ-802"],
           last_created_at: "2026-10-08T09:00:00+00:00",
         }),
       );
@@ -320,7 +320,7 @@ describe("TestDesignWorkspace", () => {
 
       await user.click(await screen.findByRole("button", { name: /create in xray/i }));
       const dialog = await screen.findByRole("dialog", { name: /create xray tests/i });
-      expect(dialog).toHaveTextContent(/already created OIE-801, OIE-802/i);
+      expect(dialog).toHaveTextContent(/already created PROJ-801, PROJ-802/i);
       expect(
         within(dialog).getByRole("button", { name: /create again/i }),
       ).toBeInTheDocument();

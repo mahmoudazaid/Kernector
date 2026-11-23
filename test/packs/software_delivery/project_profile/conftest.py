@@ -43,10 +43,10 @@ def a0_evidence() -> ProfileEvidence:
     """Client-supplied evidence for the Part A0 multi-component fixture."""
     return evidence_for_components(
         {
-            "oie-orders": "acme/oie-orders",
-            "oie-tests": "acme/oie-tests",
-            "oie-e2e": "acme/oie-e2e",
-            "oie-web": "acme/oie-web",
+            "proj-orders": "acme/proj-orders",
+            "proj-tests": "acme/proj-tests",
+            "proj-e2e": "acme/proj-e2e",
+            "proj-web": "acme/proj-web",
         }
     )
 

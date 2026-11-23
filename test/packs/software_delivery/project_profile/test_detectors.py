@@ -14,7 +14,7 @@ from packs.software_delivery.project_profile.registry import aggregate_profile
 
 def test_a0_orders_detects_python_and_delivery() -> None:
     profile = aggregate_profile(a0_evidence(), default_detector_registry())
-    orders = next(c for c in profile.components if c.label == "oie-orders")
+    orders = next(c for c in profile.components if c.label == "proj-orders")
     assert orders.facet_status["languages"] == "detected"
     assert any(f.value == "Python" for f in orders.facts if f.facet == "languages")
     assert orders.facet_status["delivery"] == "detected"
@@ -29,16 +29,16 @@ def test_a0_orders_detects_python_and_delivery() -> None:
 def test_a0_tests_detects_robot_not_ambiguous_with_e2e() -> None:
     profile = aggregate_profile(a0_evidence(), default_detector_registry())
     by_label = {c.label: c for c in profile.components}
-    assert by_label["oie-tests"].facet_status["test_frameworks"] == "detected"
+    assert by_label["proj-tests"].facet_status["test_frameworks"] == "detected"
     assert any(
         f.framework_id == "robot_framework"
-        for f in by_label["oie-tests"].facts
+        for f in by_label["proj-tests"].facts
         if f.facet == "test_frameworks"
     )
-    assert by_label["oie-e2e"].facet_status["test_frameworks"] == "detected"
+    assert by_label["proj-e2e"].facet_status["test_frameworks"] == "detected"
     assert any(
         f.framework_id == "playwright"
-        for f in by_label["oie-e2e"].facts
+        for f in by_label["proj-e2e"].facts
         if f.facet == "test_frameworks"
     )
     assert profile.facet_status.get("test_frameworks") != "ambiguous"
@@ -46,7 +46,7 @@ def test_a0_tests_detects_robot_not_ambiguous_with_e2e() -> None:
 
 def test_a0_web_detects_typescript_next_react() -> None:
     profile = aggregate_profile(a0_evidence(), default_detector_registry())
-    web = next(c for c in profile.components if c.label == "oie-web")
+    web = next(c for c in profile.components if c.label == "proj-web")
     assert web.facet_status["languages"] == "detected"
     assert any(f.value == "TypeScript" for f in web.facts if f.facet == "languages")
     frameworks = {
@@ -74,7 +74,7 @@ def test_every_fact_cites_valid_input_evidence() -> None:
 
 def test_delivery_reports_env_names_not_values() -> None:
     profile = aggregate_profile(a0_evidence(), default_detector_registry())
-    orders = next(c for c in profile.components if c.label == "oie-orders")
+    orders = next(c for c in profile.components if c.label == "proj-orders")
     delivery_facts = [f for f in orders.facts if f.facet == "delivery"]
     blob = "\n".join(f.value for f in delivery_facts)
     assert "DATABASE_URL" in "\n".join(orders.diagnostics) or any(

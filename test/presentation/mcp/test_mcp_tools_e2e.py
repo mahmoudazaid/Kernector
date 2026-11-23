@@ -745,7 +745,7 @@ async def test_locator_for_another_registered_provider_says_retry_with_it(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "locator", ["OIE-721", "https://jira.example.com/browse/OIE-721"]
+    "locator", ["PROJ-721", "https://jira.example.com/browse/PROJ-721"]
 )
 async def test_scenario_2_tracker_kernector_has_no_source_for_hints(
     tmp_path, monkeypatch: pytest.MonkeyPatch, locator: str

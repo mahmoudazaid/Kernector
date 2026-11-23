@@ -31,23 +31,23 @@ def test_env_secret_present_for_intake_drop_tests() -> None:
     secret = secret_env_value()
     assert secret
     assert "never" in secret or "secret" in secret.lower()
-    assert "SECRET_DATABASE_PASSWORD=" in read_text("acme/oie-orders/.env")
+    assert "SECRET_DATABASE_PASSWORD=" in read_text("acme/proj-orders/.env")
 
 
 def test_frontend_evidence_covers_detector_and_extractor_paths() -> None:
-    package = read_text("acme/oie-web/package.json")
+    package = read_text("acme/proj-web/package.json")
     assert "typescript" in package
     assert "next" in package
     assert "react" in package
     assert "CancelOrderButton" in read_text(
-        "acme/oie-web/components/CancelOrderButton.tsx"
+        "acme/proj-web/components/CancelOrderButton.tsx"
     )
-    assert "cancelOrder" in read_text("acme/oie-web/lib/api/orders.ts")
-    assert "Order detail" in read_text("acme/oie-web/app/orders/[id]/page.tsx")
+    assert "cancelOrder" in read_text("acme/proj-web/lib/api/orders.ts")
+    assert "Order detail" in read_text("acme/proj-web/app/orders/[id]/page.tsx")
 
 
 def test_robot_keywords_have_stable_line_ranges() -> None:
-    resource = read_text("acme/oie-tests/resources/orders.resource").splitlines()
+    resource = read_text("acme/proj-tests/resources/orders.resource").splitlines()
     assert resource[1] == "Create Unpaid Order"
     assert resource[5] == "Create Paid Order"
     assert resource[9] == "Cancel Order"

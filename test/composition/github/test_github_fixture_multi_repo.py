@@ -1,4 +1,4 @@
-"""#371 fixture: four acme/oie-* repos sync together (#388 Slice 6)."""
+"""#371 fixture: four acme/proj-* repos sync together (#388 Slice 6)."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ FIXTURE_ROOT = (
     / "acme"
 )
 
-REPOS = ("oie-web", "oie-orders", "oie-tests", "oie-e2e")
+REPOS = ("proj-web", "proj-orders", "proj-tests", "proj-e2e")
 
 
 @pytest.fixture
@@ -115,23 +115,23 @@ def _targets() -> tuple[GitHubRepoTarget, ...]:
     return (
         GitHubRepoTarget(
             owner="acme",
-            repo="oie-web",
+            repo="proj-web",
             extensions=(".tsx", ".ts", ".json"),
         ),
         GitHubRepoTarget(
             owner="acme",
-            repo="oie-orders",
+            repo="proj-orders",
             extensions=(".py", ".toml", ".yml"),
             filename_globs=("Dockerfile",),
         ),
         GitHubRepoTarget(
             owner="acme",
-            repo="oie-tests",
+            repo="proj-tests",
             extensions=(".robot", ".resource", ".txt"),
         ),
         GitHubRepoTarget(
             owner="acme",
-            repo="oie-e2e",
+            repo="proj-e2e",
             extensions=(".ts", ".json"),
         ),
     )
@@ -208,24 +208,24 @@ def test_four_fixture_repos_sync_and_selective_purge(
     ids = {row.reference.source_id for row in catalog.all()}
     for repo in REPOS:
         assert any(source_id.startswith(f"acme/{repo}:") for source_id in ids), repo
-    assert any("oie-web:" in source_id and source_id.endswith(".tsx") for source_id in ids)
-    assert "acme/oie-orders:Dockerfile" in ids
+    assert any("proj-web:" in source_id and source_id.endswith(".tsx") for source_id in ids)
+    assert "acme/proj-orders:Dockerfile" in ids
     assert not any(source_id.endswith(".env") for source_id in ids)
     assert result.ingested_count >= 4
 
     put_github_selection(
         settings,
-        repositories=tuple(t for t in _targets() if t.repo != "oie-e2e"),
+        repositories=tuple(t for t in _targets() if t.repo != "proj-e2e"),
         connection_store=tokens,
         client_factory=lambda _token: client,
         catalog=catalog,
         vector_store=store,
     )
     remaining = {row.reference.source_id for row in catalog.all()}
-    assert not any(source_id.startswith("acme/oie-e2e:") for source_id in remaining)
-    assert any(source_id.startswith("acme/oie-web:") for source_id in remaining)
-    assert any(source_id.startswith("acme/oie-orders:") for source_id in remaining)
-    assert any(source_id.startswith("acme/oie-tests:") for source_id in remaining)
+    assert not any(source_id.startswith("acme/proj-e2e:") for source_id in remaining)
+    assert any(source_id.startswith("acme/proj-web:") for source_id in remaining)
+    assert any(source_id.startswith("acme/proj-orders:") for source_id in remaining)
+    assert any(source_id.startswith("acme/proj-tests:") for source_id in remaining)
 
     # Narrow globs on orders should not touch other repos at put time.
     before = set(remaining)
@@ -234,18 +234,18 @@ def test_four_fixture_repos_sync_and_selective_purge(
         repositories=(
             GitHubRepoTarget(
                 owner="acme",
-                repo="oie-web",
+                repo="proj-web",
                 extensions=(".tsx", ".ts", ".json"),
             ),
             GitHubRepoTarget(
                 owner="acme",
-                repo="oie-orders",
+                repo="proj-orders",
                 extensions=(),
                 filename_globs=("Dockerfile",),
             ),
             GitHubRepoTarget(
                 owner="acme",
-                repo="oie-tests",
+                repo="proj-tests",
                 extensions=(".robot", ".resource", ".txt"),
             ),
         ),
@@ -263,6 +263,6 @@ def test_four_fixture_repos_sync_and_selective_purge(
         connection_store=tokens,
     )
     after = {row.reference.source_id for row in catalog.all()}
-    assert "acme/oie-orders:Dockerfile" in after
-    assert any(source_id.startswith("acme/oie-web:") for source_id in after)
-    assert any(source_id.startswith("acme/oie-tests:") for source_id in after)
+    assert "acme/proj-orders:Dockerfile" in after
+    assert any(source_id.startswith("acme/proj-web:") for source_id in after)
+    assert any(source_id.startswith("acme/proj-tests:") for source_id in after)

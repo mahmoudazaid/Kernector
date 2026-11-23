@@ -1,5 +1,5 @@
 [project]
-name = "oie-orders"
+name = "proj-orders"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [

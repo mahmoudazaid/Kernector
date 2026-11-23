@@ -21,8 +21,8 @@ from domain.project.models import (
 )
 from test.application.project.project_fakes import InMemoryProjectStore, confirmed
 
-ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
-DOCS = SourceScope("gh-1", "repo", "acme/oie-docs")
+ORDERS = SourceScope("gh-1", "repo", "acme/proj-orders")
+DOCS = SourceScope("gh-1", "repo", "acme/proj-docs")
 
 
 def _registry(store: InMemoryProjectStore) -> McpToolRegistry:
@@ -41,11 +41,11 @@ def _registry(store: InMemoryProjectStore) -> McpToolRegistry:
 def _store() -> InMemoryProjectStore:
     store = InMemoryProjectStore()
     with store.transaction() as tx:
-        tx.projects.add(Project("prj_oie", "Order Intake", "oie", 1))
-        tx.associations.add(confirmed("prj_oie", ORDERS, ("backend", "api_contract")))
+        tx.projects.add(Project("prj_proj", "Order Intake", "proj", 1))
+        tx.associations.add(confirmed("prj_proj", ORDERS, ("backend", "api_contract")))
         tx.associations.add(
             SourceAssociation(
-                "prj_oie", DOCS, (), AssociationState.SUGGESTED, (), "evidence", 1
+                "prj_proj", DOCS, (), AssociationState.SUGGESTED, (), "evidence", 1
             )
         )
     return store
@@ -62,7 +62,7 @@ def test_tool_is_denied_unless_allowlisted() -> None:
 
 
 def test_tool_returns_projects_with_confirmed_associations_only() -> None:
-    caller = McpCallerContext("ws", "default", "prj_oie", frozenset({TOOL_NAME}))
+    caller = McpCallerContext("ws", "default", "prj_proj", frozenset({TOOL_NAME}))
 
     result = _registry(_store()).invoke_authorized(caller, mcp_tool_name(TOOL_NAME), {})
 
@@ -71,14 +71,14 @@ def test_tool_returns_projects_with_confirmed_associations_only() -> None:
     assert payload == {
         "projects": [
             {
-                "project_id": "prj_oie",
+                "project_id": "prj_proj",
                 "name": "Order Intake",
-                "slug": "oie",
+                "slug": "proj",
                 "confirmed_associations": [
                     {
                         "connector_id": "gh-1",
                         "scope_kind": "repo",
-                        "scope_value": "acme/oie-orders",
+                        "scope_value": "acme/proj-orders",
                         "roles": ["backend", "api_contract"],
                     }
                 ],

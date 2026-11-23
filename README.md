@@ -684,14 +684,14 @@ associate connector scopes with it. Projects live in the catalog database for
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/projects \
-  -H 'Content-Type: application/json' -d '{"name":"Order Intake","slug":"oie"}'
+  -H 'Content-Type: application/json' -d '{"name":"Order Intake","slug":"proj"}'
 curl -s -X POST http://127.0.0.1:8000/api/v1/projects/<project_id>/sources \
   -H 'Content-Type: application/json' \
-  -d '{"connector_id":"<id>","scope_kind":"repo","scope_value":"acme/oie-orders","roles":["backend","api_contract"]}'
+  -d '{"connector_id":"<id>","scope_kind":"repo","scope_value":"acme/proj-orders","roles":["backend","api_contract"]}'
 curl -s http://127.0.0.1:8000/api/v1/projects/<project_id>
 ```
 
-- Scopes: GitHub `repo` = `owner/name`; Jira `project_key` = `OIE`. Google
+- Scopes: GitHub `repo` = `owner/name`; Jira `project_key` = `PROJ`. Google
   Drive files and GitHub ProjectV2 issues have no scope yet and cannot be
   associated.
 - Roles must be contexts registered by an enabled pack

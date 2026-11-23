@@ -24,7 +24,7 @@ from packs.software_delivery.project_profile.models import (
 
 def _ref(**overrides: object) -> EvidenceRef:
     base = {
-        "component": "oie-tests",
+        "component": "proj-tests",
         "path": "resources/orders.resource",
         "content_hash": "abc123",
         "line_range": LineRange(2, 4),
@@ -77,7 +77,7 @@ def test_phase_a_empty_collections_and_untrusted_defaults() -> None:
 
 def test_evidence_ref_requires_component_path_hash_and_line_range() -> None:
     ref = _ref()
-    assert ref.component == "oie-tests"
+    assert ref.component == "proj-tests"
     assert ref.path == "resources/orders.resource"
     assert ref.content_hash == "abc123"
     assert ref.line_range == LineRange(2, 4)
@@ -142,12 +142,12 @@ def test_reusable_component_requires_full_contract() -> None:
 
 def test_fingerprint_stable_under_reorder_and_sensitive_to_changes() -> None:
     evidence_a = (
-        ("oie-orders", "pyproject.toml", "hash-a"),
-        ("oie-tests", "requirements.txt", "hash-b"),
+        ("proj-orders", "pyproject.toml", "hash-a"),
+        ("proj-tests", "requirements.txt", "hash-b"),
     )
     evidence_b = (
-        ("oie-tests", "requirements.txt", "hash-b"),
-        ("oie-orders", "pyproject.toml", "hash-a"),
+        ("proj-tests", "requirements.txt", "hash-b"),
+        ("proj-orders", "pyproject.toml", "hash-a"),
     )
     detectors = (("python_manifest", "1"), ("robot_framework", "1"))
     fp_a = profile_fingerprint(evidence_a, detectors)
@@ -156,7 +156,7 @@ def test_fingerprint_stable_under_reorder_and_sensitive_to_changes() -> None:
 
     remapped = (
         ("other", "pyproject.toml", "hash-a"),
-        ("oie-tests", "requirements.txt", "hash-b"),
+        ("proj-tests", "requirements.txt", "hash-b"),
     )
     assert profile_fingerprint(remapped, detectors) != fp_a
 
@@ -164,8 +164,8 @@ def test_fingerprint_stable_under_reorder_and_sensitive_to_changes() -> None:
     assert profile_fingerprint(evidence_a, bumped) != fp_a
 
     revised = (
-        ("oie-orders", "pyproject.toml", "hash-a-revised"),
-        ("oie-tests", "requirements.txt", "hash-b"),
+        ("proj-orders", "pyproject.toml", "hash-a-revised"),
+        ("proj-tests", "requirements.txt", "hash-b"),
     )
     assert profile_fingerprint(revised, detectors) != fp_a
 
@@ -181,12 +181,12 @@ def test_convention_requires_evidence_refs() -> None:
 
 def test_component_profile_carries_label_and_facet_status() -> None:
     component = ComponentProfile(
-        label="oie-tests",
+        label="proj-tests",
         facet_status={"test_frameworks": "detected"},
         facts=(),
         conventions=(),
         reusable_components=(),
         diagnostics=(),
     )
-    assert component.label == "oie-tests"
+    assert component.label == "proj-tests"
     assert component.facet_status["test_frameworks"] == "detected"

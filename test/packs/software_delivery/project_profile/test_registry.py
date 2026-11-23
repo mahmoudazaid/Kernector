@@ -45,15 +45,15 @@ def test_detected_status_for_single_framework() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-tests",
+                "component": "proj-tests",
                 "files": [{"path": "requirements.txt", "content": content}],
             }
         ]
     )
-    ref = _file_ref("oie-tests", "requirements.txt", content)
+    ref = _file_ref("proj-tests", "requirements.txt", content)
     detector = _FakeDetector(
         {
-            "oie-tests": [
+            "proj-tests": [
                 DetectorEmission(
                     fact=ProfileFact(
                         facet="test_frameworks",
@@ -120,36 +120,36 @@ def test_cross_component_frameworks_are_not_project_ambiguous() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-tests",
+                "component": "proj-tests",
                 "files": [{"path": "requirements.txt", "content": robot}],
             },
             {
-                "component": "oie-e2e",
+                "component": "proj-e2e",
                 "files": [{"path": "package.json", "content": playwright}],
             },
         ]
     )
     detector = _FakeDetector(
         {
-            "oie-tests": [
+            "proj-tests": [
                 DetectorEmission(
                     fact=ProfileFact(
                         facet="test_frameworks",
                         value="robot_framework",
                         framework_id="robot_framework",
                         confidence="high",
-                        evidence_refs=(_file_ref("oie-tests", "requirements.txt", robot),),
+                        evidence_refs=(_file_ref("proj-tests", "requirements.txt", robot),),
                     )
                 )
             ],
-            "oie-e2e": [
+            "proj-e2e": [
                 DetectorEmission(
                     fact=ProfileFact(
                         facet="test_frameworks",
                         value="playwright",
                         framework_id="playwright",
                         confidence="high",
-                        evidence_refs=(_file_ref("oie-e2e", "package.json", playwright),),
+                        evidence_refs=(_file_ref("proj-e2e", "package.json", playwright),),
                     )
                 )
             ],
@@ -157,20 +157,20 @@ def test_cross_component_frameworks_are_not_project_ambiguous() -> None:
     )
     profile = aggregate_profile(evidence, TechnologyDetectorRegistry((detector,)))
     by_label = {c.label: c for c in profile.components}
-    assert by_label["oie-tests"].facet_status["test_frameworks"] == "detected"
-    assert by_label["oie-e2e"].facet_status["test_frameworks"] == "detected"
+    assert by_label["proj-tests"].facet_status["test_frameworks"] == "detected"
+    assert by_label["proj-e2e"].facet_status["test_frameworks"] == "detected"
     assert profile.facet_status.get("test_frameworks") != "ambiguous"
 
 
 def test_compatible_multi_value_stays_detected() -> None:
     content = '{"dependencies":{"next":"14","react":"18","typescript":"5"}}\n'
     evidence = ingest_profile_evidence(
-        [{"component": "oie-web", "files": [{"path": "package.json", "content": content}]}]
+        [{"component": "proj-web", "files": [{"path": "package.json", "content": content}]}]
     )
-    ref = _file_ref("oie-web", "package.json", content)
+    ref = _file_ref("proj-web", "package.json", content)
     detector = _FakeDetector(
         {
-            "oie-web": [
+            "proj-web": [
                 DetectorEmission(
                     fact=ProfileFact(
                         facet="languages",
@@ -287,20 +287,20 @@ def test_fabricated_evidence_refs_are_dropped() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-tests",
+                "component": "proj-tests",
                 "files": [{"path": "requirements.txt", "content": content}],
             }
         ]
     )
     bad_ref = EvidenceRef(
-        component="oie-tests",
+        component="proj-tests",
         path="requirements.txt",
         content_hash="deadbeef",
         line_range=LineRange(1, 1),
     )
     detector = _FakeDetector(
         {
-            "oie-tests": [
+            "proj-tests": [
                 DetectorEmission(
                     fact=ProfileFact(
                         facet="test_frameworks",
@@ -352,15 +352,15 @@ def test_fingerprint_included_and_stable() -> None:
     content = "robotframework==7\n"
     groups = [
         {
-            "component": "oie-tests",
+            "component": "proj-tests",
             "files": [{"path": "requirements.txt", "content": content}],
         }
     ]
     evidence = ingest_profile_evidence(groups)
-    ref = _file_ref("oie-tests", "requirements.txt", content)
+    ref = _file_ref("proj-tests", "requirements.txt", content)
     detector = _FakeDetector(
         {
-            "oie-tests": [
+            "proj-tests": [
                 DetectorEmission(
                     fact=ProfileFact(
                         facet="test_frameworks",

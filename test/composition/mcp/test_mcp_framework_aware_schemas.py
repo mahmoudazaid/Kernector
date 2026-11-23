@@ -20,11 +20,11 @@ def test_confirm_profile_args_require_evidence_not_profile_object() -> None:
             "profile_fingerprint": "fp",
             "evidence": [
                 {
-                    "component": "oie-tests",
+                    "component": "proj-tests",
                     "files": [{"path": "requirements.txt", "content": "robotframework\n"}],
                 }
             ],
-            "component_id": "oie-tests",
+            "component_id": "proj-tests",
         }
     )
     assert args.framework_id == "robot_framework"

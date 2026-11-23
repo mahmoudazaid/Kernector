@@ -71,7 +71,7 @@ An **association** links a project to part of a connected source:
 - **Many-to-many.** A project can have many associations, and the same scope
   can be associated with several projects. Each pair is its own association.
 - **Provider-neutral scope.** `scope_kind` and `scope_value` are opaque tokens.
-  Examples: `project_key=OIE` (Jira), `repo=acme/oie-orders` (GitHub),
+  Examples: `project_key=PROJ` (Jira), `repo=acme/proj-orders` (GitHub),
   `folder=1AbC…` (Drive). The connector that owns `connector_id` validates its
   own scope kinds; the core only checks shape. Associating or confirming a
   scope is rejected unless `connector_id` is a configured connector and that
@@ -101,7 +101,7 @@ An **association** links a project to part of a connected source:
   - `kind`: an opaque token such as `issue`, `test_case`, `api_spec`,
     `source_file` or `adr`.
   - `external_keys`: identifiers by which other artifacts can refer to it, for
-    example `jira_key=OIE-123`, `path=services/orders/openapi.yaml`, or
+    example `jira_key=PROJ-123`, `path=services/orders/openapi.yaml`, or
     `operation_id=createOrder`.
   - `revision`: the `ConnectorDocument.revision` the descriptor was derived
     from.
@@ -135,7 +135,7 @@ three independent axes. None is derived from another.
 | Origin | Meaning |
 |---|---|
 | `provider_declared` | The source system declares the link explicitly, for example Jira `issuelinks`. |
-| `deterministic` | A documented rule matched an identifier, for example a test file that cites `OIE-123`. |
+| `deterministic` | A documented rule matched an identifier, for example a test file that cites `PROJ-123`. |
 | `inferred` | A model proposed the edge. |
 | `human_confirmed` | A person asserted the edge directly. |
 
@@ -220,7 +220,7 @@ invalidates instead of rebuilding.
 - **Project-scoped filtering.** Every query is scoped to one
   `workspace_id + project_id`, and optionally to one component.
 - **Exact identifier lookup.** `external_keys` support exact lookup, for
-  example `OIE-123`, before any semantic search.
+  example `PROJ-123`, before any semantic search.
 - **Bounded traversal.** At most 2 hops from the seed artifacts. A consumer
   may ask for fewer.
 - **Ranking.** Verified before unverified, current before stale, and then
@@ -338,9 +338,9 @@ relation types for each context pair. The initial set is:
 
 `tests` and `tested_by` are inverses. An edge is stored once, in the outward
 direction of the provider link type or rule that declares it, for example
-`OIE-140 tests OIE-123` for a Jira "tests" link. Traversal follows both
-directions and may show the inverse name, so `OIE-123` lists
-`tested_by OIE-140`. Relations within one context, such as provider-declared
+`PROJ-140 tests PROJ-123` for a Jira "tests" link. Traversal follows both
+directions and may show the inverse name, so `PROJ-123` lists
+`tested_by PROJ-140`. Relations within one context, such as provider-declared
 `blocks` or `duplicates`, need no pair rule.
 
 #### 10.3 Task-aware selection
@@ -514,30 +514,30 @@ Approved decisions stay in [#331], and history stays in [#344].
 
 ## End-to-end example
 
-Workspace `acme` holds project `oie` (`project_id` `prj_7f…`) with four
+Workspace `acme` holds project `proj` (`project_id` `prj_7f…`) with four
 confirmed associations:
 
 | Connector | Scope | Context roles |
 |---|---|---|
-| Jira | `project_key=OIE` | `business` |
-| GitHub | `repo=acme/oie-web` | `frontend` |
-| GitHub | `repo=acme/oie-orders` | `backend`, `api_contract` |
-| GitHub | `repo=acme/oie-tests` | `testing` |
+| Jira | `project_key=PROJ` | `business` |
+| GitHub | `repo=acme/proj-web` | `frontend` |
+| GitHub | `repo=acme/proj-orders` | `backend`, `api_contract` |
+| GitHub | `repo=acme/proj-tests` | `testing` |
 
 The GitHub connector declares `repo` as component-forming, so each repository
-becomes its own default component (reason `association_default`): `oie-web`,
-`oie-orders` and `oie-tests`. The Jira scope is a member of no component.
+becomes its own default component (reason `association_default`): `proj-web`,
+`proj-orders` and `proj-tests`. The Jira scope is a member of no component.
 
-The relationship `OIE-140 —tests→ OIE-123` has:
+The relationship `PROJ-140 —tests→ PROJ-123` has:
 
 - origin `provider_declared`;
 - verification state `verified`;
 - freshness `current`;
 - confidence 1;
-- evidence `jira:OIE-140@2026-10-01T10:00Z field=issuelinks`.
+- evidence `jira:PROJ-140@2026-10-01T10:00Z field=issuelinks`.
 
-`OIE-140` is a Jira Test issue in the `business` scope, so a pack rule
-classifies it as `testing` (reason: that rule's id). `OIE-123` is `business`
+`PROJ-140` is a Jira Test issue in the `business` scope, so a pack rule
+classifies it as `testing` (reason: that rule's id). `PROJ-123` is `business`
 (reason `role_default`). The edge is therefore a `testing → business` `tests`
 relationship, which decision 10.2 allows.
 

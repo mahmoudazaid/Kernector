@@ -33,7 +33,7 @@ def test_shared_relative_paths_attribute_by_owner_label() -> None:
 
 def test_detected_playwright_does_not_emit_unrecognized_diagnostic() -> None:
     profile = profile_project(
-        [{"component": "oie-e2e", "files": load_component_files("acme/oie-e2e")}]
+        [{"component": "proj-e2e", "files": load_component_files("acme/proj-e2e")}]
     )
     component = profile.components[0]
     assert component.facet_status["test_frameworks"] == "detected"
@@ -50,7 +50,7 @@ def test_node_spec_without_manifest_is_insufficient_context() -> None:
     profile = profile_project(
         [
             {
-                "component": "oie-e2e",
+                "component": "proj-e2e",
                 "files": [
                     {
                         "path": "e2e/cancel-order.spec.ts",

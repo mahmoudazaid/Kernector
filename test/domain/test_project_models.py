@@ -23,12 +23,12 @@ from domain.project.models import (
     new_project_id,
 )
 
-ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
+ORDERS = SourceScope("gh-1", "repo", "acme/proj-orders")
 
 
 def _association(**overrides: object) -> SourceAssociation:
     values: dict[str, object] = {
-        "project_id": "prj_oie",
+        "project_id": "prj_proj",
         "scope": ORDERS,
         "roles": ("backend", "api_contract"),
         "state": AssociationState.CONFIRMED,
@@ -102,8 +102,8 @@ def test_scope_rejects_invalid_tokens(
 
 
 def test_scope_is_an_opaque_value() -> None:
-    assert SourceScope("jira-1", "project_key", "OIE") == SourceScope(
-        "jira-1", "project_key", "OIE"
+    assert SourceScope("jira-1", "project_key", "PROJ") == SourceScope(
+        "jira-1", "project_key", "PROJ"
     )
 
 
@@ -124,11 +124,11 @@ def test_association_rejects_invalid_roles(roles: object) -> None:
 
 
 def test_association_evidence_must_be_source_references() -> None:
-    evidence = (SourceReference("site/OIE:OIE-1", "jira"),)
+    evidence = (SourceReference("site/PROJ:PROJ-1", "jira"),)
 
     assert _association(evidence=evidence).evidence == evidence
     with pytest.raises(ProjectInputError):
-        _association(evidence=("OIE-1",))
+        _association(evidence=("PROJ-1",))
 
 
 def test_association_requires_actor_and_state() -> None:
@@ -165,14 +165,14 @@ def test_component_member_requires_canonical_prefix() -> None:
 def test_component_requires_unique_members() -> None:
     member = ComponentMember(ORDERS, "")
     component = ProjectComponent(
-        "cmp_1", "prj_oie", "oie-orders", (member,), "association_default", 1
+        "cmp_1", "prj_proj", "proj-orders", (member,), "association_default", 1
     )
 
     assert component.members == (member,)
     with pytest.raises(ProjectInputError):
-        ProjectComponent("cmp_1", "prj_oie", "x", (), "operator", 1)
+        ProjectComponent("cmp_1", "prj_proj", "x", (), "operator", 1)
     with pytest.raises(ProjectInputError):
-        ProjectComponent("cmp_1", "prj_oie", "x", (member, member), "operator", 1)
+        ProjectComponent("cmp_1", "prj_proj", "x", (member, member), "operator", 1)
 
 
 def test_context_coverage_status_matches_scopes() -> None:
@@ -205,7 +205,7 @@ def test_component_resolution_shape(
     status: ComponentResolutionStatus, ids: tuple[str, ...], valid: bool
 ) -> None:
     if valid:
-        assert ComponentResolution("prj_oie", status, ids).component_ids == ids
+        assert ComponentResolution("prj_proj", status, ids).component_ids == ids
     else:
         with pytest.raises(ProjectInputError):
-            ComponentResolution("prj_oie", status, ids)
+            ComponentResolution("prj_proj", status, ids)

@@ -17,7 +17,7 @@ def test_ingest_normalizes_paths_and_hashes_content() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-orders",
+                "component": "proj-orders",
                 "files": [{"path": "pyproject.toml", "content": "[project]\nname='x'\n"}],
             }
         ]
@@ -57,7 +57,7 @@ def test_rejects_duplicate_path_within_component() -> None:
         ingest_profile_evidence(
             [
                 {
-                    "component": "oie-web",
+                    "component": "proj-web",
                     "files": [
                         {"path": "package.json", "content": "{}\n"},
                         {"path": "package.json", "content": '{"a":1}\n'},
@@ -91,11 +91,11 @@ def test_same_path_allowed_across_components() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-web",
+                "component": "proj-web",
                 "files": [{"path": "package.json", "content": '{"name":"web"}\n'}],
             },
             {
-                "component": "oie-e2e",
+                "component": "proj-e2e",
                 "files": [{"path": "package.json", "content": '{"name":"e2e"}\n'}],
             },
         ]
@@ -114,7 +114,7 @@ def test_drops_secret_filename_with_sanitized_diagnostic() -> None:
     evidence = ingest_profile_evidence(
         [
             {
-                "component": "oie-orders",
+                "component": "proj-orders",
                 "files": [
                     {"path": "pyproject.toml", "content": "[project]\n"},
                     {"path": ".env", "content": f"SECRET_DATABASE_PASSWORD={secret}\n"},

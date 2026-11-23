@@ -8,24 +8,24 @@ FIXTURE_ROOT = Path(__file__).resolve().parent / "v1"
 
 REQUIRED_PATHS: tuple[str, ...] = (
     "README.md",
-    "acme/oie-orders/pyproject.toml",
-    "acme/oie-orders/.github/workflows/ci.yml",
-    "acme/oie-orders/Dockerfile",
-    "acme/oie-orders/.env",
-    "acme/oie-tests/requirements.txt",
-    "acme/oie-tests/tests/orders/cancel_order.robot",
-    "acme/oie-tests/resources/orders.resource",
-    "acme/oie-e2e/package.json",
-    "acme/oie-e2e/e2e/cancel-order.spec.ts",
-    "acme/oie-web/package.json",
-    "acme/oie-web/app/orders/[id]/page.tsx",
-    "acme/oie-web/components/CancelOrderButton.tsx",
-    "acme/oie-web/lib/api/orders.ts",
+    "acme/proj-orders/pyproject.toml",
+    "acme/proj-orders/.github/workflows/ci.yml",
+    "acme/proj-orders/Dockerfile",
+    "acme/proj-orders/.env",
+    "acme/proj-tests/requirements.txt",
+    "acme/proj-tests/tests/orders/cancel_order.robot",
+    "acme/proj-tests/resources/orders.resource",
+    "acme/proj-e2e/package.json",
+    "acme/proj-e2e/e2e/cancel-order.spec.ts",
+    "acme/proj-web/package.json",
+    "acme/proj-web/app/orders/[id]/page.tsx",
+    "acme/proj-web/components/CancelOrderButton.tsx",
+    "acme/proj-web/lib/api/orders.ts",
     "profile_variants/mixed/requirements.txt",
     "profile_variants/thin/README.md",
     "profile_variants/unrecognized/tests/manifest.weird",
     "profile_variants/unrecognized/tests/WeirdTest.xyz",
-    "gold/profile_oie.yaml",
+    "gold/profile_proj.yaml",
 )
 
 GOLD_SCHEMA_FIELDS: frozenset[str] = frozenset(
@@ -45,10 +45,10 @@ GOLD_SCHEMA_FIELDS: frozenset[str] = frozenset(
 )
 
 COMPONENT_LABELS: tuple[str, ...] = (
-    "oie-orders",
-    "oie-tests",
-    "oie-e2e",
-    "oie-web",
+    "proj-orders",
+    "proj-tests",
+    "proj-e2e",
+    "proj-web",
 )
 
 
@@ -69,7 +69,7 @@ def read_text(relative: str) -> str:
 
 def gold_text() -> str:
     """Return the raw gold profile document."""
-    return read_text("gold/profile_oie.yaml")
+    return read_text("gold/profile_proj.yaml")
 
 
 def gold_lists_schema_fields() -> bool:
@@ -80,7 +80,7 @@ def gold_lists_schema_fields() -> bool:
 
 def secret_env_value() -> str:
     """Return the fixture `.env` secret that must never appear in profile output."""
-    for line in read_text("acme/oie-orders/.env").splitlines():
+    for line in read_text("acme/proj-orders/.env").splitlines():
         if line.startswith("SECRET_DATABASE_PASSWORD="):
             return line.split("=", 1)[1]
     raise LookupError("SECRET_DATABASE_PASSWORD missing from fixture .env")

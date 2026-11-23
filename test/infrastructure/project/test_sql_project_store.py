@@ -25,14 +25,14 @@ from domain.project.models import (
 )
 from infrastructure.project.sql_store import SqlProjectStore
 
-ORDERS = SourceScope("gh-1", "repo", "acme/oie-orders")
-WEB = SourceScope("gh-1", "repo", "acme/oie-web")
-OIE = Project("prj_oie", "Order Intake", "oie", 1)
+ORDERS = SourceScope("gh-1", "repo", "acme/proj-orders")
+WEB = SourceScope("gh-1", "repo", "acme/proj-web")
+PROJ = Project("prj_proj", "Order Intake", "proj", 1)
 PAY = Project("prj_pay", "Payments", "pay", 1)
 
 
 def _association(
-    project_id: str = "prj_oie",
+    project_id: str = "prj_proj",
     scope: SourceScope = ORDERS,
     state: AssociationState = AssociationState.CONFIRMED,
 ) -> SourceAssociation:
@@ -41,7 +41,7 @@ def _association(
         scope=scope,
         roles=("backend", "api_contract"),
         state=state,
-        evidence=(SourceReference("site/OIE:OIE-1", "jira"),),
+        evidence=(SourceReference("site/PROJ:PROJ-1", "jira"),),
         created_by="operator",
         version=1,
     )
@@ -49,11 +49,11 @@ def _association(
 
 def _component(
     component_id: str = "cmp_orders",
-    project_id: str = "prj_oie",
+    project_id: str = "prj_proj",
     members: tuple[ComponentMember, ...] = (ComponentMember(ORDERS),),
 ) -> ProjectComponent:
     return ProjectComponent(
-        component_id, project_id, "oie-orders", members, "association_default", 1
+        component_id, project_id, "proj-orders", members, "association_default", 1
     )
 
 
@@ -69,29 +69,29 @@ def _seed(store: SqlProjectStore, *projects: Project) -> None:
 
 
 def test_projects_are_created_listed_and_fetched(store: SqlProjectStore) -> None:
-    _seed(store, OIE, PAY)
+    _seed(store, PROJ, PAY)
 
     with store.read() as tx:
-        assert tx.projects.get("prj_oie") == OIE
+        assert tx.projects.get("prj_proj") == PROJ
         assert tx.projects.get("prj_missing") is None
-        assert {p.project_id for p in tx.projects.list()} == {"prj_oie", "prj_pay"}
+        assert {p.project_id for p in tx.projects.list()} == {"prj_proj", "prj_pay"}
 
 
 def test_slug_is_unique_within_a_workspace(store: SqlProjectStore) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
 
     with pytest.raises(ProjectSlugTakenError):
-        _seed(store, Project("prj_other", "Other", "oie", 1))
+        _seed(store, Project("prj_other", "Other", "proj", 1))
 
 
 def test_projects_are_isolated_per_workspace(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
-    _seed(SqlProjectStore(path, "ws-a"), OIE)
+    _seed(SqlProjectStore(path, "ws-a"), PROJ)
     other = SqlProjectStore(path, "ws-b")
-    _seed(other, Project("prj_b", "Same slug", "oie", 1))
+    _seed(other, Project("prj_b", "Same slug", "proj", 1))
 
     with other.read() as tx:
-        assert tx.projects.get("prj_oie") is None
+        assert tx.projects.get("prj_proj") is None
         assert [p.project_id for p in tx.projects.list()] == ["prj_b"]
 
 
@@ -109,18 +109,18 @@ def test_invalid_workspace_is_rejected_before_touching_disk(
 def test_association_round_trips_with_roles_and_evidence(
     store: SqlProjectStore,
 ) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
     with store.transaction() as tx:
         tx.associations.add(_association())
 
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", ORDERS) == _association()
-        assert tx.associations.get("prj_oie", WEB) is None
-        assert tx.associations.for_project("prj_oie") == (_association(),)
+        assert tx.associations.get("prj_proj", ORDERS) == _association()
+        assert tx.associations.get("prj_proj", WEB) is None
+        assert tx.associations.for_project("prj_proj") == (_association(),)
 
 
 def test_duplicate_association_is_rejected(store: SqlProjectStore) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
     with store.transaction() as tx:
         tx.associations.add(_association())
 
@@ -129,9 +129,9 @@ def test_duplicate_association_is_rejected(store: SqlProjectStore) -> None:
 
 
 def test_for_scope_lists_every_project(store: SqlProjectStore) -> None:
-    _seed(store, OIE, PAY)
+    _seed(store, PROJ, PAY)
     with store.transaction() as tx:
-        tx.associations.add(_association("prj_oie"))
+        tx.associations.add(_association("prj_proj"))
         tx.associations.add(_association("prj_pay", state=AssociationState.SUGGESTED))
         tx.associations.add(_association("prj_pay", scope=WEB))
 
@@ -139,13 +139,13 @@ def test_for_scope_lists_every_project(store: SqlProjectStore) -> None:
         found = {(a.project_id, a.state) for a in tx.associations.for_scope(ORDERS)}
 
     assert found == {
-        ("prj_oie", AssociationState.CONFIRMED),
+        ("prj_proj", AssociationState.CONFIRMED),
         ("prj_pay", AssociationState.SUGGESTED),
     }
 
 
 def test_association_update_uses_compare_and_swap(store: SqlProjectStore) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
     suggested = _association(state=AssociationState.SUGGESTED)
     with store.transaction() as tx:
         tx.associations.add(suggested)
@@ -162,29 +162,29 @@ def test_association_update_uses_compare_and_swap(store: SqlProjectStore) -> Non
 
 
 def test_association_delete_uses_compare_and_swap(store: SqlProjectStore) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
     with store.transaction() as tx:
         tx.associations.add(_association())
 
     with pytest.raises(ProjectRecordVersionConflictError), store.transaction() as tx:
-        tx.associations.delete("prj_oie", ORDERS, expected_version=7)
+        tx.associations.delete("prj_proj", ORDERS, expected_version=7)
     with store.transaction() as tx:
-        tx.associations.delete("prj_oie", ORDERS, expected_version=1)
+        tx.associations.delete("prj_proj", ORDERS, expected_version=1)
 
     with store.read() as tx:
-        assert tx.associations.get("prj_oie", ORDERS) is None
+        assert tx.associations.get("prj_proj", ORDERS) is None
     with pytest.raises(AssociationNotFoundError), store.transaction() as tx:
-        tx.associations.delete("prj_oie", ORDERS, expected_version=1)
+        tx.associations.delete("prj_proj", ORDERS, expected_version=1)
 
 
 def test_component_round_trips_and_updates_with_cas(store: SqlProjectStore) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
     members = (ComponentMember(ORDERS), ComponentMember(WEB, "web"))
     with store.transaction() as tx:
         tx.components.add(_component(members=members))
 
     with store.read() as tx:
-        assert tx.components.get("prj_oie", "cmp_orders") == _component(members=members)
+        assert tx.components.get("prj_proj", "cmp_orders") == _component(members=members)
         assert tx.components.get("prj_pay", "cmp_orders") is None
 
     renamed = replace(_component(), name="orders", reason="operator")
@@ -200,7 +200,7 @@ def test_component_round_trips_and_updates_with_cas(store: SqlProjectStore) -> N
 
 
 def test_member_is_unique_within_a_project(store: SqlProjectStore) -> None:
-    _seed(store, OIE, PAY)
+    _seed(store, PROJ, PAY)
     with store.transaction() as tx:
         tx.components.add(_component())
         tx.components.add(_component("cmp_pay", "prj_pay"))
@@ -210,17 +210,17 @@ def test_member_is_unique_within_a_project(store: SqlProjectStore) -> None:
 
 
 def test_component_delete_uses_compare_and_swap(store: SqlProjectStore) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
     with store.transaction() as tx:
         tx.components.add(_component())
 
     with pytest.raises(ProjectRecordVersionConflictError), store.transaction() as tx:
-        tx.components.delete("prj_oie", "cmp_orders", expected_version=2)
+        tx.components.delete("prj_proj", "cmp_orders", expected_version=2)
     with store.transaction() as tx:
-        tx.components.delete("prj_oie", "cmp_orders", expected_version=1)
+        tx.components.delete("prj_proj", "cmp_orders", expected_version=1)
 
     with store.read() as tx:
-        assert tx.components.for_project("prj_oie") == ()
+        assert tx.components.for_project("prj_proj") == ()
     with store.transaction() as tx:
         tx.components.add(_component("cmp_again"))
 
@@ -228,7 +228,7 @@ def test_component_delete_uses_compare_and_swap(store: SqlProjectStore) -> None:
 def test_failure_inside_a_transaction_rolls_back_every_record(
     store: SqlProjectStore,
 ) -> None:
-    _seed(store, OIE)
+    _seed(store, PROJ)
 
     with pytest.raises(RuntimeError, match="boom"), store.transaction() as tx:
         tx.projects.add(PAY)
@@ -238,18 +238,18 @@ def test_failure_inside_a_transaction_rolls_back_every_record(
 
     with store.read() as tx:
         assert tx.projects.get("prj_pay") is None
-        assert tx.associations.for_project("prj_oie") == ()
-        assert tx.components.for_project("prj_oie") == ()
+        assert tx.associations.for_project("prj_proj") == ()
+        assert tx.components.for_project("prj_proj") == ()
 
 
 def test_components_are_isolated_per_workspace(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
     first = SqlProjectStore(path, "ws-a")
-    _seed(first, OIE)
+    _seed(first, PROJ)
     with first.transaction() as tx:
         tx.associations.add(_association())
         tx.components.add(_component())
 
     with SqlProjectStore(path, "ws-b").read() as tx:
-        assert tx.components.for_project("prj_oie") == ()
+        assert tx.components.for_project("prj_proj") == ()
         assert tx.associations.for_scope(ORDERS) == ()
