@@ -119,10 +119,13 @@ create/rotate.
   the Next.js BFF under `/api/v1/admin/mcp/*` injects it server-side. Use HTTPS
   for any remote deployment. UI hiding is not a security boundary (#36/#182
   remain open for multi-user Admin RBAC).
-- **Isolation:** `core.search_knowledge` stays unavailable on MCP until
-  project-scoped retrieval (#257). `core.project_list` returns only the
-  profile’s bound project. Allowlisting never bypasses HITL for side-effect
-  tools ([ADR 0010](docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)).
+- **Isolation:** `core.search_knowledge` stays unavailable on MCP profiles
+  until workspace isolation (#257 / #377). When invoked, it accepts optional
+  `project_id`, bounded `identifiers[]` (exact external-key lookup merged
+  ahead of hybrid hits), and `contexts[]` (#373). Omitting those args keeps
+  query-only behaviour. `core.project_list` returns only the profile’s bound
+  project. Allowlisting never bypasses HITL for side-effect tools
+  ([ADR 0010](docs/adr/0010-mcp-side-effect-tools-shared-registry-hitl.md)).
 - Test Design tools (#338) appear only when the pack is enabled **and** the
   profile allowlists their ids. See the
   [pack README](packs/software_delivery/README.md#test-design-over-mcp-338).

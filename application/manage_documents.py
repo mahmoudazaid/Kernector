@@ -9,6 +9,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from application.artifact.sync import ArtifactSyncHook
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, UploadTooLargeError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -20,6 +21,7 @@ from domain.knowledge import (
     HUB_SOURCE_TYPES,
     ProcessingProfile,
     SourceDocument,
+    SourceMetadata,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -222,6 +224,7 @@ class ManageUploadedDocuments:
         now: Callable[[], datetime] | None = None,
         max_upload_bytes: int,
         processing_profile_factory: Callable[[], ProcessingProfile],
+        artifact_sync: ArtifactSyncHook | None = None,
     ) -> None:
         self._catalog = catalog
         self._blob_store = blob_store
@@ -232,6 +235,7 @@ class ManageUploadedDocuments:
         self._now = now or (lambda: datetime.now(UTC))
         self._max_upload_bytes = max_upload_bytes
         self._processing_profile_factory = processing_profile_factory
+        self._artifact_sync = artifact_sync
 
     def list(self) -> Sequence[CatalogDocument]:
         """Return catalog rows shown in the shared documents hub."""
@@ -326,7 +330,9 @@ class ManageUploadedDocuments:
             self._record_create_failure(pending, payload, error)
             raise
         ready = self._ready_row(pending, document, response)
-        return self._finalize_ready(ready, payload, operation="create")
+        ready = self._finalize_ready(ready, payload, operation="create")
+        self._sync_artifact(document, ready)
+        return ready
 
     def replace(
         self, reference: SourceReference, payload: UploadPayload
@@ -368,7 +374,9 @@ class ManageUploadedDocuments:
             self._write_degraded(pending, payload, error)
             raise
         ready = self._ready_row(pending, document, response)
-        return self._finalize_ready(ready, payload, operation="replace")
+        ready = self._finalize_ready(ready, payload, operation="replace")
+        self._sync_artifact(document, ready)
+        return ready
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
         """Return the hub catalog row for ``source_id``, if one exists."""
@@ -438,6 +446,8 @@ class ManageUploadedDocuments:
                 raise failure from error
         try:
             self._catalog.delete(reference)
+            if self._artifact_sync is not None:
+                self._artifact_sync.on_removed(reference)
         except Exception as error:
             failure = PartialDeleteFailure(
                 reference=reference, delete_error=error
@@ -564,6 +574,30 @@ class ManageUploadedDocuments:
             metadata_fingerprint=fingerprint_metadata(document.metadata),
             processing_fingerprint=self._processing_profile_factory().fingerprint,
         )
+
+    def _sync_artifact(
+        self, document: SourceDocument, ready: CatalogDocument
+    ) -> None:
+        if self._artifact_sync is None:
+            return
+        fingerprint = ready.content_fingerprint
+        if fingerprint is None:
+            return
+        extra = dict(document.metadata.extra)
+        extra["content_fingerprint"] = fingerprint
+        stamped = dataclasses.replace(
+            document,
+            metadata=SourceMetadata(
+                reference=document.metadata.reference,
+                title=document.metadata.title,
+                provider=document.metadata.provider,
+                content_format=document.metadata.content_format,
+                created_at=document.metadata.created_at,
+                updated_at=document.metadata.updated_at,
+                extra=extra,
+            ),
+        )
+        self._artifact_sync.on_ready(stamped, revision=fingerprint)
 
     @staticmethod
     def _with_timestamps(

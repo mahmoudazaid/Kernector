@@ -369,6 +369,14 @@ def build_retrieve_knowledge(
             )
         lexical_index = vector_store.lexical
 
+    from composition.artifact.container import (
+        build_artifact_index,
+        build_lookup_artifacts,
+    )
+    from composition.project.container import build_resolve_projects_for_source
+
+    artifact_index = build_artifact_index(settings)
+    resolve_projects = build_resolve_projects_for_source(settings)
     return RetrieveKnowledge(
         embedding_model,
         vector_store if needs_embedding else None,
@@ -379,6 +387,9 @@ def build_retrieve_knowledge(
         vector_score_floor=(
             settings.retrieval.relevance_threshold if hybrid and alpha < 1.0 else None
         ),
+        artifact_lookup=build_lookup_artifacts(settings),
+        project_ids_for=resolve_projects.execute,
+        descriptor_for=artifact_index.get,
     )
 
 

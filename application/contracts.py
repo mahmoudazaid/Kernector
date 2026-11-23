@@ -640,19 +640,31 @@ class RetrieveRequest:
     """Input for metadata-filtered semantic retrieval.
 
     Attributes:
-        query (str): Natural-language query to embed and search with.
+        query (str): Natural-language query to embed and search with. May be
+            blank when ``identifiers`` is non-empty (identifier-only lookup).
         retrieval_limit (int): Positive cap on ranked hits (filter-then-limit).
         metadata_filters (Mapping[str, str] | None): Optional opaque exact-match
             AND filters over ``SourceMetadata.extra``. ``None`` or ``{}`` means
             unfiltered top-k. Copied into a plain ``dict`` when present.
+        project_id (str | None): Optional confirmed-association project scope.
+        contexts (tuple[str, ...]): Optional context tokens; filter before limit.
+        identifiers (tuple[str, ...]): Exact external keys looked up independently
+            and merged ahead of hybrid hits.
     """
 
-    query: str
-    retrieval_limit: int
+    query: str = ""
+    retrieval_limit: int = 8
     metadata_filters: Mapping[str, str] | None = None
+    project_id: str | None = None
+    contexts: tuple[str, ...] = ()
+    identifiers: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _require_text(self.query, "query")
+        if not isinstance(self.query, str):
+            raise ApplicationValidationError(
+                f"query must be a string, got {type(self.query).__name__}"
+            )
+        object.__setattr__(self, "query", self.query.strip())
         object.__setattr__(
             self,
             "retrieval_limit",
@@ -663,6 +675,24 @@ class RetrieveRequest:
             "metadata_filters",
             _require_metadata_filters(self.metadata_filters),
         )
+        if self.project_id is not None:
+            _require_text(self.project_id, "project_id")
+        if not isinstance(self.contexts, tuple) or not all(
+            isinstance(item, str) and item.strip() for item in self.contexts
+        ):
+            raise ApplicationValidationError(
+                "contexts must be a tuple of non-empty strings"
+            )
+        if not isinstance(self.identifiers, tuple) or not all(
+            isinstance(item, str) and item.strip() for item in self.identifiers
+        ):
+            raise ApplicationValidationError(
+                "identifiers must be a tuple of non-empty strings"
+            )
+        if not self.query and not self.identifiers:
+            raise ApplicationValidationError(
+                "query or identifiers must be provided"
+            )
 
 
 @dataclass(frozen=True, slots=True)

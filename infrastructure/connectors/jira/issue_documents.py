@@ -132,6 +132,7 @@ class JiraIssueDocuments:
         fields = _fields_of(issue)
         site = self._config.site
         summary = _required_text(fields, "summary")
+        issue_type = _name(fields.get("issuetype"))
         return SourceDocument(
             SourceMetadata(
                 reference=document.reference,
@@ -142,6 +143,7 @@ class JiraIssueDocuments:
                     "file_name": document.file_name,
                     **_connector_extra(self._config.connector_id),
                     "jira_issue_key": key,
+                    "jira_issue_type": issue_type,
                     "jira_issue_url": site.browse_url(key),
                     "jira_instance_id": site.instance_id,
                     "jira_project_key": project_key,
