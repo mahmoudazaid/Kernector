@@ -88,7 +88,7 @@ def resolve(store: InMemoryProjectStore) -> ResolveProjectsForSource:
         ("orders_file", ("prj_proj",)),
         ("tests_file", ("prj_proj",)),
         ("pay_story", ("prj_pay",)),
-        ("lib_file", ("prj_proj", "prj_pay")),
+        ("lib_file", ("prj_pay", "prj_proj")),
     ],
 )
 def test_documents_resolve_to_their_projects(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from pydantic import (
     BaseModel,
@@ -16,8 +16,12 @@ from pydantic import (
 from application.citations import build_citations
 from application.contracts import RetrieveRequest
 from application.retrieve_knowledge import RetrieveKnowledge
+from domain.artifact.models import ArtifactDescriptor
 from domain.errors import ToolArgumentValidationError
-from domain.knowledge import ScoredChunk
+from domain.knowledge import ScoredChunk, SourceReference
+
+ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
+DescriptorForSource = Callable[[SourceReference], ArtifactDescriptor | None]
 
 TOOL_NAME = "core.search_knowledge"
 TOOL_DESCRIPTION = (
@@ -166,11 +170,15 @@ class SearchKnowledgeTool:
         max_hits: int = DEFAULT_MAX_HITS,
         max_content_chars: int = MAX_CONTENT_CHARS_PER_HIT,
         max_total_output_chars: int = MAX_TOTAL_OUTPUT_CHARS,
+        project_ids_for: ProjectIdsForSource | None = None,
+        descriptor_for: DescriptorForSource | None = None,
     ) -> None:
         self._retrieve = retrieve
         self._max_hits = max_hits
         self._max_content_chars = max_content_chars
         self._max_total_output_chars = max_total_output_chars
+        self._project_ids_for = project_ids_for
+        self._descriptor_for = descriptor_for
 
     @property
     def name(self) -> str:
@@ -199,6 +207,8 @@ class SearchKnowledgeTool:
             response.hits,
             max_content_chars=self._max_content_chars,
             max_total_output_chars=self._max_total_output_chars,
+            project_ids_for=self._project_ids_for,
+            descriptor_for=self._descriptor_for,
         )
         return json.dumps(payload.model_dump(mode="json"), separators=(",", ":"))
 
@@ -208,12 +218,18 @@ def project_search_result(
     *,
     max_content_chars: int = MAX_CONTENT_CHARS_PER_HIT,
     max_total_output_chars: int = MAX_TOTAL_OUTPUT_CHARS,
+    project_ids_for: ProjectIdsForSource | None = None,
+    descriptor_for: DescriptorForSource | None = None,
 ) -> SearchKnowledgeResult:
     """Project retrieve hits into a safe bounded MCP result.
 
     Citations are built only from the evidence items retained after truncation
     so they stay consistent with returned evidence. Both evidence and citation
     representations count toward the total-output budget.
+
+    When ``project_ids_for`` / ``descriptor_for`` are provided, evidence
+    metadata is filled from live project and artifact indexes rather than
+    chunk ``extra`` keys (which production ingest does not write).
     """
     evidence: list[EvidenceItemOut] = []
     truncated = False
@@ -222,19 +238,11 @@ def project_search_result(
         if len(content) > max_content_chars:
             content = content[:max_content_chars]
             truncated = True
-        extra = hit.chunk.metadata.extra
-        artifact_kind = extra.get("artifact_kind")
-        project_ids = [
-            part.strip()
-            for part in extra.get("project_ids", "").split(",")
-            if part.strip()
-        ]
-        component_ids = [
-            part.strip()
-            for part in extra.get("component_ids", "").split(",")
-            if part.strip()
-        ]
-        contexts = _contexts_from_extra(extra.get("contexts_json", ""))
+        artifact_kind, project_ids, contexts, component_ids = _evidence_metadata(
+            hit,
+            project_ids_for=project_ids_for,
+            descriptor_for=descriptor_for,
+        )
         item = EvidenceItemOut(
             content=content,
             score=float(hit.score),
@@ -273,6 +281,41 @@ def project_search_result(
         citations=citations,
         truncated=truncated or len(evidence) < len(hits),
     )
+
+
+def _evidence_metadata(
+    hit: ScoredChunk,
+    *,
+    project_ids_for: ProjectIdsForSource | None,
+    descriptor_for: DescriptorForSource | None,
+) -> tuple[str | None, list[str], list[ContextAssignmentOut], list[str]]:
+    extra = hit.chunk.metadata.extra
+    artifact_kind = extra.get("artifact_kind")
+    project_ids = [
+        part.strip()
+        for part in extra.get("project_ids", "").split(",")
+        if part.strip()
+    ]
+    component_ids = [
+        part.strip()
+        for part in extra.get("component_ids", "").split(",")
+        if part.strip()
+    ]
+    contexts = _contexts_from_extra(extra.get("contexts_json", ""))
+
+    reference = hit.chunk.reference
+    if project_ids_for is not None:
+        project_ids = list(project_ids_for(reference))
+    if descriptor_for is not None:
+        descriptor = descriptor_for(reference)
+        if descriptor is not None:
+            artifact_kind = descriptor.kind
+            component_ids = list(descriptor.component_ids)
+            contexts = [
+                ContextAssignmentOut(context=item.context, reason=item.reason)
+                for item in descriptor.contexts
+            ]
+    return artifact_kind, project_ids, contexts, component_ids
 
 
 def _contexts_from_extra(raw: str) -> list[ContextAssignmentOut]:

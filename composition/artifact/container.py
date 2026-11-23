@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from application.artifact.classify import classify_contexts
 from application.artifact.lookup import LookupArtifacts
 from application.artifact.sync import SyncArtifactDescriptors
 from domain.artifact.models import ArtifactDescriptor
 from domain.artifact.ports import ArtifactDescriptorExtractor
-from domain.knowledge import SourceDocument
+from domain.knowledge import SourceDocument, SourceReference
+from domain.project.models import ComponentResolutionStatus
 from infrastructure.artifact.sql_index import SqlArtifactIndex
+from infrastructure.artifact.structural_facts import structural_facts_for
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.connectors.document_artifact_extractor import (
     DocumentArtifactDescriptorExtractor,
@@ -21,7 +24,13 @@ from infrastructure.connectors.jira.artifact_extractor import (
     JiraArtifactDescriptorExtractor,
 )
 from infrastructure.config import Settings
-from composition.project.container import build_resolve_projects_for_source
+from composition.project.container import (
+    build_resolve_components_for_source,
+    build_resolve_projects_for_source,
+)
+from packs.software_delivery.project.classification_rules import (
+    SOFTWARE_DELIVERY_CONTEXT_RULES,
+)
 
 
 class CompositeArtifactDescriptorExtractor:
@@ -66,7 +75,20 @@ def build_lookup_artifacts(settings: Settings) -> LookupArtifacts:
 
 
 def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:
+    resolve_components = build_resolve_components_for_source(settings)
+
+    def component_ids_for(reference: SourceReference) -> tuple[str, ...]:
+        ids: list[str] = []
+        for resolution in resolve_components.execute(reference):
+            if resolution.status is ComponentResolutionStatus.RESOLVED:
+                ids.extend(resolution.component_ids)
+        return tuple(ids)
+
     return SyncArtifactDescriptors(
         build_artifact_extractor(),
         build_artifact_index(settings),
+        classify=classify_contexts,
+        rules=SOFTWARE_DELIVERY_CONTEXT_RULES,
+        facts_for=structural_facts_for,
+        component_ids_for=component_ids_for,
     )

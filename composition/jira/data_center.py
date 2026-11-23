@@ -404,6 +404,8 @@ def sync(
         render_text=wiki_to_markdown,
         deployment="data_center",
     )
+    from composition.artifact.container import build_artifact_sync
+
     sync_documents = SyncConnectorDocuments(
         connector=JiraKnowledgeConnector(client, config),
         catalog=working,
@@ -416,6 +418,7 @@ def sync(
         reconcile_source_id_prefixes=frozenset({f"{site.instance_id}/"}),
         reconcile_connector_ids=frozenset({connector_id}),
         vector_store_factory=get_store,
+        artifact_sync=build_artifact_sync(settings),
     )
     try:
         result = authenticated_call(store, sync_documents.execute)

@@ -13,7 +13,10 @@ from composition.mcp.search_knowledge import (
     MAX_IDENTIFIER_CHARS,
     SearchKnowledgeArgs,
     SearchKnowledgeTool,
+    project_search_result,
 )
+from domain.artifact.kinds import ArtifactKind
+from domain.artifact.models import ArtifactDescriptor, ContextAssignment
 from domain.errors import ToolArgumentValidationError
 from domain.knowledge import (
     DocumentChunk,
@@ -115,3 +118,38 @@ def test_tool_rejects_neither_query_nor_identifiers() -> None:
     tool = SearchKnowledgeTool(_CaptureRetrieve())  # type: ignore[arg-type]
     with pytest.raises(ToolArgumentValidationError):
         tool.run({})
+
+
+def test_projection_enriches_evidence_from_live_lookups() -> None:
+    reference = SourceReference("cloud/PROJ:PROJ-123", SourceType.JIRA)
+    hit = ScoredChunk(
+        chunk=DocumentChunk(
+            metadata=SourceMetadata(reference, title="story"),
+            index=0,
+            content="Cancel unpaid order",
+        ),
+        score=1.0,
+    )
+    descriptor = ArtifactDescriptor(
+        reference=reference,
+        revision="r1",
+        kind=ArtifactKind.STORY,
+        external_keys=("PROJ-123",),
+        contexts=(ContextAssignment("business", "jira_story_bug_to_business"),),
+        component_ids=("cmp_orders",),
+        title="story",
+    )
+
+    result = project_search_result(
+        (hit,),
+        project_ids_for=lambda _ref: ("prj_proj",),
+        descriptor_for=lambda _ref: descriptor,
+    )
+
+    evidence = result.evidence[0]
+    assert evidence.artifact_kind == ArtifactKind.STORY
+    assert evidence.project_ids == ["prj_proj"]
+    assert evidence.component_ids == ["cmp_orders"]
+    assert [(item.context, item.reason) for item in evidence.contexts] == [
+        ("business", "jira_story_bug_to_business")
+    ]

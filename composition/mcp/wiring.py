@@ -50,7 +50,7 @@ def build_mcp_tool_registry(
         McpToolContribution(
             tool_id=SEARCH_KNOWLEDGE_TOOL,
             pack_id=None,
-            factory=lambda: SearchKnowledgeTool(_resolve_retrieve(retrieve)),
+            factory=lambda: _search_knowledge_tool(settings, retrieve),
         ),
         McpToolContribution(
             tool_id=PROJECT_LIST_TOOL,
@@ -83,6 +83,21 @@ def build_mcp_tool_registry(
     return McpToolRegistry(
         contributions=contributions,
         enabled_packs=settings.domain_tools.enabled_packs,
+    )
+
+
+def _search_knowledge_tool(
+    settings: Settings, retrieve: RetrieveProvider
+) -> SearchKnowledgeTool:
+    from composition.artifact.container import build_artifact_index
+    from composition.project.container import build_resolve_projects_for_source
+
+    resolve = build_resolve_projects_for_source(settings)
+    index = build_artifact_index(settings)
+    return SearchKnowledgeTool(
+        _resolve_retrieve(retrieve),
+        project_ids_for=resolve.execute,
+        descriptor_for=index.get,
     )
 
 

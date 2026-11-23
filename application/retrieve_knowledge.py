@@ -238,21 +238,30 @@ class RetrieveKnowledge:
         hybrid: Sequence[ScoredChunk],
         limit: int,
     ) -> tuple[ScoredChunk, ...]:
+        """Prefer exact hits; suppress hybrid for those sources only.
+
+        Exact hits dedupe by source. Hybrid hits keep chunk-level identity so
+        plain retrieval can still return multiple chunks from one document.
+        """
         merged: list[ScoredChunk] = []
-        seen: set[tuple[str, str]] = set()
+        exact_sources: set[tuple[str, str]] = set()
+        seen_chunks: set[tuple[str, str, int]] = set()
         for hit in exact:
-            key = _source_key(hit.chunk.reference)
-            if key in seen:
+            source = _source_key(hit.chunk.reference)
+            if source in exact_sources:
                 continue
-            seen.add(key)
+            exact_sources.add(source)
+            seen_chunks.add(_chunk_key(hit))
             merged.append(hit)
             if len(merged) >= limit:
                 return tuple(merged)
         for hit in hybrid:
-            key = _source_key(hit.chunk.reference)
-            if key in seen:
+            if _source_key(hit.chunk.reference) in exact_sources:
                 continue
-            seen.add(key)
+            chunk = _chunk_key(hit)
+            if chunk in seen_chunks:
+                continue
+            seen_chunks.add(chunk)
             merged.append(hit)
             if len(merged) >= limit:
                 break
