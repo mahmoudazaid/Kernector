@@ -237,11 +237,17 @@ class ManageUploadedDocuments:
         self._processing_profile_factory = processing_profile_factory
         self._artifact_sync = artifact_sync
 
+    # Upload / Drive only: connector rows are backfilled on sync skip.
+    _ARTIFACT_BACKFILL_SOURCE_TYPES = frozenset(
+        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+    )
+
     def list(self) -> Sequence[CatalogDocument]:
         """Return catalog rows shown in the shared documents hub.
 
-        READY hub rows that predate the artifact index get a one-shot
-        descriptor backfill from catalog metadata (no blob re-read).
+        READY upload/Drive rows that predate the artifact index get a one-shot
+        descriptor backfill from catalog metadata (no blob re-read). Jira and
+        GitHub are left to connector sync skip backfill.
         """
         rows = tuple(
             row
@@ -257,6 +263,8 @@ class ManageUploadedDocuments:
         if self._artifact_sync is None:
             return
         for row in rows:
+            if row.reference.source_type not in self._ARTIFACT_BACKFILL_SOURCE_TYPES:
+                continue
             if row.status is not CatalogStatus.READY:
                 continue
             if self._artifact_sync.has_descriptor(row.reference):
@@ -269,18 +277,19 @@ class ManageUploadedDocuments:
                 if row.reference.source_type == SourceType.GOOGLE_DRIVE
                 else "content_fingerprint"
             )
-            source = SourceDocument(
-                SourceMetadata(
-                    reference=row.reference,
-                    title=row.title,
-                    content_format=row.content_format,
-                    created_at=row.created_at,
-                    updated_at=row.updated_at,
-                    extra={extra_key: fingerprint},
-                ),
-                "",
-            )
             try:
+                # Placeholder body: extractors only need metadata extras.
+                source = SourceDocument(
+                    SourceMetadata(
+                        reference=row.reference,
+                        title=row.title,
+                        content_format=row.content_format,
+                        created_at=row.created_at,
+                        updated_at=row.updated_at,
+                        extra={extra_key: fingerprint},
+                    ),
+                    ".",
+                )
                 self._artifact_sync.on_ready(source, revision=fingerprint)
             except Exception:
                 log_operation(
