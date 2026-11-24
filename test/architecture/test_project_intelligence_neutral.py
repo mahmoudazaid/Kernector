@@ -20,7 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DOMAIN_PROJECT = REPO_ROOT / "domain" / "project"
 NEUTRAL_ROOTS = (
     DOMAIN_PROJECT,
+    REPO_ROOT / "domain" / "artifact",
     REPO_ROOT / "application" / "project",
+    REPO_ROOT / "application" / "artifact",
     REPO_ROOT / "infrastructure" / "project",
     REPO_ROOT / "composition" / "project",
 )

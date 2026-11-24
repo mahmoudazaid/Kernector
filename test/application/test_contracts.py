@@ -850,6 +850,9 @@ def test_contracts_serialize_with_asdict() -> None:
         "query": "query",
         "retrieval_limit": 5,
         "metadata_filters": {"doc_type": "runbook"},
+        "project_id": None,
+        "contexts": (),
+        "identifiers": (),
     }
     assert asdict(retrieve_response)["hits"][0]["score"] == 0.9
     assert asdict(retrieve_response)["hits"][0]["chunk"]["content"] == "chunk text"

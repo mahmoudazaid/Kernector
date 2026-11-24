@@ -243,6 +243,7 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
         "file_name": "KAN-9.md",
         "connector_id": "conn-1",
         "jira_issue_key": "KAN-9",
+        "jira_issue_type": "Bug",
         "jira_issue_url": "https://acme.atlassian.net/browse/KAN-9",
         "jira_instance_id": CLOUD_ID,
         "jira_project_key": "KAN",

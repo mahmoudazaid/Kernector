@@ -9,6 +9,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from application.artifact.sync import ArtifactSyncHook
 from application.contracts import IngestRequest, IngestResponse
 from application.errors import ApplicationValidationError, UploadTooLargeError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
@@ -20,6 +21,7 @@ from domain.knowledge import (
     HUB_SOURCE_TYPES,
     ProcessingProfile,
     SourceDocument,
+    SourceMetadata,
     SourceReference,
     SourceType,
     UploadPayload,
@@ -222,6 +224,7 @@ class ManageUploadedDocuments:
         now: Callable[[], datetime] | None = None,
         max_upload_bytes: int,
         processing_profile_factory: Callable[[], ProcessingProfile],
+        artifact_sync: ArtifactSyncHook | None = None,
     ) -> None:
         self._catalog = catalog
         self._blob_store = blob_store
@@ -232,14 +235,71 @@ class ManageUploadedDocuments:
         self._now = now or (lambda: datetime.now(UTC))
         self._max_upload_bytes = max_upload_bytes
         self._processing_profile_factory = processing_profile_factory
+        self._artifact_sync = artifact_sync
+
+    # Upload / Drive only: connector rows are backfilled on sync skip.
+    _ARTIFACT_BACKFILL_SOURCE_TYPES = frozenset(
+        {SourceType.KNOWLEDGE_DOCUMENT, SourceType.GOOGLE_DRIVE}
+    )
 
     def list(self) -> Sequence[CatalogDocument]:
-        """Return catalog rows shown in the shared documents hub."""
-        return tuple(
+        """Return catalog rows shown in the shared documents hub.
+
+        READY upload/Drive rows that predate the artifact index get a one-shot
+        descriptor backfill from catalog metadata (no blob re-read). Jira and
+        GitHub are left to connector sync skip backfill.
+        """
+        rows = tuple(
             row
             for row in self._catalog.all()
             if row.reference.source_type in self._HUB_SOURCE_TYPES
         )
+        self._backfill_missing_upload_descriptors(rows)
+        return rows
+
+    def _backfill_missing_upload_descriptors(
+        self, rows: Sequence[CatalogDocument]
+    ) -> None:
+        if self._artifact_sync is None:
+            return
+        for row in rows:
+            if row.reference.source_type not in self._ARTIFACT_BACKFILL_SOURCE_TYPES:
+                continue
+            if row.status is not CatalogStatus.READY:
+                continue
+            if self._artifact_sync.has_descriptor(row.reference):
+                continue
+            fingerprint = row.content_fingerprint
+            if not fingerprint:
+                continue
+            extra_key = (
+                "drive_revision"
+                if row.reference.source_type == SourceType.GOOGLE_DRIVE
+                else "content_fingerprint"
+            )
+            try:
+                # Placeholder body: extractors only need metadata extras.
+                source = SourceDocument(
+                    SourceMetadata(
+                        reference=row.reference,
+                        title=row.title,
+                        content_format=row.content_format,
+                        created_at=row.created_at,
+                        updated_at=row.updated_at,
+                        extra={extra_key: fingerprint},
+                    ),
+                    ".",
+                )
+                self._artifact_sync.on_ready(source, revision=fingerprint)
+            except Exception:
+                log_operation(
+                    logger,
+                    operation="artifact_backfill",
+                    outcome="error",
+                    level=logging.ERROR,
+                    source_id=row.reference.source_id,
+                    source_type=row.reference.source_type,
+                )
 
     def _unknown(
         self, reference: SourceReference, *, operation: str
@@ -326,7 +386,9 @@ class ManageUploadedDocuments:
             self._record_create_failure(pending, payload, error)
             raise
         ready = self._ready_row(pending, document, response)
-        return self._finalize_ready(ready, payload, operation="create")
+        ready = self._finalize_ready(ready, payload, operation="create")
+        self._sync_artifact(document, ready)
+        return ready
 
     def replace(
         self, reference: SourceReference, payload: UploadPayload
@@ -368,7 +430,9 @@ class ManageUploadedDocuments:
             self._write_degraded(pending, payload, error)
             raise
         ready = self._ready_row(pending, document, response)
-        return self._finalize_ready(ready, payload, operation="replace")
+        ready = self._finalize_ready(ready, payload, operation="replace")
+        self._sync_artifact(document, ready)
+        return ready
 
     def resolve(self, source_id: str) -> CatalogDocument | None:
         """Return the hub catalog row for ``source_id``, if one exists."""
@@ -438,6 +502,8 @@ class ManageUploadedDocuments:
                 raise failure from error
         try:
             self._catalog.delete(reference)
+            if self._artifact_sync is not None:
+                self._artifact_sync.on_removed(reference)
         except Exception as error:
             failure = PartialDeleteFailure(
                 reference=reference, delete_error=error
@@ -564,6 +630,30 @@ class ManageUploadedDocuments:
             metadata_fingerprint=fingerprint_metadata(document.metadata),
             processing_fingerprint=self._processing_profile_factory().fingerprint,
         )
+
+    def _sync_artifact(
+        self, document: SourceDocument, ready: CatalogDocument
+    ) -> None:
+        if self._artifact_sync is None:
+            return
+        fingerprint = ready.content_fingerprint
+        if fingerprint is None:
+            return
+        extra = dict(document.metadata.extra)
+        extra["content_fingerprint"] = fingerprint
+        stamped = dataclasses.replace(
+            document,
+            metadata=SourceMetadata(
+                reference=document.metadata.reference,
+                title=document.metadata.title,
+                provider=document.metadata.provider,
+                content_format=document.metadata.content_format,
+                created_at=document.metadata.created_at,
+                updated_at=document.metadata.updated_at,
+                extra=extra,
+            ),
+        )
+        self._artifact_sync.on_ready(stamped, revision=fingerprint)
 
     @staticmethod
     def _with_timestamps(

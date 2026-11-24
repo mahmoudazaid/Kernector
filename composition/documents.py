@@ -180,6 +180,8 @@ def build_manage_uploaded_documents(
     def _ingest() -> IngestKnowledge:
         return _container.build_ingest_knowledge(settings, vector_store=_vector_store())
 
+    from composition.artifact.container import build_artifact_sync
+
     return ManageUploadedDocuments(
         catalog=catalog if catalog is not None else _container.build_document_catalog(settings),
         blob_store=(
@@ -192,6 +194,7 @@ def build_manage_uploaded_documents(
         vector_store_factory=_vector_store,
         max_upload_bytes=settings.max_upload_bytes,
         processing_profile_factory=lambda: _container.build_processing_profile(settings),
+        artifact_sync=build_artifact_sync(settings),
     )
 
 

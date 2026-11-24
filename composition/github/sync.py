@@ -98,6 +98,8 @@ def sync_github(
                 "GitHub connector_id is required before synchronizing."
             )
 
+        from composition.artifact.container import build_artifact_sync
+
         return SyncConnectorDocuments(
             connector=connector,
             catalog=catalog,
@@ -111,6 +113,7 @@ def sync_github(
             reconcile_connector_ids=connector_ids,
             reconcile_source_id_prefixes=reconcile_source_id_prefixes,
             vector_store_factory=get_store,
+            artifact_sync=build_artifact_sync(settings),
         ).execute()
     except ConnectorError as error:
         raise GitHubConnectorSyncError(_GITHUB_SYNC_MESSAGE) from error

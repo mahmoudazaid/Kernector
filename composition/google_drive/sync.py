@@ -270,6 +270,8 @@ def sync_google_drive(
                 "reconcile_source_id_prefixes": frozenset({""}),
             }
 
+        from composition.artifact.container import build_artifact_sync
+
         return SyncConnectorDocuments(
             connector=connector,
             catalog=catalog,
@@ -279,6 +281,7 @@ def sync_google_drive(
             ),
             processing_profile=_container.build_processing_profile(settings),
             vector_store_factory=get_store,
+            artifact_sync=build_artifact_sync(settings),
             **reconcile_kwargs,
         ).execute()
     except ConnectorError as error:

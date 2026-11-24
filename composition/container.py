@@ -63,6 +63,7 @@ from domain.ports import (
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
+from infrastructure.project.sql_store import ProjectStoreError
 from infrastructure.config import (
     OllamaSettings,
     OpenRouterSettings,
@@ -369,6 +370,36 @@ def build_retrieve_knowledge(
             )
         lexical_index = vector_store.lexical
 
+    artifact_lookup = None
+    project_ids_for = None
+    descriptor_for = None
+    if _catalog_workspace_ready(settings):
+        try:
+            from composition.artifact.container import (
+                build_artifact_index,
+                build_lookup_artifacts,
+            )
+            from composition.project.container import build_resolve_projects_for_source
+
+            # Resolver may raise DocumentOperationError / ProjectStoreError;
+            # index may raise CatalogError / OSError for a bad SQLite path.
+            resolve_projects = build_resolve_projects_for_source(settings)
+            artifact_index = build_artifact_index(settings)
+            artifact_lookup = build_lookup_artifacts(settings)
+            project_ids_for = resolve_projects.execute
+            descriptor_for = artifact_index.get
+        except (
+            ConfigurationError,
+            DocumentOperationError,
+            CatalogError,
+            ProjectStoreError,
+            OSError,
+        ):
+            # Unusable catalog / retired-env race: keep retrieve/chat available.
+            artifact_lookup = None
+            project_ids_for = None
+            descriptor_for = None
+
     return RetrieveKnowledge(
         embedding_model,
         vector_store if needs_embedding else None,
@@ -379,6 +410,9 @@ def build_retrieve_knowledge(
         vector_score_floor=(
             settings.retrieval.relevance_threshold if hybrid and alpha < 1.0 else None
         ),
+        artifact_lookup=artifact_lookup,
+        project_ids_for=project_ids_for,
+        descriptor_for=descriptor_for,
     )
 
 
@@ -495,6 +529,34 @@ def _require_workspace_id(settings: Settings) -> str:
             f"DOCUMENT_CATALOG_WORKSPACE_ID is required; it {WORKSPACE_ID_CONTRACT}"
         )
     return workspace_id
+
+
+def _retired_catalog_env_set() -> bool:
+    """Return True when a non-blank retired catalog key is still configured."""
+    for key in _RETIRED_CATALOG_ENV:
+        value = os.getenv(key)
+        if value is not None and value.strip():
+            return True
+    return False
+
+
+def _catalog_workspace_ready(settings: Settings) -> bool:
+    """Return True when artifact / project catalog wiring can be constructed.
+
+    Retrieve and chat must not inherit a catalog-only precondition: when the
+    workspace or SQL path is absent or malformed, or a retired catalog env key
+    is still set, skip optional artifact lookup instead of raising during
+    construction.
+    """
+    catalog = settings.document_catalog
+    if catalog.sql_path is None:
+        return False
+    if _retired_catalog_env_set():
+        return False
+    try:
+        return parse_workspace_id(catalog.workspace_id) is not None
+    except ValueError:
+        return False
 
 
 def _agent_draft_repository(settings: Settings):
@@ -641,13 +703,14 @@ _RETIRED_CATALOG_ENV = (
 
 def _reject_retired_catalog_env() -> None:
     """Fail when a non-blank retired catalog key is still configured."""
-    for key in _RETIRED_CATALOG_ENV:
-        value = os.getenv(key)
-        if value is not None and value.strip():
-            raise ConfigurationError(
-                f"{key} is retired; use DOCUMENT_CATALOG_SQL_PATH and "
-                "DOCUMENT_CATALOG_WORKSPACE_ID"
-            )
+    if _retired_catalog_env_set():
+        for key in _RETIRED_CATALOG_ENV:
+            value = os.getenv(key)
+            if value is not None and value.strip():
+                raise ConfigurationError(
+                    f"{key} is retired; use DOCUMENT_CATALOG_SQL_PATH and "
+                    "DOCUMENT_CATALOG_WORKSPACE_ID"
+                )
 
 
 def build_document_catalog(settings: Settings) -> DocumentCatalog:

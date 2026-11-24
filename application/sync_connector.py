@@ -8,6 +8,7 @@ import logging
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
+from application.artifact.sync import ArtifactSyncHook
 from application.contracts import (
     ConnectorSyncOutcome,
     ConnectorSyncResponse,
@@ -119,6 +120,7 @@ class SyncConnectorDocuments:
         reconcile_source_id_prefixes: frozenset[str] | None = None,
         reconcile_connector_ids: frozenset[str] = frozenset(),
         vector_store_factory: Callable[[], VectorStore] | None = None,
+        artifact_sync: ArtifactSyncHook | None = None,
     ) -> None:
         if reconcile_source_id_prefixes is None:
             reconcile_source_id_prefixes = frozenset()
@@ -147,6 +149,7 @@ class SyncConnectorDocuments:
         self._reconcile_source_id_prefixes = reconcile_source_id_prefixes
         self._reconcile_connector_ids = reconcile_connector_ids
         self._vector_store_factory = vector_store_factory
+        self._artifact_sync = artifact_sync
         self._processing_fingerprint = processing_profile.fingerprint
 
     def execute(self) -> ConnectorSyncResponse:
@@ -239,11 +242,39 @@ class SyncConnectorDocuments:
                 source_id=document.source_id,
                 source_type=document.reference.source_type,
             )
+        if self._artifact_sync is not None:
+            backfill = self._backfill_missing_descriptor(document, previous)
+            if isinstance(backfill, ConnectorSyncOutcome):
+                return backfill
+            if not backfill:
+                self._artifact_sync.on_skipped(document.reference)
         return ConnectorSyncOutcome(
             source_id=document.source_id,
             status=ConnectorSyncStatus.SKIPPED,
             chunk_count=previous.chunk_count,
         )
+
+    def _backfill_missing_descriptor(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument,
+    ) -> ConnectorSyncOutcome | bool:
+        """Fetch and describe when a READY skip has no artifact descriptor yet.
+
+        Returns ``True`` when a descriptor was written, ``False`` when none was
+        needed / could be written without failing the sync, or a failed outcome.
+        """
+        assert self._artifact_sync is not None
+        if self._artifact_sync.has_descriptor(document.reference):
+            return False
+        fetched = self._fetch(document, previous)
+        if isinstance(fetched, ConnectorSyncOutcome):
+            return fetched
+        try:
+            self._artifact_sync.on_ready(fetched, revision=document.revision)
+        except Exception as error:
+            return _failed_outcome(document, error)
+        return True
 
     def _try_provider_hash(
         self, document: ConnectorDocument, previous: CatalogDocument
@@ -330,6 +361,14 @@ class SyncConnectorDocuments:
                 provider_content_hash=document.content_hash,
             )
         )
+        if self._artifact_sync is not None:
+            try:
+                self._artifact_sync.on_ready(
+                    SourceDocument(metadata, "."),
+                    revision=document.revision,
+                )
+            except Exception as error:
+                return _failed_outcome(document, error)
         return ConnectorSyncOutcome(
             source_id=document.source_id,
             status=ConnectorSyncStatus.METADATA_UPDATED,
@@ -405,6 +444,12 @@ class SyncConnectorDocuments:
             provider_content_hash=document.content_hash,
         )
         self._catalog.upsert(ready)
+        if self._artifact_sync is not None:
+            try:
+                self._artifact_sync.on_ready(source, revision=document.revision)
+            except Exception as error:
+                self._write_status(ready, CatalogStatus.FAILED, error)
+                return _failed_outcome(document, error)
         status = (
             ConnectorSyncStatus.UPDATED
             if previous is not None and previous.status is CatalogStatus.READY
@@ -466,6 +511,8 @@ class SyncConnectorDocuments:
         for row in missing:
             store.delete_source(row.reference)
             self._catalog.delete(row.reference)
+            if self._artifact_sync is not None:
+                self._artifact_sync.on_removed(row.reference)
             removals.append(
                 ConnectorSyncOutcome(
                     source_id=row.reference.source_id,

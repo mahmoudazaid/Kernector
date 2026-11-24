@@ -778,6 +778,8 @@ def sync_jira_oauth(
             _client(client_factory, token, site.cloud_id), config
         )
         try:
+            from composition.artifact.container import build_artifact_sync
+
             return SyncConnectorDocuments(
                 connector=connector,
                 catalog=working,
@@ -790,6 +792,7 @@ def sync_jira_oauth(
                 reconcile_source_id_prefixes=frozenset({f"{site.cloud_id}/"}),
                 reconcile_connector_ids=frozenset({connector_id}),
                 vector_store_factory=get_store,
+                artifact_sync=build_artifact_sync(settings),
             ).execute()
         except _InfraIssueLimitExceededError as error:
             raise JiraIssueLimitExceededError(_ISSUE_LIMIT_MESSAGE) from error
@@ -897,9 +900,14 @@ def _purge_jira_docs(
     store = _container.lazy_vector_store(
         settings, vector_store=vector_store, vector_store_factory=vector_store_factory
     )()
+    from composition.artifact.container import remove_artifact_descriptors
+
     try:
         for row in targets:
             store.delete_source(row.reference)
             working.delete(row.reference)
+        remove_artifact_descriptors(
+            settings, tuple(row.reference for row in targets)
+        )
     except (CatalogError, VectorStoreError) as error:
         raise DocumentOperationError(str(error)) from error

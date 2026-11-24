@@ -260,7 +260,7 @@ def test_shared_scope_resolves_one_component_per_project(
 
     resolved = _resolve(store, "acme/mono:a.py")["acme/mono:a.py"]
 
-    assert [r.project_id for r in resolved] == ["prj_proj", "prj_pay"]
+    assert [r.project_id for r in resolved] == ["prj_pay", "prj_proj"]
     assert all(r.status is ComponentResolutionStatus.RESOLVED for r in resolved)
 
 

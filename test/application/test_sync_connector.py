@@ -213,6 +213,7 @@ def _use_case(
     reconcile_source_id_prefixes: frozenset[str] = frozenset(),
     reconcile_connector_ids: frozenset[str] = frozenset(),
     vector_store_factory: object | None = None,
+    artifact_sync: object | None = None,
 ) -> SyncConnectorDocuments:
     ingest = ingest or RecordingIngest()
     return SyncConnectorDocuments(
@@ -226,6 +227,7 @@ def _use_case(
         reconcile_source_id_prefixes=reconcile_source_id_prefixes,
         reconcile_connector_ids=reconcile_connector_ids,
         vector_store_factory=vector_store_factory,
+        artifact_sync=artifact_sync,  # type: ignore[arg-type]
     )
 
 
@@ -326,6 +328,62 @@ def test_matching_ready_revision_skips_fetch_and_embed() -> None:
     assert connector.fetched == []
     assert ingest.calls == []
     assert catalog.get(listed.reference) == _row(listed, revision="7", chunk_count=4)
+
+
+class _RecordingArtifactSync:
+    def __init__(self, *, known: frozenset[SourceReference] = frozenset()) -> None:
+        self._known = set(known)
+        self.ready: list[tuple[SourceDocument, str]] = []
+        self.skipped: list[SourceReference] = []
+
+    def has_descriptor(self, reference: SourceReference) -> bool:
+        return reference in self._known
+
+    def on_ready(self, source: SourceDocument, *, revision: str) -> None:
+        self.ready.append((source, revision))
+        self._known.add(source.reference)
+
+    def on_skipped(self, reference: SourceReference) -> None:
+        self.skipped.append(reference)
+
+    def on_removed(self, reference: SourceReference) -> None:
+        self._known.discard(reference)
+
+
+def test_skip_backfills_missing_artifact_descriptor_without_reingest() -> None:
+    listed = _listed(revision="7")
+    source = _source(listed)
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(listed, revision="7", chunk_count=4))
+    connector = RecordingConnector((listed,), {listed.source_id: source})
+    ingest = RecordingIngest()
+    sync = _RecordingArtifactSync()
+
+    response = _use_case(
+        connector, catalog, ingest=ingest, artifact_sync=sync
+    ).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.SKIPPED
+    assert ingest.calls == []
+    assert connector.fetched == [listed]
+    assert len(sync.ready) == 1
+    assert sync.ready[0][1] == "7"
+    assert sync.skipped == []
+
+
+def test_skip_with_existing_descriptor_does_not_fetch() -> None:
+    listed = _listed(revision="7")
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(_row(listed, revision="7", chunk_count=4))
+    connector = RecordingConnector((listed,), {})
+    sync = _RecordingArtifactSync(known=frozenset({listed.reference}))
+
+    response = _use_case(connector, catalog, artifact_sync=sync).execute()
+
+    assert response.outcomes[0].status is ConnectorSyncStatus.SKIPPED
+    assert connector.fetched == []
+    assert sync.ready == []
+    assert sync.skipped == [listed.reference]
 
 
 @pytest.mark.parametrize(

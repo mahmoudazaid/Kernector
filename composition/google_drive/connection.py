@@ -430,10 +430,15 @@ def purge_google_drive_docs(
         vector_store_factory=vector_store_factory,
     )
     store = get_store()
+    from composition.artifact.container import remove_artifact_descriptors
+
     try:
         for row in targets:
             store.delete_source(row.reference)
             working.delete(row.reference)
+        remove_artifact_descriptors(
+            settings, tuple(row.reference for row in targets)
+        )
     except CatalogError as error:
         raise DocumentOperationError(str(error)) from error
     except VectorStoreError as error:

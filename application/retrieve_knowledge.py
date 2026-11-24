@@ -1,19 +1,36 @@
 """Retrieve ranked knowledge chunks through embedding and vector-store ports."""
 
-from collections.abc import Sequence
+from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+
+from application.artifact.lookup import LookupArtifacts
 from application.contracts import RetrieveRequest, RetrieveResponse
 from application.errors import ApplicationValidationError
 from application.hybrid_fusion import fuse_hybrid_scores, normalize_scores
-from domain.knowledge import ScoredChunk
+from domain.artifact.models import ArtifactDescriptor
+from domain.knowledge import DocumentChunk, ScoredChunk, SourceMetadata, SourceReference
 from domain.ports import EmbeddingModel, LexicalIndex, VectorStore
 
 _HYBRID_CANDIDATE_MULTIPLIER = 2
+_EXACT_HIT_SCORE = 1.0
+_EXACT_PIN_STUB_FLAG = "exact_pin_stub"
+
+ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
+DescriptorForSource = Callable[[SourceReference], ArtifactDescriptor | None]
 
 
 def _chunk_key(chunk: ScoredChunk) -> tuple[str, str, int]:
     reference = chunk.chunk.reference
     return (str(reference.source_type), reference.source_id, chunk.chunk.index)
+
+
+def _source_key(reference: SourceReference) -> tuple[str, str]:
+    return (str(reference.source_type), reference.source_id)
+
+
+def _is_exact_pin_stub(hit: ScoredChunk) -> bool:
+    return hit.chunk.metadata.extra.get(_EXACT_PIN_STUB_FLAG) == "1"
 
 
 def _candidate_limit(retrieval_limit: int) -> int:
@@ -38,22 +55,10 @@ class RetrieveKnowledge:
     """Embeds a query and searches the vector store with optional metadata filters.
 
     Accepts ports only: the application layer must not import `infrastructure`.
-    Embedding and store failures propagate as ``ProviderError`` /
-    ``VectorStoreError`` — retrieval is read-only and does not wrap them in a
-    typed failure carrying mutation state.
-
-    ``execute`` is the only public retrieval entry and always enforces
-    ``max_input_length`` before retrieval work. This is defense-in-depth for
-    direct or future callers; ``RewriteAndRetrieveKnowledge`` rejects oversized
-    rewrites before delegating.
-
-    When ``hybrid_enabled`` is true, ``hybrid_alpha`` weights BM25
-    (``1`` = BM25 only, ``0`` = vector only). Endpoint alphas invoke only the
-    active channel. Intermediate alphas fuse both. Hybrid hit scores are in
-    ``[0, 1]``, not raw cosine.
-
-    ``vector_score_floor`` is a raw cosine eligibility floor applied only when
-    Hybrid mode has an active vector channel, before normalization/fusion.
+    When ``artifact_lookup`` is provided, exact identifier hits are resolved
+    independently and merged ahead of hybrid/vector hits. Optional
+    ``project_ids_for`` / ``descriptor_for`` filter both paths by confirmed
+    project membership and artifact contexts before the final limit.
     """
 
     def __init__(
@@ -66,6 +71,9 @@ class RetrieveKnowledge:
         lexical_index: LexicalIndex | None = None,
         hybrid_alpha: float = 0.5,
         vector_score_floor: float | None = None,
+        artifact_lookup: LookupArtifacts | None = None,
+        project_ids_for: ProjectIdsForSource | None = None,
+        descriptor_for: DescriptorForSource | None = None,
     ) -> None:
         if not isinstance(hybrid_alpha, (int, float)) or isinstance(
             hybrid_alpha, bool
@@ -113,44 +121,171 @@ class RetrieveKnowledge:
         self._vector_score_floor = (
             None if vector_score_floor is None else float(vector_score_floor)
         )
+        self._artifact_lookup = artifact_lookup
+        self._project_ids_for = project_ids_for
+        self._descriptor_for = descriptor_for
 
     def execute(self, request: RetrieveRequest) -> RetrieveResponse:
-        """Return ranked chunks for ``request.query``, optionally metadata-filtered.
-
-        Args:
-            request: Validated retrieve contract (query, limit, optional filters).
-
-        Returns:
-            Ranked `ScoredChunk` hits with complete provenance and metadata.
-
-        Raises:
-            ApplicationValidationError: ``query`` exceeds ``max_input_length``.
-                Defense-in-depth for direct or future callers;
-                ``RewriteAndRetrieveKnowledge`` rejects oversized rewrites
-                before delegating.
-            ProviderError: Propagated from the embedding model.
-            VectorStoreError: Propagated from the vector store.
-        """
+        """Return ranked chunks, with exact identifier hits merged first."""
         if len(request.query) > self._max_input_length:
             raise ApplicationValidationError(
                 f"query must be at most {self._max_input_length} characters, "
                 f"got {len(request.query)}"
             )
+        exact = self._exact_hits(request)
+        if not request.query:
+            return RetrieveResponse(hits=exact[: request.retrieval_limit])
+        hybrid = self._semantic_hits(request)
+        return RetrieveResponse(
+            hits=self._merge(exact, hybrid, request.retrieval_limit)
+        )
+
+    def _exact_hits(self, request: RetrieveRequest) -> tuple[ScoredChunk, ...]:
+        if self._artifact_lookup is None:
+            return ()
+        keys = self._lookup_keys(request)
+        if not keys:
+            return ()
+        matches = self._artifact_lookup.execute(
+            keys,
+            project_id=request.project_id,
+            contexts=request.contexts,
+        )
+        hits: list[ScoredChunk] = []
+        for match in matches:
+            hits.extend(self._chunks_for_match(match.descriptor))
+        return tuple(hits)
+
+    def _lookup_keys(self, request: RetrieveRequest) -> tuple[str, ...]:
+        keys = list(request.identifiers)
+        if request.query:
+            for token in request.query.replace(",", " ").split():
+                stripped = token.strip()
+                if stripped and stripped not in keys:
+                    keys.append(stripped)
+        return tuple(keys)
+
+    def _chunks_for_match(
+        self, descriptor: ArtifactDescriptor
+    ) -> tuple[ScoredChunk, ...]:
+        if self._vector_store is not None:
+            page = self._vector_store.list_source_chunks(
+                descriptor.reference, limit=1
+            )
+            if page.chunks:
+                return (
+                    ScoredChunk(chunk=page.chunks[0], score=_EXACT_HIT_SCORE),
+                )
+        # BM25-only / no store: title stub pins the source. Merge replaces it
+        # when hybrid returns the real chunk at the same identity.
+        title = descriptor.title or descriptor.reference.source_id
+        chunk = DocumentChunk(
+            metadata=SourceMetadata(
+                descriptor.reference,
+                title=descriptor.title,
+                extra={
+                    "artifact_kind": descriptor.kind,
+                    _EXACT_PIN_STUB_FLAG: "1",
+                },
+            ),
+            index=0,
+            content=title,
+        )
+        return (ScoredChunk(chunk=chunk, score=_EXACT_HIT_SCORE),)
+
+    def _semantic_hits(self, request: RetrieveRequest) -> tuple[ScoredChunk, ...]:
+        over_fetch = request.retrieval_limit
+        if request.project_id is not None or request.contexts:
+            over_fetch = _candidate_limit(request.retrieval_limit) * 4
+        widened = RetrieveRequest(
+            query=request.query,
+            retrieval_limit=over_fetch,
+            metadata_filters=request.metadata_filters,
+            project_id=request.project_id,
+            contexts=request.contexts,
+            identifiers=(),
+        )
         if not self._hybrid_enabled:
-            return RetrieveResponse(hits=self._vector_search(request))
-        if self._hybrid_alpha == 0.0:
-            return RetrieveResponse(
-                hits=_normalized_hits(
-                    self._eligible_vector_hits(self._vector_search(request))
-                )
+            hits = self._vector_search(widened)
+        elif self._hybrid_alpha == 0.0:
+            hits = _normalized_hits(
+                self._eligible_vector_hits(self._vector_search(widened))
             )
-        if self._hybrid_alpha == 1.0:
-            return RetrieveResponse(
-                hits=_normalized_hits(
-                    self._lexical_search(request, limit=request.retrieval_limit)
-                )
+        elif self._hybrid_alpha == 1.0:
+            hits = _normalized_hits(
+                self._lexical_search(widened, limit=widened.retrieval_limit)
             )
-        return RetrieveResponse(hits=self._fuse_search(request))
+        else:
+            hits = self._fuse_search(widened)
+        return self._filter_hits(hits, request)
+
+    def _filter_hits(
+        self, hits: Sequence[ScoredChunk], request: RetrieveRequest
+    ) -> tuple[ScoredChunk, ...]:
+        filtered: list[ScoredChunk] = []
+        for hit in hits:
+            reference = hit.chunk.reference
+            if request.project_id is not None:
+                if self._project_ids_for is None:
+                    continue
+                if request.project_id not in self._project_ids_for(reference):
+                    continue
+            if request.contexts:
+                if self._descriptor_for is None:
+                    continue
+                descriptor = self._descriptor_for(reference)
+                if descriptor is None:
+                    continue
+                assigned = {item.context for item in descriptor.contexts}
+                if assigned.isdisjoint(request.contexts):
+                    continue
+            filtered.append(hit)
+        return tuple(filtered)
+
+    def _merge(
+        self,
+        exact: Sequence[ScoredChunk],
+        hybrid: Sequence[ScoredChunk],
+        limit: int,
+    ) -> tuple[ScoredChunk, ...]:
+        """Pin exact identifier hits first; keep hybrid evidence for those sources.
+
+        Exact hits seed the result (one pin per source). Hybrid hits then fill
+        remaining slots by chunk identity so naming an identifier does not drop
+        that source's ranked answer chunks. A title-only exact stub at the same
+        chunk identity is replaced by the real hybrid body (BM25-only mode).
+        """
+        merged: list[ScoredChunk] = []
+        pinned_sources: set[tuple[str, str]] = set()
+        seen_chunks: set[tuple[str, str, int]] = set()
+        stub_at: dict[tuple[str, str, int], int] = {}
+        for hit in exact:
+            source = _source_key(hit.chunk.reference)
+            if source in pinned_sources:
+                continue
+            pinned_sources.add(source)
+            key = _chunk_key(hit)
+            seen_chunks.add(key)
+            if _is_exact_pin_stub(hit):
+                stub_at[key] = len(merged)
+            merged.append(hit)
+            if len(merged) >= limit:
+                return tuple(merged)
+        for hit in hybrid:
+            key = _chunk_key(hit)
+            stub_index = stub_at.pop(key, None)
+            if stub_index is not None:
+                merged[stub_index] = ScoredChunk(
+                    chunk=hit.chunk, score=merged[stub_index].score
+                )
+                continue
+            if key in seen_chunks:
+                continue
+            seen_chunks.add(key)
+            merged.append(hit)
+            if len(merged) >= limit:
+                break
+        return tuple(merged)
 
     def _eligible_vector_hits(
         self, hits: Sequence[ScoredChunk]
