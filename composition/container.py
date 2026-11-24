@@ -373,17 +373,23 @@ def build_retrieve_knowledge(
     project_ids_for = None
     descriptor_for = None
     if _catalog_workspace_ready(settings):
-        from composition.artifact.container import (
-            build_artifact_index,
-            build_lookup_artifacts,
-        )
-        from composition.project.container import build_resolve_projects_for_source
+        try:
+            from composition.artifact.container import (
+                build_artifact_index,
+                build_lookup_artifacts,
+            )
+            from composition.project.container import build_resolve_projects_for_source
 
-        artifact_index = build_artifact_index(settings)
-        resolve_projects = build_resolve_projects_for_source(settings)
-        artifact_lookup = build_lookup_artifacts(settings)
-        project_ids_for = resolve_projects.execute
-        descriptor_for = artifact_index.get
+            artifact_index = build_artifact_index(settings)
+            resolve_projects = build_resolve_projects_for_source(settings)
+            artifact_lookup = build_lookup_artifacts(settings)
+            project_ids_for = resolve_projects.execute
+            descriptor_for = artifact_index.get
+        except (ConfigurationError, DocumentOperationError):
+            # Unusable catalog / retired-env race: keep retrieve/chat available.
+            artifact_lookup = None
+            project_ids_for = None
+            descriptor_for = None
 
     return RetrieveKnowledge(
         embedding_model,
@@ -516,15 +522,27 @@ def _require_workspace_id(settings: Settings) -> str:
     return workspace_id
 
 
+def _retired_catalog_env_set() -> bool:
+    """Return True when a non-blank retired catalog key is still configured."""
+    for key in _RETIRED_CATALOG_ENV:
+        value = os.getenv(key)
+        if value is not None and value.strip():
+            return True
+    return False
+
+
 def _catalog_workspace_ready(settings: Settings) -> bool:
     """Return True when artifact / project catalog wiring can be constructed.
 
     Retrieve and chat must not inherit a catalog-only precondition: when the
-    workspace or SQL path is absent or malformed, skip optional artifact lookup
-    instead of raising during construction.
+    workspace or SQL path is absent or malformed, or a retired catalog env key
+    is still set, skip optional artifact lookup instead of raising during
+    construction.
     """
     catalog = settings.document_catalog
     if catalog.sql_path is None:
+        return False
+    if _retired_catalog_env_set():
         return False
     try:
         return parse_workspace_id(catalog.workspace_id) is not None
@@ -676,13 +694,14 @@ _RETIRED_CATALOG_ENV = (
 
 def _reject_retired_catalog_env() -> None:
     """Fail when a non-blank retired catalog key is still configured."""
-    for key in _RETIRED_CATALOG_ENV:
-        value = os.getenv(key)
-        if value is not None and value.strip():
-            raise ConfigurationError(
-                f"{key} is retired; use DOCUMENT_CATALOG_SQL_PATH and "
-                "DOCUMENT_CATALOG_WORKSPACE_ID"
-            )
+    if _retired_catalog_env_set():
+        for key in _RETIRED_CATALOG_ENV:
+            value = os.getenv(key)
+            if value is not None and value.strip():
+                raise ConfigurationError(
+                    f"{key} is retired; use DOCUMENT_CATALOG_SQL_PATH and "
+                    "DOCUMENT_CATALOG_WORKSPACE_ID"
+                )
 
 
 def build_document_catalog(settings: Settings) -> DocumentCatalog:

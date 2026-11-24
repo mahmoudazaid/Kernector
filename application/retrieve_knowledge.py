@@ -14,6 +14,7 @@ from domain.ports import EmbeddingModel, LexicalIndex, VectorStore
 
 _HYBRID_CANDIDATE_MULTIPLIER = 2
 _EXACT_HIT_SCORE = 1.0
+_EXACT_PIN_STUB_FLAG = "exact_pin_stub"
 
 ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
 DescriptorForSource = Callable[[SourceReference], ArtifactDescriptor | None]
@@ -26,6 +27,10 @@ def _chunk_key(chunk: ScoredChunk) -> tuple[str, str, int]:
 
 def _source_key(reference: SourceReference) -> tuple[str, str]:
     return (str(reference.source_type), reference.source_id)
+
+
+def _is_exact_pin_stub(hit: ScoredChunk) -> bool:
+    return hit.chunk.metadata.extra.get(_EXACT_PIN_STUB_FLAG) == "1"
 
 
 def _candidate_limit(retrieval_limit: int) -> int:
@@ -171,12 +176,17 @@ class RetrieveKnowledge:
                 return (
                     ScoredChunk(chunk=page.chunks[0], score=_EXACT_HIT_SCORE),
                 )
+        # BM25-only / no store: title stub pins the source. Merge replaces it
+        # when hybrid returns the real chunk at the same identity.
         title = descriptor.title or descriptor.reference.source_id
         chunk = DocumentChunk(
             metadata=SourceMetadata(
                 descriptor.reference,
                 title=descriptor.title,
-                extra={"artifact_kind": descriptor.kind},
+                extra={
+                    "artifact_kind": descriptor.kind,
+                    _EXACT_PIN_STUB_FLAG: "1",
+                },
             ),
             index=0,
             content=title,
@@ -242,25 +252,36 @@ class RetrieveKnowledge:
 
         Exact hits seed the result (one pin per source). Hybrid hits then fill
         remaining slots by chunk identity so naming an identifier does not drop
-        that source's ranked answer chunks.
+        that source's ranked answer chunks. A title-only exact stub at the same
+        chunk identity is replaced by the real hybrid body (BM25-only mode).
         """
         merged: list[ScoredChunk] = []
         pinned_sources: set[tuple[str, str]] = set()
         seen_chunks: set[tuple[str, str, int]] = set()
+        stub_at: dict[tuple[str, str, int], int] = {}
         for hit in exact:
             source = _source_key(hit.chunk.reference)
             if source in pinned_sources:
                 continue
             pinned_sources.add(source)
-            seen_chunks.add(_chunk_key(hit))
+            key = _chunk_key(hit)
+            seen_chunks.add(key)
+            if _is_exact_pin_stub(hit):
+                stub_at[key] = len(merged)
             merged.append(hit)
             if len(merged) >= limit:
                 return tuple(merged)
         for hit in hybrid:
-            chunk = _chunk_key(hit)
-            if chunk in seen_chunks:
+            key = _chunk_key(hit)
+            stub_index = stub_at.pop(key, None)
+            if stub_index is not None:
+                merged[stub_index] = ScoredChunk(
+                    chunk=hit.chunk, score=merged[stub_index].score
+                )
                 continue
-            seen_chunks.add(chunk)
+            if key in seen_chunks:
+                continue
+            seen_chunks.add(key)
             merged.append(hit)
             if len(merged) >= limit:
                 break

@@ -1531,6 +1531,33 @@ def test_build_retrieve_knowledge_skips_artifact_wiring_without_workspace(
     assert use_case._descriptor_for is None
 
 
+def test_build_retrieve_knowledge_skips_artifact_wiring_with_retired_catalog_env(
+    embedding_env: Settings, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Retired catalog env must not break retrieve/chat construction (#373)."""
+    from test.doubles import InMemoryVectorStore
+
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "local")
+    monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
+    monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
+    settings = load_settings()
+
+    use_case = build_retrieve_knowledge(
+        settings, vector_store=InMemoryVectorStore()
+    )
+    rewrite = build_rewrite_and_retrieve_knowledge(
+        settings, vector_store=InMemoryVectorStore()
+    )
+
+    assert isinstance(use_case, RetrieveKnowledge)
+    assert use_case._artifact_lookup is None
+    assert use_case._project_ids_for is None
+    assert use_case._descriptor_for is None
+    assert isinstance(rewrite, RewriteAndRetrieveKnowledge)
+    assert rewrite._retrieve._artifact_lookup is None
+
+
 @pytest.fixture
 def rewrite_env(embedding_env: Settings, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Embedding credentials plus a chat/rewrite model name."""

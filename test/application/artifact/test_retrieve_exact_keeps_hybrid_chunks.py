@@ -18,10 +18,16 @@ from domain.knowledge import (
     SourceReference,
 )
 from test.document_doubles import InMemoryDocumentCatalog
-from test.doubles import InMemoryVectorStore, StubEmbeddingModel, vector_for
+from test.doubles import (
+    InMemoryLexicalIndex,
+    InMemoryVectorStore,
+    StubEmbeddingModel,
+    vector_for,
+)
 
 _NOW = datetime(2026, 1, 1, tzinfo=UTC)
 _SOURCE = "cloud/PROJ:PROJ-1"
+_BUG = "cloud/PROJ:PROJ-7"
 
 
 def _chunk(source_id: str, index: int, content: str) -> DocumentChunk:
@@ -120,3 +126,62 @@ def test_naming_identifier_keeps_hybrid_answer_chunk_from_same_source() -> None:
     assert keys[0] == (_SOURCE, 0)  # exact pin (list_source_chunks limit=1)
     assert (_SOURCE, 2) in keys  # hybrid answer chunk kept
     assert len(response.hits) == 3
+
+
+def test_bm25_only_exact_stub_replaced_by_real_hybrid_chunk() -> None:
+    """BM25-only (no vector store) must not leave a title-only stub as chunk 0."""
+    descriptor = ArtifactDescriptor(
+        reference=SourceReference(_BUG, "jira"),
+        revision="r1",
+        kind=ArtifactKind.BUG,
+        external_keys=("PROJ-7",),
+        title="Export fails",
+    )
+    body = (
+        "PROJ-7 Export fails: CSV export returns HTTP 500. "
+        "Workaround: export per year."
+    )
+    chunk = _chunk(_BUG, 0, body)
+    lexical = InMemoryLexicalIndex()
+    lexical.upsert([EmbeddedChunk(chunk=chunk, vector=vector_for(body))])
+    catalog = InMemoryDocumentCatalog()
+    catalog.upsert(
+        CatalogDocument(
+            reference=descriptor.reference,
+            file_name="issue.md",
+            title="Export fails",
+            content_format="markdown",
+            status=CatalogStatus.READY,
+            created_at=_NOW,
+            updated_at=_NOW,
+            chunk_count=1,
+            error=None,
+            revision="r1",
+        )
+    )
+    retrieve = RetrieveKnowledge(
+        None,
+        None,
+        max_input_length=10_000,
+        hybrid_enabled=True,
+        hybrid_alpha=1.0,
+        lexical_index=lexical,
+        artifact_lookup=LookupArtifacts(
+            _Index(descriptor),
+            catalog,
+            project_ids_for=lambda _ref: ("prj_proj",),
+        ),
+    )
+
+    response = retrieve.execute(
+        RetrieveRequest(
+            query="what is the workaround for PROJ-7",
+            retrieval_limit=3,
+        )
+    )
+
+    assert response.hits
+    assert response.hits[0].chunk.source_id == _BUG
+    assert response.hits[0].chunk.index == 0
+    assert response.hits[0].chunk.content == body
+    assert "Workaround" in response.hits[0].chunk.content
