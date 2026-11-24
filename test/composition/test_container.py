@@ -1511,6 +1511,26 @@ def test_build_retrieve_knowledge_is_a_pure_factory(embedding_env: Settings) -> 
     assert build_retrieve_knowledge(embedding_env) is not first
 
 
+def test_build_retrieve_knowledge_skips_artifact_wiring_without_workspace(
+    embedding_env: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chat/retrieve must construct when catalog workspace is unset (#373)."""
+    from test.doubles import InMemoryVectorStore
+
+    monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
+    settings = load_settings()
+    assert settings.document_catalog.workspace_id is None
+
+    use_case = build_retrieve_knowledge(
+        settings, vector_store=InMemoryVectorStore()
+    )
+
+    assert isinstance(use_case, RetrieveKnowledge)
+    assert use_case._artifact_lookup is None
+    assert use_case._project_ids_for is None
+    assert use_case._descriptor_for is None
+
+
 @pytest.fixture
 def rewrite_env(embedding_env: Settings, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Embedding credentials plus a chat/rewrite model name."""

@@ -89,15 +89,22 @@ def build_mcp_tool_registry(
 def _search_knowledge_tool(
     settings: Settings, retrieve: RetrieveProvider
 ) -> SearchKnowledgeTool:
-    from composition.artifact.container import build_artifact_index
-    from composition.project.container import build_resolve_projects_for_source
+    from composition.container import _catalog_workspace_ready
 
-    resolve = build_resolve_projects_for_source(settings)
-    index = build_artifact_index(settings)
+    project_ids_for = None
+    descriptor_for = None
+    if _catalog_workspace_ready(settings):
+        from composition.artifact.container import build_artifact_index
+        from composition.project.container import build_resolve_projects_for_source
+
+        resolve = build_resolve_projects_for_source(settings)
+        index = build_artifact_index(settings)
+        project_ids_for = resolve.execute
+        descriptor_for = index.get
     return SearchKnowledgeTool(
         _resolve_retrieve(retrieve),
-        project_ids_for=resolve.execute,
-        descriptor_for=index.get,
+        project_ids_for=project_ids_for,
+        descriptor_for=descriptor_for,
     )
 
 
