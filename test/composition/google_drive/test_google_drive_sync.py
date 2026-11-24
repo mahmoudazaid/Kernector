@@ -314,6 +314,22 @@ def test_sync_google_drive_wraps_store_failure(
     assert isinstance(raised.value.__cause__, VectorStoreError)
 
 
+class _DescriptorAlreadyPresent:
+    """Artifact sync hook that reports every source already indexed."""
+
+    def has_descriptor(self, reference: SourceReference) -> bool:
+        return True
+
+    def on_ready(self, source: SourceDocument, *, revision: str) -> None:
+        raise AssertionError("on_ready must not run for skip-only sync")
+
+    def on_skipped(self, reference: SourceReference) -> None:
+        return None
+
+    def on_removed(self, reference: SourceReference) -> None:
+        return None
+
+
 def test_skip_only_sync_does_not_build_ingest_or_store(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -329,6 +345,11 @@ def test_skip_only_sync_does_not_build_ingest_or_store(
 
     monkeypatch.setattr(composition_container, "build_vector_store", _store)
     monkeypatch.setattr(composition_container, "build_ingest_knowledge", _ingest)
+    # Skip with an existing descriptor must not fetch for backfill either.
+    monkeypatch.setattr(
+        "composition.artifact.container.build_artifact_sync",
+        lambda _settings: _DescriptorAlreadyPresent(),
+    )
     response = sync_google_drive(
         settings,
         connector=RecordingConnector((listed,)),
