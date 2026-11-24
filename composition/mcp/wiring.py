@@ -99,12 +99,20 @@ def _search_knowledge_tool(
             from composition.artifact.container import build_artifact_index
             from composition.errors import DocumentOperationError
             from composition.project.container import build_resolve_projects_for_source
+            from infrastructure.catalog.errors import CatalogError
+            from infrastructure.project.sql_store import ProjectStoreError
 
             resolve = build_resolve_projects_for_source(settings)
             index = build_artifact_index(settings)
             project_ids_for = resolve.execute
             descriptor_for = index.get
-        except (ConfigurationError, DocumentOperationError):
+        except (
+            ConfigurationError,
+            DocumentOperationError,
+            CatalogError,
+            ProjectStoreError,
+            OSError,
+        ):
             project_ids_for = None
             descriptor_for = None
     return SearchKnowledgeTool(

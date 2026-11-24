@@ -63,6 +63,7 @@ from domain.ports import (
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
+from infrastructure.project.sql_store import ProjectStoreError
 from infrastructure.config import (
     OllamaSettings,
     OpenRouterSettings,
@@ -380,12 +381,20 @@ def build_retrieve_knowledge(
             )
             from composition.project.container import build_resolve_projects_for_source
 
-            artifact_index = build_artifact_index(settings)
+            # Resolver may raise DocumentOperationError / ProjectStoreError;
+            # index may raise CatalogError / OSError for a bad SQLite path.
             resolve_projects = build_resolve_projects_for_source(settings)
+            artifact_index = build_artifact_index(settings)
             artifact_lookup = build_lookup_artifacts(settings)
             project_ids_for = resolve_projects.execute
             descriptor_for = artifact_index.get
-        except (ConfigurationError, DocumentOperationError):
+        except (
+            ConfigurationError,
+            DocumentOperationError,
+            CatalogError,
+            ProjectStoreError,
+            OSError,
+        ):
             # Unusable catalog / retired-env race: keep retrieve/chat available.
             artifact_lookup = None
             project_ids_for = None
