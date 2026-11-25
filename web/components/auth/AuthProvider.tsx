@@ -12,7 +12,7 @@ import {
   loginRequest,
   logoutRequest,
   meRequest,
-} from "@/lib/auth/api";
+} from "@/lib/api/auth";
 import {
   beginAccountSwitch,
   clearAuthSession,

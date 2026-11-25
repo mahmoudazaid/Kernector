@@ -23,7 +23,7 @@ import {
   SETTINGS_CATALOG_UNAVAILABLE,
   useRuntimeCatalog,
 } from "@/lib/settings/use-runtime-catalog";
-import { putPreferencesRequest } from "@/lib/auth/api";
+import { putPreferencesRequest } from "@/lib/api/auth";
 import {
   getAuthSession,
   setAuthPreferences,
