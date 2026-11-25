@@ -282,6 +282,64 @@ a {
   font-size: 0.8125rem;
 }
 
+.kern-app.is-login .kern-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.kern-app.is-login .kern-main {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.kern-login-page {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.kern-login {
+  display: grid;
+  gap: var(--kern-space-5);
+  width: min(100%, 24rem);
+  padding: var(--kern-space-6) 0;
+}
+
+.kern-login-brand {
+  display: flex;
+  justify-content: center;
+}
+
+.kern-login-mark {
+  width: 3rem;
+  height: 3rem;
+}
+
+.kern-login .kern-page-heading {
+  text-align: center;
+}
+
+.kern-login-form {
+  display: grid;
+  gap: var(--kern-space-4);
+}
+
+.kern-login-form .kern-settings-stack {
+  display: grid;
+  gap: var(--kern-space-4);
+}
+
+.kern-login-form .kern-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.kern-login-error {
+  margin: 0;
+  color: var(--kern-danger);
+  font-size: var(--kern-text-sm);
+}
+
 .kern-main {
   display: flex;
   flex-direction: column;

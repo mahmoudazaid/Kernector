@@ -3,9 +3,10 @@
  * Forwards Cookie / Set-Cookie / X-CSRF-Token only on these routes.
  */
 
+import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 import { apiBaseUrl } from "@/lib/server/api-proxy";
 
-export const AUTH_COOKIE_NAME = "kernector_session";
+export { AUTH_COOKIE_NAME };
 export const CSRF_HEADER = "X-CSRF-Token";
 
 const NO_STORE = "no-store";

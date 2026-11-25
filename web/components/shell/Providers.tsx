@@ -1,8 +1,10 @@
 "use client";
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { AuthGate } from "@/components/auth/AuthGate";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { LoadingState } from "@/components/states/LoadingState";
 
 type ProvidersProps = {
   children: ReactNode;
@@ -18,7 +20,17 @@ export function Providers({ children, nonce }: ProvidersProps) {
       disableTransitionOnChange
       nonce={nonce}
     >
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <Suspense
+          fallback={
+            <div className="kern-content-state" aria-busy="true">
+              <LoadingState label="Loading" />
+            </div>
+          }
+        >
+          <AuthGate>{children}</AuthGate>
+        </Suspense>
+      </AuthProvider>
     </NextThemesProvider>
   );
 }

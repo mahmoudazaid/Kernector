@@ -55,9 +55,16 @@ authorization (EPIC #257).
 8. **Preferences** — `GET`/`PUT /api/v1/me/preferences` for preferred
    `provider` + `model`, validated against the runtime settings catalog.
    Missing preferences do not invent a row; stale pairs are returned with
-   `usable: false` and chat falls back to catalog defaults. Anonymous
-   `localStorage` settings remain for signed-out users only. Chat and
-   documents stay ungated.
+   `usable: false` and chat falls back to catalog defaults. Generation
+   knobs for signed-in users live in a separate client key; the anonymous
+   `localStorage` provider/model pair is not written while signed in.
+
+9. **Hub login gate** — The Next.js Hub requires a signed-in session for
+   every product route. Unauthenticated browsers are redirected to
+   `/login` (middleware cookie check plus client `AuthGate` after
+   `GET /me`). The login surface uses Instrument panel chrome (ADR 0003):
+   embossed fieldset, `.kern-settings-input`, primary `.kern-btn`, no
+   workspace sidebar until authenticated.
 
 ## Consequences
 

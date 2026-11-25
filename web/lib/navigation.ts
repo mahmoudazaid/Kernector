@@ -14,8 +14,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "MCP Access", href: "/settings/mcp" },
 ] as const;
 
-export const SIGN_IN_ITEM: NavItem = { label: "Sign in", href: "/login" };
-
 function pathMatchesHref(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";
@@ -49,11 +47,6 @@ export function navItemForPath(pathname: string): NavItem {
     }
     if (!best || item.href.length > best.href.length) {
       best = item;
-    }
-  }
-  if (pathMatchesHref(pathname, SIGN_IN_ITEM.href)) {
-    if (!best || SIGN_IN_ITEM.href.length >= best.href.length) {
-      return SIGN_IN_ITEM;
     }
   }
   return best ?? NAV_ITEMS[0];

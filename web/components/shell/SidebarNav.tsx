@@ -3,11 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  NAV_ITEMS,
-  SIGN_IN_ITEM,
-  isActivePath,
-} from "@/lib/navigation";
+import { NAV_ITEMS, isActivePath } from "@/lib/navigation";
 import { useAuthOptional } from "@/lib/auth/use-auth";
 
 type SidebarNavProps = {
@@ -31,7 +27,7 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
     try {
       await auth.signOut();
       onNavigate?.();
-      router.push("/login");
+      router.replace("/login");
     } catch {
       setSignOutError("Sign out failed. Please try again.");
     } finally {
@@ -61,7 +57,10 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
         })}
         {auth?.user ? (
           <div className="kern-nav-auth">
-            <span className="kern-nav-item kern-nav-user" title={auth.user.username}>
+            <span
+              className="kern-nav-item kern-nav-user"
+              title={auth.user.username}
+            >
               {auth.user.username}
             </span>
             <button
@@ -78,20 +77,7 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
               </p>
             ) : null}
           </div>
-        ) : (
-          <Link
-            href={SIGN_IN_ITEM.href}
-            className={`kern-nav-item${
-              isActivePath(pathname, SIGN_IN_ITEM.href) ? " is-active" : ""
-            }`}
-            aria-current={
-              isActivePath(pathname, SIGN_IN_ITEM.href) ? "page" : undefined
-            }
-            onClick={onNavigate}
-          >
-            <span>{SIGN_IN_ITEM.label}</span>
-          </Link>
-        )}
+        ) : null}
       </div>
     </nav>
   );

@@ -15,7 +15,12 @@ const EMPTY: AuthSessionState = {
   csrfToken: null,
   preferences: null,
   generation: 0,
-  // "ready" when cleared so signed-out Settings can seed without waiting.
+  // Boot as loading until the first /me settles; cleared sessions are "ready".
+  preferencesStatus: "loading",
+};
+
+const CLEARED: AuthSessionState = {
+  ...EMPTY,
   preferencesStatus: "ready",
 };
 
@@ -97,7 +102,7 @@ export function setPreferencesStatus(status: PreferencesStatus): void {
 /** Clear in-memory user preferences and CSRF (logout / account switch). */
 export function clearAuthSession(): void {
   state = {
-    ...EMPTY,
+    ...CLEARED,
     generation: state.generation + 1,
   };
   emit();
