@@ -85,6 +85,19 @@ See [ADR 0005](docs/adr/0005-consolidate-runtime-contract-on-settings.md) for
 why `/api/v1/settings` owns client bootstrap state and why `/capabilities` was
 retired.
 
+### Local user auth (#182)
+
+Provision accounts with the CLI only (no HTTP register, no `--password` flag):
+
+```bash
+uv run python -m presentation.cli.create_user --username alice
+```
+
+Sign in at `/login`. Auth and preferences go through the Next.js same-origin
+BFF (`/api/v1/auth/*`, `/api/v1/me/preferences`). See
+[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md). Chat and
+documents stay available without signing in. Workspace membership is #446.
+
 ### Run the MCP Streamable HTTP server
 
 Coding assistants (Cursor, Claude Code, etc.) remain the agents. Kernector’s
@@ -117,8 +130,9 @@ create/rotate.
 - **Interim Admin gate:** `ADMIN_API_TOKEN` protects `/api/v1/admin/mcp/*`.
   Fail closed when unset. Never put it in `NEXT_PUBLIC_*` or browser storage;
   the Next.js BFF under `/api/v1/admin/mcp/*` injects it server-side. Use HTTPS
-  for any remote deployment. UI hiding is not a security boundary (#36/#182
-  remain open for multi-user Admin RBAC).
+  for any remote deployment. UI hiding is not a security boundary (#36
+  remains open for multi-user Admin RBAC). End-user sign-in is #182
+  ([ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md)).
 - **Isolation:** `core.search_knowledge` stays unavailable on MCP profiles
   until workspace isolation (#257 / #377). When invoked, it accepts optional
   `project_id`, bounded `identifiers[]` (exact external-key lookup merged

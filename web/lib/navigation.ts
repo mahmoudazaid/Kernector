@@ -11,6 +11,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Chat", href: "/chat" },
   { label: "Settings", href: "/settings" },
   { label: "MCP Access", href: "/settings/mcp" },
+  { label: "Sign in", href: "/login" },
 ] as const;
 
 function pathMatchesHref(pathname: string, href: string): boolean {

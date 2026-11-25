@@ -2,6 +2,7 @@
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import type { ReactNode } from "react";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 type ProvidersProps = {
   children: ReactNode;
@@ -17,7 +18,7 @@ export function Providers({ children, nonce }: ProvidersProps) {
       disableTransitionOnChange
       nonce={nonce}
     >
-      {children}
+      <AuthProvider>{children}</AuthProvider>
     </NextThemesProvider>
   );
 }

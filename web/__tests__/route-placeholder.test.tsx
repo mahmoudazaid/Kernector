@@ -7,7 +7,9 @@ const PLACEHOLDER_ITEMS = NAV_ITEMS.filter(
   (item) =>
     item.href !== "/settings" &&
     item.href !== "/chat" &&
-    item.href !== "/documents",
+    item.href !== "/documents" &&
+    item.href !== "/login" &&
+    item.href !== "/settings/mcp",
 );
 
 describe("placeholder routes", () => {

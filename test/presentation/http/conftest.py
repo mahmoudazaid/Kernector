@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from composition.auth import clear_auth_store_cache
 from presentation.http.deps import (
     get_document_catalog,
     get_prompt_repository,
@@ -31,6 +32,7 @@ def _clear_http_process_caches() -> None:
     get_get_response_feedback.cache_clear()
     get_project_use_cases.cache_clear()
     get_mcp_access_use_cases.cache_clear()
+    clear_auth_store_cache()
     yield
     get_settings.cache_clear()
     get_vector_store.cache_clear()
@@ -42,3 +44,4 @@ def _clear_http_process_caches() -> None:
     get_get_response_feedback.cache_clear()
     get_project_use_cases.cache_clear()
     get_mcp_access_use_cases.cache_clear()
+    clear_auth_store_cache()

@@ -136,6 +136,13 @@ state is **pack-presentation-owned** and must use a separate key prefix
 fallback when the session key is absent or unusable. Runtime settings stay on
 `kernector:runtime-settings:v1` and must not clear session keys.
 
+Local end-user auth (#182 / [ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md))
+uses an HttpOnly `kernector_session` cookie via the same-origin Next BFF
+(`/api/v1/auth/*`, `/api/v1/me/preferences`). CSRF is re-derived from the
+session id and a server-only key. Preferred provider/model for signed-in users
+live in SQLite preferences; anonymous users keep `kernector:runtime-settings:v1`.
+Chat and documents stay ungated. Workspace membership remains #446.
+
 ## Knowledge foundation
 
 Kernector’s reusable core is **domain-agnostic**. Business vocabulary lives in
@@ -896,7 +903,8 @@ the agents; Kernector supplies evidence and allowlisted tools.
 - Admin management (#324): `ADMIN_API_TOKEN` protects `/api/v1/admin/mcp/*`
   (fail closed when unset). The web Admin UI at `/settings/mcp` proxies through
   Next.js BFF routes so the browser never holds the admin credential. HTTPS is
-  required for remote deployments. Multi-user Admin RBAC remains #36/#182.
+  required for remote deployments. Multi-user Admin RBAC remains #36;
+  end-user auth is #182 (ADR 0013).
 - Isolation (#324): tools that cannot enforce project scope (notably
   `core.search_knowledge` until #257) are not allowlistable and are rejected on
   invoke. `core.project_list` filters to the caller’s trusted `project_id`.

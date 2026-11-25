@@ -23,6 +23,11 @@ import {
   SETTINGS_CATALOG_UNAVAILABLE,
   useRuntimeCatalog,
 } from "@/lib/settings/use-runtime-catalog";
+import { putPreferencesRequest } from "@/lib/auth/api";
+import {
+  getAuthSession,
+  setAuthPreferences,
+} from "@/lib/auth/session-store";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
@@ -160,11 +165,33 @@ function defaultsFromCatalog(
 }
 
 function persist(selection: SelectionState): void {
+  const auth = getAuthSession();
+  if (auth.user === null) {
+    // Anonymous: localStorage only. Signed-in users keep settings locally for
+    // generation knobs but provider/model also go to the server preferences API.
+    saveRuntimeSettings({
+      provider: selection.provider,
+      model: selection.model,
+      settings: selection.settings,
+    });
+    return;
+  }
   saveRuntimeSettings({
     provider: selection.provider,
     model: selection.model,
     settings: selection.settings,
   });
+  if (auth.csrfToken) {
+    void putPreferencesRequest(
+      auth.csrfToken,
+      selection.provider,
+      selection.model,
+    )
+      .then((prefs) => setAuthPreferences(prefs))
+      .catch(() => {
+        /* keep local selection; server may reject stale pairs */
+      });
+  }
 }
 
 /**
@@ -192,7 +219,20 @@ export function SettingsPanel({
 
   if (catalog !== selectionForCatalog) {
     if (catalog) {
-      const next = defaultsFromCatalog(catalog, loadRuntimeSettings());
+      const authPrefs = getAuthSession().preferences;
+      const storedLocal = loadRuntimeSettings();
+      const storedFromAuth =
+        authPrefs !== null &&
+        authPrefs.usable &&
+        authPrefs.provider !== null &&
+        authPrefs.model !== null
+          ? {
+              provider: authPrefs.provider,
+              model: authPrefs.model,
+              settings: storedLocal?.settings ?? {},
+            }
+          : storedLocal;
+      const next = defaultsFromCatalog(catalog, storedFromAuth);
       setSelection(next);
       setSelectionForCatalog(catalog);
       persist(next);

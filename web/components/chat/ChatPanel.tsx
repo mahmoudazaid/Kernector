@@ -46,6 +46,7 @@ import {
   loadRuntimeSettings,
   type StoredChatMessage,
 } from "@/lib/settings/runtime-settings-storage";
+import { getAuthSession } from "@/lib/auth/session-store";
 import { setActiveConversationId } from "@/lib/session/active-session";
 import {
   createConversation,
@@ -948,13 +949,26 @@ export function ChatPanel({
   function runtimeFromSettings(
     style: ConversationResponseStyle,
   ): AskChatOptions["body"]["runtime"] {
+    const authPrefs = getAuthSession().preferences;
     const stored = loadRuntimeSettings();
+    const fromAuth =
+      authPrefs !== null &&
+      authPrefs.usable &&
+      authPrefs.provider !== null &&
+      authPrefs.model !== null &&
+      (authPrefs.provider === "ollama" || authPrefs.provider === "openrouter")
+        ? {
+            provider: authPrefs.provider as "openrouter" | "ollama",
+            model: authPrefs.model,
+            settings: stored?.settings ?? {},
+          }
+        : null;
     const provider: "openrouter" | "ollama" | null =
       stored !== null &&
       (stored.provider === "ollama" || stored.provider === "openrouter")
         ? stored.provider
         : null;
-    const base =
+    const fromLocal =
       stored === null
         ? null
         : {
@@ -962,6 +976,7 @@ export function ChatPanel({
             model: stored.model,
             settings: stored.settings,
           };
+    const base = fromAuth ?? fromLocal;
     if (style === "default") {
       return base;
     }
