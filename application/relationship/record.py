@@ -232,14 +232,37 @@ class RecordExplicitRelationships:
         descriptor = self._index.get(reference)
         if descriptor is None:
             return False
+        arriving_prefix = _source_instance_prefix(reference.source_id)
         for key in descriptor.external_keys:
-            if self._store.list_unresolved_for_key(key):
+            if self._has_same_instance_unresolved(key, arriving_prefix):
                 return True
         for part in descriptor.parts:
-            if self._store.list_unresolved_for_key(
-                part.part_key, part_key=part.part_key
+            if self._has_same_instance_unresolved(
+                part.part_key, arriving_prefix, part_key=part.part_key
             ):
                 return True
+        return False
+
+    def _has_same_instance_unresolved(
+        self,
+        key: str,
+        arriving_prefix: str,
+        *,
+        part_key: str | None = None,
+    ) -> bool:
+        for edge in self._store.list_unresolved_for_key(key, part_key=part_key):
+            if not edge.evidence:
+                continue
+            evidence_prefix = _source_instance_prefix(
+                edge.evidence[0].source.source_id
+            )
+            if (
+                arriving_prefix
+                and evidence_prefix
+                and arriving_prefix != evidence_prefix
+            ):
+                continue
+            return True
         return False
 
     def _resolve_arriving_artifact(
@@ -249,6 +272,7 @@ class RecordExplicitRelationships:
         seen_at: str,
     ) -> None:
         """Upgrade unresolved endpoints that match this document's keys."""
+        _ = seen_at
         descriptor = self._index.get(source.reference)
         if descriptor is None:
             return
@@ -267,6 +291,8 @@ class RecordExplicitRelationships:
                 if edge.relationship_id in seen_edges:
                     continue
                 seen_edges.add(edge.relationship_id)
+                if not edge.evidence:
+                    continue
                 evidence = edge.evidence[0]
                 evidence_prefix = _source_instance_prefix(evidence.source.source_id)
                 if (
@@ -279,24 +305,13 @@ class RecordExplicitRelationships:
                 obj = self._upgrade_endpoint(edge.object, key, source)
                 if subject is edge.subject and obj is edge.object:
                     continue
-                self._store.upsert_from_evidence(
-                    project_id=edge.project_id,
+                # Rewrite only — do not re-run create-time Relationship checks
+                # (confirmed inferred edges must keep their decision fields).
+                self._store.resolve_endpoints(
+                    edge.relationship_id,
                     subject=subject,
-                    relation_type=edge.relation_type,
                     object=obj,
-                    origin=edge.origin,
-                    verification=edge.verification,
-                    confidence=edge.confidence,
                     freshness=FRESHNESS_CURRENT,
-                    evidence=EvidenceRef(
-                        source=evidence.source,
-                        revision=evidence.revision,
-                        locator=evidence.locator,
-                        extractor_id=evidence.extractor_id,
-                    ),
-                    seen_at=seen_at,
-                    subject_aliases=(key,) if isinstance(subject, ArtifactRef) else (),
-                    object_aliases=(key,) if isinstance(obj, ArtifactRef) else (),
                 )
 
     def _upgrade_endpoint(

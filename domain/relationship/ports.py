@@ -77,6 +77,16 @@ class RelationshipStore(Protocol):
     ) -> tuple[Relationship, ...]:
         """Return unresolved edges for ``key`` across every project in the workspace."""
 
+    def resolve_endpoints(
+        self,
+        relationship_id: str,
+        *,
+        subject: ArtifactRef | UnresolvedKey,
+        object: ArtifactRef | UnresolvedKey,
+        freshness: str,
+    ) -> Relationship:
+        """Upgrade endpoints on an existing edge without create-time validation."""
+
     def apply_decision(
         self,
         relationship_id: str,

@@ -306,7 +306,7 @@ class SyncConnectorDocuments:
                 level=logging.ERROR,
                 error_type=type(error).__name__,
                 source_id=document.source_id,
-                source_type=document.source_type,
+                source_type=document.reference.source_type,
             )
             return
         if not should_retry:

@@ -373,22 +373,20 @@ class SqlRelationshipStore:
         connection = _connection.connect(self._path)
         try:
             # Exact unresolved_key matches (indexed). Avoid LIKE so '_' in
-            # Jira keys is literal and skipped syncs stay cheap.
+            # Jira keys is literal and skipped syncs stay cheap. Sort in
+            # Python — an SQL ORDER BY on the UNION prevents index use.
             if part_key is not None:
                 rows = connection.execute(
                     """
-                    SELECT * FROM (
-                        SELECT * FROM relationships
-                        WHERE workspace_id = ?
-                          AND subject_unresolved_key = ?
-                          AND subject_part_key = ?
-                        UNION ALL
-                        SELECT * FROM relationships
-                        WHERE workspace_id = ?
-                          AND object_unresolved_key = ?
-                          AND object_part_key = ?
-                    )
-                    ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
+                    SELECT * FROM relationships
+                    WHERE workspace_id = ?
+                      AND subject_unresolved_key = ?
+                      AND subject_part_key = ?
+                    UNION ALL
+                    SELECT * FROM relationships
+                    WHERE workspace_id = ?
+                      AND object_unresolved_key = ?
+                      AND object_part_key = ?
                     """,
                     (
                         self._workspace_id,
@@ -402,16 +400,13 @@ class SqlRelationshipStore:
             else:
                 rows = connection.execute(
                     """
-                    SELECT * FROM (
-                        SELECT * FROM relationships
-                        WHERE workspace_id = ?
-                          AND subject_unresolved_key = ?
-                        UNION ALL
-                        SELECT * FROM relationships
-                        WHERE workspace_id = ?
-                          AND object_unresolved_key = ?
-                    )
-                    ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
+                    SELECT * FROM relationships
+                    WHERE workspace_id = ?
+                      AND subject_unresolved_key = ?
+                    UNION ALL
+                    SELECT * FROM relationships
+                    WHERE workspace_id = ?
+                      AND object_unresolved_key = ?
                     """,
                     (
                         self._workspace_id,
@@ -422,7 +417,10 @@ class SqlRelationshipStore:
                 ).fetchall()
             seen: set[str] = set()
             relationships: list[Relationship] = []
-            for row in rows:
+            for row in sorted(
+                rows,
+                key=lambda item: (item["project_id"], item["relationship_id"]),
+            ):
                 relationship_id = row["relationship_id"]
                 if relationship_id in seen:
                     continue
@@ -431,6 +429,47 @@ class SqlRelationshipStore:
             return tuple(relationships)
         finally:
             connection.close()
+
+    def resolve_endpoints(
+        self,
+        relationship_id: str,
+        *,
+        subject: ArtifactRef | UnresolvedKey,
+        object: ArtifactRef | UnresolvedKey,
+        freshness: str,
+    ) -> Relationship:
+        """Upgrade endpoints on an existing edge without create-time validation."""
+        connection = _connection.connect(self._path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM relationships
+                WHERE workspace_id = ? AND relationship_id = ?
+                """,
+                (self._workspace_id, relationship_id),
+            ).fetchone()
+            if row is None:
+                raise RelationshipInputError("relationship not found")
+            self._rewrite_endpoints(
+                connection,
+                relationship_id=relationship_id,
+                project_id=row["project_id"],
+                relation_type=row["relation_type"],
+                subject=subject,
+                object=object,
+                freshness=freshness,
+            )
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.close()
+        loaded = self.get(relationship_id)
+        if loaded is None:
+            raise RelationshipInputError("relationship resolve failed to persist")
+        return loaded
 
     def apply_decision(
         self,

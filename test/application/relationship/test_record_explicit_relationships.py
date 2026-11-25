@@ -384,10 +384,102 @@ def test_keeps_unresolved_when_only_other_instance_matches(
     assert listed[0].object.key == "PROJ-123"
 
 
+def test_resolve_arriving_preserves_confirmed_inferred_edge(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    from datetime import datetime, timezone
+
+    from domain.relationship.models import ORIGIN_INFERRED, VERIFICATION_UNVERIFIED
+
+    edge = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/PROJ:PROJ-140", "jira")),
+        relation_type="relates_to",
+        object=UnresolvedKey("PROJ-9"),
+        origin=ORIGIN_INFERRED,
+        verification=VERIFICATION_UNVERIFIED,
+        confidence=0.4,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/PROJ:PROJ-140", "jira"),
+            revision="r1",
+            locator="field=model;span=1",
+            extractor_id="inferred",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    store.apply_decision(
+        edge.relationship_id,
+        verification=VERIFICATION_VERIFIED,
+        actor="operator",
+        at=datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc),
+        expected_version=edge.decision_version,
+    )
+    index.upsert(_descriptor("inst/PROJ:PROJ-9", "PROJ-9"))
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: ("prj_orders",),
+        extractors={"jira": _FixedExtractor(())},
+        raw_from_document=_raw,
+    )
+    recorder.resolve_arriving(_source("PROJ-9", "inst/PROJ:PROJ-9"))
+    loaded = store.get(edge.relationship_id)
+    assert loaded is not None
+    assert isinstance(loaded.object, ArtifactRef)
+    assert loaded.object.reference.source_id == "inst/PROJ:PROJ-9"
+    assert loaded.origin == ORIGIN_INFERRED
+    assert loaded.verification == VERIFICATION_VERIFIED
+    assert loaded.decision_actor == "operator"
+
+
+def test_needs_retry_ignores_other_instance_unresolved(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    index.upsert(_descriptor("inst-b/PROJ:PROJ-9", "PROJ-9"))
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst-a/PROJ:PROJ-1", "jira")),
+        relation_type="relates_to",
+        object=UnresolvedKey("PROJ-9"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst-a/PROJ:PROJ-1", "jira"),
+            revision="r1",
+            locator="field=issuelinks;type=Relates;dir=out;key=PROJ-9",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: ("prj_orders",),
+        extractors={"jira": _FixedExtractor(())},
+        raw_from_document=_raw,
+        mapping_fingerprint="m1",
+    )
+    store.set_record_watermark(
+        SourceReference("inst-b/PROJ:PROJ-9", "jira"),
+        "v2\nfp\nr1\nprj_orders\nm1",
+    )
+    assert (
+        recorder.needs_retry(
+            SourceReference("inst-b/PROJ:PROJ-9", "jira"), revision="r1"
+        )
+        is False
+    )
+
+
 def test_resolve_arriving_skips_unsupported_sources(
     index: SqlArtifactIndex, store: SqlRelationshipStore
 ) -> None:
-    github_ref = SourceReference("owner/repo:openapi.yaml", "github")
+    # Same instance prefix as the evidence so the instance check would otherwise
+    # allow resolution; supports() must still short-circuit.
+    github_ref = SourceReference("inst/repo:openapi.yaml", "github")
     index.upsert(
         ArtifactDescriptor(
             reference=github_ref,
@@ -414,6 +506,14 @@ def test_resolve_arriving_skips_unsupported_sources(
         ),
         seen_at="2026-10-01T12:00:00Z",
     )
+    lookups: list[str] = []
+    original = store.list_unresolved_for_key
+
+    def _tracking_list(key: str, *, part_key: str | None = None):
+        lookups.append(key)
+        return original(key, part_key=part_key)
+
+    store.list_unresolved_for_key = _tracking_list  # type: ignore[method-assign]
     recorder = RecordExplicitRelationships(
         store,
         index,
@@ -432,7 +532,8 @@ def test_resolve_arriving_skips_unsupported_sources(
         "{}",
     )
     recorder.resolve_arriving(source)
-    pending = store.list_unresolved_for_key("openapi")
+    assert lookups == []
+    pending = original("openapi")
     assert len(pending) == 1
     assert isinstance(pending[0].object, UnresolvedKey)
 

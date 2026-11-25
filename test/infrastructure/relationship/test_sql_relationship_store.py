@@ -294,7 +294,10 @@ def test_list_unresolved_for_key_treats_underscore_literally(
 def test_merge_retains_newest_evidence_by_recorded_at(
     store: SqlRelationshipStore,
 ) -> None:
-    store.upsert_from_evidence(
+    # Two rows for the same logical edge (unresolved vs resolved). Merging via
+    # resolve_endpoints exercises _retain_newest_evidence_per_source without the
+    # upsert path's same-source DELETE.
+    unresolved = store.upsert_from_evidence(
         project_id="prj_orders",
         subject=_ref("inst/PROJ:PROJ-140"),
         relation_type="tests",
@@ -305,9 +308,25 @@ def test_merge_retains_newest_evidence_by_recorded_at(
         freshness="current",
         evidence=_evidence(revision="10"),
         seen_at="2026-10-01T12:00:00Z",
-        object_aliases=("PROJ-123",),
     )
-    merged = store.upsert_from_evidence(
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-140"),
+        relation_type="tests",
+        object=_ref("inst/PROJ:PROJ-123"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence(
+            "inst/PROJ:OTHER-1",
+            revision="9",
+            locator="field=issuelinks;type=Tests;dir=in;key=PROJ-140",
+        ),
+        seen_at="2026-10-02T12:00:00Z",
+    )
+    # Same source as unresolved, newer recorded_at, lexicographically smaller rev.
+    store.upsert_from_evidence(
         project_id="prj_orders",
         subject=_ref("inst/PROJ:PROJ-140"),
         relation_type="tests",
@@ -317,15 +336,24 @@ def test_merge_retains_newest_evidence_by_recorded_at(
         confidence=1.0,
         freshness="current",
         evidence=_evidence(revision="9"),
-        seen_at="2026-10-02T12:00:00Z",
-        object_aliases=("PROJ-123",),
+        seen_at="2026-10-03T12:00:00Z",
     )
 
-    loaded = store.get(merged.relationship_id)
+    store.resolve_endpoints(
+        unresolved.relationship_id,
+        subject=_ref("inst/PROJ:PROJ-140"),
+        object=_ref("inst/PROJ:PROJ-123"),
+        freshness="current",
+    )
+
+    loaded = store.get(unresolved.relationship_id)
     assert loaded is not None
-    assert len(loaded.evidence) == 1
-    # Lexicographically "9" < "10", but recorded_at of "9" is newer.
-    assert loaded.evidence[0].revision == "9"
+    by_source = {
+        (item.source.source_type, item.source.source_id): item.revision
+        for item in loaded.evidence
+    }
+    assert by_source[("jira", "inst/PROJ:PROJ-140")] == "9"
+    assert by_source[("jira", "inst/PROJ:OTHER-1")] == "9"
 
 
 def test_mark_stale_for_evidence_ignores_matching_revision(
