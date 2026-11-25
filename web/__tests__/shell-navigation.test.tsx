@@ -125,6 +125,21 @@ describe("shell navigation", () => {
     expect(screen.queryByText(/software delivery/i)).not.toBeInTheDocument();
   });
 
+  it("uses a single-column shell when the sidebar is hidden", () => {
+    usePathname.mockReturnValue("/login");
+
+    const { container } = render(
+      <AppShell>
+        <div>content</div>
+      </AppShell>,
+    );
+
+    expect(container.querySelector(".kern-app")).toHaveClass("is-no-sidebar");
+    expect(
+      screen.queryByRole("navigation", { name: /primary navigation/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("toggles the mobile navigation open and closed", async () => {
     const user = userEvent.setup();
 

@@ -23,9 +23,14 @@ export function AppShell({ children }: AppShellProps) {
   // Outside AuthProvider (tests): keep workspace nav. In-app: require session.
   const showWorkspaceNav =
     !isLogin && (auth === null || auth.user !== null);
+  // Single-column body whenever the sidebar is absent (login, session check,
+  // outage) so AuthGate loaders stay centered in the main pane (ADR 0003 §10).
+  const noSidebar = !showWorkspaceNav;
 
   return (
-    <div className={`kern-app${isLogin ? " is-login" : ""}`}>
+    <div
+      className={`kern-app${isLogin ? " is-login" : ""}${noSidebar ? " is-no-sidebar" : ""}`}
+    >
       <header className="kern-header">
         {showWorkspaceNav ? (
           <button

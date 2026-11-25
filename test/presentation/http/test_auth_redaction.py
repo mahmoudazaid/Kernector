@@ -72,3 +72,51 @@ def test_install_attaches_to_uvicorn_loggers() -> None:
     assert any(
         isinstance(item, SecretRedactingFilter) for item in uvicorn_error.filters
     )
+
+
+def test_filter_preserves_uvicorn_access_args_for_formatter() -> None:
+    from uvicorn.logging import AccessFormatter
+
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='%s - "%s %s HTTP/%s" %d',
+        args=(
+            "127.0.0.1:1234",
+            "GET",
+            "/health?password=super-secret",
+            "1.1",
+            200,
+        ),
+        exc_info=None,
+    )
+    assert SecretRedactingFilter().filter(record) is True
+    assert isinstance(record.args, tuple)
+    assert len(record.args) == 5
+    assert "super-secret" not in record.args[2]
+    assert "[REDACTED]" in record.args[2]
+    formatted = AccessFormatter(
+        fmt='%(client_addr)s - "%(request_line)s" %(status_code)s'
+    ).format(record)
+    assert "super-secret" not in formatted
+    assert "GET" in formatted
+    assert "/health" in formatted
+
+
+def test_filter_drops_color_message_after_clearing_args() -> None:
+    record = logging.LogRecord(
+        name="uvicorn.error",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="Uvicorn running on %s://%s:%d",
+        args=("http", "127.0.0.1", 8000),
+        exc_info=None,
+    )
+    record.__dict__["color_message"] = "Uvicorn running on %s://%s:%d"
+    assert SecretRedactingFilter().filter(record) is True
+    assert record.args is None
+    assert "color_message" not in record.__dict__
+    assert "127.0.0.1" in record.getMessage()

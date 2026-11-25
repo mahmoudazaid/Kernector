@@ -284,11 +284,13 @@ a {
   font-size: 0.8125rem;
 }
 
-.kern-app.is-login .kern-body {
+.kern-app.is-login .kern-body,
+.kern-app.is-no-sidebar .kern-body {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.kern-app.is-login .kern-main {
+.kern-app.is-login .kern-main,
+.kern-app.is-no-sidebar .kern-main {
   display: flex;
   justify-content: center;
   align-items: flex-start;

@@ -42,12 +42,22 @@ class SecretRedactingFilter(logging.Filter):
     """Redact secrets in the rendered log message and exception text."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        # AccessFormatter unpacks record.args — redact in place, do not clear.
+        if record.name == "uvicorn.access" and isinstance(record.args, tuple):
+            record.args = tuple(
+                redact_secrets(arg) if isinstance(arg, str) else arg
+                for arg in record.args
+            )
+            return True
+
         try:
             rendered = record.getMessage()
         except Exception:
             rendered = str(record.msg)
         record.msg = redact_secrets(rendered)
         record.args = None
+        # ColourizedFormatter would re-format color_message with the old args.
+        record.__dict__.pop("color_message", None)
         if record.exc_info and not record.exc_text:
             record.exc_text = redact_secrets(
                 logging.Formatter().formatException(record.exc_info)
