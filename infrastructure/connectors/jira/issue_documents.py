@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -20,6 +21,11 @@ from infrastructure.connectors.jira.errors import (
     JiraIssueLimitExceededError,
     JiraPaginationError,
 )
+from infrastructure.connectors.jira.link_extractor import (
+    PROVIDER_LINKS_EXTRA_KEY,
+    build_provider_links_payload,
+    encode_provider_links,
+)
 from infrastructure.connectors.jira.site import JiraSite
 
 _MSG_REQUEST_FAILED = "The Jira request failed."
@@ -35,6 +41,8 @@ _ISSUE_FIELDS = (
     "components",
     "fixVersions",
     "parent",
+    "subtasks",
+    "issuelinks",
     "created",
     "updated",
 )
@@ -133,6 +141,7 @@ class JiraIssueDocuments:
         site = self._config.site
         summary = _required_text(fields, "summary")
         issue_type = _name(fields.get("issuetype"))
+        links_payload = build_provider_links_payload(issue_key=key, fields=fields)
         return SourceDocument(
             SourceMetadata(
                 reference=document.reference,
@@ -149,6 +158,7 @@ class JiraIssueDocuments:
                     "jira_project_key": project_key,
                     "jira_site_url": site.site_url,
                     "jira_updated_at": _required_text(fields, "updated"),
+                    PROVIDER_LINKS_EXTRA_KEY: encode_provider_links(links_payload),
                 },
             ),
             self._markdown(project_key, key, fields),
@@ -169,10 +179,15 @@ class JiraIssueDocuments:
         cloud_extra = (
             {"cloud_id": site.cloud_id} if self._config.deployment == "cloud" else {}
         )
+        updated = _required_text(fields, "updated")
+        links_payload = build_provider_links_payload(issue_key=key, fields=fields)
+        links_fp = hashlib.sha256(
+            encode_provider_links(links_payload).encode("utf-8")
+        ).hexdigest()[:16]
         return ConnectorDocument(
             reference=SourceReference(source_id, SourceType.JIRA),
             file_name=f"{key}.md",
-            revision=_required_text(fields, "updated"),
+            revision=f"{updated}#{links_fp}",
             extra={
                 **_connector_extra(self._config.connector_id),
                 **cloud_extra,

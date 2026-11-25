@@ -95,7 +95,12 @@ def test_lists_selected_project_issues_with_stable_identity_and_revision() -> No
         SourceReference(f"{CLOUD_ID}/KAN:KAN-1", SourceType.JIRA),
         SourceReference(f"{CLOUD_ID}/KAN:KAN-2", SourceType.JIRA),
     ]
-    assert [d.revision for d in documents] == [
+    assert all(
+        d.revision.startswith("2026-09-01T10:00:00.000+0000#")
+        or d.revision.startswith("2026-09-02T00:00:00.000+0000#")
+        for d in documents
+    )
+    assert [d.revision.split("#", 1)[0] for d in documents] == [
         "2026-09-01T10:00:00.000+0000",
         "2026-09-02T00:00:00.000+0000",
     ]
@@ -239,7 +244,13 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
     assert source.metadata.title == "KAN-9: Checkout fails"
     assert source.metadata.provider == "jira"
     assert source.metadata.content_format == "markdown"
-    assert source.metadata.extra == {
+    from infrastructure.connectors.jira.link_extractor import PROVIDER_LINKS_EXTRA_KEY
+
+    assert {
+        key: value
+        for key, value in source.metadata.extra.items()
+        if key != PROVIDER_LINKS_EXTRA_KEY
+    } == {
         "file_name": "KAN-9.md",
         "connector_id": "conn-1",
         "jira_issue_key": "KAN-9",
@@ -250,6 +261,7 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
         "jira_site_url": "https://acme.atlassian.net",
         "jira_updated_at": "2026-09-01T10:00:00.000+0000",
     }
+    assert PROVIDER_LINKS_EXTRA_KEY in source.metadata.extra
     assert source.content == "\n".join(
         [
             "# KAN-9: Checkout fails",
@@ -414,6 +426,8 @@ def test_listing_requests_only_the_mapped_fields() -> None:
         "components",
         "fixVersions",
         "parent",
+        "subtasks",
+        "issuelinks",
         "created",
         "updated",
     }

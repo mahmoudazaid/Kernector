@@ -689,10 +689,44 @@ build it.
 - **Suggestions.** `SuggestAssociations` creates `suggested` rows only from
   authoritative provider-declared evidence through `AssociationEvidenceSource`.
   No production source supplies that evidence yet (the Jira connector does not
-  fetch remote links or development-panel data), so it is not wired or exposed.
+  fetch development-panel data for associations), so association suggestions
+  are not wired or exposed.
 - **Transactions.** The SQLite store (`infrastructure/project/sql_store.py`,
   migration `004`) runs each use case in one `BEGIN IMMEDIATE` transaction;
   any failure rolls back every record it touched.
+
+#### Evidence-backed relationships from Jira (#374)
+
+- **Storage.** Migration `010` adds `relationships`, `relationship_evidence`,
+  and `relationship_record_watermarks` in the catalog SQLite database. Edge
+  identity is `(workspace_id, project_id, subject_token, relation_type,
+  object_token)`. Endpoints may be resolved `ArtifactRef`s or
+  `UnresolvedKey`s.
+- **Canonical direction.** Each provider link is stored once in the link
+  type's **outward** direction (for example `PROJ-140 tests PROJ-123`).
+  Reads from the object side present the inverse name (`tested_by`). Default
+  inverses: `tests`↔`tested_by`, `blocks`↔`blocked_by`, `child_of`↔`parent_of`,
+  `relates_to`↔`relates_to`, `affects`↔`affected_by`.
+- **Jira link mapping** (config in
+  `infrastructure/connectors/jira/link_extractor.py`, not core literals):
+  `Tests` / `is tested by` → `tests`; `Relates` → `relates_to`; `Blocks` →
+  `blocks`; `Defect` / `causes` → `affects`; parent and sub-task observations
+  → `child_of`; unknown types → `jira:<sanitized_name>`.
+- **Locators.** Each observation uses a stable locator within the same field
+  and revision, for example
+  `field=issuelinks;type=Tests;dir=out;key=PROJ-123`,
+  `field=parent;key=PROJ-1`, `field=subtasks;key=PROJ-2`.
+- **Transport.** Jira fetch writes versioned JSON under
+  `kernector.jira.provider_links.v1` on `SourceDocument.extra`. Sync strips
+  all `kernector.*` keys before ingest, fingerprinting, and chunk metadata;
+  relationship recording uses the unstripped document. Connector
+  `revision` is `{updated}#{links_hash}` so link-only edits re-enter the
+  record path. A per-document watermark makes failed recording retryable
+  after a successful READY ingest without re-embedding.
+- **Reads.** `GET /api/v1/projects/{project_id}/artifacts/{key}/relationships`
+  and MCP `core.project_relationships` (default-deny allowlist) return origin,
+  verification, freshness, evidence, and each end's contexts. Edges are
+  scoped to the observing source's project; they never leak across projects.
 
 The responsibilities follow the [layer table](#layers) and its import rules
 unchanged:

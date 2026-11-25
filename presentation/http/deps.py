@@ -863,6 +863,19 @@ ProjectUseCasesDep = Annotated[object, Depends(get_project_use_cases)]
 
 
 @lru_cache(maxsize=1)
+def get_list_artifact_relationships():
+    """Process-cached artifact relationship list use case (#374)."""
+    from composition.relationship.container import build_list_artifact_relationships
+
+    return build_list_artifact_relationships(get_settings())
+
+
+ListArtifactRelationshipsDep = Annotated[
+    object, Depends(get_list_artifact_relationships)
+]
+
+
+@lru_cache(maxsize=1)
 def get_mcp_access_use_cases():
     """Process-cached MCP access-profile use cases (#324)."""
     from composition.mcp_access.container import build_mcp_access_use_cases

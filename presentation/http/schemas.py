@@ -1398,3 +1398,88 @@ def project_detail_response(detail: object) -> ProjectDetailResponse:
             for coverage in detail.context_coverage
         ],
     )
+
+
+class RelationshipEndpointResponse(BaseModel):
+    """One end of a relationship edge."""
+
+    kind: Literal["artifact", "unresolved"]
+    key: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    part_key: str | None = None
+    contexts: list[str] = Field(default_factory=list)
+
+
+class RelationshipEvidenceResponse(BaseModel):
+    """One evidence observation supporting a relationship."""
+
+    source_type: str
+    source_id: str
+    revision: str
+    locator: str
+    extractor_id: str
+
+
+class RelationshipResponse(BaseModel):
+    """Evidence-backed relationship as seen from a listed artifact."""
+
+    relationship_id: str
+    project_id: str
+    relation_type: str
+    direction: Literal["outward", "inward"]
+    subject: RelationshipEndpointResponse
+    object: RelationshipEndpointResponse
+    origin: str
+    verification: str
+    freshness: str
+    confidence: float
+    evidence: list[RelationshipEvidenceResponse]
+    decision_actor: str | None = None
+    decision_at: str | None = None
+
+
+def relationship_response(view: object) -> RelationshipResponse:
+    """Project an application ``RelationshipView`` to the HTTP schema."""
+    from application.relationship.list import RelationshipView
+
+    if not isinstance(view, RelationshipView):
+        raise TypeError("view must be a RelationshipView")
+    return RelationshipResponse(
+        relationship_id=view.relationship_id,
+        project_id=view.project_id,
+        relation_type=view.relation_type,
+        direction=view.direction,  # type: ignore[arg-type]
+        subject=RelationshipEndpointResponse(
+            kind=view.subject.kind,  # type: ignore[arg-type]
+            key=view.subject.key,
+            source_type=view.subject.source_type,
+            source_id=view.subject.source_id,
+            part_key=view.subject.part_key,
+            contexts=list(view.subject.contexts),
+        ),
+        object=RelationshipEndpointResponse(
+            kind=view.object.kind,  # type: ignore[arg-type]
+            key=view.object.key,
+            source_type=view.object.source_type,
+            source_id=view.object.source_id,
+            part_key=view.object.part_key,
+            contexts=list(view.object.contexts),
+        ),
+        origin=view.origin,
+        verification=view.verification,
+        freshness=view.freshness,
+        confidence=view.confidence,
+        evidence=[
+            RelationshipEvidenceResponse(
+                source_type=item.source_type,
+                source_id=item.source_id,
+                revision=item.revision,
+                locator=item.locator,
+                extractor_id=item.extractor_id,
+            )
+            for item in view.evidence
+        ],
+        decision_actor=view.decision_actor,
+        decision_at=view.decision_at,
+    )

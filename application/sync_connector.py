@@ -18,6 +18,7 @@ from application.contracts import (
 from application.errors import ApplicationValidationError
 from application.ingest_knowledge import IngestFailure, IngestKnowledge
 from application.observability import log_operation
+from application.relationship.transport import strip_transport_extra
 from domain.errors import (
     ConnectorAuthError,
     ConnectorError,
@@ -248,6 +249,7 @@ class SyncConnectorDocuments:
                 return backfill
             if not backfill:
                 self._artifact_sync.on_skipped(document.reference)
+            self._retry_relationship_record(document, previous)
         return ConnectorSyncOutcome(
             source_id=document.source_id,
             status=ConnectorSyncStatus.SKIPPED,
@@ -275,6 +277,24 @@ class SyncConnectorDocuments:
         except Exception as error:
             return _failed_outcome(document, error)
         return True
+
+    def _retry_relationship_record(
+        self,
+        document: ConnectorDocument,
+        previous: CatalogDocument,
+    ) -> None:
+        """Fetch and retry relationship recording when a prior attempt failed."""
+        assert self._artifact_sync is not None
+        needs = getattr(self._artifact_sync, "needs_relationship_retry", None)
+        retry = getattr(self._artifact_sync, "record_relationships_if_needed", None)
+        if not callable(needs) or not callable(retry):
+            return
+        if not needs(document.reference):
+            return
+        fetched = self._fetch(document, previous)
+        if isinstance(fetched, ConnectorSyncOutcome):
+            return
+        retry(fetched, revision=document.revision)
 
     def _try_provider_hash(
         self, document: ConnectorDocument, previous: CatalogDocument
@@ -327,13 +347,16 @@ class SyncConnectorDocuments:
         The catalog is only written after the vector store reports exactly the
         row's chunk count, so a failed or partial rewrite is retried next run.
         """
-        metadata_fingerprint = fingerprint_metadata(metadata)
+        ingest_metadata = _metadata_without_transport_keys(metadata)
+        metadata_fingerprint = fingerprint_metadata(ingest_metadata)
         updated_at = self._now()
         if previous.metadata_fingerprint != metadata_fingerprint:
             if self._vector_store_factory is None:
                 return _Fallback.REINGEST
             stamped = dataclasses.replace(
-                metadata, created_at=previous.created_at, updated_at=updated_at
+                ingest_metadata,
+                created_at=previous.created_at,
+                updated_at=updated_at,
             )
             try:
                 count = self._vector_store_factory().update_source_metadata(
@@ -414,16 +437,17 @@ class SyncConnectorDocuments:
                 updated_at=updated_at,
             ),
         )
+        ingest_source = _without_transport_keys(source)
         pending = _pending_row(
             document,
-            source,
+            ingest_source,
             previous,
             created_at=created_at,
             updated_at=updated_at,
         )
         self._catalog.upsert(pending)
         try:
-            response = ingest.execute(IngestRequest(documents=(source,)))
+            response = ingest.execute(IngestRequest(documents=(ingest_source,)))
         except IngestFailure as error:
             self._recover_ingest_failure(previous, pending, error)
             return _failed_outcome(document, error)
@@ -438,8 +462,8 @@ class SyncConnectorDocuments:
             pending,
             status=CatalogStatus.READY,
             chunk_count=response.chunk_count,
-            content_fingerprint=fingerprint_text(source.content),
-            metadata_fingerprint=fingerprint_metadata(source.metadata),
+            content_fingerprint=fingerprint_text(ingest_source.content),
+            metadata_fingerprint=fingerprint_metadata(ingest_source.metadata),
             processing_fingerprint=self._processing_fingerprint,
             provider_content_hash=document.content_hash,
         )
@@ -564,6 +588,18 @@ def _connector_id_of(document: ConnectorDocument) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _metadata_without_transport_keys(metadata: SourceMetadata) -> SourceMetadata:
+    return dataclasses.replace(
+        metadata, extra=strip_transport_extra(metadata.extra)
+    )
+
+
+def _without_transport_keys(source: SourceDocument) -> SourceDocument:
+    return dataclasses.replace(
+        source, metadata=_metadata_without_transport_keys(source.metadata)
+    )
 
 
 def _row_in_connector_scope(

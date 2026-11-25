@@ -21,16 +21,22 @@ DOMAIN_PROJECT = REPO_ROOT / "domain" / "project"
 NEUTRAL_ROOTS = (
     DOMAIN_PROJECT,
     REPO_ROOT / "domain" / "artifact",
+    REPO_ROOT / "domain" / "relationship",
     REPO_ROOT / "application" / "project",
     REPO_ROOT / "application" / "artifact",
+    REPO_ROOT / "application" / "relationship",
     REPO_ROOT / "infrastructure" / "project",
+    REPO_ROOT / "infrastructure" / "relationship",
     REPO_ROOT / "composition" / "project",
 )
 ABOVE_INFRASTRUCTURE = (
     *sorted(DOMAIN_PROJECT.rglob("*.py")),
     *sorted((REPO_ROOT / "application" / "project").rglob("*.py")),
+    *sorted((REPO_ROOT / "domain" / "relationship").rglob("*.py")),
+    *sorted((REPO_ROOT / "application" / "relationship").rglob("*.py")),
     REPO_ROOT / "presentation" / "http" / "routes" / "projects.py",
     REPO_ROOT / "composition" / "mcp" / "project_list.py",
+    REPO_ROOT / "composition" / "mcp" / "project_relationships.py",
 )
 CONTEXT_TOKENS = frozenset(
     {
@@ -99,6 +105,19 @@ def _provider_tokens(path: Path) -> set[str]:
     ids=lambda p: p.name,
 )
 def test_domain_project_imports_stdlib_and_domain_only(module_path: Path) -> None:
+    allowed = set(sys.stdlib_module_names) | {"domain", "__future__"}
+
+    assert imported_roots(module_path) <= allowed
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    sorted((REPO_ROOT / "domain" / "relationship").rglob("*.py")),
+    ids=lambda p: p.name,
+)
+def test_domain_relationship_imports_stdlib_and_domain_only(
+    module_path: Path,
+) -> None:
     allowed = set(sys.stdlib_module_names) | {"domain", "__future__"}
 
     assert imported_roots(module_path) <= allowed

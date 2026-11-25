@@ -9,6 +9,10 @@ from application.errors import ConfigurationError
 from application.retrieve_knowledge import RetrieveKnowledge
 from composition.mcp.project_list import TOOL_NAME as PROJECT_LIST_TOOL
 from composition.mcp.project_list import ProjectListTool
+from composition.mcp.project_relationships import (
+    TOOL_NAME as PROJECT_RELATIONSHIPS_TOOL,
+)
+from composition.mcp.project_relationships import ProjectRelationshipsTool
 from composition.mcp.search_knowledge import TOOL_NAME as SEARCH_KNOWLEDGE_TOOL
 from composition.mcp.search_knowledge import SearchKnowledgeTool
 from composition.mcp.tool_registry import McpToolContribution, McpToolRegistry
@@ -56,6 +60,11 @@ def build_mcp_tool_registry(
             tool_id=PROJECT_LIST_TOOL,
             pack_id=None,
             factory=lambda: _project_list_tool(settings),
+        ),
+        McpToolContribution(
+            tool_id=PROJECT_RELATIONSHIPS_TOOL,
+            pack_id=None,
+            factory=lambda: _project_relationships_tool(settings),
         ),
     ]
     for pack_id in settings.domain_tools.enabled_packs:
@@ -126,6 +135,12 @@ def _project_list_tool(settings: Settings) -> ProjectListTool:
     from composition.project.container import build_project_use_cases
 
     return ProjectListTool(build_project_use_cases(settings).list)
+
+
+def _project_relationships_tool(settings: Settings) -> ProjectRelationshipsTool:
+    from composition.relationship.container import build_list_artifact_relationships
+
+    return ProjectRelationshipsTool(build_list_artifact_relationships(settings))
 
 
 def _pack_mcp_kwargs(pack_id: str, settings: Settings) -> dict[str, object]:
