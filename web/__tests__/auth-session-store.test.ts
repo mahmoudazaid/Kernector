@@ -18,15 +18,18 @@ describe("auth session store", () => {
       csrfToken: "csrf-a",
       preferences: { provider: "ollama", model: "llama3", usable: true },
     });
+    const generationBefore = getAuthSession().generation;
     clearAuthSession();
     expect(getAuthSession()).toEqual({
       user: null,
       csrfToken: null,
       preferences: null,
+      generation: generationBefore + 1,
+      preferencesStatus: "ready",
     });
   });
 
-  it("clears state on account switch before new login", () => {
+  it("keeps the live session on beginAccountSwitch until login succeeds", () => {
     setAuthSession({
       user: { user_id: "usr_1", username: "alice" },
       csrfToken: "csrf-a",
@@ -36,8 +39,33 @@ describe("auth session store", () => {
       model: "model-a",
       usable: true,
     });
+    const before = getAuthSession();
+    const nextGen = beginAccountSwitch();
+    expect(nextGen).toBe(before.generation + 1);
+    expect(getAuthSession().user).toEqual(before.user);
+    expect(getAuthSession().csrfToken).toBe("csrf-a");
+    expect(getAuthSession().preferences).toEqual({
+      provider: "openrouter",
+      model: "model-a",
+      usable: true,
+    });
+    expect(getAuthSession().generation).toBe(nextGen);
+  });
+
+  it("ignores preference updates from a stale generation", () => {
+    setAuthSession({
+      user: { user_id: "usr_1", username: "alice" },
+      csrfToken: "csrf-a",
+      preferences: null,
+      preferencesStatus: "loading",
+    });
+    const generation = getAuthSession().generation;
     beginAccountSwitch();
+    setAuthPreferences(
+      { provider: "ollama", model: "stale", usable: true },
+      { generation, status: "ready" },
+    );
     expect(getAuthSession().preferences).toBeNull();
-    expect(getAuthSession().csrfToken).toBeNull();
+    expect(getAuthSession().preferencesStatus).toBe("loading");
   });
 });

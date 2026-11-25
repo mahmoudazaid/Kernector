@@ -24,7 +24,10 @@ from presentation.http.errors import (
     problem_from_validation_errors,
     register_problem_schemas,
 )
-from presentation.http.redaction import redact_secrets
+from presentation.http.redaction import (
+    install_secret_redacting_filter,
+    redact_secrets,
+)
 from presentation.http.routes import admin_mcp as admin_mcp_routes
 from presentation.http.routes import auth as auth_routes
 from presentation.http.routes import chat as chat_routes
@@ -97,6 +100,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
             "(app-level; not declared per operation)."
         ),
     )
+    install_secret_redacting_filter(_LOG)
     origins = list(
         cors_origins_from_env() if cors_origins is None else cors_origins
     )

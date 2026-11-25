@@ -41,12 +41,14 @@ def create_local_user(
     settings: Settings | None = None,
 ) -> StoredUser:
     """Provision a local user. Raises ConfigurationError-shaped failures."""
-    store = build_auth_store(settings)
     try:
+        store = build_auth_store(settings)
         return store.create_user(username, password)
     except DuplicateUsernameError as error:
         raise ConfigurationError(str(error)) from error
     except AuthStoreError as error:
+        raise ConfigurationError(str(error)) from error
+    except OSError as error:
         raise ConfigurationError(str(error)) from error
 
 

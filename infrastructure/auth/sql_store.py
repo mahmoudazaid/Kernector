@@ -32,6 +32,7 @@ from infrastructure.catalog.sql_schema import apply_migrations
 
 _MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 _USERNAME_MAX_LEN = 64
+_PASSWORD_MAX_LEN = 1024
 _ATTEMPT_RETENTION = timedelta(days=7)
 
 # Fixed dummy hash so missing-user auth takes the same scrypt path as a hit.
@@ -72,6 +73,10 @@ class SqlAuthStore:
             )
         if not password:
             raise AuthStoreError("password is required")
+        if len(password) > _PASSWORD_MAX_LEN:
+            raise AuthStoreError(
+                f"password must be at most {_PASSWORD_MAX_LEN} characters"
+            )
         user_id = new_user_id()
         now = _now()
         password_hash = hash_password(password)
@@ -322,9 +327,12 @@ class SqlAuthStore:
         retention_cutoff = (clock - _ATTEMPT_RETENTION).isoformat()
         with self._connect(write=True) as connection:
             try:
+                # Only prune rows that are not still locked (lockout may exceed 7d).
                 connection.execute(
-                    "DELETE FROM auth_login_attempts WHERE updated_at < ?",
-                    (retention_cutoff,),
+                    "DELETE FROM auth_login_attempts "
+                    "WHERE updated_at < ? "
+                    "AND (locked_until IS NULL OR locked_until < ?)",
+                    (retention_cutoff, updated_at),
                 )
                 row = connection.execute(
                     "SELECT username, failure_count, locked_until, updated_at "

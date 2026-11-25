@@ -43,6 +43,7 @@ import {
   type ToolUsed,
 } from "@/lib/chat/turn";
 import {
+  loadGenerationSettings,
   loadRuntimeSettings,
   type StoredChatMessage,
 } from "@/lib/settings/runtime-settings-storage";
@@ -952,7 +953,7 @@ export function ChatPanel({
     const auth = getAuthSession();
     const authPrefs = auth.preferences;
     const stored = loadRuntimeSettings();
-    const localSettings = stored?.settings ?? {};
+    const knobs = loadGenerationSettings() ?? stored?.settings ?? {};
     const fromAuth =
       auth.user !== null &&
       authPrefs !== null &&
@@ -963,11 +964,10 @@ export function ChatPanel({
         ? {
             provider: authPrefs.provider as "openrouter" | "ollama",
             model: authPrefs.model,
-            settings: localSettings,
+            settings: knobs,
           }
         : null;
     // localStorage provider/model is for signed-out users only (ADR 0013 §8).
-    // Signed-in with missing/stale prefs falls through to catalog defaults.
     const fromLocal =
       auth.user === null &&
       stored !== null &&
@@ -978,7 +978,13 @@ export function ChatPanel({
             settings: stored.settings,
           }
         : null;
-    const base = fromAuth ?? fromLocal;
+    // Signed-in with missing/stale pair: catalog defaults for provider/model,
+    // but keep generation knobs (ADR 0013 §8).
+    const signedInKnobsOnly =
+      auth.user !== null && fromAuth === null
+        ? { provider: null, model: null, settings: knobs }
+        : null;
+    const base = fromAuth ?? fromLocal ?? signedInKnobsOnly;
     if (style === "default") {
       return base;
     }

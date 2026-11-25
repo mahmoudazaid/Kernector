@@ -15,7 +15,6 @@ import {
 } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/errors";
 import {
-  beginAccountSwitch,
   clearAuthSession,
   getAuthSession,
   setAuthPreferences,
@@ -78,11 +77,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const signIn = useCallback(async (username: string, password: string) => {
-    const generation = beginAccountSwitch();
+    // Do not bump generation until login succeeds — a failed attempt must not
+    // strand the still-valid session in preferencesStatus "loading".
     const me = await loginRequest(username, password);
-    if (getAuthSession().generation !== generation) {
-      return;
-    }
+    clearAuthSession();
+    const generation = getAuthSession().generation;
     setAuthSession({
       user: { user_id: me.user_id, username: me.username },
       csrfToken: me.csrf_token,

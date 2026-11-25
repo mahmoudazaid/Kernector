@@ -15,7 +15,8 @@ const EMPTY: AuthSessionState = {
   csrfToken: null,
   preferences: null,
   generation: 0,
-  preferencesStatus: "idle",
+  // "ready" when cleared so signed-out Settings can seed without waiting.
+  preferencesStatus: "ready",
 };
 
 let state: AuthSessionState = { ...EMPTY };
