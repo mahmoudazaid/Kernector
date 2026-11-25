@@ -238,12 +238,19 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
     assert source.metadata.title == "KAN-9: Checkout fails"
     assert source.metadata.provider == "jira"
     assert source.metadata.content_format == "markdown"
-    from infrastructure.connectors.jira.link_extractor import PROVIDER_LINKS_EXTRA_KEY
+    from infrastructure.connectors.jira.link_extractor import (
+        LINKS_FINGERPRINT_EXTRA_KEY,
+        PROVIDER_LINKS_EXTRA_KEY,
+    )
 
     assert {
         key: value
         for key, value in source.metadata.extra.items()
-        if key != PROVIDER_LINKS_EXTRA_KEY
+        if key
+        not in {
+            PROVIDER_LINKS_EXTRA_KEY,
+            LINKS_FINGERPRINT_EXTRA_KEY,
+        }
     } == {
         "file_name": "KAN-9.md",
         "connector_id": "conn-1",
@@ -256,6 +263,7 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
         "jira_updated_at": "2026-09-01T10:00:00.000+0000",
     }
     assert PROVIDER_LINKS_EXTRA_KEY in source.metadata.extra
+    assert LINKS_FINGERPRINT_EXTRA_KEY in source.metadata.extra
     assert source.content == "\n".join(
         [
             "# KAN-9: Checkout fails",
